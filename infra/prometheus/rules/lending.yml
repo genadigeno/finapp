@@ -21,10 +21,12 @@
 # - lending_offered is a TARGET label the environment's scrape configuration sets, never a metric tag: an environment
 #   that offers lending labels its application targets lending_offered="true" (the last step of the activation gate,
 #   OPERATIONS_RUNBOOK.md section 7.4); production does not until that gate opens - no ACTIVE terms is its expected state.
-# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+# - Routed by severity in infra/alertmanager/alertmanager.yml (P15-TSK-025), to a placeholder receiver until an on-call tool exists.
 
 groups:
   - name: lending
+    labels:
+      owner: lending
     rules:
       - alert: LendingDisbursementPastDeadline
         # A PENDING disbursement older than the longest deadline any product's terms may name (24 h): the disbursement
@@ -96,7 +98,7 @@ groups:
       - alert: LendingSubledgerProofFailing
         # INV-LND-01: a loan account whose six ledger balances its rows do not explain. Never corrected - investigated.
         expr: max(finapp_lending_subledger_proof{verdict="FAILS"}) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:
@@ -107,7 +109,7 @@ groups:
         # INV-LND-05, INV-LND-09: a loan account a figure of which no longer re-derives by its pinned engine, or whose
         # canonical terms no longer re-verify.
         expr: max(finapp_lending_replay{verdict="DIVERGED"}) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:
@@ -117,7 +119,7 @@ groups:
       - alert: LendingCapitalProofFailing
         # INV-LND-13: a LENDING_CAPITAL line no recognition explains, or headroom below zero at rest.
         expr: max(finapp_lending_capital_proof{verdict="FAILS"}) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:
@@ -138,7 +140,7 @@ groups:
         # INV-CRD-09, INV-LND-06: a party whose reserved, committed and outstanding principal exceeds the limit each
         # deciding policy declared.
         expr: max(finapp_credit_exposure_census{verdict="FAILS"}) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:
@@ -165,7 +167,7 @@ groups:
           severity: ticket
         annotations:
           summary: "An instance is not running the loan origination sweep"
-          description: "finapp.lending.origination.sweeper.enabled is false on a scraped instance. Applications are offered by the others; set it back to true."
+          description: "finapp.lending.origination.sweeper.enabled is false on a scraped instance. Applications are offered by the others; set it back to true. See OPERATIONS_RUNBOOK.md section 7.10."
 
       - alert: LendingDisbursementSweeperOff
         expr: finapp_lending_disbursement_sweeper_enabled == 0
@@ -174,7 +176,7 @@ groups:
           severity: ticket
         annotations:
           summary: "An instance is not running the loan disbursement sweep"
-          description: "finapp.lending.disbursement.sweeper.enabled is false on a scraped instance. Loans are disbursed by the others; set it back to true."
+          description: "finapp.lending.disbursement.sweeper.enabled is false on a scraped instance. Loans are disbursed by the others; set it back to true. See OPERATIONS_RUNBOOK.md section 7.10."
 
       - alert: LendingPayoutSweeperOff
         expr: finapp_lending_payout_sweeper_enabled == 0
@@ -183,7 +185,7 @@ groups:
           severity: ticket
         annotations:
           summary: "An instance is not running the loan payout sweep"
-          description: "finapp.lending.payout.sweeper.enabled is false on a scraped instance. Payouts are carried by the others; set it back to true."
+          description: "finapp.lending.payout.sweeper.enabled is false on a scraped instance. Payouts are carried by the others; set it back to true. See OPERATIONS_RUNBOOK.md section 7.10."
 
       - alert: LendingServicingSweeperOff
         expr: finapp_lending_servicing_sweeper_enabled == 0
@@ -192,7 +194,7 @@ groups:
           severity: ticket
         annotations:
           summary: "An instance is not running the loan servicing sweep"
-          description: "finapp.lending.servicing.sweeper.enabled is false on a scraped instance. Accounts are serviced by the others; set it back to true."
+          description: "finapp.lending.servicing.sweeper.enabled is false on a scraped instance. Accounts are serviced by the others; set it back to true. See OPERATIONS_RUNBOOK.md section 7.10."
 
       - alert: LendingGaugesUnreadable
         # NaN: a lending gauge whose database read failed - an unreadable proof, queue or lag must stay visible, never read

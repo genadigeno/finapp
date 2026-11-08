@@ -3,6 +3,7 @@ package com.finapp.app.telemetry;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.outbox.OutboxBacklog;
+import com.finapp.platform.testing.database.DatabaseRoles;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -51,7 +52,8 @@ class OutboxMetricsDatabaseTest {
 
     @AfterEach
     void removeProbeRows() throws SQLException {
-        try (Connection connection = connect();
+        // The migrator: since platform V012 the application role deletes from the outbox only through the sweep's function.
+        try (Connection connection = DatabaseRoles.migrator();
                 Statement statement = connection.createStatement()) {
             statement.executeUpdate(
                     "DELETE FROM platform.outbox_event WHERE aggregate_type = '" + AGGREGATE_TYPE + "'");
@@ -134,6 +136,43 @@ class OutboxMetricsDatabaseTest {
                 .isNotNaN()
                 .isGreaterThanOrEqualTo(1.0);
         assertThat(oldest.value()).isNotNaN().isGreaterThanOrEqualTo(120.0);
+    }
+
+    @Test
+    @DisplayName("a dead-lettered event is counted, and is no part of the publishable age (P15-TSK-025, owed C14)")
+    void aDeadLetterIsCountedApart() throws SQLException {
+        OutboxBacklog.Reading before = backlog.read();
+        insertPendingEvent(Duration.ofHours(2));
+        try (Connection connection = connect();
+                Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "UPDATE platform.outbox_event SET dead_lettered_at = now(), attempts = 1 "
+                            + "WHERE aggregate_type = '" + AGGREGATE_TYPE + "'");
+        }
+        try {
+            OutboxBacklog.Reading after = backlog.read();
+            assertThat(after.deadLettered()).isEqualTo(before.deadLettered() + 1);
+            assertThat(after.oldest()).as("the old gauge still counts it").isGreaterThanOrEqualTo(Duration.ofHours(1));
+            assertThat(after.oldestPublishable()).as("the freshness SLI's reading does not").isLessThan(Duration.ofHours(1));
+        } finally {
+            try (Connection connection = connect();
+                    Statement statement = connection.createStatement()) {
+                statement.executeUpdate(
+                        "UPDATE platform.outbox_event SET dead_lettered_at = NULL "
+                                + "WHERE aggregate_type = '" + AGGREGATE_TYPE + "'");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a row stamped by an instance ahead of the database reads age zero, never a refused reading (P15-TSK-025's fix round, owed C14)")
+    void aRowStampedAheadReadsAgeZero() throws SQLException {
+        insertPendingEvent(Duration.ofMinutes(-5));
+
+        OutboxBacklog.Reading reading = backlog.read();
+
+        assertThat(reading.oldest()).isGreaterThanOrEqualTo(Duration.ZERO);
+        assertThat(reading.oldestPublishable()).isGreaterThanOrEqualTo(Duration.ZERO);
     }
 
     // -----------------------------------------------------------------

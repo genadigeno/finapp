@@ -64,6 +64,12 @@ exporter is configured. Several gaps remain:
    - **The rules.** `infra/prometheus/rules/platform.yml` holds `InstanceDown` (`up == 0` per instance, page),
      `FinappTargetsAbsent` (`absent(up)`, page) and `GaugesStale` (the refresher's canary, ticket), with `promtool test`
      cases.
+   *(As built by `P15-TSK-025`, 2026-11-08; the decisions are unchanged, and this note records how they were built.)*
+   - **The objectives.** `docs/architecture/SLOS.md` is the document; `infra/prometheus/rules/slo-recording.yml` and `slo.yml` are the rules. Fast pair 14.4× over 1h and 5m, paging; slow pair 6× over 6h and 30m, ticketing.
+   - **Corrections to the plan's table, each stated in `SLOS.md`.** Event freshness is time-based on a new gauge, `finapp.outbox.oldest.publishable`; a per-row SLI counted at publication cannot see a relay that stopped. The provider-callback denominator excludes `4xx`, so a forged delivery spends no budget. Consumption reads a new per-module gauge, `finapp.inbox.lag`.
+   - **Correctness.** Every proof and replay moved to `for: 0s` at severity `page`; the register is `SLOS.md` section 3, held by `AlertCatalogueTest`.
+   - **Routing.** Alertmanager by severity to placeholder receivers that send nothing, in compose and `deploy/observability/alertmanager/`. Group-level `owner` labels on the domain files.
+   - **Testing.** `promtool` and `amtool` run from digest-pinned images by `infra/scripts/alert-rules-check.sh` and CI's `alerts` job, each check refusing a planted defect.
 8. **End-to-end tracing is proven on one real flow.** On `kind`, one payment's trace runs customer → request → domain →
    provider → ledger → settlement → reconciliation. The asynchronous legs are linked through the envelope's correlation
    and causation ids.

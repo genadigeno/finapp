@@ -221,6 +221,9 @@ check tflint    "$TFLINT_REPOSITORY"    "$TFLINT_VERSION"    "$TFLINT_DIGEST"   
 check kustomize   "$KUSTOMIZE_REPOSITORY"   "$KUSTOMIZE_VERSION"   "$KUSTOMIZE_DIGEST"   list_tags_registry_k8s
 check kubeconform "$KUBECONFORM_REPOSITORY" "$KUBECONFORM_VERSION" "$KUBECONFORM_DIGEST" list_tags_ghcr
 check conftest    "$CONFTEST_REPOSITORY"    "$CONFTEST_VERSION"    "$CONFTEST_DIGEST"    list_tags_dockerhub
+# The alert-rule tools (P15-TSK-025): the versions compose.yaml runs.
+check prometheus "$PROMETHEUS_REPOSITORY" "$PROMETHEUS_VERSION" "$PROMETHEUS_DIGEST" list_tags_dockerhub
+check alertmanager "$ALERTMANAGER_REPOSITORY" "$ALERTMANAGER_VERSION" "$ALERTMANAGER_DIGEST" list_tags_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

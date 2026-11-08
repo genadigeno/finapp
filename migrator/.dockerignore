@@ -1,0 +1,11 @@
+# The migrator image's build context is one tar and nothing else (P15-TSK-004).
+#
+# Why this file is here and not beside the root Dockerfile. The image is a stage of the root Dockerfile, so that its bases
+# have one definition, and BuildKit looks for "<dockerfile name>.dockerignore" beside the Dockerfile before anything else.
+# A Dockerfile.dockerignore would therefore replace the application's allow-list as well. So the migrator's build names
+# this directory as its context (docker buildx build --file Dockerfile --target migrator migrator), and this file is read
+# as that context's own .dockerignore. MigratorImageTest holds both halves.
+#
+# An allow-list, for the application image's reason: it cannot forget anything.
+*
+!build/image/finapp-migrator.tar

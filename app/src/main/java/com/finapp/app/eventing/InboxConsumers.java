@@ -3,9 +3,11 @@ package com.finapp.app.eventing;
 import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.kafka.BrokerAccessRefusedException;
+import com.finapp.platform.inbox.kafka.ConsumerEvictedException;
 import com.finapp.platform.inbox.kafka.KafkaEventReceiver;
 import com.finapp.platform.inbox.kafka.ReceiverPollResult;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -13,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -99,6 +102,10 @@ public final class InboxConsumers implements SmartLifecycle {
     private final Counter parked;
     private final Counter pollsRefused;
     private final Counter pollsFailed;
+    private final Counter evictions;
+
+    /** Each module's lag on this instance as of its last good poll (`P15-TSK-025`): absent is unknown, read as NaN. */
+    private final Map<String, Long> lags = new ConcurrentHashMap<>();
 
     private final List<Loop> loops = new ArrayList<>();
     private volatile boolean running;
@@ -122,6 +129,12 @@ public final class InboxConsumers implements SmartLifecycle {
      * refusal hiding. A poll that delivered a record is admission at once: the broker served it.
      */
     static final int CLEAN_POLLS_TO_ADMIT = 3;
+
+    /** {@code finapp.inbox.lag{module}}, the consumption SLI's reading (`P15-TSK-025`). */
+    public static final String LAG = "finapp.inbox.lag";
+
+    /** {@code finapp.inbox.consumer.evictions}, a consumer evicted past its poll budget (`P15-TSK-025`). */
+    public static final String EVICTIONS = "finapp.inbox.consumer.evictions";
 
     /** One poll, as a loop makes it: the seam the refusal tests drive without a broker. */
     @FunctionalInterface
@@ -147,6 +160,24 @@ public final class InboxConsumers implements SmartLifecycle {
         this.parked = outcome(registry, "parked");
         this.pollsRefused = pollFailure(registry, "refused");
         this.pollsFailed = pollFailure(registry, "failed");
+        this.evictions = eviction(registry);
+        handlersByModule.keySet().forEach(module -> Gauge.builder(LAG, lags, known -> lagOf(known, module))
+                .tag("module", module)
+                .description("Records awaiting this instance's consumer of the module, from its last good poll; NaN"
+                        + " before the first and after a thrown one. Per instance: a group's lag is the sum, of the"
+                        + " instances that can answer")
+                .strongReference(true)
+                .register(registry));
+    }
+
+    /** A loop's last known lag, or unknown (`P15-TSK-025`): the seam the lag test drives without a broker. */
+    void observeLag(String module, OptionalLong lag) {
+        lag.ifPresentOrElse(known -> lags.put(module, known), () -> lags.remove(module));
+    }
+
+    private static double lagOf(Map<String, Long> known, String module) {
+        Long lag = known.get(module);
+        return lag == null ? Double.NaN : lag;
     }
 
     /**
@@ -185,6 +216,16 @@ public final class InboxConsumers implements SmartLifecycle {
      */
     public boolean brokerAccessRefused() {
         return !refusedModules.isEmpty();
+    }
+
+    /**
+     * Commits the group refused because this member was evicted (`P15-TSK-025`): a batch past the poll budget or a
+     * lapsed session. Its own series, where a thrown commit used to read as an ordinary failed poll.
+     */
+    static Counter eviction(MeterRegistry registry) {
+        return Counter.builder(EVICTIONS)
+                .description("Offset commits refused because the group had evicted this consumer")
+                .register(registry);
     }
 
     static Counter outcome(MeterRegistry registry, String outcome) {
@@ -300,6 +341,17 @@ public final class InboxConsumers implements SmartLifecycle {
                     refused.getMessage());
             pause();
             return null;
+        } catch (ConsumerEvictedException evicted) {
+            refusedModules.computeIfPresent(module, (ignored, clean) -> 0);
+            evictions.increment();
+            // Not a thrown poll in the ordinary sense: the records redeliver into the dedupe and the next poll rejoins.
+            log.warn(
+                    "Inbox consumer {} was evicted from its group past its poll budget: {} - the batch redelivers"
+                            + " into the dedupe",
+                    groupIdOf(module),
+                    evicted.getMessage());
+            pause();
+            return null;
         } catch (RuntimeException failure) {
             refusedModules.computeIfPresent(module, (ignored, clean) -> 0);
             pollsFailed.increment();
@@ -363,8 +415,10 @@ public final class InboxConsumers implements SmartLifecycle {
         private void tick() {
             ReceiverPollResult result = settle(module, receiver::pollOnce);
             if (result == null) {
+                observeLag(module, OptionalLong.empty()); // a thrown poll knows no lag: NaN, never its last number
                 return; // logged and backed off by settle
             }
+            observeLag(module, receiver.lag());
             processed.increment(result.processed());
             duplicates.increment(result.duplicates());
             contended.increment(result.contended());

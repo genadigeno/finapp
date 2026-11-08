@@ -178,6 +178,18 @@ class BnplServicingScheduleTest {
         assertThat(servicing(registry, "service", "failed")).isEqualTo(3.0);
     }
 
+    @Test
+    @DisplayName("finapp.bnpl.sweeper.claim.failed{kind=servicing} is eager at zero, counts a failed claim, and the sweep's own catch - only claims reach it - counts it (P15-TSK-025)")
+    void theClaimMeter() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BnplServicingMetrics metrics = new BnplServicingMetrics(registry, new BnplRepaymentMetrics(registry));
+        assertThat(registry.get(BnplOriginationMetrics.CLAIM_FAILED).tag("kind", "servicing").counter().count()).isZero();
+        metrics.claimFailed();
+        assertThat(registry.get(BnplOriginationMetrics.CLAIM_FAILED).tag("kind", "servicing").counter().count()).isEqualTo(1.0);
+        assertThat(com.finapp.platform.testing.RepositoryPaths.read("app/src/main/java/com/finapp/app/bnpl/BnplServicingSchedule.java"))
+                .containsPattern("(?s)void sweepQuietly\\(\\) \\{.*?catch \\(RuntimeException failure\\) \\{.*?metrics\\.claimFailed\\(\\);");
+    }
+
     private static double collection(SimpleMeterRegistry registry, String outcome) {
         return registry.get(BnplServicingMetrics.COLLECTION).tags("outcome", outcome).counter().count();
     }

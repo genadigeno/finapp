@@ -56,7 +56,7 @@ some to answer the brief would break ADR-0001.
    manifest. Decision 3: the actuator answers on 8081 only, bound to loopback unless `FINAPP_MANAGEMENT_ADDRESS` names
    the pod's address. Decision 4, as Spring's own phases run it on a real context (`ShutdownOrderTest`): readiness turns
    `REFUSING_TRAFFIC` before any phase stops; the API port drains (`server.shutdown: graceful`, within
-   `spring.lifecycle.timeout-per-shutdown-phase`, 30 s); no new schedule tick starts and the 32 drain in parallel,
+   `spring.lifecycle.timeout-per-shutdown-phase`, 30 s); no new schedule tick starts and the 32 (35 since `P15-TSK-029`, 2026-11-08) drain in parallel,
    each within 10 s and an interrupt's 2 s (*read "the 32 schedules stop claiming at once" until `P15-TSK-009`*); the consumers take no new batch, acknowledge the one they hold and leave
    their groups, within 10 s and 2 s; the management server closes, then the web server; the gauge refresher
    lets its read end, within 3 s (the accounting gauge reader until `P15-TSK-024` moved every gauge onto `platform`'s
@@ -141,3 +141,11 @@ every boot jar, so the SBOM is now kept out of the jar (an SBOM per image is `P1
 take the commit's time. The image runs as `65532:65532`, set explicitly; the JVM flags are `-XX:MaxRAMPercentage=75.0`
 and `-XX:+ExitOnOutOfMemoryError`; the size budget is 300 MiB of flattened filesystem (260.3 MiB measured).
 `README.md` §5f.
+
+*As built for decision 1's migrator, `P15-TSK-004` (2026-11-08); the decision is unchanged, and so is ADR-0011: the application
+never migrates and Flyway stays off its classpath.* The image is a stage of the same root `Dockerfile`, on one base stage the
+application's stage also names, so each pin still has one definition. Its build gives it its own context root, `migrator/`,
+because BuildKit's `<dockerfile>.dockerignore` would otherwise have replaced the application's allow-list. It runs a small
+program over Flyway's API rather than the command line: distroless has no shell to loop over the schemas, and only a program
+can say which failure a retry can help. `DATA_MIGRATIONS.md` §2.1 is the contract; §2.2 is the separate one-time bootstrap of the
+deployed roles, which holds the master credential alone.

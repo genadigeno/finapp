@@ -8,6 +8,7 @@ import com.finapp.app.eventing.InboxConsumers;
 import com.finapp.platform.inbox.kafka.KafkaEventReceiver;
 import com.finapp.platform.outbox.BrokerConnection;
 import com.finapp.platform.outbox.KafkaEventPublisher;
+import com.finapp.platform.retention.RetentionSweep;
 import com.finapp.platform.testing.RepositoryPaths;
 import com.finapp.sharedkernel.event.EventEnvelope;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -215,6 +216,23 @@ class TopicCatalogueTest {
                 .as("the inbox must remember an event for longer than the broker can redeliver it,"
                         + " or a redelivery is a second effect (INV-IDEM-04)")
                 .isEmpty();
+    }
+
+    @Test
+    @DisplayName("the retention sweep's floor is exactly the oldest record any catalogued topic can still redeliver")
+    void theSweepsFloorIsTheOldestRecordTheBrokerCanRedeliver() {
+        long checkInterval = Long.parseLong(required(broker, "log.retention.check.interval.ms"));
+        long oldest = 0;
+        for (String className : topics().values()) {
+            Map<String, String> config = configOf(className);
+            oldest = Math.max(oldest, Long.parseLong(config.get("retention.ms")) + Long.parseLong(config.get("segment.ms")) + checkInterval);
+        }
+
+        assertThat(oldest).as("the catalogue was read").isPositive();
+        assertThat(RetentionSweep.BROKER_REDELIVERY_HORIZON)
+                .as("a deployment's finapp.inbox.retention is judged against this at start, and V012's functions carry the same"
+                        + " figure: a topic retained longer moves all three")
+                .isEqualTo(Duration.ofMillis(oldest));
     }
 
     @Test

@@ -83,6 +83,12 @@ public interface ScorecardStore {
     Optional<ScorecardModelVersionId> shareActive(Connection unitOfWork, ScorecardFamily family);
 
     /**
+     * How many requests wait at {@code SUBMITTED} with no {@code ACTIVE} version of the family to pin (`P15-TSK-025`): zero
+     * whenever one is in force, however many requests are open. Reads only.
+     */
+    long awaitingAnActiveVersion(Connection unitOfWork, ScorecardFamily family);
+
+    /**
      * The pinned version {@code FOR SHARE} (`P10-TSK-015`; element (5)), whatever its status - read by the freeze and the
      * evaluation even after its retirement ({@code INV-HIST-04}); false when no such version exists.
      */

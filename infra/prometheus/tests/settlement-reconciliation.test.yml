@@ -53,6 +53,7 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: ticket
+              owner: reconciliation
               job: finapp
               instance: b:8081
               gauge: finapp_reconciliation_run_age_seconds
@@ -61,6 +62,7 @@ tests:
               description: "finapp_reconciliation_run_age_seconds on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: reconciliation
               job: finapp
               instance: b:8081
               gauge: finapp_settlement_file_age
@@ -69,6 +71,7 @@ tests:
               description: "finapp_settlement_file_age on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: reconciliation
               job: finapp
               instance: b:8081
               gauge: finapp_reconciliation_expectation_overdue
@@ -77,6 +80,7 @@ tests:
               description: "finapp_reconciliation_expectation_overdue on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: reconciliation
               job: finapp
               instance: b:8081
               gauge: finapp_reconciliation_suspense_age_seconds
@@ -85,6 +89,7 @@ tests:
               description: "finapp_reconciliation_suspense_age_seconds on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: reconciliation
               job: finapp
               instance: b:8081
               gauge: finapp_reconciliation_break_age

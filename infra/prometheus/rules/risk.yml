@@ -31,10 +31,12 @@
 #   risk policies are meant to judge labels its application targets risk_judging="true" (the last step of the activation
 #   gate, OPERATIONS_RUNBOOK.md section 9.1); production does not until that gate opens - no ACTIVE policy is its expected
 #   state, every seam answering ALLOW with NO_POLICY_ACTIVE recorded.
-# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+# - Routed by severity in infra/alertmanager/alertmanager.yml (P15-TSK-025), to a placeholder receiver until an on-call tool exists.
 
 groups:
   - name: risk
+    labels:
+      owner: risk
     rules:
       - alert: RiskEvaluationUnavailable
         # A seam answered its fail-safe band for a reason other than "no policy": the pin's read failed, a rule threw, or
@@ -272,7 +274,7 @@ groups:
         # counted assessments or - for windows of transfers alone - the monitored journal (the journal link subtracts the
         # uncounted transfers and sets aside the postings before the go-live floor). Nothing self-corrects.
         expr: max(finapp_risk_velocity_proof{verdict="DIVERGED"}) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:
@@ -284,7 +286,7 @@ groups:
         # A census's latest reading DIVERGED (kind: ASSESSMENT, MONITORING, ALERT_BORN_ONCE, CASE_ONE_OPEN, FILING,
         # RESCREENING) - one alert per kind.
         expr: max by (kind) (finapp_risk_census{verdict="DIVERGED"}) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:

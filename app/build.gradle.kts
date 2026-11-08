@@ -727,7 +727,8 @@ tasks.withType<Test>().configureEach {
     // Worktrees and git's own objects under the root are not evidence and are left out.
     inputs.files(
         rootProject.fileTree(rootProject.layout.projectDirectory) {
-            include("infra/**", "deploy/**", ".github/**", "**/Dockerfile*", "*/build.gradle.kts")
+            include("infra/**", "deploy/**", ".github/**", "**/Dockerfile*", "*/build.gradle.kts", "settings.gradle.kts",
+                "migrator/src/main/resources/**")
             exclude("**/build/**", "**/.gradle/**", ".git/**", ".claude/**", "**/node_modules/**")
         }
     )

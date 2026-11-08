@@ -29,9 +29,9 @@ import java.time.Duration;
  * <h2>Cost</h2>
  *
  * <p>Both figures come from one statement over the partial index on unpublished rows
- * ({@code V005}), so the scan is proportional to the backlog rather than to the table — which
- * matters because the table only grows: published rows are never deleted, and their retention
- * sweep is recorded debt owned by Phase 15.
+ * ({@code V005}), so the scan is proportional to the backlog rather than to the table: a
+ * published row leaves that index when it is published, and the table itself by the retention
+ * sweep ({@code P15-TSK-029}) once past its bound.
  */
 public final class OutboxBacklog {
 
@@ -48,6 +48,9 @@ public final class OutboxBacklog {
      * <p>Age is measured by the <strong>server's</strong> clock, on the same reasoning as
      * {@code V004} and {@code V006}: an age computed by subtracting a server timestamp from a
      * client's clock measures the difference between two machines as much as the age of a row.
+     * {@code occurred_at} itself is the writing instance's stamp, so a row from an instance ahead of
+     * the database can be younger than zero: floored here (`P15-TSK-025`'s fix round), or the
+     * reading's own guard refuses it and every gauge of the backlog answers NaN on every instance.
      *
      * <p><strong>A discarded row is not backlog, and a replay is young</strong> (`P15-TSK-028`). A discard is decided and
      * final, so counting it would hold the gauge above zero for ever. A replayed row waits from the moment the replay was
@@ -56,7 +59,10 @@ public final class OutboxBacklog {
     private static final String BACKLOG_SQL =
             """
             SELECT count(*) AS pending,
-                   coalesce(extract(epoch FROM now() - min(coalesce(replay_ordered_at, occurred_at)))::bigint, 0) AS oldest_seconds
+                   greatest(coalesce(extract(epoch FROM now() - min(coalesce(replay_ordered_at, occurred_at)))::bigint, 0), 0) AS oldest_seconds,
+                   count(dead_lettered_at) AS dead_lettered,
+                   greatest(coalesce(extract(epoch FROM now() - min(coalesce(replay_ordered_at, occurred_at)) FILTER (WHERE dead_lettered_at IS NULL))::bigint, 0), 0)
+                       AS oldest_publishable_seconds
               FROM platform.outbox_event
              WHERE published_at IS NULL AND discarded_at IS NULL
             """;
@@ -87,7 +93,11 @@ public final class OutboxBacklog {
             // carried in a double, and letting one in "because it is only a metric" is how the
             // habit spreads to something that is not.
             long oldestSeconds = results.getLong("oldest_seconds");
-            return new Reading(pending, Duration.ofSeconds(oldestSeconds));
+            return new Reading(
+                    pending,
+                    Duration.ofSeconds(oldestSeconds),
+                    results.getLong("dead_lettered"),
+                    Duration.ofSeconds(results.getLong("oldest_publishable_seconds")));
         } catch (SQLException e) {
             throw new OutboxReadException("Could not read the outbox backlog", e);
         }
@@ -98,8 +108,13 @@ public final class OutboxBacklog {
      *     blocking their aggregate; never one that was discarded
      * @param oldest how long the oldest unpublished event has been waiting, a replayed one from when
      *     it was ordered; {@link Duration#ZERO} when there is nothing pending
+     * @param deadLettered rows abandoned after their attempts and still unresolved (`P15-TSK-025`): the
+     *     relay's counter says one was abandoned, and only this says one still stands
+     * @param oldestPublishable how long the oldest row the relay may still publish has waited, a
+     *     replayed one from when it was ordered - a dead-lettered row excluded, the rows queued behind
+     *     it not - so a lone dead letter, which pages on its own, does not read as a stalled relay for ever
      */
-    public record Reading(long pending, Duration oldest) {
+    public record Reading(long pending, Duration oldest, long deadLettered, Duration oldestPublishable) {
 
         public Reading {
             if (pending < 0) {
@@ -107,6 +122,12 @@ public final class OutboxBacklog {
             }
             if (oldest == null || oldest.isNegative()) {
                 throw new IllegalArgumentException("oldest must be a non-negative duration");
+            }
+            if (deadLettered < 0) {
+                throw new IllegalArgumentException("deadLettered must not be negative but was " + deadLettered);
+            }
+            if (oldestPublishable == null || oldestPublishable.isNegative()) {
+                throw new IllegalArgumentException("oldestPublishable must be a non-negative duration");
             }
         }
     }

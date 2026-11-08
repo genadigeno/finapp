@@ -9,8 +9,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,23 +45,22 @@ import java.util.UUID;
  *       crossborder no row, which the census knows.</li>
  * </ul>
  *
- * <p><strong>The intents' day is their creation's, not their judgement's</strong> (the review's M4 - recorded, not
- * fixed). A transfer, a withdrawal and a cross-border payment are minted by the command the seam judges, so their id's
- * day is the judgement's day. A payment intent is minted at its <em>creation</em> and judged at its
- * <em>confirmation</em>, which may come any number of days later (an intent has no expiry). So for
- * {@code CARD_PAYMENT} and {@code WALLET_PAYMENT} the census of day {@code D} counts the intents created on {@code D}
- * that the snapshot finds judged, and its assessments are those sealed on {@code D}. What that means, exactly:
+ * <p><strong>An intent's day is its confirmation's</strong> (`P15-TSK-025`; until then its creation's, the review's M4). A
+ * transfer, a withdrawal and a cross-border payment are minted by the command the seam judges, so their id's day is the
+ * judgement's day. A payment intent is minted at its <em>creation</em> and judged at its <em>confirmation</em>, which may
+ * come any number of days later (an intent has no expiry). So {@code CARD_PAYMENT} and {@code WALLET_PAYMENT} enter a day
+ * through {@code payment_intent_event}'s confirmation edges - {@code REQUIRES_CONFIRMATION} to {@code PROCESSING}, or to
+ * {@code FAILED} when risk refused it - over payments {@code V037}'s partial index on {@code occurred_at}. What that means:
  *
  * <ul>
- *   <li>no difference is manufactured - a seal and its intent on different days reconcile by the cross-day lookup, in
- *       both directions ({@code reconciled});</li>
- *   <li>the day's {@code commands} and {@code assessments} totals for intents may differ with nothing wrong;</li>
- *   <li><strong>the limit</strong>: an intent created on {@code D} and confirmed without its seal is named
- *       {@code missing} only by the census <em>of {@code D}</em> - the meters' reading (today and yesterday) stops seeing
- *       it once {@code D} is two days old; the operator's decisions report for {@code D} still names it.</li>
+ *   <li>an intent confirmed on {@code D} without its seal is named {@code missing} by the census of {@code D}, whenever it
+ *       was created, and so reaches the gauge (today and yesterday) on its confirmation's day;</li>
+ *   <li>no difference is manufactured - a seal and its intent either side of midnight reconcile by the cross-day lookup,
+ *       in both directions ({@code reconciled});</li>
+ *   <li>an intent cancelled after it was confirmed stays judged, since the edge happened; one cancelled while it waited
+ *       was never judged and has no such edge.</li>
  * </ul>
- * The exact day would need the confirmation's instant behind an index - {@code payment_intent_event.occurred_at} has
- * none and its id is an identity, not a UUIDv7 - which is a payments migration this task does not own (owner item).
+ * The stamp is the confirming instance's, as every id's first 48 bits are its minter's.
  */
 public final class PlatformJudgedCommands implements JudgedCommands {
 
@@ -73,22 +74,30 @@ public final class PlatformJudgedCommands implements JudgedCommands {
 
     static final String WITHDRAWALS_RECORDED = "SELECT id FROM payments.withdrawal WHERE id = ANY (?)";
 
-    static final String CARD_PAYMENTS = "SELECT i.id FROM payments.payment_intent i"
+    /** The confirmation edges: what payments {@code V037}'s partial index covers, written out once. */
+    private static final String CONFIRMED_ON_THE_DAY = "e.occurred_at >= ? AND e.occurred_at < ?"
+            + " AND e.from_status = 'REQUIRES_CONFIRMATION' AND e.to_status IN ('PROCESSING', 'FAILED')";
+
+    static final String CARD_PAYMENTS = "SELECT i.id FROM payments.payment_intent_event e"
+            + " JOIN payments.payment_intent i ON i.id = e.intent_id"
             + " JOIN paymentmethods.payment_method m ON m.id = i.payment_method_id"
             + " JOIN ledger.ledger_account a ON a.id = i.credit_account_id"
-            + " WHERE i.id >= ? AND i.id < ? AND m.kind = 'CARD_TOKEN' AND a.purpose = 'MERCHANT_PAYABLE'"
-            + " AND i.status IN ('PROCESSING', 'SUCCEEDED', 'FAILED')";
+            + " WHERE " + CONFIRMED_ON_THE_DAY + " AND m.kind = 'CARD_TOKEN' AND a.purpose = 'MERCHANT_PAYABLE'";
 
-    static final String WALLET_PAYMENTS = "SELECT i.id FROM payments.payment_intent i"
+    static final String WALLET_PAYMENTS = "SELECT i.id FROM payments.payment_intent_event e"
+            + " JOIN payments.payment_intent i ON i.id = e.intent_id"
             + " JOIN ledger.ledger_account a ON a.id = i.credit_account_id"
-            + " WHERE i.id >= ? AND i.id < ? AND i.debit_account_id IS NOT NULL AND a.purpose = 'MERCHANT_PAYABLE'"
-            + " AND i.status IN ('PROCESSING', 'SUCCEEDED', 'FAILED')";
+            + " WHERE " + CONFIRMED_ON_THE_DAY + " AND i.debit_account_id IS NOT NULL AND a.purpose = 'MERCHANT_PAYABLE'";
 
     static final String INTENTS_RECORDED = "SELECT id FROM payments.payment_intent WHERE id = ANY (?)";
 
     static final String CROSS_BORDER = "SELECT quote_id FROM crossborder.payment WHERE id >= ? AND id < ?";
 
     static final String CROSS_BORDER_RECORDED = "SELECT quote_id FROM crossborder.payment WHERE quote_id = ANY (?)";
+
+    /** The operations a day is read of through their confirmation's stamp, every other through its identifier. */
+    private static final Set<RiskOperation> DATED_BY_CONFIRMATION =
+            EnumSet.of(RiskOperation.CARD_PAYMENT, RiskOperation.WALLET_PAYMENT);
 
     private static final Map<RiskOperation, String> JUDGED = Map.of(
             RiskOperation.TRANSFER, TRANSFERS,
@@ -111,8 +120,13 @@ public final class PlatformJudgedCommands implements JudgedCommands {
         String sql = statement(JUDGED, operation);
         Set<CommandRef> judged = new LinkedHashSet<>();
         try (PreparedStatement select = snapshot.prepareStatement(sql)) {
-            select.setObject(1, day.fromId());
-            select.setObject(2, day.toId());
+            if (DATED_BY_CONFIRMATION.contains(operation)) {
+                select.setObject(1, day.start().atOffset(ZoneOffset.UTC));
+                select.setObject(2, day.end().atOffset(ZoneOffset.UTC));
+            } else {
+                select.setObject(1, day.fromId());
+                select.setObject(2, day.toId());
+            }
             try (ResultSet row = select.executeQuery()) {
                 while (row.next()) {
                     judged.add(CommandRef.of(row.getObject(1, UUID.class)));

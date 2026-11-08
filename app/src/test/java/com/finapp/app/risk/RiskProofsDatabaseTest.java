@@ -117,6 +117,7 @@ class RiskProofsDatabaseTest {
     @Autowired private RiskOperationsReports riskOperationsReports;
     @Autowired private RiskProofReads riskProofReads;
     @Autowired private JudgedCommands judgedCommands;
+    @Autowired private com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore;
     @Autowired private VelocityProof velocityProof;
     @Autowired private RiskPolicyAdministration riskPolicyAdministration;
     @Autowired private RiskPolicies riskPolicies;
@@ -385,6 +386,51 @@ class RiskProofsDatabaseTest {
     // ------------------------------------------------------------------ fixtures
 
     /** A transfer of {@code party}'s judged and sealed by the composition's T-eval, counted in its windows. */
+    @Test
+    @DisplayName("an intent created on D and confirmed on D + 3 is counted on D + 3, never on D - the census by its confirmation, payments V037 (P15-TSK-025, owed C14)")
+    void aLateConfirmedIntentIsCountedOnItsConfirmationsDay() throws Exception {
+        java.time.Clock clock = java.time.Clock.systemUTC();
+        Instant confirmed = clock.instant();
+        Instant created = confirmed.minus(java.time.Duration.ofDays(3));
+        com.finapp.ledger.LedgerAccountId payable = inTransaction(uow -> ledgerAccountStore.createOrConverge(uow,
+                com.finapp.ledger.LedgerAccount.owned(IDS, clock, com.finapp.ledger.AccountType.LIABILITY,
+                        com.finapp.ledger.AccountPurpose.MERCHANT_PAYABLE, com.finapp.sharedkernel.money.CurrencyCode.of("EUR"), IDS.next()))
+                .account().id());
+        com.finapp.ledger.LedgerAccountId wallet = inTransaction(uow -> ledgerAccountStore.createOrConverge(uow,
+                com.finapp.ledger.LedgerAccount.owned(IDS, clock, com.finapp.ledger.AccountType.LIABILITY,
+                        com.finapp.ledger.AccountPurpose.CUSTOMER_WALLET, com.finapp.sharedkernel.money.CurrencyCode.of("EUR"), IDS.next()))
+                .account().id());
+        UUID intent = IDS.next();
+        try (Connection application = DatabaseRoles.application();
+                PreparedStatement insert = application.prepareStatement(
+                        "INSERT INTO payments.payment_intent (id, party_id, customer_id, debit_account_id, credit_account_id,"
+                                + " amount_minor, currency, scale, status, created_at, capture_mode)"
+                                + " VALUES (?, ?, ?, ?, ?, 1000, 'EUR', 2, 'PROCESSING', ?, 'AUTOMATIC')");
+                PreparedStatement event = application.prepareStatement(
+                        "INSERT INTO payments.payment_intent_event (intent_id, from_status, to_status, actor_id, actor_type, occurred_at)"
+                                + " VALUES (?, 'REQUIRES_CONFIRMATION', 'PROCESSING', ?, 'CUSTOMER', ?)")) {
+            insert.setObject(1, intent);
+            insert.setObject(2, IDS.next());
+            insert.setObject(3, IDS.next());
+            insert.setObject(4, wallet.value());
+            insert.setObject(5, payable.value());
+            insert.setTimestamp(6, java.sql.Timestamp.from(created));
+            insert.executeUpdate();
+            event.setObject(1, intent);
+            event.setString(2, IDS.next().toString());
+            event.setTimestamp(3, java.sql.Timestamp.from(confirmed));
+            event.executeUpdate();
+        }
+
+        java.util.Set<CommandRef> onItsConfirmation = riskTransactions.inSnapshot(snapshot ->
+                judgedCommands.judged(snapshot, RiskOperation.WALLET_PAYMENT, RiskDay.containing(confirmed)));
+        java.util.Set<CommandRef> onItsCreation = riskTransactions.inSnapshot(snapshot ->
+                judgedCommands.judged(snapshot, RiskOperation.WALLET_PAYMENT, RiskDay.containing(created)));
+
+        assertThat(onItsConfirmation).as("judged on the day it was confirmed").contains(CommandRef.of(intent));
+        assertThat(onItsCreation).as("not on the day it was created").doesNotContain(CommandRef.of(intent));
+    }
+
     private void seal(UUID party, long minor) {
         inTransaction(uow -> riskEvaluation.evaluate(uow, request(IDS.next(), party, minor)));
     }

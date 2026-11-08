@@ -15,8 +15,8 @@
 #               repository; a digest cannot
 #
 # Sourced by infra/scripts/secret-scan.sh, infra/scripts/dependency-scan.sh, (since P15-TSK-013)
-# infra/scripts/terraform-check.sh and (since P15-TSK-009) infra/scripts/manifest-check.sh, which CI
-# calls, so a developer and CI run the identical image -
+# infra/scripts/terraform-check.sh, (since P15-TSK-025) infra/scripts/alert-rules-check.sh and (since P15-TSK-009)
+# infra/scripts/manifest-check.sh, which CI calls, so a developer and CI run the identical image -
 # the single-definition property P0-TSK-031 established and this file preserves rather than replaces.
 #
 # UPDATING: infra/scripts/check-pinned-images.sh reports both a moved tag and a newer release.
@@ -62,3 +62,13 @@ CONFTEST_DIGEST=sha256:0e77cdf7c1fcde035f3c579e4aaa6664ee2a8be5777eaa9af9f520cdd
 # equal to kubernetes_version in infra/terraform/environments/*/main.tf.
 KUBERNETES_VERSION=1.34.12
 KUBERNETES_SCHEMAS_COMMIT=c416d7b0da0751bd8ebe5be4fa4c8e8274e3bbe2
+
+# The alert-rule tools (P15-TSK-025, ADR-0124): promtool and amtool, sourced by infra/scripts/alert-rules-check.sh. The Prometheus
+# version is the one compose.yaml runs, and so is Alertmanager's, so the tool that checks the rules is the server that loads them.
+PROMETHEUS_REPOSITORY=prom/prometheus
+PROMETHEUS_VERSION=v3.14.0
+PROMETHEUS_DIGEST=sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
+
+ALERTMANAGER_REPOSITORY=prom/alertmanager
+ALERTMANAGER_VERSION=v0.34.2
+ALERTMANAGER_DIGEST=sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b

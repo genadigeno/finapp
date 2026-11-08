@@ -23,9 +23,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.CommitFailedException;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -240,6 +242,9 @@ public final class KafkaEventReceiver implements AutoCloseable {
         return config;
     }
 
+    /** The last poll's lag: written and read by the one loop thread that polls, volatile for a test's reading. */
+    private volatile OptionalLong lag = OptionalLong.empty();
+
     /**
      * Over any consumer, unsubscribed — the test seam ({@code MockConsumer}, a decorated real
      * consumer). Production goes through {@link #connect}, which is where subscription happens.
@@ -280,10 +285,21 @@ public final class KafkaEventReceiver implements AutoCloseable {
      *     unwell without touching a Kafka type. A failed TLS handshake is not one: it leaves as
      *     the client raised it, an ordinary failure, because the broker's side fails it as often
      *     as this client's
+     * @throws ConsumerEvictedException when the group refused the offset commit because this member
+     *     was evicted (`P15-TSK-025`): a batch ran past the poll budget, or the session lapsed
      */
     public ReceiverPollResult pollOnce() {
         try {
-            return settle(consumer.poll(pollTimeout));
+            ReceiverPollResult result = settle(consumer.poll(pollTimeout));
+            recordLag();
+            return result;
+        } catch (CommitFailedException evicted) {
+            // The group moved on without this member (P15-TSK-025): the batch overran
+            // MAX_POLL_INTERVAL or the session lapsed. Its effects are committed and its records
+            // redeliver into the dedupe, so nothing is lost or applied twice - but the throughput
+            // collapse is the operator's to see, so it leaves as an outcome of its own. A commit
+            // refused during an ordinary rebalance is RebalanceInProgressException, not this.
+            throw new ConsumerEvictedException(evicted.getClass().getSimpleName());
         } catch (WakeupException shuttingDown) {
             // wakeup() interrupted a blocking call - the loop above is stopping. Nothing was
             // acknowledged past a committed effect, so whatever was in flight redelivers into
@@ -305,6 +321,28 @@ public final class KafkaEventReceiver implements AutoCloseable {
             // (the commit can be the refused call) redelivers into the dedupe.
             throw new BrokerAccessRefusedException(refused.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * Records awaiting this member across the partitions it holds, as of the last successful poll
+     * (`P15-TSK-025`), or empty when none of them is known: the client answers from its fetch state,
+     * with no remote call. A group's lag is the sum over its members.
+     */
+    public OptionalLong lag() {
+        return lag;
+    }
+
+    private void recordLag() {
+        long total = 0;
+        boolean known = consumer.assignment().isEmpty();
+        for (TopicPartition partition : consumer.assignment()) {
+            OptionalLong partitionLag = consumer.currentLag(partition);
+            if (partitionLag.isPresent()) {
+                total += partitionLag.getAsLong();
+                known = true;
+            }
+        }
+        lag = known ? OptionalLong.of(total) : OptionalLong.empty();
     }
 
     private ReceiverPollResult settle(ConsumerRecords<String, byte[]> records) {

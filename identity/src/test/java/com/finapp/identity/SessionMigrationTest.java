@@ -71,7 +71,7 @@ class SessionMigrationTest {
     @Test
     @DisplayName("the application role gets no DELETE")
     void theApplicationCannotDeleteASession() {
-        // Withheld deliberately: a retention sweep is Phase 15's and runs as a different role.
+        // Withheld deliberately: a retention sweep is Phase 16's (re-dated by the owner, 2026-11-08) and runs on a path of its own.
         // Without DELETE the application cannot make a session disappear, so an investigation always
         // has the row.
         assertThat(migration())

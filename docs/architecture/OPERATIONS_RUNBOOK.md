@@ -261,8 +261,10 @@ Nothing is decided without an `ACTIVE` policy for the product **and** an `ACTIVE
   production activates none (`PHASE_12_PLAN.md` §1.1), so their gauge reads 0 by design; `P12-TSK-026`
   owns BNPL's alerts;
 - with a policy but no `ACTIVE` scorecard, a submission is admitted but its progress step waits at
-  `SUBMITTED` (nothing to pin), and the request expires `EXPIRED` at its 7-day validity. **No gauge
-  or alert reports a missing scorecard** - check it by its approval receipt (below).
+  `SUBMITTED` (nothing to pin), and the request expires `EXPIRED` at its 7-day validity. Since
+  `P15-TSK-025`, `finapp.credit.scorecard.awaited` counts those requests and the `CreditScorecardMissing` alert
+  (`max(finapp_credit_scorecard_awaited) > 0` for 15 min, ticket) says so within minutes rather than at the week's end
+  (*until then: "No gauge or alert reports a missing scorecard"*). Activate version 1 as below.
 
 **Why.** No migration activates a credit policy or a scorecard (D26). The migrations seed v1 *as
 proposals* whose proposer is the reviewed migration itself - `RETAIL_SCORECARD` v1 by `credit V006`
@@ -779,7 +781,9 @@ drill-down; the position is within the bound by construction - a refund never ex
 Nothing to post: recovery is automatic as the merchant trades. A merchant that stops trading with a negative payable is a
 collections matter (Phase 13), not an adjustment. A `CUSTOMER_WALLET` below zero is not this alert's - it is payments'.
 
-### 8.6 A stalled sweep - `BnplApplicationAwaitingTooLong`, `BnplOriginationStepFailing`, `BnplServicingStepFailing`, `BnplDisputeDeadlineStepFailing`
+### 8.6 A stalled sweep - `BnplApplicationAwaitingTooLong`, `BnplOriginationStepFailing`, `BnplServicingStepFailing`, `BnplDisputeDeadlineStepFailing`, `BnplSweepClaimFailing`
+
+**A claim that cannot be made** (`P15-TSK-025`): `BnplSweepClaimFailing` (ticket) counts a failed page read - the claim, usually a database that is not answering - by sweep, in `finapp.bnpl.sweeper.claim.failed{kind}`. The three step-failing alerts below stay silent while nothing is claimed, since no step ever runs; this is the alert that sees it. It clears by itself when a later tick claims. If it does not, read the `… sweep failed` warn line for the class and read the database first.
 
 **Signals.** `max(finapp_bnpl_application_awaiting_age_seconds) > 608400` for 30 min (ticket): an application has waited
 `AWAITING_DECISION` longer than the longest credit request validity and an hour (`BnplObjectives.awaitingDecision()`) -
@@ -1519,7 +1523,7 @@ as stranded by payments' gauge (item 85, §9.5b); the monitoring census's id set
 
 ## 10. Accounting (Phase 14): the close and its alerts
 
-*Opened by `P14-TSK-017` (2026-11-02), written whole by `P14-TSK-020` (2026-11-05). Every alert below is in `infra/prometheus/rules/accounting.yml`, its bound in `AccountingObjectives`. No Alertmanager is wired, so `page` and `ticket` say what each will be once routing exists (Phase 15). `AccountingRunbookTest` holds what it can of this section to the code: its javadoc lists exactly what, and JSON fields and prose are not among it. What a row cannot see is said in its section.*
+*Opened by `P14-TSK-017` (2026-11-02), written whole by `P14-TSK-020` (2026-11-05). Every alert below is in `infra/prometheus/rules/accounting.yml`, its bound in `AccountingObjectives`. Routed by severity to a placeholder receiver since `P15-TSK-025` (`infra/alertmanager/alertmanager.yml`), until an on-call tool exists. `AccountingRunbookTest` holds what it can of this section to the code: its javadoc lists exactly what, and JSON fields and prose are not among it. What a row cannot see is said in its section.*
 
 | Alert | Severity | The break | Section |
 |---|---|---|---|
@@ -1854,13 +1858,14 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.5 Restore, then verify financially before any money moves | `-030` | `-030` |
 | 11.6 Broker outage, consumer lag, a poison record, dead letters and replay | `-026`, `-028` | `-028`, `-032` |
 | 11.7 Rotation and revocation per secret class; a key compromise | `-018`…`-020` | `-020` |
-| 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `P15-TSK-024` (instance down, stale gauges: written below, 2026-11-08), `-025` | `-032` |
+| 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `P15-TSK-024` (instance down, stale gauges: written below, 2026-11-08), `P15-TSK-025` (burn rate and certificates: written below, 2026-11-08) | `-032` |
 | 11.9 A refused image; a failing scan | `-006`, `-007` | `-007` |
 | 11.10 Edge, abuse and break-glass | `-010`, `-011`, `-022` | `-032` |
 | 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
 | 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |
 | 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) |
 | 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads *(written 2026-11-08, below)* | `-009` | `-009` (the check runs on Docker, each plant refused) |
+| 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below)* | `-029` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -1869,6 +1874,9 @@ row.)*
 *(Added 2026-11-08 by `P15-TSK-024`: §11.8 below is written too, its instance-down and stale-gauge parts; the paragraph above holds for the rest of that row and every other.)*
 
 *(Added 2026-11-08 by `P15-TSK-009`: §11.14 below is written too, a developer's and a reviewer's procedure over the repository, like §11.13.)*
+
+*(Added 2026-11-08 by `P15-TSK-004`: §11.1b, the bootstrap step and the migration Job, and §11.4 are written; `-012` and `-032` rehearse them.)*
+*(Added 2026-11-08 by `P15-TSK-025`: §11.8's burn-rate and certificate parts, §11.6's consumer signals and §§11.20 to 11.24, a section for every alert of this phase and for the settlement, reconciliation and FX alerts that had none. Every alert is now routed by `infra/alertmanager/alertmanager.yml` to a placeholder receiver, and `AlertCatalogueTest` holds that each alert's section exists and names it. The paragraph above holds for every row still planned.)*
 
 *(Added 2026-11-08 by `P15-TSK-027`: §11.1.1 below is written, the handler-set steps of rows 11.1 and 11.3; not yet rehearsed.)*
 
@@ -1887,7 +1895,7 @@ the `preStop` pause, the application does this, in this order:
 |---|---|---|---|
 | 1 | Readiness turns `REFUSING_TRAFFIC`: `/actuator/health/readiness` on 8081 answers `503` `{"status":"OUT_OF_SERVICE"}`; liveness still `200` | — | — |
 | 2 | The API port, 8080, stops accepting; requests it accepted finish | 30 s (`spring.lifecycle.timeout-per-shutdown-phase`); a request still running then is no longer waited for, and is cut off when the web server stops (step 5) | `Commencing graceful shutdown…`, then `Graceful shutdown complete` (or `…aborted with one or more requests still active`) |
-| 3 | No new tick starts; the tick each schedule is running finishes, one that claims in a loop of its own ending before its next claim; all 32 in parallel | 10 s, then the tick is interrupted and awaited 2 s more | `Schedule <name> drained` (DEBUG); `Schedule <name> did not drain within PT10S; its tick is interrupted` (WARN); `… abandoned to the process's exit` (WARN) |
+| 3 | No new tick starts; the tick each schedule is running finishes, one that claims in a loop of its own ending before its next claim; all 35 in parallel (32 until `P15-TSK-029`) | 10 s, then the tick is interrupted and awaited 2 s more | `Schedule <name> drained` (DEBUG); `Schedule <name> did not drain within PT10S; its tick is interrupted` (WARN); `… abandoned to the process's exit` (WARN) |
 | 4 | Every consumer loop takes no new batch, acknowledges the one it holds and leaves its group | 10 s, then interrupted, 2 s more | `Inbox consumers stopping: <n> loops`, `Inbox consumers stopped`; WARN past the bound |
 | 5 | The management port, 8081, closes at once, a scrape in flight holding nothing; then the API's web server stops | For each, Tomcat's 2 s unload, and up to 5 s for a worker thread deaf to its interrupt | — |
 | 6 | The gauge refresher (`gauge-refresher`, every gauge's one thread since `P15-TSK-024`; the accounting gauges' reader until then) drops its queued reads; the one in flight ends | 3 s | `The gauge refresher stopped` (DEBUG); WARN past the bound |
@@ -1944,11 +1952,68 @@ version is being written.
 4. Review the diff as a contract change, not as generated output. A version the code stopped writing stays in the
    catalogue on purpose.
 
+### 11.1b Deploy — the bootstrap step and the migration Job (`P15-TSK-004`)
+
+*(Written by `P15-TSK-004`, 2026-11-08, from the image and its acceptance run; **not yet rehearsed on a cluster** -
+`P15-TSK-012` does that, with this task's Job contract in `DATA_MIGRATIONS.md` §2.1, and `-017` orders it before the rollout.
+The commands here are the image's own; the manifest is `P15-TSK-009`'s.)*
+
+**Before the first release to a database, and again only when a release adds a role**, run the one-time bootstrap step
+(`DATA_MIGRATIONS.md` §2.2): the migrator image with its `command` overridden to `RoleBootstrapMain`, handed the master
+credential and the three roles' passwords from the secret store. It is the only thing that ever holds the master credential.
+Read its output: one line per role saying `created` or `present, unprivileged, unchanged`. Exit `12` naming a role means a role
+already holds a right it must not: stop and find out how. Never give the migration Job the master credential to get past it.
+
+**Then, for every release, the migration Job, and only then the rollout.** It runs the release's `finapp-migrator` by digest,
+with no `command` of its own. One line per schema and a result line:
+
+| The result line | What to do |
+|---|---|
+| `result=APPLIED schemas=21 applied=<n>` | The rollout may start. `applied=0` is normal: no schema changed, or another run got there first |
+| `result=TRANSIENT` (exit `11`) | A table was locked past the bound, or the database was away. The Job retries it (`backoffLimit`). If it fails again, find the long transaction: `SELECT pid, state, now() - xact_start, query FROM pg_stat_activity WHERE xact_start IS NOT NULL ORDER BY xact_start` |
+| `result=FAILED` (exit `10`) | Not retried. §11.4 |
+| `result=REFUSED` (exit `12`) | The configuration or identity is wrong; nothing ran. The line says which. "The TLS connection could not be verified" is the CA bundle, its path or the host, never a lock |
+
+**The rollout does not start until the Job has succeeded.** A Job that is still running is not a green light.
+
+### 11.4 A failed migration (forward fix only) (`P15-TSK-004`; `P15-TSK-005` adds the compatibility half)
+
+*(Written by `P15-TSK-004`, 2026-11-08; **not yet rehearsed** - `P15-TSK-032` rehearses it.)*
+
+A failed migration stops the release before any replica changes. The old release keeps serving on the schema it had: the
+rollout has not started, a release's migrations are expand-only (`P15-TSK-005`'s lint, once built, holds that), and the failed
+one has either not happened at all or, in the second case below, left the schema where a person must read it. **Never `clean`. Never edit an applied migration. Do not run
+`flywayRepair` to make the symptom go away** (`DATA_MIGRATIONS.md` §3.1).
+
+First read `<schema>.flyway_schema_history` for the failing schema, and the Job's log.
+
+**No row for the migration (the usual case).** Every migration in this repository runs in a transaction, and on PostgreSQL a
+failed one is rolled back and leaves no history row. Nothing happened. The next run tries it again. So the question is why it
+failed:
+
+- *The statement is wrong.* It was also wrong in the build and against an empty database, unless it depends on data. A migration
+  that has never succeeded anywhere can be corrected and released again, because no database has applied it.
+- *It depends on data this database has and no other did* (a new `CHECK`, a backfill). If it has already succeeded in another
+  environment, it **must not be edited**: the other environment's checksum would no longer match. Add a new migration with a
+  **lower version than the failed one and higher than the last applied**, which fixes the data, and release that. In the
+  environments that already applied the failed one, `outOfOrder = false` would refuse it, so such a fix is only possible while
+  every environment is behind the failed version; otherwise fix the data by an audited operational procedure and re-run the Job.
+
+**A row with `success = false`.** Only a migration that cannot run in a transaction (`executeInTransaction=false`) writes one, and
+none exists today. Its effect may be partial: for `CREATE INDEX CONCURRENTLY`, an `INVALID` index stays behind and must be dropped
+first. Every later run refuses at validation until the row is dealt with, so this is the one case for `flywayRepair`, with the
+files known good and the reason recorded (`DATA_MIGRATIONS.md` §3.1).
+
+**Whichever it is**, the application release has not started. If a compatibility marker was passed, read `P15-TSK-005`'s part
+before rolling anything back. After a fix, run the Job again; it applies what is pending and nothing else.
+
 ### 11.6 Broker outage, consumer lag, a poison record, dead letters and replay
 
 *Written by `P15-TSK-026` and `P15-TSK-028` (2026-11-08) from the code they built; **not yet rehearsed** - no deployed broker
-exists, and the rehearsal is `-032`'s. The consumption and freshness SLOs, and their alerts, are `P15-TSK-025`'s; the signals
+exists, and the rehearsal is `-032`'s. The consumption and freshness objectives are `docs/architecture/SLOS.md`'s, and their burn-rate alerts §11.8's; the signals
 below exist today.*
+
+**The consumer signals** (`P15-TSK-025`). Two series name what a poll cannot otherwise say. **`finapp.inbox.poll.failures{outcome}`** counts every thrown consumer poll: `InboxPollFailing` (page) reads `failed`, sustained for 15 minutes, and `InboxPollRefused` (page) reads `refused`, for 5. **`finapp.inbox.consumer.evictions`** counts a commit the group refused because it had already evicted the member: `InboxConsumerEvicted` (ticket). `finapp.inbox.lag{module}` is what `InboxLagHigh` (ticket, over 1000 records in a group for 15 minutes) and `ConsumptionBurnFast` read; a group's lag is the sum of its members', and a consumer whose polls throw publishes NaN, never its last number.
 
 **What is at stake.** Kafka carries hints, never truth (`INV-EVT-02`). While the broker is away nothing financial is lost
 or wrong: every event waits in the outbox in PostgreSQL, in its aggregate's order, and every consumer's place is its
@@ -1976,7 +2041,7 @@ never reads the broker.
 
 #### A refused credential or permission
 
-*Signals*: readiness `503` on the replicas whose consumers are refused (the contributor `kafkaConsumers`); a warning per
+*Signals*: `InboxPollRefused` (page) after 5 minutes; readiness `503` on the replicas whose consumers are refused (the contributor `kafkaConsumers`); a warning per
 attempt, `Inbox consumer finapp.<module> refused by the broker:` followed by the refusing class
 (`SaslAuthenticationException`, `TopicAuthorizationException`, `GroupAuthorizationException`); the relay's `last_error`
 naming the same classes. A broker that refuses is reachable: this is configuration, not an outage.
@@ -1996,11 +2061,11 @@ client's reconnection attempts.
 
 #### A failed TLS handshake
 
-*Signals*: `finapp.inbox.poll.failures{outcome="failed"}` counting, usually on every replica at once; a warning per
+*Signals*: `InboxPollFailing` (page) after 15 minutes; `finapp.inbox.poll.failures{outcome="failed"}` counting, usually on every replica at once; a warning per
 attempt, `Inbox poll failed on finapp.<module>: SslAuthenticationException`; `finapp.outbox.publication{outcome="failed"}`
 counting with the relay's `last_error` naming the same class. **Readiness stays UP, deliberately** (`P15-TSK-026`'s review
 fix round): the broker's side fails a handshake as surely as the client's, and a fault every replica meets at once is no
-reason to take the fleet out of service. The alert on the series is `P15-TSK-025`'s routing.
+reason to take the fleet out of service.
 
 1. **Every replica at once**: the broker's certificate expired or was rotated to an issuer the truststore
    (`finapp.kafka.ssl.truststore-location`, or the JVM's) does not hold, or a listener lost its certificate. Fix it on the
@@ -2011,10 +2076,9 @@ reason to take the fleet out of service. The alert on the series is `P15-TSK-025
 
 #### Consumer lag
 
-*Signals*: `finapp.inbox.consumption{outcome="processed"}` below the rate of
-`finapp.outbox.publication{outcome="published"}`; `InboxConsumptionFailing` (§9.12) for a stalled partition. The clients
-publish no lag series yet (`P15-TSK-025`); a group's lag in records is the broker's consumer-group view of
-`finapp.<module>`, read with the provider's tooling.
+*Signals*: `InboxLagHigh`, `ConsumptionBurnFast` and `finapp.inbox.lag{module}` (a group's lag in records, the sum over its members); `finapp.inbox.consumption{outcome="processed"}` below the rate of
+`finapp.outbox.publication{outcome="published"}`; `InboxConsumptionFailing` (§9.12) for a stalled partition. The broker's consumer-group view of
+`finapp.<module>`, read with the provider's tooling, is the authority on a group's lag; the gauge is each member's own view of it.
 
 1. **A stalled partition** (a record that fails or is contended): §9.12. The record is retried, never skipped; if it is
    failing for a reason of its own it parks after five failures and two minutes, and the partition goes on (below). Fix the
@@ -2024,8 +2088,8 @@ publish no lag series yet (`P15-TSK-025`); a group's lag in records is the broke
    Adding replicas adds members, and the cooperative assignor pauses only the partitions that move. Repeated rebalances in
    the logs mean a member is being evicted for exceeding the poll budget (10 records in 120 seconds; a budget, not a
    bound - a handler's statements have no timeout, and the offset commit can wait 60 seconds): the commit that follows
-   fails and counts in `finapp.inbox.poll.failures{outcome="failed"}`, the inbox still prevents a second effect, but
-   throughput collapses - find the slow statement in the handler. An eviction series of its own is `P15-TSK-025`'s.
+   fails and counts in `finapp.inbox.consumer.evictions` and fires `InboxConsumerEvicted`, the inbox still prevents a second effect, but
+   throughput collapses - find the slow statement in the handler.
 3. **A group stopped for days**: a topic keeps a record for 7 days, so restore consumption before the oldest unconsumed
    record reaches that age. Past it, the deleted records are lost hints: the group resumes at the earliest one retained,
    and the gap is recovered from the outbox by an audited replay (below), bounded by the inbox's 14-day window. A
@@ -2094,9 +2158,9 @@ There is no raw `UPDATE` in this procedure, and none is needed.
    inside, and treat what is outside as a gap, recovered from the system of record by the owning domain. Only a type every
    consumer of which declares itself `naturallyIdempotent` on its handler may go past it, and none does today.
 
-### 11.8 Instance down, stale gauges - `InstanceDown`, `FinappTargetsAbsent`, `GaugesStale`, `FxGaugesUnreadable`, `ReconciliationGaugesUnreadable`
+### 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate - `InstanceDown`, `FinappTargetsAbsent`, `GaugesStale`, `FxGaugesUnreadable`, `ReconciliationGaugesUnreadable`, `AuthenticationAvailabilityBurnFast` and `AuthenticationAvailabilityBurnSlow`, `AuthenticationLatencyBurnFast` and `AuthenticationLatencyBurnSlow`, `TransferAvailabilityBurnFast` and `TransferAvailabilityBurnSlow`, `TransferLatencyBurnFast` and `TransferLatencyBurnSlow`, `PaymentCheckoutBurnFast` and `PaymentCheckoutBurnSlow`, `MerchantApiBurnFast` and `MerchantApiBurnSlow`, `ProviderCallbacksBurnFast` and `ProviderCallbacksBurnSlow`, `OperatorSurfaceBurnFast` and `OperatorSurfaceBurnSlow`, `EventFreshnessBurnFast` and `EventFreshnessBurnSlow`, `ConsumptionBurnFast` and `ConsumptionBurnSlow`, `CertificateExpiringSoon`, `CertificateExpiring`, `CertificateExpirySeriesAbsent`
 
-*(Written by `P15-TSK-024`, 2026-11-08: the instance-down and stale-gauge parts, from `infra/prometheus/rules/platform.yml` and the code. A burning error budget and an expiring certificate are `P15-TSK-025`'s. **Not yet rehearsed**: `P15-TSK-032` rehearses this section on `kind` or compose and records the result. No Alertmanager or paging receiver is wired yet (`P15-TSK-025`), so `severity` only says which each alert will be.)*
+*(Written by `P15-TSK-024`, 2026-11-08: the instance-down and stale-gauge parts, from `infra/prometheus/rules/platform.yml` and the code. **Not yet rehearsed**: `P15-TSK-032` rehearses this section on `kind` or compose and records the result. Every alert is routed by severity to a placeholder receiver (`infra/alertmanager/alertmanager.yml`); no on-call tool exists.)*
 
 **How every gauge reads.** Every `finapp.` gauge of an instance is read on one thread, `gauge-refresher`, never on the scrape. A scrape answers each gauge's last read and asks the thread for another once that read is 5 s old; each gauge class keeps its own floor and bounds on top (accounting's: section 10.14). So a scrape does no database work on its own thread, whatever the database is doing, and every gauge of an instance together holds at most one connection of its pool. A gauge answers no value (NaN) before its first read, when its read failed, and once its ask has gone unanswered for `finapp.gauges.stale-after` (2 minutes): never a zero nobody read, and never its last number for good. The library series (`jvm_*`, `hikaricp_*`, `http_server_*`) read memory and stay on the scrape. Each instance reads the shared database for itself; a fleet-wide gauge aggregates with `max()`.
 
@@ -2111,7 +2175,137 @@ There is no raw `UPDATE` in this procedure, and none is needed.
 
 One gauge NaN while the canary is 1 is not this alert: that gauge's read is failing (a statement past its bound, a grant gone), and its module's unreadable rule answers it. **Every gauge an alert reads has one**, and `PlatformAlertRulesTest#everyGaugeAnAlertReadsCanBeSeenUnreadable` holds that over every rule file: accounting's, BNPL's, credit's, lending's and risk's `…GaugesUnreadable` and their stall and attention rules, `MustBeZeroGaugeUnreadable`, `ReferenceRateNeverFetched`, `SettlementSourceNeverAccepted`, and, since `P15-TSK-024`'s fix round (2026-11-08), **`FxGaugesUnreadable`** (`infra/prometheus/rules/fx.yml`: the cover ages, the FX books proof and plan verdict, the outbound credits' ages, the in-transit age, the counterparty review age, the missing rule sets) and **`ReconciliationGaugesUnreadable`** (`settlement-reconciliation.yml`: the run, file, suspense and break ages and the overdue expectations), with `BnplGaugesUnreadable` now reading the negative merchant payables too. Each of those two names the series in its `gauge` label and the instance; for either, check that instance's database connectivity and its log, where the gauge's class names its failed read, and if `GaugesStale` fires on the same instance start there. Only the sweeps' switches (`…sweeper.enabled`) have no unreadable rule: they are configuration constants, read from no database, so their only NaN is the canary's, which this alert counts. *(Until the fix round this paragraph claimed the domain rules covered every gauge; fifteen gauges had none, six of them read by seven paging rules.)*
 
-**What these cannot see.** `up` says a scrape completed, not that the instance serves its customers: readiness and `P15-TSK-025`'s SLO rules answer that. A healthy canary says the thread answers, not that every read succeeded: that is each module's unreadable rule. The rules are unit-tested by `promtool test rules` over two instances, only the down, stuck or behind one firing (`infra/prometheus/tests/platform.test.yml`; the two unreadable rules above in `fx.test.yml` and `settlement-reconciliation.test.yml` beside it), run by hand through the pinned Prometheus image until `P15-TSK-025` puts `promtool` in CI.
+**What these cannot see.** `up` says a scrape completed, not that the instance serves its customers: readiness and the burn-rate alerts below answer that. A healthy canary says the thread answers, not that every read succeeded: that is each module's unreadable rule. The rules are unit-tested by `promtool test rules` over two instances, only the down, stuck or behind one firing (`infra/prometheus/tests/platform.test.yml`; the two unreadable rules above in `fx.test.yml` and `settlement-reconciliation.test.yml` beside it), run in CI's `alerts` job by `infra/scripts/alert-rules-check.sh` through the pinned Prometheus image.
+
+
+*(Written by `P15-TSK-025`, 2026-11-08: the burn-rate and certificate parts. **Not yet rehearsed**: `P15-TSK-032` rehearses it.)*
+
+#### A burning error budget
+
+**Each objective's alerts, and what spends its budget:**
+
+| Alerts | Objective | Owner | Target and budget |
+|---|---|---|---|
+| `AuthenticationAvailabilityBurnFast` (page), `AuthenticationAvailabilityBurnSlow` (ticket) | the authentication and session routes, 99.9% non-5xx | identity | `docs/architecture/SLOS.md` section 2 |
+| `AuthenticationLatencyBurnFast` (page), `AuthenticationLatencyBurnSlow` (ticket) | the authentication and session routes, 95% within 1 s | identity | `docs/architecture/SLOS.md` section 2 |
+| `TransferAvailabilityBurnFast` (page), `TransferAvailabilityBurnSlow` (ticket) | POST /v1/transfers, 99.9% non-5xx | transfers | `docs/architecture/SLOS.md` section 2 |
+| `TransferLatencyBurnFast` (page), `TransferLatencyBurnSlow` (ticket) | POST /v1/transfers, 99% within 1 s | transfers | `docs/architecture/SLOS.md` section 2 |
+| `PaymentCheckoutBurnFast` (page), `PaymentCheckoutBurnSlow` (ticket) | the payment and checkout commands, 99.9% non-5xx | payments | `docs/architecture/SLOS.md` section 2 |
+| `MerchantApiBurnFast` (page), `MerchantApiBurnSlow` (ticket) | the merchant API, 99.9% non-5xx | merchant | `docs/architecture/SLOS.md` section 2 |
+| `ProviderCallbacksBurnFast` (page), `ProviderCallbacksBurnSlow` (ticket) | the provider callbacks, 99.95% accepted or deduplicated | payments | `docs/architecture/SLOS.md` section 2 |
+| `OperatorSurfaceBurnFast` (page), `OperatorSurfaceBurnSlow` (ticket) | the operator surface, 99.5% non-5xx | platform | `docs/architecture/SLOS.md` section 2 |
+| `EventFreshnessBurnFast` (page), `EventFreshnessBurnSlow` (ticket) | event freshness, 99% of minutes under 60 s | platform | `docs/architecture/SLOS.md` section 2 |
+| `ConsumptionBurnFast` (page), `ConsumptionBurnSlow` (ticket) | consumption, 99% of minutes under 1000 records | platform | `docs/architecture/SLOS.md` section 2 |
+
+A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times the budget, two per cent of a 30-day budget gone in an hour. A **slow** alert tickets: errors over 6 hours and 30 minutes exceed 6 times the budget, five per cent gone in six hours. Each pair needs both windows, so a fast alert that has cleared means the burn stopped, even though its 1-hour window is still high. The ratios are the fleet's: a single instance burning alone does not page while the fleet stays under its threshold.
+
+1. **Open the dashboard `finapp-slo`** and read the burn rate of each window for that objective.
+2. **Find what is failing.** For a request objective, read `http_server_requests_seconds_count` by `uri` and `status` and the instance's log lines. For `EventFreshness…`, §11.21's outbox procedure. For `Consumption…`, §11.6's lag procedure; the alert names the group in `module`.
+3. **Check a deploy first.** A burn that began with a rollout is rolled back by digest (§11.3). Do not wait for the budget.
+4. **A provider cannot be asked** (a `503` from a payment command): it spends the budget and it is real. Read `finapp.payments.attempt` by outcome, and treat the provider as down: nothing is lost, since an unanswered attempt stays honestly `UNKNOWN` and its sweep resolves it.
+5. **When it clears**, record the budget spent and, if it is spent, what the error-budget policy freezes (`docs/architecture/SLOS.md` section 4), with the date, in the incident record.
+
+**Never** raise a threshold to silence a burn: the targets are reference values, changed by Phase 16's calibration or by a reviewed change to `slo.yml` and `SLOS.md` together.
+
+#### An expiring certificate
+
+`CertificateExpiringSoon` (ticket) fires when a certificate cert-manager holds has under 21 days left: it renews at two-thirds of a lifetime, so a 90-day certificate's renewal has been failing for over a week. `CertificateExpiring` (page) fires under 7 days. `CertificateExpirySeriesAbsent` (ticket) says cert-manager publishes no expiry series in a deployed environment, so an expiring certificate could not be seen; compose runs no cert-manager and is exempt through its `env="local"` label.
+
+1. `kubectl describe certificate` for the one the alert names, and read the `CertificateRequest` and the issuer's status. A renewal failing is almost always the issuer, or its ACME challenge reaching the ingress.
+2. Fix the issuer, then let cert-manager renew. Force a renewal only once the issuer is healthy.
+3. **The CA bundles for PostgreSQL and Kafka are not in this series**: they are the provider's, and an expired or rotated broker certificate shows as `InboxPollFailing` (§11.6) with the warn line naming `SslAuthenticationException`. Rotation is §11.7.
+
+### 11.20 Correctness pages - `LedgerTrialBalanceNonZero`, `LedgerProjectionDrift`, `GlNotEqualLedger`, `OutboxDeadLetter`, `InboxDeadLetterParked`, `PaymentWebhookUnmappable`, `CorrectnessGaugesUnreadable`, `CorrectnessUnverifiable`
+
+*(Written by `P15-TSK-025`, 2026-11-08, from `infra/prometheus/rules/correctness.yml`. **Not yet rehearsed** (`P15-TSK-032`). The register of every correctness signal, the product proofs among them, is `docs/architecture/SLOS.md` section 3.)*
+
+**These have no budget and no waiting.** Each pages on its first breaching sample. **Never correct a figure to clear one**: financial history is immutable, and a correction is a reversal or a compensating entry through the existing doors, after the cause is understood.
+
+**`LedgerTrialBalanceNonZero` (`INV-ACC-01`).** Total debits differ from total credits in the currency the alert names. The gauge is a verdict and never an amount. This cannot be produced by the posting path, which refuses an unbalanced entry and the journal's own constraint with it, so suspect a raw write or a defect in that constraint. Stop deployments, and read the warn line, which names the currency. Then generate that period's `TRIAL_BALANCE` report (`POST /v1/operator/accounting/report-runs`) and read its lines (`GET /v1/operator/accounting/report-runs/{runId}/lines`); `GET /v1/operator/accounting/gl/balances` shows the same books where a mapping version is active. Escalate as a financial incident: no money should move until it is understood.
+
+**`LedgerProjectionDrift` (`INV-BAL-02`).** A balance projection disagrees with its recomputation from postings. The journal is the truth and the projection is a cache of it. The warn line names the drifting accounts, by identifier and without an amount. Section 10.17 is the procedure: rebuild from the journal under the four-eyes door, and never edit the projection.
+
+**`GlNotEqualLedger` (`INV-ACC-06`).** The close check `GL_EQUALS_LEDGER` failed. `AccountingCloseCheckFailed` tickets the same counter beside it. Read the run's findings (section 10.9): an unavailable proof, an unmapped line (section 10.12) or a real difference. Nothing closes the month until it passes; it is never disclosable.
+
+**`OutboxDeadLetter`.** An event used up its publication attempts and stands abandoned, blocking its aggregate's later events (`EVENT_ARCHITECTURE.md` §Handling an abandoned event). Nothing financial is lost: the row is durable and the journal is the truth. Resolve it by retry once its cause is fixed, and never by deleting a row. The page lasts as long as the row does.
+
+**`InboxDeadLetterParked`.** A poison inbox record was parked after its bounded retries; the group went on past it, and its effect has not happened (`finapp.deadletter.parked`, §11.6's dead-letter part).
+
+**`PaymentWebhookUnmappable`.** `finapp.payments.webhook{outcome="unmappable"}` counted a signed callback that names no operation this platform minted, that the provider's own inquiry denied past its bound or contradicted, or whose inquiry answer could not be read. Both the door and the hint sweep count on that series. Follow the warn lines through the table in "Provider callbacks are hints" below: a denial reads as a possible **webhook key compromise** until shown otherwise, and "we cannot read" is a change of the provider's wire format. Nothing is adopted from such a callback.
+
+**`CorrectnessGaugesUnreadable` (ticket).** A correctness gauge has been NaN on one instance for 15 minutes: its read is failing or its gauge refresher is behind (`GaugesStale`, §11.8). The other instances still answer, so a real breach still pages. **`CorrectnessUnverifiable` (ticket)** says no instance holds a number for one of them, so every rule on it is silent for the wrong reason; read the database first.
+
+### 11.21 The platform under load - `OutboxPublicationStalled`, `HttpServerErrorsHigh`, `ConnectionPoolSaturated`, `ConnectionPoolStarved`, `InstanceClockOffset`, `PlatformGaugesUnreadable`, `PlatformSeriesAbsent`
+
+*(Written by `P15-TSK-025`, 2026-11-08, from `infra/prometheus/rules/platform.yml`. **Not yet rehearsed** (`P15-TSK-032`).)*
+
+**`OutboxPublicationStalled` (page).** The oldest row the relay may still publish is over 5 minutes old. Kafka is integration, not truth: every event waits durably in the database. Follow §11.6's broker-outage procedure. If the broker is healthy, the relay is the suspect: read the `outbox-relay` schedule's log lines and `finapp.outbox.publication` by outcome. A dead-lettered row does not fire this; its aggregate's later rows do.
+
+**`HttpServerErrorsHigh` (page).** More than 5% of every request over 5 minutes answered `5xx`, across every route including the ones no objective names. It is the floor under the burn-rate alerts. Read `http_server_requests_seconds_count` by `uri` and `status` to find the route, then the instance's log by correlation id.
+
+**`ConnectionPoolSaturated` (ticket), `ConnectionPoolStarved` (page).** Per instance, because a pool is an instance's: over 90% in use for 5 minutes, or threads waiting for 2 minutes. A pool never grows at runtime and is bounded by the connection budget (`DISTRIBUTED_EXECUTION.md` §4a), so raising it is a reviewed change to that budget, never an incident's first move. Look for a slow statement or a long-held transaction on that instance. Report generation's one-connection pool is excluded: it is full whenever a report runs.
+
+**`InstanceClockOffset` (ticket).** An instance's clock differs from the database's by over a second for 5 minutes (`finapp.platform.clock.offset`, positive when the instance runs ahead). Leases and permits read only the database's clock (ADR-0014), so this costs correctness nothing. ADR-0063's clamp no longer surfaces the skew through a refused write, and this is how it is seen. Check the node's time synchronisation and replace the node if it will not sync.
+
+**`PlatformGaugesUnreadable` (ticket), `PlatformSeriesAbsent` (ticket).** A platform gauge has been NaN on an instance for 15 minutes, or a series the SLO and platform rules read has gone from every instance, so those rules are blind. Read that instance's gauge refresher (`GaugesStale`, §11.8) and the scrape.
+
+### 11.22 The critical flows - `AuthenticationRefusalsSpike`, `AccountLockoutSpike`, `LedgerPostingsRefused`, `CustomerWalletNegative`, `PaymentUnknownAged`, `WithdrawalUnknownAged`, `PaymentWebhookRefusalsSpike`, `TransferFailureSpike`, `TransferKeyConflict`, `CheckoutExpiryRising`, `MerchantPayoutUnknownAged`, `KycReviewQueueBacklog`, `ConsentRoutesFailing`, `FlowGaugesUnreadable`, `FlowSeriesAbsent`
+
+*(Written by `P15-TSK-025`, 2026-11-08, from `infra/prometheus/rules/flows.yml`. **Not yet rehearsed** (`P15-TSK-032`). Thresholds are reference values.)*
+
+| Alert | What it says | First steps | Owner |
+|---|---|---|---|
+| `AuthenticationRefusalsSpike` (ticket) | Over half of the last 15 minutes' authentications refused, at least 50 | Read `finapp.identity.authentication`. A bad release looks like it, and a credential-stuffing campaign does too: check `AccountLockoutSpike` beside it, and the audit trail for which accounts | identity |
+| `AccountLockoutSpike` (page) | Over 20 accounts locked in 15 minutes | A credential-stuffing campaign until shown otherwise. Audit trail by the action, then rate-limit at the edge (§11.10) | identity |
+| `LedgerPostingsRefused` (ticket) | Over 50 journal writes refused in 15 minutes | A refused posting wrote nothing and is not a loss. Read `finapp.accounting.cutoff.refused` first (a closed period, §10.8), then the callers' logs | ledger |
+| `CustomerWalletNegative` (ticket) | A customer wallet below zero | Legal after a chargeback, and a receivable from the customer. Follow the collections process; never absorb it | ledger |
+| `PaymentUnknownAged` (page) | An operation unknown for over 15 minutes | The provider has not answered. Its resolution sweep is the path; never decide by hand. If nothing is sweeping (`finapp.payments.sweeper.enabled` false on every instance), restore that first | payments |
+| `WithdrawalUnknownAged` (page) | A withdrawal unanswered for over 15 minutes | As above, by the withdrawal sweep. A person's claw-back is a recorded door, never an edit | payments |
+| `PaymentWebhookRefusalsSpike` (ticket) | Over 50 webhook deliveries refused in 15 minutes | Forged traffic, or a provider rotating its signing secret out of order. Spends no provider-callback budget (`docs/architecture/SLOS.md` section 2) | payments |
+| `TransferFailureSpike` (ticket) | A fifth of judged transfers failed | Each `failed` is a committed refusal and moved nothing. Read the failure reasons | transfers |
+| `TransferKeyConflict` (ticket) | A key reused with a different body (`INV-IDEM-03`) | A security signal: refused and recorded. Look for one client doing it repeatedly in the audit trail | transfers |
+| `CheckoutExpiryRising` (ticket) | Over half of the last hour's sessions expired | A provider slow to capture, or an offer window too short for the traffic. `finapp.checkout.conversion.age` separates them | checkout |
+| `MerchantPayoutUnknownAged` (page) | A payout unanswered for over 15 minutes | Its resolution sweep is the path; never pay out twice by hand | merchant |
+| `KycReviewQueueBacklog` (ticket) | Over 100 reviews waiting for over an hour | Capacity: nobody is working the queue, or a provider is sending everything to review | kyc |
+| `ConsentRoutesFailing` (page) | The consent routes have answered `5xx` for 15 minutes | A person may be unable to withdraw consent. Treat as an incident on the route, whatever the error budget says | consent |
+| `FlowGaugesUnreadable` (ticket) | One of these gauges NaN on an instance for 15 minutes | While it is NaN that instance's reading says nothing. Read its gauge refresher (`GaugesStale`, §11.8) | platform |
+| `FlowSeriesAbsent` (ticket) | One of these gauges is published by no instance | Its alert above is blind. Check the scrape and the release: a renamed meter is a defect | platform |
+
+### 11.23 Settlement and reconciliation alerts
+
+*(Written by `P15-TSK-025`, 2026-11-08: these alerts predate this section and had no runbook section. **Not yet rehearsed** (`P15-TSK-032`).)*
+
+No amount appears in any of them: the audited operator reports answer the figures (`GET /v1/operator/reports/reconciliation/*`). A break is resolved through its own door and never by editing a line.
+
+| Alert | What it says | First steps |
+|---|---|---|
+| `PositionProofFailing`, `CashProofFailing`, `UnattributedLinesOnReconciledPosition` (page) | The reconciled position or the cash proof fails, or a reconciled position has lines attributed to nobody (`INV-REC-06`) | Correctness: read the operator report for that purpose or currency. The first two page on their first sample (`docs/architecture/SLOS.md` section 3). Never adjust a line to clear it |
+| `SuspenseItemUnowned` (page) | A suspense item has no owner | Assign it in the queue: an unowned item is one nobody will ever resolve |
+| `ReconciliationRunBlocked` (page) | A source's run is blocked | Read that run's blocking reason; a blocked run also blocks what depends on it |
+| `ReconciliationRunStalled` (ticket) | A run has aged past an hour | Read its schedule's log and claim; another instance takes a lapsed claim |
+| `SettlementSourceSilent`, `SettlementSourceNeverAccepted` (ticket) | A source has delivered nothing for a day, or has never been accepted | Check the source: a delivery may be missing, or a configuration wrong |
+| `SettlementFileStuck` (ticket) | A file has not concluded within its bound | Read its processing state; a retry is idempotent |
+| `SettlementDeliveryRefused` (ticket) | A delivery was refused | Read the refusal's outcome: the file is retained as evidence and never changed |
+| `SettlementExpectationOverdue` (ticket) | Expected money has not arrived | Follow the expectation in the operator report; it is a break if it stays |
+| `SuspenseItemAged` (ticket) | A suspense item past 30 days | Work the queue; it stays aged and alerted until it is resolved |
+| `BreakAgeCritical`, `BreakAgeHigh`, `BreakAgeMedium`, `BreakAgeLow` | A break past its severity's bound | Work the break through its door. A `critical` break pages at once and is a correctness problem until it is explained |
+| `MustBeZeroGaugeUnreadable`, `ReconciliationGaugesUnreadable` (ticket) | A reconciliation gauge cannot be read | §11.8 |
+
+### 11.24 FX and cross-border alerts
+
+*(Written by `P15-TSK-025`, 2026-11-08: these alerts predate this section. **Not yet rehearsed** (`P15-TSK-032`). Sections 3, 4 and 5 are the procedures for a cover, a proof and a plan.)*
+
+| Alert | What it says | First steps |
+|---|---|---|
+| `ReferenceRateStale`, `ReferenceRateNeverFetched` | The reference rate for a pair is stale, or was never fetched | Quotes in that pair fail closed: nothing mis-prices. Check the reference source and `finapp.fx.rate.fetch` by outcome |
+| `FxQuoteImplausibleRefusals` | Quotes refused as implausible | A rate the policy will not trust: check the source before the policy |
+| `FxCoverUnknownAged`, `FxCoverOpenAged` | A cover unknown or open for over 5 minutes | Section 4 |
+| `FxBooksUnexplained`, `FxPlanDiverged` | The FX books are unexplained, or a plan does not replay | Section 5. Correctness: both page on their first sample (`docs/architecture/SLOS.md` section 3) |
+| `OutboundCreditUnknownAged`, `OutboundCreditUndecided` | An outbound credit unanswered or undecided past its bound | Its resolution sweep is the path; never resend by hand |
+| `CrossBorderPaymentUndelivered` | A cross-border payment in transit past a day | Read its status; the corridor return path is the correction (§11.11) |
+| `CounterpartyReviewAged` | A counterparty review past a day | Work the queue |
+| `CrossBorderCancellationSpike` | Cancellations rising | Read by corridor; a provider or a rate is the usual cause |
+| `FxGaugesUnreadable` | An FX gauge cannot be read | §11.8 |
 
 ### 11.13 Infrastructure code: running the Terraform checks, and changing a pin
 
@@ -2232,6 +2426,50 @@ eight minutes for three replicas, longer at the maximum. That is the price of ne
 
 **What this does not cover.** A cluster's own refusal (Pod Security Admission, NetworkPolicy, quotas: `-010`), a real
 rollout and the measured connection peak (`-012`), and delivery (`-017`).
+
+### 11.15 Retention sweeps - `finapp.retention.swept`, `finapp.retention.sweep.failed`
+
+*(Written by `P15-TSK-029`, 2026-11-08, from the code it landed. Not rehearsed: `-032` rehearses it. The policy is
+[`DATA_RETENTION.md`](DATA_RETENTION.md).)*
+
+**What runs.** Two schedules on every instance, `outbox-retention-sweep` and `inbox-retention-sweep`, each every
+`finapp.retention.sweep.interval` (default five minutes) and each deleting up to 20 batches of
+`finapp.retention.sweep.batch-size` (default 500, at most 1,000) per tick. Published outbox rows go past
+`finapp.outbox.retention` (default 30 days). Inbox records go past both their written expiry and `finapp.inbox.retention`.
+No lease and no leader: `FOR UPDATE SKIP LOCKED` means instances delete disjoint batches. The counters are per table,
+tagged `type="outbox_event"` or `type="inbox_message"`.
+
+**What is never deleted.** A pending or an abandoned outbox row, and a published one that a parked record not yet settled still
+names. An inbox record younger than either bound, or one a replay order has extended.
+`platform.idempotency_record`, sessions and audit records are not swept at all. They grow, by ruling, until Phase 16. Nor are
+parked records, discard decisions or callback hints (`DATA_RETENTION.md`).
+
+**`finapp.retention.sweep.failed` rising.** Read the instance's `Retention sweep of <table> failed` line for its SQLState.
+
+| SQLState | Means | Do |
+|---|---|---|
+| `55000` | `platform.inbox_message` has a column the sweep was not reviewed against, so the inbox's sweep stops and deletes nothing. It may carry a state | Nothing is at risk: a kept record only costs storage. Ship a migration that reviews the column, adds a positive condition for its terminal values and lists it. **Never** add the column to the function's list by hand |
+| `08*`, `null`, or an exception class instead of a SQLState | The database was unreachable or the pool was exhausted | The next tick retries. Treat it as the database's or the pool's incident |
+| `42883` or `42501` | The function does not exist, or the role cannot execute it | Platform `V012` did not apply as it should: read the schema version before anything else |
+
+**A table still growing.** Compare `finapp.retention.swept` with the table's arrival rate. An outbox that keeps
+growing with a healthy sweep is usually a backlog (pending rows, which are never swept): §11.6. If the sweep is merely behind,
+raise `finapp.retention.sweep.batch-size` up to its limit, or shorten the interval, on a rolling restart.
+
+**Pause the sweeps.** Set `finapp.retention.sweep.enabled=false` and restart. Correctness does not depend on them: a row that
+is not deleted costs storage only, so pausing is always safe.
+
+**Move a bound.**
+
+- `finapp.inbox.retention`: raising it protects rows already written, at once. **Raise `finapp.outbox.retention` first** if the new
+  value would pass it (30 days by default): every instance refuses to start with the inbox's above the outbox's. Lowering it takes
+  effect only for new records and for rows past their written expiry. An instance refuses to start with it at or below 8 days and
+  5 minutes, the oldest record the broker can redeliver.
+- `finapp.outbox.retention`: an instance refuses to start with it below `finapp.inbox.retention`, because an audited replay
+  reads the outbox across that window. Lowering it deletes only what is then past it.
+
+**Never** delete from these tables by hand to relieve space: a dedupe record removed early makes the next redelivery of that
+message a second effect (`INV-IDEM-04`). The application role cannot, and an operator with the migrator's credential must not.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

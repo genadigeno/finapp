@@ -167,6 +167,8 @@ public final class BnplDisputeSchedule implements SmartLifecycle {
         try {
             sweepOnce();
         } catch (RuntimeException failure) {
+            // Every step above catches its own failure, so what reaches here is a claim: the page read (P15-TSK-025).
+            metrics.claimFailed();
             log.warn("BNPL dispute deadline sweep failed: {}", failure.getClass().getSimpleName());
         }
     }

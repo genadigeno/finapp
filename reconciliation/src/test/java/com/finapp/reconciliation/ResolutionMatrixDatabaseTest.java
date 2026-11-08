@@ -105,7 +105,8 @@ import org.junit.jupiter.api.TestMethodOrder;
  * every reconciliation table, read from the catalogue by the owner, undeletable by privilege for
  * the application role and by trigger for every writer, every column-narrowed table refusing its
  * frozen columns. The privilege floor covers the application role's {@code TRUNCATE}; the
- * owner's {@code TRUNCATE} fires no row trigger and is a known limit, not proven here.
+ * owner's, which fires no row trigger, is refused by each table's own statement trigger since
+ * {@code V024} ({@code P15-TSK-004}) - it was a known limit until then.
  *
  * <p>The position, suspense and cash proofs ({@code PositionProof}) are the app's, not this
  * module's: they are demonstrated over real value by {@code ResolutionBatteryDatabaseTest}'s
@@ -1549,8 +1550,8 @@ class ResolutionMatrixDatabaseTest {
             + " tables refuses DELETE and TRUNCATE to the application by privilege and carries an"
             + " enabled BEFORE DELETE row trigger, a live owner DELETE refused on every table"
             + " holding a row; the seven column-narrowed tables refuse a frozen column to the"
-            + " application by privilege and to the owner by trigger (the owner's TRUNCATE is a"
-            + " known limit)")
+            + " application by privilege and to the owner by trigger; and every table refuses its"
+            + " owner's TRUNCATE by a statement trigger of its own (V024)")
     void nothingIsDeletableSchemaWide() throws Exception {
         Set<String> liveProbed = new TreeSet<>();
         try (Connection owner = DatabaseRoles.migrator();
@@ -1586,6 +1587,16 @@ class ResolutionMatrixDatabaseTest {
                         + " (tgtype & 8) = 8")))
                         .as("TRIGGER RANK: %s carries an enabled BEFORE DELETE row trigger", name)
                         .isPositive();
+                // A statement trigger of its own, not one reached by CASCADE: tgtype bit 1 row, 2 before, 32 truncate.
+                assertThat(Long.parseLong(scalar(owner, "SELECT count(*) FROM pg_trigger WHERE"
+                        + " tgrelid = '" + name + "'::regclass AND NOT tgisinternal AND"
+                        + " tgenabled <> 'D' AND (tgtype & 1) = 0 AND (tgtype & 2) = 2 AND"
+                        + " (tgtype & 32) = 32")))
+                        .as("TRIGGER RANK: %s carries an enabled BEFORE TRUNCATE statement trigger", name)
+                        .isEqualTo(1);
+                assertThat(sqlState(owner, "TRUNCATE " + name + " CASCADE"))
+                        .as("TRIGGER RANK: the owner's TRUNCATE of %s is refused (raise_exception)", name)
+                        .isEqualTo("P0001");
                 if ("t".equals(scalar(owner, "SELECT EXISTS (SELECT 1 FROM " + name + ")"))) {
                     assertThat(sqlState(owner, "DELETE FROM " + name + " WHERE ctid = (SELECT"
                             + " ctid FROM " + name + " LIMIT 1)"))

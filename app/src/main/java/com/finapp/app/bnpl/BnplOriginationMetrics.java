@@ -34,6 +34,9 @@ public final class BnplOriginationMetrics {
     /** Exported as {@code finapp_bnpl_origination_total}. */
     public static final String ORIGINATION = "finapp.bnpl.origination";
 
+    /** Exported as {@code finapp_bnpl_sweeper_claim_failed_total}: a sweep's page read failing, by {@code kind} (`P15-TSK-025`). */
+    public static final String CLAIM_FAILED = "finapp.bnpl.sweeper.claim.failed";
+
     /** What a failed sweep step was acting on. */
     public enum Step {
         APPLICATION,
@@ -42,6 +45,17 @@ public final class BnplOriginationMetrics {
         String tag() {
             return name().toLowerCase(Locale.ROOT);
         }
+    }
+
+    /** A claim of the sweep failed: nothing was stepped, and a later tick claims again (`P15-TSK-025`). */
+    public void claimFailed() {
+        claimFailedCounter().increment();
+    }
+
+    private io.micrometer.core.instrument.Counter claimFailedCounter() {
+        return io.micrometer.core.instrument.Counter.builder(CLAIM_FAILED).tag("kind", "origination")
+                .description("BNPL sweep claims that failed, by sweep - the page read, never a step's failure")
+                .register(registry);
     }
 
     /** The closed set of offer outcomes. */
@@ -62,6 +76,7 @@ public final class BnplOriginationMetrics {
 
     public BnplOriginationMetrics(MeterRegistry registry) {
         this.registry = Objects.requireNonNull(registry, "registry");
+        claimFailedCounter();
         for (BnplProduct product : BnplProduct.values()) {
             for (Outcome outcome : Outcome.values()) {
                 offer(product, outcome);

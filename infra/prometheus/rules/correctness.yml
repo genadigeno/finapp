@@ -1,0 +1,102 @@
+# The correctness pages (P15-TSK-025; docs/architecture/SLOS.md section 3; ADR-0124 decision 4; C10). A correctness signal is not an SLO and has no
+# budget: money is right or it is an incident, so each pages on its first breach and carries no for. The product proofs and the
+# replays that already exist page the same way from their own files (bnpl, credit, fx, lending, risk, settlement-reconciliation),
+# each with for: 0s since this task; SLOS.md section 3 is the register and AlertCatalogueTest holds it. The source-join census joins
+# this routing when it lands.
+#
+# No amount anywhere: these are verdicts and counts, and the audited operator reports answer the figures.
+
+groups:
+  - name: correctness
+    rules:
+      - alert: LedgerTrialBalanceNonZero
+        # Aggregation: max by (currency) - every instance sweeps the same journal, so any one instance's 1 is the fleet's, and a NaN instance neither hides nor fakes it
+        # INV-ACC-01: total debits equal total credits per currency. The gauge is a verdict, 0 balanced and 1 not, never an amount.
+        # Pages on its first non-zero sample: no for, no budget. Local development pages nobody; routing is alertmanager.yml.
+        expr: max by (currency) (finapp_ledger_trial_balance) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: ledger
+        annotations:
+          summary: "The trial balance for {{ $labels.currency }} is not zero"
+          description: "Total debits differ from total credits in {{ $labels.currency }} (INV-ACC-01). Never correct it from here. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: LedgerProjectionDrift
+        # Aggregation: max() - every instance recomputes the same projection; a NaN instance is ignored
+        # INV-BAL-02: a balance projection disagrees with its recomputation from postings.
+        expr: max(finapp_ledger_projection_drift) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: ledger
+        annotations:
+          summary: "A balance projection disagrees with the journal"
+          description: "{{ $value }} accounts have a projection that differs from the journal (INV-BAL-02). The journal is the truth. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: GlNotEqualLedger
+        # Aggregation: sum() - the close-check counter is per instance, and any instance judging GL = ledger failed is the fact
+        # INV-ACC-06: the General Ledger is a function of the journal. A counter, so increase() over an hour: the first failed judgement fires at once.
+        # AccountingCloseCheckFailed tickets the same counter beside it; this one is the page.
+        expr: sum(increase(finapp_accounting_close_check_total{check="GL_EQUALS_LEDGER",outcome="failed"}[1h])) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: accounting
+        annotations:
+          summary: "GL = ledger failed"
+          description: "The close check GL_EQUALS_LEDGER failed in the last hour (INV-ACC-06): a month cannot close on it. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: OutboxDeadLetter
+        # Aggregation: max() - every instance reads the same outbox table; a NaN instance is ignored
+        # An abandoned event blocks its aggregate until a person resolves it: the gauge is a count of what stands now, so the page lasts as long as the row does.
+        expr: max(finapp_outbox_deadlettered) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: platform
+        annotations:
+          summary: "An outbox event is dead-lettered"
+          description: "{{ $value }} outbox events were abandoned and still block their aggregates. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: InboxDeadLetterParked
+        # Aggregation: max() - every instance reads the same parked records; a NaN instance is ignored
+        # A parked inbox record is a poison message set aside (the meter finapp.deadletter.parked, PHASE_15_PLAN.md section 11.2).
+        expr: max(finapp_deadletter_parked) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: platform
+        annotations:
+          summary: "An inbox record is parked"
+          description: "{{ $value }} inbox records are parked and were never applied. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: PaymentWebhookUnmappable
+        # Aggregation: sum() - counters are per instance, and any instance counting one is the fact
+        # A signed provider callback that names no operation we minted, or that the provider's own inquiry denied past its bound, contradicted, or answered unreadably (ADR-0083): both what a stolen webhook key looks like and what a wire change looks like.
+        # The door and the hint sweep both count on this series (HintedOutcome.isBreak, CallbackHintObserver), so one rule reads them; a counter, so the first one fires at once.
+        expr: sum(increase(finapp_payments_webhook_total{outcome="unmappable"}[15m])) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: payments
+        annotations:
+          summary: "A provider callback could not be believed"
+          description: "A signed provider callback named no operation this platform minted, was denied or contradicted by the provider's own inquiry, or its answer could not be read. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: CorrectnessGaugesUnreadable
+        # Aggregation: per instance by (job, instance) - x != x holds for NaN alone, and one instance unable to read is that instance's fault
+        # While a correctness gauge is NaN it answers nothing: max() still reads the instances that can, but this names the one that cannot.
+        expr: label_replace(max by (job, instance) (finapp_ledger_trial_balance != finapp_ledger_trial_balance), "gauge", "finapp_ledger_trial_balance", "", "") or label_replace(max by (job, instance) (finapp_ledger_projection_drift != finapp_ledger_projection_drift), "gauge", "finapp_ledger_projection_drift", "", "") or label_replace(max by (job, instance) (finapp_outbox_deadlettered != finapp_outbox_deadlettered), "gauge", "finapp_outbox_deadlettered", "", "") or label_replace(max by (job, instance) (finapp_deadletter_parked != finapp_deadletter_parked), "gauge", "finapp_deadletter_parked", "", "")
+        for: 15m
+        labels:
+          severity: ticket
+          owner: platform
+        annotations:
+          summary: "A correctness gauge cannot be read on {{ $labels.instance }}"
+          description: "{{ $labels.gauge }} is NaN on {{ $labels.instance }} for 15 minutes: its read is failing or the instance's gauge refresher is behind. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: CorrectnessUnverifiable
+        # Aggregation: none - absent(x == x) is true when no instance holds a number, which is the fleet-wide question
+        # A rule that cannot evaluate fires its absent-series alert: no instance publishing a number means every rule above is silent for the wrong reason.
+        expr: absent(finapp_ledger_trial_balance == finapp_ledger_trial_balance) or absent(finapp_ledger_projection_drift == finapp_ledger_projection_drift) or absent(finapp_outbox_deadlettered == finapp_outbox_deadlettered)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: platform
+        annotations:
+          summary: "No instance can verify the books"
+          description: "No instance has published a number for a correctness gauge for 15 minutes, so the correctness pages are silent for the wrong reason. See OPERATIONS_RUNBOOK.md section 11.20."

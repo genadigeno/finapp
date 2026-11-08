@@ -1,0 +1,1180 @@
+# promtool unit tests for infra/prometheus/rules/slo-recording.yml and slo.yml (P15-TSK-025): each objective fires its fast and its slow pair, a healthy series fires neither, one instance burning alone does not page the fleet, and a burn that stopped stops paging.
+# Generated once and reviewed as written; CI runs every file here through promtool (infra/scripts/alert-rules-check.sh, P15-TSK-025).
+# Two instances wherever instances can differ: the multi-instance case is the rule's aggregation.
+
+rule_files:
+  - ../rules/slo-recording.yml
+  - ../rules/slo.yml
+
+evaluation_interval: 1m
+
+tests:
+  # authentication_availability: fleet ratio 0.0216 (instance a 0, b 0.0432): above the fast and slow thresholds, so both pairs fire.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+5741x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/authentications"}'
+        values: '0+259x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuthenticationAvailabilityBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: page
+              slo: authentication_availability
+            exp_annotations:
+              summary: "The error budget of the authentication and session routes is burning fast"
+              description: "the authentication and session routes: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: AuthenticationAvailabilityBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: ticket
+              slo: authentication_availability
+            exp_annotations:
+              summary: "The error budget of the authentication and session routes is burning steadily"
+              description: "the authentication and session routes: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # authentication_availability: fleet ratio 0.0102: above the slow threshold only.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+5878x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/authentications"}'
+        values: '0+122x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuthenticationAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: AuthenticationAvailabilityBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: ticket
+              slo: authentication_availability
+            exp_annotations:
+              summary: "The error budget of the authentication and session routes is burning steadily"
+              description: "the authentication and session routes: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # authentication_availability: healthy, ratio 0.0005: nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+5994x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/authentications"}'
+        values: '0+6x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuthenticationAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: AuthenticationAvailabilityBurnSlow
+        exp_alerts: []
+
+  # authentication_availability: one instance alone above the fast threshold (0.01728), the fleet below it: sum() does not page where a per-instance ratio would.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+5896x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/authentications"}'
+        values: '0+104x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuthenticationAvailabilityBurnFast
+        exp_alerts: []
+
+  # authentication_availability: the errors stop at minute 40: the fast pair's 5m window clears, so it stops paging though its 1h window is still high.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x40 240000+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+5741x40 229640+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/authentications"}'
+        values: '0+259x40 10360+0x39'
+    alert_rule_test:
+      - eval_time: 38m
+        alertname: AuthenticationAvailabilityBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: page
+              slo: authentication_availability
+            exp_annotations:
+              summary: "The error budget of the authentication and session routes is burning fast"
+              description: "the authentication and session routes: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 50m
+        alertname: AuthenticationAvailabilityBurnFast
+        exp_alerts: []
+
+  # authentication_latency: fleet ratio 1 (instance a 1, b 1): above the fast and slow thresholds, so both pairs fire.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications", le="1.0"}'
+        values: '0+0x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications", le="1.0"}'
+        values: '0+0x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuthenticationLatencyBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: page
+              slo: authentication_latency
+            exp_annotations:
+              summary: "The error budget of the authentication and session routes is burning fast"
+              description: "the authentication and session routes: errors over 1h and 5m exceed 14.4 times the budget of 95% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: AuthenticationLatencyBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: ticket
+              slo: authentication_latency
+            exp_annotations:
+              summary: "The error budget of the authentication and session routes is burning steadily"
+              description: "the authentication and session routes: errors over 6h and 30m exceed 6 times the budget of 95% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # authentication_latency: fleet ratio 0.51: above the slow threshold only.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications", le="1.0"}'
+        values: '0+2940x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications", le="1.0"}'
+        values: '0+2940x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuthenticationLatencyBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: AuthenticationLatencyBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: ticket
+              slo: authentication_latency
+            exp_annotations:
+              summary: "The error budget of the authentication and session routes is burning steadily"
+              description: "the authentication and session routes: errors over 6h and 30m exceed 6 times the budget of 95% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # authentication_latency: healthy, ratio 0.025: nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications", le="1.0"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications", le="1.0"}'
+        values: '0+5700x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuthenticationLatencyBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: AuthenticationLatencyBurnSlow
+        exp_alerts: []
+
+  # authentication_latency: one instance alone above the fast threshold (0.8640000000000001), the fleet below it: sum() does not page where a per-instance ratio would.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications", le="1.0"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications", le="1.0"}'
+        values: '0+816x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuthenticationLatencyBurnFast
+        exp_alerts: []
+
+  # authentication_latency: the slow requests stop at minute 40: the fast pair's 5m window clears, so it stops paging though its 1h window is still high.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/authentications", le="1.0"}'
+        values: '0+0x40 0+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/authentications", le="1.0"}'
+        values: '0+0x40 0+6000x39'
+    alert_rule_test:
+      - eval_time: 38m
+        alertname: AuthenticationLatencyBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: page
+              slo: authentication_latency
+            exp_annotations:
+              summary: "The error budget of the authentication and session routes is burning fast"
+              description: "the authentication and session routes: errors over 1h and 5m exceed 14.4 times the budget of 95% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 50m
+        alertname: AuthenticationLatencyBurnFast
+        exp_alerts: []
+
+  # transfer_availability: fleet ratio 0.0216 (instance a 0, b 0.0432): above the fast and slow thresholds, so both pairs fire.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+5741x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/transfers"}'
+        values: '0+259x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TransferAvailabilityBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: transfers
+              severity: page
+              slo: transfer_availability
+            exp_annotations:
+              summary: "The error budget of POST /v1/transfers is burning fast"
+              description: "POST /v1/transfers: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: TransferAvailabilityBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: transfers
+              severity: ticket
+              slo: transfer_availability
+            exp_annotations:
+              summary: "The error budget of POST /v1/transfers is burning steadily"
+              description: "POST /v1/transfers: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # transfer_availability: fleet ratio 0.0102: above the slow threshold only.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+5878x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/transfers"}'
+        values: '0+122x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TransferAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: TransferAvailabilityBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: transfers
+              severity: ticket
+              slo: transfer_availability
+            exp_annotations:
+              summary: "The error budget of POST /v1/transfers is burning steadily"
+              description: "POST /v1/transfers: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # transfer_availability: healthy, ratio 0.0005: nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+5994x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/transfers"}'
+        values: '0+6x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TransferAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: TransferAvailabilityBurnSlow
+        exp_alerts: []
+
+  # transfer_availability: one instance alone above the fast threshold (0.01728), the fleet below it: sum() does not page where a per-instance ratio would.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+5896x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/transfers"}'
+        values: '0+104x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TransferAvailabilityBurnFast
+        exp_alerts: []
+
+  # transfer_availability: the errors stop at minute 40: the fast pair's 5m window clears, so it stops paging though its 1h window is still high.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x40 240000+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+5741x40 229640+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/transfers"}'
+        values: '0+259x40 10360+0x39'
+    alert_rule_test:
+      - eval_time: 38m
+        alertname: TransferAvailabilityBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: transfers
+              severity: page
+              slo: transfer_availability
+            exp_annotations:
+              summary: "The error budget of POST /v1/transfers is burning fast"
+              description: "POST /v1/transfers: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 50m
+        alertname: TransferAvailabilityBurnFast
+        exp_alerts: []
+
+  # transfer_latency: fleet ratio 0.21600000000000003 (instance a 0, b 0.43200000000000005): above the fast and slow thresholds, so both pairs fire.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers", le="1.0"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers", le="1.0"}'
+        values: '0+3408x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TransferLatencyBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: transfers
+              severity: page
+              slo: transfer_latency
+            exp_annotations:
+              summary: "The error budget of POST /v1/transfers is burning fast"
+              description: "POST /v1/transfers: errors over 1h and 5m exceed 14.4 times the budget of 99% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: TransferLatencyBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: transfers
+              severity: ticket
+              slo: transfer_latency
+            exp_annotations:
+              summary: "The error budget of POST /v1/transfers is burning steadily"
+              description: "POST /v1/transfers: errors over 6h and 30m exceed 6 times the budget of 99% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # transfer_latency: fleet ratio 0.10200000000000001: above the slow threshold only.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers", le="1.0"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers", le="1.0"}'
+        values: '0+4776x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TransferLatencyBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: TransferLatencyBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: transfers
+              severity: ticket
+              slo: transfer_latency
+            exp_annotations:
+              summary: "The error budget of POST /v1/transfers is burning steadily"
+              description: "POST /v1/transfers: errors over 6h and 30m exceed 6 times the budget of 99% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # transfer_latency: healthy, ratio 0.005: nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers", le="1.0"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers", le="1.0"}'
+        values: '0+5940x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TransferLatencyBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: TransferLatencyBurnSlow
+        exp_alerts: []
+
+  # transfer_latency: one instance alone above the fast threshold (0.1728), the fleet below it: sum() does not page where a per-instance ratio would.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers", le="1.0"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers", le="1.0"}'
+        values: '0+4963x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TransferLatencyBurnFast
+        exp_alerts: []
+
+  # transfer_latency: the slow requests stop at minute 40: the fast pair's 5m window clears, so it stops paging though its 1h window is still high.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers", le="1.0"}'
+        values: '0+6000x40 240000+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_bucket{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/transfers", le="1.0"}'
+        values: '0+3408x40 136320+6000x39'
+    alert_rule_test:
+      - eval_time: 38m
+        alertname: TransferLatencyBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: transfers
+              severity: page
+              slo: transfer_latency
+            exp_annotations:
+              summary: "The error budget of POST /v1/transfers is burning fast"
+              description: "POST /v1/transfers: errors over 1h and 5m exceed 14.4 times the budget of 99% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 50m
+        alertname: TransferLatencyBurnFast
+        exp_alerts: []
+
+  # payment_checkout: fleet ratio 0.0216 (instance a 0, b 0.0432): above the fast and slow thresholds, so both pairs fire.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+5741x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+259x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentCheckoutBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: page
+              slo: payment_checkout
+            exp_annotations:
+              summary: "The error budget of the payment and checkout commands is burning fast"
+              description: "the payment and checkout commands: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: PaymentCheckoutBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: ticket
+              slo: payment_checkout
+            exp_annotations:
+              summary: "The error budget of the payment and checkout commands is burning steadily"
+              description: "the payment and checkout commands: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # payment_checkout: fleet ratio 0.0102: above the slow threshold only.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+5878x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+122x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentCheckoutBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PaymentCheckoutBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: ticket
+              slo: payment_checkout
+            exp_annotations:
+              summary: "The error budget of the payment and checkout commands is burning steadily"
+              description: "the payment and checkout commands: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # payment_checkout: healthy, ratio 0.0005: nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+5994x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+6x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentCheckoutBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PaymentCheckoutBurnSlow
+        exp_alerts: []
+
+  # payment_checkout: one instance alone above the fast threshold (0.01728), the fleet below it: sum() does not page where a per-instance ratio would.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+5896x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+104x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PaymentCheckoutBurnFast
+        exp_alerts: []
+
+  # payment_checkout: the errors stop at minute 40: the fast pair's 5m window clears, so it stops paging though its 1h window is still high.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+6000x40 240000+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+5741x40 229640+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+259x40 10360+0x39'
+    alert_rule_test:
+      - eval_time: 38m
+        alertname: PaymentCheckoutBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: page
+              slo: payment_checkout
+            exp_annotations:
+              summary: "The error budget of the payment and checkout commands is burning fast"
+              description: "the payment and checkout commands: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 50m
+        alertname: PaymentCheckoutBurnFast
+        exp_alerts: []
+
+  # merchant_api: fleet ratio 0.0216 (instance a 0, b 0.0432): above the fast and slow thresholds, so both pairs fire.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/merchant/payouts"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/merchant/payouts"}'
+        values: '0+5741x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/merchant/payouts"}'
+        values: '0+259x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: MerchantApiBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: merchant
+              severity: page
+              slo: merchant_api
+            exp_annotations:
+              summary: "The error budget of the merchant API is burning fast"
+              description: "the merchant API: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: MerchantApiBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: merchant
+              severity: ticket
+              slo: merchant_api
+            exp_annotations:
+              summary: "The error budget of the merchant API is burning steadily"
+              description: "the merchant API: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # merchant_api: fleet ratio 0.0102: above the slow threshold only.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/merchant/payouts"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/merchant/payouts"}'
+        values: '0+5878x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/merchant/payouts"}'
+        values: '0+122x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: MerchantApiBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: MerchantApiBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: merchant
+              severity: ticket
+              slo: merchant_api
+            exp_annotations:
+              summary: "The error budget of the merchant API is burning steadily"
+              description: "the merchant API: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # merchant_api: healthy, ratio 0.0005: nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/merchant/payouts"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/merchant/payouts"}'
+        values: '0+5994x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/merchant/payouts"}'
+        values: '0+6x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: MerchantApiBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: MerchantApiBurnSlow
+        exp_alerts: []
+
+  # merchant_api: one instance alone above the fast threshold (0.01728), the fleet below it: sum() does not page where a per-instance ratio would.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/merchant/payouts"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/merchant/payouts"}'
+        values: '0+5896x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/merchant/payouts"}'
+        values: '0+104x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: MerchantApiBurnFast
+        exp_alerts: []
+
+  # merchant_api: the errors stop at minute 40: the fast pair's 5m window clears, so it stops paging though its 1h window is still high.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/merchant/payouts"}'
+        values: '0+6000x40 240000+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="201", uri="/v1/merchant/payouts"}'
+        values: '0+5741x40 229640+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/merchant/payouts"}'
+        values: '0+259x40 10360+0x39'
+    alert_rule_test:
+      - eval_time: 38m
+        alertname: MerchantApiBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: merchant
+              severity: page
+              slo: merchant_api
+            exp_annotations:
+              summary: "The error budget of the merchant API is burning fast"
+              description: "the merchant API: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 50m
+        alertname: MerchantApiBurnFast
+        exp_alerts: []
+
+  # provider_callbacks: fleet ratio 0.0108 (instance a 0, b 0.0216): above the fast and slow thresholds, so both pairs fire.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="204", uri="/v1/providers/payments/webhooks"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="401", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="204", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5870x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/providers/payments/webhooks"}'
+        values: '0+130x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="401", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5000x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ProviderCallbacksBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: page
+              slo: provider_callbacks
+            exp_annotations:
+              summary: "The error budget of the provider callbacks is burning fast"
+              description: "the provider callbacks: errors over 1h and 5m exceed 14.4 times the budget of 99.95% accepted or deduplicated. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: ProviderCallbacksBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: ticket
+              slo: provider_callbacks
+            exp_annotations:
+              summary: "The error budget of the provider callbacks is burning steadily"
+              description: "the provider callbacks: errors over 6h and 30m exceed 6 times the budget of 99.95% accepted or deduplicated. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # provider_callbacks: fleet ratio 0.0051: above the slow threshold only.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="204", uri="/v1/providers/payments/webhooks"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="401", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="204", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5939x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/providers/payments/webhooks"}'
+        values: '0+61x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="401", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5000x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ProviderCallbacksBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: ProviderCallbacksBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: ticket
+              slo: provider_callbacks
+            exp_annotations:
+              summary: "The error budget of the provider callbacks is burning steadily"
+              description: "the provider callbacks: errors over 6h and 30m exceed 6 times the budget of 99.95% accepted or deduplicated. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # provider_callbacks: healthy, ratio 0.00025: nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="204", uri="/v1/providers/payments/webhooks"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="401", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="204", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5997x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/providers/payments/webhooks"}'
+        values: '0+3x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="401", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5000x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ProviderCallbacksBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: ProviderCallbacksBurnSlow
+        exp_alerts: []
+
+  # provider_callbacks: one instance alone above the fast threshold (0.00864), the fleet below it: sum() does not page where a per-instance ratio would.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="204", uri="/v1/providers/payments/webhooks"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="401", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="204", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5948x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/providers/payments/webhooks"}'
+        values: '0+52x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="401", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5000x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ProviderCallbacksBurnFast
+        exp_alerts: []
+
+  # provider_callbacks: the errors stop at minute 40: the fast pair's 5m window clears, so it stops paging though its 1h window is still high.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="204", uri="/v1/providers/payments/webhooks"}'
+        values: '0+6000x40 240000+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="401", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="204", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5870x40 234800+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="500", uri="/v1/providers/payments/webhooks"}'
+        values: '0+130x40 5200+0x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="401", uri="/v1/providers/payments/webhooks"}'
+        values: '0+5000x80'
+    alert_rule_test:
+      - eval_time: 38m
+        alertname: ProviderCallbacksBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: page
+              slo: provider_callbacks
+            exp_annotations:
+              summary: "The error budget of the provider callbacks is burning fast"
+              description: "the provider callbacks: errors over 1h and 5m exceed 14.4 times the budget of 99.95% accepted or deduplicated. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 50m
+        alertname: ProviderCallbacksBurnFast
+        exp_alerts: []
+
+  # operator_surface: fleet ratio 0.10800000000000001 (instance a 0, b 0.21600000000000003): above the fast and slow thresholds, so both pairs fire.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="GET", status="201", uri="/v1/operator/break-glass"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="201", uri="/v1/operator/break-glass"}'
+        values: '0+4704x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="500", uri="/v1/operator/break-glass"}'
+        values: '0+1296x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: OperatorSurfaceBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+              slo: operator_surface
+            exp_annotations:
+              summary: "The error budget of the operator surface is burning fast"
+              description: "the operator surface: errors over 1h and 5m exceed 14.4 times the budget of 99.5% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: OperatorSurfaceBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+              slo: operator_surface
+            exp_annotations:
+              summary: "The error budget of the operator surface is burning steadily"
+              description: "the operator surface: errors over 6h and 30m exceed 6 times the budget of 99.5% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # operator_surface: fleet ratio 0.051000000000000004: above the slow threshold only.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="GET", status="201", uri="/v1/operator/break-glass"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="201", uri="/v1/operator/break-glass"}'
+        values: '0+5388x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="500", uri="/v1/operator/break-glass"}'
+        values: '0+612x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: OperatorSurfaceBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: OperatorSurfaceBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+              slo: operator_surface
+            exp_annotations:
+              summary: "The error budget of the operator surface is burning steadily"
+              description: "the operator surface: errors over 6h and 30m exceed 6 times the budget of 99.5% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # operator_surface: healthy, ratio 0.0025: nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="GET", status="201", uri="/v1/operator/break-glass"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="201", uri="/v1/operator/break-glass"}'
+        values: '0+5970x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="500", uri="/v1/operator/break-glass"}'
+        values: '0+30x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: OperatorSurfaceBurnFast
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: OperatorSurfaceBurnSlow
+        exp_alerts: []
+
+  # operator_surface: one instance alone above the fast threshold (0.0864), the fleet below it: sum() does not page where a per-instance ratio would.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="GET", status="201", uri="/v1/operator/break-glass"}'
+        values: '0+6000x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="201", uri="/v1/operator/break-glass"}'
+        values: '0+5482x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="500", uri="/v1/operator/break-glass"}'
+        values: '0+518x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: OperatorSurfaceBurnFast
+        exp_alerts: []
+
+  # operator_surface: the errors stop at minute 40: the fast pair's 5m window clears, so it stops paging though its 1h window is still high.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="GET", status="201", uri="/v1/operator/break-glass"}'
+        values: '0+6000x40 240000+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="201", uri="/v1/operator/break-glass"}'
+        values: '0+4704x40 188160+6000x39'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="500", uri="/v1/operator/break-glass"}'
+        values: '0+1296x40 51840+0x39'
+    alert_rule_test:
+      - eval_time: 38m
+        alertname: OperatorSurfaceBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+              slo: operator_surface
+            exp_annotations:
+              summary: "The error budget of the operator surface is burning fast"
+              description: "the operator surface: errors over 1h and 5m exceed 14.4 times the budget of 99.5% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 50m
+        alertname: OperatorSurfaceBurnFast
+        exp_alerts: []
+
+  # event_freshness: over its bound at every evaluation, one instance NaN: both pairs fire, the NaN neither hiding nor faking it.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '100x80'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: EventFreshnessBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+              slo: event_freshness
+            exp_annotations:
+              summary: "The error budget of event freshness is burning fast"
+              description: "event freshness: errors over 1h and 5m exceed 14.4 times the budget of 99% of minutes under 60 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: EventFreshnessBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+              slo: event_freshness
+            exp_annotations:
+              summary: "The error budget of event freshness is burning steadily"
+              description: "event freshness: errors over 6h and 30m exceed 6 times the budget of 99% of minutes under 60 s. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # event_freshness: only one instance over the bound is still the worst instance, so max() fires.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '10x80'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: '100x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: EventFreshnessBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+              slo: event_freshness
+            exp_annotations:
+              summary: "The error budget of event freshness is burning fast"
+              description: "event freshness: errors over 1h and 5m exceed 14.4 times the budget of 99% of minutes under 60 s. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # event_freshness: bad one evaluation in ten: 10% is above the slow threshold and below the fast one.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '100 10 10 10 10 10 10 10 10 10 100 10 10 10 10 10 10 10 10 10 100 10 10 10 10 10 10 10 10 10 100 10 10 10 10 10 10 10 10 10 100 10 10 10 10 10 10 10 10 10 100 10 10 10 10 10 10 10 10 10 100 10 10 10 10 10 10 10 10 10 100 10 10 10 10 10 10 10 10 10 100'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: '1x80'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: EventFreshnessBurnFast
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: EventFreshnessBurnSlow
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+              slo: event_freshness
+            exp_annotations:
+              summary: "The error budget of event freshness is burning steadily"
+              description: "event freshness: errors over 6h and 30m exceed 6 times the budget of 99% of minutes under 60 s. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # event_freshness: healthy: nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '10x80'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: '10x80'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: EventFreshnessBurnFast
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: EventFreshnessBurnSlow
+        exp_alerts: []
+
+  # event_freshness: every instance NaN for the first hour, then over the bound: an unmeasured minute counts for nothing, so the unmeasured hour does not dilute the burn.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 100x20'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 64m
+        alertname: EventFreshnessBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+              slo: event_freshness
+            exp_annotations:
+              summary: "The error budget of event freshness is burning fast"
+              description: "event freshness: errors over 1h and 5m exceed 14.4 times the budget of 99% of minutes under 60 s. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # event_freshness: the burn stopped at minute 50: the fast pair's short window clears, so it stops paging though its long window is still high.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '100x49 10x30'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: '1x80'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: EventFreshnessBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+              slo: event_freshness
+            exp_annotations:
+              summary: "The error budget of event freshness is burning fast"
+              description: "event freshness: errors over 1h and 5m exceed 14.4 times the budget of 99% of minutes under 60 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 70m
+        alertname: EventFreshnessBurnFast
+        exp_alerts: []
+
+  # consumption: over its bound at every evaluation, one instance NaN: both pairs fire, the NaN neither hiding nor faking it.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
+        values: '1200x80'
+      - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", module="risk"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ConsumptionBurnFast
+        exp_alerts:
+          - exp_labels:
+              module: risk
+              owner: platform
+              severity: page
+              slo: consumption
+            exp_annotations:
+              summary: "The error budget of consumption for risk is burning fast"
+              description: "consumption: errors over 1h and 5m exceed 14.4 times the budget of 99% of minutes under 1000 records. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: ConsumptionBurnSlow
+        exp_alerts:
+          - exp_labels:
+              module: risk
+              owner: platform
+              severity: ticket
+              slo: consumption
+            exp_annotations:
+              summary: "The error budget of consumption for risk is burning steadily"
+              description: "consumption: errors over 6h and 30m exceed 6 times the budget of 99% of minutes under 1000 records. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # consumption: each instance under the bound, the group over it: sum() fires where max() would not.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
+        values: '600x80'
+      - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", module="risk"}'
+        values: '600x80'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ConsumptionBurnFast
+        exp_alerts:
+          - exp_labels:
+              module: risk
+              owner: platform
+              severity: page
+              slo: consumption
+            exp_annotations:
+              summary: "The error budget of consumption for risk is burning fast"
+              description: "consumption: errors over 1h and 5m exceed 14.4 times the budget of 99% of minutes under 1000 records. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 30m
+        alertname: ConsumptionBurnSlow
+        exp_alerts:
+          - exp_labels:
+              module: risk
+              owner: platform
+              severity: ticket
+              slo: consumption
+            exp_annotations:
+              summary: "The error budget of consumption for risk is burning steadily"
+              description: "consumption: errors over 6h and 30m exceed 6 times the budget of 99% of minutes under 1000 records. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # consumption: bad one evaluation in ten: 10% is above the slow threshold and below the fast one.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
+        values: '1200 100 100 100 100 100 100 100 100 100 1200 100 100 100 100 100 100 100 100 100 1200 100 100 100 100 100 100 100 100 100 1200 100 100 100 100 100 100 100 100 100 1200 100 100 100 100 100 100 100 100 100 1200 100 100 100 100 100 100 100 100 100 1200 100 100 100 100 100 100 100 100 100 1200 100 100 100 100 100 100 100 100 100 1200'
+      - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", module="risk"}'
+        values: '0x80'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: ConsumptionBurnFast
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: ConsumptionBurnSlow
+        exp_alerts:
+          - exp_labels:
+              module: risk
+              owner: platform
+              severity: ticket
+              slo: consumption
+            exp_annotations:
+              summary: "The error budget of consumption for risk is burning steadily"
+              description: "consumption: errors over 6h and 30m exceed 6 times the budget of 99% of minutes under 1000 records. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # consumption: healthy: nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
+        values: '100x80'
+      - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", module="risk"}'
+        values: '100x80'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: ConsumptionBurnFast
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: ConsumptionBurnSlow
+        exp_alerts: []
+
+  # consumption: the burn stopped at minute 50: the fast pair's short window clears, so it stops paging though its long window is still high.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
+        values: '1200x49 100x30'
+      - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", module="risk"}'
+        values: '0x80'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: ConsumptionBurnFast
+        exp_alerts:
+          - exp_labels:
+              module: risk
+              owner: platform
+              severity: page
+              slo: consumption
+            exp_annotations:
+              summary: "The error budget of consumption for risk is burning fast"
+              description: "consumption: errors over 1h and 5m exceed 14.4 times the budget of 99% of minutes under 1000 records. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 70m
+        alertname: ConsumptionBurnFast
+        exp_alerts: []
+

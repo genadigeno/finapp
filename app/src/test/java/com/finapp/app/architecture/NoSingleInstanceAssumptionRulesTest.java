@@ -436,7 +436,14 @@ class NoSingleInstanceAssumptionRulesTest {
                     // #aDeadWorkersCheckIsReclaimed - owed, C5). The heartbeat is liveness only. The orphan leg's
                     // completeOrphaned(1, ...) is FOR UPDATE SKIP LOCKED past a lease, its completion conditional on the
                     // attempt (ReportRunDatabaseTest - owed, C5). Register row: DISTRIBUTED_EXECUTION.md section 3.
-                    "com.finapp.app.accounting.AccountingCloseSchedule");
+                    "com.finapp.app.accounting.AccountingCloseSchedule",
+                    // P15-TSK-029, the 33rd, its two beans the outbox's and the inbox's retention sweeps: the idempotent-per-row
+                    // half. No external call, and no financial row. Each batch is one call of a platform V012 SECURITY DEFINER
+                    // function, one transaction deleting rows it holds FOR UPDATE SKIP LOCKED past a bound judged on the
+                    // database clock, so ten sweepers delete disjoint batches, a row is deleted once, and a crash rolls the
+                    // batch back for the next tick. Register row: DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper race is
+                    // RetentionSweepDatabaseTest#tenSweepersDeleteDisjointBatches (owed, C14).
+                    "com.finapp.app.eventing.RetentionSweepSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

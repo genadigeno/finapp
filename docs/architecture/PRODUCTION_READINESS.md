@@ -107,14 +107,14 @@ Each table carries **Today**, the survey's reading in `PHASE_15_PLAN.md` §15 (`
 | Logging | Partial: ECS JSON with correlation and trace ids, default-deny redaction; no shipping, retention or central search | — | — | — |
 | Metrics | Partial: the naming contract enforced; every gauge read off the scrape thread on one gauge thread per instance, restartable (`P15-TSK-024`, 2026-11-08; read "about sixty gauge classes read on the scrape thread" until then); scraped from the management port *(`P15-TSK-008`, 2026-11-08; read "from the API port" until then)*, its policy not yet built | — | — | — |
 | Tracing | Partial: spans recorded and dropped, no exporter | — | — | — |
-| Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run. Since 2026-11-08 (`P15-TSK-024`): 141 rules in eight files, `platform.yml` adding a rule on `up` per instance, the fleet absent and the gauges stale, and its fix round `FxGaugesUnreadable` and `ReconciliationGaugesUnreadable`, every gauge an alert reads now seen unreadable; their own `promtool test` cases run by hand | — | — | — |
+| Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run. Since 2026-11-08 (`P15-TSK-024`): 141 rules in eight files, `platform.yml` adding a rule on `up` per instance, the fleet absent and the gauges stale, and its fix round `FxGaugesUnreadable` and `ReconciliationGaugesUnreadable`, every gauge an alert reads now seen unreadable; their own `promtool test` cases run by hand. Since 2026-11-08 (`P15-TSK-025`): 200 alerts in twelve files, with objectives and burn-rate pairs (`slo.yml`), correctness pages (`correctness.yml`), each critical flow (`flows.yml`), routing by severity to a placeholder receiver (`infra/alertmanager/`), `promtool` and `amtool` in CI's `alerts` job, and every alert's runbook section checked by `AlertCatalogueTest`. Not rehearsed (`-032`); no real on-call receiver | — | — | — |
 | Security | Partial: transport guards off loopback, secrets externalised and confined; an operator's acts recorded as the operator population and every refused step-up recorded, report generation reading as a `SELECT`-only role (`P15-TSK-021`); no image, pod profile *(the restricted profile on every committed workload, held on every overlay: `P15-TSK-009`, 2026-11-08)*, NetworkPolicy, workload identity or secret store *(2026-11-08, `P15-TSK-003`: the image runs as UID 65532 with no shell or package manager, asserted on the built image; still no pod profile, NetworkPolicy, workload identity, secret store, scan or signature)* *(2026-11-08, `P15-TSK-014`: the cluster's halves exist as code, asserted over a plan and never applied - private API endpoint, nodes in at least three zones, the workload identity provider, the VPC CNI's network policy agent on; still no workload role and no NetworkPolicy)* | — | — | — |
 | Resource limits | Partial: requests and limits on every container, memory equal, and the connection budget counting terminating pods held on every overlay by the manifest policy, each refusal proven by a plant *(`P15-TSK-009`, 2026-11-08; read "Missing (the connection budget is a startup guard, not a manifest)" until then)*; the namespace quota (`-010`) and the measured peak (`-012`) not yet | — | — | — |
-| Failure handling | Partial: graceful shutdown stated and held on a real context (`ShutdownOrderTest`): readiness refuses, HTTP drains, 32 schedules drain within 10 s + 2 s, consumers acknowledge and leave within 10 s + 2 s, the pool closes last *(`P15-TSK-008`, 2026-11-08; read "graceful shutdown unasserted; schedules' `stop()` does not wait; consumers join for 10 s" until then)*; the `preStop` pause and a grace sized from every step's bound in the manifest (`P15-TSK-009`, 2026-11-08; read "no `preStop` or grace yet" until then); recovery after a kill not rehearsed (`-012`) | — | — | — |
+| Failure handling | Partial: graceful shutdown stated and held on a real context (`ShutdownOrderTest`): readiness refuses, HTTP drains, 35 schedules drain within 10 s + 2 s, consumers acknowledge and leave within 10 s + 2 s, the pool closes last *(`P15-TSK-008`, 2026-11-08; read "graceful shutdown unasserted; schedules' `stop()` does not wait; consumers join for 10 s" until then)*; the `preStop` pause and a grace sized from every step's bound in the manifest (`P15-TSK-009`, 2026-11-08; read "no `preStop` or grace yet" until then); recovery after a kill not rehearsed (`-012`) | — | — | — |
 | Recovery | Missing | — | — | — |
-| Ownership | Partial: seven alert files cover eight modules (§4); no owner label on an alert, no person or rota | — | — | — |
+| Ownership | Partial: an `owner` label naming the owning module on every alert (`P15-TSK-025`, on the rule or its group; `AlertCatalogueTest`); no person or rota, which needs a real environment | — | — | — |
 | Runbooks | Partial: `OPERATIONS_RUNBOOK.md` §1–§10 domain sections; §11 (platform) planned | — | — | — |
-| Multi-instance | Leaderless by design; 34 `SmartLifecycle` components (32 schedules, the gauge refresher - accounting's until `P15-TSK-024` made it every gauge's, 2026-11-08 - the inbox consumers), guarded by `NoSingleInstanceAssumptionRulesTest`; the deployed fleet not yet rehearsed | — | — | — |
+| Multi-instance | Leaderless by design; 37 `SmartLifecycle` components (35 schedules, the two retention sweeps among them, the gauge refresher - accounting's until `P15-TSK-024` made it every gauge's, 2026-11-08 - the inbox consumers), guarded by `NoSingleInstanceAssumptionRulesTest`; the deployed fleet not yet rehearsed | — | — | — |
 
 **Named gaps of `finapp-app`** (open Phase 14 remediation entries; each `PLANNED` with its horizon; none may be read as
 met): `P14-REM-001` (a break's resolution under `MULTI_FACTOR`), `P14-REM-002` (step-up on two approvals),
@@ -129,19 +129,19 @@ entry's status when it rules: an entry still open is a `GAP` of the dimension it
 
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
-| Deployment | Missing: migrations run by Gradle and CI's `migrations` job; no image, no Job | — | — | — |
+| Deployment | Partial: migrations run by Gradle and CI's `migrations` job; *(2026-11-08, `P15-TSK-004`)* the migrator image is built by CI from the commit, twice and compared, and pushed nowhere; unsigned; its Job contract is written and its manifest is `P15-TSK-009`'s | — | — | — |
 | Health checks | N/A: a Job that exits | — | — | — |
-| Logging | Missing | — | — | — |
+| Logging | Partial *(2026-11-08, `P15-TSK-004`)*: one line per schema and a result line on the Job's stdout; no structured log | — | — | — |
 | Metrics | N/A: a Job that exits | — | — | — |
 | Tracing | N/A: a Job that exits | — | — | — |
 | Alerting | Missing (a failed or stalled Job alerts nobody) | — | — | — |
-| Security | Partial: `finapp_migrator` is `NOSUPERUSER NOCREATEDB NOCREATEROLE`; every one of the 21 migrating modules' builds disables `clean`, validates and refuses out-of-order (counted) | — | — | — |
-| Resource limits | Missing | — | — | — |
-| Failure handling | Partial: Flyway's schema-history lock serialises two runs; no `lock_timeout` | — | — | — |
-| Recovery | Missing: forward-only by design; the fix-forward procedure unwritten | — | — | — |
+| Security | Partial: `finapp_migrator` is `NOSUPERUSER NOCREATEDB NOCREATEROLE`; every one of the 21 migrating modules' builds disables `clean`, validates and refuses out-of-order (counted); *(2026-11-08, `P15-TSK-004`)* the image holds no credential, runs as UID 65532, refuses an administrative identity and an unverified connection off loopback; the deployed roles from a separate bootstrap step | — | — | — |
+| Resource limits | Partial *(2026-11-08, `P15-TSK-004`)*: a 512 MiB limit in the Job contract, every acceptance run under it; no manifest | — | — | — |
+| Failure handling | Partial: Flyway's schema-history lock serialises two runs; *(2026-11-08, `P15-TSK-004`)* `lock_timeout`, bounded retries and exit codes the Job can act on, proven on the image against a real database | — | — | — |
+| Recovery | Partial *(2026-11-08, `P15-TSK-004`)*: forward-only by design; the fix-forward procedure written (runbook §11.4), not rehearsed | — | — | — |
 | Ownership | Missing | — | — | — |
-| Runbooks | Missing (migration failure is a planned platform section) | — | — | — |
-| Multi-instance | Two Jobs at once serialised by Flyway's lock (unproven on a deployed database) | — | — | — |
+| Runbooks | Partial *(2026-11-08, `P15-TSK-004`)*: deploy's migration step and a failed migration written (§11.1b, §11.4), not rehearsed | — | — | — |
+| Multi-instance | Concurrent runs of the image: each migration applied exactly once, the history the build's (`migrator-verify.sh`, a throwaway PostgreSQL; unproven on a deployed database) | — | — | — |
 
 **Named gaps of `finapp-migrator`**: `P14-REM-004` and `P14-REM-006` are migrations it will apply; their schemas are
 gaps of the module they touch (§4).
@@ -156,7 +156,7 @@ gaps of the module they touch (§4).
 | Metrics | Missing | — | — | — |
 | Tracing | — | — | — | — |
 | Alerting | Missing | — | — | — |
-| Security | Partial: three least-privilege roles - the migrator, the application and report generation's `SELECT`-only `finapp_reporting` (`P15-TSK-021`) - per-table grants in every migration, `verify-full` required off loopback; no encryption at rest beyond the application's field-level ciphers (`SECURITY_ARCHITECTURE.md` §Encryption at rest) | — | — | — |
+| Security | Partial: three least-privilege roles - the migrator, the application and report generation's `SELECT`-only `finapp_reporting` (`P15-TSK-021`) - per-table grants in every migration, the application role's `DELETE` on the outbox and the inbox replaced by the retention sweeps' two definer functions (platform `V012`), `verify-full` required off loopback; no encryption at rest beyond the application's field-level ciphers (`SECURITY_ARCHITECTURE.md` §Encryption at rest) | — | — | — |
 | Resource limits | Partial: the connection budget guarded by `ConnectionPoolSizingGuard` against a declared instance count | — | — | — |
 | Failure handling | — | — | — | — |
 | Recovery | Missing: no backup, no restore, no rehearsal | — | — | — |
@@ -191,7 +191,7 @@ gaps of the module they touch (§4).
 | Logging | — | — | — | — |
 | Metrics | Local only | — | — | — |
 | Tracing | Missing: no collector or back end | — | — | — |
-| Alerting | Missing: no Alertmanager | — | — | — |
+| Alerting | Partial: Alertmanager configured in compose and `deploy/observability/alertmanager/` (`P15-TSK-025`), its receivers placeholders; the telemetry stack's own alerts are not built | — | — | — |
 | Security | Missing | — | — | — |
 | Resource limits | Missing | — | — | — |
 | Failure handling | — | — | — | — |
@@ -247,7 +247,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | — | — | — | — |
-| Alerting | No rule on the outbox, the inbox or a dead letter (§15; `-025`) | — | — | — |
+| Alerting | Partial: `OutboxPublicationStalled`, `OutboxDeadLetter`, `InboxLagHigh`, `InboxPollFailing`, `InboxPollRefused`, `InboxConsumerEvicted` and `InboxDeadLetterParked` (`P15-TSK-025`, 2026-11-08) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | Dead letters, a poison record and replay have doors and a written section (`OPERATIONS_RUNBOOK.md` §11.6); no raw `UPDATE` remains; rehearsal is `-032`'s | — | — | — |
 
@@ -265,7 +265,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -274,7 +274,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -283,7 +283,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -292,7 +292,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule, the continuous trial balance included (§15, §11.1) | — | — | — |
+| Alerting | Partial: `LedgerTrialBalanceNonZero` and `LedgerProjectionDrift` page on their first sample, and `flows.yml`'s ledger rules (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -313,7 +313,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -331,7 +331,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -340,7 +340,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -349,7 +349,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule of its own (§15); `MerchantPayableNegative` is in the BNPL rules | — | — | — |
+| Alerting | Partial: `flows.yml`'s merchant rules and the `merchant_api` objective (`P15-TSK-025`); `MerchantPayableNegative` is in the BNPL rules | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | §8.5 (a negative payable from a BNPL refund) | — | — | — |
 
