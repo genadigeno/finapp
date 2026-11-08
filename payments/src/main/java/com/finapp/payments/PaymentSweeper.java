@@ -475,7 +475,7 @@ public final class PaymentSweeper {
         // THE VOID'S SEND LEG (P7-TSK-004): a VOID_DISPATCHED past the bound is RE-SENT,
         // not queried - idempotent at the provider by the stored reference, so any
         // instance may finish it. This is what guarantees a redirect committed by a
-        // port-less resolver (the webhook door) actually releases the authorization, and
+        // resolver that may not send (a callback's hinted inquiry) actually releases the authorization, and
         // it is deliberately permit-free: releasing a released promise converges, the
         // recorded asymmetry with the refund's V009.
         if (candidate.status() == PaymentAttemptStatus.VOID_DISPATCHED) {

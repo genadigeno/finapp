@@ -126,6 +126,7 @@ public final class DecisionRequests {
                 // Minor units beside the currency, an instant as epoch milliseconds - the payload's own vocabulary.
                 .with("requestedMinor", Long.toString(application.requested().minorUnits()))
                 .with("currency", application.requested().currency().code())
+                .with("scale", Integer.toString(application.requested().scale()))
                 .with("expiresAtEpochMilli", Long.toString(born.expiresAt().toEpochMilli()));
         if (application.termMonths().isPresent()) {
             payload = payload.with("termMonths", application.termMonths().get().toString());

@@ -76,7 +76,11 @@ public final class MerchantSettlement {
     static final String EVENT_TYPE = "merchant.FeeAssessed";
     static final String FEE_RETURNED_EVENT_TYPE = "merchant.FeeReturned";
     static final String PRODUCER = "merchant";
-    static final int EVENT_VERSION = 1;
+    /**
+     * Version 2 of both fee events adds {@code scale}, additively (`P15-TSK-027`, `X-TSK-014`): the amounts' scale had
+     * been left implicit in the currency.
+     */
+    static final int EVENT_VERSION = 2;
     static final String AGGREGATE_TYPE = "merchant";
 
     @NonNull private final PaymentFeePinStore<Connection> pins;
@@ -532,6 +536,7 @@ public final class MerchantSettlement {
                         .with("refundedMinor", String.valueOf(refunded.minorUnits()))
                         .with("feeReturnedMinor", String.valueOf(returned.minorUnits()))
                         .with("currency", returned.currency().code())
+                        .with("scale", Integer.toString(returned.scale()))
                         .toBytes(),
                 EventPayload.MEDIA_TYPE);
     }
@@ -660,6 +665,7 @@ public final class MerchantSettlement {
                         .with("feeMinor", String.valueOf(assessment.fee().minorUnits()))
                         .with("netMinor", String.valueOf(assessment.net().minorUnits()))
                         .with("currency", assessment.gross().currency().code())
+                        .with("scale", Integer.toString(assessment.gross().scale()))
                         .toBytes(),
                 EventPayload.MEDIA_TYPE);
     }

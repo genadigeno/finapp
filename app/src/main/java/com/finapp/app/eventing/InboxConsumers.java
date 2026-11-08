@@ -149,8 +149,11 @@ public final class InboxConsumers implements SmartLifecycle {
         this.pollsFailed = pollFailure(registry, "failed");
     }
 
-    /** The group key: everything before the first dot, or the whole name if it has none. */
-    static Map<String, List<InboxEventHandler>> byModule(List<InboxEventHandler> handlers) {
+    /**
+     * The group key: everything before the first dot, or the whole name if it has none. Public so that the handler-set
+     * catalogue's test derives each handler's group from this method rather than from a copy of the rule (`P15-TSK-027`).
+     */
+    public static Map<String, List<InboxEventHandler>> byModule(List<InboxEventHandler> handlers) {
         Map<String, List<InboxEventHandler>> byModule = new LinkedHashMap<>();
         for (InboxEventHandler handler : handlers) {
             String name = handler.consumerName();

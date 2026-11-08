@@ -1,9 +1,7 @@
-package com.finapp.app.payments;
+package com.finapp.payments;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.finapp.payments.DisputeReason;
-import com.finapp.payments.DisputeStage;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The card PSP's dispute vocabulary (`P7-TSK-012`, {@code INV-PAY-03}'s state-mapping table
- * test): every word the door reads, where it goes, and the two defaults — an unknown stage word
+ * test): every word the adapter reads, where it goes, and the two defaults — an unknown stage word
  * moves NOTHING, an unknown reason code is {@code UNCATEGORISED}, never a guess.
  */
 @DisplayName("the card PSP's dispute vocabulary (P7-TSK-012)")

@@ -68,6 +68,8 @@ public final class SimulatedInstantSchemeAdapter implements PushRail {
     public static final String TRANSFER_STATUS_PATH = "/credit-transfers/";
     public static final String INITIATION_STATUS_PATH = "/initiations/";
     public static final String RETURN_STATUS_PATH = "/returns/";
+    /** The execution inquiry's prefix (`P15-TSK-036`); the scheme's own reference is the path segment. */
+    public static final String EXECUTION_STATUS_PATH = "/executions/";
 
     /** The dispatch idempotency header, published for the contract tests' wire oracle. */
     public static final String IDEMPOTENCY_KEY_HEADER = SchemeWireClient.IDEMPOTENCY_KEY_HEADER;
@@ -152,6 +154,11 @@ public final class SimulatedInstantSchemeAdapter implements PushRail {
     @Override
     public PushInquiryAnswer inquireReturn(EndToEndReference ourReference) {
         return client.inquire(RETURN_STATUS_PATH + ourReference.value());
+    }
+
+    @Override
+    public ExecutionAnswer inquireExecution(ProviderReference schemeReference) {
+        return client.inquireExecution(EXECUTION_STATUS_PATH + schemeReference.value());
     }
 
     /** Minor units as a JSON string — the card wire's `INV-MON-01` stance, same reasons. */

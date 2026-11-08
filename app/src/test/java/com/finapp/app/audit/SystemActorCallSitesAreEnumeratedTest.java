@@ -168,6 +168,13 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " stage trail and its audit records name the platform whichever"
                         + " delivery wins the race."),
                     Map.entry(
+                            "com.finapp.payments.CallbackHintResolution.sweep",
+                    "The callback-hint sweep (P15-TSK-036, ADR-0083): the PaymentSweeper case for the"
+                        + " notices no payment row can stand for - a scheduled inquiry by a stored"
+                        + " reference has no person, and the same outcome applied by the door's own"
+                        + " inquiry is already the platform's act. The scope wraps each hint's"
+                        + " permit-and-ask; the candidate read and the expiry before it claim nothing."),
+                    Map.entry(
                             "com.finapp.payments.PaymentSweeper.sweep",
                     "The swept resolution (P5-TSK-014, ADR-0046 section 4): a scheduled"
                         + " reconciliation query has no person at all - the cleanest case of"
