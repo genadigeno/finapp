@@ -113,3 +113,14 @@ surge. `INV-HIST-01`: no rollback rewrites history. A schema is only ever moved 
 
 Phase 16 covers the role split, PgBouncer, an in-cluster database operator and multi-AZ/region topology, each by
 measurement. `P15-TSK-003`, `-004`, `-008`…`-012` build this ADR. `P15-DOC-001` reads it against them.
+
+*As built for decision 1's image, `P15-TSK-003` (2026-11-08); the decision is unchanged.* The two bases' one
+definition is the root `Dockerfile`'s `FROM` lines (`tag@sha256`): Dependabot's docker ecosystem reads `FROM` lines and
+does not resolve `ARG`, so a separate pins file would have left it inert. The jar is built by Gradle outside the image;
+the builder stage only extracts it. Reproducibility is measured on bytes: two builds, each from source (every task re-run,
+the image with no cache), must match on the jar's sha256, the image id and every layer digest. Measuring it found the
+jar was not reproducible: Spring Boot copied the CycloneDX SBOM, with its random serial and its own instant, into
+every boot jar, so the SBOM is now kept out of the jar (an SBOM per image is `P15-TSK-006`'s), and the extracted files
+take the commit's time. The image runs as `65532:65532`, set explicitly; the JVM flags are `-XX:MaxRAMPercentage=75.0`
+and `-XX:+ExitOnOutOfMemoryError`; the size budget is 300 MiB of flattened filesystem (260.3 MiB measured).
+`README.md` §5f.
