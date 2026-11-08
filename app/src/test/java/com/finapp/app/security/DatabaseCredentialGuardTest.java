@@ -128,4 +128,30 @@ class DatabaseCredentialGuardTest {
                 .containsExactly("::1");
         assertThat(DatabaseEndpoint.hostsOf("jdbc:postgresql:finapp")).isEmpty();
     }
+
+    @Test
+    @DisplayName("the reporting role's marked default is confined to loopback too, and the refusal names its own"
+            + " variable (P15-TSK-021)")
+    void theReportingCredentialIsConfinedToo() {
+        org.springframework.mock.env.MockEnvironment remote = new org.springframework.mock.env.MockEnvironment()
+                .withProperty("spring.datasource.url", "jdbc:postgresql://db.internal:5432/finapp")
+                .withProperty("spring.datasource.password", REAL_CREDENTIAL)
+                .withProperty(com.finapp.app.database.ReportingPool.LOGIN_PROPERTY, MARKED_LOCAL_DEFAULT);
+        assertThatThrownBy(() -> new DatabaseCredentialGuard(remote))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("FINAPP_DB_REPORTING_PASSWORD")
+                .hasMessageNotContaining(MARKED_LOCAL_DEFAULT);
+
+        org.springframework.mock.env.MockEnvironment supplied = new org.springframework.mock.env.MockEnvironment()
+                .withProperty("spring.datasource.url", "jdbc:postgresql://db.internal:5432/finapp")
+                .withProperty("spring.datasource.password", REAL_CREDENTIAL)
+                .withProperty(com.finapp.app.database.ReportingPool.LOGIN_PROPERTY, "supplied-for-reporting");
+        assertThatCode(() -> new DatabaseCredentialGuard(supplied)).doesNotThrowAnyException();
+
+        org.springframework.mock.env.MockEnvironment local = new org.springframework.mock.env.MockEnvironment()
+                .withProperty("spring.datasource.url", "jdbc:postgresql://127.0.0.1:5432/finapp")
+                .withProperty("spring.datasource.password", MARKED_LOCAL_DEFAULT)
+                .withProperty(com.finapp.app.database.ReportingPool.LOGIN_PROPERTY, MARKED_LOCAL_DEFAULT);
+        assertThatCode(() -> new DatabaseCredentialGuard(local)).doesNotThrowAnyException();
+    }
 }

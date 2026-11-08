@@ -167,7 +167,7 @@ public final class LoanAmendmentDesk {
         UUID amendment = id(rawAmendmentId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(ACCEPTANCE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(ACCEPTANCE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "lending.amendment-acceptance",
                 loan.value().toString(), amendment.toString(), body.documentSha256()).getBytes(StandardCharsets.UTF_8));
         AcceptanceEvidence evidence = new AcceptanceEvidence(current.identityId().value(), current.id().value(),
@@ -249,7 +249,7 @@ public final class LoanAmendmentDesk {
             LoanAmendmentMetrics.Outcome success,
             String fingerprinted,
             Function<Connection, Acted> act) {
-        IdempotencyKey key = new IdempotencyKey(LoanServicingDesk.SCOPE + actor.type().name() + ":" + actor.id(),
+        IdempotencyKey key = new IdempotencyKey(LoanServicingDesk.SCOPE + actor.keyedType().name() + ":" + actor.id(),
                 idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         AtomicReference<Acted> acted = new AtomicReference<>();

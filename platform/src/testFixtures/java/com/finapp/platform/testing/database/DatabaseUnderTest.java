@@ -221,6 +221,13 @@ public final class DatabaseUnderTest implements LauncherSessionListener {
         System.setProperty("FINAPP_DB_URL", url);
         System.setProperty("FINAPP_DB_APP_USER", "finapp_app");
         System.setProperty("FINAPP_DB_APP_PASSWORD", MARKED_LOCAL_DEFAULT);
+
+        // Report generation's role (P15-TSK-021), created by the same role script: the app's
+        // context opens its reporting pool as it, and a suite that must read as it reads these.
+        System.setProperty("finapp.db.reporting.user", "finapp_reporting");
+        System.setProperty("finapp.db.reporting.password", MARKED_LOCAL_DEFAULT);
+        System.setProperty("FINAPP_DB_REPORTING_USER", "finapp_reporting");
+        System.setProperty("FINAPP_DB_REPORTING_PASSWORD", MARKED_LOCAL_DEFAULT);
     }
 
     private static Path roleScript() {

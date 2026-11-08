@@ -83,6 +83,18 @@ class SessionBeans {
                 sessionStore, sessionTransactions, dataSource, sessionPolicy, authorization);
     }
 
+    /**
+     * The error contract's recorder of an operation's own step-up refusals (`P15-TSK-021`), on the
+     * session's {@code REQUIRES_NEW} template: the record commits whatever the handler's work did.
+     */
+    @Bean
+    StepUpRefusals stepUpRefusals(
+            org.springframework.transaction.support.TransactionTemplate sessionTransactions,
+            javax.sql.DataSource dataSource,
+            com.finapp.identity.Authorization authorization) {
+        return new StepUpRefusals(sessionTransactions, dataSource, authorization);
+    }
+
     @Bean
     com.finapp.identity.RoleAssignmentStore<Connection> roleAssignmentStore(IdGenerator idGenerator) {
         return new com.finapp.identity.JdbcRoleAssignmentStore(idGenerator);

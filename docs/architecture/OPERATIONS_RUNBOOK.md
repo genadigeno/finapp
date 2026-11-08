@@ -1880,7 +1880,7 @@ the `preStop` pause, the application does this, in this order:
 | 4 | Every consumer loop takes no new batch, acknowledges the one it holds and leaves its group | 10 s, then interrupted, 2 s more | `Inbox consumers stopping: <n> loops`, `Inbox consumers stopped`; WARN past the bound |
 | 5 | The management port, 8081, closes; then the API's web server stops | immediate | — |
 | 6 | The accounting gauges' reader drops its queued reads; the one in flight ends | 3 s | `The accounting gauges' reader stopped` (DEBUG); WARN past the bound |
-| 7 | The Kafka producer closes, then the connection pool | the producer's `finapp.kafka.ack-timeout` (10 s), then HikariCP's own close | HikariCP's shutdown lines |
+| 7 | The Kafka producer closes, then the connection pool; report generation's one-connection pool (`P15-TSK-021`) closes with it, at the context's close | the producer's `finapp.kafka.ack-timeout` (10 s), then HikariCP's own close | HikariCP's shutdown lines |
 
 **Reading it.** A WARN in step 3 or 4 is not an incident: the interrupted work's claim lapses to another instance and
 its records redeliver into the dedupe. It is a signal that a tick or a batch ran longer than 10 s, which the schedule's

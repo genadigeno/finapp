@@ -66,16 +66,19 @@ spring:
       # queueing is invisible to the application and shows up as latency on every query
       # rather than as a timeout on one.
       #
-      # The fleet must also fit. 10 instances x 8 = 80, against 100 max_connections less 12
-      # reserved = 88. ConnectionPoolSizingGuard refuses to start if that stops holding, and
-      # the numbers below are what it reads - see finapp.database.
+      # The fleet must also fit. 10 instances x (7 + 1 reporting) = 80, against 100
+      # max_connections less 12 reserved = 88. ConnectionPoolSizingGuard refuses to start if
+      # that stops holding, and the numbers below are what it reads - see finapp.database.
+      # (P15-TSK-021: this pool was 8 until report generation got a pool of its own, as
+      # finapp_reporting; the reporting pool's one connection came out of these eight, so the
+      # fleet's demand did not move.)
       #
       # minimum-idle EQUALS maximum-pool-size, so the pool is fixed-size. That is what
       # HikariCP recommends, and it is what makes the arithmetic meaningful: a pool that only
       # sometimes reaches its maximum would make the check a statement about the average, and
       # a server is exhausted by the worst case.
-      maximum-pool-size: 8
-      minimum-idle: 8
+      maximum-pool-size: 7
+      minimum-idle: 7
       data-source-properties:
         # How long to wait for the TCP connect, in seconds. The driver's default is 10, which
         # is longer than a probe interval; a blackholed database would otherwise leave
@@ -127,6 +130,16 @@ finapp:
     # connection, the one thing nobody can do when the fleet is in trouble is connect to the
     # database to find out why.
     reserved-connections: ${FINAPP_DB_RESERVED_CONNECTIONS:12}
+    # Report generation's own pool, as finapp_reporting (P15-TSK-021, C13): SELECT on the tables
+    # a report run reads and nothing else, so a report path cannot write at the database
+    # whatever its transaction says. Same database and URL as the writer's pool, its own role
+    # and credential (DatabaseCredentialGuard confines the marked default to loopback, as it
+    # does the writer's); counted in the arithmetic above; never on the readiness path, and
+    # never a fallback to the writer's: an unreachable role fails report generation alone.
+    reporting:
+      username: ${FINAPP_DB_REPORTING_USER:finapp_reporting}
+      password: ${FINAPP_DB_REPORTING_PASSWORD:local-development-only-not-a-secret}
+      pool-size: ${FINAPP_DB_REPORTING_POOL_SIZE:1}
 
 # ---------------------------------------------------------------------------
 # Logging (P0-TSK-030).

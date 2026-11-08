@@ -517,7 +517,7 @@ latest evidence signal its evidence - both in the existing one `raiseAll` per tr
 exists (`-015`'s D6; `-018`'s door).
 
 *(As built, `P13-TSK-018`, 2026-10-25 - the door, the persons, the queue; `risk V014`.)* **The suppression's persons
-are authenticated humans** - `CUSTOMER`-typed as the platform's session establishes every operator, or `EMPLOYEE`; never
+are authenticated humans** - `CUSTOMER`-typed as the platform's session established every operator until `P15-TSK-021` (2026-11-08), `EMPLOYEE` since; never
 `SYSTEM`, `SERVICE` or `MERCHANT` - by the domain (`Cases.person`) and by `risk_alert_suppression_by_persons`, re-made by
 name in `V014` (the "`EMPLOYEE` by domain and `CHECK`" above read so until then, and would have refused every analyst).
 **The door**: `POST /v1/operator/risk/alerts/{alertId}/suppression` (`RISK_INVESTIGATE`, `201`), `…/approval`

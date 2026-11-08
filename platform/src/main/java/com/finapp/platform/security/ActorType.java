@@ -36,7 +36,15 @@ public enum ActorType {
     /** A human acting on their own account. */
     CUSTOMER,
 
-    /** A human acting in an operational or administrative capacity. */
+    /**
+     * A human acting in an operational or administrative capacity.
+     *
+     * <p>The operator population (`P15-TSK-021`; {@code PHASE_15_PLAN.md} C13 calls it {@code OPERATOR},
+     * stored under this name, which every person {@code CHECK} already admits): the session interceptor
+     * types a request {@code EMPLOYEE} when it is an operator act - its handler declares a permission -
+     * and the identity holds a live role, read on that request. Until then nothing produced it, and
+     * every operator act was recorded {@link #CUSTOMER}; those records stay as written.
+     */
     EMPLOYEE,
 
     /**

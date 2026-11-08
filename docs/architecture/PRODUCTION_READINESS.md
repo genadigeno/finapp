@@ -108,7 +108,7 @@ Each table carries **Today**, the survey's reading in `PHASE_15_PLAN.md` §15 (`
 | Metrics | Partial: the naming contract enforced; about sixty gauge classes read on the scrape thread; scraped from the management port *(`P15-TSK-008`, 2026-11-08; read "from the API port" until then)*, its policy not yet built | — | — | — |
 | Tracing | Partial: spans recorded and dropped, no exporter | — | — | — |
 | Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run | — | — | — |
-| Security | Partial: transport guards off loopback, secrets externalised and confined; no image, pod profile, NetworkPolicy, workload identity or secret store *(2026-11-08, `P15-TSK-003`: the image runs as UID 65532 with no shell or package manager, asserted on the built image; still no pod profile, NetworkPolicy, workload identity, secret store, scan or signature)* | — | — | — |
+| Security | Partial: transport guards off loopback, secrets externalised and confined; an operator's acts recorded as the operator population and every refused step-up recorded, report generation reading as a `SELECT`-only role (`P15-TSK-021`); no image, pod profile, NetworkPolicy, workload identity or secret store *(2026-11-08, `P15-TSK-003`: the image runs as UID 65532 with no shell or package manager, asserted on the built image; still no pod profile, NetworkPolicy, workload identity, secret store, scan or signature)* | — | — | — |
 | Resource limits | Missing (the connection budget is a startup guard, not a manifest) | — | — | — |
 | Failure handling | Partial: graceful shutdown stated and held on a real context (`ShutdownOrderTest`): readiness refuses, HTTP drains, 32 schedules drain within 10 s + 2 s, consumers acknowledge and leave within 10 s + 2 s, the pool closes last *(`P15-TSK-008`, 2026-11-08; read "graceful shutdown unasserted; schedules' `stop()` does not wait; consumers join for 10 s" until then)*; no `preStop` or grace yet (`-009`); recovery after a kill not rehearsed (`-012`) | — | — | — |
 | Recovery | Missing | — | — | — |
@@ -156,7 +156,7 @@ gaps of the module they touch (§4).
 | Metrics | Missing | — | — | — |
 | Tracing | — | — | — | — |
 | Alerting | Missing | — | — | — |
-| Security | Partial: two least-privilege roles, per-table grants in every migration, `verify-full` required off loopback; no encryption at rest beyond the application's field-level ciphers (`SECURITY_ARCHITECTURE.md` §Encryption at rest) | — | — | — |
+| Security | Partial: three least-privilege roles - the migrator, the application and report generation's `SELECT`-only `finapp_reporting` (`P15-TSK-021`) - per-table grants in every migration, `verify-full` required off loopback; no encryption at rest beyond the application's field-level ciphers (`SECURITY_ARCHITECTURE.md` §Encryption at rest) | — | — | — |
 | Resource limits | Partial: the connection budget guarded by `ConnectionPoolSizingGuard` against a declared instance count | — | — | — |
 | Failure handling | — | — | — | — |
 | Recovery | Missing: no backup, no restore, no rehearsal | — | — | — |

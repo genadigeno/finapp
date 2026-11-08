@@ -61,9 +61,29 @@ public record RiskCase(
             return new Person(actor.id(), actor.type());
         }
 
-        /** True when {@code actor} is this person. */
+        /**
+         * True when {@code actor} is this person: the same identity, whatever the audit type either request carried.
+         *
+         * <p>A person's audit type is decided per request (`P15-TSK-021`): an operator act is typed {@code EMPLOYEE},
+         * and before that release every session was typed {@code CUSTOMER}. So a proposal recorded {@code CUSTOMER}
+         * - by an instance of the earlier release, or standing across the deploy - is the same person as an approver
+         * acting {@code EMPLOYEE} now. Comparing the types too would let that approver past the domain's four-eyes
+         * check, to be refused only by the database's id-only guard as a {@code 500}, and would read a re-take of one's
+         * own case as a takeover. The person is compared as idempotency keys name it ({@link Actor#keyedType()}).
+         */
         public boolean is(Actor actor) {
-            return id.equals(actor.id()) && type == actor.type();
+            Objects.requireNonNull(actor, "actor");
+            return id.equals(actor.id()) && keyedType() == actor.keyedType();
+        }
+
+        /** True when {@code other} names the same person - never record equality, which compares the audit type. */
+        public boolean isSamePersonAs(Person other) {
+            Objects.requireNonNull(other, "other");
+            return id.equals(other.id) && keyedType() == other.keyedType();
+        }
+
+        private ActorType keyedType() {
+            return new Actor(id, type).keyedType();
         }
 
         @Override
@@ -91,7 +111,7 @@ public record RiskCase(
             if (prohibits && !disposition.confirms()) {
                 throw new IllegalArgumentException("only a confirming disposition sets PROHIBITED");
             }
-            if (approvedBy.isPresent() && approvedBy.get().equals(proposedBy)
+            if (approvedBy.isPresent() && approvedBy.get().isSamePersonAs(proposedBy)
                     && DispositionRules.needsSecondPerson(disposition, prohibits)) {
                 // INV-RSK-07: refused by the value as well as by risk_case_disposition_four_eyes.
                 throw new IllegalArgumentException("a " + disposition + " disposition is approved by a second person");
@@ -109,7 +129,7 @@ public record RiskCase(
          */
         public boolean needsSecondPerson() {
             return DispositionRules.needsSecondPerson(disposition, prohibits)
-                    || approvedBy.map(approver -> !approver.equals(proposedBy)).orElse(true);
+                    || approvedBy.map(approver -> !approver.isSamePersonAs(proposedBy)).orElse(true);
         }
 
         @Override

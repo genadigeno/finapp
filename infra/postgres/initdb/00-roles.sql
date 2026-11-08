@@ -17,7 +17,7 @@
 --   operator. It is here because a laptop has no such thing, and because the roles must exist
 --   before the first migration runs.
 --
--- WHY TWO ROLES AND NOT ONE
+-- WHY TWO ROLES AND NOT ONE (and a third, finapp_reporting, for report generation: below)
 --   Three invariants are enforced at the privilege level and nowhere else:
 --     INV-LED-03   posted journal entries and lines are immutable
 --     INV-HIST-01  financial history is never edited
@@ -57,6 +57,18 @@ BEGIN
             LOGIN PASSWORD 'local-development-only-not-a-secret'
             NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
     END IF;
+
+    -- What report generation reads as (P15-TSK-021, C13; INV-ACC-14 at the privilege level).
+    -- SELECT on the tables a report run reads and nothing else, granted per table by a
+    -- migration of the module that owns each; it can write nothing, create nothing and read no
+    -- restricted table. It must exist BEFORE the migrations run, because they grant to it: a
+    -- developer with an existing volume runs this idempotent script again first (README). In a
+    -- deployed database the one-time bootstrap step creates it (P15-TSK-004), never Flyway.
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'finapp_reporting') THEN
+        CREATE ROLE finapp_reporting
+            LOGIN PASSWORD 'local-development-only-not-a-secret'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+    END IF;
 END
 $$;
 
@@ -74,6 +86,7 @@ BEGIN
     -- The migrator needs to create its schema on first run; nothing else does.
     EXECUTE format('GRANT CREATE, CONNECT ON DATABASE %I TO finapp_migrator', current_database());
     EXECUTE format('GRANT CONNECT ON DATABASE %I TO finapp_app', current_database());
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO finapp_reporting', current_database());
 
     -- Default-deny for everyone else, matching V001's stance on the schema. PostgreSQL grants
     -- CREATE on the public schema and CONNECT on the database to PUBLIC by default, which would

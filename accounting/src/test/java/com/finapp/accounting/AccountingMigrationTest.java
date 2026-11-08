@@ -70,13 +70,15 @@ class AccountingMigrationTest {
     }
 
     @Test
-    @DisplayName("the ACL is exactly {finapp_migrator=UC, finapp_app=U} - no PUBLIC, no one else")
+    @DisplayName("the ACL is exactly {finapp_migrator=UC, finapp_app=U, finapp_reporting=U} - no PUBLIC, no one else")
     void theAclIsExactlyTheFloor() throws SQLException {
         // Read from pg_namespace rather than via has_schema_privilege, because the acceptance criterion is the WHOLE
         // list: an extra grantee is invisible to a per-role probe, and an extra grantee is precisely the silent failure
         // a floor exists to prevent.
         assertThat(aclOf(SCHEMA))
-                .containsExactlyInAnyOrder("finapp_migrator=UC/finapp_migrator", "finapp_app=U/finapp_migrator");
+                .containsExactlyInAnyOrder("finapp_migrator=UC/finapp_migrator", "finapp_app=U/finapp_migrator",
+                        // P15-TSK-021: report generation's role reads the tables a report run reads.
+                        "finapp_reporting=U/finapp_migrator");
     }
 
     @Test

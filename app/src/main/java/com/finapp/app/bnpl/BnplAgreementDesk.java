@@ -171,7 +171,7 @@ public final class BnplAgreementDesk {
         BnplOfferId id = offerId(rawOfferId);
         Actor actor = SecurityContext.require();
         Correlation correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(ACCEPTANCE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(ACCEPTANCE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "bnpl.offer-acceptance",
                 id.value().toString(), body.termsSha256()).getBytes(StandardCharsets.UTF_8));
         BnplAcceptanceEvidence evidence = new BnplAcceptanceEvidence(current.identityId().value(), current.id().value(),

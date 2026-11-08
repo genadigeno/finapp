@@ -98,6 +98,7 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.MfaChallengeSucceeded` | No | A second factor was proven and the session was elevated. |
 | `identity.MfaChallengeFailed` | No | A second-factor challenge was refused. |
 | `identity.AuthorizationDenied` | No | A privileged action was refused because the actor lacked the permission. |
+| `identity.StepUpRefused` | No | A request was refused because its session had not stepped up to the assurance the operation requires. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.IdentityReinstated` | **Yes** | A suspension was lifted by an administrator and the identity can authenticate again. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
@@ -141,6 +142,19 @@ from the inside.
 the easy thing — and an investigator would then read a logout that never happened. *"This session was
 ended"* and *"this session was replaced"* are different facts, and only the second leaves the person
 still logged in. The rotation record names both identifiers so the chain is followable.
+
+**`identity.StepUpRefused` is the other refused privileged attempt** (`P15-TSK-021`; `THREAT_MODEL.md` T38).
+`identity.AuthorizationDenied` records a caller without the permission; this records a session below the assurance an
+operation requires - the trace a stolen password leaves at a four-eyes door. One record per refused request, committed
+in a transaction of its own before the `403 identity.AssuranceRequired` is answered: by the session interceptor at a
+declared `@RequiresAssurance`, by the error contract (`StepUpRefusals`) at an operation's own conditional step-up, never
+both. **Both paths fail closed** (the review's fix round, 2026-11-08): a record that cannot be written - the database
+unreachable - answers `500 api.InternalError`, never a `403` without its record, as a denial whose record cannot be
+written does; the request is refused either way. A retry is a second attempt and a second record, as a denial is. Its summary is the operation's route pattern -
+never the path's values, the presented code, the factor or the session. **Its actor carries the population**: since
+`P15-TSK-021` the interceptor types an operator act `EMPLOYEE` and every other session request `CUSTOMER`, so this
+record, the denial and every operator act's own record say which population acted; records written before it read
+`CUSTOMER` for operators and stay as written.
 
 **Neither authentication action records *why* a failure failed.** Unknown identity, wrong password,
 suspended identity and an identity with no credential are deliberately not distinguished anywhere -

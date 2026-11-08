@@ -156,6 +156,9 @@ class OperationalReportsDatabaseTest {
     };
     private static final JdbcReportSnapshots SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::application,
             ReportRuns.Leases.STANDARD.generationTimeout());
+    /** Report generation's snapshots, as production opens them: the reporting role ({@code P15-TSK-021}). */
+    private static final JdbcReportSnapshots GENERATION_SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::reporting,
+            ReportRuns.Leases.STANDARD.generationTimeout());
     private static final OperationalDoorBound DOOR = new OperationalDoorBound(Duration.parse(OperationalDoorBound.STANDARD_TIMEOUT),
             OperationalDoorBound.STANDARD_PERMITS);
     private static final JdbcReportSnapshots DOOR_SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::application, DOOR.timeout());
@@ -651,7 +654,7 @@ class OperationalReportsDatabaseTest {
 
     private static ReportRunGenerator generator() {
         return new ReportRunGenerator(runs(), new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT,
-                ReportRuns.Leases.STANDARD.generationTimeout(), NOW), SNAPSHOTS, TRANSACTIONS,
+                ReportRuns.Leases.STANDARD.generationTimeout(), NOW), GENERATION_SNAPSHOTS, TRANSACTIONS,
                 new ReportRunMetrics(new SimpleMeterRegistry(), DEFINITIONS));
     }
 

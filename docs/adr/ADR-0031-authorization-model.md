@@ -154,3 +154,14 @@ split trigger), ADR-0021 (the acting party), ADR-0030 (assurance level, a third 
 - Phase 4 consumes the assurance level for high-value transfers; the seam is ADR-0030's level.
 - Phase 13 owns the risk rules engine. It is not an authorization engine and must not become one.
 - `BOUNDED_CONTEXTS.md` context 2 renamed by this ADR.
+
+**Dated note (2026-11-08, `P15-TSK-021`; `PHASE_15_PLAN.md` C13): the roles also decide the acting population.** The
+interceptor that resolves a permission per request now reads the identity's live roles once, in the session's own
+transaction, on every operator act (a handler declaring `@RequiresPermission`), and that one read decides both the
+permission and the actor's type: an identity holding any live role acts as `EMPLOYEE` (the operator population, C13's
+"`OPERATOR`"; every person `CHECK` already admitted `EMPLOYEE`), everything else a session does is `CUSTOMER`. Since
+every role is an operational one, a role holder acting on their own account acts as a customer, and a permitted
+operator act is always typed by the standing that permitted it. A permission's meaning is unchanged. Idempotency scopes
+key a person by `Actor.keyedType` (always `CUSTOMER` for a person), so the typing never splits one person's retries
+across two scopes. A refused step-up is now recorded beside a denial (`identity.StepUpRefused`). Who may hold which
+role is `PRIVILEGED_ACCESS_REVIEW.md`.

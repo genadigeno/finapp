@@ -160,7 +160,7 @@ public class ReconciliationAdministrationDesk {
         Correlation correlation = resolvedCorrelation();
         IdempotencyKey key =
                 new IdempotencyKey(
-                        PROPOSE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+                        PROPOSE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
                         String.valueOf(request).getBytes(StandardCharsets.UTF_8));
@@ -371,7 +371,7 @@ public class ReconciliationAdministrationDesk {
         Correlation correlation = resolvedCorrelation();
         IdempotencyKey key =
                 new IdempotencyKey(
-                        REPROCESS_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+                        REPROCESS_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
                         (sourceCode + "|" + reason).getBytes(StandardCharsets.UTF_8));

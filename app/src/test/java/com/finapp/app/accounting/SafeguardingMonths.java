@@ -38,6 +38,9 @@ public final class SafeguardingMonths {
     private static final TrialBalanceReads READS = new LedgerTrialBalanceReads(new JdbcGlMappingStore());
     private static final ReportDefinitions DEFINITIONS = ReportDefinitions.of(new SafeguardingPositionDefinition(READS, new LedgerCounterpartyPositionReads(), new LendingFundedAsOfCutoffReads()));
     private static final JdbcReportSnapshots SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::application, ReportRuns.Leases.STANDARD.generationTimeout());
+    /** Report generation's snapshots, as production opens them: the reporting role ({@code P15-TSK-021}). */
+    private static final JdbcReportSnapshots GENERATION_SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::reporting,
+            ReportRuns.Leases.STANDARD.generationTimeout());
     private static final ReportRuns RUNS = new ReportRuns(new JdbcReportRunStore(), AccountingPeriodFixture.STORE, new JdbcGlMappingStore(), DEFINITIONS, ReportRuns.Leases.STANDARD, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
 
     private static final AccountingTransactions TRANSACTIONS = new AccountingTransactions() {
@@ -91,7 +94,7 @@ public final class SafeguardingMonths {
     }
 
     private static ReportRunGenerator generator() {
-        return new ReportRunGenerator(RUNS, new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT, ReportRuns.Leases.STANDARD.generationTimeout(), NOW), SNAPSHOTS, TRANSACTIONS,
+        return new ReportRunGenerator(RUNS, new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT, ReportRuns.Leases.STANDARD.generationTimeout(), NOW), GENERATION_SNAPSHOTS, TRANSACTIONS,
                 new ReportRunMetrics(new SimpleMeterRegistry(), DEFINITIONS));
     }
 }
