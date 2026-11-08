@@ -271,111 +271,6 @@ tests:
         alertname: PaymentWebhookRefusalsSpike
         exp_alerts: []
 
-  # PaymentSweeperOff: off on instance b alone: only b fires, per instance.
-  - interval: 1m
-    input_series:
-      - series: 'finapp_payments_sweeper_enabled{job="finapp", instance="a:8081"}'
-        values: '1x10'
-      - series: 'finapp_payments_sweeper_enabled{job="finapp", instance="b:8081"}'
-        values: '0x10'
-    alert_rule_test:
-      - eval_time: 4m
-        alertname: PaymentSweeperOff
-        exp_alerts: []
-      - eval_time: 6m
-        alertname: PaymentSweeperOff
-        exp_alerts:
-          - exp_labels:
-              instance: b:8081
-              job: finapp
-              owner: payments
-              severity: ticket
-            exp_annotations:
-              summary: "The payment sweep is off on b:8081"
-              description: "finapp.payments.sweeper.enabled is false there, so its unknown payments are not resolved by it. See OPERATIONS_RUNBOOK.md section 11.22."
-
-  # PaymentSweeperOff: on everywhere: silent.
-  - interval: 1m
-    input_series:
-      - series: 'finapp_payments_sweeper_enabled{job="finapp", instance="a:8081"}'
-        values: '1x10'
-      - series: 'finapp_payments_sweeper_enabled{job="finapp", instance="b:8081"}'
-        values: '1x10'
-    alert_rule_test:
-      - eval_time: 6m
-        alertname: PaymentSweeperOff
-        exp_alerts: []
-
-  # CheckoutSweeperOff: off on instance b alone: only b fires, per instance.
-  - interval: 1m
-    input_series:
-      - series: 'finapp_checkout_sweeper_enabled{job="finapp", instance="a:8081"}'
-        values: '1x10'
-      - series: 'finapp_checkout_sweeper_enabled{job="finapp", instance="b:8081"}'
-        values: '0x10'
-    alert_rule_test:
-      - eval_time: 4m
-        alertname: CheckoutSweeperOff
-        exp_alerts: []
-      - eval_time: 6m
-        alertname: CheckoutSweeperOff
-        exp_alerts:
-          - exp_labels:
-              instance: b:8081
-              job: finapp
-              owner: checkout
-              severity: ticket
-            exp_annotations:
-              summary: "The checkout expiry sweep is off on b:8081"
-              description: "finapp.checkout.sweeper.enabled is false there. See OPERATIONS_RUNBOOK.md section 11.22."
-
-  # CheckoutSweeperOff: on everywhere: silent.
-  - interval: 1m
-    input_series:
-      - series: 'finapp_checkout_sweeper_enabled{job="finapp", instance="a:8081"}'
-        values: '1x10'
-      - series: 'finapp_checkout_sweeper_enabled{job="finapp", instance="b:8081"}'
-        values: '1x10'
-    alert_rule_test:
-      - eval_time: 6m
-        alertname: CheckoutSweeperOff
-        exp_alerts: []
-
-  # MerchantPayoutSweeperOff: off on instance b alone: only b fires, per instance.
-  - interval: 1m
-    input_series:
-      - series: 'finapp_merchant_payout_sweeper_enabled{job="finapp", instance="a:8081"}'
-        values: '1x10'
-      - series: 'finapp_merchant_payout_sweeper_enabled{job="finapp", instance="b:8081"}'
-        values: '0x10'
-    alert_rule_test:
-      - eval_time: 4m
-        alertname: MerchantPayoutSweeperOff
-        exp_alerts: []
-      - eval_time: 6m
-        alertname: MerchantPayoutSweeperOff
-        exp_alerts:
-          - exp_labels:
-              instance: b:8081
-              job: finapp
-              owner: merchant
-              severity: ticket
-            exp_annotations:
-              summary: "The merchant payout sweep is off on b:8081"
-              description: "finapp.merchant.payout.sweeper.enabled is false there. See OPERATIONS_RUNBOOK.md section 11.22."
-
-  # MerchantPayoutSweeperOff: on everywhere: silent.
-  - interval: 1m
-    input_series:
-      - series: 'finapp_merchant_payout_sweeper_enabled{job="finapp", instance="a:8081"}'
-        values: '1x10'
-      - series: 'finapp_merchant_payout_sweeper_enabled{job="finapp", instance="b:8081"}'
-        values: '1x10'
-    alert_rule_test:
-      - eval_time: 6m
-        alertname: MerchantPayoutSweeperOff
-        exp_alerts: []
-
   # TransferFailureSpike: failures over both instances, a fifth of the judged.
   - interval: 1m
     input_series:
@@ -529,6 +424,43 @@ tests:
     alert_rule_test:
       - eval_time: 30m
         alertname: ConsentRoutesFailing
+        exp_alerts: []
+
+  # FlowSeriesAbsent: a target answering but none of the gauges: it fires.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: FlowSeriesAbsent
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: FlowSeriesAbsent
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A series the critical-flow alerts read is gone"
+              description: "A gauge a critical-flow alert reads has not been published for 5 minutes, so that alert is blind. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # FlowSeriesAbsent: every gauge present on one instance is enough: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x10'
+      - series: 'finapp_payments_withdrawal_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x10'
+      - series: 'finapp_merchant_payout_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x10'
+      - series: 'finapp_kyc_review_queue{job="finapp", instance="a:8081"}'
+        values: '0x10'
+      - series: 'finapp_ledger_negative_positions{job="finapp", instance="a:8081", purpose="CUSTOMER_WALLET"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: FlowSeriesAbsent
         exp_alerts: []
 
   # FlowGaugesUnreadable: every gauge NaN on instance b: one alert per gauge, on b alone.

@@ -85,15 +85,6 @@ groups:
         annotations:
           summary: "Provider webhooks are being refused"
           description: "More than 50 webhook deliveries were refused in 15 minutes: a rotated secret or forged traffic. See OPERATIONS_RUNBOOK.md section 11.22."
-      - alert: PaymentSweeperOff
-        # Aggregation: per instance - the sweep's switch is that instance's own configuration, and one instance off is the finding
-        expr: finapp_payments_sweeper_enabled == 0
-        for: 5m
-        labels:
-          severity: ticket
-        annotations:
-          summary: "The payment sweep is off on {{ $labels.instance }}"
-          description: "finapp.payments.sweeper.enabled is false there, so its unknown payments are not resolved by it. See OPERATIONS_RUNBOOK.md section 11.22."
   - name: transfers
     labels:
       owner: transfers
@@ -130,15 +121,6 @@ groups:
         annotations:
           summary: "Most checkout offers are expiring"
           description: "Over half of the last hour's checkout sessions expired, at least 20 of them. See OPERATIONS_RUNBOOK.md section 11.22."
-      - alert: CheckoutSweeperOff
-        # Aggregation: per instance - the sweep's switch is that instance's own configuration, and one instance off is the finding
-        expr: finapp_checkout_sweeper_enabled == 0
-        for: 5m
-        labels:
-          severity: ticket
-        annotations:
-          summary: "The checkout expiry sweep is off on {{ $labels.instance }}"
-          description: "finapp.checkout.sweeper.enabled is false there. See OPERATIONS_RUNBOOK.md section 11.22."
   - name: merchant
     labels:
       owner: merchant
@@ -152,15 +134,6 @@ groups:
         annotations:
           summary: "A merchant payout has been unanswered too long"
           description: "The oldest unanswered payout has waited over 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
-      - alert: MerchantPayoutSweeperOff
-        # Aggregation: per instance - the sweep's switch is that instance's own configuration, and one instance off is the finding
-        expr: finapp_merchant_payout_sweeper_enabled == 0
-        for: 5m
-        labels:
-          severity: ticket
-        annotations:
-          summary: "The merchant payout sweep is off on {{ $labels.instance }}"
-          description: "finapp.merchant.payout.sweeper.enabled is false there. See OPERATIONS_RUNBOOK.md section 11.22."
   - name: kyc
     labels:
       owner: kyc
@@ -202,3 +175,13 @@ groups:
         annotations:
           summary: "A critical flow's gauge cannot be read on {{ $labels.instance }}"
           description: "{{ $labels.gauge }} is NaN on {{ $labels.instance }} for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: FlowSeriesAbsent
+        # Aggregation: none - absent() asks whether any instance publishes the series at all
+        # A rule that cannot evaluate fires this: with one of these gone, its alert above is silent for the wrong reason.
+        expr: absent(finapp_payments_unknown_age) or absent(finapp_payments_withdrawal_unknown_age) or absent(finapp_merchant_payout_unknown_age) or absent(finapp_kyc_review_queue) or absent(finapp_ledger_negative_positions)
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A series the critical-flow alerts read is gone"
+          description: "A gauge a critical-flow alert reads has not been published for 5 minutes, so that alert is blind. See OPERATIONS_RUNBOOK.md section 11.22."

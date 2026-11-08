@@ -1014,6 +1014,25 @@ tests:
         alertname: EventFreshnessBurnSlow
         exp_alerts: []
 
+  # event_freshness: every instance NaN for the first hour, then over the bound: an unmeasured minute counts for nothing, so the unmeasured hour does not dilute the burn.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 100x20'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 64m
+        alertname: EventFreshnessBurnFast
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+              slo: event_freshness
+            exp_annotations:
+              summary: "The error budget of event freshness is burning fast"
+              description: "event freshness: errors over 1h and 5m exceed 14.4 times the budget of 99% of minutes under 60 s. See OPERATIONS_RUNBOOK.md section 11.8."
+
   # event_freshness: the burn stopped at minute 50: the fast pair's short window clears, so it stops paging though its long window is still high.
   - interval: 1m
     input_series:

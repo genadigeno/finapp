@@ -2078,7 +2078,7 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 
 **`PlatformGaugesUnreadable` (ticket), `PlatformSeriesAbsent` (ticket).** A platform gauge has been NaN on an instance for 15 minutes, or a series the SLO and platform rules read has gone from every instance, so those rules are blind. Read that instance's gauge refresher (`GaugesStale`, §11.8) and the scrape.
 
-### 11.22 The critical flows - `AuthenticationRefusalsSpike`, `AccountLockoutSpike`, `LedgerPostingsRefused`, `CustomerWalletNegative`, `PaymentUnknownAged`, `WithdrawalUnknownAged`, `PaymentWebhookRefusalsSpike`, `PaymentSweeperOff`, `TransferFailureSpike`, `TransferKeyConflict`, `CheckoutExpiryRising`, `CheckoutSweeperOff`, `MerchantPayoutUnknownAged`, `MerchantPayoutSweeperOff`, `KycReviewQueueBacklog`, `ConsentRoutesFailing`, `FlowGaugesUnreadable`
+### 11.22 The critical flows - `AuthenticationRefusalsSpike`, `AccountLockoutSpike`, `LedgerPostingsRefused`, `CustomerWalletNegative`, `PaymentUnknownAged`, `WithdrawalUnknownAged`, `PaymentWebhookRefusalsSpike`, `TransferFailureSpike`, `TransferKeyConflict`, `CheckoutExpiryRising`, `MerchantPayoutUnknownAged`, `KycReviewQueueBacklog`, `ConsentRoutesFailing`, `FlowGaugesUnreadable`, `FlowSeriesAbsent`
 
 *(Written by `P15-TSK-025`, 2026-11-08, from `infra/prometheus/rules/flows.yml`. **Not yet rehearsed** (`P15-TSK-032`). Thresholds are reference values.)*
 
@@ -2088,19 +2088,17 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 | `AccountLockoutSpike` (page) | Over 20 accounts locked in 15 minutes | A credential-stuffing campaign until shown otherwise. Audit trail by the action, then rate-limit at the edge (§11.10) | identity |
 | `LedgerPostingsRefused` (ticket) | Over 50 journal writes refused in 15 minutes | A refused posting wrote nothing and is not a loss. Read `finapp.accounting.cutoff.refused` first (a closed period, §10.8), then the callers' logs | ledger |
 | `CustomerWalletNegative` (ticket) | A customer wallet below zero | Legal after a chargeback, and a receivable from the customer. Follow the collections process; never absorb it | ledger |
-| `PaymentUnknownAged` (page) | An operation unknown for over 15 minutes | The provider has not answered. Its resolution sweep is the path; never decide by hand. If `PaymentSweeperOff` is firing, restore the sweep first | payments |
+| `PaymentUnknownAged` (page) | An operation unknown for over 15 minutes | The provider has not answered. Its resolution sweep is the path; never decide by hand. If nothing is sweeping (`finapp.payments.sweeper.enabled` false on every instance), restore that first | payments |
 | `WithdrawalUnknownAged` (page) | A withdrawal unanswered for over 15 minutes | As above, by the withdrawal sweep. A person's claw-back is a recorded door, never an edit | payments |
 | `PaymentWebhookRefusalsSpike` (ticket) | Over 50 webhook deliveries refused in 15 minutes | Forged traffic, or a provider rotating its signing secret out of order. Spends no provider-callback budget (`docs/architecture/SLOS.md` section 2) | payments |
-| `PaymentSweeperOff` (ticket) | The payment sweep off on one instance | Read `finapp.payments.sweeper.enabled` in that instance's configuration: a leaderless sweep on N instances still runs elsewhere, so this is a misconfiguration | payments |
 | `TransferFailureSpike` (ticket) | A fifth of judged transfers failed | Each `failed` is a committed refusal and moved nothing. Read the failure reasons | transfers |
 | `TransferKeyConflict` (ticket) | A key reused with a different body (`INV-IDEM-03`) | A security signal: refused and recorded. Look for one client doing it repeatedly in the audit trail | transfers |
 | `CheckoutExpiryRising` (ticket) | Over half of the last hour's sessions expired | A provider slow to capture, or an offer window too short for the traffic. `finapp.checkout.conversion.age` separates them | checkout |
-| `CheckoutSweeperOff` (ticket) | The expiry sweep off on one instance | As `PaymentSweeperOff` | checkout |
 | `MerchantPayoutUnknownAged` (page) | A payout unanswered for over 15 minutes | Its resolution sweep is the path; never pay out twice by hand | merchant |
-| `MerchantPayoutSweeperOff` (ticket) | The payout sweep off on one instance | As `PaymentSweeperOff` | merchant |
 | `KycReviewQueueBacklog` (ticket) | Over 100 reviews waiting for over an hour | Capacity: nobody is working the queue, or a provider is sending everything to review | kyc |
 | `ConsentRoutesFailing` (page) | The consent routes have answered `5xx` for 15 minutes | A person may be unable to withdraw consent. Treat as an incident on the route, whatever the error budget says | consent |
 | `FlowGaugesUnreadable` (ticket) | One of these gauges NaN on an instance for 15 minutes | While it is NaN that instance's reading says nothing. Read its gauge refresher (`GaugesStale`, §11.8) | platform |
+| `FlowSeriesAbsent` (ticket) | One of these gauges is published by no instance | Its alert above is blind. Check the scrape and the release: a renamed meter is a defect | platform |
 
 ### 11.23 Settlement and reconciliation alerts
 
