@@ -76,7 +76,10 @@ commit and the date; do not delete the entry.
   immediately-effective rule: a version effective at its creation is in force from its commit); add a trigger rank on the
   pin's instant like merchant `V012`'s; a regression case with the JVM clock skewed past a version boundary; probe it.
 - **Owner of the fix:** the post-phase clean-up, unless the owner schedules it with `X-TSK-008`'s debt row (Phase 15 at
-  the latest).
+  the latest). *(2026-11-08: the owner did. C15, ratified 2026-11-07 and applied by `P15-TSK-002`, routes
+  `X-TSK-008`'s five stores to `P15-TSK-033`, and this site, `JdbcFeeScheduleStore.findEffectiveVersionFor` behind
+  `FeeSchedules`, is one of them. The fix above is that task's, and this entry is struck when its gate proves it. If
+  `-033` closes before the ruling reaches it, the post-phase clean-up stays the owner.)*
 
 ## PI-003 — Phase 6 merchant reason columns are not screened for card or account numbers
 
