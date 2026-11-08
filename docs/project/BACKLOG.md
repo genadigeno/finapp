@@ -26808,7 +26808,8 @@ BNPL**
 Status: `READY` (2026-11-07 — entry gate passed by the Phase 14 → 15 transition: Phase 14 confirmed by its completion
 gate, `P14-GATE`), initialised as documents only by the same transition and elaborated to task granularity:
 thirty-seven items (`P15-TSK-001`…`-034`, `P15-TST-001`, `P15-TST-002`, `P15-DOC-001`) across eleven milestones, with
-`P15-TSK-001` marked `READY`. The engineering plan is [`PHASE_15_PLAN.md`](PHASE_15_PLAN.md); decisions are
+`P15-TSK-001` marked `READY` *(thirty-eight since 2026-11-08, when the owner added `P15-TSK-035`, the source-join
+census, by accepting `THREAT_MODEL.md` section 6 item 2)*. The engineering plan is [`PHASE_15_PLAN.md`](PHASE_15_PLAN.md); decisions are
 ADR-0120…ADR-0125 (`Proposed`). The roadmap's title is kept ("Production Hardening"); the owner's brief calls the phase
 "Production Architecture and Hardening", and its twelve areas are the plan's scope. **No new invariant**: the phase
 protects the catalogue's existing ones — `INV-LED-*`, `INV-ACC-01`, `INV-HIST-01`, `INV-IDEM-*`, `INV-EVT-*`,
@@ -26994,7 +26995,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every Phase-15-owned row carries a dated disposition; new items, if any, in this section.
 - **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: S.
 
-**P15-TSK-003 — The application image** — `PLANNED`
+**P15-TSK-003 — The application image** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: one minimal, non-root, reproducible image of `app`, built from digest-pinned bases.
 - **Affected components**: `app` packaging; new `Dockerfile` (or `app/Dockerfile`) and `.dockerignore`;
   `infra/scripts/image-build.sh`; `.github/workflows/ci.yml` (an `image` job, no push).
@@ -27101,6 +27102,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every planted finding fails its job; the final tree green.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T45 (injection through hand-written JDBC, CRITICAL) has this task's static analysis as its only control: include a vendored rule refusing a statement whose SQL text is built from anything but constants (not only a concatenation pattern), with the planted case of this entry's testing. Findings accepted here are accepted in the threat model with an `until` date (the model's §1.4). T30's built row holds `ci.yml`'s token scope through `CiWorkflowIsLockedDownTest`: a job that widens it rewrites that row in this task's gate.
+- *Widened by the owner (2026-11-08, `THREAT_MODEL.md` section 6 item 5), status unchanged:* the static analysis also flags an unbounded read of a provider's answer in an adapter (a body read with no size bound), with a planted case among this entry's tests; this task's gate rewrites T43's planned row with the evidence.
 
 **P15-TSK-007 — Signing, provenance and admission verification** — `PLANNED`
 - **Objective**: only images CI built from a reviewed commit can run.
@@ -27123,7 +27125,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T30's built row holds `ci.yml`'s token scope through `CiWorkflowIsLockedDownTest`. Keyless signing needs `id-token: write` on the signing job: grant it at that job only, rewrite T30's row (and the test's read-only assertion, to name that one exception) in this task's gate.
 
-**P15-TSK-008 — The runtime contract: management port, graceful shutdown, drained schedules** — `PLANNED`
+**P15-TSK-008 — The runtime contract: management port, graceful shutdown, drained schedules** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: an instance can be stopped at any moment without failing an accepted request or leaving work stranded,
   and its operational endpoints are on a port no ingress serves.
 - **Affected components**: `app` (`application.yaml`, every `*Schedule`, `InboxConsumers`, `AccountingGaugeRefresher`),
@@ -27261,7 +27263,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every step green with its census; timings recorded.
 - **Definition of done**: `DOD-BUILD`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
 
-**P15-TSK-013 — Terraform foundations: layout, state, conventions, CI checks** — `PLANNED`
+**P15-TSK-013 — Terraform foundations: layout, state, conventions, CI checks** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: infrastructure code that is pinned, locked and checked on every change before any module exists.
 - **Affected components**: new `infra/terraform/` (layout, version pins, lock file, backend configuration per
   environment), `infra/scripts/terraform-check.sh`, `ci.yml` (an `iac` job).
@@ -27338,6 +27340,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §rotation (cloud half).
 - **Acceptance criteria**: every assertion green; the secret entries equal the inventory.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Widened by the owner (2026-11-08, `THREAT_MODEL.md` section 6 item 3), status unchanged:* a **human IAM baseline** in `modules/security`: MFA required by policy for every human principal, no long-lived human access keys, permission boundaries on human roles; asserted by `terraform test` with mock providers (a human user with an access key, a policy without the MFA condition, a human role without its boundary: each red), with its probe (drop the MFA condition → red). Workforce federation waits for a workforce identity provider (C13). This task's gate rewrites T29's planned row with the evidence.
 
 **P15-TSK-017 — GitOps delivery, promotion and the production approval boundary** — `PLANNED`
 - **Objective**: a release moves by digest through reviewed changes, and production changes need two persons.
@@ -27359,6 +27362,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §promote, §rollback.
 - **Acceptance criteria**: as tested; the approval boundary documented.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *The owner's decision (2026-11-08, `THREAT_MODEL.md` section 6 item 4), status unchanged:* the owner applies branch protection and the production environment's required reviewers when the repository gains a production environment; this task writes them down. T28's `GAP` row stays held by owner item 4.
 
 **P15-TSK-018 — The secret inventory and its delivery** — `PLANNED`
 - **Objective**: every secret the application reads is inventoried, classed and delivered from the secret store — and
@@ -27437,7 +27441,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every rotation rehearsed green and recorded.
 - **Definition of done**: `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P15-TSK-021 — Privileged access: the operator actor, the refused step-up, the reporting role (C13)** — `PLANNED`
+**P15-TSK-021 — Privileged access: the operator actor, the refused step-up, the reporting role (C13)** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: an operator's acts are recorded as an operator's, refused privileged attempts are recorded, and report
   generation holds no write privilege at the database.
 - **Affected components**: `app` (`SessionAuthenticationInterceptor`, the step-up path, `RequiresAssurance`'s note),
@@ -27491,6 +27495,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: exactly the limit admitted across contexts.
 - **Definition of done**: `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T40: a per-source limit keyed on a client-supplied forwarded header is evaded by setting the header, so the source is the address the edge sets (`-011`), never one the client chooses; a test sending a forged forwarded header proves it.
+- *The owner's decision (2026-11-08, `THREAT_MODEL.md` section 6 item 6), status unchanged:* T47 (registration enumeration) is `ACCEPTED by the owner`, bounded by this task's registration throttle; verify-then-tell is `PI-017`. Cutting or weakening the registration throttle reopens the acceptance for the owner.
 
 **P15-TSK-023 — The telemetry pipeline and the end-to-end trace** — `PLANNED`
 - **Objective**: traces and logs leave every replica through one scrubbing collector, and one payment is traceable from
@@ -27516,7 +27521,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every leg found in one trace; no needle.
 - **Definition of done**: `DOD-OBS`, `DOD-SEC`. **Risk**: Medium. **Cx**: L.
 
-**P15-TSK-024 — Every gauge off the scrape thread, a rule on `up`, the refresher restartable** — `PLANNED`
+**P15-TSK-024 — Every gauge off the scrape thread, a rule on `up`, the refresher restartable** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: a slow database never loses a whole scrape, and a stopped instance is noticed.
 - **Affected components**: `platform` (the refresher moved from `app`'s accounting package), about sixty metric classes,
   `infra/prometheus/rules/`, `DISTRIBUTED_EXECUTION.md` §3.
@@ -27562,8 +27567,9 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: the SLO document; runbook sections for every new alert.
 - **Acceptance criteria**: as tested; the trial balance pages on its first non-zero sample.
 - **Definition of done**: `DOD-OBS`. **Risk**: Medium. **Cx**: L.
+- *The owner's decision (2026-11-08), status unchanged:* `P15-TSK-035` (the source-join census) follows this task and pages through its correctness routing.
 
-**P15-TSK-026 — Kafka for production: authenticated TLS, topics as code, rebalance-safe consumers** — `PLANNED`
+**P15-TSK-026 — Kafka for production: authenticated TLS, topics as code, rebalance-safe consumers** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: the clients connect over authenticated TLS, every topic is declared, and a rolling update moves
   partitions without stopping a group.
 - **Affected components**: `platform` (`KafkaEventPublisher`, `KafkaEventReceiver`), `app` (`EventingBeans`,
@@ -27751,7 +27757,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   records' directory and form, adds the rule to `ThreatModelIsCompleteTest` with a probe, and rewrites the rows it
   satisfies. Until then a rehearsal record counts in `PRODUCTION_READINESS.md` only.
 
-**P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `PLANNED`
+**P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: fix, at their causes, the production defects the owner postponed to this phase's database pass.
 - **Affected components**: `accounting` (`CloseRuns.view`, `JdbcCloseRunStore`, `JdbcPeriodCloseStore`'s latest-close
   read), `lending` and `bnpl` (a terms version's retirement stamp; a new migration each), `risk` `V002`'s retirement
@@ -27776,10 +27782,50 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: both reproductions green in the pass.
 - **Definition of done**: `DOD-FIN`. **Risk**: Medium. **Cx**: M.
 
+**P15-TSK-035 — The source-join census: every journal entry tied to the domain record that caused it** — `PLANNED`
+- **Objective**: a journal entry with no domain record behind it, or whose domain record's amounts differ from its lines,
+  is detected on every book - the ten accounts no proof reads among them (`THREAT_MODEL.md` T15, section 5) - and pages
+  on its first occurrence.
+- **Affected components**: the ledger's journal (read by `reference` and `idempotency_scope`), every posting module's
+  domain records (read-only, each through its own module's read port, never another module's tables), a census run with
+  its own run records, a gauge, a correctness rule beside `-025`'s, `OPERATIONS_RUNBOOK.md`.
+- **Dependencies**: `-025`.
+- **Scope**: for every posting namespace the rule register holds, a source join from each journal entry to the domain
+  record that names it - the transfer, the payment attempt, the withdrawal, the capture, the fee assessment, the payout,
+  the loan and BNPL postings, FX, settlement, the accounting adjustments - comparing that record's amounts and currency
+  with the entry's lines in minor units; a namespace whose source is a schedule run or a file line joins to that record;
+  **no namespace is skipped silently**: a namespace without a source join is red in a hermetic guard; the run resumes by
+  journal position and is safe on N replicas; a gauge of unsourced and mismatched entries; a correctness alert paging on
+  the first non-zero sample, routed as `-025`'s; a runbook section for a break.
+- **Exclusions**: refusing such an entry (the definer-rights posting path, `PI-016`); a wallet-only proof; correcting a
+  break (an incident's correction through the existing doors); any change to a posting path.
+- **Architecture changes**: a read-only census composed from each posting module's read port (an ADR by the task if it
+  adds a cross-module read contract). **Infrastructure changes**: a rule and its `promtool` case.
+- **Security implications**: T15's detective control on the books no proof reads; it does not detect an entry whose
+  domain record was written first (`PI-016`). It writes only its own run records; no amount in a label.
+- **Multi-instance implications**: one census per window across N replicas - a lease or a per-window row arbitrated by
+  PostgreSQL - so a duplicate run records the same result once; a run on a replica that dies resumes from its position on
+  another; `PASS` on a counted case (owed to `P15-TST-002`, C14).
+- **Failure and rollback**: a run that cannot read a source fires its absent-series alert, never a zero; read-only, so
+  rollback removes the run.
+- **Testing and validation**: hermetic: every registered namespace has a source join (a namespace without one is red); the
+  comparison arithmetic per currency in minor units. Database (owed to the pass): a balanced raw entry between two
+  customer wallets with no transfer behind it is counted; a fee revenue to merchant payable entry with no fee record is
+  counted; a legitimate posting of every namespace is not.
+- **Probe**: drop one namespace's source join → the coverage guard red; the planted wallet-to-wallet entry uncounted →
+  its database case red (owed).
+- **Operational documentation**: runbook section for a source-join break; `THREAT_MODEL.md` T15's planned row rewritten
+  to evidence.
+- **Acceptance criteria**: every posting namespace joined; both planted entries counted; no legitimate posting counted;
+  the alert pages on the first non-zero sample.
+- **Definition of done**: `DOD-FIN`, `DOD-OBS`. **Risk**: Medium. **Cx**: L.
+- *Added by the owner (2026-11-08), accepting `THREAT_MODEL.md` section 6 item 2's recommendation (a) after
+  `P15-TSK-001`'s merge; milestone M15.8, wave D.*
+
 **P15-TST-002 — The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015)** — `PLANNED`
 - **Objective**: the owed database suites of every Phase 15 task and of PI-012…PI-015 run once, fresh, on the final tree.
 - **Affected components**: every module's `databaseTest`, own-container and `kafkaTest` tiers; `MUTATION_TESTING.md`.
-- **Dependencies**: every item from `-002` to `-033`.
+- **Dependencies**: every item from `-002` to `-033`, and `-035` *(added 2026-11-08 with that item)*.
 - **Scope**: every tier run fresh once on the tree as it then stands, including `kafkaTest` (PI-012); PI-013's and
   PI-014's regression cases; PI-014's unclassified suites classified; PI-015's struck rows performed again on present
   bytes or struck for good with a reason; counts read from the JUnit XML with their timestamps.

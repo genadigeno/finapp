@@ -354,15 +354,17 @@ numbers `PHASE_15_PLAN.md` §9.2 gave them.
 | T39 | A dead-lettered event resolved by an unaudited manual change | B10:T, B10:R | MEDIUM | MEDIUM | MEDIUM | CONTROL |
 | T40 | A client's source address spoofed through forwarded headers, to evade a per-source limit or to mislead a record | B2:S | MEDIUM | MEDIUM | MEDIUM | CONTROL |
 | T41 | One client's idempotency key value refusing another client's request | B2:D | LOW | LOW | LOW | CONTROL |
-| T42 | The registry unavailable when a replica must start | B9:D | MEDIUM | MEDIUM | MEDIUM | PROPOSED ACCEPTANCE |
+| T42 | The registry unavailable when a replica must start | B9:D | MEDIUM | MEDIUM | MEDIUM | ACCEPTED by the owner on 2026-11-08, until 2027-06-30 |
 | T43 | A hostile or malformed provider answer driving an adapter outside its contract | B6:E | MEDIUM | HIGH | HIGH | CONTROL |
 | T44 | A report path able to write | B4:E | MEDIUM | HIGH | HIGH | CONTROL |
 | T45 | Injection through hand-written JDBC: a request value reaching a statement's text rather than a bind parameter, so a caller runs SQL as the application's role | B2:E, B4:T | MEDIUM | SEVERE | CRITICAL | CONTROL |
 | T46 | Restricted data or a secret leaking through logs, spans, metric labels, error bodies or the telemetry back ends, which have their own readers and retention | B2:I, B10:I | MEDIUM | SEVERE | CRITICAL | CONTROL |
-| T47 | Login identifier enumeration through registration, which answers a taken identifier distinctly by design | B1:I | HIGH | MEDIUM | MEDIUM | PROPOSED ACCEPTANCE |
+| T47 | Login identifier enumeration through registration, which answers a taken identifier distinctly by design | B1:I | HIGH | MEDIUM | MEDIUM | ACCEPTED by the owner on 2026-11-08 |
 
 **Summary.** 47 threats: 25 CRITICAL, 13 HIGH, 8 MEDIUM, 1 LOW. 45 are `CONTROL`. Two, T42 and T47 (both MEDIUM),
-are `PROPOSED ACCEPTANCE` awaiting the owner (§6). No threat is `ACCEPTED`.
+are accepted by the owner (2026-11-08; T42 until 2027-06-30; §6 items 1 and 6). None is `PROPOSED ACCEPTANCE`.
+*(Read "are `PROPOSED ACCEPTANCE` awaiting the owner (§6). No threat is `ACCEPTED`." until the owner's decisions of
+2026-11-08.)*
 
 *(The fix round of 2026-11-08 re-read every rating against §1.3's words. T10, T19, T22, T32, T33, T34 and T36 rose to
 CRITICAL; T35, T38, T43 and T44 to HIGH. Each had understated a likelihood the definitions call one foothold, or an
@@ -484,7 +486,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T15 | The database reachable only from the application's and the migrator's pods | PLANNED | `P15-TSK-010` |
 | T15 | The database in private subnets | PLANNED | `P15-TSK-015` |
 | T15 | The product proofs and projection drift paging on their first breach: detection for the books those proofs cover (§5), and nothing for a balanced shift between accounts no proof covers | PLANNED | `P15-TSK-025` |
-| T15 | A balanced, rule-shaped entry inserted by a holder of the application's credential, with the projection co-updated, is neither refused nor detected between the ten accounts no proof reads (§5), or on any book once the product's own row is written first | GAP | `owner item 2`; owner: the owner, since 2026-11-08 |
+| T15 | The source-join census: every journal entry joined by its `reference` and `idempotency_scope` to the domain record that caused it, with equal amounts, on every book (the ten accounts no proof reads among them), paging on its first break; it detects an entry with no domain record behind it, not one whose domain record was written first | PLANNED | `P15-TSK-035` |
+| T15 | Refusal of a balanced, rule-shaped entry inserted by a holder of the application's credential (a definer-rights posting path as the journal's only `INSERT`, the projection's `UPDATE` revoked, a role per module), and detection of one whose domain record was written first | GAP | `PI-016`; owner: the owner, since 2026-11-08 |
 | T16 | Ten instances submitting one key produce exactly one transfer (`INV-IDEM-01`) | EXISTS | `app/src/test/java/com/finapp/app/transfers/TransferExecutionDatabaseTest.java#tenConcurrentIdenticalKeysProduceOneTransfer` |
 | T16 | A key reused with a different request is refused as a distinct conflict, never replayed (`INV-IDEM-03`) | EXISTS | `platform/src/test/java/com/finapp/platform/idempotency/IdempotentExecutorTest.java#differingFingerprintIsRejected` |
 | T16 | A merchant's payout key is that merchant's own: two merchants, one key value, two payouts | EXISTS | `app/src/test/java/com/finapp/app/merchant/MerchantPayoutEndpointDatabaseTest.java#aClientKeyIsEachMerchantsOwn` |
@@ -544,7 +547,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T29 | A private cluster API endpoint, control-plane audit logs, separate production and non-production roots | PLANNED | `P15-TSK-014` |
 | T29 | Workload identities, KMS key policies, separate accounts and keys per environment | PLANNED | `P15-TSK-016` |
 | T29 | Break-glass and compromise procedures rehearsed | PLANNED | `P15-TSK-032` |
-| T29 | The human identity controls of a real cloud account: MFA by policy, workforce federation, no long-lived human keys | GAP | `owner item 3`; owner: the owner, since 2026-11-08 |
+| T29 | A human IAM baseline for the cloud account: MFA required by policy, no long-lived human access keys, permission boundaries, asserted by `terraform test` with mock providers | PLANNED | `P15-TSK-016` |
 | T30 | CI's token is read-only in every permissions entry, no job references a secret, and the workflow is the repository's only one, with no local action | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theTokenIsReadOnly`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#noJobReferencesASecret`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#thereIsOneWorkflow` |
 | T30 | Pull-based GitOps: no CI credential reaches production | PLANNED | `P15-TSK-017` |
 | T30 | No cloud credential in CI, and no state backend initialised by it | PLANNED | `P15-TSK-013` |
@@ -578,11 +581,11 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T41 | A key reused with a different request is refused as a distinct conflict, never replayed | EXISTS | `platform/src/test/java/com/finapp/platform/idempotency/IdempotentExecutorTest.java#differingFingerprintIsRejected` |
 | T41 | Every idempotency claim scoped to its principal | REMEDIATION | `X-TSK-003` |
 | T42 | A managed registry with immutable tags | PLANNED | `P15-TSK-016` |
-| T42 | Nothing in Phase 15 caches or mirrors images for a replica starting while the registry is down | GAP | `owner item 1`; owner: the owner, since 2026-11-08 |
+| T42 | Nothing in Phase 15 caches or mirrors images for a replica starting while the registry is down: accepted until 2027-06-30 and re-owned to Phase 16's disaster recovery | GAP | `owner item 1`; owner: the owner, since 2026-11-08 |
 | T43 | The FX and credit providers' wire vocabularies are confined to their adapters by build rules, each with a planted leak caught | EXISTS | `app/src/test/java/com/finapp/app/architecture/FxProviderVocabularyIsConfinedTest.java#theVocabularyLivesInTheAdapterAlone`; `app/src/test/java/com/finapp/app/architecture/CreditProviderVocabularyIsConfinedTest.java#theVocabularyLivesInTheAdapterAlone` |
 | T43 | The regulatory filing adapter: a malformed or oversized answer decides nothing | EXISTS | `accounting/src/test/java/com/finapp/accounting/RegulatoryFormTest.java#aMalformedAnswerDecidesNothing`; `accounting/src/test/java/com/finapp/accounting/RegulatoryFormTest.java#anOversizedAnswerDecidesNothing` |
 | T43 | Static analysis over the adapters in CI | PLANNED | `P15-TSK-006` |
-| T43 | No general bound on the size of a provider's answer across the adapters | GAP | `owner item 5`; owner: the owner, since 2026-11-08 |
+| T43 | Static analysis flags an unbounded read of a provider's answer in an adapter, with a planted case | PLANNED | `P15-TSK-006` |
 | T44 | Report generation reaches no writer, and no write path, by any route the build can see (`INV-ACC-14`) | EXISTS | `app/src/test/java/com/finapp/app/architecture/ReportingNeverWritesTest.java` |
 | T44 | A `SELECT`-only reporting role for report generation (C13's cut candidate) | PLANNED | `P15-TSK-021` |
 | T45 | Static analysis refusing a statement whose text is built from anything but constants, and a planted concatenation caught | PLANNED | `P15-TSK-006` |
@@ -592,7 +595,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T46 | An unexpected exception's message, type and stack frames never reach an error body; a malformed body is not echoed back; no error body carries a member beyond the contract | EXISTS | `app/src/test/java/com/finapp/app/api/ApiErrorHandlerTest.java#anUnexpectedExceptionLeaksNothing`; `app/src/test/java/com/finapp/app/api/ApiErrorHandlerTest.java#aMalformedBodyRendersTheContract`; `app/src/test/java/com/finapp/app/api/ApiErrorHandlerTest.java#theShapeIsExactlyTheContract` |
 | T46 | One collector as the telemetry egress, its span attributes an allow-list, a scrubbing stage, and the needle sweep over a rehearsal's exported spans and logs | PLANNED | `P15-TSK-023` |
 | T47 | A cluster-safe registration throttle per source, which bounds how fast identifiers can be tested | PLANNED | `P15-TSK-022` |
-| T47 | Registration answers a taken identifier `422` by design; whether that stands is the owner's | GAP | `owner item 6`; owner: the owner, since 2026-11-08 |
+| T47 | Registration answers a taken identifier `422` by design (accepted); verify-then-tell, the alternative, waits for the first real customer launch | GAP | `PI-017`; owner: the owner, since 2026-11-08 |
 
 **Where the evidence is a database test.** Many `EXISTS` rows cite tests in the `database` tier. Phase 15's standing
 deviation (C14) defers those tiers to one pass at the phase exit (`P15-TST-002`). Each such test exists and was green
@@ -643,7 +646,10 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
     an ordinary payout. Neither raises anything: no proof reads those accounts, reconciliation sees only the
     legitimate withdrawal or payout, and the trial balance stays zero.
   Phase 15's controls lower the likelihood: the credential reaches only the application's pods (`-018`), and the
-  database only those pods (`-010`, `-015`). They do not change the impact. **Owner item 2.**
+  database only those pods (`-010`, `-015`). They do not change the impact. **Owner item 2, decided 2026-11-08**: the
+  source-join census (`P15-TSK-035`) reads every book, the ten above among them, and detects an entry with no domain
+  record behind it; the preventive fix is postponed to before production use (`PI-016`). An entry whose domain record
+  was written first stays neither refused nor detected until `PI-016` lands.
 - **T45, injection through hand-written JDBC.** Every statement is hand-written. The codebase's idiom is constant SQL
   with bind parameters, and the statements read for this register were constant. Some concatenate constants
   (`ROW + " WHERE …"`), and about fifteen `createStatement()` calls execute constant or configuration-derived text.
@@ -656,13 +662,17 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   scrubbing and needle sweep are the second net. The telemetry back ends and their retention do not exist yet.
 - **T47, registration enumeration.** `POST /v1/registrations` answers `422` for a taken login identifier, by design: a
   registration endpoint tells you the name is taken. Authentication's paths are equal-cost (`INV-IDN-07`), so the leak
-  is registration's alone. `-022`'s throttle bounds the rate and does not remove the oracle. **Owner item 6.**
+  is registration's alone. `-022`'s throttle bounds the rate and does not remove the oracle. **Accepted by the owner
+  on 2026-11-08** (owner item 6); verify-then-tell is recorded for the first real customer launch (`PI-017`).
 - **T29, human administrative access.** The tasks bound what a human can do inside the cluster (`-010`) and log what
   the control plane does (`-014`). No task builds the identity controls of a real cloud account: required MFA,
-  workforce federation, and no long-lived access keys for humans. **Owner item 3.**
+  workforce federation, and no long-lived access keys for humans. **Owner item 3, decided 2026-11-08**: `-016` builds a
+  human IAM baseline (MFA required by policy, no long-lived human access keys, permission boundaries) under `terraform
+  test`; workforce federation waits for a workforce identity provider (§7, C13).
 - **T28.** GitHub's branch protection and environment rules are repository settings, and only the owner can apply
   them (§1.1). `P15-TSK-017` writes them down and adds `CODEOWNERS`. Today no `CODEOWNERS` file exists and no setting
-  refuses a single-person change, so "two persons on production" is not yet held by anything. **Owner item 4.**
+  refuses a single-person change, so "two persons on production" is not yet held by anything. **Owner item 4,
+  decided 2026-11-08**: the owner applies them when the repository gains a production environment.
 - **T4, T21, T27, T28, T29, T32, T45.** Today **no built control exists** for these CRITICAL and HIGH threats: nothing
   is deployed, and T45's rule is unwritten. Each is answered only by its planned tasks, and rule 9 and the exit rule
   (§1.5) hold them to it.
@@ -686,7 +696,8 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 - **T38.** Today **every session actor is audited as `CUSTOMER`, operators included**, and a refused step-up writes no
   record. Both are debt rows that `-021` closes. The actor's identity is right; only its type is wrong.
 - **T43.** No general bound on the size of a provider's answer exists across the adapters. The regulatory adapter is
-  the one evidenced. The adapters call simulated providers in this programme. **Owner item 5.**
+  the one evidenced. The adapters call simulated providers in this programme. **Owner item 5, decided 2026-11-08**:
+  `-006`'s static analysis flags an unbounded read of a provider's answer in an adapter.
 - **T31.** The build pins the permission of every route that declares one, and refuses a handler that declares no
   rule. **It does not assert that every route under `/v1/operator` is permission-guarded.** A route declaring only
   `@RequiresSession` would pass both guards. `P15-TSK-011`'s allow-list moves only the routes an operator permission
@@ -694,7 +705,8 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   and `-011` is to keep `/v1/operator` off the public host by path as well as by permission (both routed on their
   entries).
 - **T42.** A replica rescheduled while the registry is unreachable cannot pull its image. Nothing in Phase 15 caches
-  or mirrors images. **Owner item 1.**
+  or mirrors images. **Accepted by the owner on 2026-11-08, until 2027-06-30** (owner item 1), and re-owned to Phase
+  16, where registry availability, image pre-pulling and disaster recovery belong.
 - **T44.** The reporting role is C13's first cut candidate. If it is cut, `-021`'s gate rewrites T7's and T44's
   planned rows as `GAP` rows with an owner.
 - **T13.** Time sync on nodes is a property of the managed cluster. No task asserts it, and the register does not
@@ -704,14 +716,16 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 
 ## 6. Owner items
 
-Only the owner can accept a risk or choose between the options below. Each item carries a recommendation, and each is
-held by a `GAP` row in §4. None blocks Phase 15's work; the two proposed acceptances (items 1 and 6) must be decided
-by the phase's exit (§1.5).
+Only the owner can accept a risk or choose between the options below. **The owner decided all six on 2026-11-08,
+accepting each recommendation** ("accept recommendations", after `P15-TSK-001`'s merge); each item's decision follows
+its options. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
+work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)*
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
    availability, image pre-pulling and disaster recovery belong: `ACCEPTED by the owner on <the date you decide>, until
-   <a review date you set>`, for example a review date of 2027-06-30.
+   <a review date you set>`, for example a review date of 2027-06-30. **Decided 2026-11-08**: `ACCEPTED by the owner on
+   2026-11-08, until 2027-06-30`, re-owned to Phase 16; its `GAP` row stays as what stands meanwhile.
 2. **T15's residual: a balanced shift between accounts no proof covers is neither refused nor detected.** The options:
    - **(a) An interim detective control.** A source-join census: every journal entry joins, by its `reference` and
      `idempotency_scope`, to the domain record that caused it (the transfer, the payment attempt, the withdrawal, the
@@ -736,20 +750,23 @@ by the phase's exit (§1.5).
      15, which leaves every posting path as Phases 3–14 built it (`PHASE_15_PLAN.md` §1). Add **(a)** now, as the
      source-join census rather than the wallet proof, as a new Phase 15 item after `-025`, so that something reads
      the uncovered books until (b) lands. With (a) and (b) both declined, the residual stays a `GAP` and must be
-     accepted by the owner before production use.
+     accepted by the owner before production use. **Decided 2026-11-08**: (a) is `P15-TSK-035`, the source-join census,
+     after `-025`; (b) is `PI-016`, postponed by the owner and required before production use.
 3. **T29's residual.** No task builds the human identity controls of a real cloud account. *Recommendation*: widen
    `P15-TSK-016` with a human IAM baseline in the `security` module (MFA required by policy, no long-lived human access
    keys, permission boundaries), asserted by `terraform test` with mock providers like the rest of the module.
-   Otherwise, record it as a real-environment item under §1.1.
+   Otherwise, record it as a real-environment item under §1.1. **Decided 2026-11-08**: `P15-TSK-016` widened.
 4. **T28's residual.** Branch protection and the production environment's required reviewers are the owner's to apply.
    *Recommendation*: apply them when the repository gains a production environment; `-017` writes them down.
+   **Decided 2026-11-08**: as recommended; the row stays a `GAP` held by this item until the owner applies them.
 5. **T43's residual.** No adapter bounds the size of a provider's answer in general. *Recommendation*: ask `-006`'s
    static analysis to flag an unbounded body read in an adapter, or record it for the first real provider integration.
+   **Decided 2026-11-08**: `P15-TSK-006` flags it.
 6. **T47, a proposed acceptance (MEDIUM).** Registration tells a caller that an identifier is taken, so whether an
    identifier is registered can be learned at the rate `-022`'s throttle allows. The alternative is a business change
    to registration (verify-then-tell, by a channel the identifier's owner controls), which Phase 15 does not make.
    *Recommendation*: accept it, bounded by `-022`'s throttle, and record the alternative for the first real customer
-   launch.
+   launch. **Decided 2026-11-08**: `ACCEPTED by the owner on 2026-11-08`; the alternative is `PI-017`.
 
 ---
 

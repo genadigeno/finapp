@@ -67,7 +67,8 @@ load, the capacity model and HPA calibration, chaos experiments (node loss, data
 partition), multi-AZ and multi-region topology, disaster recovery with measured RPO/RTO and cross-region backups,
 partitioning and archival of high-volume tables, read-replica routing, backpressure and load shedding, and any service
 extraction (ADR-0001's revisit point). Phase 15 builds what those need (images, manifests, restore, alerts) and measures
-none of them at scale. Beyond the programme: real provider connectivity, a real jurisdiction's retention periods and
+none of them at scale. *(Added 2026-11-08:)* registry availability for a starting replica (image pre-pulling or a mirror),
+`THREAT_MODEL.md` T42, accepted by the owner until 2027-06-30 and re-owned to Phase 16. Beyond the programme: real provider connectivity, a real jurisdiction's retention periods and
 filing channels, real customer funds.
 
 ---
@@ -629,7 +630,7 @@ alert rule** — `-025` gives each critical flow its SLO alerts and the ledger i
 | **M15.5 Delivery** | GitOps promotion by digest with the two-person production boundary | `-017` |
 | **M15.6 Secrets and keys** | every secret inventoried and delivered; key rings; rotation rehearsed | `-018`…`-020` |
 | **M15.7 Application security** | privileged access and abuse limits | `-021`, `-022` |
-| **M15.8 Observability** | telemetry pipeline and the end-to-end trace; gauges off the scrape thread; SLOs and routing | `-023`…`-025` |
+| **M15.8 Observability** | telemetry pipeline and the end-to-end trace; gauges off the scrape thread; SLOs and routing; the source-join census | `-023`…`-025`, `-035` *(added by the owner, 2026-11-08)* |
 | **M15.9 Database and messaging operations** | Kafka for production; event contracts; dead letters and replay; retention sweeps; restore rehearsed | `-026`…`-030` |
 | **M15.10 Configuration** | the configuration register and overlays | `-031` |
 | **M15.11 Operations and exit** | platform runbooks rehearsed; the postponed defects; the database pass; the readiness review; the exit review (the storm postponed) | `-032`, `-033`, `-034`, `P15-TST-002`, `P15-TST-001` (`POSTPONED`), `P15-DOC-001` |
@@ -676,7 +677,8 @@ restore rehearsal (`-030`), the runbooks' rehearsal (`-032`), the database pass.
 | `P15-TSK-031` | The configuration register and the environment overlays | M15.10 | `-008`, `-018` | `DOD-ARCH`, `DOD-SEC` |
 | `P15-TSK-032` | Platform runbooks, incident response, and their rehearsal | M15.11 | `-017`, `-020`, `-025`, `-028`, `-030` | `DOD-DOC`, `DOD-OBS` |
 | `P15-TSK-033` | The postponed production defects: PI-013 and PI-014 | M15.11 | `-001` | `DOD-FIN` |
-| `P15-TST-002` | The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015) | M15.11 | `-002`…`-033` | `DOD-TEST` |
+| `P15-TSK-035` | The source-join census: every journal entry tied to the domain record that caused it *(added by the owner, 2026-11-08, `THREAT_MODEL.md` §6 item 2)* | M15.8 | `-025` | `DOD-FIN`, `DOD-OBS` |
+| `P15-TST-002` | The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015) | M15.11 | `-002`…`-033`, `-035` | `DOD-TEST` |
 | `P15-TSK-034` | The production readiness review | M15.11 | `-032`, `P15-TST-002` | `DOD-DOC` |
 | `P15-TST-001` | The rolling-deploy storm — `POSTPONED` (PI-004) | M15.11 | all | `DOD-TEST` |
 | `P15-DOC-001` | The Phase 15 exit review | M15.11 | all but `TST-001` | `DOD-DOC` |
@@ -685,7 +687,7 @@ restore rehearsal (`-030`), the runbooks' rehearsal (`-032`), the database pass.
 
 **Waves** (each wave's items depend only on earlier waves; every dependency-free item of a wave may run in parallel, the
 owner's standing rule): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`, `-033`; **C** `-004`,
-`-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`; **D** `-005`, `-010`, `-011`, `-015`, `-018`; **E** `-012`,
+`-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035`; **E** `-012`,
 `-016`, `-019`, `-022`, `-031`; **F** `-007`, `-020`, `-023`, `-030`; **G** `-017`; **H** `-032`; **I** `P15-TST-002`;
 **J** `-034`; **K** `P15-DOC-001` (`P15-TST-001` `POSTPONED`, PI-004).
 
@@ -697,8 +699,8 @@ owner's standing rule): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-02
 `-009`; `-012` after `-004`, `-005`, `-010`, `-011` and `-026` (`kind` is not loopback, so `TransportSecurityGuard` needs `verify-full` to PostgreSQL and `KafkaTransportGuard` refuses `PLAINTEXT`: the rehearsal needs `-026`'s authenticated TLS client and a TLS PostgreSQL from the local CA - added by the transition's review, its M-5; the waves and the critical path are unchanged, `-026` being in wave B); `-007` after `-006` and `-012`; `-014` after `-013`; `-015` after
 `-014` and `-026`; `-016` after `-014` and `-018`; `-017` after `-007`, `-012` and `-016`; `-019` after `-018`; `-020`
 after `-012` and `-019`; `-022` after `-011`; `-023` and `-030` after `-012`; `-025` after `-024`; `-027` and `-028`
-after `-026`; `-031` after `-008` and `-018`; `-032` after `-017`, `-020`, `-025`, `-028` and `-030`; `P15-TST-002` after
-every item from `-002` to `-033`, so that it runs on the final tree; `-034` after `-032` and `P15-TST-002`; `P15-DOC-001` after every item but
+after `-026`; `-031` after `-008` and `-018`; `-035` after `-025` (added by the owner, 2026-11-08); `-032` after `-017`, `-020`, `-025`, `-028` and `-030`; `P15-TST-002` after
+every item from `-002` to `-033` and `-035`, so that it runs on the final tree; `-034` after `-032` and `P15-TST-002`; `P15-DOC-001` after every item but
 `P15-TST-001`.
 
 ## 20. Exit criteria (summary — the gate is `PHASE_GATES.md` §5 Phase 15)

@@ -25,6 +25,8 @@ commit and the date; do not delete the entry.
 | PI-013 | `POSTPONED` | P14-DOC-001, by the owner (2026-11-06) | accounting — a production defect: after a backward step of the database clock a month's close can read an earlier lock's run as its own, and cannot be proposed; due at the next phase's database pass at the latest |
 | PI-014 | `POSTPONED` | P14-DOC-001, by the owner (2026-11-06) | lending, bnpl, accounting, app — the database suites still red after the pass, two of them production defects; due at the next phase's database pass at the latest |
 | PI-015 | `POSTPONED` | P14-DOC-001 (2026-11-06) | the mutation register — 330 rows struck on moved bytes and the database halves of about a hundred rows, not performed again; due at the next phase's database pass at the latest |
+| PI-016 | `POSTPONED` | P15-TSK-001, by the owner (2026-11-08) | ledger, every posting module - a balanced journal entry written with the application's database credential outside the ledger's doors is not refused; required before production use |
+| PI-017 | `POSTPONED` | P15-TSK-001, by the owner (2026-11-08) | identity - registration tells a caller that a login identifier is taken; required before the first real customer launch |
 
 ---
 
@@ -384,3 +386,36 @@ commit and the date; do not delete the entry.
   perform or strike the second class. The review's own walk script was not committed; any script doing that is the method.
   *(Read "the review's walk script and its brief are the method" until the fix round, 2026-11-07.)*
 - **Owner of the fix:** the next phase's database pass at the latest.
+
+---
+
+## PI-016 — A balanced journal entry written with the application's database credential is not refused
+
+- **Status:** `POSTPONED` (owner, 2026-11-08, accepting `THREAT_MODEL.md` section 6 item 2's recommendation (b) after
+  `P15-TSK-001`'s merge). **Required before production use.**
+- **What:** the application's role `finapp_app` holds `INSERT` on the journal and `UPDATE` on the balance projection, and
+  every module's code runs as that one role. The database refuses an unbalanced entry and any edit of the journal, but not a
+  balanced entry of a registered shape inserted outside the ledger's doors, with both projection rows co-updated
+  (`THREAT_MODEL.md` T15, CRITICAL).
+- **Consequence until fixed:** `P15-TSK-035`'s source-join census detects an entry with no domain record behind it, on
+  every book. An entry whose domain record was written first is neither refused nor detected. Phase 15 lowers the likelihood
+  (the credential delivered only to the application's pods, the database reachable only from them) and not the impact.
+- **Fix:** a definer-rights posting function as the journal's only `INSERT` path, validating each posting against the rule
+  register and the domain record it names; the application role's `INSERT` on the journal and `UPDATE` on the balance
+  projection revoked; a database role per module, so that one module's credential cannot write another's books or rows. It
+  changes every module's write path and must be measured on the posting hot path. It does not stop a holder who writes the
+  domain record first, and pods holding every module's credential are narrowed, not stopped.
+- **Owner of the fix:** the post-phase clean-up, before production use, or sooner if the owner schedules it.
+
+---
+
+## PI-017 — Registration tells a caller that a login identifier is taken
+
+- **Status:** `POSTPONED` (owner, 2026-11-08, accepting `THREAT_MODEL.md` section 6 item 6's recommendation; T47 is
+  `ACCEPTED by the owner on 2026-11-08`). **Required before the first real customer launch.**
+- **What:** `POST /v1/registrations` answers `422` for a taken login identifier, by design, so whether an identifier is
+  registered can be learned. Authentication's paths are equal-cost (`INV-IDN-07`); the oracle is registration's alone.
+- **Consequence today:** accepted, bounded by the cluster-safe registration throttle per source (`P15-TSK-022`).
+- **Fix:** verify-then-tell: registration answers a taken and a free identifier alike and tells the outcome through a
+  channel the identifier's owner controls. A business change to registration, which Phase 15 does not make.
+- **Owner of the fix:** the first real customer launch, or sooner if the owner schedules it.
