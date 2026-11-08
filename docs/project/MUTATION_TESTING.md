@@ -2939,6 +2939,7 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-AUD-01` | `ApplicationImageTest#theImageCarriesItsRevisionSourceAndVersion` | Recorded | A `P15-TSK-003` probe (2026-11-08, on the final bytes) on the `Dockerfile`, the substituted-image threat's (T27) labels: **the revision label removed** from the runtime stage's `LABEL` | Caught (8 tests, 1 failed: the label rule). Restored from saved bytes, byte-identical (sha256 `6cdf819a…47d1d024`, verified) |
 | `INV-HIST-01` | `ApplicationImageTest#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly` | Recorded | A `P15-TSK-003` probe (2026-11-08, on the final bytes) on CI's workflow (`.github/workflows/ci.yml`): **the readiness run dropped** - the image job's `./infra/scripts/image-readiness.sh` step replaced by an `echo` | Caught (8 tests, 1 failed: the wiring rule). Restored from saved bytes, byte-identical (sha256 `e08909d7…1a62ac89`, verified) |
 | `INV-HIST-01` | `ApplicationImageTest#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly` | Recorded | A `P15-TSK-003` probe (2026-11-08, on the final bytes) on `.github/dependabot.yml`: **the base images' update path removed** - the `docker` ecosystem entry renamed to another ecosystem | Caught (8 tests, 1 failed: the wiring rule). Restored from saved bytes, byte-identical (sha256 `cc075983…ef02e130`, verified) |
+| `INV-HIST-01` | `ApplicationImageTest#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly` | Recorded | A `P15-TSK-003` probe (2026-11-08, on the final bytes) on `infra/scripts/image-build.sh`, the defect its own first probe round found: **the first jar build made incremental again** - its `--rerun-tasks` removed, so a stale `build/` can make the two builds agree or differ for the wrong reason (section 3) | Caught (8 tests, 1 failed: the wiring rule, one `bootJar` call of two at `--rerun-tasks`). Restored from saved bytes, byte-identical (sha256 `ad860508…b9be1771`, verified) |
 
 *The `P15-TSK-003` rows above key the image's guard on the invariant of the threat each probe broke, as `P15-TSK-001`'s rows do: T4's and T6's (a root or over-filled image is the foothold that exfiltrates restricted data, `INV-AUD-02`), T5's (a substituted base rewrites what runs on the financial record, `INV-HIST-01`), T27's (an image that cannot say which commit it is leaves the deployment unattributable, `INV-AUD-01`). The probes the image build script catches and no test does - a timestamp left in, a jar not reproducible, the size budget - are section 3's, because this section's reference column names tests the build runs.*
 
@@ -3886,6 +3887,38 @@ reachable from the review's tree), so a row's stated hash names the file and the
   reporting `(currently 14)` and naming exactly `["INV-ACC-07"]`, and `everyTestItemHasADemonstration` naming exactly
   `["P14-TST-001"]`; the other seven green. The register was restored **byte-identical** (sha256 `01924d16…0a131180`, verified,
   and the blob equal to the committed one) before this line was written.
+
+**The application image's own assertions are a script's, not a test's** (`P15-TSK-003`, 2026-11-08). What only a built
+image can show - two builds being the same bytes, the size, the user in the configuration - is asserted by
+`infra/scripts/image-build.sh` against `docker inspect` and `docker export`, in CI's `image` job, so its probes cannot be
+section 2 rows, whose reference column names tests the build runs. They were performed with the same three parts, each
+by `infra/scripts/image-build.sh` on Docker Desktop 28 (containerd image store), each file restored from saved bytes and
+verified byte-identical afterwards, on the script's final bytes (sha256 `ad860508…b9be1771`):
+
+- **A timestamp left in.** The builder's `find layers -exec touch --date=@SOURCE_DATE_EPOCH` replaced by `true`
+  (`Dockerfile`, sha256 `6cdf819a…47d1d024`), run from 07:49Z. The two jars matched (`037f4576…`); the images did not:
+  "image id: `dfed2825…`, then `86864dcd…`", three of the 39 layer digests marked (the dependencies, loader and
+  application layers; the empty snapshot layer and the `WORKDIR` layer equal), "the two builds … differ", exit 1.
+- **The jar not reproducible.** The SBOM's exclusion in `app/build.gradle.kts` disabled (`exclude()` replaced by `Unit`;
+  sha256 `320597d5…59836edd`), run from 07:56Z: "the boot jar is not reproducible: `e4df46f4…`, then `79eb5172…`", the
+  one entry listed as differing `META-INF/sbom/application.cdx.json` (crc `2175b690`, then `65f5995c`), exit 1 - the
+  defect this task found, demonstrated again.
+- **The size budget exceeded.** `SIZE_BUDGET_MIB=300` lowered to 250 (`image-build.sh` itself), run from 08:00Z: every
+  other assertion held, then "the image is 272924672 bytes, over its budget of 250 MiB (262144000 bytes)", exit 1.
+- **Readiness that never comes.** `infra/scripts/image-readiness.sh` run on the accepted image (`finapp-app:29c7ddb8…`)
+  with `FINAPP_DB_URL` pointed at a loopback port nothing listens on, 08:21Z: the application started, and readiness answered
+  `503` on 2 of 48 attempts and nothing within the poll's two seconds on the rest (consistent with the database
+  indicator waiting on the pool's five-second connection timeout), and the script printed the container's last log lines and "never reported
+  ready", exit 1, at 08:25:26Z. No file was changed for this one.
+
+**The first round of these probes found a defect in the script, and is not counted.** Run on the script's earlier bytes,
+whose first jar build was incremental, the SBOM probe left the SBOM in `build/resources/main`, and the size probe after
+it then failed on the jar ("53d4f133…, then 037f4576…"), not on the size: an up-to-date `processResources` keeps what its
+last run left, because Gradle does not see a change to a copy spec's `eachFile`. The comparison of a stale build with a
+clean one fails for the wrong reason, and of two stale ones passes for one. Both builds are now from source, and
+`ApplicationImageTest#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly` holds every `bootJar` call in the
+script at `--rerun-tasks`; the round above was run again on those bytes. The user probes of section 2's `P15-TSK-003`
+rows were run again with it.
 
 ---
 
