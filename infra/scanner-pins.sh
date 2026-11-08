@@ -1,4 +1,4 @@
-# The pinned scanner images. ONE definition each (P0-TSK-040).
+# The pinned scanner and tool images. ONE definition each (P0-TSK-040).
 #
 # Named .sh rather than .env, and not by accident: .gitignore ignores `*.env` under its Secrets
 # section, so the first version of this file was silently never committed - CI would have sourced
@@ -14,9 +14,9 @@
 #   DIGEST      what is actually pulled. A tag can be moved by whoever controls the source
 #               repository; a digest cannot
 #
-# Sourced by infra/scripts/secret-scan.sh and infra/scripts/dependency-scan.sh, which CI calls, so
-# a developer and CI run the identical image - the single-definition property P0-TSK-031
-# established and this file preserves rather than replaces.
+# Sourced by infra/scripts/secret-scan.sh, infra/scripts/dependency-scan.sh and (since P15-TSK-013)
+# infra/scripts/terraform-check.sh, which CI calls, so a developer and CI run the identical image -
+# the single-definition property P0-TSK-031 established and this file preserves rather than replaces.
 #
 # UPDATING: infra/scripts/check-pinned-images.sh reports both a moved tag and a newer release.
 # Bump VERSION, re-resolve DIGEST with `docker buildx imagetools inspect <repo>:<version>`, and
@@ -29,3 +29,15 @@ GITLEAKS_DIGEST=sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc
 TRIVY_REPOSITORY=aquasec/trivy
 TRIVY_VERSION=0.74.0
 TRIVY_DIGEST=sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+
+# The infrastructure-code tools (P15-TSK-013, ADR-0121): sourced by infra/scripts/terraform-check.sh.
+# TERRAFORM_VERSION is also every root's required_version (infra/terraform/environments/*/versions.tf),
+# which TerraformIsPinnedAndCheckedTest holds equal, so the binary that checks the code is the one the
+# code declares. Trivy above also runs `trivy config` over the Terraform.
+TERRAFORM_REPOSITORY=hashicorp/terraform
+TERRAFORM_VERSION=1.17.1
+TERRAFORM_DIGEST=sha256:a5d5a5a892c98f60fcbfa81eac2a40fc19e7b3fa7719bccae10ff6111d22524a
+
+TFLINT_REPOSITORY=ghcr.io/terraform-linters/tflint
+TFLINT_VERSION=v0.65.0
+TFLINT_DIGEST=sha256:2788f4d4fc663c0e953b011b01bf443fe5bfce7587ee916e588e6057b85d6359
