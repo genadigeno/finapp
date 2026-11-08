@@ -70,6 +70,13 @@ compatibility check between releases.
    - There is no runtime schema registry while no consumer exists outside the monolith.
 
    *(Widened by the transition's review, 2026-11-07, its I-2.)*
+
+   *(Read-note, `P15-TSK-027`, 2026-11-08: built as written, with what the decision left open settled in
+   `EVENT_ARCHITECTURE.md` §Schema evolution. Both catalogues are read from the compiled code, and the committed files
+   in `docs/events/` stand for the last release, so no second list is kept by hand. "Within a major" is `eventVersion`,
+   the number a consumer opts into: an additive change may stay under a version or take the next one, and a new version
+   of a type a released handler consumes waits until the consumers have learned it. The handler diff runs both ways,
+   because a handler removed opens the same window to a rollback that a handler added opens to a rollout.)*
 7. **Smoke tests never move production money.** The production smoke is read-only: health, build identity and the
    trial-balance gauge. Money flows are exercised only in `ci` and `staging`, against simulated providers.
 

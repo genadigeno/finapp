@@ -1865,6 +1865,8 @@ row.)*
 
 *(Added 2026-11-08 by `P15-TSK-024`: §11.8 below is written too, its instance-down and stale-gauge parts; the paragraph above holds for the rest of that row and every other.)*
 
+*(Added 2026-11-08 by `P15-TSK-027`: §11.1.1 below is written, the handler-set steps of rows 11.1 and 11.3; not yet rehearsed.)*
+
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
 *(Written by `P15-TSK-008`, 2026-11-08, from the code and its tests; **not yet rehearsed** - `P15-TSK-012` rehearses it
@@ -1891,6 +1893,50 @@ its records redeliver into the dedupe. It is a signal that a tick or a batch ran
 own latency metrics explain. Steps 1-6 together take at most 57 s; the grace period covers the `preStop` pause, those
 57 s and step 7 (`P15-TSK-009`). A pod still running when the grace ends is killed - the same as any kill, and as
 correct.
+
+### 11.1.1 A release that changes the handler set, or an event's contract (`P15-TSK-027`)
+
+*(Written by `P15-TSK-027`, 2026-11-08, from the tests; **not yet rehearsed** - `P15-TSK-012` rehearses the handler-window
+case on `kind`. The audited replay it names is `P15-TSK-028`'s door.)*
+
+The build refuses a release whose events a consumer of the last release cannot read, and a release that changes who
+handles what with no recorded way through (`EVENT_ARCHITECTURE.md` §Schema evolution and §Adding a handler). What it
+cannot do is run the step, so a release with an entry in `docs/events/release-record.yaml` has these to perform.
+
+**A handler added to an existing consumer group** (the record's `replay`):
+
+1. Note the instant the rolling update starts.
+2. Let the rollout complete: every replica on N. While it runs, an N − 1 replica acknowledges records of the type unseen.
+3. Note the instant it completes. Those two instants are the rollout window.
+4. Replay that one event type over that window through the audited replay. The inbox deduplicates what N already applied,
+   so nothing is applied twice. The operator's reason names the release.
+5. Check that the replay's audit record names the type and the window.
+
+**A rollback** after step 2 has the same exposure from the other side: every record of the type the rollback window
+carries is acknowledged unseen by N − 1. After the re-roll, replay the type again over the rollback window. A window older
+than the inbox's dedupe window is refused by the replay itself.
+
+**A handler removed** (the record's `replay` over `[rollback]`): nothing to do unless the release is rolled back. If it
+is, after the rollback replay the type over the window the release ran, because N acknowledged those records unseen.
+
+**A handler in a new group** (the record's `newGroup`): set the group's offsets before any replica of the release starts,
+to the choice the record names (`latest`, or the instant). The consumers' `auto.offset.reset` is `earliest`, so a group
+that starts with no committed offset reads the whole retention. Only a handler recorded `naturallyIdempotent: true` may
+do that. Set them with the broker's consumer-group tooling, before the group has any member.
+
+**A new `eventVersion` of a type a handler consumes** (the record's `versions`): the consumer must be running on every
+replica, a release earlier, before the producer ships. Never roll the consumer back past that release while the new
+version is being written.
+
+**At every release, roll the catalogues forward.** After the release is cut:
+
+1. Copy `app/build/event-catalogue/event-catalogue.yaml` and `handler-catalogue.yaml` over the files of the same name in
+   `docs/events/`. `EventCatalogueTest` and `HandlerSetCatalogueTest` leave them there on every run. Never write them by
+   hand: the build's comparison is only as good as this file.
+2. Set each file's `release:` line to the release's identity.
+3. Empty `handlers:`, `versions:` and `retired:` in `docs/events/release-record.yaml`.
+4. Review the diff as a contract change, not as generated output. A version the code stopped writing stays in the
+   catalogue on purpose.
 
 ### 11.6 Broker outage and consumer lag
 
@@ -2080,8 +2126,10 @@ published yet. A statement built from a constant that another file declares and 
 
 It runs `terraform fmt -check`, `tflint`, `trivy config` (HIGH and CRITICAL fail), and then, in every directory that
 holds a `.tf` file, `terraform init -backend=false -lockfile=readonly`, `terraform validate` and `terraform test`.
-Each test only plans; a root's tests plan against a mock AWS provider, and the conventions module uses no provider. It then plants six defects in copies of the tree and requires each check to
-refuse its plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
+Each test only plans; the roots' tests and the concern modules' tests plan against a mock AWS provider, and the
+conventions module uses no provider. It then plants thirteen defects in copies of the tree (six over the checks
+themselves, seven over the network and cluster modules' named properties) and requires each check to refuse its
+plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
 reason`, and the exit status is 0. A line starting `!!` names what failed:
 
 - **a check failed** on the tree: fix the code. For a formatting failure, `terraform fmt -recursive infra/terraform`
@@ -2101,10 +2149,10 @@ pinned one, and the providers are still verified against the committed lock file
 
 | Convention | Enforced by |
 |---|---|
-| Terraform and every provider pinned exactly; `required_version` equals the pinned image's version; the two roots on the same versions; the lock file holding exactly those | `TerraformIsPinnedAndCheckedTest`; `tflint` (`terraform_required_version`, `terraform_required_providers`); `init -lockfile=readonly` |
+| Terraform and every provider pinned exactly; `required_version` equals the pinned image's version; the two roots on the same versions; the lock file holding exactly those; a concern module requiring a provider commits a lock file at the same version the roots pin | `TerraformIsPinnedAndCheckedTest`; `tflint` (`terraform_required_version`, `terraform_required_providers`); `init -lockfile=readonly` |
 | One `s3` backend per root, its own key, `encrypt = true`, `use_lockfile = true`; no credential argument in a backend or provider block | `TerraformIsPinnedAndCheckedTest` |
 | snake_case identifiers; `main.tf`, `variables.tf`, `outputs.tf` per directory; every variable and output typed and described | `tflint` |
-| Names start `finapp-<environment>` and every resource carries `Project`, `Environment` and `ManagedBy`, from `modules/conventions` through the AWS provider's `default_tags` | `terraform test` (the conventions module and each root); `TerraformIsPinnedAndCheckedTest` (each root's provider takes the tags, each root calls the module as itself). That each new resource uses the prefix is a review point until `-014`…`-016` |
+| Names start `finapp-<environment>` and every resource carries `Project`, `Environment` and `ManagedBy`, from `modules/conventions` through the AWS provider's `default_tags` | `terraform test` (the conventions module and each root); `TerraformIsPinnedAndCheckedTest` (each root's provider takes the tags, each root calls the module as itself). Each concern module's tests assert the prefix on the resources they name; a new resource's use of it is a review point |
 | `prevent_destroy = true` on the database, its backups and every KMS key | `TerraformIsPinnedAndCheckedTest` |
 | No resource or data source that writes a secret value into state, and no database given its password (use `manage_master_user_password`) | `TerraformIsPinnedAndCheckedTest` |
 | Every test file mocks every provider its directory requires, and configures no real one | `TerraformIsPinnedAndCheckedTest` |
@@ -2112,8 +2160,14 @@ pinned one, and the providers are still verified against the committed lock file
 **Change a provider pin.** Use the same version in every root's `versions.tf`. Then regenerate each root's lock file
 with the pinned Terraform, for the platforms the checks run on:
 `terraform providers lock -platform=linux_amd64 -platform=linux_arm64`, run in each root after an
-`init -backend=false`. Review the lock file's diff and run the checks. A Dependabot pull request that moves one root
-and not the other fails `TerraformIsPinnedAndCheckedTest` until both roots agree.
+`init -backend=false`. Then copy a root's lock file over each concern module's `.terraform.lock.hcl`, setting its
+`constraints` line to the module's own constraint (`versions.tf`). Review the lock files' diff and run the checks. A
+Dependabot pull request that moves one root and not the other, or the roots and not the modules, fails
+`TerraformIsPinnedAndCheckedTest` until they agree.
+
+**The modules.** What each concern module holds, what asserts it and how to operate it is in its own README:
+[`network`](../../infra/terraform/modules/network/README.md) and
+[`kubernetes`](../../infra/terraform/modules/kubernetes/README.md).
 
 **Change the Terraform or `tflint` version.** Bump `VERSION` in `infra/scanner-pins.sh` and re-resolve `DIGEST` with
 `docker buildx imagetools inspect <repository>:<version>`, as for the scanners. For Terraform, set every root's

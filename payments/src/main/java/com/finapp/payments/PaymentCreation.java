@@ -69,7 +69,6 @@ public final class PaymentCreation {
 
     static final String CREATED_EVENT_TYPE = "payments.PaymentIntentCreated";
     static final String PRODUCER = "payments";
-    static final int EVENT_VERSION = 1;
     static final String TARGET_TYPE = "payment_intent";
 
     @NonNull private final IdempotentExecutor executor;
@@ -278,7 +277,7 @@ public final class PaymentCreation {
                 new EventEnvelope(
                         EventId.next(ids),
                         CREATED_EVENT_TYPE,
-                        EVENT_VERSION,
+                        PaymentEventVersions.of(CREATED_EVENT_TYPE),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         intent.id(),
                         TARGET_TYPE,

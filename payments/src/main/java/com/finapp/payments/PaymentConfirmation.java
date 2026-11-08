@@ -129,8 +129,6 @@ public final class PaymentConfirmation {
     /** {@code RailSelected} (`P7-TSK-003`): the routed dispatch, published with Tx1. */
     static final String RAIL_SELECTED_EVENT_TYPE = "payments.RailSelected";
 
-    static final int RAIL_SELECTED_EVENT_VERSION = 1;
-
     /**
      * What the caller learns — statuses honestly, {@code PROCESSING} included (ADR-0046).
      *
@@ -537,7 +535,7 @@ public final class PaymentConfirmation {
                 new EventEnvelope(
                         EventId.next(ids),
                         RAIL_SELECTED_EVENT_TYPE,
-                        RAIL_SELECTED_EVENT_VERSION,
+                        PaymentEventVersions.of(RAIL_SELECTED_EVENT_TYPE),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         intentId,
                         PaymentCreation.TARGET_TYPE,
@@ -654,7 +652,7 @@ public final class PaymentConfirmation {
                 new EventEnvelope(
                         EventId.next(ids),
                         PaymentOutcomes.FAILED_EVENT_TYPE,
-                        PaymentCreation.EVENT_VERSION,
+                        PaymentEventVersions.of(PaymentOutcomes.FAILED_EVENT_TYPE),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         intent.id(),
                         PaymentCreation.TARGET_TYPE,
@@ -705,7 +703,7 @@ public final class PaymentConfirmation {
                 new EventEnvelope(
                         EventId.next(ids),
                         CAPTURE_DEFERRED_EVENT_TYPE,
-                        PaymentCreation.EVENT_VERSION,
+                        PaymentEventVersions.of(CAPTURE_DEFERRED_EVENT_TYPE),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         intentId,
                         PaymentCreation.TARGET_TYPE,
