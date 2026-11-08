@@ -48,13 +48,17 @@ public final class OutboxBacklog {
      * <p>Age is measured by the <strong>server's</strong> clock, on the same reasoning as
      * {@code V004} and {@code V006}: an age computed by subtracting a server timestamp from a
      * client's clock measures the difference between two machines as much as the age of a row.
+     *
+     * <p><strong>A discarded row is not backlog, and a replay is young</strong> (`P15-TSK-028`). A discard is decided and
+     * final, so counting it would hold the gauge above zero for ever. A replayed row waits from the moment the replay was
+     * ordered: aged from {@code occurred_at}, a replay of last week's events would read as a week-old stuck event.
      */
     private static final String BACKLOG_SQL =
             """
             SELECT count(*) AS pending,
-                   coalesce(extract(epoch FROM now() - min(occurred_at))::bigint, 0) AS oldest_seconds
+                   coalesce(extract(epoch FROM now() - min(coalesce(replay_ordered_at, occurred_at)))::bigint, 0) AS oldest_seconds
               FROM platform.outbox_event
-             WHERE published_at IS NULL
+             WHERE published_at IS NULL AND discarded_at IS NULL
             """;
 
     private final OutboxConnectionSource connections;
@@ -91,9 +95,9 @@ public final class OutboxBacklog {
 
     /**
      * @param pending unpublished events, including any that are dead-lettered and therefore
-     *     blocking their aggregate
-     * @param oldest how long the oldest unpublished event has been waiting; {@link Duration#ZERO}
-     *     when there is nothing pending
+     *     blocking their aggregate; never one that was discarded
+     * @param oldest how long the oldest unpublished event has been waiting, a replayed one from when
+     *     it was ordered; {@link Duration#ZERO} when there is nothing pending
      */
     public record Reading(long pending, Duration oldest) {
 

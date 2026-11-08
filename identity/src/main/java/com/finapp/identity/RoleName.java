@@ -377,7 +377,18 @@ public enum RoleName {
      */
     REGULATORY_REPORTER(EnumSet.of(
             PermissionName.REGULATORY_REPORT_PREPARE,
-            PermissionName.REGULATORY_REPORT_SUBMIT));
+            PermissionName.REGULATORY_REPORT_SUBMIT)),
+
+    /**
+     * Operates the platform's event plumbing (`P15-TSK-028`; identity {@code V026}): holds {@link PermissionName#EVENT_OPERATE}
+     * alone - the doors over an abandoned event, a parked record and a replay.
+     *
+     * <p><strong>A twenty-first role, because it is a distinct trust decision</strong>: deciding that a fact will be republished
+     * or will never be delivered is neither moving money nor reading the books, and the grant is disjoint from every desk that is.
+     * A discard's four eyes are two holders of this one role, the second person a {@code CHECK} on {@code platform.dead_letter_discard}
+     * ({@code INV-AUD-04}), the {@code LEDGER_ADJUST} shape.
+     */
+    EVENT_OPERATOR(EnumSet.of(PermissionName.EVENT_OPERATE));
 
     private final Set<PermissionName> permissions;
 

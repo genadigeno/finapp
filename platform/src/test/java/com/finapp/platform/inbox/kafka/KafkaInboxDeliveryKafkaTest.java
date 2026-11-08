@@ -181,8 +181,10 @@ class KafkaInboxDeliveryKafkaTest {
         try (KafkaEventReceiver crashed =
                 new KafkaEventReceiver(
                         unacknowledging,
+                        group,
                         DatabaseRoles::bootstrap,
                         inbox(),
+                        com.finapp.platform.testing.InboxParkingDoubles.NEVER_PARKS,
                         List.of(counting(consumerName)),
                         Duration.ofSeconds(1))) {
             pollUntil(crashed, () -> effectCount(consumerName) >= 1);
@@ -305,6 +307,7 @@ class KafkaInboxDeliveryKafkaTest {
                 group,
                 DatabaseRoles::bootstrap,
                 inbox(),
+                com.finapp.platform.testing.InboxParkingDoubles.NEVER_PARKS,
                 List.of(handlers),
                 Duration.ofSeconds(1));
     }
@@ -427,7 +430,7 @@ class KafkaInboxDeliveryKafkaTest {
     }
 
     private static OutboxRelay relay(EventPublisher publisher) {
-        return new OutboxRelay(DatabaseRoles::application, publisher);
+        return new OutboxRelay(DatabaseRoles::application, publisher, OutboxRelay.Abandonments.NOT_RECORDED);
     }
 
     private static KafkaEventPublisher realPublisher() {

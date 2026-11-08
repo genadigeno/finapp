@@ -1488,13 +1488,15 @@ The proofs write nothing and decide nothing: each reading takes one read-only sn
 
 Risk's signals arrive through the inbox (`risk.signals`' consumer group): a delivery the handler cannot record is thrown,
 rolled back with its dedupe record, and retried - the partition **stalls loudly** behind it, never skips it (`INV-EVT-04`).
+*(Since `P15-TSK-028` the stall is bounded: a record failing for a reason of its own parks after five failures and two minutes,
+kept, counted and alerted, and the partition goes on. A version this build cannot read never parks. §11.6 has the door.)*
 
 - **`RiskCollectionsUnplaced`** (`finapp.risk.collections.unplaced` rising - `P13-TSK-025`): a `LoanDefaulted` or
   `BnplDefaulted` delivery names an agreement whose party cannot be placed (lending's and bnpl's published views), so it is
-  refused before any alert is born and its partition retries it - delivering nothing behind it (every later signal of the
-  partition waits). The fix is upstream: the agreement's party missing from the view (a status filter, a migration) - the
-  owning module restores it, and the retry then records the default, opens its `COLLECTIONS` case and the partition
-  drains. Never acknowledge the delivery by hand: the default would never reach the collections desk.
+  refused before any alert is born and its partition retries it, then parks it (§11.6). The fix is upstream: the agreement's
+  party missing from the view (a status filter, a migration) - the owning module restores it. If the record has parked, release
+  it (§11.6) and the retry records the default and opens its `COLLECTIONS` case. Never acknowledge the delivery by hand: the
+  default would never reach the collections desk.
 - **`InboxConsumptionFailing`** (`finapp.inbox.consumption{outcome="failed"}` in each quarter hour - platform-wide, the
   series carries no module tag, registered eagerly whatever the consumer's flag): some consumer's partition is stalled -
   an event version this build cannot read (deploy the build that knows it), a payload out of bounds, a handler failing.
@@ -1868,6 +1870,8 @@ row.)*
 
 *(Added 2026-11-08 by `P15-TSK-009`: §11.14 below is written too, a developer's and a reviewer's procedure over the repository, like §11.13.)*
 
+*(Added 2026-11-08 by `P15-TSK-027`: §11.1.1 below is written, the handler-set steps of rows 11.1 and 11.3; not yet rehearsed.)*
+
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
 *(Written by `P15-TSK-008`, 2026-11-08, from the code and its tests; **not yet rehearsed** - `P15-TSK-012` rehearses it
@@ -1896,11 +1900,55 @@ stops and their worker pools, and removed the 10 s a scrape in flight could hold
 `preStop` pause, those 71 s, step 7's 30 s and 4 s for the JVM's exit (§11.14). A pod still running when the grace ends
 is killed - the same as any kill, and as correct.
 
-### 11.6 Broker outage and consumer lag
+### 11.1.1 A release that changes the handler set, or an event's contract (`P15-TSK-027`)
 
-*Written by `P15-TSK-026` (2026-11-08) from the clients it built; **not yet rehearsed** - no deployed broker exists, and
-the rehearsal is `P15-TSK-028`'s and `-032`'s. A poison record, dead letters and replay are `P15-TSK-028`'s part of this
-subsection. The consumption and freshness SLOs, and their alerts, are `P15-TSK-025`'s; the signals below exist today.*
+*(Written by `P15-TSK-027`, 2026-11-08, from the tests; **not yet rehearsed** - `P15-TSK-012` rehearses the handler-window
+case on `kind`. The audited replay it names is `P15-TSK-028`'s door.)*
+
+The build refuses a release whose events a consumer of the last release cannot read, and a release that changes who
+handles what with no recorded way through (`EVENT_ARCHITECTURE.md` §Schema evolution and §Adding a handler). What it
+cannot do is run the step, so a release with an entry in `docs/events/release-record.yaml` has these to perform.
+
+**A handler added to an existing consumer group** (the record's `replay`):
+
+1. Note the instant the rolling update starts.
+2. Let the rollout complete: every replica on N. While it runs, an N − 1 replica acknowledges records of the type unseen.
+3. Note the instant it completes. Those two instants are the rollout window.
+4. Replay that one event type over that window through the audited replay. The inbox deduplicates what N already applied,
+   so nothing is applied twice. The operator's reason names the release.
+5. Check that the replay's audit record names the type and the window.
+
+**A rollback** after step 2 has the same exposure from the other side: every record of the type the rollback window
+carries is acknowledged unseen by N − 1. After the re-roll, replay the type again over the rollback window. A window older
+than the inbox's dedupe window is refused by the replay itself.
+
+**A handler removed** (the record's `replay` over `[rollback]`): nothing to do unless the release is rolled back. If it
+is, after the rollback replay the type over the window the release ran, because N acknowledged those records unseen.
+
+**A handler in a new group** (the record's `newGroup`): set the group's offsets before any replica of the release starts,
+to the choice the record names (`latest`, or the instant). The consumers' `auto.offset.reset` is `earliest`, so a group
+that starts with no committed offset reads the whole retention. Only a handler recorded `naturallyIdempotent: true` may
+do that. Set them with the broker's consumer-group tooling, before the group has any member.
+
+**A new `eventVersion` of a type a handler consumes** (the record's `versions`): the consumer must be running on every
+replica, a release earlier, before the producer ships. Never roll the consumer back past that release while the new
+version is being written.
+
+**At every release, roll the catalogues forward.** After the release is cut:
+
+1. Copy `app/build/event-catalogue/event-catalogue.yaml` and `handler-catalogue.yaml` over the files of the same name in
+   `docs/events/`. `EventCatalogueTest` and `HandlerSetCatalogueTest` leave them there on every run. Never write them by
+   hand: the build's comparison is only as good as this file.
+2. Set each file's `release:` line to the release's identity.
+3. Empty `handlers:`, `versions:` and `retired:` in `docs/events/release-record.yaml`.
+4. Review the diff as a contract change, not as generated output. A version the code stopped writing stays in the
+   catalogue on purpose.
+
+### 11.6 Broker outage, consumer lag, a poison record, dead letters and replay
+
+*Written by `P15-TSK-026` and `P15-TSK-028` (2026-11-08) from the code they built; **not yet rehearsed** - no deployed broker
+exists, and the rehearsal is `-032`'s. The consumption and freshness SLOs, and their alerts, are `P15-TSK-025`'s; the signals
+below exist today.*
 
 **What is at stake.** Kafka carries hints, never truth (`INV-EVT-02`). While the broker is away nothing financial is lost
 or wrong: every event waits in the outbox in PostgreSQL, in its aggregate's order, and every consumer's place is its
@@ -1968,9 +2016,10 @@ reason to take the fleet out of service. The alert on the series is `P15-TSK-025
 publish no lag series yet (`P15-TSK-025`); a group's lag in records is the broker's consumer-group view of
 `finapp.<module>`, read with the provider's tooling.
 
-1. **A stalled partition** (a record that fails or is contended): §9.12. The record is retried, never skipped. Fix the
+1. **A stalled partition** (a record that fails or is contended): §9.12. The record is retried, never skipped; if it is
+   failing for a reason of its own it parks after five failures and two minutes, and the partition goes on (below). Fix the
    cause - deploy the build that reads the event's version, restore the upstream data - and the partition drains. Never
-   move the group's offset past it by hand: the effect would never happen.
+   move the group's offset past it by hand: the effect would never happen, and nothing would say so.
 2. **Too slow, not stalled**: a group's parallelism is its partitions (12 per topic) and its members (one per replica).
    Adding replicas adds members, and the cooperative assignor pauses only the partitions that move. Repeated rebalances in
    the logs mean a member is being evicted for exceeding the poll budget (10 records in 120 seconds; a budget, not a
@@ -1979,12 +2028,71 @@ publish no lag series yet (`P15-TSK-025`); a group's lag in records is the broke
    throughput collapses - find the slow statement in the handler. An eviction series of its own is `P15-TSK-025`'s.
 3. **A group stopped for days**: a topic keeps a record for 7 days, so restore consumption before the oldest unconsumed
    record reaches that age. Past it, the deleted records are lost hints: the group resumes at the earliest one retained,
-   and the gap is recovered from the outbox by `P15-TSK-028`'s audited replay, bounded by the inbox's 14-day window. A
+   and the gap is recovered from the outbox by an audited replay (below), bounded by the inbox's 14-day window. A
    group with no members loses its committed offsets after 7 days and restarts from the earliest retained record; every
    such record is inside the dedupe window, so the replay is absorbed.
 
 Never reset a group's offsets to the latest record: it skips facts silently. Resetting to the earliest retained record is
 safe, because the inbox deduplicates everything the topic still holds.
+
+#### A poison record
+
+*Signals*: `finapp.deadletter.parked{group}` above zero, alerted by `P15-TSK-025`'s rule; `finapp.inbox.consumption{outcome="parked"}`;
+an `ERROR`, `Record of <type> parked for consumer ...`, naming the failure's class; `inbox.RecordParked` in the audit trail. A parked
+record is set aside and its partition has already moved on, so this is not an outage and nothing is lost: the record is on
+`platform.inbox_parked_record`, its event still in the outbox.
+
+Only a failure of the record's own counts, against both budgets, on the database's clock: five failures and two minutes
+(`finapp.inbox.park-after-attempts`, `finapp.inbox.park-after-failing-for`). A database that blinked, a pool that ran dry, a
+contended claim, a refused broker credential or a build too old to read a version never counts: the partition stalls until the
+cause is gone, as §9.12 says. **Many parks at once are a bad release, not bad records**: stop, read the failure class, fix forward.
+
+1. **Read the queue**: `GET /v1/operator/events/dead-letters` (`EVENT_OPERATE`). Audited; identifiers and the failure's class,
+   never a payload or the failure's message.
+2. **Fix the cause first.** Releasing a record the handler still cannot take costs it its budget again and parks it again.
+3. **Release it**: `POST /v1/operator/events/parked/{parkId}/release`, with a reason, on a `MULTI_FACTOR` session. It clears the
+   count and republishes the event through the outbox; every other consumer's inbox refuses the duplicate.
+   Refused `deadletter.ReplayOutsideDedupeWindow` past the 14 days, and `deadletter.NotReleasable` for a record that was
+   never an event (a malformed one) or whose event has left the outbox: its only way on is a discard.
+4. **Or discard it**, below. Never `DELETE` a row or move a group's offset to get past it.
+
+#### Dead letters: an abandoned event
+
+*Signals*: `outbox.EventAbandoned` in the audit trail; `finapp.outbox.publication{outcome="deadlettered"}`; an `ERROR`
+naming the event, the aggregate and the attempts; a `WARN` each cycle that the aggregate is blocked behind it;
+`finapp.outbox.oldest` climbing. The row blocks its aggregate, by design: later events of that aggregate wait.
+
+1. **Read the queue**, as above. The failure's class says what to do: a broker or credential class is environmental; a
+   class that speaks of the payload is the event's own.
+2. **Environmental, and the cause is fixed: retry.** `POST /v1/operator/events/abandoned/{eventId}/retry`, with a reason. The
+   relay takes it again in its aggregate's order. `deadletter.RetryOutsideDedupeWindow` means the event occurred 14 days ago or
+   more: an earlier attempt may have reached the broker with its acknowledgement lost, so a consumer may have applied it and lost
+   its record of doing so. Discard it instead, and recover the fact from the owning domain. Any replay waiting behind the event is
+   judged by the same act; one past the window is withdrawn, and the audit record counts them (`replaysWithdrawn`).
+3. **The event can never be published: discard, two people.** `POST /v1/operator/events/discards` (`subjectKind`
+   `OUTBOX_EVENT` or `INBOX_RECORD`, `subjectId`, `reason`), then a **different** `EVENT_OPERATOR`
+   `POST /v1/operator/events/discards/{discardId}/approval`. Consumers will never see that fact: record why, and expect to
+   answer for it at reconciliation. The row stays as the evidence of the gap, and the aggregate goes on. A proposal that
+   should not proceed is rejected, by anyone including its proposer, `.../rejection`; while one stands, a retry is refused.
+
+There is no raw `UPDATE` in this procedure, and none is needed.
+
+#### Replay
+
+*For*: a group stopped past topic retention (above); a handler added to a release, over its rollout and any rollback windows
+(§11.1, §11.3; `P15-TSK-027`'s catalogue says which). *Not for*: reprocessing a parked record, which is a release.
+
+1. **Choose the type and the window** of first publication, `[from, to)`, as instants. One command, one type, at most 1000
+   events, all or nothing. More than that: narrow the window and repeat. Replay at volume is Phase 16's.
+2. **Order it** after the rollout completes: `POST /v1/operator/events/replays` `{eventType, from, to, reason}`, on a
+   `MULTI_FACTOR` session (`outbox.EventReplayOrdered`). The receipt says how many were requeued, not delivered.
+3. **What to expect**: the events return to the outbox, so `finapp.outbox.pending` rises and falls, the age measured from the order;
+   consumers that already applied them count `finapp.inbox.consumption{outcome="duplicate"}`, and only a consumer without a
+   dedupe record runs its handler.
+4. **`deadletter.ReplayOutsideDedupeWindow`**: an event in the window is 14 days old or more, so its dedupe rows may be gone and a
+   replay could apply an effect twice. The whole command is refused. Never work around it: narrow the window to what is
+   inside, and treat what is outside as a gap, recovered from the system of record by the owning domain. Only a type every
+   consumer of which declares itself `naturallyIdempotent` on its handler may go past it, and none does today.
 
 ### 11.8 Instance down, stale gauges - `InstanceDown`, `FinappTargetsAbsent`, `GaugesStale`, `FxGaugesUnreadable`, `ReconciliationGaugesUnreadable`
 
@@ -2124,3 +2232,18 @@ eight minutes for three replicas, longer at the maximum. That is the price of ne
 
 **What this does not cover.** A cluster's own refusal (Pod Security Admission, NetworkPolicy, quotas: `-010`), a real
 rollout and the measured connection peak (`-012`), and delivery (`-017`).
+
+## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
+
+A signed callback no longer concludes anything by itself on the payment, instant, FX or corridor doors. Its evidence and dedupe
+commit, then the door asks the provider, and the delivery is acknowledged after that one inquiry. KYC's callbacks are outside
+this rule. So a callback's outcome now waits on one inquiry, bounded by that provider's timeout.
+
+| You see | It means | Do |
+|---|---|---|
+| A payment stays `*_UNKNOWN` or `AWAITING_PAYER` after its callback arrived | The inquiry failed or had no answer; nothing was adopted | Nothing. The resolution sweep asks again. If it persists, check the provider's inquiry endpoint |
+| `finapp.payments.webhook{outcome="unmappable"}` rising, with WARN lines saying the provider "has denied a signed callback for longer than its bound" | A signed callback the provider's own inquiry still denies, past that kind's `refute-after` bound | Treat as a possible **webhook key compromise** until shown otherwise, then rotate the key under `SECRET_MANAGEMENT.md`. Nothing has moved, and no reversal is needed on this signal alone |
+| The same series rising, with WARN lines saying "we cannot read" | The provider answered and the adapter cannot read it: a wire change. Nothing moves and each question stays open | Fix the adapter. The hints then conclude on their own |
+| WARN "contradicts the row" | The provider's answer disagrees with a concluded payment | A break: the row stands, the answer rests as evidence, and reconciliation will type it from settlement. Investigate with the provider |
+| `payments.callback_hint` rows with `concluded_at IS NULL` growing | Clearing, dispute or parking inquiries are not being answered | Check the provider's inquiry endpoints. The sweep's wait doubles from `finapp.payments.callback-hint.retry-after` (1 min) to `.retry-cap` (6 h). A denial is believed only past `.refute-after` (disputes 2 h, clearing 30 min, executions 15 min) |
+| WARN "never answered within their bound and are abandoned" | A hint passed `finapp.payments.callback-hint.give-up-after` (7 days) | The callback's evidence stands and settlement reconciliation is the backstop; find the notice in `provider_evidence` and reconcile it |

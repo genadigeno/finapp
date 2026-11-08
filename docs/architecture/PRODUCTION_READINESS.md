@@ -180,7 +180,7 @@ gaps of the module they touch (§4).
 | Recovery | — | — | — | — |
 | Ownership | Missing | — | — | — |
 | Runbooks | Partial: `OPERATIONS_RUNBOOK.md` §11.6, broker outage and consumer lag, written and not yet rehearsed | — | — | — |
-| Multi-instance | Consumer groups per module, manual commit after the inbox record, dedupe window `finapp.inbox.retention` (14 days by default); every topic's retention plus one segment below that window, and the cooperative assignor with bounded session and poll timeouts (`P15-TSK-026`) | — | — | — |
+| Multi-instance | Consumer groups per module, manual commit after the inbox record, dedupe window `finapp.inbox.retention` (14 days by default); every topic's retention plus one segment below that window, and the cooperative assignor with bounded session and poll timeouts (`P15-TSK-026`); event payloads additive over the last release and every change to the handler set recorded, both held at build time (`P15-TSK-027`) | — | — | — |
 
 ### 3.5 Telemetry
 
@@ -249,7 +249,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Metrics | — | — | — | — |
 | Alerting | No rule on the outbox, the inbox or a dead letter (§15; `-025`) | — | — | — |
 | Ownership | — | — | — | — |
-| Runbooks | No platform section; dead letters resolved by a manual change (`-028`, `-032`) | — | — | — |
+| Runbooks | Dead letters, a poison record and replay have doors and a written section (`OPERATIONS_RUNBOOK.md` §11.6); no raw `UPDATE` remains; rehearsal is `-032`'s | — | — | — |
 
 ### 4.3 `party`
 

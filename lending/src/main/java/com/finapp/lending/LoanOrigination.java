@@ -265,6 +265,7 @@ public final class LoanOrigination {
                 .with("product", application.product().name())
                 .with("amountMinor", Long.toString(approved.amount().minorUnits()))
                 .with("currency", approved.amount().currency().code())
+                .with("scale", Integer.toString(approved.amount().scale()))
                 .with("nominalAnnualRateE8", pinned.nominalAnnualRate().movePointRight(8).toBigIntegerExact().toString())
                 .with("expiresAtEpochMilli", Long.toString(expiresAt.toEpochMilli()))
                 .with("termsVersionId", version.row().id().value().toString())

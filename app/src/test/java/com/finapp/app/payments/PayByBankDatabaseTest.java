@@ -1344,6 +1344,58 @@ class PayByBankDatabaseTest {
     // -----------------------------------------------------------------
 
     @Test
+    @DisplayName("a forged-but-signed execution moves nothing over the real chain: the pay-in waits, nothing posts, and"
+            + " the signed bytes and the inquiry's answer are both retained (P15-TSK-036)")
+    void aForgedSignedExecutionMovesNothing() throws Exception {
+        Fixture f = bankFixture();
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String attemptId = attemptIdOf(field(confirmedPayment(f, "5.00").body(), "id"));
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.INITIATION_STATUS_PATH + referenceOf(attemptId), 200,
+                "{\"status\":\"unrecognised\"}");
+
+        assertThat(rawCallback(
+                        "{\"eventId\":\"evt_" + suffix() + "\",\"reference\":\"" + referenceOf(attemptId)
+                                + "\",\"status\":\"executed\",\"schemeReference\":\"sch-forged-" + suffix()
+                                + "\",\"amount\":\"5.00\",\"currency\":\"USD\"}"))
+                .isEqualTo(204);
+
+        assertThat(oneString("SELECT status FROM payments.payment_attempt WHERE id = ?", UUID.fromString(attemptId)))
+                .isEqualTo("AWAITING_PAYER");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-execution:" + attemptId + "'"))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = '" + attemptId + "'"))
+                .as("the signed bytes and the inquiry's answer")
+                .isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a forged-but-signed execution naming nothing of ours parks nothing, its hint open inside the refutation"
+            + " bound (P15-TSK-036)")
+    void aForgedSignedOrphanParksNothing() throws Exception {
+        String scheme = "sch-forged-orphan-" + suffix();
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.EXECUTION_STATUS_PATH + scheme, 200, "{\"status\":\"unrecognised\"}");
+
+        assertThat(rawCallback(
+                        "{\"eventId\":\"evt_" + suffix() + "\",\"reference\":\"nobody" + suffix()
+                                + "\",\"status\":\"executed\",\"schemeReference\":\"" + scheme
+                                + "\",\"amount\":\"7.50\",\"currency\":\"USD\"}"))
+                .isEqualTo(204);
+
+        assertThat(count("SELECT count(*) FROM payments.unmatched_confirmation WHERE scheme_reference = '" + scheme + "'"))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:unmatched-confirmation:instant:" + scheme + "'"))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM payments.callback_hint WHERE asked_about = '" + scheme + "'"
+                        + " AND concluded_at IS NULL"))
+                .as("a denial may be a lagging read until its bound has passed")
+                .isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("the door authenticates before anything else: a wrong signature, a missing"
             + " header and a stale timestamp are ONE uniform 401 with nothing written")
     void anUnsignedCallbackDiesAtTheDoor() throws Exception {
@@ -2026,6 +2078,11 @@ class PayByBankDatabaseTest {
         }
 
         @Override
+        public com.finapp.payments.ExecutionAnswer inquireExecution(com.finapp.payments.ProviderReference reference) {
+            return com.finapp.payments.ExecutionAnswer.indeterminate();
+        }
+
+        @Override
         public com.finapp.payments.PushInquiryAnswer inquireReturn(
                 com.finapp.payments.EndToEndReference ourReference) {
             return inquiries.inquireReturn(ourReference);
@@ -2169,6 +2226,12 @@ class PayByBankDatabaseTest {
     }
 
     private int callback(String body) {
+        com.finapp.app.payments.ProviderInquiryStubs.instantAgrees(provider, body);
+        return rawCallback(body);
+    }
+
+    /** A signed delivery the scheme has NOT been told to agree with: the forged-callback tests' door. */
+    private int rawCallback(String body) {
         return provider.deliverTimestampSignedCallback(
                 door(), body, WEBHOOK_KEY, Instant.now(CLOCK).getEpochSecond(), 1);
     }

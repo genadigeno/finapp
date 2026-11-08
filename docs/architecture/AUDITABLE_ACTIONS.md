@@ -54,7 +54,15 @@ question, not a refactor.
 |---|---|---|
 | `outbox.EventAbandoned` | No | The relay exhausted its attempts for an event and stopped retrying, blocking its aggregate until an operator resolves it. |
 | `outbox.EventRetryAuthorised` | **Yes** | An operator cleared an event's abandonment and returned it to the relay's queue. |
-| `outbox.EventDiscarded` | **Yes** | An operator accepted that an event will never be published, leaving a permanent gap in what consumers received. |
+| `outbox.EventDiscarded` | **Yes** | An operator accepted that an event will never be published, leaving a permanent gap in what consumers received. The second person of a four-eyes discard; the row stays (`P15-TSK-028`). |
+| `outbox.EventReplayOrdered` | **Yes** | An operator ordered published events of one type republished over a time window; consumers' dedupe records absorb what they have already handled (`P15-TSK-028`; `POST /v1/operator/events/replays`, `EVENT_OPERATE`). Its target the event type; the summary the window and the count. |
+| `deadletter.Read` | No | An operator read the abandoned events and parked records awaiting a decision: identifiers, types and failure classes, never a payload (`P15-TSK-028`). Recorded in the transaction of the read. |
+| `deadletter.DiscardProposed` | **Yes** | An operator proposed discarding an abandoned event or a parked record; nothing changes until a different person approves (`P15-TSK-028`). |
+| `deadletter.DiscardRejected` | **Yes** | A proposed discard of an abandoned event or a parked record was rejected, by anyone, its proposer included; nothing was discarded (`P15-TSK-028`). |
+| `deadletter.ActRefused` | No | A dead-letter door refused an act - not abandoned, past the dedupe window, one's own proposal; the summary names the act and the refusal's code (`P15-TSK-028`). Recorded `DENIED` in a transaction of its own, after the act's rolled back; a reason is not demanded, because a refused request may have given none. A missing permission or step-up is the interceptor's record. |
+| `inbox.RecordParked` | No | A consumer's record failed its bounded retries for a reason of its own and was parked, so its consumer group continued (`P15-TSK-028`). Recorded by the platform, in the transaction that parks it. |
+| `inbox.ParkedRecordReleased` | **Yes** | An operator released a parked record: its failure count cleared and its event republished from the outbox (`P15-TSK-028`). |
+| `inbox.ParkedRecordDiscarded` | **Yes** | A second operator approved discarding a parked record: the consumer will never apply it, and the row is kept (`P15-TSK-028`). |
 
 ### `party` — `PartyAuditAction`
 
@@ -908,14 +916,13 @@ accountant, controller or reporter is identity's existing `identity.RoleAssigned
 
 ### What is emitted, and what is declared not to be
 
-**The two registration actions are emitted; none of the three `platform` actions is**, and that is
-not an oversight. Two describe the manual procedure
-in [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned event, performed today
-with raw SQL and no audit record at all; the third is a relay decision currently visible only as a
-log line, which ADR-0010 is explicit does not count. A completeness registry is precisely the list
-that reality is checked *against*, so an action that must be audited belongs here whether or not
-the code emitting it exists. The gap is recorded in
-[`CURRENT_STATE.md`](../project/CURRENT_STATE.md) §Known Architectural Debt.
+**Every action in this document is emitted.** For most of the platform's life the three `outbox.*`
+actions were not: the relay's abandonment was a log line, and its two resolutions were manual
+`UPDATE`s with no record at all. `P15-TSK-028` emits them, the relay in the transaction that abandons
+the row, and the doors of [`EVENT_ARCHITECTURE.md`](EVENT_ARCHITECTURE.md) §Handling an abandoned
+event in the transaction of the act. A completeness registry is precisely the list that reality is
+checked *against*, so an action that must be audited belongs here whether or not the code emitting
+it exists yet.
 
 **`P1-TSK-022` makes that distinction mechanical.** `AuditableActionRegistryTest` reconciles this
 document with the code and states its own limit — *it cannot detect a privileged action that writes
@@ -925,7 +932,8 @@ every action against production code: each is **emitted**, or **declared not to 
 that will emit it. So *"deliberately not built yet"* and *"somebody removed the audit call"* stop
 being indistinguishable, and an action that silently **stops** being emitted fails the build.
 
-Three actions are currently declared unemitted: the three `outbox.*` actions above.
+No action is currently declared unemitted. The three `outbox.*` actions left the list at
+`P15-TSK-028`.
 `ledger.AdjustmentPosted` left the list at `P3-TSK-017`, when the adjustment endpoint was
 built *(this sentence still counted it as waiting until `P3-TSK-021` — the doc went stale
 when the code moved, corrected in passing)*; the four-eyes pair arrived emitted

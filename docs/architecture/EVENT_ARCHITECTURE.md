@@ -110,6 +110,14 @@ currencies at three scales now travel; *corrected by the Phase 9 → 10 transiti
 event names identifiers, and a consumer that needs an amount reads it from its owner. An amount on the wire is information, never the balance: the ledger stays
 the record (`INV-EVT-02`).
 
+*(`P15-TSK-027`, 2026-11-08: every `<name>Minor` field now has its scale beside it, so "the scale being the currency's
+own" describes only the version 1 records still on the wire. `merchant.FeeAssessed` and `merchant.FeeReturned` carry
+`scale` at version 2 (`X-TSK-014`), and `crossborder.CrossBorderPaymentReturned` its returned amount at version 2, as
+`returnedMinor`, `returnedCurrency` and `returnedScale`. `credit.CreditDecisionRequested`, `credit.CreditDecisionRecorded`
+and `lending.LoanOffered`, written after Phase 9 without one, gained `scale` under their existing version. Later phases
+added amount-bearing events this paragraph never listed, so "every other event names identifiers" stopped being true
+with lending: the catalogue in §Schema evolution, not this list, says which events carry an amount.)*
+
 ### Causation at the root of a flow
 
 `Correlation` leaves `causationId` **null** at a flow's root, deliberately, so a root is
@@ -146,39 +154,87 @@ This is why `eventId` is minted with the event and never regenerated at publicat
 ### Handling an abandoned event
 
 ADR-0005 requires poison messages to have a documented procedure, and abandonment is not
-self-healing: the aggregate stays stalled until a person acts. There is no tooling yet — Phase
-15 owns dead-letter handling and replay — so the procedure is manual and deliberately small.
+self-healing: the aggregate stays stalled until a person acts. The doors are `P15-TSK-028`'s: no
+raw `UPDATE` remains in this procedure, and every act below is keyed, reasoned, audited and on a
+`MULTI_FACTOR` session (`EVENT_OPERATE`, held by `EVENT_OPERATOR`).
 
-An abandoned row announces itself twice: an `ERROR` naming the event, the aggregate and the
-attempt count, and a `WARN` on every subsequent cycle saying the aggregate is blocked behind it.
-Both carry the originating flow's correlation identifier, so the event can be traced back to the
-transfer or payment that produced it.
+An abandoned row announces itself three times: `outbox.EventAbandoned` in the audit trail, in the
+transaction that abandoned it; an `ERROR` naming the event, the aggregate and the attempt count;
+and a `WARN` on every subsequent cycle saying the aggregate is blocked behind it. Every one of
+them carries the originating flow's correlation identifier, so the event can be traced back to
+the transfer or payment that produced it.
 
-```sql
--- What is abandoned, and what is stuck behind it.
-SELECT event_id, aggregate_id, event_type, attempts, dead_lettered_at, last_error
-FROM platform.outbox_event
-WHERE dead_lettered_at IS NOT NULL
-ORDER BY dead_lettered_at;
-```
+`GET /v1/operator/events/dead-letters` lists what is abandoned, oldest first, with the failure's
+class and never its message or the payload.
 
 Two resolutions, and the choice is a judgement about the event, never a default:
 
 - **Retry it** — the cause was environmental (a broker misconfiguration, an expired credential,
-  a topic that did not exist) and the event is still correct to publish. Clear the abandonment
-  and let the relay pick it up again:
-  `UPDATE platform.outbox_event SET dead_lettered_at = NULL, attempts = 0, next_attempt_at = now() WHERE event_id = ?`
+  a topic that did not exist) and the event is still correct to publish:
+  `POST /v1/operator/events/abandoned/{eventId}/retry`, with a reason. The relay takes it again in
+  its aggregate's order. Refused while a discard stands, and at or past the dedupe window unless every
+  consumer of the type is naturally idempotent (`deadletter.RetryOutsideDedupeWindow`): an earlier attempt
+  whose acknowledgement was lost reached the broker and left no mark, so nothing can prove a consumer never
+  applied it. That default is the owner's to confirm (`THREAT_MODEL.md` §6 item 17).
 - **Abandon it permanently** — the event is genuinely unpublishable. This is a decision that
   consumers will never see a fact that happened, so it needs the same scrutiny as a manual
-  adjustment: record why, and expect to answer for it at reconciliation. The row is **not**
-  deleted; it is the evidence that the gap exists.
+  adjustment: `POST /v1/operator/events/discards` proposes it with a reason, and a **different
+  person** approves it, `POST /v1/operator/events/discards/{discardId}/approval`
+  (`outbox.EventDiscarded`). The row is **not** deleted; it is the evidence that the gap exists.
+  It stops being pending, so its aggregate goes on, and it keeps `dead_lettered_at`, so a relay of
+  the previous release still stops at it.
 
 **Never resolve an abandoned row by deleting it.** The row is the only record that an event
 which should have been published was not, and the outbox is where that question is answered.
 
-Both statements are manual `UPDATE`s against a table the application role can write, which is
-acceptable only because the outbox is transport rather than financial history (`INV-EVT-02`,
-`V005`). The same action against a ledger table would not be.
+### A poison record, parked
+
+Since `P15-TSK-028` the receiver no longer stalls a partition without end. A record that fails
+**for a reason of its own** is retried, counted in `platform.inbox_parked_record` in PostgreSQL, and
+parked once it has failed five times **and** for two minutes on the database's clock
+(`finapp.inbox.park-after-attempts`, `finapp.inbox.park-after-failing-for`). A parked record is
+acknowledged only after the park has committed, so its partition goes on and nothing is
+acknowledged on the strength of a park that did not happen. It is counted
+(`finapp.deadletter.parked{group}`), audited (`inbox.RecordParked`), and kept; a redelivery of it is
+acknowledged without running the handler.
+
+**A failure that says nothing about the record never counts** (`InboxFailures`): a database that
+blinked, a pool that ran dry, a contended claim, a refused broker credential, or a build too old to
+read a version (`EventNotYetReadable`, which stalls as it always did until a deploy that reads it).
+
+Release it once the cause is fixed, `POST /v1/operator/events/parked/{parkId}/release`, which
+clears its count and republishes its event under the replay rule below; or discard it, four-eyes,
+through the same `discards` door. A record that could not even be parsed never had an outbox event,
+so a discard is its only way on.
+
+### Replay
+
+`POST /v1/operator/events/replays` republishes the published events of **one type over a time
+window** of first publication, all or nothing, with a reason (`outbox.EventReplayOrdered`). It is how
+a handler added in a release is served over its rollout and rollback windows, and how a group
+stopped past topic retention catches up.
+
+**A replay can never apply an effect twice, because the inbox primary key refuses the duplicate
+while its row exists.** So:
+
+- **Refused past the dedupe window.** An event at or older than `finapp.inbox.retention` (14 days)
+  may have lost its row to the sweep, and the whole command is refused. The window is the value the
+  dedupe rows were dated with (`InboxConsumer#retention`), not a copy, and an event's age is counted from when
+  it occurred, or from the last replay ordered of it, never from a publication: a publication whose
+  acknowledgement was lost reached the broker and left no mark.
+- **The dedupe rows are extended in the same transaction.** Inside the window is not enough: an event
+  a moment younger than the limit could have its row swept before a lagging consumer reads the
+  replayed record. So the order keeps every consumer's row, found from the table itself, for a full
+  retention from now, longer than the broker can still hold the record.
+- **Unless every consumer of the type is naturally idempotent**, by the mark on the handler
+  (`InboxEventHandler#naturallyIdempotent`, off by default). No handler carries it today.
+
+A replay is requeued for the relay, so it inherits per-aggregate order, backoff and abandonment. A row
+behind an abandoned one waits for it, so a retry or a discard of that row judges the replays it sets
+moving: one still inside the window is extended, and one past it is withdrawn, back to its first publication
+and not sent again (a refusal would leave the aggregate with no door, because a row that is merely waiting
+cannot be discarded). A parked record is not revived by a replay: releasing one is its own act. Replay at volume is
+Phase 16's: one command requeues at most 1000 events.
 
 **The transport adapters exist since Phase 2, one per direction.** `KafkaEventPublisher`
 (`P2-TSK-001`) settled the wire format, the topic scheme and the acknowledgement configuration
@@ -321,6 +377,116 @@ backed off, and counted with every thrown poll in `finapp.inbox.poll.failures{ou
 or `failed`), the series an alert reads; the alert itself is `P15-TSK-025`'s routing. The cost: replicas share one credential, so revoking it before the fleet has
 rolled onto its successor takes every replica's readiness down — rotation is add, roll, remove
 (ADR-0123 decision 5; `OPERATIONS_RUNBOOK.md` §11.6).
+
+## Schema evolution — *Implemented* (`P15-TSK-027`)
+
+An event is a contract with a reader the writer never meets, and during a rollout that reader can be the previous
+release. So no release may change an event in a way the previous release's consumers cannot read. That is enforced at
+build time (ADR-0122 decision 6). There is no runtime schema registry while no consumer exists outside the monolith
+(owner decision C11).
+
+**Neither side is kept by hand.** What the code writes is read from the compiled code; the committed files in
+[`docs/events/`](../events/event-catalogue.yaml) stand for the last release, and are replaced only by the release procedure
+(`OPERATIONS_RUNBOOK.md` §11.1.1).
+
+| File | What it holds |
+|---|---|
+| `event-catalogue.yaml` | The last release's event types, each version with its producer, and each field with its kind and whether every record carries it |
+| `handler-catalogue.yaml` | The last release's handler set: `(group, topic, eventType, consumerName)` (§Adding a handler) |
+| `release-record.yaml` | What the coming release records about a change the build cannot judge alone. Empty today |
+
+**How the code is read.** `EventFlows` runs a small abstract interpretation over every production class, the classes
+`EnvelopeProducers` and the monitor sweep read too: operand stack and locals, joined at branch targets. Many producers
+build the envelope in a helper that takes the event type and the payload as parameters, and assemble the payload in the
+caller, a ternary or a loop, so a value that depends on a parameter is followed to each call site, up the chain. Each
+write to the outbox closes as producer, type, version and fields. A field records its name, whether every path to the
+write sets it, and a kind read from how its value was made: `uuid`, `integer`, `decimal`, `boolean`, `date`, `currency`,
+`enum(<class>)`, `literal(<a|b>)`, or `identifier` for any other string. A loop's numbered field (`"reasonCode" + (i + 1)`)
+is `reasonCode#`, never required, and a field set inside a lambda (`Optional.ifPresent`) is not required either: the
+lambda runs when something chooses to run it. **What the reader cannot read fails the build**: a guess would be a wrong contract and
+silence would be a hole. `EventCatalogueTest` cross-checks it against `EnvelopeProducers`, a separate simulation of the
+same construction sites.
+
+**The rule: additive.** Compared against the last release, per event type:
+
+| Change | Same `eventVersion` | The next one |
+|---|---|---|
+| A field added | Accepted | Accepted |
+| A field removed | Refused | Refused |
+| A kind changed | Refused, unless an `identifier` is narrowed to something more exact | Refused, likewise |
+| A field every record carried, no longer always written | Refused | Refused |
+| A value withdrawn from a `literal` | Refused | Refused |
+| Another enumeration behind a field | Refused | Refused |
+| A type no producer writes any more | Refused, unless the release record retires it | — |
+| A type moved to another producer | Refused: its consumers subscribe to the first topic | Refused |
+| A version going backwards | — | Refused |
+
+An added field is optional for a reader on the previous release, which never looks at it (`EventPayload.fields` hands it
+over unread). It is optional for a reader on the new release too, because a record written before it does not carry it:
+when the catalogue is rolled forward, a field added under an existing version becomes `required: false`.
+
+**What a version is.** An `eventVersion` is what a consumer opts into. `RiskSignalIntake` refuses a version it does not
+know by throwing, which stalls its partition; the origination hints log it and act on nothing. So a new version of a
+type some handler of the last release consumes is **refused until the release record names the release whose consumers
+learned it**, and the consumer ships a release before the producer. Otherwise an additive change stays under the same
+version where a consumer reads the type (`credit.CreditDecisionRecorded`), and may take the next one where a reader must
+be able to tell old records from new (`merchant.FeeAssessed` version 2, `crossborder.CrossBorderPaymentReturned` version
+2; neither has a consumer). A change that cannot be additive is a new event type, which consumers opt into by adding a
+handler, with the old type retired through the release record. A version the code stops writing stays in the catalogue:
+its records are on the wire until retention passes them, and a replay or a rollback must parse them. `RiskSignalsReadTheCatalogueTest` runs the one
+consumer that reads a payload, `SignalMappings`, over the released shape and the current shape of everything it reads,
+each with a field it has never seen.
+
+**`required` is per event type, and that has a limit.** A shared helper that writes a field on some paths makes it
+`required: false` for every type it serves, even a type that never takes the other path. `SignalMappings` needs four such
+fields: `from` on `crossborder.BeneficiaryActivated` and `BeneficiaryBlocked`, and `previousBucket` on
+`lending.LoanDelinquencyChanged` and `bnpl.BnplDelinquencyChanged`. The catalogue cannot say those types always carry
+them. The test pins exactly that set, so a consumer newly leaning on an optional field has to be argued for.
+
+**Amounts.** Every `<name>Minor` field is an integer of minor units, beside an explicit currency and scale
+(`DOD-EVENT`), and no field anywhere is written from a floating-point or decimal value. The rule rests on the naming
+convention: an amount named otherwise is not seen as one.
+
+**One version per payments type** (the Phase 7 residue #49). Every payments event took its version from one constant, so
+a change to one type's contract would have moved every other type's version on the wire. Each construction site now
+passes its own type to `PaymentEventVersions.of`, and the catalogue's test refuses a site naming another type's version
+or a bare number. Every number is still the one already on the wire. Other modules still share one constant across some
+of their types; a bump there is seen per type by the catalogue, and the rule above still applies to each.
+
+**The limits, said plainly.** A field that keeps its name and its kind but starts to carry a different quantity is
+invisible to any reading of the code: that is a reviewer and a new version. A new constant in an enumeration behind a
+field is not refused, so a reader must not `valueOf` one blindly. The committed baseline is only as good as its review:
+rolling it in the same change that breaks it passes, exactly as regenerating `docs/api/openapi.json` would.
+
+## Adding a handler — *Implemented* (`P15-TSK-027`)
+
+**Payload compatibility does not cover a new handler.** `KafkaEventReceiver` acknowledges a record no registered handler
+wants (`UNHANDLED`). Groups are per module, and each topic carries every type its module produces. So while release N − 1
+and release N share a group, an N − 1 replica commits unseen a record of a type only N handles; and after a rollback,
+every such record is committed unseen. **A handler removed in N opens the same hole from the other side**: N acknowledges
+the type unseen, and a rollback to N − 1 never gets those records back.
+
+So the handler set is a contract too. `HandlerSetCatalogueTest` reads it from the code, by invoking every `@Bean` method
+that returns an `InboxEventHandler` with collaborators that do nothing and asking each handler its identity, with the
+group from `InboxConsumers`' own derivation, and diffs it against the last release. A change is refused unless
+`release-record.yaml` records a safe way through:
+
+| Change | What the release must record |
+|---|---|
+| A handler added to a group the last release had | `replay` of its event type over `[rollout, rollback]`: after the rollout completes, through the audited replay, the inbox deduplicating what N already applied |
+| A handler in a new group | `newGroup` with `startingOffsets`: `latest`, an instant, or `earliest` only if `naturallyIdempotent: true`, because `earliest` replays the whole retention |
+| A handler removed | `replay` over `[rollback]` |
+| A consumer renamed | Both of the above: it is a removal and an addition, and a new name makes every past delivery look unhandled |
+
+A step recorded for a handler that did not change is refused too, so a stale record cannot pass for the next release's.
+The same test holds every handler's topic to `infra/kafka/topics.yaml` and refuses a type that topic never carries: a
+handler naming either would subscribe to nothing, silently.
+
+**A new group needs its offsets set before its first start**, because the consumers' `auto.offset.reset` is `earliest`
+(`OPERATIONS_RUNBOOK.md` §11.1.1).
+
+**What the build proves is that the release recorded the step**, not that the step was run. The replay's own audit record
+is that evidence, and `P15-TSK-012`'s handler-window case rehearses it: none lost, none applied twice.
 
 ## Delivery Assumptions
 

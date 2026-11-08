@@ -171,10 +171,12 @@ class KafkaEventReceiverConfigurationTest {
     private static KafkaEventReceiver receiver(MockConsumer<String, byte[]> consumer) {
         return new KafkaEventReceiver(
                 consumer,
+                "probe.group",
                 () -> {
                     throw new SQLException("no record arrives, so no unit of work is opened");
                 },
                 new InboxConsumer<>(new JdbcInboxRecordStore(), Clock.systemUTC(), Duration.ofDays(14)),
+                com.finapp.platform.testing.InboxParkingDoubles.NEVER_PARKS,
                 List.of(new NoHandler()),
                 Duration.ofMillis(10));
     }

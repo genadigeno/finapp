@@ -64,7 +64,6 @@ class RoleAssignmentMigrationTest {
         java.util.Map<String, String> migrations = allMigrations();
         String v025 = migrations.get("V025__admit_the_accounting_roles.sql");
         assertThat(v025).as("V025 is on the classpath").isNotNull();
-        assertThat(latestConstraintDefinition()).as("V025 is the latest role constraint").isEqualTo(v025);
         java.util.Set<String> before = roleNames(migrations.get("V023__admit_the_risk_roles.sql"));
         java.util.Set<String> after = roleNames(v025);
         assertThat(after).as("nothing removed").containsAll(before);
@@ -75,6 +74,21 @@ class RoleAssignmentMigrationTest {
                 .collect(java.util.stream.Collectors.joining("\n"));
         assertThat(statements).doesNotContain("GRANT").doesNotContain("CREATE").doesNotContain("PERMISSION")
                 .contains("ALTER TABLE identity.role_assignment");
+    }
+
+    @Test
+    @DisplayName("identity V026 admits exactly EVENT_OPERATOR beyond V025's twenty, and is the latest role constraint (P15-TSK-028)")
+    void v026AdmitsTheEventOperatorAndNothingElse() {
+        java.util.Map<String, String> migrations = allMigrations();
+        String v026 = migrations.get("V026__admit_the_event_operator_role.sql");
+        assertThat(v026).as("V026 is on the classpath").isNotNull();
+        assertThat(latestConstraintDefinition()).as("V026 is the latest role constraint").isEqualTo(v026);
+        java.util.Set<String> before = roleNames(migrations.get("V025__admit_the_accounting_roles.sql"));
+        java.util.Set<String> after = roleNames(v026);
+        assertThat(after).as("nothing removed").containsAll(before);
+        java.util.Set<String> added = new java.util.TreeSet<>(after);
+        added.removeAll(before);
+        assertThat(added).containsExactly("EVENT_OPERATOR");
     }
 
     /** The quoted names inside a migration's {@code role_name IN (...)} list. */

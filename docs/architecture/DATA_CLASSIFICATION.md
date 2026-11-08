@@ -152,6 +152,35 @@ no business data.
 | `outbox_event` | `attempts` | `INTERNAL` | |
 | `outbox_event` | `next_attempt_at` | `INTERNAL` | |
 | `outbox_event` | `dead_lettered_at` | `INTERNAL` | |
+| `outbox_event` | `discarded_at` | `INTERNAL` | `P15-TSK-028`: a four-eyes decision's instant; the decision is `dead_letter_discard`. |
+| `outbox_event` | `first_published_at` | `INTERNAL` | `P15-TSK-028`: kept across replays. |
+| `outbox_event` | `replay_ordered_at` | `INTERNAL` | `P15-TSK-028`: the dedupe window's anchor for a replayed row. |
+| `inbox_parked_record` | `park_id` | `INTERNAL` | `P15-TSK-028`: the door's handle. |
+| `inbox_parked_record` | `consumer` | `INTERNAL` | |
+| `inbox_parked_record` | `dedupe_key` | `CONFIDENTIAL` | As `inbox_message.dedupe_key`: an external system's message identifier for a webhook, an event id otherwise. |
+| `inbox_parked_record` | `consumer_group` | `INTERNAL` | |
+| `inbox_parked_record` | `message_type` | `INTERNAL` | |
+| `inbox_parked_record` | `correlation_id` | `INTERNAL` | |
+| `inbox_parked_record` | `topic` | `INTERNAL` | |
+| `inbox_parked_record` | `partition_number` | `INTERNAL` | |
+| `inbox_parked_record` | `record_offset` | `INTERNAL` | |
+| `inbox_parked_record` | `state` | `INTERNAL` | |
+| `inbox_parked_record` | `attempts` | `INTERNAL` | |
+| `inbox_parked_record` | `last_failure` | `INTERNAL` | The failure's class name, never its message: bounded and set by the receiver. |
+| `inbox_parked_record` | `first_failed_at` | `INTERNAL` | |
+| `inbox_parked_record` | `last_failed_at` | `INTERNAL` | |
+| `inbox_parked_record` | `parked_at` | `INTERNAL` | |
+| `inbox_parked_record` | `settled_at` | `INTERNAL` | |
+| `dead_letter_discard` | `discard_id` | `INTERNAL` | `P15-TSK-028`: the four-eyes decision over an abandoned event or a parked record. Never the payload. |
+| `dead_letter_discard` | `subject_kind` | `INTERNAL` | |
+| `dead_letter_discard` | `subject_id` | `INTERNAL` | |
+| `dead_letter_discard` | `status` | `INTERNAL` | |
+| `dead_letter_discard` | `proposed_by` | `CONFIDENTIAL` | A person's identifier, compared for the four eyes and never served. |
+| `dead_letter_discard` | `proposed_at` | `INTERNAL` | |
+| `dead_letter_discard` | `proposal_reason` | `CONFIDENTIAL` | Free text a person wrote: served to whoever decides it, never logged. |
+| `dead_letter_discard` | `decided_by` | `CONFIDENTIAL` | A person's identifier, never served. |
+| `dead_letter_discard` | `decided_at` | `INTERNAL` | |
+| `dead_letter_discard` | `decision_reason` | `CONFIDENTIAL` | Free text a person wrote; never served or logged. |
 | `outbox_event` | `last_error` | `CONFIDENTIAL` | A broker or adapter error. `V006` already forbids the payload here; an error string can still carry a host or endpoint |
 
 ### `party` and `identity` — *added by `P1-TSK-005`*
@@ -3093,6 +3122,24 @@ reads the intent's generic `FAILED` or `PROCESSING`, and none of these columns.
 | `payment_capture_hold` | `resolution` | `CONFIDENTIAL` | `CAPTURE`, `VOID`, `EXPIRED` or null - how a person's held payment ended, decided by a person or the deadline |
 | `payment_capture_hold` | `resolution_key` | `INTERNAL` | The keyed door's idempotency key (`risk.action:<id>`) - an identifier of a risk action, never a note or a reason |
 | `payment_capture_hold` | `resolved_at` | `CONFIDENTIAL` | Dates the resolution - the `held_at` reasoning |
+
+### `payments` - the callback hint - *added by `P15-TSK-036`*
+
+`payments V036`: a callback still to be asked about, for the kinds with no payment row a sweep could find. Operational state,
+never financial truth. No amount, no personal data and nothing the callback claimed: the claim rests encrypted in
+`provider_evidence`. Concluded rows are operational history with no retention sweep yet (routed to `P15-TSK-029`).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `callback_hint` | `id` | `INTERNAL` | An identifier of a thing - one question still to ask |
+| `callback_hint` | `kind` | `INTERNAL` | One of four enumerated kinds, never a value about a person |
+| `callback_hint` | `attempt_id` | `INTERNAL` | An identifier of a thing - the attempt the callback was attributed to; null only for value naming nothing of ours |
+| `callback_hint` | `asked_about` | `CONFIDENTIAL` | One opaque reference: ours, the PSP's dispute reference or the scheme's transaction reference, each shape-checked by its type - the `acquirer_reference` class |
+| `callback_hint` | `received_at` | `INTERNAL` | When the callback arrived, on the database's clock - a scheduling instant, and the refutation bound's origin |
+| `callback_hint` | `next_inquiry_at` | `INTERNAL` | The sweep's permit: a scheduling instant |
+| `callback_hint` | `asked_count` | `INTERNAL` | How many times the sweep has asked - the backoff's exponent |
+| `callback_hint` | `concluded_at` | `INTERNAL` | When the question ended - a scheduling instant |
+| `callback_hint` | `conclusion` | `INTERNAL` | One of five enumerated outcomes, or null while open |
 
 ### `lending` - the interest accrual and the servicing permit - *added by `P11-TSK-016`*
 

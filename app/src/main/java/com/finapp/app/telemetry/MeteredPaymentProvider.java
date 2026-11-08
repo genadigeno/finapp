@@ -1,8 +1,11 @@
 package com.finapp.app.telemetry;
 
+import com.finapp.payments.ClearingAnswer;
+import com.finapp.payments.DisputeAnswer;
 import com.finapp.payments.PaymentProvider;
 import com.finapp.payments.ProviderAnswer;
 import com.finapp.payments.ProviderIdempotencyReference;
+import com.finapp.payments.ProviderReference;
 import com.finapp.payments.QueryAnswer;
 import com.finapp.payments.RailId;
 import java.time.Clock;
@@ -87,6 +90,26 @@ public final class MeteredPaymentProvider implements PaymentProvider {
             return delegate.refund(request);
         } finally {
             record(PaymentMeters.Operation.REFUND, started);
+        }
+    }
+
+    @Override
+    public ClearingAnswer queryClearing(ProviderIdempotencyReference ourReference) {
+        Instant started = Instant.now(clock);
+        try {
+            return delegate.queryClearing(ourReference);
+        } finally {
+            record(PaymentMeters.Operation.QUERY, started);
+        }
+    }
+
+    @Override
+    public DisputeAnswer queryDispute(ProviderReference disputeReference) {
+        Instant started = Instant.now(clock);
+        try {
+            return delegate.queryDispute(disputeReference);
+        } finally {
+            record(PaymentMeters.Operation.QUERY, started);
         }
     }
 

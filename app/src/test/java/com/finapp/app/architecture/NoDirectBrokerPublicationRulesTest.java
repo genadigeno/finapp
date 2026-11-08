@@ -393,7 +393,7 @@ class NoDirectBrokerPublicationRulesTest {
                 com.finapp.platform.inbox.InboxConnectionSource connections,
                 com.finapp.platform.inbox.InboxConsumer<java.sql.Connection> inbox) {
             return com.finapp.platform.inbox.kafka.KafkaEventReceiver.connect(
-                    connection, "finapp.probe", connections, inbox, List.of(), java.time.Duration.ofSeconds(1));
+                    connection, "finapp.probe", connections, inbox, com.finapp.platform.testing.InboxParkingDoubles.NEVER_PARKS, List.of(), java.time.Duration.ofSeconds(1));
         }
     }
 

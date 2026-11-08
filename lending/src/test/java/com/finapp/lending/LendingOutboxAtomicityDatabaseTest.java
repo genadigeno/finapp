@@ -105,7 +105,7 @@ class LendingOutboxAtomicityDatabaseTest {
 
     private static OutboxRelay relay(EventPublisher publisher) {
         return new OutboxRelay(DatabaseRoles::application, publisher,
-                new RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 50), 10_000, 100);
+                new RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 50), 10_000, 100, OutboxRelay.Abandonments.NOT_RECORDED);
     }
 
     private static boolean unpublished(UUID aggregate, String type) {

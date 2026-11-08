@@ -100,8 +100,11 @@ public interface OutboundCreditComposition<T> {
      */
     java.util.Optional<List<JournalLine>> returnLines(T unitOfWork, ReturnApplication application);
 
-    /** After the return posted (or a person's resolution recorded it): the subject's {@code RETURNED} edge. */
-    void returned(T unitOfWork, UUID subject, String basis, Instant at);
+    /**
+     * After the return posted (or a person's resolution recorded it): the subject's {@code RETURNED} edge, with the
+     * amount that came back (`P15-TSK-027`, the Phase 9 residue).
+     */
+    void returned(T unitOfWork, UUID subject, String basis, Money returned, Instant at);
 
     /**
      * The provider answered a cancellation's recall (`P9-TSK-024`) - telemetry for the composition's own tally,

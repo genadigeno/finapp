@@ -88,7 +88,7 @@ class OutboxRelayScheduleKafkaTest {
                         Duration.ofSeconds(10))) {
             OutboxRelaySchedule schedule =
                     new OutboxRelaySchedule(
-                            new OutboxRelay(DatabaseRoles::application, publisher),
+                            new OutboxRelay(DatabaseRoles::application, publisher, OutboxRelay.Abandonments.NOT_RECORDED),
                             Duration.ofMillis(200),
                             registry);
 

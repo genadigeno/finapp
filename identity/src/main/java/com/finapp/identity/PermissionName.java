@@ -768,5 +768,14 @@ public enum PermissionName {
      * {@code MULTI_FACTOR} session to approve. <strong>Held by {@code BNPL_OFFICER}</strong>, the {@link #LOAN_WRITE_OFF_APPROVE}
      * shape: a loan's desk is not a BNPL desk.
      */
-    BNPL_WRITE_OFF_APPROVE
+    BNPL_WRITE_OFF_APPROVE,
+
+    /**
+     * Operate the platform's dead letters and replay (`P15-TSK-028`): read the abandoned events and parked records, retry an
+     * abandoned event, release a parked record, order a replay, and propose, approve or reject a discard - <strong>an approval
+     * never one's own</strong>, refused at the door and by {@code platform V011}'s four-eyes {@code CHECK}, so two holders of this
+     * one permission are the two persons (the {@link #LEDGER_ADJUST} shape). Every act on a {@code MULTI_FACTOR} session, keyed and
+     * reasoned. Moves no money, and reads no payload. <strong>Held by {@code EVENT_OPERATOR} alone.</strong>
+     */
+    EVENT_OPERATE
 }

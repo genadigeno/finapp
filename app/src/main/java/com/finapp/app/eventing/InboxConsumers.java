@@ -96,6 +96,7 @@ public final class InboxConsumers implements SmartLifecycle {
     private final Counter duplicates;
     private final Counter contended;
     private final Counter failed;
+    private final Counter parked;
     private final Counter pollsRefused;
     private final Counter pollsFailed;
 
@@ -143,12 +144,16 @@ public final class InboxConsumers implements SmartLifecycle {
         this.duplicates = outcome(registry, "duplicate");
         this.contended = outcome(registry, "contended");
         this.failed = outcome(registry, "failed");
+        this.parked = outcome(registry, "parked");
         this.pollsRefused = pollFailure(registry, "refused");
         this.pollsFailed = pollFailure(registry, "failed");
     }
 
-    /** The group key: everything before the first dot, or the whole name if it has none. */
-    static Map<String, List<InboxEventHandler>> byModule(List<InboxEventHandler> handlers) {
+    /**
+     * The group key: everything before the first dot, or the whole name if it has none. Public so that the handler-set
+     * catalogue's test derives each handler's group from this method rather than from a copy of the rule (`P15-TSK-027`).
+     */
+    public static Map<String, List<InboxEventHandler>> byModule(List<InboxEventHandler> handlers) {
         Map<String, List<InboxEventHandler>> byModule = new LinkedHashMap<>();
         for (InboxEventHandler handler : handlers) {
             String name = handler.consumerName();
@@ -166,6 +171,11 @@ public final class InboxConsumers implements SmartLifecycle {
      */
     public static String groupIdOf(String module) {
         return "finapp." + Objects.requireNonNull(module, "module must not be null");
+    }
+
+    /** The consumer groups these handlers run under: what the parked gauge is registered for (`P15-TSK-028`). */
+    public static List<String> groupsOf(List<InboxEventHandler> handlers) {
+        return byModule(handlers).keySet().stream().map(InboxConsumers::groupIdOf).toList();
     }
 
     /**
@@ -274,7 +284,7 @@ public final class InboxConsumers implements SmartLifecycle {
         try {
             ReceiverPollResult result = attempt.poll();
             boolean delivered =
-                    result.processed() + result.duplicates() + result.contended() + result.failed() > 0;
+                    result.processed() + result.duplicates() + result.contended() + result.failed() + result.parked() > 0;
             refusedModules.computeIfPresent(
                     module,
                     (ignored, clean) -> delivered || clean + 1 >= CLEAN_POLLS_TO_ADMIT ? null : clean + 1);
@@ -359,11 +369,13 @@ public final class InboxConsumers implements SmartLifecycle {
             duplicates.increment(result.duplicates());
             contended.increment(result.contended());
             failed.increment(result.failed());
+            parked.increment(result.parked());
             if (result.failed() > 0 || result.contended() > 0) {
                 // The stalled partition will be re-polled immediately; without a pause a
                 // poison record turns the loop hot. Bounded, so a transient failure
                 // retries soon and a persistent one costs a bounded rate, loudly logged
-                // by the receiver each time.
+                // by the receiver each time. A parked record needs no pause: its partition
+                // has moved on (P15-TSK-028).
                 pause();
             }
         }

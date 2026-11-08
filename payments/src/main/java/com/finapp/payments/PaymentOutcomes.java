@@ -57,7 +57,8 @@ import lombok.extern.slf4j.Slf4j;
  * <p>Every application runs as the platform ({@link SecurityContext#require()} inside the
  * caller's {@code enterSystem()} scope — a provider's answer has no session, whichever
  * resolver carries it) and on the caller's connection: the synchronous paths' Tx2, the
- * webhook's delivery transaction (evidence + dedupe + effect, one commit — ADR-0047 §3).
+ * hinted inquiry's own transaction since `P15-TSK-036` (the webhook's evidence and dedupe
+ * commit first, ADR-0083).
  * A posting failure inside an approved capture fails that whole transaction loudly — no
  * savepoint, deliberately ({@code PaymentCapture}'s recorded stance, preserved by the
  * extraction rather than re-decided).
@@ -203,7 +204,7 @@ public final class PaymentOutcomes {
         /**
          * The declined-capture redirect committed {@code VOID_DISPATCHED} and the send is
          * now the caller's (`P7-TSK-004`): a resolver that owns a provider port performs it
-         * ({@code PaymentVoid.completeDispatched}); one that does not - the webhook door -
+         * ({@code PaymentVoid.completeDispatched}); one that may not - a callback's hinted inquiry -
          * leaves the row visibly dispatched for the sweeper's void leg, which re-sends
          * idempotently by the stored reference.
          */
@@ -561,8 +562,8 @@ public final class PaymentOutcomes {
     /**
      * The redirect (P7-TSK-004, ADR-0059): {@code VOID_DISPATCHED} with its minted reference
      * ({@code INV-PAY-04}) committed in THIS outcome transaction; the send is the caller's,
-     * and the sweeper's void leg finishes any redirect whose caller has no provider port (the
-     * webhook door).
+     * and the sweeper's void leg finishes any redirect whose caller may not send (a callback's
+     * hinted inquiry).
      */
     private Applied redirectToVoid(
             Connection uow,
@@ -662,7 +663,7 @@ public final class PaymentOutcomes {
     }
 
     /**
-     * Applies the payer PSP's execution answer from {@code from} — the signed callback and
+     * Applies the payer PSP's execution answer from {@code from} — the callback-hinted inquiry and
      * the initiation inquiry, one judgement (`P7-TSK-009`, ADR-0062 §5).
      *
      * <p>{@code ACCEPTED}: the conditional {@code EXECUTED} transition, <strong>the
@@ -1442,7 +1443,7 @@ public final class PaymentOutcomes {
                 new EventEnvelope(
                         EventId.next(ids),
                         eventType,
-                        PaymentCreation.EVENT_VERSION,
+                        PaymentEventVersions.of(eventType),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         refund.id(),
                         "refund",
@@ -1485,7 +1486,7 @@ public final class PaymentOutcomes {
                 new EventEnvelope(
                         EventId.next(ids),
                         eventType,
-                        PaymentCreation.EVENT_VERSION,
+                        PaymentEventVersions.of(eventType),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         intentId,
                         PaymentCreation.TARGET_TYPE,

@@ -1047,6 +1047,7 @@ class DisputeNotificationDatabaseTest {
 
     /** A legitimately signed, fresh delivery — the webhook door's own scheme. */
     private HttpResponse<String> deliver(String body) throws Exception {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(provider, body);
         String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
         return send(
                 HttpRequest.newBuilder(
@@ -1231,7 +1232,7 @@ class DisputeNotificationDatabaseTest {
 
     private static long evidenceCount(UUID attempt) throws SQLException {
         return count(
-                "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ?", attempt);
+                "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ? AND kind = 'WEBHOOK'", attempt);
     }
 
     /**
