@@ -514,8 +514,6 @@ tests:
         values: '0x20'
       - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
         values: '0x20'
-      - series: 'finapp_inbox_consumer_enabled{job="finapp", instance="a:8081"}'
-        values: '0x20'
       - series: 'finapp_platform_clock_offset_seconds{job="finapp", instance="a:8081"}'
         values: '0x20'
       - series: 'finapp_outbox_pending{job="finapp", instance="b:8081"}'
@@ -526,8 +524,6 @@ tests:
         values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
       - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", module="risk"}'
         values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
-      - series: 'finapp_inbox_consumer_enabled{job="finapp", instance="b:8081"}'
-        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
       - series: 'finapp_platform_clock_offset_seconds{job="finapp", instance="b:8081"}'
         values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
     alert_rule_test:
@@ -537,15 +533,6 @@ tests:
       - eval_time: 16m
         alertname: PlatformGaugesUnreadable
         exp_alerts:
-          - exp_labels:
-              gauge: finapp_inbox_consumer_enabled
-              instance: b:8081
-              job: finapp
-              owner: platform
-              severity: ticket
-            exp_annotations:
-              summary: "A platform gauge cannot be read on b:8081"
-              description: "finapp_inbox_consumer_enabled is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
           - exp_labels:
               gauge: finapp_inbox_lag
               instance: b:8081
@@ -611,7 +598,7 @@ tests:
               summary: "A series the platform alerts read is gone"
               description: "A series the SLO or platform rules read has not been published for 5 minutes, so those rules are blind. See OPERATIONS_RUNBOOK.md section 11.21."
 
-  # PlatformSeriesAbsent: every series present: silent, and the consumer flag off asks no lag.
+  # PlatformSeriesAbsent: every series present: silent.
   - interval: 1m
     input_series:
       - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
@@ -620,14 +607,14 @@ tests:
         values: '0+1x10'
       - series: 'hikaricp_connections_active{job="finapp", instance="a:8081", pool="HikariPool-1"}'
         values: '1x10'
-      - series: 'finapp_inbox_consumer_enabled{job="finapp", instance="a:8081"}'
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
         values: '0x10'
     alert_rule_test:
       - eval_time: 6m
         alertname: PlatformSeriesAbsent
         exp_alerts: []
 
-  # PlatformSeriesAbsent: a consumer enabled and no lag series: it fires.
+  # PlatformSeriesAbsent: every other series present and no consumer's lag: it fires.
   - interval: 1m
     input_series:
       - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
@@ -635,8 +622,6 @@ tests:
       - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="GET", status="200", uri="/v1/x"}'
         values: '0+1x10'
       - series: 'hikaricp_connections_active{job="finapp", instance="a:8081", pool="HikariPool-1"}'
-        values: '1x10'
-      - series: 'finapp_inbox_consumer_enabled{job="finapp", instance="a:8081"}'
         values: '1x10'
     alert_rule_test:
       - eval_time: 6m

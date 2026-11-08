@@ -163,7 +163,7 @@ groups:
           description: "The clock of {{ $labels.instance }} differs from the database by over a second. See OPERATIONS_RUNBOOK.md section 11.21."
       - alert: PlatformGaugesUnreadable
         # Aggregation: per instance by (job, instance) - x != x holds for NaN alone, and one instance unable to read is that instance's fault
-        expr: label_replace(max by (job, instance) (finapp_outbox_pending != finapp_outbox_pending), "gauge", "finapp_outbox_pending", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_seconds != finapp_outbox_oldest_seconds), "gauge", "finapp_outbox_oldest_seconds", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_publishable_seconds != finapp_outbox_oldest_publishable_seconds), "gauge", "finapp_outbox_oldest_publishable_seconds", "", "") or label_replace(max by (job, instance) (finapp_inbox_lag != finapp_inbox_lag), "gauge", "finapp_inbox_lag", "", "") or label_replace(max by (job, instance) (finapp_inbox_consumer_enabled != finapp_inbox_consumer_enabled), "gauge", "finapp_inbox_consumer_enabled", "", "") or label_replace(max by (job, instance) (finapp_platform_clock_offset_seconds != finapp_platform_clock_offset_seconds), "gauge", "finapp_platform_clock_offset_seconds", "", "")
+        expr: label_replace(max by (job, instance) (finapp_outbox_pending != finapp_outbox_pending), "gauge", "finapp_outbox_pending", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_seconds != finapp_outbox_oldest_seconds), "gauge", "finapp_outbox_oldest_seconds", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_publishable_seconds != finapp_outbox_oldest_publishable_seconds), "gauge", "finapp_outbox_oldest_publishable_seconds", "", "") or label_replace(max by (job, instance) (finapp_inbox_lag != finapp_inbox_lag), "gauge", "finapp_inbox_lag", "", "") or label_replace(max by (job, instance) (finapp_platform_clock_offset_seconds != finapp_platform_clock_offset_seconds), "gauge", "finapp_platform_clock_offset_seconds", "", "")
         for: 15m
         labels:
           severity: ticket
@@ -172,8 +172,8 @@ groups:
           description: "{{ $labels.gauge }} is NaN on {{ $labels.instance }} for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
       - alert: PlatformSeriesAbsent
         # Aggregation: none - absent() asks whether any instance publishes the series at all
-        # A rule that cannot evaluate fires this: the SLO and platform rules are silent if these series are gone. The lag is asked only where a consumer runs.
-        expr: absent(finapp_outbox_oldest_publishable_seconds) or absent(http_server_requests_seconds_count) or absent(hikaricp_connections_active) or (absent(finapp_inbox_lag) and on() (max(finapp_inbox_consumer_enabled) == 1))
+        # A rule that cannot evaluate fires this: the SLO and platform rules are silent if these series are gone. A deployment always runs its consumers, so a lag series gone means they are gone.
+        expr: absent(finapp_outbox_oldest_publishable_seconds) or absent(http_server_requests_seconds_count) or absent(hikaricp_connections_active) or absent(finapp_inbox_lag)
         for: 5m
         labels:
           severity: ticket
