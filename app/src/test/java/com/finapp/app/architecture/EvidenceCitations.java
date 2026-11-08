@@ -27,7 +27,8 @@ import java.util.regex.Pattern;
  *   <li>a <strong>repository path</strong>, relative to the root, with or without an extension
  *       ({@code app/Dockerfile}, {@code .github/CODEOWNERS}), optionally {@code #member}: the file must
  *       exist, and the member must be a <em>test</em> declared in it - a method annotated as a JUnit test
- *       or an {@code @ArchTest} rule field - never a helper or a call;
+ *       or an {@code @ArchTest} rule field - never a helper or a call. A whole test source cited without a
+ *       member must declare at least one test;
  *   <li>a <strong>content pin</strong>, {@code contains: text} or {@code lacks: text}, attached to the
  *       path cited just before it: that file must contain, or must not contain, the text;
  *   <li>a <strong>task id</strong> ({@code P15-TSK-019}, {@code P14-REM-004}, {@code X-TSK-010}): it must
@@ -86,6 +87,10 @@ final class EvidenceCitations {
     /** The annotations that make a declaration a test the build runs. */
     private static final Pattern TEST_ANNOTATION =
             Pattern.compile("@(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate|ArchTest)\\b");
+
+    /** A test annotation on a line of its own, as code writes it: never one a comment or a javadoc mentions. */
+    private static final Pattern DECLARED_TEST_ANNOTATION =
+            Pattern.compile("(?m)^[ \\t]*@(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate|ArchTest)\\b");
 
     /** Leading words of a statement, never of a declaration: a call line is not evidence. */
     private static final Set<String> STATEMENT_WORDS =
@@ -181,7 +186,12 @@ final class EvidenceCitations {
             }
         }
         if (citation.member().isEmpty()) {
-            return Optional.empty();
+            // A whole test file counts as a test only if it declares one: a helper or a fixture under src/test is a
+            // bare file that happens to sit beside the tests.
+            return citation.isTestSource() && !DECLARED_TEST_ANNOTATION.matcher(content).find()
+                    ? Optional.of("is a test source that declares no test (no @Test, @ParameterizedTest, @ArchTest or"
+                            + " other test annotation)")
+                    : Optional.empty();
         }
         String name = citation.member().get();
         if (SOURCE_EXTENSIONS.stream().noneMatch(citation.path()::endsWith)) {

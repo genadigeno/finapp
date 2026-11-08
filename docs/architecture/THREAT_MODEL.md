@@ -100,9 +100,12 @@ A row in §4 has one of four states, and its evidence column must match its stat
 - **`EXISTS`**: the control is built. The evidence is one or more repository paths in backticks, each a file that
   exists. `Class.java#member` names the test that holds the claim, wherever the class is broader than the claim; the
   member must be a test declared in that file (a method annotated `@Test`, `@ParameterizedTest` or alike, or an
-  `@ArchTest` rule), never a helper. **A file that is not a test counts for a CRITICAL or HIGH threat only with a
-  content pin**: `` `contains: <text>` `` or `` `lacks: <text>` `` right after the path, which the guard checks against
-  the file. Otherwise a test asserts the property, and the row cites the test.
+  `@ArchTest` rule), never a helper; a whole test file cited without a member must declare at least one test. **A
+  file that is not a test counts for a CRITICAL or HIGH threat only with a content pin**: `` `contains: <text>` `` or
+  `` `lacks: <text>` `` right after the path, which the guard checks against the file. Otherwise a test asserts the
+  property, and the row cites the test. **A document under `docs/` never counts for a CRITICAL or HIGH threat**,
+  pinned or not: it states a control and builds none. A rehearsal record (`-032`) counts only once a gate widens this
+  grammar deliberately, naming the records' directory and form.
 - **`PLANNED`**: a Phase 15 task builds it. The evidence is the task's id.
 - **`REMEDIATION`**: an earlier remediation entry (`P14-REM-*`) or a cross-cutting item (`X-TSK-*`) builds it, outside
   the Phase 15 milestones. The evidence is the entry's id. This is the honest answer where that entry is the only owner.
@@ -121,14 +124,17 @@ A row in §4 has one of four states, and its evidence column must match its stat
 - a rating is not the cell of §1.3's table, or the table itself has changed;
 - a threat has no disposition, a `CONTROL` threat has no row that is not a `GAP`, an acceptance names anyone but the
   owner or is past its `until`, or a CRITICAL or HIGH threat is neither controlled nor accepted by the owner;
-- an `EXISTS` row names a file that does not exist, a `#member` that is not a test declared in its file, a pin that
-  does not hold, or a bare non-test file for a CRITICAL or HIGH threat; a `PLANNED` or `REMEDIATION` row names an id
+- an `EXISTS` row names a file that does not exist, a `#member` that is not a test declared in its file, a whole test
+  file that declares no test, a pin that does not hold, or, for a CRITICAL or HIGH threat, a document under `docs/` or
+  a bare non-test file; a `PLANNED` or `REMEDIATION` row names an id
   that is not a backlog entry; a `GAP` row names no postponed issue or owner item, or no owner and date; or any task id
   in this document, short (`-018`) or long, is not a backlog entry;
 - **a `PLANNED` or `REMEDIATION` row names a task that is no longer live** (`PLANNED`, `READY` or `IN_PROGRESS`). When
   a task's status becomes `COMPLETE`, its gate must replace the promise with the evidence it built. When a task is
   postponed or a promise is cut, the row becomes a `GAP` naming what holds it. A row naming two tasks goes red when
-  either one finishes, so the gate splits it;
+  either one finishes, so the gate splits it. **The same holds anywhere in this document**: a task id in a residual,
+  an owner item or a note (short or long) goes red, naming the task and the section, once the task is no longer live,
+  so the gate rewrites the sentence. The one exception is `P15-TSK-001`, cited as this register's author;
 - §3's summary line does not count what the register holds;
 - **once Phase 15's status in `CURRENT_STATE.md` is complete**, a CRITICAL or HIGH threat has no `EXISTS` row and is
   not accepted by the owner, or any threat's acceptance is still only proposed. This is `PHASE_GATES.md` §5 Phase 15
@@ -415,7 +421,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T6 | Humans denied `get secrets` | PLANNED | `P15-TSK-010` |
 | T6 | Images scanned for secrets | PLANNED | `P15-TSK-006` |
 | T6 | Rotation and revocation of every credential class, rehearsed | PLANNED | `P15-TSK-020` |
-| T7 | Locally (compose and the test databases built from the initialisation scripts), both roles are `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT` | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
+| T7 | Locally (compose and the test databases built from the initialisation scripts), both roles are `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
 | T7 | In a deployed database, the roles created by the one-time bootstrap step with the same attributes | PLANNED | `P15-TSK-004` |
 | T7 | The application role cannot become the migrator, create a role, make itself a superuser, run a program on the host or read password hashes | EXISTS | `platform/src/test/java/com/finapp/platform/audit/ApplicationRoleGrantsTest.java#theRoleCannotEscalate` |
 | T7 | The application role holds no DDL and cannot reach the migration history | EXISTS | `platform/src/test/java/com/finapp/platform/audit/ApplicationRoleGrantsTest.java#theRoleIsConfinedToData` |
@@ -429,7 +435,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T8 | Payment webhooks: a signature that tampering breaks, and a two-sided freshness window | EXISTS | `payments/src/test/java/com/finapp/payments/WebhookSignatureTest.java#roundTripAndTamper`; `payments/src/test/java/com/finapp/payments/WebhookSignatureTest.java#theWindowIsTwoSided` |
 | T8 | The instant-rail door: a wrong signature, a missing header and a stale timestamp are one uniform `401`, with nothing written | EXISTS | `app/src/test/java/com/finapp/app/payments/PayByBankDatabaseTest.java#anUnsignedCallbackDiesAtTheDoor` |
 | T8 | A delivery repeated three times lands one dedupe record, and every copy is retained as evidence | EXISTS | `app/src/test/java/com/finapp/app/payments/PaymentWebhookDatabaseTest.java#aTripleDeliveryLandsOneDedupeRecordAndThreeEvidenceRows` |
-| T8 | FX and corridor callbacks are hints: a signed but forged callback is retained and moves nothing the inquiry does not confirm, and an unsigned or stale one is `401` | EXISTS | `app/src/test/java/com/finapp/app/fx/FxCallbackDuplicateDatabaseTest.java#aForgedSignedCallbackMovesNothing`; `app/src/test/java/com/finapp/app/fx/FxCallbackDuplicateDatabaseTest.java#unsignedOrStaleMovesNothing`; `app/src/test/java/com/finapp/app/fx/OutboundCreditResolutionDatabaseTest.java#callbacksAreHints` |
+| T8 | FX and corridor callbacks are hints: a signed but forged callback is acknowledged and moves nothing the inquiry does not confirm (both rails), and is retained as evidence (asserted for FX); an unsigned or stale one is `401` and moves nothing (both rails) | EXISTS | `app/src/test/java/com/finapp/app/fx/FxCallbackDuplicateDatabaseTest.java#aForgedSignedCallbackMovesNothing`; `app/src/test/java/com/finapp/app/fx/FxCallbackDuplicateDatabaseTest.java#unsignedOrStaleMovesNothing`; `app/src/test/java/com/finapp/app/fx/OutboundCreditResolutionDatabaseTest.java#callbacksAreHints` |
 | T8 | Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers, which still adopt a callback's own outcome | REMEDIATION | `X-TSK-015` |
 | T8 | Provider callback routes served only by name on the public allow-list | PLANNED | `P15-TSK-011` |
 | T8 | Callback secrets verified against the current and the previous secret during a rotation window | PLANNED | `P15-TSK-019` |
@@ -478,7 +484,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T15 | The database reachable only from the application's and the migrator's pods | PLANNED | `P15-TSK-010` |
 | T15 | The database in private subnets | PLANNED | `P15-TSK-015` |
 | T15 | The product proofs and projection drift paging on their first breach: detection for the books those proofs cover (§5), and nothing for a balanced shift between accounts no proof covers | PLANNED | `P15-TSK-025` |
-| T15 | A balanced, rule-shaped entry inserted by a holder of the application's credential between accounts no proof covers, with the projection co-updated, is neither refused nor detected | GAP | `owner item 2`; owner: the owner, since 2026-11-08 |
+| T15 | A balanced, rule-shaped entry inserted by a holder of the application's credential, with the projection co-updated, is neither refused nor detected between the ten accounts no proof reads (§5), or on any book once the product's own row is written first | GAP | `owner item 2`; owner: the owner, since 2026-11-08 |
 | T16 | Ten instances submitting one key produce exactly one transfer (`INV-IDEM-01`) | EXISTS | `app/src/test/java/com/finapp/app/transfers/TransferExecutionDatabaseTest.java#tenConcurrentIdenticalKeysProduceOneTransfer` |
 | T16 | A key reused with a different request is refused as a distinct conflict, never replayed (`INV-IDEM-03`) | EXISTS | `platform/src/test/java/com/finapp/platform/idempotency/IdempotentExecutorTest.java#differingFingerprintIsRejected` |
 | T16 | A merchant's payout key is that merchant's own: two merchants, one key value, two payouts | EXISTS | `app/src/test/java/com/finapp/app/merchant/MerchantPayoutEndpointDatabaseTest.java#aClientKeyIsEachMerchantsOwn` |
@@ -493,7 +499,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T17 | One effect per key counted after a rolling update and a pod kill | PLANNED | `P15-TSK-012` |
 | T18 | A manual adjustment's approver differs from its proposer, as a `CHECK` every writer meets (`INV-AUD-04`) | EXISTS | `ledger/src/test/java/com/finapp/ledger/AdjustmentProposalMigrationTest.java#theFourEyesCheckIsTheInvariants` |
 | T18 | Where the vocabulary names an act's proposal and approval as two permissions (six pairs today), no role holds both | EXISTS | `identity/src/test/java/com/finapp/identity/RoleNameTest.java#noRoleProposesAndApprovesTheSameAct` |
-| T18 | Where one role holds both halves of a desk, the domain and the database still refuse the proposer's own approval: a loan fee waiver and a repayment reversal (lending servicing), a BNPL dispute above its threshold (BNPL servicing), a risk case's disposition (risk) | EXISTS | `lending/src/test/java/com/finapp/lending/FeeAndWaiverDatabaseTest.java#selfApprovalRefusedAtBothRanks`; `lending/src/test/java/com/finapp/lending/RepaymentReversalDatabaseTest.java#selfApprovalRefusedAtBothRanks`; `bnpl/src/test/java/com/finapp/bnpl/BnplDisputesTest.java#selfApprovalRefusedAndAudited`; `risk/src/test/java/com/finapp/risk/CaseDatabaseTest.java#theProposerCannotApprove` |
+| T18 | Where one role holds both halves of a desk, the domain and the database still refuse the proposer's own approval: a loan fee waiver and a repayment reversal (lending servicing), a BNPL dispute above its threshold (BNPL servicing), a risk case's disposition (risk) | EXISTS | `lending/src/test/java/com/finapp/lending/FeeAndWaiverDatabaseTest.java#selfApprovalRefusedAtBothRanks`; `lending/src/test/java/com/finapp/lending/RepaymentReversalDatabaseTest.java#selfApprovalRefusedAtBothRanks`; `bnpl/src/test/java/com/finapp/bnpl/BnplDisputeDatabaseTest.java#selfApprovalRefusedAtBothRanksAndAudited`; `risk/src/test/java/com/finapp/risk/CaseDatabaseTest.java#theProposerCannotApprove` |
 | T18 | The adjustment refuses self-approval, and the refusal is recorded in its own transaction | EXISTS | `ledger/src/test/java/com/finapp/ledger/AdjustmentProposalTest.java#selfApprovalIsRefusedByTheAggregate`; `app/src/test/java/com/finapp/app/ledger/LedgerAdjustmentsRefusalTest.java#aRefusedSelfApprovalIsRecordedInItsOwnTransaction` |
 | T18 | A period close's proposer cannot approve it | EXISTS | `accounting/src/test/java/com/finapp/accounting/PeriodClosesTest.java#theProposerCannotApprove` |
 | T18 | A break's resolution under `MULTI_FACTOR`, and never one person's word for an aggregate subject | REMEDIATION | `P14-REM-001` |
@@ -539,7 +545,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T29 | Workload identities, KMS key policies, separate accounts and keys per environment | PLANNED | `P15-TSK-016` |
 | T29 | Break-glass and compromise procedures rehearsed | PLANNED | `P15-TSK-032` |
 | T29 | The human identity controls of a real cloud account: MFA by policy, workforce federation, no long-lived human keys | GAP | `owner item 3`; owner: the owner, since 2026-11-08 |
-| T30 | CI's token is read-only in every permissions entry, no job references a secret, and the workflow is the repository's only one | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theTokenIsReadOnly`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#noJobReferencesASecret`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#thereIsOneWorkflow` |
+| T30 | CI's token is read-only in every permissions entry, no job references a secret, and the workflow is the repository's only one, with no local action | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theTokenIsReadOnly`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#noJobReferencesASecret`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#thereIsOneWorkflow` |
 | T30 | Pull-based GitOps: no CI credential reaches production | PLANNED | `P15-TSK-017` |
 | T30 | No cloud credential in CI, and no state backend initialised by it | PLANNED | `P15-TSK-013` |
 | T30 | Keyless signing from CI's identity, its trust narrowed at admission | PLANNED | `P15-TSK-007` |
@@ -548,7 +554,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T31 | The privileged access review asserting every route under `/v1/operator` is permission-guarded | PLANNED | `P15-TSK-021` |
 | T32 | Automated backups with point-in-time recovery under a separate KMS key, and deletion protection | PLANNED | `P15-TSK-015` |
 | T32 | A restore rehearsed into a fresh database, ending in the financial verification, with the backup handled as a copy of the ledger | PLANNED | `P15-TSK-030` |
-| T33 | Locally (compose and the test databases), the migrator is `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT` | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
+| T33 | Locally (compose and the test databases), the migrator is `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
 | T33 | The journal's append-only trigger binds the migrator | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
 | T33 | Only the migrator image holds the migrator's credentials, under the Job contract; the deployed roles created by the one-time bootstrap step | PLANNED | `P15-TSK-004` |
 | T33 | The migrator's egress reaches PostgreSQL alone | PLANNED | `P15-TSK-010` |
@@ -607,18 +613,35 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   to zero. GL = ledger compares two views of the same journal. Rule conformance judges an entry's namespace and shape,
   never its amount or its provenance (ADR-0117). So, for an entry inserted by anyone holding the application's
   credential:
-  - **Detected** (late, by the close or by the proof's own reading): an entry touching a book a product proof covers.
-    The loan book (lending's subledger and replay proofs); lending capital (its capital proof); the BNPL book (its
-    subledger and three-way proofs); the FX books (fx's books proof); the reconciled clearing positions and cash at
-    bank (reconciliation's position proof, against the providers' and the bank's statements); merchant payables (the
-    payable's terms must sum to its position). Also detected: an entry whose namespace no rule registers or whose
-    shape no rule allows (rule conformance, at the month's close), and an entry whose projection row was left stale
-    (the projection check).
-  - **Undetected:** a balanced entry of a registered shape between accounts no proof covers, **customer wallet
-    liabilities first among them**, with both projection rows co-updated in the same transaction. A shift from one
-    customer's wallet to another's, followed by a legitimate withdrawal, moves money without authority and raises
-    nothing: no proof, no reconciliation (no external cash moves until the withdrawal, which is itself legitimate), no
-    trial balance.
+  - **Refused at insert or commit**, raw SQL included: an unbalanced entry and one of fewer than two lines (`V004`), a
+    line on an account that is not active (`V007`), a reversal beyond its original (`V009`), an `ADJUSTMENT` entry no
+    approved two-person proposal names (`V010`), an entry or line dated on or before the posting cutoff (`V028`,
+    `V032`), and any edit of the journal. `V015`'s binding (re-stated through `V030`) refuses a `MANUAL`-origin
+    adjustment *proposal* line on a reconciled position or a closed book; it judges the adjustment path only, so an
+    entry inserted straight into the journal as a `POSTING` never meets it.
+  - **Detected**, late, by the close or by the proof's own reading - **and only for a naive raw insert or a code
+    defect.** Every proof compares the ledger with the product's own rows, and `finapp_app` holds `INSERT` on those
+    rows too (`fx.trade`, `lending.repayment`, `reconciliation.expectation` among them): a holder who writes the row
+    first defeats the proof. With that qualification, `AccountPurpose`'s forty members divide three ways. **Read per
+    account (28)**: the loan book's six per-loan receivables and credit balance and the BNPL book's six per-obligation
+    ones (the subledger proofs; every entry on them must be named by a row), lending capital (its capital proof, and
+    the position proof as one of the eleven reconciled positions), the five FX books (fx's books proof), and the
+    other ten reconciled positions - the card, instant and payout clearings, the FX provider and corridor clearings,
+    cash at bank, suspense, processing costs, reconciliation losses and gains (the position proof's completeness). **Read only through the lines a row names (2)**: loan fee income (the
+    subledger proof's fee arm) and BNPL merchant fee income (the three-way proof's fee identity); a line no row names
+    is not seen. Also detected: merchant payable lines under a `bnpl.` key (the three-way proof's merchant leg), an
+    entry whose namespace no rule registers or whose shape no rule allows (rule conformance, at the month's close),
+    and a projection row left stale (the projection check).
+  - **Undetected:** a balanced entry of a registered shape, both projection rows co-updated in the same transaction,
+    between accounts no proof reads (**10**): **customer wallets**; **merchant payables** apart from `bnpl.`-keyed
+    lines (their check sums the payable's own breakdown, which equals its position by construction, so a balanced
+    entry cannot fail it); the platform's **fee revenue**; **loan interest income, BNPL interest income and BNPL
+    late-fee income**; **loan and BNPL write-off expense**; **chargeback recoverable and dispute costs**. Also
+    undetected: a line on loan fee income or BNPL merchant fee income that no row names, and any book above once the
+    product's row is forged first. Two examples: one customer's wallet debited and another's credited, then a
+    legitimate withdrawal; or fee revenue debited and the payable of a merchant the attacker controls credited, then
+    an ordinary payout. Neither raises anything: no proof reads those accounts, reconciliation sees only the
+    legitimate withdrawal or payout, and the trial balance stays zero.
   Phase 15's controls lower the likelihood: the credential reaches only the application's pods (`-018`), and the
   database only those pods (`-010`, `-015`). They do not change the impact. **Owner item 2.**
 - **T45, injection through hand-written JDBC.** Every statement is hand-written. The codebase's idiom is constant SQL
@@ -691,22 +714,29 @@ by the phase's exit (§1.5).
    <a review date you set>`, for example a review date of 2027-06-30.
 2. **T15's residual: a balanced shift between accounts no proof covers is neither refused nor detected.** The options:
    - **(a) An interim detective control.** A source-join census: every journal entry joins, by its `reference` and
-     `idempotency_scope`, to the domain record that caused it (the transfer, the payment attempt, the withdrawal),
-     and that record's amounts equal the entry's lines. Or a wallet proof: each customer wallet's balance is
-     explained by its domain records. Either catches a raw entry with no domain record, and a code defect that posts
-     outside the doors. Neither closes the threat, because a credential holder can forge the domain row too: the same
-     role holds `INSERT` on those tables. **It does not fit `-025`**, which pages on correctness signals that already
-     exist and builds no proof. It needs its own item, read-only and changing no posting path, so it could sit inside
-     Phase 15.
+     `idempotency_scope`, to the domain record that caused it (the transfer, the payment attempt, the withdrawal, the
+     capture, the fee assessment), and that record's amounts equal the entry's lines. **Only the census covers every
+     book**, the ten no proof reads among them. A wallet proof (each customer wallet's balance explained by its domain
+     records) is the narrower alternative and covers customer wallets only: merchant payables, fee revenue, the
+     interest, fee and write-off accounts and the dispute accounts stay unread. Either catches a raw entry with no
+     domain record, and a code defect that posts outside the doors. Neither closes the threat, because a credential
+     holder can write the domain record first: the same role holds `INSERT` on those tables. **It does not fit
+     `-025`**, which pages on correctness signals that already exist and builds no proof. It needs its own item,
+     read-only and changing no posting path, so it could sit inside Phase 15.
    - **(b) The preventive fix.** A definer-rights posting function as the journal's only `INSERT` path, which
-     validates each posting against the rule register and its domain reference; the application role's `INSERT` on
-     the journal and its `UPDATE` on the balance projection revoked; and a database role per module, so that one
-     module's credential cannot write another's books. It changes every module's write path and must be measured on
-     the posting hot path.
+     validates each posting against the rule register and the domain record it names; the application role's
+     `INSERT` on the journal and its `UPDATE` on the balance projection revoked; and a database role per module, so
+     that one module's credential cannot write another's books or rows. It refuses a raw entry with no domain record
+     and a shape no rule allows, and it confines an injection or a defect in one module (T45) to that module's books.
+     **It does not stop a holder who writes the domain record first**, and the modular monolith's pods hold every
+     module's credential, so a compromised pod is narrowed, not stopped: there the defence is the database reachable
+     only from those pods (`-010`, `-015`) and the credential delivered only to them (`-018`). It changes every
+     module's write path and must be measured on the posting hot path.
    - *Recommendation*: schedule **(b)** as a remediation entry with the horizon "before production use", after Phase
-     15, which leaves every posting path as Phases 3–14 built it (`PHASE_15_PLAN.md` §1). Add **(a)** now as a new
-     Phase 15 item after `-025`, so that something reads the uncovered books until (b) lands. With (a) and (b) both
-     declined, the residual stays a `GAP` and must be accepted by the owner before production use.
+     15, which leaves every posting path as Phases 3–14 built it (`PHASE_15_PLAN.md` §1). Add **(a)** now, as the
+     source-join census rather than the wallet proof, as a new Phase 15 item after `-025`, so that something reads
+     the uncovered books until (b) lands. With (a) and (b) both declined, the residual stays a `GAP` and must be
+     accepted by the owner before production use.
 3. **T29's residual.** No task builds the human identity controls of a real cloud account. *Recommendation*: widen
    `P15-TSK-016` with a human IAM baseline in the `security` module (MFA required by policy, no long-lived human access
    keys, permission boundaries), asserted by `terraform test` with mock providers like the rest of the module.

@@ -29,11 +29,9 @@ import org.junit.jupiter.api.Test;
 @DisplayName("every migrating module's Flyway tasks are forward-only (P15-TSK-001)")
 class MigrationSettingsAreForwardOnlyTest {
 
-    /** Each setting, as an uncommented assignment line. */
-    private static final Map<String, Pattern> SETTINGS = Map.of(
-            "cleanDisabled = true", Pattern.compile("(?m)^\\s*cleanDisabled\\s*=\\s*true\\s*$"),
-            "validateOnMigrate = true", Pattern.compile("(?m)^\\s*validateOnMigrate\\s*=\\s*true\\s*$"),
-            "outOfOrder = false", Pattern.compile("(?m)^\\s*outOfOrder\\s*=\\s*false\\s*$"));
+    /** Each setting and the one value it may take. */
+    private static final Map<String, String> SETTINGS =
+            Map.of("cleanDisabled", "true", "validateOnMigrate", "true", "outOfOrder", "false");
 
     @Test
     @DisplayName("clean disabled, validated before migrating and never out of order, in every module with migrations")
@@ -48,10 +46,18 @@ class MigrationSettingsAreForwardOnlyTest {
         }
         Map<String, String> missing = new TreeMap<>();
         for (Path module : modules) {
-            String build = read(module.resolve("build.gradle.kts"));
-            SETTINGS.forEach((setting, pattern) -> {
-                if (!pattern.matcher(build).find()) {
-                    missing.merge(module.getFileName().toString(), setting, (a, b) -> a + ", " + b);
+            List<String> build = read(module.resolve("build.gradle.kts")).lines()
+                    .map(line -> line.replaceFirst("//.*$", ""))
+                    .toList();
+            SETTINGS.forEach((setting, value) -> {
+                // Every line naming the setting must be the one assignment: a later "cleanDisabled = false", or a
+                // setter, overrides the first, so the first match proves nothing.
+                Pattern names = Pattern.compile("\\b" + setting + "\\b");
+                Pattern assigns = Pattern.compile("^\\s*" + setting + "\\s*=\\s*" + value + "\\s*$");
+                List<String> naming = build.stream().filter(line -> names.matcher(line).find()).toList();
+                if (naming.isEmpty() || !naming.stream().allMatch(line -> assigns.matcher(line).matches())) {
+                    missing.merge(module.getFileName().toString(), setting + " = " + value + " (and only that)",
+                            (a, b) -> a + ", " + b);
                 }
             });
         }

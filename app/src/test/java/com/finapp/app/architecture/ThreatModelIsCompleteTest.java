@@ -50,10 +50,12 @@ import org.junit.jupiter.api.Test;
  *       is the owner's with a real date and is not past its {@code until};
  *   <li>no CRITICAL or HIGH threat is left without a control or the owner's acceptance;
  *   <li>every row's evidence is in the form its state requires and resolves: an {@code EXISTS} row's files
- *       exist, each {@code #member} is a test declared in its file, each content pin holds, and a CRITICAL or
- *       HIGH threat's {@code EXISTS} row never rests on a bare non-test file without a pin; a {@code GAP} row
- *       names a postponed issue or an owner item, an owner and a date;
- *   <li>no promise outlives its task: a row citing a task that is no longer live is red, naming the task;
+ *       exist, each {@code #member} is a test declared in its file (a whole test file declares at least one),
+ *       each content pin holds, and a CRITICAL or HIGH threat's {@code EXISTS} row never rests on a document
+ *       under {@code docs/}, nor on a bare non-test file without a pin; a {@code GAP} row names a postponed
+ *       issue or an owner item, an owner and a date;
+ *   <li>no promise outlives its task: every task the document cites - in a row or in its prose, long or short
+ *       id - is live, the register's own task excepted; a red names the task and the section;
  *   <li>every task id the document names, a short {@code -NNN} included, is a backlog entry;
  *   <li>the register's summary line counts what the register holds;
  *   <li>once Phase 15 is complete ({@code CURRENT_STATE.md}), every CRITICAL or HIGH threat has an
@@ -66,8 +68,10 @@ import org.junit.jupiter.api.Test;
  * {@code COMPLETE}, the promise is kept, and the evidence belongs in the row, or it is broken, and the row is a
  * {@code GAP}. Either way the register is wrong until that task's gate rewrites it, so the flip turns this test
  * red. A postponed or cut task's promise has no owner, so it is refused too, until it is rewritten as a
- * {@code GAP} naming the postponed issue or owner item that holds it. The cost is deliberate: every Phase 15 gate
- * edits the model.
+ * {@code GAP} naming the postponed issue or owner item that holds it. The same holds of the prose: a residual or
+ * an owner item saying what a task will do is a promise too, so a finished task's id anywhere in the model is red
+ * until its gate rewrites the sentence. The one exception is {@code P15-TSK-001}, cited as the register's author.
+ * The cost is deliberate: every Phase 15 gate edits the model.
  *
  * <p>Hermetic: it reads files only ({@code THREAT_MODEL.md}, {@code BACKLOG.md}, {@code POSTPONED_ISSUES.md},
  * Phase 15's status line in {@code CURRENT_STATE.md}, and the evidence the register cites). It carries the
@@ -83,6 +87,16 @@ class ThreatModelIsCompleteTest {
     private static final String POSTPONED = "docs/project/POSTPONED_ISSUES.md";
     private static final String STATE = "docs/project/CURRENT_STATE.md";
     private static final String PHASE_15_HEADING = "**Phase 15 — Production Hardening**";
+
+    /**
+     * The documents tree, never built evidence for a CRITICAL or HIGH threat, pinned or not. A rehearsal record
+     * ({@code P15-TSK-032}'s) counts only once a gate widens this grammar deliberately, naming the records'
+     * directory and form, with a rule here holding them.
+     */
+    private static final String DOCUMENTS = "docs/";
+
+    /** The register's own task: the model cites it as its author, history rather than a promise. */
+    private static final String OWN_TASK = "P15-TSK-001";
 
     /** A completed phase's status line, as `CURRENT_STATE.md` writes it: the token itself, not any mention. */
     private static final Pattern COMPLETED_STATUS = Pattern.compile("^Status:\\s+\\S+\\s+\\*\\*`COMPLETE`\\*\\*");
@@ -414,9 +428,45 @@ class ThreatModelIsCompleteTest {
     }
 
     @Test
-    @DisplayName("no promise outlives its task: a PLANNED or REMEDIATION row cites only live tasks")
+    @DisplayName("no promise outlives its task: every task the model cites, in a row or in prose, short ids included, is live")
     void noPromiseOutlivesItsTask() {
         Map<String, String> problems = new LinkedHashMap<>();
+        // Prose first: a residual, an owner item or a scope note saying what a task will do reads as true until that
+        // task's gate rewrites it ("SASL_PLAINTEXT is admitted today; -026 widens the guard"). Every line outside
+        // section 4's rows is read; the rows are judged below, with the advice their state needs.
+        String heading = "the preamble";
+        for (String line : model.split("\\R", -1)) {
+            if (line.startsWith("## ") || line.startsWith("### ")) {
+                heading = line.replaceFirst("^#+ ", "");
+                continue;
+            }
+            List<String> columns = columns(line);
+            if (columns.size() == 4 && THREAT_ID.matcher(columns.get(0)).matches()) {
+                continue; // a section 4 row
+            }
+            Set<String> cited = new TreeSet<>();
+            Matcher id = ANY_TASK_ID.matcher(line);
+            while (id.find()) {
+                cited.add(id.group(1));
+            }
+            Matcher shortId = SHORT_TASK_ID.matcher(line);
+            while (shortId.find()) {
+                cited.add("P15-TSK-" + shortId.group(1));
+            }
+            for (String task : cited) {
+                String status = statuses.get(task);
+                if (task.equals(OWN_TASK) || status == null || EvidenceCitations.LIVE_STATUSES.contains(status)) {
+                    continue; // an unknown id is the backlog-entry rule's
+                }
+                problems.merge(task + " in '" + heading + "'", task + " is " + status + ". "
+                        + (status.equals("COMPLETE")
+                                ? "Its gate rewrites what this section says of it: a residual it closed is struck, a"
+                                        + " promise it kept becomes a section 4 EXISTS row, and the register cites a"
+                                        + " finished task by the evidence it left, never by its id"
+                                : "Name the task that now owns this, or the postponed issue or owner item that holds"
+                                        + " it"), (a, b) -> a);
+            }
+        }
         for (Control row : controls) {
             if (!row.state().equals("PLANNED") && !row.state().equals("REMEDIATION")) {
                 continue;
@@ -440,7 +490,7 @@ class ThreatModelIsCompleteTest {
                 }
             }
         }
-        assertThat(problems).as("promises in %s whose task is no longer live", MODEL).isEmpty();
+        assertThat(problems).as("tasks %s cites that are no longer live (row or section)", MODEL).isEmpty();
     }
 
     @Test
@@ -578,7 +628,11 @@ class ThreatModelIsCompleteTest {
                 }
                 EvidenceCitations.problemWith(root, path).ifPresent(problem -> problems.add(
                         "`" + path.path() + path.member().map(m -> "#" + m).orElse("") + "` " + problem));
-                if (threat != null && severe(threat) && !path.isTestSource() && path.pins().isEmpty()) {
+                if (threat != null && severe(threat) && path.path().startsWith(DOCUMENTS)) {
+                    problems.add("`" + path.path() + "` is a document cited as built evidence for a " + threat.rating()
+                            + " threat: a document states a control, pinned or not, and never builds one; cite the"
+                            + " test, policy or file that holds it (PRODUCTION_READINESS.md's 'what never counts')");
+                } else if (threat != null && severe(threat) && !path.isTestSource() && path.pins().isEmpty()) {
                     problems.add("`" + path.path() + "` is a bare file cited as built evidence for a "
                             + threat.rating() + " threat: its existence proves nothing, so back it with a test that"
                             + " asserts the property, or pin the text that holds it (`contains: ...`, `lacks: ...`)");

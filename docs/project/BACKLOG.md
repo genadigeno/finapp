@@ -26948,6 +26948,22 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   the owner only; rows reworded to what each test holds; a merge note; the readiness standard's boundary-to-unit map
   and clause-level `N/A`. **Now:** 47 threats (25 CRITICAL, 13 HIGH, 8 MEDIUM, 1 LOW); 45 `CONTROL`, two proposed
   acceptances (T42, T47); 216 rows (95 `EXISTS`, 103 `PLANNED`, 12 `REMEDIATION`, 6 `GAP`); the guard's 14 rules.
+- **Second fix round** (2026-11-08; the focused re-review's FIX FIRST: one IMPORTANT, six MINOR). **I-1:** T15's
+  "detected" list overclaimed. It now derives from `AccountPurpose`'s forty members: 28 read per account by a proof,
+  two only through the lines a row names (loan fee income, BNPL merchant fee income), ten by none - customer wallets,
+  merchant payables (their check is an identity of their own breakdown), fee revenue, loan and BNPL interest income,
+  BNPL late-fee income, loan and BNPL write-off expense, chargeback recoverable and dispute costs. "Detected" holds
+  only for a naive raw insert or a defect, since `finapp_app` can also insert the product rows each proof reads. What
+  is refused at insert is listed (`V004`, `V007`, `V009`, `V010`, `V028`, `V032`); `V015`'s binding judges the
+  adjustment path only. Owner item 2: only the source-join census covers every book, a wallet proof wallets only;
+  (b) confines a module, and does not stop a holder who writes the domain row first. **Minor:** the CI test reads
+  `secrets: inherit`, `toJSON(secrets)`, flow-style `uses:`, refuses local actions and asserts the scan's git mode;
+  the Flyway test requires every occurrence to agree; the roles test refuses `ALTER ROLE` and role-membership grants;
+  documents under `docs/` never count for CRITICAL or HIGH (routed onto `-032`); a whole test file must declare a
+  test; T18 cites the database test that holds the four-eyes `CHECK`; T8's wording narrowed to what is asserted per
+  rail (the corridor test does refuse a forged signed callback's effect; it does not assert its retention); the test
+  inputs take every `Dockerfile` and module build script; rule 9 reads every task id in the model, the
+  register's own excepted. Counts unchanged (47 threats, 216 rows, 14 rules).
 
 **P15-TSK-002 — The carried items ruled (C15)** — `PLANNED`
 - **Objective**: no debt row, deferral or cross-cutting item names Phase 15 as owner without a ratified disposition.
@@ -27729,6 +27745,11 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: this task.
 - **Acceptance criteria**: criterion 4.
 - **Definition of done**: `DOD-DOC`, `DOD-OBS`. **Risk**: Low. **Cx**: L.
+- *Routed by `P15-TSK-001` (2026-11-08, its second fix round), status unchanged:* `THREAT_MODEL.md`'s guard refuses a
+  document under `docs/` as built evidence for a CRITICAL or HIGH threat, pinned or not. If this task's rehearsal
+  records are to count there (break-glass, compromise), its gate widens the grammar deliberately: it names the
+  records' directory and form, adds the rule to `ThreatModelIsCompleteTest` with a probe, and rewrites the rows it
+  satisfies. Until then a rehearsal record counts in `PRODUCTION_READINESS.md` only.
 
 **P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `PLANNED`
 - **Objective**: fix, at their causes, the production defects the owner postponed to this phase's database pass.

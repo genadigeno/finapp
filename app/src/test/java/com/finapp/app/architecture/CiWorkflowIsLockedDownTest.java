@@ -27,8 +27,8 @@ import org.junit.jupiter.api.Test;
  * pinning an action to a tag fails the build until the register is rewritten with it.
  *
  * <p>What this does not hold: the repository's settings (branch protection, environments), which are not in the
- * repository, and any workflow file other than {@code ci.yml}, of which there is none today
- * ({@link #thereIsOneWorkflow}).
+ * repository, and any workflow file other than {@code ci.yml} or local action, of which there is none today
+ * ({@link #thereIsOneWorkflow} refuses either until this test reads it).
  */
 @Tag("architecture")
 @DisplayName("the CI workflow is locked down as the threat register says (P15-TSK-001)")
@@ -41,7 +41,22 @@ class CiWorkflowIsLockedDownTest {
     /** An action reference pinned to a full commit: {@code owner/repo[/path]@<40 hex>}. */
     private static final Pattern PINNED_ACTION = Pattern.compile("^[\\w.-]+/[\\w./-]+@[0-9a-f]{40}$");
 
-    private static final Pattern USES = Pattern.compile("^\\s*-?\\s*uses:\\s*(\\S+)");
+    /** A {@code uses:} key in block style ({@code - uses: x}) or flow style ({@code - { uses: x, with: ... }}). */
+    private static final Pattern USES = Pattern.compile("(?:^|[\\s{,])uses:\\s*([^\\s,}]+)");
+
+    /**
+     * A reference to the secrets context: a member ({@code secrets.X}, {@code secrets['X']}), the whole context in an
+     * expression ({@code toJSON(secrets)}), or a {@code secrets:} key ({@code secrets: inherit} to a reusable
+     * workflow, or a map of them). A step merely named "... for secrets" is none of these.
+     */
+    private static final List<Pattern> SECRETS = List.of(
+            Pattern.compile("\\bsecrets\\s*[.\\[]"),
+            Pattern.compile("\\$\\{\\{[^}]*\\bsecrets\\b"),
+            Pattern.compile("\\(\\s*secrets\\s*\\)"),
+            Pattern.compile("(?:^|[\\s{,-])secrets\\s*:"));
+
+    /** The secret scan's script, whose gitleaks mode decides whether history is scanned. */
+    private static final String SECRET_SCAN = "infra/scripts/secret-scan.sh";
     private static final Pattern JOB = Pattern.compile("^  ([A-Za-z0-9_-]+):\\s*$");
     private static final Pattern PERMISSION_ENTRY = Pattern.compile("^(\\s+)([a-z-]+):\\s*(\\S+)\\s*$");
 
@@ -121,8 +136,9 @@ class CiWorkflowIsLockedDownTest {
     void noJobReferencesASecret() {
         List<String> referencing = new ArrayList<>();
         for (int i = 0; i < lines.size(); i++) {
-            if (lines.get(i).contains("secrets.") || lines.get(i).contains("secrets[")) {
-                referencing.add("line " + (i + 1) + ": " + lines.get(i).trim());
+            String line = lines.get(i);
+            if (SECRETS.stream().anyMatch(secrets -> secrets.matcher(line).find())) {
+                referencing.add("line " + (i + 1) + ": " + line.trim());
             }
         }
         assertThat(referencing).as("a CI job holding a secret is a CI credential the register says does not exist")
@@ -136,17 +152,21 @@ class CiWorkflowIsLockedDownTest {
         List<String> unpinned = new ArrayList<>();
         for (String line : lines) {
             Matcher use = USES.matcher(line);
-            if (!use.find()) {
-                continue;
-            }
-            String reference = use.group(1).replace("\"", "").replace("'", "");
-            uses.add(reference);
-            if (!reference.startsWith("./") && !PINNED_ACTION.matcher(reference).matches()) {
-                unpinned.add(reference);
+            while (use.find()) {
+                String reference = use.group(1).replace("\"", "").replace("'", "");
+                uses.add(reference);
+                // A local action (./...) is refused too: its own uses: lines are a second set of actions this test
+                // would have to read, and there is none today (thereIsOneWorkflow).
+                if (!PINNED_ACTION.matcher(reference).matches()) {
+                    unpinned.add(reference);
+                }
             }
         }
         assertThat(uses).as("the workflow's actions were read").hasSizeGreaterThanOrEqualTo(4);
-        assertThat(unpinned).as("an action pinned to a tag or a branch can be repointed by its owner").isEmpty();
+        assertThat(unpinned)
+                .as("an action pinned to a tag or a branch can be repointed by its owner, and a local action's own"
+                        + " actions are unread here")
+                .isEmpty();
         assertThat(EvidenceCitations.read(root.resolve(DEPENDABOT)))
                 .as("the SHA pins have an update path, or they rot")
                 .contains("package-ecosystem: github-actions")
@@ -154,12 +174,19 @@ class CiWorkflowIsLockedDownTest {
     }
 
     @Test
-    @DisplayName("the secret-scan job scans the whole history with the pinned scanner")
+    @DisplayName("the secret-scan job checks out the whole history and its script scans it in gitleaks' git mode")
     void theHistoryIsScannedForSecrets() {
         assertThat(job("secret-scan"))
                 .as("history, not the working tree: a secret committed and later removed is still disclosed")
                 .anySatisfy(line -> assertThat(line).contains("fetch-depth: 0"))
                 .anySatisfy(line -> assertThat(line).contains("./infra/scripts/secret-scan.sh"));
+        String script = EvidenceCitations.read(root.resolve(SECRET_SCAN));
+        assertThat(Pattern.compile("(?m)^\\s*git\\s+/repo\\b").matcher(script).find())
+                .as("%s runs gitleaks' git mode over the mounted repository, which reads every commit", SECRET_SCAN)
+                .isTrue();
+        assertThat(Pattern.compile("(?m)^\\s*dir\\s+/repo\\b|--no-git").matcher(script).find())
+                .as("%s scans only the working tree, so a removed secret is never found", SECRET_SCAN)
+                .isFalse();
     }
 
     @Test
@@ -192,11 +219,15 @@ class CiWorkflowIsLockedDownTest {
     }
 
     @Test
-    @DisplayName("there is one workflow, so these properties hold for every workflow the repository has")
+    @DisplayName("there is one workflow and no local action, so these properties hold for every workflow the repository has")
     void thereIsOneWorkflow() {
         assertThat(root.resolve(".github/workflows").toFile().list())
                 .as("a second workflow is a second token and a second set of actions this test does not read")
                 .containsExactly("ci.yml");
+        assertThat(root.resolve(".github/actions"))
+                .as("a local action's action.yml holds uses: lines and secrets this test does not read: read them here"
+                        + " before adding one")
+                .doesNotExist();
     }
 
     private static List<String> job(String name) {
