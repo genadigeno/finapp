@@ -26971,7 +26971,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   inputs take every `Dockerfile` and module build script; rule 9 reads every task id in the model, the
   register's own excepted. Counts unchanged (47 threats, 216 rows, 14 rules).
 
-**P15-TSK-002 — The carried items ruled (C15)** — `IN_PROGRESS` (2026-11-08; design done on branch `P15-TSK-002` from master `c1d07726`; marked `READY` by the coordinator at `P15-TSK-001`'s merge, master `060c6b2a`; every dependency `COMPLETE`)
+**P15-TSK-002 — The carried items ruled (C15)** — `COMPLETE` (2026-11-08; built and gated on branch `P15-TSK-002` from master `c1d07726`; marked `READY` by the coordinator at `P15-TSK-001`'s merge, master `060c6b2a`; every dependency `COMPLETE`)
 - **Objective**: no debt row, deferral or cross-cutting item names Phase 15 as owner without a ratified disposition.
 - **Affected components**: `CURRENT_STATE.md` §Known Architectural Debt, `DECISIONS.md` §Deliberately Deferred,
   `BACKLOG.md` (cross-cutting items `X-TSK-008`, `-014`, `-015`), `PHASE_15_PLAN.md` §25.
@@ -26999,6 +26999,55 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: the rows themselves.
 - **Acceptance criteria**: every Phase-15-owned row carries a dated disposition; new items, if any, in this section.
 - **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: S.
+- **As built** (2026-11-08; documents only; no migration, no production code, no ADR; the design in the engineer's
+  scratch, the ruling on the rows themselves). **The class rule** read from this entry and `PHASE_15_PLAN.md` §25:
+  - *Security-class* rows are scheduled into the Phase 15 task that fits them, or left to the owner; none is re-dated
+    without the owner's reason.
+  - *Correctness-class* rows, this entry's instants decided off the database's clock, stay in the phase (`-033`;
+    A4-F1 stays `P14-REM-009`'s, as §25 rules).
+  - The others are re-dated with a reason: purges and real providers as §25 says; a functional gap whose fix would be
+    a financial treatment §22 forbids to its own trigger; scale, latency, contention and resilience to Phase 16.
+
+  **Recounted**: 58 live rows of §Known Architectural Debt name Phase 15, nine paid rows also do and need nothing; 14
+  rows of §Deliberately Deferred; three cross-cutting entries, `X-TSK-008`, `-014` and `-015`. Each carries
+  **C15** (`P15-TSK-002`, 2026-11-08) and its disposition in place. **Scheduled**, each receiving entry widened with
+  scope, testing, acceptance and probe: `-004`, `-021` (running), `-023`, `-025`, `-027`, `-029`, `-032` and `-033`
+  (running); notes on `-019` and `-026`; already in scope: `-008`, `-010`, `-022`, `-024`, `-028`. **New**:
+  `P15-TSK-036` (M15.7, wave C), with `X-TSK-015` `CANCELLED`, moved, not dropped. **#61 ruled not settled**: `-029`
+  sweeps no idempotency record. **Owner items** (`CURRENT_STATE.md` §Next Task):
+  1. `P14-REM-009`'s scheduling.
+  2. `X-TSK-008`'s remainder.
+  3. `V015`'s foreign closure.
+  4. The transfer pre-empting an instant execution.
+  5. Six ADR promises with no register row.
+
+  **Recounts that differ from the records**: the conditional step-up is in 17 production classes, where the debt row
+  says five; reconciliation has 33 tables, where `P8-TST-002`'s scan says 31; `X-TSK-008`'s stores are five statements,
+  since `findEffectiveVersion` is already on the database's clock. **Deviations**:
+  - `X-TSK-008`'s remainder is the clock class and goes to the owner instead of `-033`, which is running and cannot take
+    a schema-wide review.
+  - Instance-clock judgements that decide no financial instant (a pacing timer, a freshness window in front of a hint)
+    are not counted in the correctness class.
+  - The threat model never cited this task, so no row of its own was rewritten.
+
+  **The check**, run from the repository root with a POSIX shell; it must print nothing:
+  ```sh
+  M='**C15** (`P15-TSK-002`, 2026-11-08)'
+  sed -n '/^## Known Architectural Debt/,/^### /p' docs/project/CURRENT_STATE.md | grep '^|' | grep -v '^| ~~' \
+    | awk -F'|' '$0 ~ /Phase 15/ || $(NF-1) ~ /(^|[^0-9-])15([^0-9]|$)|[Nn]ext phase/' | grep -vF "$M"
+  sed -n '/^## Deliberately Deferred/,$p' docs/project/DECISIONS.md | grep '^|' | grep -v '^| ~~' \
+    | grep -E 'Phase 15|14/15' | grep -vF "$M"
+  sed -n '/^# Cross-cutting work/,/^# Phases 11/p' docs/project/BACKLOG.md | awk -v M="$M" '
+    function flush() { if (id != "" && status ~ /^(PLANNED|READY|IN_PROGRESS)$/ && body ~ /Phase 15/ && index(body, M) == 0) print id }
+    /^\*\*X-TSK-[0-9]+ — / { flush(); id = substr($1, 3); s = $0; p = index(s, "** — `");
+      s = substr(s, p + length("** — `")); status = substr(s, 1, index(s, "`") - 1); body = "" }
+    { if (id != "") body = body "\n" $0 }
+    END { flush() }'
+  ```
+  It prints nothing on this tree. Its probe (one ruled row's marker removed, so the check names that row) and the
+  `ThreatModelIsCompleteTest` probes this task performed, the new `-036` citation probe and the 21 earlier rows on
+  the files it changed, are recorded in `MUTATION_TESTING.md` §2 (the guard probes) and in this task's change-log row
+  (the check's probe and the fresh test counts).
 
 **P15-TSK-003 — The application image** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: one minimal, non-root, reproducible image of `app`, built from digest-pinned bases.
