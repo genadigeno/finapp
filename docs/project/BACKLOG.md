@@ -27523,7 +27523,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   the Kubernetes minor and node sizes are reference values); CI's own run of the `iac` job. The local runs used the
   pinned Terraform image plus this laptop's root certificate, through `TERRAFORM_IMAGE`, which CI never sets.
 
-**P15-TSK-015 — Data-tier modules: PostgreSQL, Kafka, object storage** — `PLANNED`
+**P15-TSK-015 — Data-tier modules: PostgreSQL, Kafka, object storage** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-014`'s merge, master `131f16b5`; every dependency `COMPLETE`)
 - **Objective**: the financial record's database and the integration transport provisioned to the bar C3 sets.
 - **Affected components**: `modules/postgres`, `modules/kafka`, `modules/object-storage`; the topic catalogue of `-026`.
 - **Dependencies**: `-014`, `-026`.
