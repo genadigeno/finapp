@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
  * {@code #anOfferAfterAnActivationOnAStepBackIsInsideItsVersion}, owed to {@code P15-TST-002} (C14). It keeps the retirement's end after the latest offer, the
  * successor's start on its predecessor's end by row order, and the offering instant on or after its version's start from leaving unnoticed.
  */
-@DisplayName("lending V033: a terms version ends after its offers, its successor starts there, an offer is never before its version (P15-TSK-033)")
+@DisplayName("lending V033 as written - a text pin: a terms version ends after its offers, its successor starts there, an offer is never before its version (P15-TSK-033)")
 class LoanTermsClockMigrationTest {
 
     private static final String V033 = read("db/migration/lending/V033__a_terms_version_ends_after_its_offers_and_its_successor_starts_there.sql");

@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
  * owed to {@code P15-TST-002} (C14). It keeps the retirement's end after the latest offer, the successor's start on its predecessor's end by row order, and the
  * offering instant on or after its version's start from leaving unnoticed.
  */
-@DisplayName("bnpl V021: a terms version ends after its offers, its successor starts there, an offer is never before its version (P15-TSK-033)")
+@DisplayName("bnpl V021 as written - a text pin: a terms version ends after its offers, its successor starts there, an offer is never before its version (P15-TSK-033)")
 class BnplTermsClockMigrationTest {
 
     private static final String V021 = read("db/migration/bnpl/V021__a_terms_version_ends_after_its_offers_and_its_successor_starts_there.sql");

@@ -1267,7 +1267,7 @@ stamp. Postponed by the owner: lending's and bnpl's terms retirement (lending `V
 retired version before an offer pinned to it when the clock steps back between the offer and the retirement (`PI-014`;
 a fix must also keep the successor starting exactly where the predecessor ends - the review's draft, lending `V033` and
 bnpl `V021`, met lending `V003`'s successor rule in its database re-run and was withdrawn unmerged); and `CloseRuns.view`
-names a period's latest close run by `started_at`, which a step can misorder (`PI-013`). The review's financial audit found that the cutoff refused an entry and not a line:
+names a period's latest close run by `started_at`, which a step can misorder (`PI-013`). *(Both fixed by `P15-TSK-033`, 2026-11-08 - the run named by its lock's identity, the latest close ranked by the rows; lending `V033` and bnpl `V021` ending a version after its latest offer, its successor exactly there, an offer never before its version - and proven only at `P15-TST-002`'s database pass; `DISTRIBUTED_EXECUTION.md` §3.)* The review's financial audit found that the cutoff refused an entry and not a line:
 ledger `V032` refuses a journal line whose entry is dated on or before the cutoff, under namespace `14` key `cutoff`
 shared, so `INV-ACC-08`'s "raw SQL included" now holds for lines too. The manual adjustment's door records a refused
 self-approval `FAILED` (`ledger.SelfApprovalRefused`) in a transaction of its own, and refuses an instrument shape in

@@ -598,9 +598,11 @@ disclosure and fx's reference rates through ports `app` implements.
   (C3, `P14-TSK-006`); the write-off is built as its four-eyes command (C6 (A), `P14-TSK-021`, lending `V032`). A
   retired terms version's `effective_to` can still fall before an offer pinned to it when the database clock steps back
   between the offer and the retirement (`V030:247`): a defect found by `P14-DOC-001`'s database pass and postponed by the
-  owner as `PI-014`.
+  owner as `PI-014`. *(Fixed by `P15-TSK-033`, 2026-11-08, lending `V033`: the end after the version's latest offer, the
+  successor exactly there, an offer never before its version's start; proven at `P15-TST-002`'s database pass.)*
 - **BNPL (19)** — its accrual's lag read by the close (C3, `P14-TSK-006`); the write-off, four-eyes (C6 (A),
-  `P14-TSK-021`, bnpl `V020`). Its terms retirement has the same postponed defect (`V002:343`, `PI-014`).
+  `P14-TSK-021`, bnpl `V020`). Its terms retirement has the same postponed defect (`V002:343`, `PI-014`). *(Fixed by
+  `P15-TSK-033`, 2026-11-08, bnpl `V021`, lending `V033`'s twin; proven at `P15-TST-002`'s database pass.)*
 - **Merchant (12)** — `MerchantPayable` classifies an `ACCOUNTING`-origin and an operator's `MANUAL` line by its origin
   (`P14-TSK-022`, `P14-TSK-023`); `PayoutReturns` floors a return's posting date at the first open date (C3,
   `P14-TSK-006`); a BNPL fee pin is stamped by its own insert (merchant `V013`, `P14-DOC-001`).
