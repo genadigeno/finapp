@@ -88,3 +88,16 @@ is a small deviation from decision 1's layout:
   `TerraformIsPinnedAndCheckedTest` refuses a resource of a guarded type (the database, its backups, every KMS key)
   without `prevent_destroy = true`. It also refuses a resource or data source that writes a secret value into state,
   and a database given its password. No such resource exists yet. Each rule is proven against a planted violation.
+
+`P15-TSK-014` (2026-11-08), the `network` and `kubernetes` modules. The decision stands. Three points the build settled:
+
+- **A concern module that requires a provider commits a lock file.** Every `init` in the check script is
+  `-lockfile=readonly`, so a module tested on its own needs one, which `modules/conventions`, having no provider, never
+  showed. Each holds the exact version the roots pin (`TerraformIsPinnedAndCheckedTest`), so a module's tests run
+  against the provider its roots use. A module's own constraint stays a floor (`>= 6.72.0`), as `required_version` does.
+- **The chosen security properties are literals, not inputs.** The endpoint's privacy, the audit log, etcd's encryption
+  and the three-zone rule cannot be turned off from a root. Decision 5's `terraform test` asserts them over the plan,
+  and the check script plants a defect against each.
+- **Keys remain inputs until `-016`.** etcd's key is a variable each root requires, and no KMS key is created here.
+  The access entries through which any principal reaches the cluster are `-016`'s too; the cluster grants its
+  creator none.

@@ -27348,6 +27348,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   outside Kubernetes, the API port `404` for `/actuator` (`ManagementPortTest`). The two debt rows now say they close
   with this task's policy, and `THREAT_MODEL.md` T2's NetworkPolicy row is this task's; each is closed by this task's
   gate, not before.
+- *Routed by `P15-TSK-014`'s gate (2026-11-08), status unchanged, for information:* on EKS a NetworkPolicy is enforced only because `modules/kubernetes` turns the VPC CNI's network policy agent on (off by default). What this task's `kind` tests prove is `kind`'s CNI enforcing the policies, not EKS's.
 
 **P15-TSK-011 — The edge: public and operator ingresses, TLS, the route allow-list** — `PLANNED`
 - **Objective**: the internet reaches customer, merchant and provider routes only; operators reach theirs only from the
@@ -27370,6 +27371,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T40 cites this task: the edge sets the client's address and drops any client-supplied forwarded header, so `-022`'s per-source limits and every record key on an address the client cannot choose. T1, T3, T8, T20, T21 and T31 cite it too. *(The fix round, 2026-11-08:)* `THREAT_MODEL.md` T31: the allow-list moves only the routes an operator permission guards, so a route under `/v1/operator` that declares only a session would stay on the public host. Keep `/v1/operator/**` off the public host by path as well as by permission.
+- *Routed by `P15-TSK-014`'s gate (2026-11-08), status unchanged:* on EKS, the public ingress's load balancer belongs in `module.network.public_subnet_ids_by_zone` (tagged `kubernetes.io/role/elb`) and the operator ingress's in the private tier (`kubernetes.io/role/internal-elb`); the edge tier holds nothing else, and a node or pod is never placed there.
 
 **P15-TSK-012 — The `kind` deployment: N replicas, the migration Job, smoke, rolling update and rollback rehearsed** —
 `PLANNED`
@@ -27411,6 +27413,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Definition of done**: `DOD-BUILD`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
 - *Routed by `P15-TSK-026` (2026-11-08), status unchanged:* the test-only broker takes its topics, their configuration and the ACLs from `infra/kafka/topics.yaml` and its posture from `infra/kafka/broker.properties`, overriding only replication (one node: `replication-factor` 1, `min.insync.replicas` 1, `default.replication.factor` 1, `offsets.topic.replication.factor` 1); a `SASL_SSL` listener with SCRAM-SHA-512 and a certificate from the local CA, the SCRAM users and the broker's own keystore generated per run and never committed; the application with `finapp.kafka.security-protocol` set to `SASL_SSL`, `FINAPP_KAFKA_SASL_USERNAME`, `FINAPP_KAFKA_SASL_PASSWORD` and `finapp.kafka.ssl.truststore-location` pointing at the local CA's PEM. This rehearsal is the first real TLS and SCRAM handshake (`THREAT_MODEL.md` T9's planned row now names this task), and its rolling step is where the cooperative assignor is seen moving only the partitions that change hands - the rebalance itself counted by `KafkaRebalanceKafkaTest`, owed to `P15-TST-002`. A replica whose consumer the broker refuses reports itself not ready (`kafkaConsumers`), which is what halts a rollout carrying a wrong Kafka secret.
 - *Routed by `P15-TSK-004` (2026-11-08), status unchanged:* the rehearsal's migrator Job is the contract in `DATA_MIGRATIONS.md` §2.1 and its bootstrap step §2.2 (run before it, with the local CA in `sslrootcert`, `sslmode=verify-full` on the URL, because off loopback the runner refuses anything less). `THREAT_MODEL.md` T12's and T33's two manifest rows are `PLANNED` on this task: rewrite them to evidence at its gate. Runbook §11.1b is to be rehearsed here.
+- *Routed by `P15-TSK-014`'s gate (2026-11-08), status unchanged:* pin the `kind` node image to the Kubernetes minor both roots declare (`kubernetes_version` in `infra/terraform/environments/*/main.tf`), so the rehearsal runs the API the cluster modules target.
 
 **P15-TSK-013 — Terraform foundations: layout, state, conventions, CI checks** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`; read `READY` until its gate)
 - **Objective**: infrastructure code that is pinned, locked and checked on every change before any module exists.
@@ -27467,7 +27470,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   pushed. This laptop's antivirus intercepts TLS, so the local runs used the pinned Terraform image plus that machine's
   root certificate, through the script's `TERRAFORM_IMAGE` override, which CI never sets.
 
-**P15-TSK-014 — Network and cluster modules** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-013`'s merge, master `fcae1309`; every dependency `COMPLETE`)
+**P15-TSK-014 — Network and cluster modules** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at `P15-TSK-013`'s merge, master `fcae1309`; every dependency `COMPLETE`; read `READY` until its gate)
 - **Objective**: a private network and a hardened managed cluster as tested code.
 - **Affected components**: `infra/terraform/modules/network`, `modules/kubernetes`, the environment roots.
 - **Dependencies**: `-013`.
@@ -27490,8 +27493,43 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   root's AWS provider `default_tags`. `infra/scripts/terraform-check.sh` finds a new directory by itself.
   `TerraformIsPinnedAndCheckedTest` requires every test file in it to mock every provider the directory requires. A new
   provider is pinned exactly in both roots and locked in each (`OPERATIONS_RUNBOOK.md` §11.13).
+- **As built** (2026-11-08; branch `P15-TSK-014` from master `8100cac9`; infrastructure code, one guard and documents, no
+  production Java, no migration, no new ADR - a dated note on ADR-0121): **`modules/network`**: a VPC; a workload tier of
+  one `/20` per zone, assigning no public address, with no internet-gateway route and a default route through its own
+  zone's NAT gateway; an edge tier of one `/24` per zone holding the NAT gateways and, for `-011`, the public load
+  balancer, the only table with an internet route; one NAT gateway per zone in both environments; interface endpoints for
+  `ec2`, `ecr.api`, `ecr.dkr`, `kms`, `logs`, `secretsmanager` and `sts` and a gateway endpoint for `s3`; flow logs of all
+  traffic into a log group with deletion protection, through a role scoped to it. **`modules/kubernetes`**: EKS whose API
+  endpoint has no public address; `secrets` envelope-encrypted under `etcd_kms_key_arn`, an input (no KMS key is created
+  here), which refuses an alias, and at each root another account's or region's key, the cluster role able to use that
+  key alone; all five control-plane log types, `audit` among them, into the group EKS writes to, created first; one managed
+  node group per zone, each confined to its zone's workload subnet with a minimum of one node, so three zones means nodes
+  in three zones; a launch template requiring IMDSv2 at a hop limit of one, encrypting the root volume and setting no SSH
+  key; a workload identity OIDC provider; the VPC CNI's network policy agent on, which EKS leaves off; `API`-only
+  access with no standing access for the creator; deletion protection. The security properties are literals, not
+  variables. Three additions beyond the entry's list, each because the entry's property would otherwise be hollow: the
+  IMDS hop limit (workload identity means little if a pod can borrow the node's role), the network policy agent (a
+  policy on EKS is otherwise enforced by nothing) and `API` access mode. **Both roots** call the modules, zones and the
+  key as required variables, each validated. **Tests**: `terraform test` over a mock provider, 50 runs (network 12,
+  kubernetes 15, each root 10, conventions 3), every property asserted over the plan and every validation refused. Each
+  root's runs assert its own wiring, with the two subnet tiers told apart. **The frame**: `terraform-check.sh`'s
+  `-lockfile=readonly` means a module requiring a provider needs a lock file, which `-013`'s provider-less module never
+  showed, so each module commits one at the roots' exact version, held by a new guard member; the camel-case plant had
+  to rename `module.conventions.` in `main.tf` too; seven plants added, thirteen in all, each named property refused by
+  its assertion's own message on every CI run; `iac`'s timeout raised from 20 to 40 minutes (the script takes about nine
+  here, and CI's runner is smaller; CI's own timing unverified, nothing is pushed). `TerraformIsPinnedAndCheckedTest` also
+  now refuses a root whose provider is not confined to its own account. **Trivy**: 0 findings at HIGH and CRITICAL, no
+  ignore; the probes showed it reading these resources (AWS-0040, AWS-0041, AWS-0039), and also that it cannot see a
+  public workload subnet, since the subnets `for_each` over an input it cannot resolve, so the test holds that one
+  alone. **Threat model**: T6, T7 and T29's rows rewritten `EXISTS`, two `EXISTS` rows added to T4, the T29 residual
+  and the "no built control" list rewritten, a residual added for what a mock cannot show. **Runbook**: §11.13
+  references the two READMEs. **Tests** (the owner's rule of 2026-11-08: no production Java changed): the check script
+  and the ten guard classes reading a changed file, fresh. Owed to `P15-TST-002`: `RiskAlertRulesTest`, `BnplAlertRulesTest`
+  and `SafeguardingReturnDatabaseTest`, which read the runbook, and every other tier. **Not verified**: anything AWS would do with this configuration (no account exists, and
+  the Kubernetes minor and node sizes are reference values); CI's own run of the `iac` job. The local runs used the
+  pinned Terraform image plus this laptop's root certificate, through `TERRAFORM_IMAGE`, which CI never sets.
 
-**P15-TSK-015 — Data-tier modules: PostgreSQL, Kafka, object storage** — `PLANNED`
+**P15-TSK-015 — Data-tier modules: PostgreSQL, Kafka, object storage** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-014`'s merge, master `131f16b5`; every dependency `COMPLETE`)
 - **Objective**: the financial record's database and the integration transport provisioned to the bar C3 sets.
 - **Affected components**: `modules/postgres`, `modules/kafka`, `modules/object-storage`; the topic catalogue of `-026`.
 - **Dependencies**: `-014`, `-026`.
@@ -27512,6 +27550,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §restore (managed half, deferred), §broker outage.
 - **Acceptance criteria**: every property asserted; checks green.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-014`'s gate (2026-11-08), status unchanged:* a new module in `infra/terraform/modules` that requires a provider commits its own `.terraform.lock.hcl` at the roots' exact version (`TerraformIsPinnedAndCheckedTest`; `OPERATIONS_RUNBOOK.md` §11.13). The database and brokers take `module.network.vpc_id` and `module.network.private_subnet_ids_by_zone`, the tier with no public address and no internet route; the database's Multi-AZ and the brokers' three zones can rest on those at least three zones. The interface endpoints' security group admits the VPC on 443 only, so each data-tier service brings its own.
 - *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* `TerraformIsPinnedAndCheckedTest` refuses a guarded
   type without `lifecycle { prevent_destroy = true }`. The guarded types this task adds are `aws_db_instance`,
   `aws_rds_cluster`, the database snapshots and `aws_backup_vault`. The test also refuses a database given `password`
@@ -27537,6 +27576,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §rotation (cloud half).
 - **Acceptance criteria**: every assertion green; the secret entries equal the inventory.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-014`'s gate (2026-11-08), status unchanged:* (1) each root takes `etcd_kms_key_arn` as a variable; replace it with this task's etcd key output in both roots (`environments/*/main.tf`), and let the key's policy admit that environment's cluster role (`module.kubernetes`; the role's own policy already names only that key). (2) **Also yours now**: the cluster's access entries. The module sets `authentication_mode = "API"` and `bootstrap_cluster_creator_admin_permissions = false` and creates none, so no human, pipeline or GitOps principal reaches the API until `aws_eks_access_entry` resources grant it (`THREAT_MODEL.md` T29's planned row now names this). (3) The workload roles trust `module.kubernetes.workload_identity_provider_arn` and name `module.kubernetes.workload_identity_issuer` in their conditions. (4) `CloudWatch` log groups for flow logs and control-plane logs use the service's default encryption: the plan's key purposes do not include one, so adding a `logs` key here, with the service principal in its policy, is this task's call.
 - *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* every `aws_kms_key`, `aws_kms_replica_key` and
   `aws_kms_external_key` needs `lifecycle { prevent_destroy = true }`. `TerraformIsPinnedAndCheckedTest` refuses one
   without it. The same test refuses `aws_secretsmanager_secret_version` (resource or data source), `random_password`,
