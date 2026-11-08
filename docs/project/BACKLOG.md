@@ -27049,7 +27049,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   the files it changed, are recorded in `MUTATION_TESTING.md` §2 (the guard probes) and in this task's change-log row
   (the check's probe and the fresh test counts).
 
-**P15-TSK-003 — The application image** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-003 — The application image** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; built on branch `P15-TSK-003` from master `c1d07726`; M15.2 at 1 of 5; marks no task `READY` - the coordinator does)
 - **Objective**: one minimal, non-root, reproducible image of `app`, built from digest-pinned bases.
 - **Affected components**: `app` packaging; new `Dockerfile` (or `app/Dockerfile`) and `.dockerignore`;
   `infra/scripts/image-build.sh`; `.github/workflows/ci.yml` (an `image` job, no push).
@@ -27072,8 +27072,9 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   within budget.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T30's built row holds `ci.yml`'s token scope (read-only, no secret, one workflow) through `CiWorkflowIsLockedDownTest`. A job this task adds that widens a `permissions` entry, references a secret or adds a workflow turns that test red: rewrite T30's row with the change, and the test with it, in this task's gate.
+- *As built (2026-11-08, branch `P15-TSK-003` from master `c1d07726`; no migration, no ADR, no application code; the record is `CURRENT_STATE.md` §Just completed):* a root `Dockerfile` of two stages - a JDK 21 builder (`eclipse-temurin:21.0.13_9-jdk-noble`) that only extracts the boot jar Gradle built (`-Djarmode=tools extract --layers --launcher`) and gives every extracted file the commit's time, and a `gcr.io/distroless/java21-debian13:nonroot` runtime that copies the four layers in order, sets the three OCI labels, `WORKDIR /app`, `USER 65532:65532` and `ENTRYPOINT ["/usr/bin/java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", …JarLauncher]`, with no `HEALTHCHECK`, `ENV` or `RUN`. **The two `FROM` lines are the pins file** (`tag@sha256`), a deviation from "one pins file" in letter only: Dependabot's `docker` ecosystem (added to `.github/dependabot.yml`, weekly, never a new major) reads `FROM` lines and does not resolve `ARG`. `.dockerignore` is an allow-list of the boot jar. `infra/scripts/image-build.sh` refuses an unpinned base (`check-pinned-images.sh --offline`, which now reads every root `Dockerfile*` by pattern), builds the jar from source (`--rerun-tasks`) and the image with no cache, twice, and refuses the image unless the jar's sha256, the image id and all 39 layer digests match, the user is `65532:65532`, there is no `HEALTHCHECK` or environment of its own, the labels read back, outside `/app` the filesystem is exactly the pinned base's 2,302 entries and `/app` exactly the jar's 2,119 files, no shell or package manager is anywhere and `java` is the only program on the `PATH`, and the flattened filesystem is within **300 MiB** (272,924,672 bytes, 260.3 MiB, measured). `infra/scripts/image-readiness.sh` runs it on the host network against compose's PostgreSQL and Kafka, read-only, `/tmp` a tmpfs, every capability dropped, and requires readiness `UP` and every process at UID 65532 (`docker top`). CI's new `image` job runs both, with compose and `flywayMigrate` between them; no permission, secret or action added (T30 unchanged). **Found by measuring, and fixed: the boot jar was not reproducible** - Spring Boot copied the CycloneDX SBOM, with a random serial and its own instant, into every jar (two `--rerun-tasks` builds, two jars; a re-archive hid it), and shipped its test-scope components as if they were the artefact's; `app/build.gradle.kts` now keeps the SBOM out of the jar (the dependency scan's SBOM is untouched). `ApplicationImageTest` (eight tests, `architecture` tier) holds the Dockerfile, the context and the CI and Dependabot wiring on every build. `THREAT_MODEL.md` T4, T5 and T27's planned rows rewritten as `EXISTS` (T27's post-deploy half to `-017`), a T6 row added. Readiness was checked on the actuator's port today, 8080; it follows `-008`'s management port (8081). The gate's probes found one more defect, in the script: its first jar build was incremental, and an up-to-date `processResources` keeps what its last run left (Gradle does not see an `eachFile` change), so a stale build and a clean one differed for the wrong reason; both builds are now from source and the test holds it. **Probes performed** (`MUTATION_TESTING.md` §2's nine `P15-TSK-003` rows and §3): the entry's probe as written - the runtime base switched to its root variant - red in the test, and on the built image green while `USER 65532:65532` stays (the explicit user is what holds) and red without it; `USER 0:0`, a base by tag, a timestamp left in, the SBOM put back, the budget at 250 MiB and an unreachable database each red. **Deviations from the entry**: the pins file is the `Dockerfile`'s `FROM` lines (above); a second script, `infra/scripts/image-readiness.sh`, beside `image-build.sh`; the SBOM out of the jar (`app/build.gradle.kts`), which the entry did not foresee.
 
-**P15-TSK-004 — The migrator image and the migration Job contract** — `PLANNED`
+**P15-TSK-004 — The migrator image and the migration Job contract** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-003`'s merge, master `e231357c`; every dependency `COMPLETE`)
 - **Objective**: run every module's migrations in a deployed environment exactly as the build does, as
   `finapp_migrator`, safely concurrent and never blocking postings.
 - **Affected components**: a migrator image (Flyway with every module's `db/migration`); its build script; the Job
@@ -27123,6 +27124,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   `TRUNCATE` as the migrator refused; a shadowing schema first in a role's path changing no lending judgement) owed to
   `P15-TST-002` (C14). **Probe**: drop one table's `TRUNCATE` refusal → the guard red. **Acceptance**: both debt rows
   closed; `THREAT_MODEL.md` T33's and T13's planned rows for them rewritten to evidence.
+- *Routed by `P15-TSK-003` (2026-11-08), status unchanged:* the base images' one definition is the root `Dockerfile`'s `FROM` lines (`repository:tag@sha256:…`), which Dependabot's docker ecosystem reads. `infra/scripts/check-pinned-images.sh` and `ApplicationImageTest#everyBaseIsPinnedByDigest` read every root `Dockerfile`, `Dockerfile.*` and `*.Dockerfile` by pattern, so a migrator Dockerfile there is held on arrival; a migrator on the same bases keeps one definition only as a stage of the same file, since a second file repeating a digest is a second definition. The root `.dockerignore` lets in the boot jar alone; a migrator build context needs its own ignore file beside its Dockerfile, named for it (the Dockerfile's file name followed by `.dockerignore`, which BuildKit reads in place of the root one). `infra/scripts/image-build.sh` is the pattern for the migrator's build: twice from one commit, compared on the image id and every layer digest, the configuration and the filesystem read from the built image.
 
 **P15-TSK-005 — Schema compatibility across a rolling deploy: the expand-only lint and the schema-version guard** —
 `PLANNED`
@@ -27154,7 +27156,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every refused class refused; readiness false on an older schema and true on the expected one.
 - **Definition of done**: `DOD-BUILD`, `DOD-FIN`. **Risk**: Medium. **Cx**: M.
 
-**P15-TSK-006 — Image scanning, SBOMs and static analysis in CI** — `PLANNED`
+**P15-TSK-006 — Image scanning, SBOMs and static analysis in CI** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-003`'s merge, master `e231357c`; every dependency `COMPLETE`)
 - **Objective**: no image or source with a known HIGH or CRITICAL finding reaches an environment unnoticed.
 - **Affected components**: `infra/scripts/` (image scan, image SBOM, SAST), `infra/scanner-pins.sh`, `ci.yml`, vendored
   Semgrep rules.
@@ -27175,8 +27177,13 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: `SYSTEM_ARCHITECTURE.md` §Continuous Integration's table; runbook §a failing scan.
 - **Acceptance criteria**: every planted finding fails its job; the final tree green.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* on 2026-11-08 `infra/scripts/check-pinned-images.sh`
+  reported Trivy 0.76.2 released beside the pinned 0.74.0. `-013` observed this and did not change the pin. This task
+  pins Trivy for the image scans. A bump also moves the checks embedded in the binary, which `trivy config` runs over
+  the Terraform (`--skip-check-update`), so re-run `infra/scripts/terraform-check.sh` with it.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T45 (injection through hand-written JDBC, CRITICAL) has this task's static analysis as its only control: include a vendored rule refusing a statement whose SQL text is built from anything but constants (not only a concatenation pattern), with the planted case of this entry's testing. Findings accepted here are accepted in the threat model with an `until` date (the model's §1.4). T30's built row holds `ci.yml`'s token scope through `CiWorkflowIsLockedDownTest`: a job that widens it rewrites that row in this task's gate.
 - *Widened by the owner (2026-11-08, `THREAT_MODEL.md` section 6 item 5), status unchanged:* the static analysis also flags an unbounded read of a provider's answer in an adapter (a body read with no size bound), with a planted case among this entry's tests; this task's gate rewrites T43's planned row with the evidence.
+- *Routed by `P15-TSK-003` (2026-11-08), status unchanged:* the image to scan is the one `infra/scripts/image-build.sh` leaves tagged `finapp-app:<commit>` in CI's `image` job (built twice and compared there; nothing is pushed). The boot jar no longer embeds the CycloneDX SBOM (`app/build.gradle.kts`): Spring Boot had been copying it into every jar, where its random serial and instant made two builds of one commit two jars and its test-scope components rode along as if they shipped. So this task's SBOM per image is the only shipping SBOM, and the `P0-TSK-004` row of `CURRENT_STATE.md` §Partially Satisfied Definition of Done (the SBOM overstates what ships) is closed by it. `check-pinned-images.sh` reported on 2026-11-08 that Trivy 0.74.0 is pinned while 0.76.2 is released: this task adds Trivy's image scan, so it is the natural one to move the pin.
 
 **P15-TSK-007 — Signing, provenance and admission verification** — `PLANNED`
 - **Objective**: only images CI built from a reviewed commit can run.
@@ -27256,6 +27263,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: `deploy/README` section in `OPERATIONS_RUNBOOK.md` §11 (planned) on overlays.
 - **Acceptance criteria**: rendered, validated, every policy proven by its plant.
 - **Definition of done**: `DOD-BUILD`, `DOD-ARCH`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-003` (2026-11-08), status unchanged:* what the image gives the pod profile. It runs as `65532:65532`, numeric, so `runAsNonRoot: true` with `runAsUser: 65532` verifies without reading the image. It reached readiness under `infra/scripts/image-readiness.sh` with a read-only root, `/tmp` a tmpfs, every capability dropped and `no-new-privileges`, so `readOnlyRootFilesystem` needs one writable `emptyDir` at `/tmp` (Tomcat's work directory) and nothing else. The heap is `-XX:MaxRAMPercentage=75.0` in the image's `ENTRYPOINT`, beside `-XX:+ExitOnOutOfMemoryError`: the memory request = limit sizing reads that percentage, and a calibrated value is a reviewed change to the `Dockerfile` (further flags go in `JDK_JAVA_OPTIONS`). The image has no `HEALTHCHECK` and declares no port. Observed in the negative readiness run: with the database unreachable, readiness answered (`503`) within the poll's two seconds on 2 of 48 attempts and otherwise not at all - consistent with the database indicator waiting on the pool's five-second `connection-timeout` - so a readiness probe whose `timeoutSeconds` is under that mostly reads a timeout rather than a `503`: still not ready, but the probe's timeout is a number to choose knowingly.
 
 **P15-TSK-010 — Namespace security: RBAC, NetworkPolicy, Pod Security, quotas** — `PLANNED`
 - **Objective**: a compromised pod reaches only what it must, and no human holds standing write access.
@@ -27339,7 +27347,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every step green with its census; timings recorded.
 - **Definition of done**: `DOD-BUILD`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
 
-**P15-TSK-013 — Terraform foundations: layout, state, conventions, CI checks** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-013 — Terraform foundations: layout, state, conventions, CI checks** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`; read `READY` until its gate)
 - **Objective**: infrastructure code that is pinned, locked and checked on every change before any module exists.
 - **Affected components**: new `infra/terraform/` (layout, version pins, lock file, backend configuration per
   environment), `infra/scripts/terraform-check.sh`, `ci.yml` (an `iac` job).
@@ -27357,8 +27365,44 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: `infra/terraform` usage in `OPERATIONS_RUNBOOK.md` §11 (planned).
 - **Acceptance criteria**: every plant caught; the scaffold green.
 - **Definition of done**: `DOD-BUILD`. **Risk**: Low. **Cx**: S.
+- **As built** (2026-11-08; branch `P15-TSK-013` from master `c1d07726`; infrastructure code, one guard and documents,
+  no production code, no migration, no ADR): **ADR-0121's layout**: `infra/terraform/environments/{staging,production}`
+  (root modules) and `infra/terraform/modules/conventions`, a ninth module beside decision 1's eight. It holds the name
+  prefix and the tags once; this is a deviation, recorded in ADR-0121's as-built note. The eight concern modules arrive
+  with `-014`…`-016`. **Pinned and locked**: Terraform `1.17.1` (`required_version` equal to `TERRAFORM_VERSION` in
+  `infra/scanner-pins.sh`, the image that checks it) and the AWS provider `6.72.0`, exactly and the same in both roots.
+  Each root's `.terraform.lock.hcl` was generated by the pinned binary from HashiCorp-signed packages. Terraform
+  (`hashicorp/terraform`) and tflint (`v0.65.0`) are pinned by digest, Trivy as before, and `check-pinned-images.sh`
+  checks them; Dependabot's `terraform` ecosystem proposes provider updates. **State**: a partial `s3` backend per root,
+  with its own key, `encrypt = true` and `use_lockfile = true`; the bucket and region are given at `init` in a real
+  environment. **No backend initialised in CI**: every `init` is `-backend=false -lockfile=readonly`, and the tests keep
+  state in memory. **Checks**: `infra/scripts/terraform-check.sh` runs `fmt`, `tflint` (the bundled ruleset, every
+  rule), `trivy config` (HIGH and CRITICAL fail, the binary's embedded checks), and then `validate` and `test` (seven
+  runs, each only a plan; the roots' against a mock AWS provider) in every directory holding a `.tf` file. It then runs each check over a planted defect, which
+  the check must refuse by name. Those are the entry's three plants (unformatted, public bucket, unpinned provider) and
+  three more: a camel-case identifier, an undeclared reference and a dropped tag. CI's `iac` job runs the script on every
+  change with no env, permission or secret. **Conventions**, each enforced: snake_case identifiers and the standard file
+  layout (`tflint`); the name prefix and tag set (`terraform test`); every root's provider tagged through the
+  conventions and every root calling them as itself; `prevent_destroy` on the guarded types (the database, its backups,
+  every KMS key); no secret written into state; every test mocking every provider (`TerraformIsPinnedAndCheckedTest`).
+  That each future resource uses the prefix is documentation only, a review point until `-014`…`-016`.
+  **`TerraformIsPinnedAndCheckedTest`** (ten members, `com.finapp.app.architecture`, tag `architecture`) holds the
+  pins, the lock files, the backend, the CI wiring, the absence of credentials and the conventions. Its last member
+  runs every rule over a planted violation, because two rules hold over an empty set today. **The entry's probe and
+  plants**: performed on the real tree and recorded in `MUTATION_TESTING.md` §2. The pin dropped turns the pin members
+  red, and `tflint` and `fmt` red; an unformatted file turns `fmt` red; a public bucket turns `trivy config` red; the
+  `ManagedBy` tag dropped turns `terraform test` red; a camel-case module and an untyped module variable turn `tflint`
+  red; a KMS key without `prevent_destroy` turns the guard red. The five `ci.yml` rows of
+  `CiWorkflowIsLockedDownTest` were performed again on this branch's bytes. **Threat model**: T11 and T30 are
+  `EXISTS`; T11's remainder (an apply only from a reviewed plan, drift reported) is a `GAP` held by owner item 7.
+  **Runbook**: `OPERATIONS_RUNBOOK.md` §11.13. **Tests** (the owner's rule of 2026-11-08: no production Java changed):
+  the new guard, the guards reading a changed file, and the check script, fresh. `:app:architectureTest`, the module
+  unit tests and the brief's package filters were skipped under that rule. `SafeguardingReturnDatabaseTest` (it reads
+  the runbook) is owed to `P15-TST-002`. **Not verified**: CI's own run of the `iac` job, because nothing is
+  pushed. This laptop's antivirus intercepts TLS, so the local runs used the pinned Terraform image plus that machine's
+  root certificate, through the script's `TERRAFORM_IMAGE` override, which CI never sets.
 
-**P15-TSK-014 — Network and cluster modules** — `PLANNED`
+**P15-TSK-014 — Network and cluster modules** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-013`'s merge, master `fcae1309`; every dependency `COMPLETE`)
 - **Objective**: a private network and a hardened managed cluster as tested code.
 - **Affected components**: `infra/terraform/modules/network`, `modules/kubernetes`, the environment roots.
 - **Dependencies**: `-013`.
@@ -27375,6 +27419,12 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: module READMEs referenced from the runbook.
 - **Acceptance criteria**: all checks green; each property asserted.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* the modules land in the frame `-013` built. Call
+  them from both roots (`infra/terraform/environments/{staging,production}/main.tf`). Name resources from
+  `module.conventions.name_prefix`; that use is a review point, because no check reads it. The tags arrive through each
+  root's AWS provider `default_tags`. `infra/scripts/terraform-check.sh` finds a new directory by itself.
+  `TerraformIsPinnedAndCheckedTest` requires every test file in it to mock every provider the directory requires. A new
+  provider is pinned exactly in both roots and locked in each (`OPERATIONS_RUNBOOK.md` §11.13).
 
 **P15-TSK-015 — Data-tier modules: PostgreSQL, Kafka, object storage** — `PLANNED`
 - **Objective**: the financial record's database and the integration transport provisioned to the bar C3 sets.
@@ -27397,6 +27447,11 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §restore (managed half, deferred), §broker outage.
 - **Acceptance criteria**: every property asserted; checks green.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* `TerraformIsPinnedAndCheckedTest` refuses a guarded
+  type without `lifecycle { prevent_destroy = true }`. The guarded types this task adds are `aws_db_instance`,
+  `aws_rds_cluster`, the database snapshots and `aws_backup_vault`. The test also refuses a database given `password`
+  or `master_password`, so use `manage_master_user_password`. The state buckets built here are the ones each root's
+  partial `s3` backend names at `init` (`OPERATIONS_RUNBOOK.md` §11.13).
 
 **P15-TSK-016 — Security modules: KMS, secrets, workload identities, registry** — `PLANNED`
 - **Objective**: keys, secret entries, workload permissions and the registry as least-privilege code.
@@ -27416,6 +27471,11 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §rotation (cloud half).
 - **Acceptance criteria**: every assertion green; the secret entries equal the inventory.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* every `aws_kms_key`, `aws_kms_replica_key` and
+  `aws_kms_external_key` needs `lifecycle { prevent_destroy = true }`. `TerraformIsPinnedAndCheckedTest` refuses one
+  without it. The same test refuses `aws_secretsmanager_secret_version` (resource or data source), `random_password`,
+  `tls_private_key`, `aws_iam_access_key`, `aws_iam_user_login_profile`, `aws_kms_ciphertext` and the data source
+  `aws_kms_secrets`, so the secret entries stay without values in state as well as in the files.
 - *Widened by the owner (2026-11-08, `THREAT_MODEL.md` section 6 item 3), status unchanged:* a **human IAM baseline** in `modules/security`: MFA required by policy for every human principal, no long-lived human access keys, permission boundaries on human roles; asserted by `terraform test` with mock providers (a human user with an access key, a policy without the MFA condition, a human role without its boundary: each red), with its probe (drop the MFA condition → red). Workforce federation waits for a workforce identity provider (C13). This task's gate rewrites T29's planned row with the evidence.
 
 **P15-TSK-017 — GitOps delivery, promotion and the production approval boundary** — `PLANNED`
@@ -27439,6 +27499,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; the approval boundary documented.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - *The owner's decision (2026-11-08, `THREAT_MODEL.md` section 6 item 4), status unchanged:* the owner applies branch protection and the production environment's required reviewers when the repository gains a production environment; this task writes them down. T28's `GAP` row stays held by owner item 4.
+- *Routed by `P15-TSK-003` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T27's row "Build identity asserted after deploy, against the promoted image's revision" is now this task's alone (`PHASE_15_PLAN.md` §5: the post-deploy smoke asserts `/actuator/info`'s build identity equals the promoted revision); the image's labels are built. Note for the design: `/actuator/info` publishes `build.version` (`0.1.0-SNAPSHOT` today), not the commit, while the image's `org.opencontainers.image.revision` label is the commit, so the smoke compares like with like only if the build identity gains the commit (it stays reproducible for one commit) or the smoke reads the deployed digest's label instead. This task's gate rewrites T27's row.
 
 **P15-TSK-018 — The secret inventory and its delivery** — `PLANNED`
 - **Objective**: every secret the application reads is inventoried, classed and delivered from the secret store — and
@@ -27564,7 +27625,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   - **Built**: `finapp_reporting` in `00-roles.sql` (CONNECT; `LocalDatabaseRolesAreUnprivilegedTest` holds three roles); the pool's credential guarded (`DatabaseCredentialGuard`, `FINAPP_DB_REPORTING_PASSWORD`); the budget `instances × (writer + reporting)`, the writer pool 8 → 7 with reporting 1 so the fleet demand stays 80 of 88; `DatabaseUnderTest` publishes the role; T31's rule in `RoutePermissionRegisterTest` with a planted route; `PRIVILEGED_ACCESS_REVIEW.md` (roles, the propose/approve partition of holdings, the review, break-glass) held by `PrivilegedAccessReviewTest`; ADR-0113 and ADR-0031 dated notes, no new ADR.
   - **Owed (C14)**: `ReportingRoleDatabaseTest` (a planted write refused by the role outside `READ ONLY`, every register table readable, restricted tables refused, the catalogue exact); `DenyByDefaultDatabaseTest#theOperatorActorIsTyped` and `#aRefusedStepUpIsRecorded`; the definition suites (trial balance, statements, safeguarding, operational) now generate as `DatabaseRoles::reporting`; the three schema-ACL migration tests widened. Walked by hand, not run.
   - **Owner items**: `THREAT_MODEL.md` §6 item 8 - refuse, at role assignment, one identity holding both roles of a propose/approve pair (recommended as a remediation before production use; the review finds it meanwhile); item 9 - `P15-TSK-002`'s routed parts (a)-(d), below, not taken at this gate (recommended: (c) as the review's §6 rules it, (a), (b) and (d) one follow-on M15.7 item).
-  - **Merged master `2a3d6f93`** (`P15-TSK-002`'s ruling) before the final run; its T38 planned row became a `GAP` held by owner item 9.
+  - **Merged master `2a3d6f93`** (`P15-TSK-002`'s ruling) before the final run; its T38 planned row became a `GAP` held by owner item 9. **Then master `19db300f`** (`P15-TSK-003`, `P15-TSK-013`) after it: `-013`'s own owner item 7 (T11) had landed first, so this task's items, written as 7 and 8, are 8 and 9; nothing routed to this task; the conflicts were records only, and the guards reading them were run again.
   - **Found at the final run, fixed before it was run again**: `NoProcessLocalSessionStateTest` named the interceptor's per-request `Established` record (the session and the roles one request read) - the rule's third exemption of the kind it already argues, a return value discarded within the request; `DatabaseCredentialGuardStartupTest`'s two remote-database contexts lacked the reporting credential, so its guard refused first; and, found reading that failure, the reporting pool took the writer's URL and none of its driver settings, so an `sslmode` set as a driver property satisfied the transport guard for the writer while the reporting pool reached the same database under the driver's default - it now carries the writer's driver settings (`ReportingPoolTransportTest`, a probe caught).
   - **Skipped under the owner's 2026-11-08 rule** ("if we dont change business logic in java, we dont need its unit tests"): `:accounting:test`, `:ledger:test`, `:reconciliation:test`, `:lending:test` - their changes on this branch are grant migrations, no production Java. Kept: `:app:test` over the guard set and the touched desks, `:app:architectureTest`, `:identity:test`, `:platform:test`, `:merchant:test`, `:payments:test` (production Java changed in each) - Fresh on the branch: `:app:test` over the guard set and the touched desks 742/0 (121 classes), `:app:architectureTest` 266/0 (46 classes), `:identity:test` 149/0, `:platform:test` 189/0, `:merchant:test` 190/0, `:payments:test` 306/0, after the fixes above.
 - *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged - for the coordinator to forward; taken if this task's

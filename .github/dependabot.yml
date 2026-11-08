@@ -5,11 +5,16 @@
 # rot, and a security fix in `actions/checkout` is never picked up. Pinning without maintenance
 # trades one supply-chain risk for a quieter one, which is what the P0-TSK-004 review found.
 #
-# WHAT THIS DOES NOT COVER, stated here so the gap is not mistaken for coverage: the two scanner
-# image digests. They live in infra/scanner-pins.sh, which Dependabot does not read, and they stay
+# WHAT THIS DOES NOT COVER, stated here so the gap is not mistaken for coverage: the scanner and
+# tool image digests (since P15-TSK-013 Terraform's and tflint's beside the two scanners'). They
+# live in infra/scanner-pins.sh, which Dependabot does not read, and they stay
 # there deliberately - moving them into the workflow so a bot could see them would put the same
 # digest in two places and undo the single definition P0-TSK-031 established. They are covered
 # instead by infra/scripts/check-pinned-images.sh, run weekly by the `pinned-images` job.
+#
+# The application image's two base images ARE covered (P15-TSK-003): their one definition is the
+# Dockerfile's FROM lines, which is the place this ecosystem reads. check-pinned-images.sh reads
+# the same lines weekly too.
 
 version: 2
 updates:
@@ -62,6 +67,45 @@ updates:
     open-pull-requests-limit: 3
     commit-message:
       prefix: "deps"
+    labels:
+      - dependencies
+      - supply-chain
+
+  # The provider pins of the two Terraform roots and their .terraform.lock.hcl (P15-TSK-013,
+  # ADR-0121). Each root pins exact versions and locks its own providers, so each needs its own
+  # entry. A bump that leaves the two roots on different versions, or a lock file disagreeing with
+  # its pin, fails TerraformIsPinnedAndCheckedTest in the build until a person reconciles it.
+  - package-ecosystem: terraform
+    directories:
+      - /infra/terraform/environments/staging
+      - /infra/terraform/environments/production
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+      - supply-chain
+
+  # The application image's two bases, in the root Dockerfile's FROM lines (P15-TSK-003). Each is
+  # pinned as tag@digest; a pull request here proposes the next tag and its digest, or a new
+  # digest behind distroless's floating `nonroot` tag. Never a new Java major: the toolchain
+  # decides that, and ApplicationImageTest fails a base whose Java is not the toolchain's.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "image"
     labels:
       - dependencies
       - supply-chain

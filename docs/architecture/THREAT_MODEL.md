@@ -37,6 +37,8 @@ duplicate commands and events (T16, T17), and a client address read from a heade
 
 **Today and target.** Phase 15 has built nothing yet. "Today" means the repository at this commit: the application,
 its guards and tests, the local stack, CI. There is no image, manifest, edge, cloud account or deployed instance.
+*(Since 2026-11-08 the application image exists: built, compared and asserted locally and in CI's image job, pushed
+nowhere. The rest of that list still holds.)*
 The edge and network threats are therefore answered by the Phase 15 tasks that will build those things, and the
 register says so row by row. Where evidence holds only the local stack or CI, the row says so, and the deployed
 equivalent is its own planned row.
@@ -265,7 +267,7 @@ any delivery.
 ### B8 — CI → registry
 
 CI builds the application and migrator images from a reviewed commit and pushes them to the registry (C7). Today CI
-builds, tests and scans, and pushes nothing.
+builds, tests and scans, builds the application image (since 2026-11-08), and pushes nothing.
 
 | Category | Threats | Note |
 |---|---|---|
@@ -402,7 +404,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T3 | A refused step-up is recorded once, in a transaction of its own committed before the refusal is answered: the interceptor's at a declared step-up, the error contract's at an operation's own | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusedStepUpIsRecorded`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#anOperationsRefusalIsRecordedOnce` |
 | T3 | The privileged access review's role register and propose/approve partition are the code's, role by role and pair by pair | EXISTS | `app/src/test/java/com/finapp/app/architecture/PrivilegedAccessReviewTest.java#theRoleRegisterIsTheCodes`; `app/src/test/java/com/finapp/app/architecture/PrivilegedAccessReviewTest.java#thePartitionIsTheCodes` |
 | T3 | Break-glass and compromise procedures, audited and rehearsed | PLANNED | `P15-TSK-032` |
-| T4 | A minimal image: non-root, no shell, no package manager | PLANNED | `P15-TSK-003` |
+| T4 | The application image's runtime stage is distroless's `nonroot` Java pinned by digest, declares `USER 65532:65532` explicitly and numerically, and adds the boot jar's four layers and nothing else: no `RUN`, `ADD`, `ENV`, `HEALTHCHECK` or `--chown` | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeIsDistrolessNonrootOnTheToolchainsJava`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageRunsAsUid65532`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageAddsTheJarsFourLayersAndNothingElse` |
+| T4 | On the built image, CI's image job refuses a user other than `65532:65532`, a file named for a shell or a package manager anywhere, a program on the `PATH` other than `java`, and an entry that is neither the pinned base's nor the boot jar's; run with a read-only root and every capability dropped, the image must report ready with every process at UID 65532 | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly`; `infra/scripts/image-build.sh` `contains: [ "$user" = "$RUNTIME_USER" ]` `contains: the image holds a shell or a package manager` `contains: [ "$programs" = "usr/bin/java " ]` `contains: outside /app the image differs from the pinned runtime base`; `infra/scripts/image-readiness.sh` `contains: --read-only --tmpfs /tmp --cap-drop ALL` `contains: [ "$uids" = "$RUNTIME_UID " ]` |
 | T4 | The restricted pod profile: read-only root, no capabilities, no privilege escalation, a seccomp profile, no service-account token | PLANNED | `P15-TSK-009` |
 | T4 | Default-deny NetworkPolicy with an egress allow-list; Pod Security Admission `restricted`; no Kubernetes RBAC for the workload | PLANNED | `P15-TSK-010` |
 | T4 | A workload identity that reads only its own secrets | PLANNED | `P15-TSK-016` |
@@ -410,7 +413,9 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T5 | Every action in CI's one workflow pinned to a full commit SHA, with weekly update proposals for the pins | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#everyActionIsPinnedToACommit` |
 | T5 | Every scanner image pinned by a full sha256 digest, and the pins' freshness checked by a scheduled job | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#everyScannerImageIsPinnedByDigest` |
 | T5 | The build's CycloneDX SBOM generated and scanned for known vulnerabilities in CI | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theSbomIsScanned` |
-| T5 | Base images pinned by digest in a minimal multi-stage build | PLANNED | `P15-TSK-003` |
+| T5 | The application image's two base images pinned as `tag@sha256` in the `Dockerfile`'s `FROM` lines, their one definition, in a two-stage build whose runtime stage holds no build tool; an unpinned base in any root Dockerfile fails the build, and the image job refuses one before building | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#everyBaseIsPinnedByDigest`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageAddsTheJarsFourLayersAndNothingElse`; `infra/scripts/check-pinned-images.sh` `contains: is not pinned as repository:tag@sha256:<digest>`; `infra/scripts/image-build.sh` `contains: check-pinned-images.sh" --offline` |
+| T5 | Dependabot proposes the base images' next tag and digest weekly, and the scheduled pin check reports a base whose tag moved or that has a newer release | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#everyScannerImageIsPinnedByDigest`; `infra/scripts/check-pinned-images.sh` `contains: check "base $repository"` |
+| T5 | Two builds of one commit compared in CI's image job: the boot jar, built from source both times (every task re-run), must have the same sha256, and the two images the same image id and the same layer digests, one by one | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly`; `infra/scripts/image-build.sh` `contains: --rerun-tasks :app:bootJar` `contains: the boot jar is not reproducible` `contains: the two builds of $REVISION differ` |
 | T5 | Image scans, an SBOM per image and static analysis in CI, HIGH and CRITICAL failing | PLANNED | `P15-TSK-006` |
 | T5 | Signatures and provenance, with admission refusing an unsigned image | PLANNED | `P15-TSK-007` |
 | T6 | No credential literal in committed configuration except the one marked local default | EXISTS | `app/src/test/java/com/finapp/app/security/CommittedConfigurationHoldsNoSecretTest.java#noCommittedConfigurationHoldsACredentialLiteral` |
@@ -424,6 +429,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T6 | Each workload's identity reads only its own secrets, under KMS keys per environment and purpose | PLANNED | `P15-TSK-016` |
 | T6 | Humans denied `get secrets` | PLANNED | `P15-TSK-010` |
 | T6 | Images scanned for secrets | PLANNED | `P15-TSK-006` |
+| T6 | The application image's build context is the boot jar alone (`.dockerignore` an allow-list) and its runtime stage sets no environment; CI's image job refuses an image whose `/app` is not exactly the jar's entries or whose environment is not the base's, so no local file, `.env` or configuration beyond the jar's reaches it | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theBuildContextIsTheBootJarAlone`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageAddsTheJarsFourLayersAndNothingElse`; `infra/scripts/image-build.sh` `contains: /app is not exactly the boot jar's entries` `contains: the image sets environment of its own` |
 | T6 | Rotation and revocation of every credential class, rehearsed | PLANNED | `P15-TSK-020` |
 | T7 | Locally (compose and the test databases built from the initialisation scripts), every role - the migrator, the application and report generation's - is `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
 | T7 | In a deployed database, the roles created by the one-time bootstrap step with the same attributes | PLANNED | `P15-TSK-004` |
@@ -454,7 +460,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T10 | The retention policy by data class, and the audit archival design to write-once storage | PLANNED | `P15-TSK-029` |
 | T10 | Write-once (Object Lock) on the audit archive bucket | PLANNED | `P15-TSK-015` |
 | T11 | Startup guards refuse an unsafe configuration on every replica: a fleet whose pools exceed the database's connections (the guard wired, so a violation stops the instance), any configured `sslmode` source weaker than `verify-full`, a settlement pull source in cleartext | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired`; `app/src/test/java/com/finapp/app/security/TransportSecurityGuardTest.java#everyConfiguredSourceMustVerify`; `app/src/test/java/com/finapp/app/security/ProviderTransportGuardTest.java#startupConsultsEverySourceUrl` |
-| T11 | Infrastructure as pinned, checked code, never applied by hand | PLANNED | `P15-TSK-013` |
+| T11 | Infrastructure code pinned: every environment root requires Terraform at exactly the version of the image that checks it and every provider at one exact version, the same in both roots, and each root's lock file holds exactly those providers at those versions. It is checked on every pull request: CI's `iac` job, ungated, runs a script that runs `fmt`, `tflint`, `trivy config`, `validate` and `terraform test` over the whole tree, then runs each check again over a planted defect it must refuse | EXISTS | `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyRootPinsTerraformAndEveryProviderExactly`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyLockFileHoldsThePinnedVersions`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#ciRunsEveryCheckOverTheTreeAndItsPlants` |
+| T11 | Infrastructure applied only from a reviewed plan, and a scheduled plan reporting drift. Both need a real account, which Phase 15 does not have (ADR-0121 decision 6), so nothing yet holds either | GAP | `owner item 7`; owner: the owner, since 2026-11-08 |
 | T11 | GitOps self-heal, and two persons on every production change | PLANNED | `P15-TSK-017` |
 | T11 | The configuration register, and an alert when replicas disagree for longer than a rollout | PLANNED | `P15-TSK-031` |
 | T12 | The build's Flyway tasks are forward-only in every module with migrations (21 today): `clean` disabled, validated before migrating, never out of order. This holds the Gradle and CI path, not the deployed runner | EXISTS | `app/src/test/java/com/finapp/app/architecture/MigrationSettingsAreForwardOnlyTest.java#everyMigratingModuleIsForwardOnly` |
@@ -540,7 +547,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T26 | In a customer's own account flows (the sweep's), every audit record names that customer as actor, carries operation, target and outcome, and joins to its request by correlation | EXISTS | `app/src/test/java/com/finapp/app/domain/AuditNamesTheActorDatabaseTest.java#authenticatedRequestsNameThePerson`; `app/src/test/java/com/finapp/app/domain/AuditNamesTheActorDatabaseTest.java#everyRecordCarriesTheAuditFields` |
 | T26 | The auditable action registry and its catalogue agree | EXISTS | `app/src/test/java/com/finapp/app/audit/AuditableActionRegistryTest.java#theRegistryAndTheCatalogueAgree` |
 | T26 | Audit retention and its archival design | PLANNED | `P15-TSK-029` |
-| T27 | OCI revision labels, and build identity asserted after deploy | PLANNED | `P15-TSK-003` |
+| T27 | The application image carries the OCI `revision` (the commit, marked `-dirty` from a changed tree), `source` and `version` labels, passed by the build script and read back from the built image by CI's image job | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageCarriesItsRevisionSourceAndVersion`; `infra/scripts/image-build.sh` `contains: label org.opencontainers.image.$key is` |
+| T27 | Build identity asserted after deploy, against the promoted image's revision | PLANNED | `P15-TSK-017` |
 | T27 | Signatures with provenance and SBOM attestations, verified at admission | PLANNED | `P15-TSK-007` |
 | T27 | A registry with immutable tags and scan on push | PLANNED | `P15-TSK-016` |
 | T27 | Deploy by digest, with promotion refusing a tag or an unsigned digest | PLANNED | `P15-TSK-017` |
@@ -554,7 +562,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T29 | A human IAM baseline for the cloud account: MFA required by policy, no long-lived human access keys, permission boundaries, asserted by `terraform test` with mock providers | PLANNED | `P15-TSK-016` |
 | T30 | CI's token is read-only in every permissions entry, no job references a secret, and the workflow is the repository's only one, with no local action | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theTokenIsReadOnly`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#noJobReferencesASecret`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#thereIsOneWorkflow` |
 | T30 | Pull-based GitOps: no CI credential reaches production | PLANNED | `P15-TSK-017` |
-| T30 | No cloud credential in CI, and no state backend initialised by it | PLANNED | `P15-TSK-013` |
+| T30 | No cloud credential and no state backend in CI's infrastructure checks. The `iac` job declares no environment, permission or secret of its own. Its script initialises only with `-backend=false`, runs no command that touches a backend, a state or an account, gives no container a host variable, and mounts the tree read-only. Every `terraform test` file mocks every provider its directory requires and configures no real one. No backend or provider block holds a credential argument | EXISTS | `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#ciHoldsNoCredentialAndInitialisesNoBackend`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyTestMocksEveryProvider`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyEnvironmentKeepsItsStateRemoteLockedAndEncrypted` |
 | T30 | Keyless signing from CI's identity, its trust narrowed at admission | PLANNED | `P15-TSK-007` |
 | T31 | No handler is served without a declared rule, and every permission-guarded route requires exactly the permission the register names | EXISTS | `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#everyGuardedRouteRequiresItsRegisteredPermission`; `app/src/test/java/com/finapp/app/api/EveryEndpointDeclaresARuleTest.java#everyHandlerDeclaresSomething` |
 | T31 | The public allow-list generated from the permission register, with an operator route refused on the public host | PLANNED | `P15-TSK-011` |
@@ -729,6 +737,11 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   as it: the operational door, the close checks and the final statements read through the application's role in
   `REPEATABLE READ READ ONLY` snapshots. In a deployed database the role is created by the one-time bootstrap step
   (`P15-TSK-004`, routed on its entry) before the migrations that grant to it.
+- **T11, the infrastructure.** Its code is pinned, locked and checked on every pull request, and nothing in Phase 15
+  applies it. No check reads a real account, so nothing yet holds that an apply comes only from a reviewed plan, and
+  nothing reports drift. `prevent_destroy` on the database, its backups and every KMS key is a build rule, and it
+  holds over an empty set until the data-tier and security modules (`-015`, `-016`) add the first such resource.
+  **Owner item 7**, added 2026-11-08, awaits the owner.
 - **T13.** Time sync on nodes is a property of the managed cluster. No task asserts it, and the register does not
   claim it. The platform's answer is to decide financial instants on the database's clock.
 
@@ -738,9 +751,12 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 
 Only the owner can accept a risk or choose between the options below. **The owner decided items 1 to 6 on 2026-11-08,
 accepting each recommendation** ("accept recommendations", after `P15-TSK-001`'s merge); each item's decision follows
-its options. Items 8 and 9 were added on 2026-11-08 by the privileged access review (`PRIVILEGED_ACCESS_REVIEW.md`)
-and are open. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
-work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)*
+its options. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
+work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)* **Item 7
+was added on 2026-11-08, when the Terraform foundations were built, and awaits the owner.** It carries a
+recommendation, a `GAP` row in §4 holds it, and it blocks none of the phase's work. *(This paragraph read "decided all
+six" until then.)* **Items 8 and 9 were added on 2026-11-08 by the privileged access review
+(`PRIVILEGED_ACCESS_REVIEW.md`) and are open.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -788,6 +804,15 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
    to registration (verify-then-tell, by a channel the identifier's owner controls), which Phase 15 does not make.
    *Recommendation*: accept it, bounded by `-022`'s throttle, and record the alternative for the first real customer
    launch. **Decided 2026-11-08**: `ACCEPTED by the owner on 2026-11-08`; the alternative is `PI-017`.
+7. **T11's residual: infrastructure applied only from a reviewed plan, and drift reported.** The infrastructure code
+   is pinned, locked and checked on every change, and Phase 15 applies none of it (ADR-0121 decision 6). In a real
+   account nothing yet stops a person changing a resource by hand or applying a plan nobody reviewed, and nothing
+   reports the drift. Both need an account, and none exists (`PHASE_15_PLAN.md` §1.1). *Recommendation*: record it as
+   a real-environment item under §1.1, beside the apply it belongs to. When an account exists, applies run only from a
+   pipeline role on the plan a pull request showed, humans hold read-only access to the account (`-016`'s human
+   baseline adds the boundaries), and a scheduled plan reports drift. Separately, widen `-017`'s `CODEOWNERS` to the
+   production root (`infra/terraform/environments/production/`), so that a change to production's infrastructure code
+   needs the same second person as a change to its overlay. **Awaiting the owner.**
 8. **T18's residual: one identity may hold both roles of a propose/approve pair** *(added 2026-11-08 by the privileged
    access review; open)*. `PRIVILEGED_ACCESS_REVIEW.md` §4 names the pairs of roles no identity should hold together
    (`ACCOUNTANT` and `FINANCIAL_CONTROLLER`, `REGULATORY_REPORTER` and `FINANCIAL_CONTROLLER`, `LOAN_SERVICING_AGENT` and
