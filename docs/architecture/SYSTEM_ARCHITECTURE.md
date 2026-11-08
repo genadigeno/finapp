@@ -73,7 +73,10 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | PostgreSQL JDBC | 42.7.13 | Matches the Spring Boot BOM |
 | CycloneDX Gradle plugin | 3.4.1 | Produces the SBOM the dependency scan consumes |
 | gitleaks | v8.30.1 | Secret scanning; pinned by image digest in `infra/scripts/secret-scan.sh`, which CI calls |
-| Trivy | 0.74.0 | Dependency vulnerability scanning; pinned by image digest in CI |
+| Trivy | 0.74.0 | Dependency vulnerability scanning, and since `P15-TSK-013` the configuration scan of the Terraform (`trivy config`, its embedded checks); pinned by image digest in `infra/scanner-pins.sh` |
+| Terraform | 1.17.1 | Infrastructure code (ADR-0121), never applied in Phase 15; the image pinned by digest in `infra/scanner-pins.sh`, and every root's `required_version` equal to it |
+| tflint | v0.65.0 | Lints the Terraform with its bundled ruleset only; pinned by image digest in `infra/scanner-pins.sh` |
+| AWS provider (Terraform) | 6.72.0 | Pinned exactly in both environment roots and locked in each root's `.terraform.lock.hcl` |
 
 Infrastructure versions appear in both `compose.yaml` and the version catalog. The
 `verifyInfrastructureVersions` build task fails if they drift, because local infrastructure
@@ -95,8 +98,10 @@ that breaks. Gradle upgrades must also update `distributionSha256Sum` from
 
 `CLAUDE.md` and the Definition of Done depend on checks actually running. A gate that is not
 automated is a gate that will be skipped, so every gate the DoD relies on runs on every
-change in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), as four separate
-jobs so a failure names its own gate:
+change in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), as separate jobs so
+a failure names its own gate *(this read "as four separate jobs" until `P15-TSK-013` added
+`iac`; the weekly `pinned-images` freshness job is scheduled, not a per-change gate, and
+`README.md` §7b describes it)*:
 
 | Job | Gate |
 |-----|------|
@@ -104,6 +109,7 @@ jobs so a failure names its own gate:
 | `migrations` | Migrations apply to an empty database, re-apply idempotently, and still match the repository (`flywayValidate`) |
 | `secret-scan` | No secret anywhere in git history — not just at the tip, because a secret committed and later removed is still disclosed. A **net**, not the control: gitleaks is an entropy-and-pattern detector and does not catch `password: hunter2`. The control for that is a build rule in the `build` job (ADR-0020) |
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved runtime dependency set, via a CycloneDX SBOM |
+| `iac` | Every Terraform root and module passes `fmt`, `tflint`, `trivy config` (no HIGH or CRITICAL), `validate` and `terraform test` with mock providers, and each check refuses a planted defect in the same run; no credential, no backend (`P15-TSK-013`, ADR-0121) |
 
 **Dependency verification and locking** (`P0-TSK-039`, ADR-0025). Two files, two different
 controls, both enforced on every build:

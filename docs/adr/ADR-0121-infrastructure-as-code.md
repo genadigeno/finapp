@@ -65,3 +65,26 @@ be destroyed by a plan.
 ## Follow-up
 
 `P15-TSK-013`…`-016` build this ADR. Phase 16 adds the multi-AZ and multi-region variants and cross-region backup.
+
+## As built
+
+`P15-TSK-013` (2026-11-08), the foundations. The decision stands. Four points record how it was built, and the first
+is a small deviation from decision 1's layout:
+
+- **One module beyond decision 1's eight: `modules/conventions`.** It holds the name prefix (`finapp-<environment>`)
+  and the tags (`Project`, `Environment`, `ManagedBy`) once, so that the two roots and the eight concern modules never
+  repeat them. Each root hands its tags to the AWS provider's `default_tags`, and every resource carries them. It
+  creates no resource. The eight concern modules are not created empty: each arrives with its task (`-014`…`-016`).
+- **The checks (decision 5) run as one pinned script, `infra/scripts/terraform-check.sh`, in CI's `iac` job.**
+  Terraform itself runs from its image pinned by digest beside `tflint`'s (`infra/scanner-pins.sh`), and every root's
+  `required_version` equals that image's version. Each check is also run, in the same job, over a copy of the tree
+  carrying one planted defect it must refuse by name: an unformatted file, a dropped provider pin, a camel-case
+  identifier, a public bucket, an undeclared reference and a dropped tag.
+- **State (decision 3).** Each root declares an `s3` backend with its own key, `encrypt = true` and
+  `use_lockfile = true`. The bucket and the region are given at `init` in a real environment, as a partial
+  configuration, because no account exists to name them. `-015`'s object-storage module builds the bucket. CI runs
+  every `init` with `-backend=false`.
+- **Guarded resources (decision 4) and no secret in state (decision 3) are build rules.**
+  `TerraformIsPinnedAndCheckedTest` refuses a resource of a guarded type (the database, its backups, every KMS key)
+  without `prevent_destroy = true`. It also refuses a resource or data source that writes a secret value into state,
+  and a database given its password. No such resource exists yet. Each rule is proven against a planted violation.
