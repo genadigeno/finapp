@@ -173,9 +173,48 @@ class InboxConsumersTest {
     }
 
     @Test
+    @DisplayName("an eviction has a series of its own, is no thrown poll and no refusal, and its meter is eager (P15-TSK-025)")
+    void anEvictionIsCountedApart() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        InboxConsumers consumers =
+                new InboxConsumers(
+                        List.of(), (group, handlers) -> failConnecting(), Duration.ofMillis(1),
+                        registry);
+        assertThat(registry.get(InboxConsumers.EVICTIONS).counter().count()).isZero();
+
+        assertThat(consumers.settle("kyc", InboxConsumersTest::evicted))
+                .as("the batch redelivers into the dedupe; there is nothing to count")
+                .isNull();
+
+        assertThat(registry.get(InboxConsumers.EVICTIONS).counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("finapp.inbox.poll.failures").tag("outcome", "failed").counter().count()).isZero();
+        assertThat(consumers.brokerAccessRefused()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a module's lag gauge is NaN until a poll has read it, its number after, and NaN again when a poll cannot say (P15-TSK-025)")
+    void theLagGaugeIsNaNWhenUnknown() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        InboxConsumers consumers =
+                new InboxConsumers(
+                        List.of(handler("risk.signals")), (group, handlers) -> failConnecting(), Duration.ofMillis(1),
+                        registry);
+
+        assertThat(registry.get(InboxConsumers.LAG).tag("module", "risk").gauge().value()).isNaN();
+        consumers.observeLag("risk", java.util.OptionalLong.of(7));
+        assertThat(registry.get(InboxConsumers.LAG).tag("module", "risk").gauge().value()).isEqualTo(7.0);
+        consumers.observeLag("risk", java.util.OptionalLong.empty());
+        assertThat(registry.get(InboxConsumers.LAG).tag("module", "risk").gauge().value()).isNaN();
+    }
+
+    @Test
     @DisplayName("a module's consumer group is finapp.<module> (P15-TSK-026)")
     void theGroupIsNamedForTheModule() {
         assertThat(InboxConsumers.groupIdOf("kyc")).isEqualTo("finapp.kyc");
+    }
+
+    private static ReceiverPollResult evicted() {
+        throw new com.finapp.platform.inbox.kafka.ConsumerEvictedException("CommitFailedException");
     }
 
     private static ReceiverPollResult refused() {

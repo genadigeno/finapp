@@ -1,0 +1,43 @@
+# promtool unit tests for CreditScorecardMissing in infra/prometheus/rules/credit.yml (P15-TSK-025; the debt row "No alert names a missing ACTIVE scorecard").
+# Generated once and reviewed as written; CI runs every file here through promtool (infra/scripts/alert-rules-check.sh, P15-TSK-025).
+# Two instances wherever instances can differ: the multi-instance case is the rule's aggregation.
+
+rule_files:
+  - ../rules/credit.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Requests wait with no scorecard: instance b NaN, a reading three: fires at 15 minutes, long before the seven-day validity.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_credit_scorecard_awaited{job="finapp", instance="a:8081"}'
+        values: '3x20'
+      - series: 'finapp_credit_scorecard_awaited{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: CreditScorecardMissing
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: CreditScorecardMissing
+        exp_alerts:
+          - exp_labels:
+              owner: credit
+              severity: ticket
+            exp_annotations:
+              summary: "Credit requests are waiting for a scorecard"
+              description: "3 credit requests wait at SUBMITTED because no RETAIL_SCORECARD is ACTIVE, and nothing can decide them until one is. See OPERATIONS_RUNBOOK.md section 6.1."
+
+  # No request waits: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_credit_scorecard_awaited{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_credit_scorecard_awaited{job="finapp", instance="b:8081"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: CreditScorecardMissing
+        exp_alerts: []
+

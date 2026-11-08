@@ -30,6 +30,7 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: page
+              owner: platform
               job: finapp
               instance: b:8081
             exp_annotations:
@@ -75,6 +76,7 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: page
+              owner: platform
               job: finapp
             exp_annotations:
               summary: "No finapp instance is being scraped"
@@ -101,6 +103,7 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: ticket
+              owner: platform
               job: finapp
               instance: b:8081
             exp_annotations:
@@ -126,6 +129,7 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: ticket
+              owner: platform
               job: finapp
               instance: b:8081
             exp_annotations:
@@ -136,6 +140,7 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: ticket
+              owner: platform
               job: finapp
               instance: b:8081
             exp_annotations:
@@ -159,6 +164,7 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: ticket
+              owner: platform
               job: finapp
               instance: b:8081
             exp_annotations:
@@ -181,3 +187,546 @@ tests:
       - eval_time: 29m
         alertname: GaugesStale
         exp_alerts: []
+
+
+  # ------------------------------------------------------------ the rest of the platform rules (P15-TSK-025)
+
+  # OutboxPublicationStalled: instance b NaN, instance a over five minutes old: it fires.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '600x12'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: OutboxPublicationStalled
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: OutboxPublicationStalled
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "The outbox is not draining"
+              description: "The oldest publishable event is over 5 minutes old. Nothing financial is lost: it waits in the database. See OPERATIONS_RUNBOOK.md section 11.21."
+
+  # OutboxPublicationStalled: healthy.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '5x12'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: '5x12'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: OutboxPublicationStalled
+        exp_alerts: []
+
+  # InboxLagHigh: each instance under 1000, the group over it: sum fires per module.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
+        values: '600x20'
+      - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", module="risk"}'
+        values: '600x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: InboxLagHigh
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: InboxLagHigh
+        exp_alerts:
+          - exp_labels:
+              module: risk
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The consumer group of risk is behind"
+              description: "More than 1000 records are awaiting the group finapp.risk. See OPERATIONS_RUNBOOK.md section 11.6."
+
+  # InboxLagHigh: instance b NaN, a over the bound: the NaN does not poison the sum.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
+        values: '1500x20'
+      - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", module="risk"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: InboxLagHigh
+        exp_alerts:
+          - exp_labels:
+              module: risk
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The consumer group of risk is behind"
+              description: "More than 1000 records are awaiting the group finapp.risk. See OPERATIONS_RUNBOOK.md section 11.6."
+
+  # InboxLagHigh: healthy.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
+        values: '10x20'
+      - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", module="risk"}'
+        values: '10x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: InboxLagHigh
+        exp_alerts: []
+
+  # InboxPollFailing: instance b keeps throwing, a clean: the sum fires once it has been sustained.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_poll_failures_total{job="finapp", instance="a:8081", outcome="failed"}'
+        values: '0x35'
+      - series: 'finapp_inbox_poll_failures_total{job="finapp", instance="b:8081", outcome="failed"}'
+        values: '0+1x35'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: InboxPollFailing
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: InboxPollFailing
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "Consumer polls keep failing"
+              description: "Inbox polls have thrown for 15 minutes on end. See OPERATIONS_RUNBOOK.md section 11.6."
+
+  # InboxPollFailing: no failures.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_poll_failures_total{job="finapp", instance="a:8081", outcome="failed"}'
+        values: '0x35'
+      - series: 'finapp_inbox_poll_failures_total{job="finapp", instance="b:8081", outcome="failed"}'
+        values: '0x35'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: InboxPollFailing
+        exp_alerts: []
+
+  # InboxPollRefused: refused polls on instance b page after five minutes, and failures alone do not.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_poll_failures_total{job="finapp", instance="a:8081", outcome="refused"}'
+        values: '0x20'
+      - series: 'finapp_inbox_poll_failures_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: InboxPollRefused
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: InboxPollRefused
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "The broker is refusing the consumers"
+              description: "The broker refused a consumer poll for 5 minutes: a credential or a permission. See OPERATIONS_RUNBOOK.md section 11.6."
+
+  # InboxPollRefused: thrown failures are not refusals.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_poll_failures_total{job="finapp", instance="a:8081", outcome="failed"}'
+        values: '0+1x20'
+      - series: 'finapp_inbox_poll_failures_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: InboxPollRefused
+        exp_alerts: []
+
+  # InboxConsumerEvicted: one eviction on instance b tickets, and clears once out of the window.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_inbox_consumer_evictions_total{job="finapp", instance="a:8081"}'
+        values: '0x70'
+      - series: 'finapp_inbox_consumer_evictions_total{job="finapp", instance="b:8081"}'
+        values: '0 0 0 1x67'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: InboxConsumerEvicted
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: InboxConsumerEvicted
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A consumer was evicted from its group"
+              description: "A consumer overran its poll budget and was evicted in the last 30 minutes. See OPERATIONS_RUNBOOK.md section 11.6."
+      - eval_time: 40m
+        alertname: InboxConsumerEvicted
+        exp_alerts: []
+
+  # HttpServerErrorsHigh: only instance b failing, at 20%: the fleet at 10% fires.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="GET", status="200", uri="/v1/x"}'
+        values: '0+6000x20'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="200", uri="/v1/x"}'
+        values: '0+4800x20'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="500", uri="/v1/x"}'
+        values: '0+1200x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: HttpServerErrorsHigh
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: HttpServerErrorsHigh
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "More than 5% of requests are failing"
+              description: "Over 5% of all requests answered 5xx for 5 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+
+  # HttpServerErrorsHigh: only instance b failing, at 8%: the fleet at 4% is under the bound, though b alone is over it.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="GET", status="200", uri="/v1/x"}'
+        values: '0+6000x20'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="200", uri="/v1/x"}'
+        values: '0+5520x20'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="GET", status="500", uri="/v1/x"}'
+        values: '0+480x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HttpServerErrorsHigh
+        exp_alerts: []
+
+  # ConnectionPoolSaturated: instance b is full, a is not: only b fires.
+  - interval: 1m
+    input_series:
+      - series: 'hikaricp_connections_active{job="finapp", instance="a:8081", pool="HikariPool-1"}'
+        values: '3x10'
+      - series: 'hikaricp_connections_max{job="finapp", instance="a:8081", pool="HikariPool-1"}'
+        values: '10x10'
+      - series: 'hikaricp_connections_active{job="finapp", instance="b:8081", pool="HikariPool-1"}'
+        values: '10x10'
+      - series: 'hikaricp_connections_max{job="finapp", instance="b:8081", pool="HikariPool-1"}'
+        values: '10x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ConnectionPoolSaturated
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: ConnectionPoolSaturated
+        exp_alerts:
+          - exp_labels:
+              instance: b:8081
+              job: finapp
+              owner: platform
+              pool: HikariPool-1
+              severity: ticket
+            exp_annotations:
+              summary: "The connection pool of b:8081 is nearly full"
+              description: "Over 90% of the pool on b:8081 has been in use for 5 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+
+  # ConnectionPoolSaturated: the report pool at its one connection is no saturation.
+  - interval: 1m
+    input_series:
+      - series: 'hikaricp_connections_active{job="finapp", instance="a:8081", pool="finapp-reporting"}'
+        values: '1x10'
+      - series: 'hikaricp_connections_max{job="finapp", instance="a:8081", pool="finapp-reporting"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: ConnectionPoolSaturated
+        exp_alerts: []
+
+  # ConnectionPoolStarved: threads waiting on instance a alone: only a fires.
+  - interval: 1m
+    input_series:
+      - series: 'hikaricp_connections_pending{job="finapp", instance="a:8081", pool="HikariPool-1"}'
+        values: '2x10'
+      - series: 'hikaricp_connections_pending{job="finapp", instance="b:8081", pool="HikariPool-1"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ConnectionPoolStarved
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: ConnectionPoolStarved
+        exp_alerts:
+          - exp_labels:
+              instance: a:8081
+              job: finapp
+              owner: platform
+              pool: HikariPool-1
+              severity: page
+            exp_annotations:
+              summary: "Threads are waiting on the connection pool of a:8081"
+              description: "Requests on a:8081 have been waiting for a connection for 2 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+
+  # InstanceClockOffset: instance b is three seconds behind, a is fine: only b fires, per instance.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_platform_clock_offset_seconds{job="finapp", instance="a:8081"}'
+        values: '0.01x10'
+      - series: 'finapp_platform_clock_offset_seconds{job="finapp", instance="b:8081"}'
+        values: '-3x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: InstanceClockOffset
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: InstanceClockOffset
+        exp_alerts:
+          - exp_labels:
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The clock of b:8081 is off"
+              description: "The clock of b:8081 differs from the database by over a second. See OPERATIONS_RUNBOOK.md section 11.21."
+
+  # InstanceClockOffset: a NaN offset is no breach.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_platform_clock_offset_seconds{job="finapp", instance="a:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_platform_clock_offset_seconds{job="finapp", instance="b:8081"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: InstanceClockOffset
+        exp_alerts: []
+
+  # PlatformGaugesUnreadable: every gauge NaN on instance b: one alert per gauge, on b alone.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_pending{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_oldest_seconds{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
+        values: '0x20'
+      - series: 'finapp_platform_clock_offset_seconds{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_pending{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_outbox_oldest_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", module="risk"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_platform_clock_offset_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PlatformGaugesUnreadable
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: PlatformGaugesUnreadable
+        exp_alerts:
+          - exp_labels:
+              gauge: finapp_inbox_lag
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A platform gauge cannot be read on b:8081"
+              description: "finapp_inbox_lag is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+          - exp_labels:
+              gauge: finapp_outbox_oldest_publishable_seconds
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A platform gauge cannot be read on b:8081"
+              description: "finapp_outbox_oldest_publishable_seconds is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+          - exp_labels:
+              gauge: finapp_outbox_oldest_seconds
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A platform gauge cannot be read on b:8081"
+              description: "finapp_outbox_oldest_seconds is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+          - exp_labels:
+              gauge: finapp_outbox_pending
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A platform gauge cannot be read on b:8081"
+              description: "finapp_outbox_pending is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+          - exp_labels:
+              gauge: finapp_platform_clock_offset_seconds
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A platform gauge cannot be read on b:8081"
+              description: "finapp_platform_clock_offset_seconds is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+
+  # PlatformSeriesAbsent: a target answering but none of the series: it fires.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PlatformSeriesAbsent
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: PlatformSeriesAbsent
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A series the platform alerts read is gone"
+              description: "A series the SLO or platform rules read has not been published for 5 minutes, so those rules are blind. See OPERATIONS_RUNBOOK.md section 11.21."
+
+  # PlatformSeriesAbsent: every series present: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '0x10'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="GET", status="200", uri="/v1/x"}'
+        values: '0+1x10'
+      - series: 'hikaricp_connections_active{job="finapp", instance="a:8081", pool="HikariPool-1"}'
+        values: '1x10'
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", module="risk"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: PlatformSeriesAbsent
+        exp_alerts: []
+
+  # PlatformSeriesAbsent: every other series present and no consumer's lag: it fires.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '0x10'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="GET", status="200", uri="/v1/x"}'
+        values: '0+1x10'
+      - series: 'hikaricp_connections_active{job="finapp", instance="a:8081", pool="HikariPool-1"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: PlatformSeriesAbsent
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A series the platform alerts read is gone"
+              description: "A series the SLO or platform rules read has not been published for 5 minutes, so those rules are blind. See OPERATIONS_RUNBOOK.md section 11.21."
+
+  # CertificateExpiringSoon: 15 days left, published by two cert-manager replicas: one alert, by the certificate, within the hour.
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{job="cert-manager", instance="a:8081", namespace="ingress", name="edge"}'
+        values: '1296000x90'
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{job="cert-manager", instance="b:8081", namespace="ingress", name="edge"}'
+        values: '1296000x90'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: CertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              name: edge
+              namespace: ingress
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The certificate edge is not renewing"
+              description: "The certificate ingress/edge expires within 21 days. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 70m
+        alertname: CertificateExpiring
+        exp_alerts: []
+
+  # CertificateExpiring: 5 days left pages, and the ticket fires beside it.
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{job="cert-manager", instance="a:8081", namespace="ingress", name="edge"}'
+        values: '432000x90'
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{job="cert-manager", instance="b:8081", namespace="ingress", name="edge"}'
+        values: '432000x90'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: CertificateExpiring
+        exp_alerts:
+          - exp_labels:
+              name: edge
+              namespace: ingress
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "The certificate edge expires within a week"
+              description: "The certificate ingress/edge expires within 7 days. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 70m
+        alertname: CertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              name: edge
+              namespace: ingress
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The certificate edge is not renewing"
+              description: "The certificate ingress/edge expires within 21 days. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # Certificates: 60 days left: silent.
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{job="cert-manager", instance="a:8081", namespace="ingress", name="edge"}'
+        values: '5184000x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: CertificateExpiring
+        exp_alerts: []
+
+  # CertificateExpirySeriesAbsent: a deployed environment with no cert-manager series: it tickets.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081", env="staging"}'
+        values: '1x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: CertificateExpirySeriesAbsent
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "No certificate expiry series is published"
+              description: "cert-manager publishes no expiry series here, so an expiring certificate cannot be seen. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # CertificateExpirySeriesAbsent: compose, labelled env="local", has no cert-manager by design: silent.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081", env="local"}'
+        values: '1x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: CertificateExpirySeriesAbsent
+        exp_alerts: []
+

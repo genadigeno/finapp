@@ -25,6 +25,10 @@ public final class JdbcScorecardStore implements ScorecardStore {
 
     private static final String ROW_COLUMNS = "id, family, version, status, proposed_by, decided_by";
 
+    /** Zero whenever a version of the family is in force, however many requests are open (`P15-TSK-025`). */
+    static final String AWAITING_AN_ACTIVE_VERSION = "SELECT count(*) FROM credit.decision_request WHERE status = 'SUBMITTED'"
+            + " AND NOT EXISTS (SELECT 1 FROM credit.scorecard_model_version WHERE family = ? AND status = 'ACTIVE')";
+
     @Override
     public void lockFamily(Connection unitOfWork, ScorecardFamily family) {
         try (PreparedStatement lock = unitOfWork.prepareStatement("SELECT pg_advisory_xact_lock(?, hashtext(?))")) {
@@ -306,6 +310,19 @@ public final class JdbcScorecardStore implements ScorecardStore {
         return row(unitOfWork, "SELECT " + ROW_COLUMNS + " FROM credit.scorecard_model_version"
                 + " WHERE family = ? AND status = 'ACTIVE' FOR SHARE", family.name(), "sharing the active version")
                 .map(VersionRow::id);
+    }
+
+    @Override
+    public long awaitingAnActiveVersion(Connection unitOfWork, ScorecardFamily family) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(AWAITING_AN_ACTIVE_VERSION)) {
+            select.setString(1, family.name());
+            try (ResultSet rows = select.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("counting the requests awaiting a scorecard", failure));
+        }
     }
 
     @Override

@@ -34,10 +34,9 @@ import java.util.Set;
  * one transaction, so in one snapshot they are both visible or neither. Nothing is written; a difference is named
  * (at most {@link RiskProofs#NAMED} references a list) and corrected by nobody here.
  *
- * <p><strong>A command's day is its id's</strong>, and for a payment intent that is its creation, not its judgement
- * (the review's M4, recorded in {@code app}'s {@code PlatformJudgedCommands}): an intent created on {@code D} and confirmed
- * later without its seal is named missing only by the census of {@code D} - the meters' reading of today and yesterday
- * stops seeing it after two days; the decisions report for {@code D} does not.
+ * <p><strong>A command's day is the day it was judged</strong>: its id's, except a payment intent's, which is its
+ * confirmation's ({@code app}'s {@code PlatformJudgedCommands}, `P15-TSK-025`), so an intent confirmed days after its
+ * creation without its seal reaches the census, and the gauge, on the day it was confirmed.
  */
 public final class AssessmentCensus {
 

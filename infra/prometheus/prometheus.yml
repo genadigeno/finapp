@@ -16,10 +16,15 @@ global:
 
 # Alert rules (P8-TSK-024: the settlement and reconciliation alerts). Resolved relative to THIS
 # file, so compose mounts infra/prometheus/rules beside it at /etc/prometheus/rules. Evaluated and
-# shown at /alerts; no Alertmanager is wired - routing and paging are Phase 15's, and the
-# `severity` label only says which kind each alert will be.
+# shown at /alerts, and sent to Alertmanager (P15-TSK-025), which routes by the `severity` label to
+# a placeholder receiver until an on-call tool exists. The test files beside rules/ are not loaded.
 rule_files:
   - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   - job_name: finapp

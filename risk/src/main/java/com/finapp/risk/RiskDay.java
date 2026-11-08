@@ -9,8 +9,8 @@ import java.util.UUID;
 /**
  * One UTC date as the proofs read it (`P13-TSK-023`; {@code DESIGN-023} D1) - <strong>a range of identifiers</strong>.
  * Every row the proofs count is keyed by a UUIDv7 its writer minted (ADR-0013: 48 bits of milliseconds first): risk's
- * assessments, alerts and cases, the ledger's journal entries, the owners' transfers, withdrawals, payment intents and
- * cross-border payments. So the day {@code D} is {@code [positionAt(D 00:00Z), positionAt(D+1 00:00Z))} - a primary-key
+ * assessments, alerts and cases, the ledger's journal entries, the owners' transfers, withdrawals and cross-border
+ * payments (a payment intent's day is its confirmation's, {@code app}'s {@code PlatformJudgedCommands}). So the day {@code D} is {@code [positionAt(D 00:00Z), positionAt(D+1 00:00Z))} - a primary-key
  * range scan in every module, no new index - and a record's day is the day its identifier was minted. A record minted
  * within the instances' skew of midnight may fall on the other day than its counterpart; the censuses reconcile that by
  * looking the counterpart up whatever its day, so no boundary manufactures a difference.

@@ -12,10 +12,12 @@
 #   the unreadable rule can.
 # - Never a figure anywhere: labels and annotations name products, states, kinds, providers and verdicts only - no
 #   amount, score, attribute or party exists in any credit series to name (INV-CRD-02).
-# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+# - Routed by severity in infra/alertmanager/alertmanager.yml (P15-TSK-025), to a placeholder receiver until an on-call tool exists.
 
 groups:
   - name: credit
+    labels:
+      owner: credit
     rules:
       - alert: CreditDecisionLatencyAboveObjective
         # p99 of the platform's own decisions above the 45-minute objective, read exactly: p99 exceeds X if and only if
@@ -27,7 +29,7 @@ groups:
           severity: page
         annotations:
           summary: "Credit decisions for {{ $labels.product }} are slower than the objective"
-          description: "{{ $value | humanizePercentage }} of the platform's {{ $labels.product }} decisions in the last 30 minutes took longer than 45 minutes from submission - the collection window plus the platform's own steps. Check the progress sweep (finapp_credit_progress_sweeper_enabled) and finapp_credit_request_open_age_seconds by status."
+          description: "{{ $value | humanizePercentage }} of the platform's {{ $labels.product }} decisions in the last 30 minutes took longer than 45 minutes from submission - the collection window plus the platform's own steps. Check the progress sweep (finapp_credit_progress_sweeper_enabled) and finapp_credit_request_open_age_seconds by status. See OPERATIONS_RUNBOOK.md section 6.3."
 
       - alert: CreditDataUnavailable
         # The unavailability ratio: unavailable answers over answered ones (received or unavailable), per source kind.
@@ -38,7 +40,7 @@ groups:
           severity: ticket
         annotations:
           summary: "More than a fifth of {{ $labels.source_kind }} credit data answers are unavailable"
-          description: "{{ $value | humanizePercentage }} of {{ $labels.source_kind }} answers in the last 15 minutes were unavailable. Decisions fall back to each policy's unavailable rule. Read the sources report (/v1/operator/reports/credit/sources) for the provider."
+          description: "{{ $value | humanizePercentage }} of {{ $labels.source_kind }} answers in the last 15 minutes were unavailable. Decisions fall back to each policy's unavailable rule. Read the sources report (/v1/operator/reports/credit/sources) for the provider. See OPERATIONS_RUNBOOK.md section 6.3."
 
       - alert: CreditRequestOpenPastValidity
         # A request still open longer than any product's request validity (seven days) means its expiry is not being
@@ -50,7 +52,7 @@ groups:
           severity: page
         annotations:
           summary: "A credit decision request in {{ $labels.status }} is open past its validity"
-          description: "The oldest {{ $labels.status }} request was submitted {{ $value | humanizeDuration }} ago, past every product's request validity. The progress sweep expires open requests on the database clock; check it is running."
+          description: "The oldest {{ $labels.status }} request was submitted {{ $value | humanizeDuration }} ago, past every product's request validity. The progress sweep expires open requests on the database clock; check it is running. See OPERATIONS_RUNBOOK.md section 6.3."
 
       - alert: CreditReviewAged
         # The review objective: an OPEN review case - never taken, or released - waiting longer than a day.
@@ -60,18 +62,18 @@ groups:
           severity: ticket
         annotations:
           summary: "A credit review case has waited more than a day for an underwriter"
-          description: "The oldest open review case has waited {{ $value | humanizeDuration }}. A referral nobody works expires at the request's validity - a silent decline."
+          description: "The oldest open review case has waited {{ $value | humanizeDuration }}. A referral nobody works expires at the request's validity - a silent decline. See OPERATIONS_RUNBOOK.md section 6.2."
 
       - alert: CreditDecisionDiverged
         # INV-CRD-01: a decision that no longer replays from its sealed snapshot and pinned versions. Never repaired by
         # an UPDATE - an incident; the CRITICAL log line names each decision.
         expr: max(finapp_credit_replay{verdict="DIVERGED"}) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:
           summary: "Credit decisions do not replay from their sealed inputs"
-          description: "{{ $value }} decisions replay DIVERGED. Replay each through POST /v1/operator/credit/decisions/{id}/replay to see what differs, by kind."
+          description: "{{ $value }} decisions replay DIVERGED. Replay each through POST /v1/operator/credit/decisions/{id}/replay to see what differs, by kind. See OPERATIONS_RUNBOOK.md section 6.3."
 
       - alert: CreditPolicyMissing
         # A product with no ACTIVE policy: none of its requests is accepted (credit.ProductNotOffered) or decided until a
@@ -94,7 +96,7 @@ groups:
           severity: ticket
         annotations:
           summary: "An instance is not running the credit decision progress sweep"
-          description: "finapp.credit.progress.sweeper.enabled is false on a scraped instance. Requests still progress on the others; set it back to true."
+          description: "finapp.credit.progress.sweeper.enabled is false on a scraped instance. Requests still progress on the others; set it back to true. See OPERATIONS_RUNBOOK.md section 6.3."
 
       - alert: CreditDataRetrySweeperOff
         # The credit data retry sweep, the same rule.
@@ -104,14 +106,26 @@ groups:
           severity: ticket
         annotations:
           summary: "An instance is not running the credit data retry sweep"
-          description: "finapp.credit.data.retry.sweeper.enabled is false on a scraped instance. Unanswered data requests are re-asked by the others; set it back to true."
+          description: "finapp.credit.data.retry.sweeper.enabled is false on a scraped instance. Unanswered data requests are re-asked by the others; set it back to true. See OPERATIONS_RUNBOOK.md section 6.3."
+
+      - alert: CreditScorecardMissing
+        # Aggregation: max() - every instance reads the same requests; a NaN instance is ignored
+        # Requests admitted with no ACTIVE RETAIL_SCORECARD wait at SUBMITTED until they expire: CreditRequestOpenPastValidity
+        # would say so a week later (P15-TSK-025). A ticket, as CreditPolicyMissing is.
+        expr: max(finapp_credit_scorecard_awaited) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Credit requests are waiting for a scorecard"
+          description: "{{ $value }} credit requests wait at SUBMITTED because no RETAIL_SCORECARD is ACTIVE, and nothing can decide them until one is. See OPERATIONS_RUNBOOK.md section 6.1."
 
       - alert: CreditGaugesUnreadable
         # NaN: a credit gauge whose database read failed - an unreadable proof or queue must stay visible, never read as 0.
-        expr: max(finapp_credit_replay != finapp_credit_replay) or max(finapp_credit_request_open_age_seconds != finapp_credit_request_open_age_seconds) or max(finapp_credit_review_age_seconds != finapp_credit_review_age_seconds) or max(finapp_credit_policy_active != finapp_credit_policy_active)
+        expr: max(finapp_credit_scorecard_awaited != finapp_credit_scorecard_awaited) or max(finapp_credit_replay != finapp_credit_replay) or max(finapp_credit_request_open_age_seconds != finapp_credit_request_open_age_seconds) or max(finapp_credit_review_age_seconds != finapp_credit_review_age_seconds) or max(finapp_credit_policy_active != finapp_credit_policy_active)
         for: 15m
         labels:
           severity: ticket
         annotations:
           summary: "A credit gauge cannot be read"
-          description: "A credit gauge reads NaN - its database read failed. The replay proof, the open requests, the review queue or the active policies are not being watched until it reads again."
+          description: "A credit gauge reads NaN - its database read failed. The replay proof, the open requests, the review queue or the active policies are not being watched until it reads again. See OPERATIONS_RUNBOOK.md section 6.3."

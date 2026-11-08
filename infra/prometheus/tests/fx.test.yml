@@ -65,6 +65,7 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: ticket
+              owner: fx
               job: finapp
               instance: b:8081
               gauge: finapp_fx_cover_unknown_age_seconds
@@ -73,6 +74,7 @@ tests:
               description: "finapp_fx_cover_unknown_age_seconds on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: fx
               job: finapp
               instance: b:8081
               gauge: finapp_fx_cover_open_age_seconds
@@ -81,6 +83,7 @@ tests:
               description: "finapp_fx_cover_open_age_seconds on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: fx
               job: finapp
               instance: b:8081
               gauge: finapp_fx_proof
@@ -89,6 +92,7 @@ tests:
               description: "finapp_fx_proof on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: fx
               job: finapp
               instance: b:8081
               gauge: finapp_fx_plan_verdict
@@ -97,6 +101,7 @@ tests:
               description: "finapp_fx_plan_verdict on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: fx
               job: finapp
               instance: b:8081
               gauge: finapp_payments_outbound_unknown_age
@@ -105,6 +110,7 @@ tests:
               description: "finapp_payments_outbound_unknown_age on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: fx
               job: finapp
               instance: b:8081
               gauge: finapp_payments_outbound_received_age
@@ -113,6 +119,7 @@ tests:
               description: "finapp_payments_outbound_received_age on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: fx
               job: finapp
               instance: b:8081
               gauge: finapp_crossborder_payment_in_transit_age
@@ -121,6 +128,7 @@ tests:
               description: "finapp_crossborder_payment_in_transit_age on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: fx
               job: finapp
               instance: b:8081
               gauge: finapp_kyc_counterparty_review_age_seconds
@@ -129,6 +137,7 @@ tests:
               description: "finapp_kyc_counterparty_review_age_seconds on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
           - exp_labels:
               severity: ticket
+              owner: fx
               job: finapp
               instance: b:8081
               gauge: finapp_reconciliation_rule_set_missing

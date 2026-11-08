@@ -67,6 +67,7 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | Redis | 8.10.1 | AOF persistence enabled locally |
 | Prometheus | v3.14.0 | Scrapes `/actuator/prometheus`; also guarded by `verifyInfrastructureVersions` |
 | Grafana | 12.4.10 | Renders the reviewed dashboard in git; UI edits disabled (ADR-0018) |
+| Alertmanager | v0.34.2 | Routes alerts by severity to placeholder receivers (`P15-TSK-025`); also guarded by `verifyInfrastructureVersions` |
 | Flyway | 12.4.0 | Matches the Spring Boot BOM; forward-only (ADR-0011) |
 | WireMock | 3.13.2 | Provider failure simulation, test scope; standalone artefact (ADR-0008, `P0-TSK-037`) |
 | Lombok | 1.18.46 | **Compile time only** (`compileOnly` + `annotationProcessor`, wired once in `finapp.java-conventions`); matches the Spring Boot BOM; `.claude/rules/java-lombok.md` and `lombok.config` (ADR-0055) |

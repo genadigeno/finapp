@@ -157,7 +157,7 @@ Financial impact:
 - `X-TSK-006` implements decision (2) across the class, together with a test per aggregate on a
   trailing clock and the probes. It waits on this ADR's acceptance and displaces no phase task.
 - A per-instance clock-offset signal (the instance's clock minus the database's `now()`), owned by
-  Phase 15's observability, because the clamp no longer surfaces skew.
+  Phase 15's observability, because the clamp no longer surfaces skew. *(Built by `P15-TSK-025`, 2026-11-08: `finapp.platform.clock.offset`, per instance, read off the scrape, with `InstanceClockOffset` (a ticket over one second for 5 minutes) and NaN when unreadable.)*
 - `kyc.review_task` could take its ordering constraint back under this decision. That is not
   required, and it is recorded so the omission stays a choice.
 - *2026-10-09, `X-TSK-017`*: the rule applied to two stamps that are the **database's own**, not

@@ -1,0 +1,235 @@
+# The SLO burn-rate alerts (P15-TSK-025; docs/architecture/SLOS.md; ADR-0124 decision 3; PHASE_15_PLAN.md section 11.1). Each objective has
+# two pairs of windows: a fast pair paging and a slow pair ticketing. Each pair needs both its long window and its short one over
+# the threshold: the long says the budget is really burning, the short says it is burning now, so an incident that stopped stops
+# paging at once.
+#
+#   fast: 14.4 times the budget over 1h and 5m (2% of a 30-day budget in an hour)        severity: page
+#   slow:  6   times the budget over 6h and 30m (5% of a 30-day budget in six hours)     severity: ticket
+#
+# Targets are reference values that Phase 16's load model recalibrates. Correctness signals are not here: they have no budget
+# (correctness.yml). No amount, no unbounded label: slo and owner are closed sets written in this file, module the consumer group's.
+# The procedure for all of these is OPERATIONS_RUNBOOK.md section 11.8, which names each one.
+
+groups:
+  - name: slo
+    rules:
+      - alert: AuthenticationAvailabilityBurnFast
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and totals over every instance
+        expr: finapp:slo_authentication_availability:error_ratio_rate1h > (14.4 * 0.001) and finapp:slo_authentication_availability:error_ratio_rate5m > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: page
+          owner: identity
+          slo: authentication_availability
+        annotations:
+          summary: "The error budget of the authentication and session routes is burning fast"
+          description: "the authentication and session routes: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: AuthenticationAvailabilityBurnSlow
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and totals over every instance
+        expr: finapp:slo_authentication_availability:error_ratio_rate6h > (6 * 0.001) and finapp:slo_authentication_availability:error_ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: identity
+          slo: authentication_availability
+        annotations:
+          summary: "The error budget of the authentication and session routes is burning steadily"
+          description: "the authentication and session routes: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: AuthenticationLatencyBurnFast
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum the bucket and the count over every instance
+        expr: finapp:slo_authentication_latency:error_ratio_rate1h > (14.4 * 0.05) and finapp:slo_authentication_latency:error_ratio_rate5m > (14.4 * 0.05)
+        for: 2m
+        labels:
+          severity: page
+          owner: identity
+          slo: authentication_latency
+        annotations:
+          summary: "The error budget of the authentication and session routes is burning fast"
+          description: "the authentication and session routes: errors over 1h and 5m exceed 14.4 times the budget of 95% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: AuthenticationLatencyBurnSlow
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum the bucket and the count over every instance
+        expr: finapp:slo_authentication_latency:error_ratio_rate6h > (6 * 0.05) and finapp:slo_authentication_latency:error_ratio_rate30m > (6 * 0.05)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: identity
+          slo: authentication_latency
+        annotations:
+          summary: "The error budget of the authentication and session routes is burning steadily"
+          description: "the authentication and session routes: errors over 6h and 30m exceed 6 times the budget of 95% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: TransferAvailabilityBurnFast
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and totals over every instance
+        expr: finapp:slo_transfer_availability:error_ratio_rate1h > (14.4 * 0.001) and finapp:slo_transfer_availability:error_ratio_rate5m > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: page
+          owner: transfers
+          slo: transfer_availability
+        annotations:
+          summary: "The error budget of POST /v1/transfers is burning fast"
+          description: "POST /v1/transfers: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: TransferAvailabilityBurnSlow
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and totals over every instance
+        expr: finapp:slo_transfer_availability:error_ratio_rate6h > (6 * 0.001) and finapp:slo_transfer_availability:error_ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: transfers
+          slo: transfer_availability
+        annotations:
+          summary: "The error budget of POST /v1/transfers is burning steadily"
+          description: "POST /v1/transfers: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: TransferLatencyBurnFast
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum the bucket and the count over every instance
+        expr: finapp:slo_transfer_latency:error_ratio_rate1h > (14.4 * 0.01) and finapp:slo_transfer_latency:error_ratio_rate5m > (14.4 * 0.01)
+        for: 2m
+        labels:
+          severity: page
+          owner: transfers
+          slo: transfer_latency
+        annotations:
+          summary: "The error budget of POST /v1/transfers is burning fast"
+          description: "POST /v1/transfers: errors over 1h and 5m exceed 14.4 times the budget of 99% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: TransferLatencyBurnSlow
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum the bucket and the count over every instance
+        expr: finapp:slo_transfer_latency:error_ratio_rate6h > (6 * 0.01) and finapp:slo_transfer_latency:error_ratio_rate30m > (6 * 0.01)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: transfers
+          slo: transfer_latency
+        annotations:
+          summary: "The error budget of POST /v1/transfers is burning steadily"
+          description: "POST /v1/transfers: errors over 6h and 30m exceed 6 times the budget of 99% within 1 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: PaymentCheckoutBurnFast
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and totals over every instance
+        expr: finapp:slo_payment_checkout:error_ratio_rate1h > (14.4 * 0.001) and finapp:slo_payment_checkout:error_ratio_rate5m > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: page
+          owner: payments
+          slo: payment_checkout
+        annotations:
+          summary: "The error budget of the payment and checkout commands is burning fast"
+          description: "the payment and checkout commands: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: PaymentCheckoutBurnSlow
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and totals over every instance
+        expr: finapp:slo_payment_checkout:error_ratio_rate6h > (6 * 0.001) and finapp:slo_payment_checkout:error_ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: payments
+          slo: payment_checkout
+        annotations:
+          summary: "The error budget of the payment and checkout commands is burning steadily"
+          description: "the payment and checkout commands: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: MerchantApiBurnFast
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and totals over every instance
+        expr: finapp:slo_merchant_api:error_ratio_rate1h > (14.4 * 0.001) and finapp:slo_merchant_api:error_ratio_rate5m > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: page
+          owner: merchant
+          slo: merchant_api
+        annotations:
+          summary: "The error budget of the merchant API is burning fast"
+          description: "the merchant API: errors over 1h and 5m exceed 14.4 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: MerchantApiBurnSlow
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and totals over every instance
+        expr: finapp:slo_merchant_api:error_ratio_rate6h > (6 * 0.001) and finapp:slo_merchant_api:error_ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: merchant
+          slo: merchant_api
+        annotations:
+          summary: "The error budget of the merchant API is burning steadily"
+          description: "the merchant API: errors over 6h and 30m exceed 6 times the budget of 99.9% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: ProviderCallbacksBurnFast
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and answers over every instance
+        expr: finapp:slo_provider_callbacks:error_ratio_rate1h > (14.4 * 0.0005) and finapp:slo_provider_callbacks:error_ratio_rate5m > (14.4 * 0.0005)
+        for: 2m
+        labels:
+          severity: page
+          owner: payments
+          slo: provider_callbacks
+        annotations:
+          summary: "The error budget of the provider callbacks is burning fast"
+          description: "the provider callbacks: errors over 1h and 5m exceed 14.4 times the budget of 99.95% accepted or deduplicated. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: ProviderCallbacksBurnSlow
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and answers over every instance
+        expr: finapp:slo_provider_callbacks:error_ratio_rate6h > (6 * 0.0005) and finapp:slo_provider_callbacks:error_ratio_rate30m > (6 * 0.0005)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: payments
+          slo: provider_callbacks
+        annotations:
+          summary: "The error budget of the provider callbacks is burning steadily"
+          description: "the provider callbacks: errors over 6h and 30m exceed 6 times the budget of 99.95% accepted or deduplicated. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: OperatorSurfaceBurnFast
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and totals over every instance
+        expr: finapp:slo_operator_surface:error_ratio_rate1h > (14.4 * 0.005) and finapp:slo_operator_surface:error_ratio_rate5m > (14.4 * 0.005)
+        for: 2m
+        labels:
+          severity: page
+          owner: platform
+          slo: operator_surface
+        annotations:
+          summary: "The error budget of the operator surface is burning fast"
+          description: "the operator surface: errors over 1h and 5m exceed 14.4 times the budget of 99.5% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: OperatorSurfaceBurnSlow
+        # Aggregation: sum() - read from slo-recording.yml, whose ratios sum errors and totals over every instance
+        expr: finapp:slo_operator_surface:error_ratio_rate6h > (6 * 0.005) and finapp:slo_operator_surface:error_ratio_rate30m > (6 * 0.005)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: platform
+          slo: operator_surface
+        annotations:
+          summary: "The error budget of the operator surface is burning steadily"
+          description: "the operator surface: errors over 6h and 30m exceed 6 times the budget of 99.5% non-5xx. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: EventFreshnessBurnFast
+        # Aggregation: max() - read from slo-recording.yml: every instance reads the same outbox, so the worst reading is the fleet's, a NaN instance ignored
+        expr: finapp:slo_event_freshness:error_ratio_rate1h > (14.4 * 0.01) and finapp:slo_event_freshness:error_ratio_rate5m > (14.4 * 0.01)
+        for: 2m
+        labels:
+          severity: page
+          owner: platform
+          slo: event_freshness
+        annotations:
+          summary: "The error budget of event freshness is burning fast"
+          description: "event freshness: errors over 1h and 5m exceed 14.4 times the budget of 99% of minutes under 60 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: EventFreshnessBurnSlow
+        # Aggregation: max() - read from slo-recording.yml: every instance reads the same outbox, so the worst reading is the fleet's, a NaN instance ignored
+        expr: finapp:slo_event_freshness:error_ratio_rate6h > (6 * 0.01) and finapp:slo_event_freshness:error_ratio_rate30m > (6 * 0.01)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: platform
+          slo: event_freshness
+        annotations:
+          summary: "The error budget of event freshness is burning steadily"
+          description: "event freshness: errors over 6h and 30m exceed 6 times the budget of 99% of minutes under 60 s. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: ConsumptionBurnFast
+        # Aggregation: sum() - read from slo-recording.yml: a group's lag is the sum of its members', a NaN instance filtered first
+        expr: finapp:slo_consumption:error_ratio_rate1h > (14.4 * 0.01) and finapp:slo_consumption:error_ratio_rate5m > (14.4 * 0.01)
+        for: 2m
+        labels:
+          severity: page
+          owner: platform
+          slo: consumption
+        annotations:
+          summary: "The error budget of consumption for {{ $labels.module }} is burning fast"
+          description: "consumption: errors over 1h and 5m exceed 14.4 times the budget of 99% of minutes under 1000 records. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: ConsumptionBurnSlow
+        # Aggregation: sum() - read from slo-recording.yml: a group's lag is the sum of its members', a NaN instance filtered first
+        expr: finapp:slo_consumption:error_ratio_rate6h > (6 * 0.01) and finapp:slo_consumption:error_ratio_rate30m > (6 * 0.01)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: platform
+          slo: consumption
+        annotations:
+          summary: "The error budget of consumption for {{ $labels.module }} is burning steadily"
+          description: "consumption: errors over 6h and 30m exceed 6 times the budget of 99% of minutes under 1000 records. See OPERATIONS_RUNBOOK.md section 11.8."

@@ -3,7 +3,7 @@
 # Every expression names a series the application publishes, with the labels it filters on: AccountingAlertRulesTest resolves each selector against a real scrape of a freshly started instance, then
 # evaluates every rule over that scrape with one sample broken and proves that alert, and only it, fires, and that none fires on a healthy scrape. The evaluator is RuleEvaluator, written here, not
 # Prometheus: it proves the expression, read as this file means it, and no more. Prometheus's own promtool checked this file at the phase's exit review (P14-DOC-001, prom/prometheus:v3.14.0,
-# `promtool check rules`); routing and paging are Phase 15's. The expressions keep to the small grammar that test evaluates; a rule outside it fails the test rather than going unchecked. Live resolution
+# `promtool check rules`); routing is infra/alertmanager/alertmanager.yml (P15-TSK-025). The expressions keep to the small grammar that test evaluates; a rule outside it fails the test rather than going unchecked. Live resolution
 # with a database is AlertRulesResolveTest#theAccountingRulesResolve, first run at that review's database pass.
 #
 # Conventions (credit.yml's):
@@ -17,10 +17,12 @@
 #   a person's act clears stays a level.
 # - increase() extrapolates, so one event can read just above 1: a rule meaning "more than one" says > 1.5.
 # - Never a figure anywhere: no amount, period, subject or return exists in these series to name.
-# - The bounds are AccountingObjectives' defaults, held equal to this file by AccountingAlertRulesTest. Local development only: no Alertmanager is wired.
+# - The bounds are AccountingObjectives' defaults, held equal to this file by AccountingAlertRulesTest.
 
 groups:
   - name: accounting
+    labels:
+      owner: accounting
     rules:
       - alert: AccountingCloseRunStalled
         # A period LOCKED past the bound (10 polls of the check leg by default, 5 minutes; never under 3) with no close run under its
@@ -147,7 +149,7 @@ groups:
       - alert: AccountingReportDiverged
         # A FINAL run's regeneration was not IDENTICAL, an empty regeneratedSha256 among them (a definition now refusing what it issued, P14-TSK-016). Counted once per keyed regeneration, so at rest nothing counts.
         expr: sum by (definition) (increase(finapp_accounting_report_diverged_total[1h])) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:

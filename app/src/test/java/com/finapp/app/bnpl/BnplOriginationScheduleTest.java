@@ -78,6 +78,18 @@ class BnplOriginationScheduleTest {
     }
 
     @Test
+    @DisplayName("finapp.bnpl.sweeper.claim.failed{kind=origination} is eager at zero, counts a failed claim, and the sweep's own catch - only claims reach it - counts it (P15-TSK-025)")
+    void theClaimMeter() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BnplOriginationMetrics metrics = new BnplOriginationMetrics(registry);
+        assertThat(registry.get(BnplOriginationMetrics.CLAIM_FAILED).tag("kind", "origination").counter().count()).isZero();
+        metrics.claimFailed();
+        assertThat(registry.get(BnplOriginationMetrics.CLAIM_FAILED).tag("kind", "origination").counter().count()).isEqualTo(1.0);
+        assertThat(com.finapp.platform.testing.RepositoryPaths.read("app/src/main/java/com/finapp/app/bnpl/BnplOriginationSchedule.java"))
+                .containsPattern("(?s)void sweepQuietly\\(\\) \\{.*?catch \\(RuntimeException failure\\) \\{.*?metrics\\.claimFailed\\(\\);");
+    }
+
+    @Test
     @DisplayName("a poll, a permit or a batch that is not positive is refused at construction")
     void theConfigurationIsPositive() {
         BnplOrigination origination = origination(new ArrayList<>());

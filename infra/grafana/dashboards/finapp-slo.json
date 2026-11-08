@@ -1,0 +1,2738 @@
+{
+  "uid": "finapp-slo",
+  "title": "finapp - SLOs and correctness",
+  "editable": false,
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "description": "Each objective's burn rate over the four alert windows, and the correctness signals that have no budget (P15-TSK-025; docs/architecture/SLOS.md). Provisioned read-only.",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "utc",
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "the authentication and session routes: 99.9% non-5xx",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Burn rate, 5m",
+      "description": "Error ratio over 5 minutes divided by the budget: 1 spends exactly the 30-day budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_authentication_availability:error_ratio_rate5m / 0.001",
+          "legendFormat": "Burn rate, 5m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Burn rate, 1h",
+      "description": "The fast pair pages above 14.4 here and in the 5m panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_authentication_availability:error_ratio_rate1h / 0.001",
+          "legendFormat": "Burn rate, 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Burn rate, 30m",
+      "description": "The slow pair tickets above 6 here and in the 6h panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_authentication_availability:error_ratio_rate30m / 0.001",
+          "legendFormat": "Burn rate, 30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Burn rate, 6h",
+      "description": "Long enough to say the budget is really burning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_authentication_availability:error_ratio_rate6h / 0.001",
+          "legendFormat": "Burn rate, 6h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "the authentication and session routes: 95% within 1 s",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Burn rate, 5m",
+      "description": "Error ratio over 5 minutes divided by the budget: 1 spends exactly the 30-day budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_authentication_latency:error_ratio_rate5m / 0.05",
+          "legendFormat": "Burn rate, 5m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Burn rate, 1h",
+      "description": "The fast pair pages above 14.4 here and in the 5m panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_authentication_latency:error_ratio_rate1h / 0.05",
+          "legendFormat": "Burn rate, 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Burn rate, 30m",
+      "description": "The slow pair tickets above 6 here and in the 6h panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_authentication_latency:error_ratio_rate30m / 0.05",
+          "legendFormat": "Burn rate, 30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Burn rate, 6h",
+      "description": "Long enough to say the budget is really burning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_authentication_latency:error_ratio_rate6h / 0.05",
+          "legendFormat": "Burn rate, 6h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "POST /v1/transfers: 99.9% non-5xx",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Burn rate, 5m",
+      "description": "Error ratio over 5 minutes divided by the budget: 1 spends exactly the 30-day budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_transfer_availability:error_ratio_rate5m / 0.001",
+          "legendFormat": "Burn rate, 5m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Burn rate, 1h",
+      "description": "The fast pair pages above 14.4 here and in the 5m panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_transfer_availability:error_ratio_rate1h / 0.001",
+          "legendFormat": "Burn rate, 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Burn rate, 30m",
+      "description": "The slow pair tickets above 6 here and in the 6h panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_transfer_availability:error_ratio_rate30m / 0.001",
+          "legendFormat": "Burn rate, 30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Burn rate, 6h",
+      "description": "Long enough to say the budget is really burning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_transfer_availability:error_ratio_rate6h / 0.001",
+          "legendFormat": "Burn rate, 6h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "row",
+      "title": "POST /v1/transfers: 99% within 1 s",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Burn rate, 5m",
+      "description": "Error ratio over 5 minutes divided by the budget: 1 spends exactly the 30-day budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 19
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_transfer_latency:error_ratio_rate5m / 0.01",
+          "legendFormat": "Burn rate, 5m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Burn rate, 1h",
+      "description": "The fast pair pages above 14.4 here and in the 5m panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 19
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_transfer_latency:error_ratio_rate1h / 0.01",
+          "legendFormat": "Burn rate, 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "Burn rate, 30m",
+      "description": "The slow pair tickets above 6 here and in the 6h panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 19
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_transfer_latency:error_ratio_rate30m / 0.01",
+          "legendFormat": "Burn rate, 30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Burn rate, 6h",
+      "description": "Long enough to say the budget is really burning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 19
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_transfer_latency:error_ratio_rate6h / 0.01",
+          "legendFormat": "Burn rate, 6h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "the payment and checkout commands: 99.9% non-5xx",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Burn rate, 5m",
+      "description": "Error ratio over 5 minutes divided by the budget: 1 spends exactly the 30-day budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 25
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_payment_checkout:error_ratio_rate5m / 0.001",
+          "legendFormat": "Burn rate, 5m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Burn rate, 1h",
+      "description": "The fast pair pages above 14.4 here and in the 5m panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 25
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_payment_checkout:error_ratio_rate1h / 0.001",
+          "legendFormat": "Burn rate, 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "Burn rate, 30m",
+      "description": "The slow pair tickets above 6 here and in the 6h panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 25
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_payment_checkout:error_ratio_rate30m / 0.001",
+          "legendFormat": "Burn rate, 30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "Burn rate, 6h",
+      "description": "Long enough to say the budget is really burning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 25
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_payment_checkout:error_ratio_rate6h / 0.001",
+          "legendFormat": "Burn rate, 6h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "the merchant API: 99.9% non-5xx",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Burn rate, 5m",
+      "description": "Error ratio over 5 minutes divided by the budget: 1 spends exactly the 30-day budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_merchant_api:error_ratio_rate5m / 0.001",
+          "legendFormat": "Burn rate, 5m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 28,
+      "type": "stat",
+      "title": "Burn rate, 1h",
+      "description": "The fast pair pages above 14.4 here and in the 5m panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_merchant_api:error_ratio_rate1h / 0.001",
+          "legendFormat": "Burn rate, 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "Burn rate, 30m",
+      "description": "The slow pair tickets above 6 here and in the 6h panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_merchant_api:error_ratio_rate30m / 0.001",
+          "legendFormat": "Burn rate, 30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Burn rate, 6h",
+      "description": "Long enough to say the budget is really burning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_merchant_api:error_ratio_rate6h / 0.001",
+          "legendFormat": "Burn rate, 6h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 31,
+      "type": "row",
+      "title": "the provider callbacks: 99.95% accepted or deduplicated",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Burn rate, 5m",
+      "description": "Error ratio over 5 minutes divided by the budget: 1 spends exactly the 30-day budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 37
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_provider_callbacks:error_ratio_rate5m / 0.0005",
+          "legendFormat": "Burn rate, 5m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Burn rate, 1h",
+      "description": "The fast pair pages above 14.4 here and in the 5m panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 37
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_provider_callbacks:error_ratio_rate1h / 0.0005",
+          "legendFormat": "Burn rate, 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "Burn rate, 30m",
+      "description": "The slow pair tickets above 6 here and in the 6h panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 37
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_provider_callbacks:error_ratio_rate30m / 0.0005",
+          "legendFormat": "Burn rate, 30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "Burn rate, 6h",
+      "description": "Long enough to say the budget is really burning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 37
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_provider_callbacks:error_ratio_rate6h / 0.0005",
+          "legendFormat": "Burn rate, 6h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 36,
+      "type": "row",
+      "title": "the operator surface: 99.5% non-5xx",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 37,
+      "type": "stat",
+      "title": "Burn rate, 5m",
+      "description": "Error ratio over 5 minutes divided by the budget: 1 spends exactly the 30-day budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_operator_surface:error_ratio_rate5m / 0.005",
+          "legendFormat": "Burn rate, 5m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 38,
+      "type": "stat",
+      "title": "Burn rate, 1h",
+      "description": "The fast pair pages above 14.4 here and in the 5m panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_operator_surface:error_ratio_rate1h / 0.005",
+          "legendFormat": "Burn rate, 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 39,
+      "type": "stat",
+      "title": "Burn rate, 30m",
+      "description": "The slow pair tickets above 6 here and in the 6h panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_operator_surface:error_ratio_rate30m / 0.005",
+          "legendFormat": "Burn rate, 30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 40,
+      "type": "stat",
+      "title": "Burn rate, 6h",
+      "description": "Long enough to say the budget is really burning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_operator_surface:error_ratio_rate6h / 0.005",
+          "legendFormat": "Burn rate, 6h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 41,
+      "type": "row",
+      "title": "event freshness: 99% of minutes under 60 s",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 42,
+      "type": "stat",
+      "title": "Burn rate, 5m",
+      "description": "Error ratio over 5 minutes divided by the budget: 1 spends exactly the 30-day budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 49
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_event_freshness:error_ratio_rate5m / 0.01",
+          "legendFormat": "Burn rate, 5m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 43,
+      "type": "stat",
+      "title": "Burn rate, 1h",
+      "description": "The fast pair pages above 14.4 here and in the 5m panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 49
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_event_freshness:error_ratio_rate1h / 0.01",
+          "legendFormat": "Burn rate, 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 44,
+      "type": "stat",
+      "title": "Burn rate, 30m",
+      "description": "The slow pair tickets above 6 here and in the 6h panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 49
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_event_freshness:error_ratio_rate30m / 0.01",
+          "legendFormat": "Burn rate, 30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 45,
+      "type": "stat",
+      "title": "Burn rate, 6h",
+      "description": "Long enough to say the budget is really burning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 49
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "finapp:slo_event_freshness:error_ratio_rate6h / 0.01",
+          "legendFormat": "Burn rate, 6h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 46,
+      "type": "row",
+      "title": "consumption: 99% of minutes under 1000 records",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 47,
+      "type": "stat",
+      "title": "Burn rate, 5m",
+      "description": "Error ratio over 5 minutes divided by the budget: 1 spends exactly the 30-day budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 55
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp:slo_consumption:error_ratio_rate5m) / 0.01",
+          "legendFormat": "Burn rate, 5m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 48,
+      "type": "stat",
+      "title": "Burn rate, 1h",
+      "description": "The fast pair pages above 14.4 here and in the 5m panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 55
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp:slo_consumption:error_ratio_rate1h) / 0.01",
+          "legendFormat": "Burn rate, 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 49,
+      "type": "stat",
+      "title": "Burn rate, 30m",
+      "description": "The slow pair tickets above 6 here and in the 6h panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 55
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp:slo_consumption:error_ratio_rate30m) / 0.01",
+          "legendFormat": "Burn rate, 30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 50,
+      "type": "stat",
+      "title": "Burn rate, 6h",
+      "description": "Long enough to say the budget is really burning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 55
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp:slo_consumption:error_ratio_rate6h) / 0.01",
+          "legendFormat": "Burn rate, 6h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 51,
+      "type": "row",
+      "title": "Correctness: no budget, every non-zero is an incident",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 60
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 52,
+      "type": "stat",
+      "title": "Trial balance out of balance",
+      "description": "INV-ACC-01, currencies out of balance. Zero at all times.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(max by (currency) (finapp_ledger_trial_balance))",
+          "legendFormat": "Trial balance out of balance"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 53,
+      "type": "stat",
+      "title": "Projection drift",
+      "description": "INV-BAL-02, accounts whose projection differs from the journal.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_ledger_projection_drift)",
+          "legendFormat": "Projection drift"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 54,
+      "type": "stat",
+      "title": "Outbox dead letters",
+      "description": "Abandoned events still blocking their aggregates.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_outbox_deadlettered)",
+          "legendFormat": "Outbox dead letters"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 55,
+      "type": "stat",
+      "title": "Oldest publishable event",
+      "description": "The freshness SLI: seconds the oldest row the relay may still publish has waited.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(finapp_outbox_oldest_publishable_seconds)",
+          "legendFormat": "Oldest publishable event"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    }
+  ]
+}

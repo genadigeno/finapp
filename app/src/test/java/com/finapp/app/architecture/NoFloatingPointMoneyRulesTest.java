@@ -460,7 +460,16 @@ class NoFloatingPointMoneyRulesTest {
                     // nowhere else: no amount is ever a gauge's value (ADR-0072), and these hold no Money.
                     "com.finapp.platform.metrics.RefreshedReading",
                     "com.finapp.platform.metrics.RefreshedReading$Held",
-                    "com.finapp.app.telemetry.OffScrapeMeterRegistry");
+                    "com.finapp.app.telemetry.OffScrapeMeterRegistry",
+                    // P15-TSK-025. A clock's offset in seconds, a count of requests waiting and a consumer group's lag in
+                    // records: never an amount, published through the ToDoubleFunction Micrometer's Gauge imposes. And one
+                    // duration boundary, 1 s, handed to the double API a distribution statistic takes.
+                    "com.finapp.app.telemetry.ClockOffsetMetrics",
+                    "com.finapp.app.telemetry.ClockOffsetMetrics$Cached",
+                    "com.finapp.app.telemetry.CreditScorecardMetrics",
+                    "com.finapp.app.telemetry.CreditScorecardMetrics$Cached",
+                    "com.finapp.app.eventing.InboxConsumers",
+                    "com.finapp.app.telemetry.SloLatencyBuckets");
 
     // ---------------------------------------------------------------------
     // Guard: the rules must actually see the code they claim to protect.

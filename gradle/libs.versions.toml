@@ -159,6 +159,7 @@ redisImage = "8.10.1"
 # checked by `verifyInfrastructureVersions`: a dashboard that renders against one Grafana
 # version and not another is exactly the difference the drift check exists to prevent.
 prometheusImage = "v3.14.0"
+alertmanagerImage = "v0.34.2"
 grafanaImage = "12.4.10"
 
 [libraries]

@@ -24,10 +24,12 @@
 # - bnpl_offered is a TARGET label the environment's scrape configuration sets, never a metric tag: an environment that
 #   offers BNPL labels its application targets bnpl_offered="true" (the last step of the activation gate,
 #   OPERATIONS_RUNBOOK.md section 8.1); production does not until that gate opens - no ACTIVE terms is its expected state.
-# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+# - Routed by severity in infra/alertmanager/alertmanager.yml (P15-TSK-025), to a placeholder receiver until an on-call tool exists.
 
 groups:
   - name: bnpl
+    labels:
+      owner: bnpl
     rules:
       - alert: BnplAccrualLagging
         # An ACTIVE pay-in-N obligation has left an elapsed date of its accrual span unaccrued for more than a day past its
@@ -135,7 +137,7 @@ groups:
         # Gate criterion 5: a currency in which the BNPL purchases are not proven three ways - merchant leg, customer leg,
         # economic identity, trial balance, capital or exposure. Never corrected - investigated.
         expr: max(finapp_bnpl_threeway_proof{verdict="FAILS"}) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:
@@ -145,7 +147,7 @@ groups:
       - alert: BnplSubledgerProofFailing
         # INV-BNPL-01: an obligation whose six ledger balances its rows do not explain.
         expr: max(finapp_bnpl_subledger_proof{verdict="FAILS"}) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:
@@ -156,7 +158,7 @@ groups:
         # INV-BNPL-04, -05, -09: an obligation a figure of which no longer re-derives by its pinned engine, or whose
         # canonical terms no longer re-verify.
         expr: max(finapp_bnpl_replay{verdict="DIVERGED"}) > 0
-        for: 1m
+        for: 0s
         labels:
           severity: page
         annotations:
@@ -227,3 +229,20 @@ groups:
         annotations:
           summary: "A BNPL gauge cannot be read"
           description: "A BNPL gauge reads NaN - its database read failed, or its instance's gauge refresher is behind. The proofs, the accrual lag, the application queue, the contested disputes' wait, the active terms or the negative merchant payables are not being watched until it reads again (OPERATIONS_RUNBOOK.md section 8.8)."
+
+  # A failed claim - the page read - is logged and now counted (P15-TSK-025; the debt row "The BNPL schedules log a claim-level sweep
+  # failure but never meter it"). A group of its own: BnplAlertRulesTest holds the bnpl group to its 18 rules, and this one is
+  # proved by promtool (infra/prometheus/tests/bnpl.test.yml).
+  - name: bnpl-claims
+    labels:
+      owner: bnpl
+    rules:
+      - alert: BnplSweepClaimFailing
+        # Aggregation: sum by (kind) - counters are per instance, and any instance's failing claim is the sweep's
+        expr: sum by (kind) (increase(finapp_bnpl_sweeper_claim_failed_total[15m])) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The BNPL {{ $labels.kind }} sweep's claims keep failing"
+          description: "Claims of the BNPL {{ $labels.kind }} sweep have failed for 15 minutes, so nothing is being swept and the step alerts stay silent. See OPERATIONS_RUNBOOK.md section 8.6."
