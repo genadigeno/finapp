@@ -7,8 +7,8 @@
 # Enforced: tests/conventions.tftest.hcl asserts the prefix and the exact tag set, and refuses an
 # environment that is not staging or production; each root's own test asserts that the root names and
 # tags itself as its environment; TerraformIsPinnedAndCheckedTest asserts that every root takes its
-# default_tags from here. That each resource of -014 to -016 uses name_prefix is documentation until
-# those modules land.
+# default_tags from here. Each concern module's tests assert name_prefix on the resources they name;
+# a new resource's use of it is a review point.
 
 locals {
   name_prefix = "finapp-${var.environment}"
