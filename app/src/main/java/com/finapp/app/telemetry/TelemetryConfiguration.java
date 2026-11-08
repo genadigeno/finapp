@@ -48,6 +48,17 @@ class TelemetryConfiguration {
      * "nothing is failing" rather than "nothing is running". Recorded as debt rather than faked.
      */
     @Bean
+    ClockOffsetMetrics clockOffsetMetrics(DataSource dataSource, Clock clock, MeterRegistry registry) {
+        return new ClockOffsetMetrics(dataSource::getConnection, clock, registry);
+    }
+
+    /** The one latency boundary the SLO routes need, on those routes alone (`P15-TSK-025`). */
+    @Bean
+    SloLatencyBuckets sloLatencyBuckets() {
+        return new SloLatencyBuckets();
+    }
+
+    @Bean
     OutboxMetrics outboxMetrics(DataSource dataSource, Clock clock, MeterRegistry registry) {
         return new OutboxMetrics(new OutboxBacklog(dataSource::getConnection), clock, registry);
     }

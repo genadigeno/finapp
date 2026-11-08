@@ -44,6 +44,12 @@ final class OutboxMetrics {
     /** {@code finapp.outbox.oldest} — how long the oldest unpublished event has waited. */
     static final String OLDEST = "finapp.outbox.oldest";
 
+    /** {@code finapp.outbox.deadlettered} - abandoned rows still unresolved (`P15-TSK-025`): the correctness page's reading. */
+    static final String DEAD_LETTERED = "finapp.outbox.deadlettered";
+
+    /** {@code finapp.outbox.oldest.publishable} - the event-freshness SLI's reading (`P15-TSK-025`). */
+    static final String OLDEST_PUBLISHABLE = "finapp.outbox.oldest.publishable";
+
     /**
      * A scrape asks every gauge at once, and several scrapers may be attached. Without a floor,
      * monitoring becomes load on the database it is monitoring.
@@ -73,6 +79,19 @@ final class OutboxMetrics {
                 .baseUnit("seconds")
                 .strongReference(true)
                 .register(registry);
+
+        Gauge.builder(DEAD_LETTERED, this, self -> self.reading().deadLetteredOrNaN())
+                .description("Outbox events abandoned after their attempts and still unresolved, each blocking its"
+                        + " aggregate. Fleet-wide from every instance: aggregate with max(), never sum()")
+                .strongReference(true)
+                .register(registry);
+
+        Gauge.builder(OLDEST_PUBLISHABLE, this, self -> self.reading().oldestPublishableSecondsOrNaN())
+                .description("Age of the oldest unpublished outbox event that is not itself dead-lettered."
+                        + " Fleet-wide from every instance: aggregate with max(), never sum()")
+                .baseUnit("seconds")
+                .strongReference(true)
+                .register(registry);
     }
 
     private Cached reading() {
@@ -84,12 +103,13 @@ final class OutboxMetrics {
         Cached refreshed;
         try {
             OutboxBacklog.Reading read = backlog.read();
-            refreshed = new Cached(now, read.pending(), read.oldest().toSeconds(), true);
+            refreshed = new Cached(now, read.pending(), read.oldest().toSeconds(), read.deadLettered(),
+                    read.oldestPublishable().toSeconds(), true);
         } catch (RuntimeException failure) {
             // Logged at warn and reported as absent, not as zero. The exception type only: a JDBC
             // message names the host, the database and sometimes the user (INV-AUD-02).
             log.warn("Could not read the outbox backlog for metrics: {}", failure.getClass().getSimpleName());
-            refreshed = new Cached(now, 0, 0, false);
+            refreshed = new Cached(now, 0, 0, 0, 0, false);
         }
         // A losing racer discards its own equally-fresh reading. Both are correct; neither is
         // worth a lock on a scrape path.
@@ -106,10 +126,11 @@ final class OutboxMetrics {
      *     absent, which an always-NaN gauge satisfies perfectly, and one exercising the query
      *     rather than the gauge. It took scraping a running instance.
      */
-    private record Cached(Instant takenAt, long pending, long oldestSeconds, boolean known) {
+    private record Cached(
+            Instant takenAt, long pending, long oldestSeconds, long deadLettered, long oldestPublishableSeconds, boolean known) {
 
         static Cached empty() {
-            return new Cached(null, 0, 0, false);
+            return new Cached(null, 0, 0, 0, 0, false);
         }
 
         boolean isStale(Instant now) {
@@ -122,6 +143,14 @@ final class OutboxMetrics {
 
         double oldestSecondsOrNaN() {
             return known ? oldestSeconds : Double.NaN;
+        }
+
+        double deadLetteredOrNaN() {
+            return known ? deadLettered : Double.NaN;
+        }
+
+        double oldestPublishableSecondsOrNaN() {
+            return known ? oldestPublishableSeconds : Double.NaN;
         }
     }
 }

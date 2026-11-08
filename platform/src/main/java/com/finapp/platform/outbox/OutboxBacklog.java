@@ -52,7 +52,10 @@ public final class OutboxBacklog {
     private static final String BACKLOG_SQL =
             """
             SELECT count(*) AS pending,
-                   coalesce(extract(epoch FROM now() - min(occurred_at))::bigint, 0) AS oldest_seconds
+                   coalesce(extract(epoch FROM now() - min(occurred_at))::bigint, 0) AS oldest_seconds,
+                   count(dead_lettered_at) AS dead_lettered,
+                   coalesce(extract(epoch FROM now() - min(occurred_at) FILTER (WHERE dead_lettered_at IS NULL))::bigint, 0)
+                       AS oldest_publishable_seconds
               FROM platform.outbox_event
              WHERE published_at IS NULL
             """;
@@ -83,7 +86,11 @@ public final class OutboxBacklog {
             // carried in a double, and letting one in "because it is only a metric" is how the
             // habit spreads to something that is not.
             long oldestSeconds = results.getLong("oldest_seconds");
-            return new Reading(pending, Duration.ofSeconds(oldestSeconds));
+            return new Reading(
+                    pending,
+                    Duration.ofSeconds(oldestSeconds),
+                    results.getLong("dead_lettered"),
+                    Duration.ofSeconds(results.getLong("oldest_publishable_seconds")));
         } catch (SQLException e) {
             throw new OutboxReadException("Could not read the outbox backlog", e);
         }
@@ -94,8 +101,13 @@ public final class OutboxBacklog {
      *     blocking their aggregate
      * @param oldest how long the oldest unpublished event has been waiting; {@link Duration#ZERO}
      *     when there is nothing pending
+     * @param deadLettered rows abandoned after their attempts and still unresolved (`P15-TSK-025`): the
+     *     relay's counter says one was abandoned, and only this says one still stands
+     * @param oldestPublishable how long the oldest row the relay may still publish has waited - a
+     *     dead-lettered row excluded, the rows queued behind it not - so a lone dead letter, which
+     *     pages on its own, does not read as a stalled relay for ever
      */
-    public record Reading(long pending, Duration oldest) {
+    public record Reading(long pending, Duration oldest, long deadLettered, Duration oldestPublishable) {
 
         public Reading {
             if (pending < 0) {
@@ -103,6 +115,12 @@ public final class OutboxBacklog {
             }
             if (oldest == null || oldest.isNegative()) {
                 throw new IllegalArgumentException("oldest must be a non-negative duration");
+            }
+            if (deadLettered < 0) {
+                throw new IllegalArgumentException("deadLettered must not be negative but was " + deadLettered);
+            }
+            if (oldestPublishable == null || oldestPublishable.isNegative()) {
+                throw new IllegalArgumentException("oldestPublishable must be a non-negative duration");
             }
         }
     }

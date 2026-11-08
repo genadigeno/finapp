@@ -61,8 +61,20 @@ public final class BnplDisputeMetrics {
 
     private final MeterRegistry registry;
 
+    /** A claim of the sweep failed: nothing was stepped, and a later tick claims again (`P15-TSK-025`). */
+    public void claimFailed() {
+        claimFailedCounter().increment();
+    }
+
+    private io.micrometer.core.instrument.Counter claimFailedCounter() {
+        return io.micrometer.core.instrument.Counter.builder(BnplOriginationMetrics.CLAIM_FAILED).tag("kind", "dispute")
+                .description("BNPL sweep claims that failed, by sweep - the page read, never a step's failure")
+                .register(registry);
+    }
+
     public BnplDisputeMetrics(MeterRegistry registry) {
         this.registry = Objects.requireNonNull(registry, "registry");
+        claimFailedCounter();
         for (Outcome outcome : Outcome.values()) {
             counter(outcome);
         }

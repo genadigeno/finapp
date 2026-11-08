@@ -248,6 +248,16 @@ public class CreditBeans {
         return new com.finapp.app.telemetry.CreditPolicyMetrics(
                 creditPolicyStore, dataSource::getConnection, clock, meterRegistry);
     }
+    /**
+     * {@code finapp.credit.scorecard.awaited} (`P15-TSK-025`): requests admitted and waiting because no
+     * {@code RETAIL_SCORECARD} is {@code ACTIVE} - alerted within minutes, where the validity's own alert takes a week.
+     */
+    @Bean
+    com.finapp.app.telemetry.CreditScorecardMetrics creditScorecardMetrics(
+            com.finapp.credit.ScorecardStore creditScorecardStore, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new com.finapp.app.telemetry.CreditScorecardMetrics(
+                creditScorecardStore, dataSource::getConnection, clock, meterRegistry);
+    }
     // ------------------------------------------------------------------ the decision request (P10-TSK-014)
 
     /** The party's credit standing and facts over the party store - a verified customer, ACTIVE (`P10-TSK-014`). */
