@@ -1521,7 +1521,7 @@ as stranded by payments' gauge (item 85, §9.5b); the monitoring census's id set
 
 ## 10. Accounting (Phase 14): the close and its alerts
 
-*Opened by `P14-TSK-017` (2026-11-02), written whole by `P14-TSK-020` (2026-11-05). Every alert below is in `infra/prometheus/rules/accounting.yml`, its bound in `AccountingObjectives`. No Alertmanager is wired, so `page` and `ticket` say what each will be once routing exists (Phase 15). `AccountingRunbookTest` holds what it can of this section to the code: its javadoc lists exactly what, and JSON fields and prose are not among it. What a row cannot see is said in its section.*
+*Opened by `P14-TSK-017` (2026-11-02), written whole by `P14-TSK-020` (2026-11-05). Every alert below is in `infra/prometheus/rules/accounting.yml`, its bound in `AccountingObjectives`. Routed by severity to a placeholder receiver since `P15-TSK-025` (`infra/alertmanager/alertmanager.yml`), until an on-call tool exists. `AccountingRunbookTest` holds what it can of this section to the code: its javadoc lists exactly what, and JSON fields and prose are not among it. What a row cannot see is said in its section.*
 
 | Alert | Severity | The break | Section |
 |---|---|---|---|

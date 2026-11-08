@@ -33,6 +33,7 @@ val verifyInfrastructureVersions = tasks.register("verifyInfrastructureVersions"
         "apache/kafka" to libs.versions.kafkaImage.get(),
         "redis" to libs.versions.redisImage.get(),
         "prom/prometheus" to libs.versions.prometheusImage.get(),
+        "prom/alertmanager" to libs.versions.alertmanagerImage.get(),
         "grafana/grafana" to libs.versions.grafanaImage.get(),
     )
 
