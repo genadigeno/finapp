@@ -2351,8 +2351,10 @@ are `PHASE_15_PLAN.md`'s, a bare `-nnn` meaning `P15-TSK-nnn`):
   schema; the promotion script refusing a rollback across a contract marker. **Owners**: `-005`…`-007`, `-017`.
 - **Security hardening** — criterion 1; the management port unreachable from the ingresses (a `kind` test); the public
   ingress serving no route that an operator permission guards (a test over the route register); registration and
-  per-source limits refusing a burst across three replicas; operator sessions audited as `OPERATOR`. **Owners**: `-001`,
-  `-008`, `-010`, `-011`, `-021`, `-022`.
+  per-source limits refusing a burst across three replicas; operator sessions audited as `OPERATOR`; a forged-but-signed
+  callback moving nothing on the payment and instant rails, a planted test per provider. **Owners**: `-001`,
+  `-008`, `-010`, `-011`, `-021`, `-022`, `-036`. *(The callback clause and `-036` added 2026-11-08 by `P15-TSK-002`,
+  applying C15.)*
 - **Secrets and key management** — every secret property in the inventory, both ways; no committed `kind: Secret` with
   data; each class of `PHASE_15_PLAN.md` §10 with a rotation and a revocation procedure; a database password and an HMAC
   secret rotated on `kind` with no failed request beyond retries; a row encrypted under a key version read after the

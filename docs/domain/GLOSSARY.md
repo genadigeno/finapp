@@ -2803,7 +2803,8 @@ entry goes through the ledger's adjustment machinery (ADR-0071), or by an approv
 `REPUDIATE_BATCH` that empties its subject, recorded in a `repudiation_closure` row. For every
 writer it becomes `RESOLVED` only if, at commit, a `RESOLVED` event of the break names a
 resolution that is `APPROVED`; that the named resolution is the break's own is held by the
-domain alone (recorded debt, Phase 15).
+domain alone (recorded debt; the owner's to schedule since the carried items' ruling of 2026-11-08, C15,
+recommended before production use).
 *(Extended by the Phase 7 → 8 transition, ADR-0069 and ADR-0071. Corrected 2026-10-01,
 `P8-DOC-001`: this read "four-eyes whenever value is at issue or it posts", which reconciliation
 `V014` narrowed, and omitted closure by repudiation; the every-writer binding is reconciliation

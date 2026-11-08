@@ -439,3 +439,7 @@ ADR-0038, ADR-0046, ADR-0066, ADR-0081.
   missing from a `Received`-shaped answer silently `ABSENT`; the evidence key ring (one key version
   read); the over-64 KiB body read whole before the bound, and a body that stalls after its
   headers.
+
+## Read-note: the carried items' ruling (2026-11-08)
+
+C15 (`PHASE_15_PLAN.md` §25, C12), applied by `P15-TSK-002`, re-dates the credit evidence purge and its crypto-shredding to the choice of a real jurisdiction. Phase 15 writes the retention policy by class (`P15-TSK-029`), which states the purge's scope question (the normalised attributes, each snapshot's canonical text) as open, and builds key rings (`P15-TSK-019`), the mechanism crypto-shredding by key version would use. Read "Phase 15's" purge here as re-dated. The rows carry the disposition, marked **C15** (`P15-TSK-002`, 2026-11-08); this record's decision and status are unchanged.

@@ -197,3 +197,11 @@ callback; the corridor's unattributed one excepted, point 1's note), `INV-AUD-01
 ## Amended by the Phase 9 → 10 transition (2026-10-07)
 
 The corridor door names only its own rail's credits: a callback naming another rail's credit attaches no evidence and triggers no inquiry. Keeping evidence for an authenticated callback that names no credit at all needs a subject-less append payments does not have — recorded as debt. See [`reviews/PHASE_9_TO_10_TRANSITION.md`](../project/reviews/PHASE_9_TO_10_TRANSITION.md) and `PHASE_9_PLAN.md` §21.
+
+## Read-note: decision 4's owner (2026-11-08)
+
+The owner's C15 (`PHASE_15_PLAN.md` §2.2, §25) moved the alignment of decision 4 into Phase 15. `P15-TSK-002` applied
+it: **read `X-TSK-015` as `P15-TSK-036` throughout this record**. The work and its trigger are unchanged, and
+`X-TSK-015` is `CANCELLED` (moved, not dropped). `P15-TSK-036` also carries the corridor door's evidence for a
+callback naming no credit (the amendment above). Its gate records decision 4 as built here, and writes a new ADR only
+if a Phase 5 or Phase 7 callback kind has no inquiry. The decision itself is unchanged; this ADR's status is unchanged.
