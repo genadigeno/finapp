@@ -93,6 +93,28 @@ final class ClockStep {
         }
     }
 
+    /**
+     * {@link #inOneTransaction}, but always rolled back (`P15-TSK-033`): for a case whose frame would leave a fact dated in the future in the shared
+     * database - an offer stamped tomorrow ends its terms version after it under lending {@code V033}, and every later activation of the product would then
+     * start tomorrow for the rest of the suite. Such a case asserts on {@code connection}, before the rollback.
+     */
+    static <R> R inOneRolledBackTransaction(Duration frame, Function<Connection, R> work) {
+        try (Connection connection = DatabaseRoles.application()) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("SET search_path = clockstep, pg_catalog, \"$user\", public");
+                statement.execute("SET clockstep.frame = '" + micros(frame) + " microseconds'");
+            }
+            connection.setAutoCommit(false);
+            try {
+                return work.apply(connection);
+            } finally {
+                connection.rollback();
+            }
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
     /** Steps {@code connection}'s clock back by {@code by} for every later statement of its transaction. */
     static void stepBack(Connection connection, Duration by) {
         try (Statement statement = connection.createStatement()) {

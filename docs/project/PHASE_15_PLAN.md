@@ -793,7 +793,8 @@ into has its entry widened (scope, testing, acceptance, probe): `-004`, `-019` (
 `-027`, `-029`, `-032`, `-033`. `X-TSK-015` is the new item **`P15-TSK-036`** (M15.7, wave C), and `X-TSK-015` is
 `CANCELLED` (moved, not dropped). Debt row #61 is ruled **not settled**, so `-029` sweeps no idempotency record. How the
 last row of the table was read: **security-class** rows went into the task that fits them. **Correctness-class** rows,
-the entry's instants decided off the database's clock, stayed in the phase: `X-TSK-008`'s five stores went to `-033`,
+the entry's instants decided off the database's clock, stayed in the phase: `X-TSK-008`'s five stores went to `-033`
+*(returned untaken by `-033`'s gate the same day, to `X-TSK-008` and the owner: the ruling reached it after its gate)*,
 and A4-F1 stays `P14-REM-009`'s. **Others** were re-dated with a reason: scale, latency and contention to Phase 16;
 functional gaps that need a financial treatment §22 forbids to their own triggers; purges and providers as above. Four
 rows are owner items rather than rulings: `P14-REM-009`'s scheduling; `X-TSK-008`'s remainder (the ordering `CHECK`s

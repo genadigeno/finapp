@@ -12,6 +12,7 @@ import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.security.SecureRandom;
 import java.sql.Connection;
@@ -435,6 +436,35 @@ class CloseRunsTest {
     }
 
     @Test
+    @DisplayName("PI-013 (P15-TSK-033): the view names the present lock's run by the lock's identity, read over a store whose latest is an"
+            + " earlier lock's run - as ORDER BY started_at DESC answered after a backward step of the database's clock - so a ready month"
+            + " is ready; while the present lock has no run yet the earlier one is shown, and is never current")
+    void theRunIsTheLocksWhateverAStampSays() {
+        CloseRunId earlier = started();
+        AccountingPeriodId period = store.runs().get(0).period();
+        unlock(period);
+        periods.markLocked(UOW, period, 1, ACCOUNTANT, Optional.empty());
+        CloseRunStore stepped = latestIsTheFirstBorn(store);
+        CloseRuns afterTheStep = new CloseRuns(stepped, periods, breaks, leases, (uow, record) -> audit.add(record), IDS, CLOCK);
+
+        CloseRuns.RunView before = afterTheStep.view(UOW, period).orElseThrow();
+        assertThat(before.run().id()).as("no run under the present lock yet: the earlier lock's is shown").isEqualTo(earlier);
+        assertThat(before.current()).isFalse();
+        assertThat(CloseRuns.readinessOf(Optional.of(before)).run()).as("and it is never ready").isEmpty();
+
+        CloseRunId present = runs.startMissing(UOW, Actor.SYSTEM).get(0);
+        concludeAll(present);
+        assertThat(stepped.latestRun(UOW, period).orElseThrow().id()).as("the precondition: the store's latest is the earlier lock's run")
+                .isEqualTo(earlier);
+
+        CloseRuns.RunView view = afterTheStep.view(UOW, period).orElseThrow();
+        assertThat(view.run().id()).as("the present lock's run, by its identity").isEqualTo(present);
+        assertThat(view.current()).isTrue();
+        assertThat(view.complete()).isTrue();
+        assertThat(afterTheStep.readiness(UOW, period).run()).as("ready, so a close can be proposed on it").contains(present);
+    }
+
+    @Test
     @DisplayName("the configuration is refused unless a lease holds three renewals and the run's bound a lease")
     void theLeasesAreJudged() {
         Duration minute = Duration.ofMinutes(1);
@@ -545,6 +575,25 @@ class CloseRunsTest {
                 runs.conclude(UOW, held, passed(held.check()));
             }
         }
+    }
+
+    /**
+     * {@code delegate} answering {@link CloseRunStore#latestRun} with the period's FIRST-born run - what {@code ORDER BY run.started_at DESC} answered once the
+     * database's clock had stepped back between an earlier lock's run and the present lock's (PI-013's measured case); every other call is the delegate's.
+     */
+    private static CloseRunStore latestIsTheFirstBorn(InMemoryCloseRunStore delegate) {
+        return (CloseRunStore) Proxy.newProxyInstance(CloseRunStore.class.getClassLoader(), new Class<?>[] {CloseRunStore.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("latestRun")) {
+                        AccountingPeriodId period = (AccountingPeriodId) args[1];
+                        return delegate.runs().stream().filter(run -> run.period().equals(period)).findFirst();
+                    }
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (InvocationTargetException thrown) {
+                        throw thrown.getCause();
+                    }
+                });
     }
 
     private CloseRunStore.AttemptRow attempt(CloseRuns.ClaimedCheck claimed) {

@@ -17,6 +17,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,7 +42,8 @@ import org.junit.jupiter.api.Test;
  * ten proposers, ten approvers, an approval racing a rejection; four eyes, immutability for every role, one
  * {@code PROPOSED} and one {@code ACTIVE} version per product, pay-in-4's zero rate and nothing migration-activated, held
  * for every writer by raw SQL; an activation waiting for the pin of its predecessor; the effective periods clamped on a
- * database clock that stepped back. lending's {@code LoanTermsDatabaseTest}, applied.
+ * database clock that stepped back, and every offer inside its version's period on one stepped back on demand
+ * ({@link BnplClockFrame}; `P15-TSK-033`, bnpl {@code V021}, PI-014 (1)). lending's {@code LoanTermsDatabaseTest}, applied.
  *
  * <p>The two products are shared rows in the suite's database, so every case first brings a product to the state it
  * needs through the domain itself and never assumes what an earlier case left; no case leaves a proposal pending (the
@@ -391,6 +393,116 @@ class BnplTermsDatabaseTest {
             }
         }
         assertThat(status(predecessor)).as("the plant rolled back with it").isEqualTo("ACTIVE");
+    }
+
+    /** The planted step: far beyond any real step measured (2.8 s) and the few milliseconds between the offer and the retirement. */
+    private static final Duration STEP_BACK = Duration.ofSeconds(5);
+
+    @Test
+    @DisplayName("PI-014's reproduction, bnpl's twin (P15-TSK-033, bnpl V021): the activation's database clock stepped back after an offer pinned to"
+            + " the version commits - the retired version still ends after the offer, the successor starts exactly where it ends, and the version in"
+            + " force at the offering instant is the one the offer pins; bnpl V002 ended the version before the offer")
+    void anOfferBeforeABackwardStepStandsInsideItsVersion() throws Exception {
+        BnplTermsVersionId pinned = activate(P4);
+        awaitTheClockPastTheStartOf(pinned);
+        BnplApplicationId application = BnplApplicationStoreDatabaseTest.born(UUID.randomUUID(), UUID.randomUUID(), P4, BnplPlan.PAY_IN_4, pinned);
+        BnplTermsAdministration.Proposed successor = propose(P4, employee());
+        BnplClockFrame.install();
+        BnplClockFrame.inOneTransaction(Duration.ZERO, activation -> {
+            // The activation's transaction begins - its start fixed - before the offer is made and committed.
+            Instant start = instantOn(activation, "SELECT pg_catalog.transaction_timestamp()");
+            BnplApplicationStoreDatabaseTest.offered(application);
+            BnplClockFrame.stepBack(activation, STEP_BACK);
+            Instant offered = offeredAt(application);
+            assertThat(start).as("the precondition: the activation began before the offer").isBefore(offered);
+            assertThat(instantOn(activation, "SELECT clock_timestamp()")).as("the precondition: its clock now reads before the offer - the step is real")
+                    .isBefore(offered);
+            assertThat(effectiveOrFail(pinned, "effective_from").plusNanos(1_000)).as("the precondition: the offer stamped by the clock, after its version's"
+                    + " start, so only the offer can carry the end past it").isBefore(offered);
+            ADMINISTRATION.approve(activation, successor.id(), employee(), "PI-014's reproduction", correlation());
+            return null;
+        });
+        Instant offered = offeredAt(application);
+        assertThat(scalar("SELECT (o.offered_at >= v.effective_from AND o.offered_at < v.effective_to)::text FROM bnpl.bnpl_offer o"
+                + " JOIN bnpl.bnpl_terms_version v ON v.id = o.terms_version_id WHERE o.application_id = '" + application.value() + "'"))
+                .as("the offer inside its pinned version's period - bnpl V002 ended the version before it").isEqualTo("true");
+        assertThat(effective(successor.id(), "effective_from")).as("the successor starts exactly where the retired version ends")
+                .isEqualTo(effective(pinned, "effective_to"));
+        Optional<BnplTermsVersionId> inForce = inOneTransaction(uow -> STORE.activeAt(uow, P4, offered));
+        assertThat(inForce).as("the version in force at the offering instant is the pinned one")
+                .contains(pinned);
+    }
+
+    @Test
+    @DisplayName("the other half of the interval (P15-TSK-033, bnpl V021): an offer made just after an activation, on a database clock stepped back"
+            + " behind the new version's start, is stamped at that start - never before its version began - and the version in force at it is the pinned one")
+    void anOfferAfterAnActivationOnAStepBackIsInsideItsVersion() throws Exception {
+        BnplTermsVersionId earlier = activate(P4);
+        BnplApplicationId application = BnplApplicationStoreDatabaseTest.born(UUID.randomUUID(), UUID.randomUUID(), P4, BnplPlan.PAY_IN_4, earlier);
+        BnplTermsVersionId pinned = activate(P4);
+        BnplClockFrame.install();
+        BnplClockFrame.inOneTransaction(STEP_BACK.negated().multipliedBy(2), origination -> {
+            assertThat(instantOn(origination, "SELECT clock_timestamp()")).as("the precondition: this clock reads before the version began - the step"
+                    + " is real").isBefore(effectiveOrFail(pinned, "effective_from"));
+            return BnplApplicationStoreDatabaseTest.offeredOn(origination, application);
+        });
+        assertThat(scalar("SELECT terms_version_id::text FROM bnpl.bnpl_offer WHERE application_id = '" + application.value() + "'"))
+                .as("pinned to the version just activated").isEqualTo(pinned.value().toString());
+        Instant offered = offeredAt(application);
+        assertThat(offered).as("floored at its version's start (V021) - V006 alone stamped it before the version began")
+                .isEqualTo(effective(pinned, "effective_from"));
+        Optional<BnplTermsVersionId> inForce = inOneTransaction(uow -> STORE.activeAt(uow, P4, offered));
+        assertThat(inForce).as("the version in force at the offering instant is the pinned one")
+                .contains(pinned);
+    }
+
+    /** Waits until the database's clock is past {@code version}'s start, so an offer made now is stamped by the clock, not floored at that start. */
+    private static void awaitTheClockPastTheStartOf(BnplTermsVersionId version) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (!"true".equals(scalar("SELECT (clock_timestamp() > effective_from + interval '50 milliseconds')::text"
+                + " FROM bnpl.bnpl_terms_version WHERE id = '" + version.value() + "'"))) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("the database's clock did not pass the version's start within 30 s");
+            }
+            Thread.sleep(50);
+        }
+    }
+
+    /** The application's offer's offering instant, read on a connection of its own. */
+    private static Instant offeredAt(BnplApplicationId application) {
+        try {
+            return Instant.parse(scalar("SELECT to_char(o.offered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')"
+                    + " FROM bnpl.bnpl_offer o WHERE o.application_id = '" + application.value() + "'"));
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    /** One instant {@code sql} answers on {@code connection} - inside its transaction, on its clock. */
+    private static Instant instantOn(Connection connection, String sql) {
+        try (Statement statement = connection.createStatement(); ResultSet row = statement.executeQuery(sql)) {
+            row.next();
+            return row.getTimestamp(1).toInstant();
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    /** {@link #effective}, for a lambda. */
+    private static Instant effectiveOrFail(BnplTermsVersionId id, String column) {
+        try {
+            return effective(id, column);
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    private static String scalar(String sql) throws SQLException {
+        try (Connection migrator = DatabaseRoles.migrator(); Statement statement = migrator.createStatement();
+                ResultSet row = statement.executeQuery(sql)) {
+            row.next();
+            return row.getString(1);
+        }
     }
 
     // ------------------------------------------------------------------ plumbing

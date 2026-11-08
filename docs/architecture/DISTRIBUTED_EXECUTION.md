@@ -350,6 +350,22 @@ instant in the statement that writes the row, never an instant read a statement 
 the terms retirement and withdrew it unmerged: in the database re-run it met lending `V003`'s
 `loan_terms_retires_only_beside_its_successor` (`LoanTermsDatabaseTest#aBackwardClockIsClamped`), and its own
 regression case met another suite's future-dated version in the shared container - not a finished, green fix.
+*(`P15-TSK-033`, 2026-11-08: **both fixed at their causes, each proven only when `P15-TST-002`'s database pass runs its
+clock-step regression case** - until then `POSTPONED_ISSUES.md` keeps PI-013 and PI-014 open. **The close run**:
+`CloseRuns.view` names the present lock's run by the lock's identity (`runUnder(period, locked_at)`, exact by
+`close_run_one_per_lock`); only an `OPEN` period, or a lock with no run yet, shows the store's latest - never current,
+never ready - and that latest is ranked by the rows (the present lock's run, then the higher revision; `started_at`
+last). The latest close is ranked the same way (the `PROPOSED` proposal, the higher revision, its `APPROVED` one;
+`proposed_at` orders only one revision's rejected proposals, which no act reads). Regression case:
+`CloseRunClockStepDatabaseTest`. **The terms retirement** (lending `V033`, bnpl `V021`): the end never before one
+microsecond after the latest offer pinned to the version; the successor starting exactly there, its predecessor chosen
+by version number - never `max(effective_to)` over the product, the term the withdrawn draft kept and a future-dated end
+moved; and the offering instant never before its version's start, without which the end pushed past a stepped offer
+would leave the successor's first offer before its version began. The midnight-framed origination of
+`BackwardClockDatabaseTest` now rolls back, so no offer dated tomorrow is left in the shared tier for a later activation
+to follow. Regression cases: `LoanTermsDatabaseTest` and `BnplTermsDatabaseTest`. Risk `V002`'s retirement has the same
+stamp; nothing reads a risk policy version by an instant, so it is latent, recorded and not changed. The rule above is
+unchanged; it now holds for both.)*
 
 ### Why the Phase 12 → 13 transition added rows for components that do not exist yet
 
@@ -807,7 +823,9 @@ verification, checkout expiry, the fee schedule in force and payout-destination 
 second is `CHECK`s that order two business timestamps written by different instances; these refuse a
 legitimate operation under skew. The routing-policy instance is `X-TSK-005`. *(2026-11-08, the carried items' ruling,
 C15: the first family's five stores are routed to `P15-TSK-033`, the card fee version among them; the `CHECK` family
-and the two session leftovers stay `X-TSK-008`'s, their horizon the owner's.)*
+and the two session leftovers stay `X-TSK-008`'s, their horizon the owner's.)* *(Same day: the ruling reached
+`P15-TSK-033` after its gate, and that task returned the five to `X-TSK-008` and the owner untaken - a task of their own
+across identity, checkout and merchant; `BACKLOG.md` `X-TSK-008`.)*
 
 ---
 

@@ -181,7 +181,8 @@ class BnplApplicationStoreDatabaseTest {
 
     // ------------------------------------------------------------------ plumbing
 
-    private static BnplApplicationId born(UUID party, UUID session, BnplProduct product, BnplPlan plan,
+    /** An application born and moved {@code AWAITING_DECISION} on {@code version} - {@code BnplTermsDatabaseTest}'s too (`P15-TSK-033`). */
+    static BnplApplicationId born(UUID party, UUID session, BnplProduct product, BnplPlan plan,
             BnplTermsVersionId version) {
         return born(party, session, product, plan, version, UUID.randomUUID());
     }
@@ -214,27 +215,30 @@ class BnplApplicationStoreDatabaseTest {
      * The origination step's OFFERED edge as {@code bnpl V004} admits it (`P12-TSK-011`): under B1, the offer born on the
      * product's terms version ACTIVE now with its terms, then the application moved - one transaction.
      */
-    private static void offered(BnplApplicationId id) {
-        inOneTransaction(uow -> {
-            BnplApplication application = STORE.lockClaimed(uow, id).orElseThrow();
-            BnplTermsVersion version = TERMS.pinActive(uow, application.product());
-            JdbcBnplOfferStore offers = new JdbcBnplOfferStore();
-            BnplOfferId offer = BnplOfferId.next(IDS);
-            BnplOfferStore.Offered born = offers.insert(uow, new BnplOfferStore.NewOffer(offer, id,
-                    application.party(), application.product(), application.plan(), UUID.randomUUID(), version.id(),
-                    application.checkoutSession(), java.time.Instant.now().plus(java.time.Duration.ofDays(1)),
-                    java.time.Instant.now().plus(java.time.Duration.ofHours(1)), correlation()));
-            BnplIllustration illustration = BnplIllustration.of(version.terms(), application.plan(),
-                    com.finapp.sharedkernel.money.Money.ofMinorUnits(600_00, BnplTermsFixtures.EUR),
-                    java.time.LocalDate.ofInstant(born.offeredAt(), java.time.ZoneOffset.UTC));
-            offers.insertTerms(uow, offer, BnplOfferStore.StoredTerms.of(application.plan(),
-                    version.terms().nominalAnnualRate(), illustration,
-                    "{\"format\":\"1\",\"offer\":\"" + offer.value() + "\"}", new byte[32]));
-            if (!STORE.close(uow, id, BnplApplicationStatus.OFFERED, Optional.empty())) {
-                throw new IllegalStateException("the application was awaiting a decision");
-            }
-            return null;
-        });
+    static void offered(BnplApplicationId id) {
+        inOneTransaction(uow -> offeredOn(uow, id));
+    }
+
+    /** {@link #offered}, on the caller's transaction - a session reading a shadowed clock among them ({@code BnplTermsDatabaseTest}, `P15-TSK-033`). */
+    static Void offeredOn(Connection uow, BnplApplicationId id) {
+        BnplApplication application = STORE.lockClaimed(uow, id).orElseThrow();
+        BnplTermsVersion version = TERMS.pinActive(uow, application.product());
+        JdbcBnplOfferStore offers = new JdbcBnplOfferStore();
+        BnplOfferId offer = BnplOfferId.next(IDS);
+        BnplOfferStore.Offered born = offers.insert(uow, new BnplOfferStore.NewOffer(offer, id,
+                application.party(), application.product(), application.plan(), UUID.randomUUID(), version.id(),
+                application.checkoutSession(), java.time.Instant.now().plus(java.time.Duration.ofDays(1)),
+                java.time.Instant.now().plus(java.time.Duration.ofHours(1)), correlation()));
+        BnplIllustration illustration = BnplIllustration.of(version.terms(), application.plan(),
+                com.finapp.sharedkernel.money.Money.ofMinorUnits(600_00, BnplTermsFixtures.EUR),
+                java.time.LocalDate.ofInstant(born.offeredAt(), java.time.ZoneOffset.UTC));
+        offers.insertTerms(uow, offer, BnplOfferStore.StoredTerms.of(application.plan(),
+                version.terms().nominalAnnualRate(), illustration,
+                "{\"format\":\"1\",\"offer\":\"" + offer.value() + "\"}", new byte[32]));
+        if (!STORE.close(uow, id, BnplApplicationStatus.OFFERED, Optional.empty())) {
+            throw new IllegalStateException("the application was awaiting a decision");
+        }
+        return null;
     }
 
     private static boolean inserted(BnplApplicationStore.NewApplication row) {

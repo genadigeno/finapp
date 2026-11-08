@@ -292,6 +292,10 @@ only by an accepted amendment.
   widen (RG-M4, a debt row). (b) **A2-F3**: a version's `decided_at` and its predecessor's `effective_to` were stamped
   `transaction_timestamp()` before the activation's locks, so a predecessor could end before an offer made under it -
   now `clock_timestamp()` after the lock (lending `V030`, `LoanTermsDatabaseTest#anOfferMadeDuringAnActivationStandsInsideItsVersion`).
+  *(That held only on a database clock that never steps back (PI-014 (1)). 2026-11-08, `P15-TSK-033`, lending `V033`:
+  the end is never before one microsecond after the version's latest offer, the successor starts exactly there - its
+  predecessor chosen by version number - and an offering instant is never before its version's start; proven at
+  `P15-TST-002`'s database pass.)*
   (c) **A3-M1**: the engine-version `CHECK` admitted any version ≥ 1 though only 1 exists in code - now `= 1` (lending
   `V029`, `LoanTermsDatabaseTest#anEngineVersionNoCodeHoldsIsRefused`). Recorded in
   `reviews/PHASE_11_TO_12_TRANSITION.md`.

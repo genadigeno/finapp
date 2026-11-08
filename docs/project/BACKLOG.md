@@ -28020,7 +28020,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   condition and counted in its section. **Probe**: none applicable, as this entry's (procedures; the planted condition
   is the rehearsal's). **Acceptance**: the three debt rows' procedure halves closed.
 
-**P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; built on branch `P15-TSK-033` from master `c1d07726`; lending `V033`, bnpl `V021`; marks no task `READY` - the coordinator does; PI-013 and PI-014 (1) stay open until `P15-TST-002` runs their regression cases green)
 - **Objective**: fix, at their causes, the production defects the owner postponed to this phase's database pass.
 - **Affected components**: `accounting` (`CloseRuns.view`, `JdbcCloseRunStore`, `JdbcPeriodCloseStore`'s latest-close
   read), `lending` and `bnpl` (a terms version's retirement stamp; a new migration each), `risk` `V002`'s retirement
@@ -28060,6 +28060,45 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   **Acceptance**: the five on the database's clock, the rule green, PI-002 marked `FIXED` when the pass proves it, and
   `THREAT_MODEL.md` T13's planned row for the five stores rewritten to evidence. Not this task's: `X-TSK-008`'s ordering
   `CHECK`s and session leftovers.
+  *(**Not taken, returned**, by this task's gate, 2026-11-08: the ruling reached master (`53d442b1`) after this task was
+  built, implemented, probed and gated; the five are production changes in three more modules (identity, checkout,
+  merchant), PI-002's needing a merchant migration with a trigger rank - a task of their own, not a widening of a
+  finished one. They are `X-TSK-008`'s again, its entry noting the return, `THREAT_MODEL.md` T13's row for them
+  `REMEDIATION` `X-TSK-008` again, and their scheduling an owner item (`CURRENT_STATE.md` §Next Task).)*
+- **As built** (2026-11-08, branch `P15-TSK-033` from master `c1d07726`; implementation commit `f672145e`; lending `V033`, bnpl
+  `V021`; no accounting migration, no ADR - a dated note on ADR-0063 and ADR-0092). **PI-013**: `CloseRuns.view` names the
+  present lock's run by the lock's identity (`store.runUnder(period, locked_at)`, exact by `close_run_one_per_lock`); only an
+  `OPEN` period or a lock with no run yet shows the store's latest, never current, so never ready. `JdbcCloseRunStore
+  .LATEST_RUN_SQL` ranks by the rows - the present lock's run, then the higher revision - and `started_at` last;
+  `JdbcPeriodCloseStore.LATEST_CLOSE_SQL` the same way - the `PROPOSED` proposal, the higher revision, its `APPROVED` one -
+  `proposed_at` last, ordering only one revision's rejected proposals, which no act reads. **The census** of every accounting
+  reader ordering or comparing by a stamp (the design's table): three fixed (the run's latest, the view and its five callers,
+  the latest close); the rest safe - the claim's order and the leases (fenced by `holder`), the duration timer, the identity
+  reads, the revision-ordered report runs, the freshness and stall gauges, the `LIMIT ?` pages; PROVISIONAL cuts by
+  `created_at` a different class (an as-of cut; FINAL runs read a frozen month). **PI-014 (1)**: lending `V033` and bnpl `V021`
+  end a retired version never before one microsecond after the latest offer pinned to it (read after the activation's lock,
+  an index each on `(terms_version_id, offered_at)`), start the successor exactly there - its predecessor chosen by version
+  number, never `max(effective_to)` over the product, the term the withdrawn draft kept - and floor the offering instant at
+  its pinned version's start. **No backfill**: a retired end is frozen history; `POSTPONED_ISSUES.md` gives the census query.
+  Risk `V002` checked: the same stamp, latent (nothing reads a policy version by an instant) - `THREAT_MODEL.md` owner item 8.
+  **Tests**: hermetic - `CloseRunsTest#theRunIsTheLocksWhateverAStampSays` (the view over a store whose latest is the earlier
+  lock's run), `CloseRunStatementsTest#theLatestRunIsRankedByTheRows`, `PeriodCloseStatementsTest#theLatestCloseIsRankedByTheRows`
+  (`#theDecisionsAreConditional` loses its old pin), `LoanTermsClockMigrationTest` and `BnplTermsClockMigrationTest` (four text
+  pins each); database, written and owed to `P15-TST-002` (C14) - `CloseRunClockStepDatabaseTest` (own container, listed in
+  `app/build.gradle.kts`; its own `closeclock` shadow), `LoanTermsDatabaseTest` and `BnplTermsDatabaseTest` two clock-step cases
+  each, `LoanOriginationDatabaseTest#theOfferingInstantIsTheDatabasesForEveryWriter` adjusted to the floor,
+  `BackwardClockDatabaseTest#anOriginationAcrossAMidnightIllustratesTheOfferingDate` asserting inside its transaction and rolling
+  back (its offer dated tomorrow would otherwise push the shared tier's PERSONAL_LOAN chain a day ahead under `V033`), with
+  `ClockStep.inOneRolledBackTransaction`; `BnplApplicationStoreDatabaseTest`'s `born`/`offered` helpers shared. **Deviations**:
+  the offering floor, beyond the entry's words (without it the pushed end moves the violation onto the successor's first offer);
+  criterion 7 as C14 sets it; the reproductions green in the pass, not here. **Probes** (`MUTATION_TESTING.md` §2, each on
+  the branch's bytes, caught, restored byte-identical): nine of this task's - the entry's (`ORDER BY run.started_at DESC`
+  restored), the view by the store's latest alone, the latest close's old order, and each of `V033`'s and `V021`'s three
+  stamps restored - their database halves owed and unproven; and nineteen existing rows on the files it changed performed
+  again: eight on `JdbcCloseRunStore.java`, one each on `JdbcPeriodCloseStore.java` and `PeriodCloseStore.java`, and the nine
+  struck on `CloseRuns.java` (PI-015 down to 321).
+  **`X-TSK-008`'s five stores**, routed by `P15-TSK-002`'s ruling, which reached master after this task's gate: not taken,
+  returned to `X-TSK-008` and the owner (the routed note above; `THREAT_MODEL.md` T13's row for them `REMEDIATION` again).
 
 **P15-TSK-035 — The source-join census: every journal entry tied to the domain record that caused it** — `PLANNED`
 - **Objective**: a journal entry with no domain record behind it, or whose domain record's amounts differ from its lines,
@@ -28161,6 +28200,15 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Scope**: every tier run fresh once on the tree as it then stands, including `kafkaTest` (PI-012); PI-013's and
   PI-014's regression cases; PI-014's unclassified suites classified; PI-015's struck rows performed again on present
   bytes or struck for good with a reason; counts read from the JUnit XML with their timestamps.
+  *(Routed by `P15-TSK-033`'s gate, 2026-11-08, status unchanged: PI-013's and PI-014 (1)'s regression cases are
+  `CloseRunClockStepDatabaseTest` (`app`, own container), `LoanTermsDatabaseTest#anOfferBeforeABackwardStepStandsInsideItsVersion`
+  and `#anOfferAfterAnActivationOnAStepBackIsInsideItsVersion` (lending) and their twins in `BnplTermsDatabaseTest` (bnpl);
+  `LoanOriginationDatabaseTest#theOfferingInstantIsTheDatabasesForEveryWriter` and `BackwardClockDatabaseTest
+  #anOriginationAcrossAMidnightIllustratesTheOfferingDate` were adjusted to lending `V033` and run here too. Green, this
+  item marks PI-013 and PI-014 (1) `FIXED` in `POSTPONED_ISSUES.md` with `-033`'s commit; `THREAT_MODEL.md` T13's
+  `PLANNED` row names this item for that proof; the database halves of `-033`'s probes, listed unproven in
+  `MUTATION_TESTING.md` §2, are performed here. A LINE origination whose credit decision lapses within seconds can be
+  refused "born expired" right after an activation that followed a step - a flake to classify, not a defect.)*
 - **Exclusions**: the storm.
 - **Architecture changes / Infrastructure changes**: none.
 - **Security implications**: none.
@@ -28703,6 +28751,11 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   (owner item 2 of the ruling; recommended: before production use, counted by `P15-TSK-034` as a named gap, the `touch`
   leftover into `P15-TSK-031`'s rollout-safety question). If `-033` closes before this split reaches it, the five stores
   return here and to the owner.
+  *(**Returned here and to the owner**, 2026-11-08, by `P15-TSK-033`'s gate - option (b) of the coordinator's two: the split
+  reached that task after it was built and gated, and the five are a task of their own (three modules, PI-002's merchant
+  migration). Status unchanged, `PLANNED`; `THREAT_MODEL.md` T13's row for the five is `REMEDIATION` naming this entry;
+  the owner schedules them - recommended as their own Phase 15 item before `P15-TST-002`, so their skew cases run in the
+  pass.)*
 
 **X-TSK-009 — Provider receipt after a timeout, proved deterministically** — `IN_PROGRESS`
 *(implemented and demonstrated 2026-09-27; awaiting the completion gate)*
