@@ -33,6 +33,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.AuthorizationException;
+import org.apache.kafka.common.errors.SslAuthenticationException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.header.Header;
 
@@ -142,17 +143,31 @@ public final class KafkaEventReceiver implements AutoCloseable {
     /**
      * How long a member may go between polls before the group evicts it (`P15-TSK-026`).
      *
-     * <p><strong>The arithmetic.</strong> A record costs each interested handler at most a pool
-     * wait (5 s, Hikari's {@code connection-timeout}), the inbox claim's bounded wait (0.5 s,
-     * {@code JdbcInboxRecordStore}) and the handler's own statements. One handler is interested
-     * per record in every group today. Ten records in 120 s leaves 12 s a record, so 6.5 s for a
-     * handler's own statements after a full pool wait and a full claim wait; an OLTP-sized handler
-     * needs milliseconds. A batch that overruns anyway is evicted, its offset commit fails, and the
-     * partition's next owner redelivers into the dedupe: the inbox, not this number, is what keeps
-     * a record from being applied twice. The bound also caps how long a stuck member holds its
-     * partitions and, under the classic protocol, how long a rebalance can wait for it.
+     * <p><strong>A budget, not a bound</strong> (reworded in the review fix round). Between two
+     * polls the batch is settled and its offsets committed. Per record, for each interested handler,
+     * two waits are bounded: a connection from the pool (Hikari's {@code connection-timeout}, 5 s)
+     * and the inbox claim ({@link com.finapp.platform.inbox.JdbcInboxRecordStore#DEFAULT_CLAIM_WAIT},
+     * 0.5 s). The handler's own statements are <em>not</em> bounded - no statement timeout is set -
+     * and the commit can wait up to {@link #API_TIMEOUT}. One handler is interested per record in
+     * every group today. Ten records in 120 s is 12 s a record, so a prompt commit leaves 6.5 s for
+     * a handler's statements after both bounded waits ran out; a commit that ran its full 60 s
+     * leaves half a second. Each wait at its limit is already a fault - an exhausted pool, a
+     * contended key, an unreachable coordinator - and a batch that overruns anyway is evicted, its
+     * offset commit fails, and the partition's next owner redelivers into the dedupe: the inbox,
+     * not this number, keeps a record from being applied twice. {@code InboxPollBudgetTest} keeps
+     * the arithmetic against the configuration these numbers come from. The interval also caps how
+     * long a stuck member holds its partitions and, under the classic protocol, how long a
+     * rebalance waits for it.
      */
     public static final Duration MAX_POLL_INTERVAL = Duration.ofSeconds(120);
+
+    /**
+     * How long a blocking client call that takes no timeout of its own may wait - the offset
+     * commit among them ({@code default.api.timeout.ms}). The client's own default, written out
+     * (`P15-TSK-026`'s review fix round) so that {@link #MAX_POLL_INTERVAL}'s budget is computed
+     * from the configuration rather than from a copy of a default.
+     */
+    public static final Duration API_TIMEOUT = Duration.ofSeconds(60);
 
     /**
      * The consumer's whole client configuration, as {@link #connect} builds it: public so a test
@@ -197,6 +212,9 @@ public final class KafkaEventReceiver implements AutoCloseable {
                 Long.toString(MAX_POLL_INTERVAL.toMillis()));
         config.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, Integer.toString(MAX_POLL_RECORDS));
         config.put(
+                ConsumerConfig.DEFAULT_API_TIMEOUT_MS_CONFIG,
+                Long.toString(API_TIMEOUT.toMillis()));
+        config.put(
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
                 "org.apache.kafka.common.serialization.StringDeserializer");
         config.put(
@@ -238,7 +256,9 @@ public final class KafkaEventReceiver implements AutoCloseable {
      * @throws BrokerAccessRefusedException when the broker refused this client's credential or
      *     its permission on a topic or the group (`P15-TSK-026`) - the one failure translated
      *     here, so the loop above can tell a configuration fault from a broker that is merely
-     *     unwell without touching a Kafka type
+     *     unwell without touching a Kafka type. A failed TLS handshake is not one: it leaves as
+     *     the client raised it, an ordinary failure, because the broker's side fails it as often
+     *     as this client's
      */
     public ReceiverPollResult pollOnce() {
         try {
@@ -248,6 +268,15 @@ public final class KafkaEventReceiver implements AutoCloseable {
             // acknowledged past a committed effect, so whatever was in flight redelivers into
             // the dedupe. Translated to an empty result here so no caller needs a Kafka type.
             return ReceiverPollResult.NOTHING;
+        } catch (SslAuthenticationException handshake) {
+            // Not a refusal, though the client files it under AuthenticationException
+            // (`P15-TSK-026`'s review fix round): a TLS handshake fails as often on the broker's
+            // side - an expired or rotated broker certificate, a listener misconfigured - as on
+            // this client's, and a broker-side fault reaches every replica at once. Translated to
+            // a refusal it would fail readiness on the whole fleet for a fault no rollout made.
+            // So it leaves as the ordinary failure it is: the loop above logs its class, counts
+            // it (finapp.inbox.poll.failures{outcome=failed}) and backs off.
+            throw handshake;
         } catch (AuthenticationException | AuthorizationException refused) {
             // The class only: the client's message can name the broker and the principal. A
             // broker that is down raises neither - the poll simply returns empty - so this is

@@ -1907,7 +1907,24 @@ naming the same classes. A broker that refuses is reachable: this is configurati
    `finapp.<module>`, and nothing more.
 
 Never take a refused replica out of readiness's reach, or point it at the broker without `SASL_SSL`: off this machine the
-application refuses to start on anything else (`KafkaTransportGuard`).
+application refuses to start on anything else (`KafkaTransportGuard`). A refused replica's readiness returns once the
+broker is seen to admit it - a delivered record, or three clean polls in a row - so it does not flap up between the
+client's reconnection attempts.
+
+#### A failed TLS handshake
+
+*Signals*: `finapp.inbox.poll.failures{outcome="failed"}` counting, usually on every replica at once; a warning per
+attempt, `Inbox poll failed on finapp.<module>: SslAuthenticationException`; `finapp.outbox.publication{outcome="failed"}`
+counting with the relay's `last_error` naming the same class. **Readiness stays UP, deliberately** (`P15-TSK-026`'s review
+fix round): the broker's side fails a handshake as surely as the client's, and a fault every replica meets at once is no
+reason to take the fleet out of service. The alert on the series is `P15-TSK-025`'s routing.
+
+1. **Every replica at once**: the broker's certificate expired or was rotated to an issuer the truststore
+   (`finapp.kafka.ssl.truststore-location`, or the JVM's) does not hold, or a listener lost its certificate. Fix it on the
+   broker side, or ship the new CA bundle; do not roll back the application.
+2. **Only the new replicas**: the release carries a wrong truststore. Roll back by digest (§11.3).
+3. **Never** turn hostname verification off or point the clients at a non-TLS listener to get past it: the guard refuses
+   to start on anything but `SASL_SSL` off this machine, and `BrokerConnection` fixes verification on.
 
 #### Consumer lag
 
@@ -1921,8 +1938,10 @@ publish no lag series yet (`P15-TSK-025`); a group's lag in records is the broke
    move the group's offset past it by hand: the effect would never happen.
 2. **Too slow, not stalled**: a group's parallelism is its partitions (12 per topic) and its members (one per replica).
    Adding replicas adds members, and the cooperative assignor pauses only the partitions that move. Repeated rebalances in
-   the logs mean a member is being evicted for exceeding the poll bound (10 records in 120 seconds): the inbox still
-   prevents a second effect, but throughput collapses - find the slow statement in the handler.
+   the logs mean a member is being evicted for exceeding the poll budget (10 records in 120 seconds; a budget, not a
+   bound - a handler's statements have no timeout, and the offset commit can wait 60 seconds): the commit that follows
+   fails and counts in `finapp.inbox.poll.failures{outcome="failed"}`, the inbox still prevents a second effect, but
+   throughput collapses - find the slow statement in the handler. An eviction series of its own is `P15-TSK-025`'s.
 3. **A group stopped for days**: a topic keeps a record for 7 days, so restore consumption before the oldest unconsumed
    record reaches that age. Past it, the deleted records are lost hints: the group resumes at the earliest one retained,
    and the gap is recovered from the outbox by `P15-TSK-028`'s audited replay, bounded by the inbox's 14-day window. A

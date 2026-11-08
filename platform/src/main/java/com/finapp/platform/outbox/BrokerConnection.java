@@ -124,9 +124,15 @@ public record BrokerConnection(
     /**
      * A JAAS quoted string: the client parses the line with a {@code StreamTokenizer} whose quote
      * character is {@code "}, which reads a backslash as an escape. So a password holding either
-     * character would end its own string early, or lose a character, unless both are escaped.
+     * character would end its own string early, or lose a character, unless both are escaped. The
+     * same tokenizer ends a quoted string at a line feed or a carriage return (`P15-TSK-026`'s
+     * review fix round), so those are written as its {@code \n} and {@code \r} escapes, which it
+     * reads back as the characters themselves - the backslash first, so no escape is doubled.
      */
     static String jaasQuoted(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 }

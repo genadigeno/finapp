@@ -1,5 +1,6 @@
 package com.finapp.app.security;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -43,6 +44,19 @@ import java.util.Set;
  * renders, and it fixes verification on.
  *
  * <p>No refusal echoes the password.
+ *
+ * <h2>What "on this machine" means here, and its limit</h2>
+ *
+ * <p>Every bootstrap entry must be strictly {@code host:port} or {@code [IPv6]:port}, on loopback
+ * too, or startup is refused (`P15-TSK-026`'s review fix round): kafka-clients reads
+ * {@code localhost://kafka.internal:9092} as {@code kafka.internal}, and the first reading of this
+ * guard took the text before the first colon, {@code localhost}, so a remote broker passed as a
+ * local one over {@code PLAINTEXT}. The guard checks the <em>bootstrap</em> list only. After the
+ * first contact the clients connect to the listeners the brokers advertise, which this guard never
+ * sees: a broker on loopback advertising a remote listener would take the clients there under the
+ * protocol admitted for loopback. Off loopback that protocol is {@code SASL_SSL} with hostname
+ * verification, which holds for every listener the clients reach; on loopback it is whatever the
+ * local development broker is configured with.
  */
 public class KafkaTransportGuard {
 
@@ -85,7 +99,17 @@ public class KafkaTransportGuard {
                             + PROTOCOLS
                             + ". A protocol this guard cannot read is not one it can admit.");
         }
-        boolean local = DatabaseEndpoint.allLoopbackHostPorts(bootstrapServers);
+        List<String> hosts = DatabaseEndpoint.bootstrapHosts(bootstrapServers);
+        if (hosts.isEmpty()) {
+            // Not echoed: a list this guard cannot read may be one that carries a credential.
+            throw new IllegalStateException(
+                    "Refusing to start: finapp.kafka.bootstrap-servers is not a comma-separated list"
+                            + " of host:port or [IPv6]:port entries. The client reads some other"
+                            + " shapes differently from this guard (a scheme:// prefix is skipped and"
+                            + " the host after it connected to), so a list it cannot read is not one"
+                            + " it can show to be local.");
+        }
+        boolean local = hosts.stream().allMatch(DatabaseEndpoint::isLoopback);
         if (!local && !"SASL_SSL".equals(protocol)) {
             throw new IllegalStateException(
                     "Refusing to start: finapp.kafka.bootstrap-servers points at '"

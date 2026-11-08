@@ -45,6 +45,11 @@ class KafkaConsumersHealthIndicatorTest {
                 .isEmpty();
 
         consumers.settle("risk", () -> ReceiverPollResult.NOTHING);
+        assertThat(indicator.health().getStatus())
+                .as("one quiet poll is no admission (the review fix round)")
+                .isEqualTo(Status.DOWN);
+
+        consumers.settle("risk", () -> new ReceiverPollResult(1, 0, 0, 0));
         assertThat(indicator.health().getStatus()).isEqualTo(Status.UP);
     }
 

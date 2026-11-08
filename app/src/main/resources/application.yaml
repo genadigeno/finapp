@@ -238,7 +238,10 @@ management:
         # credential that does not authenticate, a missing topic or group permission - which is
         # the fault a release with a wrong secret carries, so the rollout halts on it. A broker
         # that is merely down is not a refusal and fails nothing: Kafka is not truth, and the
-        # outbox holds every event until it returns. Never in liveness, for the reason above.
+        # outbox holds every event until it returns. Nor is a failed TLS handshake (the review
+        # fix round): a broker's expired certificate meets every replica at once, so it is an
+        # ordinary failure, counted in finapp.inbox.poll.failures, not a readiness fault. Never
+        # in liveness, for the reason above.
         # KafkaConsumersReadinessTest fails if it leaves this group or joins liveness.
         readiness:
           include: readinessState,db,kafkaConsumers

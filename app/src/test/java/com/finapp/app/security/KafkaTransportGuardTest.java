@@ -154,4 +154,50 @@ class KafkaTransportGuardTest {
         assertThatThrownBy(() -> new KafkaTransportGuard("   ", "PLAINTEXT"))
                 .isInstanceOf(IllegalStateException.class);
     }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                // The review's bypass: kafka-clients 4.2.1 skips the prefix and connects to
+                // kafka.internal; a first-colon reading saw localhost.
+                "localhost://kafka.internal:9092",
+                "PLAINTEXT://localhost:9092",
+                "localhost:29092,localhost://kafka.internal:9092",
+                "kafka.internal:9092@localhost:9092",
+                "localhost:9092/kafka.internal",
+                // An unbracketed IPv6 literal: its colons are not a port's.
+                "localhost:9092,::ffff:10.0.0.5:9092",
+                "localhost: 9092",
+                "localhost",
+                "localhost:99999",
+                "127.999.0.1:9092",
+                "localhost:9092,"
+            })
+    @DisplayName("an entry that is not strictly host:port or [IPv6]:port is refused, on loopback too")
+    void aBootstrapEntryThatIsNotStrictlyHostAndPortIsRefused(String bootstrap) {
+        assertThatThrownBy(() -> new KafkaTransportGuard(bootstrap, "PLAINTEXT"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("host:port")
+                .hasMessageNotContaining(bootstrap);
+        // Strictness is about reading the list, not about the protocol: SASL_SSL is refused too.
+        assertThatThrownBy(
+                        () -> new KafkaTransportGuard(bootstrap, "SASL_SSL", "finapp-app", "a-real-one"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("host:port");
+    }
+
+    @Test
+    @DisplayName("a strict list is still read as the client lists it: spaces around commas, brackets, 127/8")
+    void aStrictListIsRead() {
+        assertThatCode(
+                        () -> {
+                            new KafkaTransportGuard("localhost:29092, 127.0.0.2:9092", "PLAINTEXT");
+                            new KafkaTransportGuard("[::1]:9092,localhost:9093", "PLAINTEXT");
+                        })
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> new KafkaTransportGuard("localhost:29092, [fd00::5]:9092", "PLAINTEXT"))
+                .as("a bracketed remote literal is read, and refused as remote")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not (entirely) on this machine");
+    }
 }

@@ -23,6 +23,7 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.GroupAuthorizationException;
 import org.apache.kafka.common.errors.SaslAuthenticationException;
+import org.apache.kafka.common.errors.SslAuthenticationException;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -77,14 +78,14 @@ class KafkaEventReceiverConfigurationTest {
         assertThat(config.getInt(ConsumerConfig.MAX_POLL_RECORDS_CONFIG))
                 .isEqualTo(KafkaEventReceiver.MAX_POLL_RECORDS)
                 .isEqualTo(10);
+        assertThat(config.getInt(ConsumerConfig.DEFAULT_API_TIMEOUT_MS_CONFIG))
+                .as("the commit's wait, which the poll budget spends")
+                .isEqualTo((int) KafkaEventReceiver.API_TIMEOUT.toMillis());
 
-        // The arithmetic in MAX_POLL_INTERVAL's comment, asserted: per record, one interested
-        // handler's full pool wait (5 s) and full inbox claim wait (0.5 s), with at least five
-        // seconds left for the handler's own statements.
-        Duration perRecord =
-                KafkaEventReceiver.MAX_POLL_INTERVAL.dividedBy(KafkaEventReceiver.MAX_POLL_RECORDS);
-        Duration fixedWaits = Duration.ofSeconds(5).plusMillis(500);
-        assertThat(perRecord.minus(fixedWaits)).isGreaterThanOrEqualTo(Duration.ofSeconds(5));
+        // The budget's arithmetic lives with the configuration it reads (the review fix round):
+        // InboxPollBudgetTest, in app, takes the pool's wait from the committed application.yaml
+        // and the claim wait from JdbcInboxRecordStore, where the first version copied 5 s and
+        // 0.5 s into this test.
     }
 
     @Test
@@ -137,6 +138,15 @@ class KafkaEventReceiverConfigurationTest {
         assertThatThrownBy(receiver::pollOnce)
                 .isInstanceOf(BrokerAccessRefusedException.class)
                 .hasMessageContaining("GroupAuthorizationException");
+
+        // The review fix round: an AuthenticationException by inheritance, but no refusal - the
+        // broker's certificate fails a handshake as surely as this client's truststore, and a
+        // broker-side fault translated into a refusal would fail readiness on every replica.
+        consumer.setPollException(new SslAuthenticationException("SSL handshake failed"));
+        assertThatThrownBy(receiver::pollOnce)
+                .as("a failed TLS handshake leaves as the ordinary failure it is")
+                .isInstanceOf(SslAuthenticationException.class)
+                .isNotInstanceOf(BrokerAccessRefusedException.class);
 
         assertThat(receiver.pollOnce())
                 .as("admitted again, the next poll is an ordinary empty one")

@@ -52,7 +52,7 @@ class BrokerConnectionTest {
     }
 
     @Test
-    @DisplayName("a password holding quotes and backslashes reaches the client unchanged")
+    @DisplayName("a password holding quotes, backslashes or line breaks reaches the client unchanged")
     void theJaasLineIsEscaped() {
         // StreamTokenizer reads `\` as an escape inside a quoted string, so an unescaped `"`
         // would end the password early and an unescaped `\` would vanish.
@@ -64,6 +64,21 @@ class BrokerConnectionTest {
         assertThat(loginOptions(rendered))
                 .containsEntry("password", awkward)
                 .containsEntry("username", "u\"ser");
+
+        // The review fix round: a line feed or carriage return ends a quoted string in the same
+        // tokenizer, so a password holding one (a secret file's trailing newline, read whole) was
+        // cut there - the client then failed the line, or authenticated with less of a password.
+        String broken = "first\nsecond\rthird\r\n";
+        Properties withBreaks =
+                new BrokerConnection("broker:9096", "SASL_SSL", "u\nser", Sensitive.of(broken), "")
+                        .clientProperties();
+        assertThat(withBreaks.getProperty("sasl.jaas.config"))
+                .as("one line, whatever the credential holds")
+                .doesNotContain("\n")
+                .doesNotContain("\r");
+        assertThat(loginOptions(withBreaks))
+                .containsEntry("password", broken)
+                .containsEntry("username", "u\nser");
     }
 
     @Test

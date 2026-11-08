@@ -267,7 +267,23 @@ bundle as the truststore when one is configured (`finapp.kafka.ssl.truststore-lo
 the JVM's trust store). The credential is `FINAPP_KAFKA_SASL_USERNAME` and
 `FINAPP_KAFKA_SASL_PASSWORD` (`SECRET_MANAGEMENT.md`). Each principal's ACLs are data in the
 catalogue: the application may describe, read and write the catalogued topics and read the groups
-`finapp.<module>`, and nothing more; the provisioner creates and configures but deletes nothing.
+`finapp.<module>`, and nothing more; the provisioner creates and configures but deletes nothing, *as
+declared* - its cluster `Alter` is the permission that edits ACLs, so it could grant itself more at
+run time, and who holds that credential is the operating answer.
+
+*The review fix round (2026-11-08).* "On this machine" is read strictly: every bootstrap entry must
+be `host:port` or `[IPv6]:port`, on loopback too, or startup is refused. kafka-clients 4.2.1 reads
+`localhost://kafka.internal:9092` as `kafka.internal`, and the guard's first reading took the text
+before the first colon, so a remote broker passed as local over `PLAINTEXT`. The database guards
+share the parser and were open the same way, measured against the pinned driver: a `host`, `PGHOST`
+or `service` query parameter overrides the URL's host, and an unbracketed IPv6 entry beside a
+loopback one was dropped unread; each now leaves the URL unread, so they fail closed. **The guard's
+limit:** it checks the *bootstrap* list only. After the first contact the clients connect to the
+listeners the brokers advertise, which no guard sees; off loopback the admitted protocol is
+`SASL_SSL` with hostname verification on every listener, but a broker on loopback that advertises a
+remote listener would take the clients there under the loopback protocol. Only
+`EventingBeans` may make a broker connection (`brokerConnectionsAreMadeBehindTheGuard`), so the
+configuration the guard reads is the configuration that connects.
 
 **A rolling update moves partitions without stopping a group.** Every replica runs every module's
 consumer loop, so under the eager protocol every rolling step stopped every member of every group
@@ -275,9 +291,15 @@ while partitions were revoked and reassigned. The consumers now use the cooperat
 (`group.protocol=classic` pinned, so a client default cannot move the group to a protocol where
 these settings are the broker's), a 30-second session timeout (a killed pod's partitions move within
 half a minute; a pod that leaves gracefully says so at once), and `max.poll.records` 10 within
-`max.poll.interval.ms` of 120 seconds: a record costs at most a full pool wait (5 s), the inbox
-claim's bounded wait (0.5 s) and its handler's own statements, so 12 seconds a record leaves 6.5 for
-the statements. No static membership: a Deployment's pod names change on every rollout. **None of
+`max.poll.interval.ms` of 120 seconds. That interval is a **budget, not a bound** (reworded in the
+review fix round): per record two waits are bounded — a pool wait (Hikari's `connection-timeout`,
+5 s) and the inbox claim (0.5 s) — but the handler's own statements have no timeout, and the offset
+commit can wait up to `default.api.timeout.ms` (60 s, written out). Twelve seconds a record leaves
+6.5 for the statements after both bounded waits, with a prompt commit; a commit that ran its full
+60 s leaves half a second. A batch that overruns is evicted and redelivered into the dedupe.
+`InboxPollBudgetTest` computes this from the committed configuration. No eviction or commit-failure
+series exists yet beyond the thrown polls' count below; `P15-TSK-025` carries one. No static
+membership: a Deployment's pod names change on every rollout. **None of
 this is the correctness argument.** A rebalance, cooperative or not, redelivers whatever was settled
 and not yet committed, and the inbox deduplicates it; the assignor only keeps the other members
 consuming meanwhile. `KafkaRebalanceKafkaTest` is written to show both on a real broker; it has not
@@ -285,11 +307,18 @@ run yet, and is owed to the exit's database pass (`P15-TST-002`).
 
 **A refused consumer fails readiness, never liveness.** When the broker refuses a consumer loop —
 a credential that does not authenticate, a missing topic or group permission — the receiver raises
-`BrokerAccessRefusedException` (the client's class name only), the loop records it until a poll is
-admitted, and the readiness contributor `kafkaConsumers` reports DOWN. That is the fault a release
+`BrokerAccessRefusedException` (the client's class name only), the loop records it until the broker
+is seen to admit it — a poll that delivered a record, or three clean polls in a row (a refused client
+returns quiet polls between reconnection attempts, so one was no evidence: the review fix round) —
+and the readiness contributor `kafkaConsumers` reports DOWN. That is the fault a release
 with a wrong secret carries, so the rollout halts on it. A broker that is merely down is not a
 refusal: its polls return empty and readiness is unaffected, because the outbox holds every event
-until it returns. The cost: replicas share one credential, so revoking it before the fleet has
+until it returns. Nor is a **failed TLS handshake**, though the client files it under
+authentication (the review fix round): a broker's expired or rotated certificate fails every
+replica's handshake at once, and a refusal there would take the whole fleet out of readiness for a
+fault no rollout carried. It is an ordinary failure — logged by class (`SslAuthenticationException`),
+backed off, and counted with every thrown poll in `finapp.inbox.poll.failures{outcome}` (`refused`
+or `failed`), the series an alert reads; the alert itself is `P15-TSK-025`'s routing. The cost: replicas share one credential, so revoking it before the fleet has
 rolled onto its successor takes every replica's readiness down — rotation is add, roll, remove
 (ADR-0123 decision 5; `OPERATIONS_RUNBOOK.md` §11.6).
 

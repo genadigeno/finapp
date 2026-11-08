@@ -295,6 +295,12 @@ class TopicCatalogueTest {
                 .isEmpty();
     }
 
+    /**
+     * Holds for the ACLs <em>as declared</em> in the catalogue, and no further (the review fix
+     * round): the administrator's cluster {@code Alter} is the permission that edits ACLs, so that
+     * principal can grant itself {@code Delete} at run time. Who holds the administrator credential,
+     * and the broker's record of an ACL change, are the operating answer to that, not this test.
+     */
     @Test
     @DisplayName("only the two principals exist, and neither may delete a topic or hold All")
     void noPrincipalMayDelete() {

@@ -41,6 +41,12 @@ class InboxConsumersTest {
                     .isNotNull()
                     .satisfies(counter -> assertThat(counter.count()).isZero());
         }
+        for (String outcome : List.of("refused", "failed")) {
+            assertThat(registry.find("finapp.inbox.poll.failures").tag("outcome", outcome).counter())
+                    .as("thrown-poll series for outcome=%s (P15-TSK-026)", outcome)
+                    .isNotNull()
+                    .satisfies(counter -> assertThat(counter.count()).isZero());
+        }
     }
 
     @Test
@@ -88,31 +94,67 @@ class InboxConsumersTest {
         consumers.settle("kyc", InboxConsumersTest::refused);
         assertThat(consumers.brokerAccessRefused()).as("kyc's loop was refused").isTrue();
 
-        consumers.settle("risk", () -> ReceiverPollResult.NOTHING);
+        consumers.settle("risk", () -> new ReceiverPollResult(1, 0, 0, 0));
         assertThat(consumers.brokerAccessRefused())
                 .as("another module's admitted poll does not clear kyc's refusal")
                 .isTrue();
 
         consumers.settle("kyc", () -> new ReceiverPollResult(1, 0, 0, 0));
         assertThat(consumers.brokerAccessRefused())
-                .as("kyc's next admitted poll clears it")
+                .as("a poll that delivered a record is admission: the broker served it")
                 .isFalse();
+    }
+
+    @Test
+    @DisplayName("a quiet poll is no admission: the refusal holds until enough clean polls in a row (P15-TSK-026)")
+    void aQuietPollDoesNotClearARefusal() {
+        // The review fix round: a refused client returns clean, empty polls between its
+        // reconnection attempts, and the first version cleared the refusal on the first of them.
+        InboxConsumers consumers =
+                new InboxConsumers(
+                        List.of(), (group, handlers) -> failConnecting(), Duration.ofMillis(1),
+                        new SimpleMeterRegistry());
+        consumers.settle("kyc", InboxConsumersTest::refused);
+
+        for (int clean = 1; clean < InboxConsumers.CLEAN_POLLS_TO_ADMIT; clean++) {
+            consumers.settle("kyc", () -> ReceiverPollResult.NOTHING);
+            assertThat(consumers.brokerAccessRefused())
+                    .as("%d quiet poll(s) after the refusal", clean)
+                    .isTrue();
+        }
+        consumers.settle("kyc", InboxConsumersTest::failing);
+        consumers.settle("kyc", () -> ReceiverPollResult.NOTHING);
+        assertThat(consumers.brokerAccessRefused())
+                .as("a failure in between starts the count again")
+                .isTrue();
+        for (int clean = 1; clean < InboxConsumers.CLEAN_POLLS_TO_ADMIT; clean++) {
+            consumers.settle("kyc", () -> ReceiverPollResult.NOTHING);
+        }
+        assertThat(consumers.brokerAccessRefused())
+                .as("%d clean polls in a row are admission", InboxConsumers.CLEAN_POLLS_TO_ADMIT)
+                .isFalse();
+
+        consumers.settle("kyc", InboxConsumersTest::refused);
+        consumers.settle("kyc", () -> ReceiverPollResult.NOTHING);
+        consumers.settle("kyc", InboxConsumersTest::refused);
+        for (int clean = 1; clean < InboxConsumers.CLEAN_POLLS_TO_ADMIT; clean++) {
+            consumers.settle("kyc", () -> ReceiverPollResult.NOTHING);
+        }
+        assertThat(consumers.brokerAccessRefused())
+                .as("a refusal between quiet polls starts the count again")
+                .isTrue();
     }
 
     @Test
     @DisplayName("an ordinary poll failure is not a refusal, so it fails no readiness (P15-TSK-026)")
     void aFailureIsNotARefusal() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
         InboxConsumers consumers =
                 new InboxConsumers(
                         List.of(), (group, handlers) -> failConnecting(), Duration.ofMillis(1),
-                        new SimpleMeterRegistry());
+                        registry);
 
-        assertThat(
-                        consumers.settle(
-                                "kyc",
-                                () -> {
-                                    throw new IllegalStateException("a client failure");
-                                }))
+        assertThat(consumers.settle("kyc", InboxConsumersTest::failing))
                 .as("a failed poll is logged and backed off, and yields no result to count")
                 .isNull();
         ReceiverPollResult stalled = new ReceiverPollResult(0, 0, 0, 1);
@@ -121,6 +163,13 @@ class InboxConsumersTest {
                 .isSameAs(stalled);
 
         assertThat(consumers.brokerAccessRefused()).isFalse();
+        // The review fix round: a thrown poll - a broker's expired certificate among them - is
+        // counted where an alert can read it, and a refusal apart from it.
+        consumers.settle("kyc", InboxConsumersTest::refused);
+        assertThat(registry.get("finapp.inbox.poll.failures").tag("outcome", "failed").counter().count())
+                .isEqualTo(1.0);
+        assertThat(registry.get("finapp.inbox.poll.failures").tag("outcome", "refused").counter().count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -131,6 +180,13 @@ class InboxConsumersTest {
 
     private static ReceiverPollResult refused() {
         throw new BrokerAccessRefusedException("SaslAuthenticationException");
+    }
+
+    private static ReceiverPollResult failing() {
+        // What the receiver lets through untranslated, a failed TLS handshake among them; its
+        // Kafka type is not on this module's test classpath, and the loop reads no type but the
+        // refusal's.
+        throw new IllegalStateException("a client failure");
     }
 
     private static com.finapp.platform.inbox.kafka.KafkaEventReceiver failConnecting() {

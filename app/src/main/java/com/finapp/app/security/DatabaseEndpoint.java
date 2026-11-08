@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
 
@@ -58,73 +61,136 @@ public final class DatabaseEndpoint {
     /**
      * Every host in a JDBC URL, because PostgreSQL accepts a comma-separated list for failover and
      * checking only the first would let the second be anywhere at all.
+     *
+     * <p>Empty when any part of the URL could send the driver somewhere this reading does not see
+     * (`P15-TSK-026`'s review fix round, measured against the driver this build pins, 42.7.13):
+     *
+     * <ul>
+     *   <li>a {@code host}, {@code PGHOST} or {@code service} query parameter - the driver reads
+     *       {@code //localhost:5432/finapp?host=db.prod} as {@code db.prod}, the query winning over
+     *       the authority;
+     *   <li>an entry that is not strictly {@code host[:port]} or {@code [v6][:port]} - the driver
+     *       takes the text before an entry's <em>last</em> colon as its host, so an unbracketed IPv6
+     *       literal such as {@code ::ffff:10.0.0.5:5432}, which a first-colon reading saw as an empty
+     *       host and dropped, reached 10.0.0.5 beside a loopback first entry; and a {@code @} is no
+     *       credential form to this driver but part of the name it resolves.
+     * </ul>
+     *
+     * <p>Empty reads as "not shown to be local", so every guard fails closed on it.
      */
     static List<String> hostsOf(String jdbcUrl) {
-        List<String> hosts = new ArrayList<>();
         if (jdbcUrl == null) {
-            return hosts;
+            return List.of();
         }
-        int authorityStart = jdbcUrl.indexOf("//");
+        int query = jdbcUrl.indexOf('?');
+        if (query >= 0 && namesAHost(jdbcUrl.substring(query + 1))) {
+            return List.of();
+        }
+        String server = query < 0 ? jdbcUrl : jdbcUrl.substring(0, query);
+        int authorityStart = server.indexOf("//");
         if (authorityStart < 0) {
-            return hosts;
+            return List.of();
         }
-        String rest = jdbcUrl.substring(authorityStart + 2);
-        int end = rest.length();
-        for (int i = 0; i < rest.length(); i++) {
-            char c = rest.charAt(i);
-            if (c == '/' || c == '?' || c == ';') {
-                end = i;
-                break;
+        String rest = server.substring(authorityStart + 2);
+        int slash = rest.indexOf('/');
+        return hostsOfEntries(slash < 0 ? rest : rest.substring(0, slash), false);
+    }
+
+    /**
+     * The hosts of a Kafka bootstrap list (`P2-TSK-001`): every entry strictly {@code host:port} or
+     * {@code [v6]:port}, or an empty list.
+     *
+     * <p>Strict because the client is not (`P15-TSK-026`'s review fix round): kafka-clients 4.2.1
+     * reads {@code localhost://kafka.internal:9092} as {@code kafka.internal}, skipping any prefix up
+     * to the last thing shaped like a host and port, where a first-colon reading saw
+     * {@code localhost}. A list holding anything but host-and-port entries - a scheme, a path, a
+     * {@code @}, whitespace, an empty entry, a port out of range, an IPv4 octet over 255 - is not one
+     * this method can say the client will read the same way, so it reads none of it.
+     */
+    static List<String> bootstrapHosts(String hostPortList) {
+        if (hostPortList == null || hostPortList.isBlank()) {
+            return List.of();
+        }
+        return hostsOfEntries(hostPortList, true);
+    }
+
+    private static List<String> hostsOfEntries(String list, boolean portRequired) {
+        List<String> hosts = new ArrayList<>();
+        for (String candidate : list.split(",", -1)) {
+            Optional<String> host = hostOfEntry(candidate.trim(), portRequired);
+            if (host.isEmpty()) {
+                // One entry this cannot read makes the whole list unread: dropping it would be the
+                // failover trap again, the unread entry free to be anywhere.
+                return List.of();
             }
-        }
-        String authority = rest.substring(0, end);
-        // user:pass@host - the credential form of a URL. Discarded, never parsed.
-        int at = authority.lastIndexOf('@');
-        if (at >= 0) {
-            authority = authority.substring(at + 1);
-        }
-        for (String candidate : authority.split(",")) {
-            String host = stripPort(candidate.trim());
-            if (!host.isEmpty()) {
-                hosts.add(host);
-            }
+            hosts.add(host.get());
         }
         return hosts;
     }
 
-    /**
-     * True when every entry of a comma-separated {@code host:port} list is on this machine.
-     *
-     * <p>The Kafka bootstrap form (`P2-TSK-001`): no scheme, no path — just the authority list a
-     * JDBC URL carries after {@code //}. Same fail-closed rule as {@link #isEntirelyLoopback}: an
-     * empty or unreadable list has not been shown to be local.
-     */
-    static boolean allLoopbackHostPorts(String hostPortList) {
-        if (hostPortList == null || hostPortList.isBlank()) {
-            return false;
-        }
-        boolean any = false;
-        for (String candidate : hostPortList.split(",")) {
-            String host = stripPort(candidate.trim());
-            if (host.isEmpty()) {
-                return false;
+    /** A name or an IPv4 literal, and an optional port: nothing a second host could hide in. */
+    private static final Pattern NAMED_ENTRY =
+            Pattern.compile("([A-Za-z0-9_.\\-]+)(?::(\\d{1,5}))?");
+
+    /** An IPv6 literal, bracketed so that its colons cannot be read as a port's. */
+    private static final Pattern BRACKETED_ENTRY =
+            Pattern.compile("\\[([0-9A-Fa-f:.]+)\\](?::(\\d{1,5}))?");
+
+    private static final Pattern DIGITS_AND_DOTS = Pattern.compile("[0-9.]+");
+
+    private static final Pattern IPV4 =
+            Pattern.compile("(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})");
+
+    /** The query parameters the driver takes a host from: {@code host} in any case, {@code PGHOST}, a service file. */
+    private static final Set<String> HOST_PARAMETERS = Set.of("host", "pghost", "service");
+
+    private static Optional<String> hostOfEntry(String entry, boolean portRequired) {
+        Matcher matcher = BRACKETED_ENTRY.matcher(entry);
+        if (!matcher.matches()) {
+            matcher = NAMED_ENTRY.matcher(entry);
+            if (!matcher.matches()) {
+                return Optional.empty();
             }
-            if (!isLoopback(host)) {
-                return false;
-            }
-            any = true;
         }
-        return any;
+        String host = matcher.group(1);
+        String port = matcher.group(2);
+        if (port == null ? portRequired : !isPort(port)) {
+            return Optional.empty();
+        }
+        if (DIGITS_AND_DOTS.matcher(host).matches() && !isIpv4(host)) {
+            // 127.999.0.1 is no address, so the resolver would be asked for it as a name.
+            return Optional.empty();
+        }
+        return Optional.of(host);
     }
 
-    private static String stripPort(String hostAndPort) {
-        if (hostAndPort.startsWith("[")) {
-            // IPv6 literal: the colons inside the brackets are part of the address.
-            int close = hostAndPort.indexOf(']');
-            return close < 0 ? hostAndPort : hostAndPort.substring(1, close);
+    private static boolean namesAHost(String queryString) {
+        for (String parameter : queryString.split("&")) {
+            int equals = parameter.indexOf('=');
+            String name = (equals < 0 ? parameter : parameter.substring(0, equals)).trim();
+            if (HOST_PARAMETERS.contains(name.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
         }
-        int colon = hostAndPort.indexOf(':');
-        return colon < 0 ? hostAndPort : hostAndPort.substring(0, colon);
+        return false;
+    }
+
+    private static boolean isPort(String digits) {
+        int port = Integer.parseInt(digits);
+        return port >= 1 && port <= 65_535;
+    }
+
+    private static boolean isIpv4(String host) {
+        Matcher octets = IPV4.matcher(host);
+        if (!octets.matches()) {
+            return false;
+        }
+        for (int group = 1; group <= 4; group++) {
+            if (Integer.parseInt(octets.group(group)) > 255) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** No DNS lookup: resolution is not this platform's to trust, and it must not block startup. */
@@ -133,8 +199,9 @@ public final class DatabaseEndpoint {
         if (lower.equals("localhost") || lower.equals("::1") || lower.equals("0:0:0:0:0:0:0:1")) {
             return true;
         }
-        // The whole 127.0.0.0/8 block, not 127.0.0.1 alone.
-        return lower.matches("127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}");
+        // The whole 127.0.0.0/8 block, not 127.0.0.1 alone - and only addresses in it: 127.999.0.1
+        // is a name the resolver would be asked for, not a loopback address.
+        return lower.startsWith("127.") && isIpv4(lower);
     }
 
     static Optional<String> hikari(Environment environment, String property) {

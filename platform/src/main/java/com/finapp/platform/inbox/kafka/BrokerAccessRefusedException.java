@@ -10,6 +10,11 @@ package com.finapp.platform.inbox.kafka;
  * that is down costs consumption and nothing else, while a refused credential is what a release
  * with a wrong secret looks like, and fails the consumers' readiness contributor.
  *
+ * <p>A failed TLS handshake is not translated, though the client files it under authentication
+ * (`P15-TSK-026`'s review fix round): the broker's side fails a handshake - an expired or rotated
+ * certificate - as surely as this client's, and failing readiness on a fault every replica meets at
+ * once would take the fleet out of service for something no rollout carried.
+ *
  * <p>Carries the refusing exception's class name and nothing else: the client's message can name
  * the broker and the principal ({@code INV-AUD-02}).
  */
