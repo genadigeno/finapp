@@ -80,7 +80,11 @@ public final class HandlerSet {
     public record VersionStep(String eventType, int version, String consumersLearnedItIn) {}
 
     /** What the coming release records. */
-    public record ReleaseRecord(List<HandlerStep> handlers, List<VersionStep> versions) {
+    public record ReleaseRecord(List<HandlerStep> handlers, List<VersionStep> versions, Set<String> retired) {
+
+        public ReleaseRecord(List<HandlerStep> handlers, List<VersionStep> versions) {
+            this(handlers, versions, Set.of());
+        }
 
         public static ReleaseRecord committed() {
             return parse(RepositoryPaths.read(RECORD));
@@ -116,7 +120,8 @@ public final class HandlerSet {
                                 (Integer) entry.get("version"),
                                 Objects.toString(entry.get("consumersLearnedItIn"), "")));
             }
-            return new ReleaseRecord(List.copyOf(handlers), List.copyOf(versions));
+            List<String> retired = (List<String>) document.getOrDefault("retired", List.of());
+            return new ReleaseRecord(List.copyOf(handlers), List.copyOf(versions), Set.copyOf(retired));
         }
     }
 

@@ -3,6 +3,7 @@ package com.finapp.app.architecture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -154,6 +155,19 @@ class EventCompatibilityTest {
     }
 
     @Test
+    @DisplayName("a type the release record retires is accepted, gone from the next catalogue, and refused while still written")
+    void aRetiredTypeIsRecorded() {
+        EventCatalogue withoutIt = EventCatalogue.parse(current("\"probe.Event\":", "\"probe.Another\":"));
+
+        assertThat(released().refusals(withoutIt, Set.of("probe.Event"))).isEmpty();
+        assertThat(released().rolled(withoutIt, Set.of("probe.Event"), "next").events()).doesNotContainKey("probe.Event");
+        assertThat(released().refusals(released(), Set.of("probe.Event")))
+                .singleElement()
+                .asString()
+                .contains("recorded as retired");
+    }
+
+    @Test
     @DisplayName("a new event type is accepted")
     void aNewTypeIsAccepted() {
         String withANewType =
@@ -180,13 +194,13 @@ class EventCompatibilityTest {
                         "    \"note\": {kind: \"identifier\", required: false}\n"
                                 + "        \"scale\": {kind: \"integer\", required: true}\n");
 
-        EventCatalogue rolled = released().rolled(EventCatalogue.parse(addedInPlace), "next");
+        EventCatalogue rolled = released().rolled(EventCatalogue.parse(addedInPlace), Set.of(), "next");
 
         assertThat(rolled.events().get("probe.Event").get(1).fields().get("scale").required())
                 .as("the records written before it do not carry it")
                 .isFalse();
 
-        EventCatalogue successor = released().rolled(EventCatalogue.parse(current("    1:\n", "    2:\n")), "next");
+        EventCatalogue successor = released().rolled(EventCatalogue.parse(current("    1:\n", "    2:\n")), Set.of(), "next");
 
         assertThat(successor.events().get("probe.Event")).containsOnlyKeys(1, 2);
         assertThat(EventCatalogue.parse(successor.render()).events())

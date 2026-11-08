@@ -48,22 +48,22 @@ class RiskSignalsReadTheCatalogueTest {
         int checked = 0;
 
         for (RiskSignalIntake.Source source : RiskSignalIntake.Source.values()) {
-            if (source.isHint()) {
-                continue;
-            }
-            SignalKind kind = source.kind().orElseThrow();
             for (EventCatalogue catalogue : List.of(released, current)) {
                 var versions = catalogue.events().get(source.eventType());
                 assertThat(versions).as("%s is catalogued", source.eventType()).isNotNull();
+                assertThat(versions.keySet())
+                        .as("%s: the intake refuses a version it does not know, and a rollback must parse what is on the wire",
+                                source.eventType())
+                        .allMatch(number -> number <= RiskSignalIntake.Source.NEWEST_VERSION);
+                if (source.isHint()) {
+                    continue; // a hint reacts to the envelope and reads no payload
+                }
+                SignalKind kind = source.kind().orElseThrow();
                 versions.forEach(
-                        (number, version) -> {
-                            assertThat(number)
-                                    .as("%s: a version the intake does not accept would stall its partition", source.eventType())
-                                    .isLessThanOrEqualTo(RiskSignalIntake.Source.NEWEST_VERSION);
-                            assertThat(parsesInSomeForm(kind, source.eventType(), number, version.fields()))
-                                    .as("%s v%s", source.eventType(), number)
-                                    .isTrue();
-                        });
+                        (number, version) ->
+                                assertThat(parsesInSomeForm(kind, source.eventType(), number, version.fields()))
+                                        .as("%s v%s", source.eventType(), number)
+                                        .isTrue());
                 checked++;
             }
         }

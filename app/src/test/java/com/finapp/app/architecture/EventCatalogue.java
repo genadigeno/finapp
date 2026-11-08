@@ -9,6 +9,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
 import java.util.TreeMap;
@@ -36,7 +37,9 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  * rolled forward.
  *
  * <p>A version the code no longer writes stays in the catalogue: its records are still on the wire
- * until retention passes them, and a replay or a rollback must parse them.
+ * until retention passes them, and a replay or a rollback must parse them. A change that cannot be
+ * additive is a new event type, which consumers opt into by adding a handler, and the old type is
+ * retired through the release record.
  *
  * <p><strong>The limit, said plainly.</strong> A field that keeps its name and its kind but starts
  * to carry a different quantity is invisible here. That is a change of meaning and needs a new
@@ -232,13 +235,27 @@ public final class EventCatalogue {
      * <p>Empty means the previous release's consumers can read everything the code now writes.
      */
     public List<String> refusals(EventCatalogue current) {
+        return refusals(current, Set.of());
+    }
+
+    /**
+     * As {@link #refusals(EventCatalogue)}, with the types this release retires: named in the release
+     * record, so a type's last producer cannot simply disappear. A type retired and still written is
+     * refused, so a stale entry cannot pass for the next release's.
+     */
+    public List<String> refusals(EventCatalogue current, Set<String> retired) {
         List<String> refusals = new ArrayList<>();
         events.forEach(
                 (type, releasedVersions) -> {
                     SortedMap<Integer, Version> currentVersions = current.events.get(type);
                     if (currentVersions == null) {
-                        refusals.add(type + ": no producer writes it any more, and a consumer of the last release still expects it");
+                        if (!retired.contains(type)) {
+                            refusals.add(type + ": no producer writes it any more, and a consumer of the last release still expects it");
+                        }
                         return;
+                    }
+                    if (retired.contains(type)) {
+                        refusals.add(type + ": recorded as retired, and it is still written");
                     }
                     int newestReleased = releasedVersions.lastKey();
                     if (currentVersions.lastKey() < newestReleased) {
@@ -311,9 +328,14 @@ public final class EventCatalogue {
      * field added under a version that already existed is not required, because the records written
      * before it do not carry it.
      */
-    public EventCatalogue rolled(EventCatalogue current, String label) {
+    public EventCatalogue rolled(EventCatalogue current, Set<String> retired, String label) {
         SortedMap<String, SortedMap<Integer, Version>> next = new TreeMap<>();
-        events.forEach((type, versions) -> next.put(type, new TreeMap<>(versions)));
+        events.forEach(
+                (type, versions) -> {
+                    if (!retired.contains(type)) {
+                        next.put(type, new TreeMap<>(versions));
+                    }
+                });
         current.events.forEach(
                 (type, versions) -> {
                     SortedMap<Integer, Version> into = next.computeIfAbsent(type, ignored -> new TreeMap<>());

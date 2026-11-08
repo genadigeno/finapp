@@ -15,7 +15,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.function.Consumer;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Handle;
@@ -32,8 +31,8 @@ import org.objectweb.asm.Type;
  * <p>The event catalogue must say what the code writes, and a list somebody keeps beside the code
  * would agree with the catalogue by construction. {@link EnvelopeProducers} already reads each
  * {@code new EventEnvelope(...)}, but the facts a contract needs are rarely all in that one method:
- * two thirds of the producers build the envelope in a private helper that takes the event type and
- * the payload as parameters ({@code publish(unitOfWork, type, payload)}), and the payload itself is
+ * many producers build the envelope in a private helper that takes the event type and the payload
+ * as parameters ({@code publish(unitOfWork, type, payload)}), and the payload itself is
  * assembled by the caller, a ternary or a loop.
  *
  * <p>So this reader runs a small abstract interpretation over every production class - operand
@@ -1424,10 +1423,5 @@ final class EventFlows {
         return only.equals("integer") && literals.stream().allMatch(value -> value.matches("-?[0-9]+"))
                 ? only
                 : "identifier";
-    }
-
-    /** For a caller that wants the construction sites this reader saw closed. */
-    static void forEachSite(Result result, Consumer<String> sink) {
-        result.flows().forEach(flow -> sink.accept(flow.owner() + "#" + flow.method()));
     }
 }

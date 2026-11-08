@@ -1934,7 +1934,7 @@ version is being written.
    `docs/events/`. `EventCatalogueTest` and `HandlerSetCatalogueTest` leave them there on every run. Never write them by
    hand: the build's comparison is only as good as this file.
 2. Set each file's `release:` line to the release's identity.
-3. Empty `handlers:` and `versions:` in `docs/events/release-record.yaml`.
+3. Empty `handlers:`, `versions:` and `retired:` in `docs/events/release-record.yaml`.
 4. Review the diff as a contract change, not as generated output. A version the code stopped writing stays in the
    catalogue on purpose.
 

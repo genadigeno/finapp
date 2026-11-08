@@ -348,7 +348,7 @@ build time (ADR-0122 decision 6). There is no runtime schema registry while no c
 | `release-record.yaml` | What the coming release records about a change the build cannot judge alone. Empty today |
 
 **How the code is read.** `EventFlows` runs a small abstract interpretation over every production class, the classes
-`EnvelopeProducers` and the monitor sweep read too: operand stack and locals, joined at branch targets. Most producers
+`EnvelopeProducers` and the monitor sweep read too: operand stack and locals, joined at branch targets. Many producers
 build the envelope in a helper that takes the event type and the payload as parameters, and assemble the payload in the
 caller, a ternary or a loop, so a value that depends on a parameter is followed to each call site, up the chain. Each
 write to the outbox closes as producer, type, version and fields. A field records its name, whether every path to the
@@ -368,7 +368,7 @@ same construction sites.
 | A field every record carried, no longer always written | Refused | Refused |
 | A value withdrawn from a `literal` | Refused | Refused |
 | Another enumeration behind a field | Refused | Refused |
-| A type no producer writes any more | Refused | — |
+| A type no producer writes any more | Refused, unless the release record retires it | — |
 | A type moved to another producer | Refused: its consumers subscribe to the first topic | Refused |
 | A version going backwards | — | Refused |
 
@@ -382,8 +382,9 @@ type some handler of the last release consumes is **refused until the release re
 learned it**, and the consumer ships a release before the producer. Otherwise an additive change stays under the same
 version where a consumer reads the type (`credit.CreditDecisionRecorded`), and may take the next one where a reader must
 be able to tell old records from new (`merchant.FeeAssessed` version 2, `crossborder.CrossBorderPaymentReturned` version
-2; neither has a consumer). A version the code stops writing stays in the catalogue: its records are on the wire until
-retention passes them, and a replay or a rollback must parse them. `RiskSignalsReadTheCatalogueTest` runs the one
+2; neither has a consumer). A change that cannot be additive is a new event type, which consumers opt into by adding a
+handler, with the old type retired through the release record. A version the code stops writing stays in the catalogue:
+its records are on the wire until retention passes them, and a replay or a rollback must parse them. `RiskSignalsReadTheCatalogueTest` runs the one
 consumer that reads a payload, `SignalMappings`, over the released shape and the current shape of everything it reads,
 each with a field it has never seen.
 

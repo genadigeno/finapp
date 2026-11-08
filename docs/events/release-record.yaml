@@ -11,5 +11,9 @@
 #
 # versions: one entry per new eventVersion of a type a handler of the last release consumes.
 #   - {eventType: ..., version: ..., consumersLearnedItIn: <the release that shipped the consumer>}
+#
+# retired: the event types this release stops writing. EventCatalogueTest refuses a type that
+# simply disappears, and a type named here that is still written.
 handlers: []
 versions: []
+retired: []

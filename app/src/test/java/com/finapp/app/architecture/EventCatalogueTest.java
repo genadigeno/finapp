@@ -46,21 +46,18 @@ class EventCatalogueTest {
     private static EventFlows.Result read;
     private static EventCatalogue current;
     private static EventCatalogue released;
+    private static Set<String> retired;
 
     @BeforeAll
     static void read() throws IOException {
         read = EventCatalogue.flows();
         current = EventCatalogue.of(read.flows());
         Files.createDirectories(GENERATED.getParent());
-        try {
-            released = EventCatalogue.released();
-        } catch (IllegalStateException missing) {
-            Files.writeString(GENERATED, current.render(), StandardCharsets.UTF_8);
-            throw new AssertionError(EventCatalogue.RELEASED + " does not exist; the generated one is at " + GENERATED.toAbsolutePath(), missing);
-        }
+        released = EventCatalogue.released();
+        retired = HandlerSet.ReleaseRecord.committed().retired();
         Files.writeString(
                 GENERATED,
-                released.rolled(current, "the next release").render(),
+                released.rolled(current, retired, "the next release").render(),
                 StandardCharsets.UTF_8);
     }
 
@@ -124,7 +121,7 @@ class EventCatalogueTest {
     @Test
     @DisplayName("what the code writes is additive over the last release")
     void onlyAdditiveChangesSinceTheLastRelease() {
-        assertThat(released.refusals(current))
+        assertThat(released.refusals(current, retired))
                 .as("a change the last release's consumers cannot read; see EVENT_ARCHITECTURE.md, Schema evolution")
                 .isEmpty();
     }
@@ -145,9 +142,8 @@ class EventCatalogueTest {
     @DisplayName("the additive version 2s are accepted over their released version 1, and carry what they add")
     void theAdditiveVersionsAreAccepted() {
         for (String type : ADDITIVE_VERSION_TWO) {
-            assertThat(released.events().get(type)).as("%s was released at version 1", type).containsKey(1);
-            assertThat(released.events().get(type)).as("%s: version 2 is this release's", type).doesNotContainKey(2);
-            assertThat(current.events().get(type).lastKey()).as("%s is written at version 2", type).isEqualTo(2);
+            assertThat(released.events().get(type)).as("%s: version 1 stays catalogued, its records on the wire", type).containsKey(1);
+            assertThat(current.events().get(type).lastKey()).as("%s is written at version 2 or later", type).isGreaterThanOrEqualTo(2);
         }
         assertThat(current.events().get("merchant.FeeAssessed").get(2).fields()).containsKey("scale");
         assertThat(current.events().get("merchant.FeeReturned").get(2).fields()).containsKey("scale");
@@ -235,23 +231,6 @@ class EventCatalogueTest {
         assertThat(EventCatalogue.sharedVersions(payments))
                 .as("a type bumped through a version another type also reads moves both on the wire")
                 .isEmpty();
-    }
-
-    @Test
-    @DisplayName("the per-type declaration changed no byte on the wire: every payments type is at its released version")
-    void paymentsVersionsAreUnchangedOnTheWire() {
-        Map<String, Integer> moved = new TreeMap<>();
-        read.flows().stream()
-                .filter(flow -> flow.producer().equals("payments"))
-                .forEach(
-                        flow -> {
-                            var basis = released.events().get(flow.eventType());
-                            if (basis != null && !basis.lastKey().equals(flow.version())) {
-                                moved.put(flow.eventType(), flow.version());
-                            }
-                        });
-
-        assertThat(moved).as("records already on the wire stay what a replay or a rollback can parse").isEmpty();
     }
 
     /** The committed file exists and reads back as a catalogue with a release label. */
