@@ -89,7 +89,7 @@ logs() {
 
 echo "== waiting for $READINESS_URL (up to about four minutes)"
 if ! body=$(curl_on_host --fail --silent --show-error --max-time 2 \
-    --retry 80 --retry-delay 3 --retry-all-errors --retry-connrefused "$READINESS_URL"); then
+    --retry 47 --retry-delay 3 --retry-all-errors --retry-connrefused "$READINESS_URL"); then
     logs
     fail "$IMAGE never reported ready"
 fi
