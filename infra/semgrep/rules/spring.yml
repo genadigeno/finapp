@@ -1,0 +1,77 @@
+# Spring rules, written for this repository and vendored here so nothing is fetched at run time (ADR-0122 decision 2).
+rules:
+  - id: finapp-spring-expression-from-input
+    languages: [java]
+    severity: ERROR
+    message: A SpEL expression parsed from anything but a constant runs what its author wrote, including T(java.lang.Runtime).
+    patterns:
+      - pattern: $PARSER.parseExpression($TEXT, ...)
+      - pattern-not: $PARSER.parseExpression("...", ...)
+
+  - id: finapp-spring-open-redirect
+    languages: [java]
+    severity: ERROR
+    message: A redirect built from anything but a constant sends a caller wherever the input says.
+    pattern-either:
+      - pattern: |
+          "=~/^redirect:/" + $X
+      - patterns:
+          - pattern: new org.springframework.web.servlet.view.RedirectView($URL, ...)
+          - pattern-not: new org.springframework.web.servlet.view.RedirectView("...", ...)
+
+  - id: finapp-spring-cors-wildcard
+    languages: [java]
+    severity: ERROR
+    message: Any origin may call this. CORS is an allow-list of named origins, set at the edge (THREAT_MODEL.md B1).
+    pattern-either:
+      - pattern: |
+          @CrossOrigin
+          $RET $M(...) { ... }
+      - pattern: |
+          @CrossOrigin
+          class $C { ... }
+      - pattern: |
+          @CrossOrigin("*")
+          $RET $M(...) { ... }
+      - pattern: |
+          @CrossOrigin(origins = "*")
+          $RET $M(...) { ... }
+      - pattern: $REGISTRY.allowedOrigins("*", ...)
+      - pattern: $REGISTRY.allowedOriginPatterns("*", ...)
+      - pattern: $CONFIG.addAllowedOrigin("*")
+
+  - id: finapp-spring-everything-permitted
+    languages: [java]
+    severity: ERROR
+    message: Authorization is declared per route and pinned by RoutePermissionRegisterTest, never opened wholesale.
+    pattern-either:
+      - pattern: $AUTH.anyRequest().permitAll()
+      - pattern: $AUTH.requestMatchers("/**").permitAll()
+
+  - id: finapp-spring-csrf-disabled
+    languages: [java]
+    severity: ERROR
+    message: Disabling CSRF protection is a security decision, recorded in the baseline with its reason if a session cookie ever carries authority.
+    pattern-either:
+      - pattern: $HTTP.csrf().disable()
+      - pattern: $HTTP.csrf($C -> $C.disable())
+      - pattern: $HTTP.csrf(AbstractHttpConfigurer::disable)
+
+  - id: finapp-spring-actuator-exposes-everything
+    languages: [yaml]
+    severity: ERROR
+    message: The actuator is an allow-list (health, info, prometheus). A wildcard serves the environment and heap dumps.
+    pattern-either:
+      - pattern-inside: |
+          management:
+            ...
+            endpoints:
+              ...
+              web:
+                ...
+                exposure:
+                  ...
+                  include: $VALUE
+    metavariable-regex:
+      metavariable: $VALUE
+      regex: ^["']?\*

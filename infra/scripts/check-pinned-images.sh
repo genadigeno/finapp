@@ -210,6 +210,8 @@ check trivy     "$TRIVY_REPOSITORY"     "$TRIVY_VERSION"     "$TRIVY_DIGEST"    
 # required_version, which TerraformIsPinnedAndCheckedTest holds equal to TERRAFORM_VERSION.
 check terraform "$TERRAFORM_REPOSITORY" "$TERRAFORM_VERSION" "$TERRAFORM_DIGEST" list_tags_dockerhub
 check tflint    "$TFLINT_REPOSITORY"    "$TFLINT_VERSION"    "$TFLINT_DIGEST"    list_tags_ghcr
+# Static analysis (P15-TSK-006).
+check semgrep   "$SEMGREP_REPOSITORY"   "$SEMGREP_VERSION"   "$SEMGREP_DIGEST"   list_tags_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue
