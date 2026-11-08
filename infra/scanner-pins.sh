@@ -15,8 +15,9 @@
 #               repository; a digest cannot
 #
 # Sourced by infra/scripts/secret-scan.sh, infra/scripts/dependency-scan.sh, (since P15-TSK-013)
-# infra/scripts/terraform-check.sh and (since P15-TSK-025) infra/scripts/alert-rules-check.sh, which CI calls, so a developer and CI run the identical image -
-# the single-definition property P0-TSK-031 established and this file preserves rather than replaces.
+# infra/scripts/terraform-check.sh, (since P15-TSK-025) infra/scripts/alert-rules-check.sh and (since P15-TSK-006)
+# infra/scripts/image-scan.sh and infra/scripts/sast.sh, which CI calls, so a developer and CI run the identical image - the
+# single-definition property P0-TSK-031 established and this file preserves rather than replaces.
 #
 # UPDATING: infra/scripts/check-pinned-images.sh reports both a moved tag and a newer release.
 # Bump VERSION, re-resolve DIGEST with `docker buildx imagetools inspect <repo>:<version>`, and
@@ -27,8 +28,8 @@ GITLEAKS_VERSION=v8.30.1
 GITLEAKS_DIGEST=sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
 
 TRIVY_REPOSITORY=aquasec/trivy
-TRIVY_VERSION=0.74.0
-TRIVY_DIGEST=sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+TRIVY_VERSION=0.76.2
+TRIVY_DIGEST=sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
 
 # The infrastructure-code tools (P15-TSK-013, ADR-0121): sourced by infra/scripts/terraform-check.sh.
 # TERRAFORM_VERSION is also every root's required_version (infra/terraform/environments/*/versions.tf),
@@ -51,3 +52,9 @@ PROMETHEUS_DIGEST=sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3
 ALERTMANAGER_REPOSITORY=prom/alertmanager
 ALERTMANAGER_VERSION=v0.34.2
 ALERTMANAGER_DIGEST=sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
+
+# Static analysis (P15-TSK-006, ADR-0122 decision 2): sourced by infra/scripts/sast.sh. Semgrep OSS, run with
+# no network at all, over the rules vendored under infra/semgrep/rules.
+SEMGREP_REPOSITORY=semgrep/semgrep
+SEMGREP_VERSION=1.184.0
+SEMGREP_DIGEST=sha256:cc1b68266f267878b39739373ea9985b9a78e5d64497dd875c8de100b22695ed

@@ -421,7 +421,12 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T5 | The application image's two base images pinned as `tag@sha256` in the `Dockerfile`'s `FROM` lines, their one definition, in a two-stage build whose runtime stage holds no build tool; an unpinned base in any root Dockerfile fails the build, and the image job refuses one before building | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#everyBaseIsPinnedByDigest`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageAddsTheJarsFourLayersAndNothingElse`; `infra/scripts/check-pinned-images.sh` `contains: is not pinned as repository:tag@sha256:<digest>`; `infra/scripts/image-build.sh` `contains: check-pinned-images.sh" --offline` |
 | T5 | Dependabot proposes the base images' next tag and digest weekly, and the scheduled pin check reports a base whose tag moved or that has a newer release | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#everyScannerImageIsPinnedByDigest`; `infra/scripts/check-pinned-images.sh` `contains: check "base $repository"` |
 | T5 | Two builds of one commit compared in CI's image job: the boot jar, built from source both times (every task re-run), must have the same sha256, and the two images the same image id and the same layer digests, one by one | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly`; `infra/scripts/image-build.sh` `contains: --rerun-tasks :app:bootJar` `contains: the boot jar is not reproducible` `contains: the two builds of $REVISION differ` |
-| T5 | Image scans, an SBOM per image and static analysis in CI, HIGH and CRITICAL failing | PLANNED | `P15-TSK-006` |
+| T5 | Both images scanned in CI, each in the job that builds it: the application image in the `image` job (every local `finapp-*:<commit>`, the application image required) and the migrator image in the `migrator-image` job (named with `--only finapp-migrator`, required), for vulnerabilities, secrets and misconfiguration, HIGH and CRITICAL failing, read from a saved tar so the scanner holds no Docker socket | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#everyImageIsScannedAtTheBar`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#ciScansBothImagesAndKeepsTheirSboms`; `infra/scripts/image-scan.sh` `contains: --severity "$SEVERITY" --exit-code "$FOUND"` `lacks: docker.sock` |
+| T5 | Five plants refused by name in every run of that scan, in both jobs, through the same flags and the same list of carried findings as the real images: a vulnerable base, a library whose only finding is HIGH (so the bar lowered to CRITICAL fails the job), a secret in a layer, a secret in the environment, an image running as root | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#everyImageIsScannedAtTheBar`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theRulesRefuseTheirPlants`; `infra/scripts/image-scan.sh` `contains: refuses high-only "CVE-2021-23337"` |
+| T5 | One CycloneDX SBOM for each of the two images, kept with its job's run, the build failing if it does not list the image's operating-system packages and every third-party jar in the image by path, or lists a test-scope library | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#everySbomDescribesItsImage`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#ciScansBothImagesAndKeepsTheirSboms`; `infra/scripts/image-scan.sh` `contains: omits third-party jars the image holds` |
+| T5 | Each image's last build rescanned weekly against a fresh database: the workflow's schedule runs both image jobs, each of which rebuilds the last commit and refuses two builds of one commit that differ; the databases are never cached between runs | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#ciScansBothImagesAndKeepsTheirSboms`; `infra/scripts/image-scan.sh` `contains: --download-db-only` |
+| T5 | Static analysis of every module's production source in CI: Semgrep pinned by digest with no network, rules vendored, a finding needing a baseline row with a reason and an expiry, the scanner required to have read every Java file, the rules' own tests and the plants run in the same job | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theStaticAnalysisRunsOverTheVendoredRulesOffline`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theBaselineIsSmallAndReasoned`; `infra/scripts/sast.sh` `contains: --network none` |
+| T5 | The findings the image and dependency scans carry today (18 HIGH, 0 CRITICAL: ten in the distroless base's packages, which both images share, eight in the application's libraries), each with a reason and an expiry, applied by `infra/trivy/accepted-findings.yaml`; not one is accepted until the owner decides | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
 | T5 | Signatures and provenance, with admission refusing an unsigned image | PLANNED | `P15-TSK-007` |
 | T6 | No credential literal in committed configuration except the one marked local default | EXISTS | `app/src/test/java/com/finapp/app/security/CommittedConfigurationHoldsNoSecretTest.java#noCommittedConfigurationHoldsACredentialLiteral` |
 | T6 | The whole of git history scanned for secrets in CI, with the pinned scanner | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theHistoryIsScannedForSecrets` |
@@ -434,7 +439,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T6 | Kubernetes Secrets are envelope-encrypted in etcd under a customer-managed KMS key each environment must supply: the cluster's `encryption_config` names `secrets` and that key, and the input refuses an alias and a malformed value, and at each root another account's or region's key. Asserted over a plan against a mock provider, never applied; CI's check refuses a plant that removes the block | EXISTS | `infra/terraform/modules/kubernetes/tests/kubernetes.tftest.hcl` `contains: Kubernetes Secrets are not encrypted in etcd.` `contains: Secrets in etcd are not encrypted under the key this module is given.` `contains: an_alias_is_refused_for_the_etcd_key`; `infra/terraform/modules/kubernetes/main.tf` `contains: resources = ["secrets"]`; `infra/terraform/environments/staging/tests/staging.tftest.hcl` `contains: a_key_of_another_account_is_refused` `contains: a_key_of_another_region_is_refused`; `infra/terraform/environments/production/tests/production.tftest.hcl` `contains: a_key_of_another_account_is_refused` `contains: a_key_of_another_region_is_refused`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#ciRunsEveryCheckOverTheTreeAndItsPlants` |
 | T6 | Each workload's identity reads only its own secrets, under KMS keys per environment and purpose | PLANNED | `P15-TSK-016` |
 | T6 | Humans denied `get secrets` | PLANNED | `P15-TSK-010` |
-| T6 | Images scanned for secrets | PLANNED | `P15-TSK-006` |
+| T6 | Both images scanned for secrets in their layers and in their own configuration (`ENV` and history), with a generated secret planted in each of those two places and refused by name in the same run | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#everyImageIsScannedAtTheBar`; `infra/scripts/image-scan.sh` `contains: refuses secret-in-layer "github-pat"` `contains: refuses secret-in-env "aws-access-key-id"` `contains: --image-config-scanners misconfig,secret` |
 | T6 | The application image's build context is the boot jar alone (`.dockerignore` an allow-list) and its runtime stage sets no environment; CI's image job refuses an image whose `/app` is not exactly the jar's entries or whose environment is not the base's, so no local file, `.env` or configuration beyond the jar's reaches it | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theBuildContextIsTheBootJarAlone`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageAddsTheJarsFourLayersAndNothingElse`; `infra/scripts/image-build.sh` `contains: /app is not exactly the boot jar's entries` `contains: the image sets environment of its own` |
 | T6 | Rotation and revocation of every credential class, rehearsed | PLANNED | `P15-TSK-020` |
 | T7 | Locally (compose and the test databases built from the initialisation scripts), every role - the migrator, the application and report generation's - is `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
@@ -647,12 +652,14 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T42 | Nothing in Phase 15 caches or mirrors images for a replica starting while the registry is down: accepted until 2027-06-30 and re-owned to Phase 16's disaster recovery | GAP | `owner item 1`; owner: the owner, since 2026-11-08 |
 | T43 | The FX and credit providers' wire vocabularies are confined to their adapters by build rules, each with a planted leak caught | EXISTS | `app/src/test/java/com/finapp/app/architecture/FxProviderVocabularyIsConfinedTest.java#theVocabularyLivesInTheAdapterAlone`; `app/src/test/java/com/finapp/app/architecture/CreditProviderVocabularyIsConfinedTest.java#theVocabularyLivesInTheAdapterAlone` |
 | T43 | The regulatory filing adapter: a malformed or oversized answer decides nothing | EXISTS | `accounting/src/test/java/com/finapp/accounting/RegulatoryFormTest.java#aMalformedAnswerDecidesNothing`; `accounting/src/test/java/com/finapp/accounting/RegulatoryFormTest.java#anOversizedAnswerDecidesNothing` |
-| T43 | Static analysis over the adapters in CI | PLANNED | `P15-TSK-006` |
-| T43 | Static analysis flags an unbounded read of a provider's answer in an adapter, with a planted case | PLANNED | `P15-TSK-006` |
+| T43 | Static analysis over every module's production source, the adapters included, in CI's `sast` job | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theStaticAnalysisRunsOverTheVendoredRulesOffline`; `infra/scripts/sast.sh` `contains: /repo/*/src/main` |
+| T43 | Static analysis flags a provider's answer read with no bound (a body handler reading it whole, or `readAllBytes`), with a planted case refused by name in every run | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theUnboundedBodyRuleIsVendoredAndPlanted`; `infra/semgrep/rules/provider-body.yml` `contains: finapp-provider-body-unbounded`; `infra/scripts/sast.sh` `contains: refuses unbounded-body finapp-provider-body-unbounded` |
+| T43 | The sixteen reads of a provider's answer the rule found, each read whole and then checked against a size bound, carried in `infra/semgrep/baseline.tsv` with a reason and an expiry; a read bounded before it allocates is for the first real provider integration, and none of them is accepted until the owner decides | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
 | T44 | Report generation reaches no writer, and no write path, by any route the build can see (`INV-ACC-14`) | EXISTS | `app/src/test/java/com/finapp/app/architecture/ReportingNeverWritesTest.java` |
 | T44 | Report generation's snapshots open connections from the reporting pool alone, as `finapp_reporting`; with the pool unreachable no content is produced, no run completes and the application's pool is never asked | EXISTS | `app/src/test/java/com/finapp/app/accounting/ReportGenerationReadsAsTheReportingRoleTest.java#aRunsGenerationFailsClosedAtTheReportingPool`; `app/src/test/java/com/finapp/app/accounting/ReportGenerationReadsAsTheReportingRoleTest.java#aRegenerationReadsAsTheReportingRole` |
 | T44 | The reporting role holds `SELECT` on the report run's tables and nothing else | EXISTS | `app/src/test/java/com/finapp/app/architecture/ReportingRoleIsSelectOnlyTest.java#theRoleReadsTheRegisterAndNothingElse`; `app/src/test/java/com/finapp/app/architecture/ReportingRoleIsSelectOnlyTest.java#theRuleCanFail` |
-| T45 | Static analysis refusing a statement whose text is built from anything but constants, and a planted concatenation caught | PLANNED | `P15-TSK-006` |
+| T45 | CI's `sast` job refuses a statement whose text is built from anything but constants, in every module's production source: a parameter, a local given a call's result, a field, a loop or lambda variable, a builder, a call, each proven by an annotated line in the rule's own test, and a planted concatenation and a helper handed a built string refused by name in every run. Constant composition (text blocks, `static final` parts, ternaries of them, a private helper given only constants) passes. | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theStatementRuleIsVendoredAndPlanted`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theBaselineIsSmallAndReasoned`; `infra/semgrep/rules/sql.yml` `contains: finapp-sql-text-not-constant` `contains: finapp-sql-helper-given-non-constant`; `infra/scripts/sast.sh` `contains: refuses sql-concatenation finapp-sql-text-not-constant` |
+| T45 | The statements the rule cannot prove constant, each with a reason and an expiry in `infra/semgrep/baseline.tsv`; each stays a finding the owner has yet to accept | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
 | T46 | A field or accessor named for a secret must be held in `Sensitive`, and only the correlation context writes the logging context (the build rules) | EXISTS | `app/src/test/java/com/finapp/app/architecture/NoUnwrappedSecretRulesTest.java#secretsAreWrapped`; `app/src/test/java/com/finapp/app/architecture/NoUnwrappedSecretRulesTest.java#onlyCorrelationContextWritesTheMdc` |
 | T46 | A `Sensitive` value is masked on every rendering path and on both appenders | EXISTS | `app/src/test/java/com/finapp/app/observability/LogRedactionTest.java#everyRenderingPathIsMasked`; `app/src/test/java/com/finapp/app/observability/RedactionAcrossAppendersTest.java#redactionHoldsOnBothAppenders` |
 | T46 | No meter carries a tag whose value a request could influence | EXISTS | `app/src/test/java/com/finapp/app/telemetry/MetricConventionTest.java#tagsCannotCarryUnboundedValues` |
@@ -717,9 +724,11 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 - **T45, injection through hand-written JDBC.** Every statement is hand-written. The codebase's idiom is constant SQL
   with bind parameters, and the statements read for this register were constant. Some concatenate constants
   (`ROW + " WHERE …"`), and about fifteen `createStatement()` calls execute constant or configuration-derived text.
-  **Nothing proves the idiom holds**: no build rule forbids a statement built from a request value. Until `-006`'s
-  static analysis carries such a rule (routed on its entry), this threat rests on review alone. Its impact is T15's:
-  a caller running SQL as `finapp_app`.
+  *(Since 2026-11-08)* CI's static analysis holds the idiom: a statement whose text is built from anything but
+  constants fails the `sast` job, and a statement it cannot prove constant takes a baseline row with a reason and an
+  expiry (owner item 12). **Its limits**: Semgrep OSS does not follow a value across methods or files, so a private
+  helper's SQL-fragment parameter is checked at its call sites, and a constant another file declares is taken at its
+  name; the analysis runs over `main` sources only. Its impact is T15's: a caller running SQL as `finapp_app`.
 - **T46, telemetry and error bodies.** The redaction is default-deny for values held in `Sensitive`, and the
   correlation context alone writes log fields. A restricted value held in a plain variable and passed straight to a
   log call has no declaration for either rule to inspect (`SECURITY_ARCHITECTURE.md` §Logging). `-023`'s collector
@@ -785,7 +794,8 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   (owner item 10), now planned as `P15-TSK-039` (the owner, 2026-11-08).
 - **T43.** No general bound on the size of a provider's answer exists across the adapters. The regulatory adapter is
   the one evidenced. The adapters call simulated providers in this programme. **Owner item 5, decided 2026-11-08**:
-  `-006`'s static analysis flags an unbounded read of a provider's answer in an adapter.
+  static analysis flags an unbounded read of a provider's answer in an adapter, *built 2026-11-08*: the rule refuses a
+  new one, and the existing reads are carried in the baseline for the first real provider integration (owner item 12).
 - **T31.** The build pins the permission of every route that declares one, refuses a handler that declares no rule,
   and *(since 2026-11-08)* refuses a route under `/v1/operator` that declares no permission. Operator routes outside
   that prefix (identity administration, the ledger's adjustments, KYC review, a payment's refund and void, a transfer's
@@ -866,9 +876,9 @@ owner.**
 4. **T28's residual.** Branch protection and the production environment's required reviewers are the owner's to apply.
    *Recommendation*: apply them when the repository gains a production environment; `-017` writes them down.
    **Decided 2026-11-08**: as recommended; the row stays a `GAP` held by this item until the owner applies them.
-5. **T43's residual.** No adapter bounds the size of a provider's answer in general. *Recommendation*: ask `-006`'s
+5. **T43's residual.** No adapter bounds the size of a provider's answer in general. *Recommendation*: ask CI's
    static analysis to flag an unbounded body read in an adapter, or record it for the first real provider integration.
-   **Decided 2026-11-08**: `P15-TSK-006` flags it.
+   **Decided 2026-11-08**: the static analysis flags it (built the same day; see T43's rows in section 4).
 6. **T47, a proposed acceptance (MEDIUM).** Registration tells a caller that an identifier is taken, so whether an
    identifier is registered can be learned at the rate `-022`'s throttle allows. The alternative is a business change
    to registration (verify-then-tell, by a channel the identifier's owner controls), which Phase 15 does not make.
@@ -940,6 +950,58 @@ owner.**
    goes; (b) `TRUNCATE` for the ledger alone now, the rest after the phases; (c) accept. *Recommendation*: **(a)**, because the
    journal is the financial record and the migrator exists now; the remaining clock calls could follow in the same item or a
    second one, and the guard already names every one of them.
+12. **The findings the image and dependency scans and the static analysis carry** *(added 2026-11-08 by the scan task's
+    gate; **awaiting the owner's decision**)*. `PHASE_GATES.md` §5 Phase 15 criterion 2 allows a remaining HIGH or CRITICAL
+    finding only as an accepted risk in this register with an expiry, and §1.4 lets only the owner accept one. So the
+    following are **proposed, not accepted**: the jobs are green only because `infra/trivy/accepted-findings.yaml` and
+    `infra/semgrep/baseline.tsv` apply them, each with a reason and an expiry, and `SecurityScansAreWiredTest` holds this
+    list and those files equal. An entry the owner refuses is removed from its file and the job goes red.
+
+    **(a) Eighteen HIGH findings on the application image and its libraries, no CRITICAL, no secret, no misconfiguration**
+    (Trivy 0.76.2, 2026-11-08). The migrator image carries the first ten, the same base packages at the same versions, and
+    none of the eight: its six third-party jars have no finding of their own, so it adds nothing to this list:
+   - `CVE-2026-113351` (libexpat1), until 2027-01-31
+   - `CVE-2026-115506` (libexpat1), until 2027-01-31
+   - `CVE-2026-117610` (libexpat1), until 2027-01-31
+   - `CVE-2026-118370` (libexpat1), until 2027-01-31
+   - `CVE-2026-76642` (libuuid1), until 2027-01-31
+   - `CVE-2026-78408` (libuuid1), until 2027-01-31
+   - `CVE-2026-78409` (libuuid1), until 2027-01-31
+   - `CVE-2026-78410` (libuuid1), until 2027-01-31
+   - `CVE-2026-76844` (zlib1g), until 2027-01-31
+   - `CVE-2026-85091` (zlib1g), until 2027-01-31
+   - `CVE-2026-68497` (jackson-databind 3.1.5), until 2026-12-31
+   - `CVE-2026-91776` (jackson-databind 3.1.5), until 2026-12-31
+   - `CVE-2026-91777` (jackson-databind 3.1.5), until 2026-12-31
+   - `CVE-2026-89407` (jackson-core 3.1.5), until 2026-12-31
+   - `CVE-2026-89425` (jackson-core 3.1.5), until 2026-12-31
+   - `CVE-2026-106451` (lz4-java 1.10.1), until 2026-12-31
+   - `CVE-2026-108106` (snappy-java 1.1.10.7), until 2026-12-31
+   - `CVE-2026-93451` (snappy-java 1.1.10.7), until 2026-12-31
+
+    The first ten are in the Debian 13 packages of the pinned distroless runtime base, whose digest is the current digest of
+    its tag (checked 2026-11-08): `libexpat1` and `libuuid1` have no fixed Debian package, `zlib1g`'s fix is not in a
+    distroless build yet. *Recommendation*: accept, until 2027-01-31, re-read each time the pin check reports a newer base.
+    The last eight are the application's own libraries and each has a fixed release; moving them changes the JSON
+    library and the Kafka codecs every module runs on and needs the full test tiers, so it was not done inside a scan
+    task. *Recommendation*: accept, until 2026-12-31, and add **one small backlog item to Phase 15, before the database
+    pass**, moving Jackson to 3.1.7 or later and `lz4-java` and `snappy-java` to their fixed releases, so that the exit's
+    database pass runs on the moved versions; then these eight rows are removed.
+
+    **(b) Fifty-five rows of `infra/semgrep/baseline.tsv`, each read and reasoned on 2026-11-08, until 2027-06-30.**
+    Sixteen are T43's unbounded reads: each simulated provider's answer is read whole and then checked against the
+    class's size bound, so a hostile answer is allocated before it is refused. They are real and small here because
+    every provider is simulated (`PHASE_15_PLAN.md` section 1.1); a read bounded before it allocates belongs to the
+    first real provider integration. Thirty-nine are statements the T45 rules cannot prove constant, although each is:
+    a `StringBuilder` of literals, a `Map` of constants read by an enum key, an enum's own name or SQL value list, a
+    private helper handed only constants through a forwarding overload, a report-snapshot proxy forwarding its caller's
+    text after screening it, the migrator's role bootstrap (DDL takes no bind parameter: an enum role name and a SCRAM
+    verifier, or the server's own `format()` over a constant template). These are about two in a hundred of the tree's statements. *Recommendation*: accept the
+    fifty-five until 2027-06-30; a statement that changes loses its row by construction, and the baseline's date and
+    row count are held by `SecurityScansAreWiredTest`.
+
+    **Deciding this item**: accept (a) and (b) as recommended and add the one dependency item, or refuse any entry and
+    remove it from its file, in which case the job goes red until the finding is fixed.
 18. **T10's and T37's residual: the tables the retention sweeps leave alone** *(added 2026-11-08 by the retention task's
    gate; numbered for the tasks that ran beside it)*. The audit archival is designed (`DATA_RETENTION.md` §3) and not
    built, so the audit table grows and no archive copy exists. Idempotency records and session rows are not swept: a sweep

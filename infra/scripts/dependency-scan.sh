@@ -33,10 +33,14 @@ fi
 # The SBOM is scanned rather than the build scripts: a scanner cannot resolve Gradle's
 # dependency graph, and the SBOM is the resolved set that actually ships.
 #
+# The carried findings are the image scan's one list (infra/trivy/accepted-findings.yaml): a finding
+# accepted in the threat model is carried once, with one reason and one expiry, not per scanner.
+#
 # MSYS_NO_PATHCONV stops Git Bash on Windows rewriting /scan into a host path. Unset and
 # harmless on Linux, where CI runs.
 MSYS_NO_PATHCONV=1 exec docker run --rm \
   -v "${ROOT}:/scan" \
   "${TRIVY_IMAGE}" \
   sbom --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress \
+  --ignorefile /scan/infra/trivy/accepted-findings.yaml \
   "/scan/${SBOM}"

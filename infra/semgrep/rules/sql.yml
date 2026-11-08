@@ -1,0 +1,307 @@
+# T45 (THREAT_MODEL.md), CRITICAL: injection through hand-written JDBC. The control that does not depend on a reviewer
+# noticing: a statement's text is built from constants, and nothing else.
+#
+# HOW "ANYTHING BUT CONSTANTS" IS EXPRESSED. Semgrep's taint mode, inverted: every leaf of an expression that is not a
+# constant is a source - a name, a field, a call, an array element, an object created - and the statement's text is
+# the sink. So what the codebase legitimately does is clean by construction (a text block, static final constants
+# concatenated, a local assigned from them, a ternary of them), and what it must not do is reported wherever the value
+# came from (a parameter, a local given a call's result, a field, a loop or lambda variable, a builder).
+#
+# THE ONE EXEMPTION, AND WHY IT IS NOT A HOLE. A private method's String parameter with a SQL-fragment name (sql,
+# lock, where, column ...) is not a source at the statement, because the plumbing the stores share (`edge(unitOfWork,
+# MARK_SQL, ...)`) passes constants through one. The companion rule checks every call of such a method in its class
+# instead, with no such exemption, so a value handed to a helper is reported at the call and a helper of a helper is
+# reported too. A parameter with any other name is a source at the statement like everything else, so a new helper
+# cannot opt in by being private. Semgrep OSS cannot follow a value between methods or files, which is why the shape is
+# this and why a non-private helper is reported rather than assumed clean.
+#
+# WHAT IT TRUSTS. A name spelt like a constant, and a qualified one (Other.CONSTANT). finapp-sql-constant-name-not-constant
+# holds the spelling to the fact in the file it is declared in. A constant another file declares is taken at its name:
+# Semgrep OSS does not read across files. That limit is recorded in THREAT_MODEL.md T45's residual.
+#
+# A finding not fixed takes a row in infra/semgrep/baseline.tsv, with a reason and an expiry. Rules changed here change
+# what every row means: run infra/scripts/sast.sh.
+rules:
+  - id: finapp-sql-text-not-constant
+    mode: taint
+    languages: [java]
+    severity: ERROR
+    message: >-
+      This statement's text is built from something that is not a constant (T45). Bind the value with a ? parameter; a
+      column, a direction or a lock clause is chosen from constants.
+    pattern-sources:
+      # A method's or constructor's parameter.
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  $R $M(..., $T $P, ...) { ... }
+              - pattern: |
+                  $M(..., $T $P, ...) { ... }
+          - pattern-not: |
+              private $R $M(..., String $P, ...) { ... }
+          - focus-metavariable: $P
+      - patterns:
+          - pattern: |
+              private $R $M(..., String $P, ...) { ... }
+          - metavariable-regex:
+              metavariable: $P
+              regex: ^(?!(?:sql|lock|locking|where|predicate|column|subjectColumn|slotColumn|clockSide|window|table|mode|statement|kinds)$).+
+          - focus-metavariable: $P
+      # What only a run can know: a loop's variable, a lambda's parameter, a pattern binding.
+      - patterns:
+          - pattern: |
+              for ($T $V : $E) { ... }
+          - focus-metavariable: $V
+      - patterns:
+          - pattern: |
+              ($V) -> { ... }
+          - focus-metavariable: $V
+      - patterns:
+          - pattern: ($V) -> $E
+          - focus-metavariable: $V
+      - patterns:
+          - pattern: $E instanceof $T $V
+          - focus-metavariable: $V
+      # A field of this class read by its simple name, unless it is a constant.
+      - exact: true
+        patterns:
+          - pattern-inside: |
+              class $C { ... $FT $NAME; ... }
+          - pattern: $NAME
+          - pattern-not-inside: |
+              $LT $NAME = ...;
+              ...
+          - metavariable-regex:
+              metavariable: $NAME
+              regex: ^(?![A-Z][A-Z0-9_]*$).+
+      # A field of anything else, unless it is a constant.
+      - exact: true
+        patterns:
+          - pattern: $O.$FIELD
+          - metavariable-regex:
+              metavariable: $FIELD
+              regex: ^(?![A-Z][A-Z0-9_]*$).+
+      # A call, an array element, an object created.
+      - exact: true
+        pattern: $F(...)
+      - exact: true
+        pattern: $O.$F(...)
+      - exact: true
+        pattern: $A[$I]
+      - exact: true
+        pattern: new $T(...)
+    # Text that is derived from constants alone is still a constant: a method on a constant given only constants (its
+    # name upper-case, so the rule below holds it to being one), and a no-argument SQL value list on a type, which
+    # renders that enum's own declared values.
+    pattern-sanitizers:
+      - patterns:
+          - pattern-either:
+              - pattern: $C.$M()
+              - pattern: $C.$M("...")
+              - pattern: $C.$M("...", "...")
+          - metavariable-regex:
+              metavariable: $C
+              regex: ^[A-Z][A-Z0-9_]*$
+      - patterns:
+          - pattern-either:
+              - pattern: $C.$M($D)
+              - pattern: $C.$M($D, "...")
+          - metavariable-regex:
+              metavariable: $C
+              regex: ^[A-Z][A-Z0-9_]*$
+          - metavariable-regex:
+              metavariable: $D
+              regex: ^[A-Z][A-Z0-9_]*$
+      - patterns:
+          - pattern: $TYPE.$M()
+          - metavariable-regex:
+              metavariable: $TYPE
+              regex: ^[A-Z][a-z][A-Za-z0-9]*$
+          - metavariable-regex:
+              metavariable: $M
+              regex: ^(?:[a-z]+Sql[A-Za-z]*List|sql[A-Z][A-Za-z]*List)$
+    pattern-sinks:
+      - exact: true
+        patterns:
+          - pattern-either:
+              - pattern: $X.prepareStatement($SQL, ...)
+              - pattern: $X.prepareCall($SQL, ...)
+              - pattern: (java.sql.Statement $X).executeQuery($SQL, ...)
+              - pattern: (java.sql.Statement $X).executeUpdate($SQL, ...)
+              - pattern: (java.sql.Statement $X).executeLargeUpdate($SQL, ...)
+              - pattern: (java.sql.Statement $X).execute($SQL, ...)
+              - pattern: (java.sql.Statement $X).addBatch($SQL)
+              - pattern: $C.createStatement(...).executeQuery($SQL, ...)
+              - pattern: $C.createStatement(...).executeUpdate($SQL, ...)
+              - pattern: $C.createStatement(...).execute($SQL, ...)
+              - pattern: (org.springframework.jdbc.core.JdbcTemplate $T).update($SQL, ...)
+              - pattern: (org.springframework.jdbc.core.JdbcTemplate $T).query($SQL, ...)
+              - pattern: (org.springframework.jdbc.core.JdbcTemplate $T).queryForObject($SQL, ...)
+              - pattern: (org.springframework.jdbc.core.JdbcTemplate $T).queryForList($SQL, ...)
+              - pattern: (org.springframework.jdbc.core.JdbcTemplate $T).execute($SQL, ...)
+              - pattern: (org.springframework.jdbc.core.JdbcTemplate $T).batchUpdate($SQL, ...)
+              - pattern: (org.springframework.jdbc.core.simple.JdbcClient $T).sql($SQL)
+              - patterns:
+                  - pattern-either:
+                      - pattern-inside: |
+                          var $X = $C.createStatement(...);
+                          ...
+                      - pattern-inside: |
+                          try (var $X = $C.createStatement(...)) { ... }
+                  - pattern-either:
+                      - pattern: $X.execute($SQL, ...)
+                      - pattern: $X.executeQuery($SQL, ...)
+                      - pattern: $X.executeUpdate($SQL, ...)
+                      - pattern: $X.addBatch($SQL)
+          - focus-metavariable: $SQL
+
+  - id: finapp-sql-helper-given-non-constant
+    mode: taint
+    languages: [java]
+    severity: ERROR
+    message: >-
+      This private helper composes its SQL-fragment parameter into a statement's text, so it may be given only
+      constants (T45). Pass a constant, or bind the value with a ? parameter.
+    pattern-sources:
+      # A method's or constructor's parameter.
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  $R $M(..., $T $P, ...) { ... }
+              - pattern: |
+                  $M(..., $T $P, ...) { ... }
+          - focus-metavariable: $P
+      # What only a run can know: a loop's variable, a lambda's parameter, a pattern binding.
+      - patterns:
+          - pattern: |
+              for ($T $V : $E) { ... }
+          - focus-metavariable: $V
+      - patterns:
+          - pattern: |
+              ($V) -> { ... }
+          - focus-metavariable: $V
+      - patterns:
+          - pattern: ($V) -> $E
+          - focus-metavariable: $V
+      - patterns:
+          - pattern: $E instanceof $T $V
+          - focus-metavariable: $V
+      # A field of this class read by its simple name, unless it is a constant.
+      - exact: true
+        patterns:
+          - pattern-inside: |
+              class $C { ... $FT $NAME; ... }
+          - pattern: $NAME
+          - pattern-not-inside: |
+              $LT $NAME = ...;
+              ...
+          - metavariable-regex:
+              metavariable: $NAME
+              regex: ^(?![A-Z][A-Z0-9_]*$).+
+      # A field of anything else, unless it is a constant.
+      - exact: true
+        patterns:
+          - pattern: $O.$FIELD
+          - metavariable-regex:
+              metavariable: $FIELD
+              regex: ^(?![A-Z][A-Z0-9_]*$).+
+      # A call, an array element, an object created.
+      - exact: true
+        pattern: $F(...)
+      - exact: true
+        pattern: $O.$F(...)
+      - exact: true
+        pattern: $A[$I]
+      - exact: true
+        pattern: new $T(...)
+    # Text that is derived from constants alone is still a constant: a method on a constant given only constants (its
+    # name upper-case, so the rule below holds it to being one), and a no-argument SQL value list on a type, which
+    # renders that enum's own declared values.
+    pattern-sanitizers:
+      - patterns:
+          - pattern-either:
+              - pattern: $C.$M()
+              - pattern: $C.$M("...")
+              - pattern: $C.$M("...", "...")
+          - metavariable-regex:
+              metavariable: $C
+              regex: ^[A-Z][A-Z0-9_]*$
+      - patterns:
+          - pattern-either:
+              - pattern: $C.$M($D)
+              - pattern: $C.$M($D, "...")
+          - metavariable-regex:
+              metavariable: $C
+              regex: ^[A-Z][A-Z0-9_]*$
+          - metavariable-regex:
+              metavariable: $D
+              regex: ^[A-Z][A-Z0-9_]*$
+      - patterns:
+          - pattern: $TYPE.$M()
+          - metavariable-regex:
+              metavariable: $TYPE
+              regex: ^[A-Z][a-z][A-Za-z0-9]*$
+          - metavariable-regex:
+              metavariable: $M
+              regex: ^(?:[a-z]+Sql[A-Za-z]*List|sql[A-Z][A-Za-z]*List)$
+    pattern-sinks:
+      - exact: true
+        patterns:
+          - pattern-either:
+              - patterns:
+                  - pattern-inside: |
+                      class $C { ... private $R $M(String $P, ...) { $...BODY } ... }
+                  - pattern: $M($SQL, ...)
+              - patterns:
+                  - pattern-inside: |
+                      class $C { ... private $R $M($T1 $A1, String $P, ...) { $...BODY } ... }
+                  - pattern: $M($B1, $SQL, ...)
+              - patterns:
+                  - pattern-inside: |
+                      class $C { ... private $R $M($T1 $A1, $T2 $A2, String $P, ...) { $...BODY } ... }
+                  - pattern: $M($B1, $B2, $SQL, ...)
+              - patterns:
+                  - pattern-inside: |
+                      class $C { ... private $R $M($T1 $A1, $T2 $A2, $T3 $A3, String $P, ...) { $...BODY } ... }
+                  - pattern: $M($B1, $B2, $B3, $SQL, ...)
+              - patterns:
+                  - pattern-inside: |
+                      class $C { ... private $R $M($T1 $A1, $T2 $A2, $T3 $A3, $T4 $A4, String $P, ...) { $...BODY } ... }
+                  - pattern: $M($B1, $B2, $B3, $B4, $SQL, ...)
+              - patterns:
+                  - pattern-inside: |
+                      class $C { ... private $R $M($T1 $A1, $T2 $A2, $T3 $A3, $T4 $A4, $T5 $A5, String $P, ...) { $...BODY } ... }
+                  - pattern: $M($B1, $B2, $B3, $B4, $B5, $SQL, ...)
+          - metavariable-regex:
+              metavariable: $P
+              regex: ^(?:sql|lock|locking|where|predicate|column|subjectColumn|slotColumn|clockSide|window|table|mode|statement|kinds)$
+          - metavariable-pattern:
+              metavariable: $...BODY
+              pattern-either:
+                - pattern: $X.prepareStatement(<... $P ...>, ...)
+                - pattern: $X.prepareCall(<... $P ...>, ...)
+                - pattern: (java.sql.Statement $X).execute(<... $P ...>, ...)
+                - pattern: (java.sql.Statement $X).executeQuery(<... $P ...>, ...)
+                - pattern: (java.sql.Statement $X).executeUpdate(<... $P ...>, ...)
+          - focus-metavariable: $SQL
+
+  - id: finapp-sql-constant-name-not-constant
+    languages: [java]
+    severity: ERROR
+    message: >-
+      A name spelt like a constant is trusted as a constant by the SQL rules (T45), so it is declared as one: static
+      final. Rename this local, parameter or field.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern: $T $NAME = ...;
+              - pattern-not: static final $T $NAME = ...;
+              - pattern-not-inside: |
+                  interface $I { ... }
+          - patterns:
+              - pattern: |
+                  $R $M(..., $T $NAME, ...) { ... }
+              - focus-metavariable: $NAME
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: ^[A-Z][A-Z0-9_]*$

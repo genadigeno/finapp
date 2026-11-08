@@ -1,0 +1,32 @@
+# T43 (THREAT_MODEL.md): a provider's answer read into memory with no bound on its size.
+#
+# The owner's decision (THREAT_MODEL.md section 6 item 5): static analysis flags an unbounded read of a provider's
+# answer in an adapter. A body read whole, into a byte array or a String, is unbounded however the bytes are checked
+# afterwards: a length check after the read has already held them. The bounded shape reads ofInputStream() and
+# then readNBytes(<the bound> + 1), so neither of those is flagged (HttpReferenceRateSource is the example).
+#
+# Every target is production code that holds a body handler or a stream, so the rule applies to the whole of src/main,
+# not to a list of adapter classes: a list goes stale the day an adapter is added.
+rules:
+  - id: finapp-provider-body-unbounded
+    languages: [java]
+    severity: ERROR
+    message: >-
+      A provider's answer is read whole, with no bound on its size: a body larger than the heap ends the JVM, which
+      exits on OutOfMemoryError. Read it through BodyHandlers.ofInputStream() and readNBytes(bound + 1), and refuse
+      an answer longer than the bound. A finding accepted instead goes in infra/semgrep/baseline.tsv with its reason.
+    pattern-either:
+      - pattern: java.net.http.HttpResponse.BodyHandlers.ofByteArray(...)
+      - pattern: java.net.http.HttpResponse.BodyHandlers.ofString(...)
+      - pattern: java.net.http.HttpResponse.BodyHandlers.ofFile(...)
+      - pattern: java.net.http.HttpResponse.BodyHandlers.ofFileDownload(...)
+      - pattern: java.net.http.HttpResponse.BodySubscribers.ofByteArray(...)
+      - pattern: java.net.http.HttpResponse.BodySubscribers.ofString(...)
+      - pattern: HttpResponse.BodyHandlers.ofByteArray(...)
+      - pattern: HttpResponse.BodyHandlers.ofString(...)
+      - pattern: BodyHandlers.ofByteArray(...)
+      - pattern: BodyHandlers.ofString(...)
+      - pattern: $STREAM.readAllBytes()
+      - pattern: org.springframework.util.StreamUtils.copyToByteArray(...)
+      - pattern: org.springframework.util.StreamUtils.copyToString(...)
+      - pattern: org.springframework.util.FileCopyUtils.copyToByteArray(...)

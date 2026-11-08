@@ -1,0 +1,14 @@
+# The rules' own test: `semgrep --test` over this directory, offline, on every run of infra/scripts/sast.sh. Named
+# .test.yaml so Semgrep reads it as a target of the rule beside it and never as a rule file itself.
+management:
+  endpoints:
+    web:
+      exposure:
+        # ruleid: finapp-spring-actuator-exposes-everything
+        include: "*"
+plain:
+  endpoints:
+    web:
+      exposure:
+        # ok: finapp-spring-actuator-exposes-everything
+        include: health,info,prometheus

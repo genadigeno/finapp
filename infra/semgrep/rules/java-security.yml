@@ -1,0 +1,91 @@
+# Java security rules, written for this repository and vendored here so nothing is fetched at run time (ADR-0122
+# decision 2). Each rule names an API this codebase has no reason to use, or uses only in a safe form, so a finding is
+# a decision to make rather than noise to tune out.
+rules:
+  - id: finapp-java-deserialization
+    languages: [java]
+    severity: ERROR
+    message: Java deserialization of a stream is remote code execution when any caller controls the bytes. Parse a declared format instead.
+    pattern-either:
+      - pattern: new java.io.ObjectInputStream(...)
+      - pattern: new ObjectInputStream(...)
+
+  - id: finapp-java-command-execution
+    languages: [java]
+    severity: ERROR
+    message: The application image has no shell and no other program by design (P15-TSK-003), so nothing here starts a process.
+    pattern-either:
+      - pattern: java.lang.Runtime.getRuntime().exec(...)
+      - pattern: Runtime.getRuntime().exec(...)
+      - pattern: new java.lang.ProcessBuilder(...)
+      - pattern: new ProcessBuilder(...)
+
+  - id: finapp-java-weak-digest
+    languages: [java]
+    severity: ERROR
+    message: MD2, MD5 and SHA-1 are not collision resistant. Use SHA-256 or better.
+    pattern-either:
+      - pattern: java.security.MessageDigest.getInstance("=~/(?i)^(MD2|MD5|SHA-?1)$/", ...)
+      - pattern: MessageDigest.getInstance("=~/(?i)^(MD2|MD5|SHA-?1)$/", ...)
+
+  - id: finapp-java-weak-cipher
+    languages: [java]
+    severity: ERROR
+    message: DES, RC2, RC4, Blowfish and ECB mode (which a bare "AES" means) do not protect the data. Use AES/GCM with a fresh nonce.
+    pattern-either:
+      - pattern: javax.crypto.Cipher.getInstance("=~/(?i)^(DES|DESede|RC2|RC4|ARCFOUR|Blowfish)(/.*)?$|^AES$|/ECB(/|$)/", ...)
+      - pattern: Cipher.getInstance("=~/(?i)^(DES|DESede|RC2|RC4|ARCFOUR|Blowfish)(/.*)?$|^AES$|/ECB(/|$)/", ...)
+
+  - id: finapp-java-insecure-random
+    languages: [java]
+    severity: ERROR
+    message: java.util.Random and Math.random are predictable. Use SecureRandom for anything an attacker could guess.
+    pattern-either:
+      - pattern: new java.util.Random(...)
+      - pattern: new Random(...)
+      - pattern: Math.random()
+
+  - id: finapp-java-trust-everything
+    languages: [java]
+    severity: ERROR
+    message: Accepting every certificate or hostname turns TLS into encryption to anyone (SECURITY_ARCHITECTURE.md, Transport encryption).
+    pattern-either:
+      - patterns:
+          - pattern-inside: |
+              class $C implements $I { ... }
+          - metavariable-regex:
+              metavariable: $I
+              regex: .*X509(Extended)?TrustManager$
+          - pattern: |
+              public void checkServerTrusted(...) { }
+      - patterns:
+          - pattern-inside: |
+              class $C implements $I { ... }
+          - metavariable-regex:
+              metavariable: $I
+              regex: .*HostnameVerifier$
+          - pattern: |
+              public boolean verify(...) { return true; }
+      - pattern: $C.setDefaultHostnameVerifier(...)
+      - pattern: System.setProperty("jdk.internal.httpclient.disableHostnameVerification", ...)
+
+  - id: finapp-java-xml-external-entities
+    languages: [java]
+    severity: ERROR
+    message: An XML parser that resolves external entities reads files and reaches URLs for whoever wrote the document. Disable DOCTYPE declarations.
+    patterns:
+      - pattern-either:
+          - pattern: DocumentBuilderFactory.newInstance(...)
+          - pattern: SAXParserFactory.newInstance(...)
+          - pattern: XMLInputFactory.newInstance(...)
+          - pattern: XMLInputFactory.newFactory(...)
+          - pattern: TransformerFactory.newInstance(...)
+          - pattern: SchemaFactory.newInstance(...)
+      - pattern-not-inside: |
+          $F = $X.newInstance(...);
+          ...
+          $F.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+      - pattern-not-inside: |
+          $T $F = $X.newInstance(...);
+          ...
+          $F.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
