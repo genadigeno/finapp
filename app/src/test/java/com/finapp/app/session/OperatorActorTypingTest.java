@@ -48,7 +48,7 @@ import org.springframework.web.servlet.HandlerMapping;
  * <p>The real {@link SessionAuthenticationInterceptor} in front of declared handlers, with no database: a session at a
  * stated assurance, holding stated roles, stood in behind it; every audit record it writes and every transaction it
  * opens is captured in order. What a real session row and a real {@code platform.audit_record} do is
- * {@code OperatorActorDatabaseTest}'s, owed.
+ * {@code DenyByDefaultDatabaseTest#theOperatorActorIsTyped}'s and {@code #aRefusedStepUpIsRecorded}'s, owed.
  */
 @DisplayName("the operator actor and the refused step-up, at the session interceptor (P15-TSK-021)")
 class OperatorActorTypingTest {
