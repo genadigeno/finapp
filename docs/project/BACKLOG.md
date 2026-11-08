@@ -27757,7 +27757,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   records' directory and form, adds the rule to `ThreatModelIsCompleteTest` with a probe, and rewrites the rows it
   satisfies. Until then a rehearsal record counts in `PRODUCTION_READINESS.md` only.
 
-**P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `IN_PROGRESS` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`; designed and begun on branch `P15-TSK-033` from master `c1d07726`)
 - **Objective**: fix, at their causes, the production defects the owner postponed to this phase's database pass.
 - **Affected components**: `accounting` (`CloseRuns.view`, `JdbcCloseRunStore`, `JdbcPeriodCloseStore`'s latest-close
   read), `lending` and `bnpl` (a terms version's retirement stamp; a new migration each), `risk` `V002`'s retirement
