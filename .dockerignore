@@ -1,0 +1,9 @@
+# The build context is the boot jar and nothing else (P15-TSK-003).
+#
+# An allow-list, not a deny-list: everything is excluded, then the one file the image is built from is let back in.
+# A deny-list has to remember .env, secrets/, build/ output, infra/, test resources and whatever is added next; an
+# allow-list cannot forget any of them. The plain jar Gradle's `build` also writes beside it is excluded again.
+# ApplicationImageTest holds this shape.
+*
+!app/build/libs/app-*.jar
+app/build/libs/*-plain.jar

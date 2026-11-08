@@ -252,6 +252,37 @@ springBoot {
 }
 
 // ---------------------------------------------------------------------------
+// No SBOM inside the boot jar (P15-TSK-003).
+//
+// With the CycloneDX plugin applied, Spring Boot copies the build's SBOM into the jar
+// (META-INF/sbom/application.cdx.json, through processResources) and names it in the manifest.
+// That file carries a random serial number and the instant it was generated, and the plugin has
+// no setting for the instant, so two builds of one commit produced two different jars: measured,
+// 2026-11-08, by rebuilding with --rerun-tasks (the archive settings above held; this file did
+// not). The SBOM is also the WHOLE resolved set, test scope included (the plugin note above), so
+// shipping it inside the artefact would publish it as the shipping provenance it must not be.
+// The SBOM the dependency scan reads is unaffected (build/reports/cyclonedx); an SBOM per image
+// is P15-TSK-006's. infra/scripts/image-build.sh rebuilds the jar from source and refuses a
+// second jar that differs from the first.
+// ---------------------------------------------------------------------------
+tasks.processResources {
+    // By destination path, in eachFile: Spring Boot adds the SBOM through a child spec
+    // (`into("META-INF/sbom")`), and an `exclude` pattern matches a file's SOURCE path, which is
+    // just its name - `exclude("META-INF/sbom/**")` compiled, ran and excluded nothing (verified
+    // by listing the jar, 2026-11-08).
+    eachFile {
+        if (relativePath.pathString.startsWith("META-INF/sbom/")) {
+            exclude()
+        }
+    }
+}
+
+tasks.bootJar {
+    manifest.attributes.remove("Sbom-Format")
+    manifest.attributes.remove("Sbom-Location")
+}
+
+// ---------------------------------------------------------------------------
 // The `database` tier's module-specific configuration.
 //
 // The tier tasks themselves are registered once in finapp.java-conventions (P0-TSK-036). Only
