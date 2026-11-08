@@ -1,0 +1,29 @@
+# The order the migrator applies every schema in (P15-TSK-004). One schema per line.
+#
+# THIS IS THE BUILD'S ORDER: `./gradlew flywayMigrate`, unqualified, runs the task in every project that has it, in project
+# path order (measured with --dry-run, 2026-11-08). MigratorMatchesTheBuildTest holds this list equal to that order, read
+# from settings.gradle.kts and each module's build script, so a new schema-owning module, or two lines swapped, turns the
+# build red. No schema depends on another today (ADR-0006: no cross-schema foreign key), so the order changes no outcome; it
+# is pinned so that a deployed database is built the way every tested one was, and so that a dependency added one day
+# fails where it is tested first.
+accounting
+accounts
+bnpl
+checkout
+consent
+credit
+crossborder
+fx
+identity
+kyc
+ledger
+lending
+merchant
+party
+paymentmethods
+payments
+platform
+reconciliation
+risk
+settlement
+transfers

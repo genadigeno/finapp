@@ -4,7 +4,7 @@
 # the build arguments below, builds the image twice and refuses it unless the two builds are the same bytes, it runs
 # as UID 65532, it holds nothing but the jar's entries and the pinned base, and it is within its size budget.
 #
-# THE TWO FROM LINES ARE THE BASE IMAGES' ONLY PINS. Each names the tag it claims and the digest that is pulled: a
+# THE TWO PINNED FROM LINES ARE THE BASE IMAGES' ONLY PINS. Each names the tag it claims and the digest that is pulled: a
 # tag can be moved by whoever controls the source repository, a digest cannot. They live here rather than in a
 # shell-sourced pins file because Dependabot's docker ecosystem reads FROM lines (it proposes the next tag and its
 # digest weekly) and does not resolve ARG; infra/scripts/check-pinned-images.sh reads them too, refuses one that is
@@ -32,8 +32,30 @@ RUN java -Djarmode=tools -jar application.jar extract --layers --launcher --dest
     done \
  && find layers -exec touch --no-dereference --date="@${SOURCE_DATE_EPOCH}" {} +
 
-# The runtime: distroless Java 21, the nonroot variant - no shell, no package manager, a JRE and its certificates.
-FROM gcr.io/distroless/java21-debian13:nonroot@sha256:b22857e939bd95abd69d9d747f0421a274f9f70855ecfc335f7d97f6eeef578d AS runtime
+# The runtime base: distroless Java 21, the nonroot variant - no shell, no package manager, a JRE and its certificates.
+# A stage of its own, with nothing added, so that the two images built on it (below) name one pin between them.
+FROM gcr.io/distroless/java21-debian13:nonroot@sha256:b22857e939bd95abd69d9d747f0421a274f9f70855ecfc335f7d97f6eeef578d AS distroless
+
+# The migrator image, finapp-migrator (P15-TSK-004; PHASE_15_PLAN.md section 5; ADR-0120 decision 1): every module's
+# migrations and the program that applies them, on the same base as the application. Build it with
+# infra/scripts/migrator-image-build.sh, which gives it its own context: `--file Dockerfile --target migrator migrator`,
+# so migrator/.dockerignore applies and the application's context stays the boot jar alone. Nothing below reaches the
+# application image, which is the last stage of this file so that a plain build still produces it. No HEALTHCHECK, no
+# RUN, no ENV: a Job that exits has no probe, and its configuration comes from the Job.
+FROM distroless AS migrator
+ARG REVISION
+ARG SOURCE
+ARG VERSION
+LABEL org.opencontainers.image.revision="${REVISION}"       org.opencontainers.image.source="${SOURCE}"       org.opencontainers.image.version="${VERSION}"
+# One tar Gradle built reproducibly (:migrator:imageTar): /migrator/lib and /migrator/sql/<schema>, root's and read-only to
+# the process, so the migrator cannot rewrite the scripts it is about to apply. ADD, not COPY, because ADD unpacks it.
+ADD build/image/finapp-migrator.tar /
+WORKDIR /migrator
+USER 65532:65532
+ENTRYPOINT ["/usr/bin/java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "-cp", "/migrator/lib/*", "com.finapp.migrator.MigratorMain"]
+
+# The application image.
+FROM distroless AS runtime
 ARG REVISION
 ARG SOURCE
 ARG VERSION

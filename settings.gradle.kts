@@ -192,4 +192,10 @@ include("risk")
 // regulatory provider).
 include("accounting")
 
+// The migration runner of a deployed environment (P15-TSK-004; ADR-0011, ADR-0120 decision 1): Flyway over every module's
+// migrations with the build's settings, in the second deployable's image. Not a business module and no module's
+// dependency: it holds no domain code, nothing depends on it, and it is deliberately absent from `app`'s classpath - the
+// application never migrates (ADR-0011).
+include("migrator")
+
 include("app")
