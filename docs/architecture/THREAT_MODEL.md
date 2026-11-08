@@ -994,16 +994,16 @@ owner.**
     pass**, moving Jackson to 3.1.7 or later and `lz4-java` and `snappy-java` to their fixed releases, so that the exit's
     database pass runs on the moved versions; then these eight rows are removed.
 
-    **(b) Fifty-five rows of `infra/semgrep/baseline.tsv`, each read and reasoned on 2026-11-08, until 2027-06-30.**
+    **(b) Fifty-six rows of `infra/semgrep/baseline.tsv`, each read and reasoned on 2026-11-08, until 2027-06-30.**
     Sixteen are T43's unbounded reads: each simulated provider's answer is read whole and then checked against the
     class's size bound, so a hostile answer is allocated before it is refused. They are real and small here because
     every provider is simulated (`PHASE_15_PLAN.md` section 1.1); a read bounded before it allocates belongs to the
-    first real provider integration. Thirty-nine are statements the T45 rules cannot prove constant, although each is:
-    a `StringBuilder` of literals, a `Map` of constants read by an enum key, an enum's own name or SQL value list, a
+    first real provider integration. Forty are statements the T45 rules cannot prove constant, although each is:
+    a `StringBuilder` of literals, a field holding one of two private constants, a `Map` of constants read by an enum key, an enum's own name or SQL value list, a
     private helper handed only constants through a forwarding overload, a report-snapshot proxy forwarding its caller's
     text after screening it, the migrator's role bootstrap (DDL takes no bind parameter: an enum role name and a SCRAM
     verifier, or the server's own `format()` over a constant template). These are about two in a hundred of the tree's statements. *Recommendation*: accept the
-    fifty-five until 2027-06-30; a statement that changes loses its row by construction, and the baseline's date and
+    fifty-six until 2027-06-30; a statement that changes loses its row by construction, and the baseline's date and
     row count are held by `SecurityScansAreWiredTest`.
 
     **Deciding this item**: accept (a) and (b) as recommended and add the one dependency item, or refuse any entry and
