@@ -493,9 +493,9 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T13 | PI-014 item 1: lending `V033` and bnpl `V021` end a retired terms version after its latest offer, start its successor exactly there by version number, and floor an offering instant at its version's start - pinned as text | EXISTS | `lending/src/test/java/com/finapp/lending/LoanTermsClockMigrationTest.java#theRetirementEndsAfterTheLatestOffer`; `lending/src/test/java/com/finapp/lending/LoanTermsClockMigrationTest.java#theSuccessorStartsExactlyThere`; `lending/src/test/java/com/finapp/lending/LoanTermsClockMigrationTest.java#theOfferIsNeverBeforeItsVersion`; `bnpl/src/test/java/com/finapp/bnpl/BnplTermsClockMigrationTest.java#theRetirementEndsAfterTheLatestOffer`; `bnpl/src/test/java/com/finapp/bnpl/BnplTermsClockMigrationTest.java#theSuccessorStartsExactlyThere`; `bnpl/src/test/java/com/finapp/bnpl/BnplTermsClockMigrationTest.java#theOfferIsNeverBeforeItsVersion` |
 | T13 | PI-013's and PI-014's clock-step regression cases run green on PostgreSQL with the database's clock stepped back on demand (`CloseRunClockStepDatabaseTest`, `LoanTermsDatabaseTest`, `BnplTermsDatabaseTest`, written and owed) | PLANNED | `P15-TST-002` |
 | T13 | The lock's grace and the submissions' orderings judged on the database's clock | REMEDIATION | `P14-REM-009` |
-| T13 | Five stores still comparing a stored bound with a caller's instant (recovery tokens, contact-channel verification, checkout expiry, the card fee version in force, payout-destination cooling-off), each judged and stamped on the database's clock | REMEDIATION | `X-TSK-008` |
+| T13 | Five stores still comparing a stored bound with a caller's instant (recovery tokens, contact-channel verification, checkout expiry, the card fee version in force, payout-destination cooling-off), each judged and stamped on the database's clock | PLANNED | `P15-TSK-038` |
 | T13 | Lending's trigger functions read the database's clock whatever a role's `search_path` holds | PLANNED | `P15-TSK-004` |
-| T13 | Single-row reads that pick "the latest" by a database stamp outside accounting, lending and bnpl (ten by `grep`, `ORDER BY <stamp> DESC ... LIMIT 1`: risk three, kyc two, payments two, fx, reconciliation and `app`'s lending reports one each) not yet judged for whether the row they pick decides anything; and risk `V002`'s policy retirement, stamped like the terms retirement was, latent because nothing reads a policy version by an instant | GAP | `owner item 8`; owner: the owner, since 2026-11-08 |
+| T13 | Single-row reads that pick "the latest" by a database stamp outside accounting, lending and bnpl (ten by `grep`, `ORDER BY <stamp> DESC ... LIMIT 1`: risk three, kyc two, payments two, fx, reconciliation and `app`'s lending reports one each) not yet judged for whether the row they pick decides anything; and risk `V002`'s policy retirement, stamped like the terms retirement was, latent because nothing reads a policy version by an instant | PLANNED | `P15-TSK-037` |
 | T14 | The connection budget is a startup guard against the **declared** instance count (`finapp.database.instances`): a fleet whose pools exceed the database's available connections refuses to start, naming the fix; a declared fleet scaled out past the limit no longer fits; reserved connections count; the guard is wired. A replica count that outgrows its declaration (an HPA) is not caught here | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#scalingOutIsCaught`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#reservedConnectionsAreLoadBearing`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired` |
 | T14 | Requests and limits, and an HPA bounded by the declared budget counting terminating pods | PLANNED | `P15-TSK-009` |
 | T14 | `ResourceQuota` and `LimitRange` | PLANNED | `P15-TSK-010` |
@@ -536,7 +536,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T18 | A break's resolution under `MULTI_FACTOR`, and never one person's word for an aggregate subject | REMEDIATION | `P14-REM-001` |
 | T18 | Step-up on the mapping activation and the acknowledgement approval | REMEDIATION | `P14-REM-002` |
 | T18 | The privileged access review names, for each of the six propose/approve pairs, the two roles no identity holds together, and its partition is the code's | EXISTS | `app/src/test/java/com/finapp/app/architecture/PrivilegedAccessReviewTest.java#thePartitionIsTheCodes` |
-| T18 | Role assignment refusing an identity both roles of a propose/approve pair (today an administrator can grant it, audited; each act still refuses its proposer by identity) | GAP | `owner item 9`; owner: the owner, since 2026-11-08 |
+| T18 | Role assignment refusing an identity both roles of a propose/approve pair (today an administrator can grant it, audited; each act still refuses its proposer by identity) | GAP | `PI-020`; owner: the owner, since 2026-11-08 |
 | T19 | An owner-scoped statement carries the owner predicate, and each owner-scoped operation has a named negative test | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnershipIsScopedTest.java#ownerScopedStatementsCarryThePredicate`; `app/src/test/java/com/finapp/app/architecture/OwnershipIsScopedTest.java#ownerScopedOperationsHaveNegativeTests` |
 | T19 | A session-derived endpoint takes no identifier | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnershipIsScopedTest.java#sessionDerivedEndpointsTakeNoIdentifier` |
 | T19 | Every merchant route the application serves is in the battery's derived table, each addressed route carrying a cross-tenant probe (in the battery or a named delegate); the battery's own probes answer another tenant's resource exactly as an unknown one (`INV-MER-01`) | EXISTS | `app/src/test/java/com/finapp/app/merchant/MerchantTenancyBatteryDatabaseTest.java#theTableIsEveryMerchantRoute`; `app/src/test/java/com/finapp/app/merchant/MerchantTenancyBatteryDatabaseTest.java#everyAddressedRouteAnswersAnotherTenantsResourceAsUnknown` |
@@ -613,7 +613,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T38 | A permission denial is audited | EXISTS | `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#aDenialIsAudited` |
 | T38 | An operator act is recorded `EMPLOYEE`, decided per request from the server's record of roles and never from the client; a customer refused at an operator route `CUSTOMER` | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#anOperatorActIsTypedEmployee`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusalIsTypedByWhoTried`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRoleHolderOnACustomerRouteIsACustomer` |
 | T38 | A refused step-up is recorded once per refused request, committed on its own, naming the route pattern and no session, code or factor | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusedStepUpIsRecorded`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#anOperationsRefusalIsRecordedOnce` |
-| T38 | Refused and failed Phase 7 and Phase 8 acts (the refused four-eyes attempts among them) and failed or not-found Phase 9 and 10 operator reads recorded with their outcome, and a merchant's dispute act naming its API key (returned to the owner, 2026-11-08) | GAP | `owner item 10`; owner: the owner, since 2026-11-08 |
+| T38 | Refused and failed Phase 7 and Phase 8 acts (the refused four-eyes attempts among them) and failed or not-found Phase 9 and 10 operator reads recorded with their outcome, and a merchant's dispute act naming its API key (returned to the owner, 2026-11-08) | PLANNED | `P15-TSK-039` |
 | T39 | An audited operator door to retry or discard an abandoned event (discard four-eyes), emitting the three platform actions | PLANNED | `P15-TSK-028` |
 | T40 | The edge sets the client address, and only the edge's is trusted | PLANNED | `P15-TSK-011` |
 | T40 | Per-source limits keyed on the address the edge sets | PLANNED | `P15-TSK-022` |
@@ -752,7 +752,7 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   and failed Phase 7 and 8 acts and failed or not-found Phase 9 and 10 operator reads leave no audit outcome;
   the privileged-access task records every refused step-up and every denial, and returned this wider class to
   the owner with the access review's two step-up questions and the conditional step-up's extraction
-  (owner item 10), held by a `GAP` row.
+  (owner item 10), now planned as `P15-TSK-039` (the owner, 2026-11-08).
 - **T43.** No general bound on the size of a provider's answer exists across the adapters. The regulatory adapter is
   the one evidenced. The adapters call simulated providers in this programme. **Owner item 5, decided 2026-11-08**:
   `-006`'s static analysis flags an unbounded read of a provider's answer in an adapter.
@@ -776,11 +776,11 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   applies it. No check reads a real account, so nothing yet holds that an apply comes only from a reviewed plan, and
   nothing reports drift. `prevent_destroy` on the database, its backups and every KMS key is a build rule, and it
   holds over an empty set until the data-tier and security modules (`-015`, `-016`) add the first such resource.
-  **Owner item 7**, added 2026-11-08, awaits the owner.
+  **Owner item 7**, decided 2026-11-08, holds it until a real account exists.
 - **T13.** Time sync on nodes is a property of the managed cluster. No task asserts it, and the register does not
   claim it. The platform's answer is to decide financial instants on the database's clock. The database's clock steps
   too: a stamp it wrote never decides which of two facts came first, and a stamp follows the facts it must follow.
-  Where that is not yet judged outside the close and the terms, owner item 8 holds it.
+  Where that is not yet judged outside the close and the terms, `P15-TSK-037` judges it (owner item 8, decided 2026-11-08).
 
 ---
 
@@ -789,11 +789,9 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 Only the owner can accept a risk or choose between the options below. **The owner decided items 1 to 6 on 2026-11-08,
 accepting each recommendation** ("accept recommendations", after `P15-TSK-001`'s merge); each item's decision follows
 its options. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
-work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)* **Item 7
-was added on 2026-11-08, when the Terraform foundations were built, and awaits the owner.** It carries a
-recommendation, a `GAP` row in §4 holds it, and it blocks none of the phase's work. *(This paragraph read "decided all
-six" until then.)* **Items 9 and 10 were added on 2026-11-08 by the privileged access review
-(`PRIVILEGED_ACCESS_REVIEW.md`) and are open.**
+work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)* **Items 7 to 10 were added on 2026-11-08, and the owner decided them the same day, accepting each recommendation**
+("accept recommendations", at the end of wave B); each item's decision follows its options. *(This paragraph read
+"Item 7 ... awaits the owner" and "Items 9 and 10 ... are open" until then.)*
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -849,9 +847,9 @@ six" until then.)* **Items 9 and 10 were added on 2026-11-08 by the privileged a
    pipeline role on the plan a pull request showed, humans hold read-only access to the account (`-016`'s human
    baseline adds the boundaries), and a scheduled plan reports drift. Separately, widen `-017`'s `CODEOWNERS` to the
    production root (`infra/terraform/environments/production/`), so that a change to production's infrastructure code
-   needs the same second person as a change to its overlay. **Awaiting the owner.**
-8. **T13's residual: "the latest" chosen by a stamp elsewhere** *(added 2026-11-08, after the six above were decided;
-   awaiting the owner)*. A backward step of the database's clock made the close read an earlier lock's run as the latest
+   needs the same second person as a change to its overlay. **Decided 2026-11-08**: as recommended; recorded under
+   `PHASE_15_PLAN.md` §1.1 and `-017`'s `CODEOWNERS` widened; the row stays a `GAP` held by this item until an account exists.
+8. **T13's residual: "the latest" chosen by a stamp elsewhere** *(added 2026-11-08, after the six above were decided)*. A backward step of the database's clock made the close read an earlier lock's run as the latest
    (PI-013) and ended a terms version before its offer (PI-014). Both are fixed at their causes, and the close's and the
    terms' readers were censused. Outside them, `grep` finds ten single-row reads ordering by a stamp, `ORDER BY <stamp> DESC ...
    LIMIT 1` (risk three, kyc two, payments two, fx, reconciliation and `app`'s lending reports one each; twenty-four
@@ -862,8 +860,9 @@ six" until then.)* **Items 9 and 10 were added on 2026-11-08 by the privileged a
    given the terms' rule; (b) postpone it, required before production use; (c) accept the residual. *Recommendation*:
    **(a)**, sized like `P15-TSK-035`, after `P15-TST-002`'s dependencies are settled, so its database cases run in the
    pass; if Phase 15 must shrink, (b), never (c), since PI-013 shows one such read can stop a month's close.
+   **Decided 2026-11-08**: (a), as `P15-TSK-037`, before the database pass.
 9. **T18's residual: one identity may hold both roles of a propose/approve pair** *(added 2026-11-08 by the privileged
-   access review; open)*. `PRIVILEGED_ACCESS_REVIEW.md` §4 names the pairs of roles no identity should hold together
+   access review)*. `PRIVILEGED_ACCESS_REVIEW.md` §4 names the pairs of roles no identity should hold together
    (`ACCOUNTANT` and `FINANCIAL_CONTROLLER`, `REGULATORY_REPORTER` and `FINANCIAL_CONTROLLER`, `LOAN_SERVICING_AGENT` and
    `LENDING_OFFICER`, `BNPL_SERVICING_AGENT` and `BNPL_OFFICER`). Role assignment does not refuse such a holding: an
    administrator can grant it, with a required, audited reason. Every such act still refuses its proposer by identity,
@@ -872,8 +871,9 @@ six" until then.)* **Items 9 and 10 were added on 2026-11-08 by the privileged a
    /v1/identities/{id}/roles`, its answer in the contract, and a check of the holdings that already exist); (b) leave it
    to the review of `PRIVILEGED_ACCESS_REVIEW.md` §5, which finds it. *Recommendation*: (a), as a remediation entry before
    production use, so the rule does not rest on a human review alone; meanwhile (b). Held by a `GAP` row in §4.
+   **Decided 2026-11-08**: (a), as `PI-020`, required before production use, with ADR-0071 §10's holding rule; meanwhile (b).
 10. **T38's wider class, and two step-up questions, returned to the owner** *(added 2026-11-08 by the privileged access
-   review's task at its gate, the carried items' ruling (C15) having routed them to it while it ran; open)*. Four parts,
+   review's task at its gate, the carried items' ruling (C15) having routed them to it while it ran)*. Four parts,
    one item: (a) every refused and failed Phase 7 and Phase 8 act - the refused four-eyes attempts (a self-approval, a
    stale echo, a refused kind) among them - audited with its outcome, a merchant's dispute act naming its API key, and the
    void dispatch's missing dispatch record; (b) a failed Phase 9 operator lookup (a `404` on a trace or a provenance), a
@@ -889,7 +889,8 @@ six" until then.)* **Items 9 and 10 were added on 2026-11-08 by the privileged a
    `PRIVILEGED_ACCESS_REVIEW.md` §6 rules it - a factor required of every holder of `MERCHANT_ADMINISTRATOR`,
    `MERCHANT_PAYOUT`'s and `PAYOUT_DESTINATION_APPROVE`'s roles before the role is granted, and `MULTI_FACTOR` declared on
    Phase 9's approvals, restarts and reversals - and (a), (b) and (d) as **one follow-on M15.7 item** after the privileged
-   access task, before the phase's database pass. Held by a `GAP` row in §4 (T38).
+   access task, before the phase's database pass. **Decided 2026-11-08**: as recommended, all four parts in
+   `P15-TSK-039`, which also builds (c); T38's row is `PLANNED` on it.
 
 ---
 

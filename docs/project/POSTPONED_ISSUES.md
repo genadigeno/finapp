@@ -27,6 +27,9 @@ commit and the date; do not delete the entry.
 | PI-015 | `POSTPONED` | P14-DOC-001 (2026-11-06) | the mutation register — 330 rows struck on moved bytes and the database halves of about a hundred rows, not performed again; due at the next phase's database pass at the latest |
 | PI-016 | `POSTPONED` | P15-TSK-001, by the owner (2026-11-08) | ledger, every posting module - a balanced journal entry written with the application's database credential outside the ledger's doors is not refused; required before production use |
 | PI-017 | `POSTPONED` | P15-TSK-001, by the owner (2026-11-08) | identity - registration tells a caller that a login identifier is taken; required before the first real customer launch |
+| PI-018 | `POSTPONED` | P15-TSK-002's ruling, by the owner (2026-11-08) | reconciliation - a raw writer can close a break with another break's approved resolution; required before production use |
+| PI-019 | `POSTPONED` | P15-TSK-002's ruling, by the owner (2026-11-08) | payments - a transfer can pre-empt an in-flight instant execution the platform cannot yet name; required before production use |
+| PI-020 | `POSTPONED` | the privileged access review, by the owner (2026-11-08) | identity - one identity may hold both roles of a propose/approve pair; required before production use |
 
 ---
 
@@ -107,6 +110,7 @@ commit and the date; do not delete the entry.
   if existing rows must be kept; the corpus-parity and raw-writer cases of
   `MerchantBnplEnablementDatabaseTest#everyBnplReasonColumnRefusesAnInstrumentShape` extended to them; probe each rank.
 - **Owner of the fix:** the post-phase clean-up, or Phase 15's data-handling review if the owner schedules it there.
+- *Scheduled by the owner (2026-11-08): `P15-TSK-038` takes the card-side fix with `X-TSK-008`'s other four stores, before `P15-TST-002`; this entry is struck when that task's gate is merged.*
 
 ---
 
@@ -465,3 +469,33 @@ commit and the date; do not delete the entry.
 - **Fix:** verify-then-tell: registration answers a taken and a free identifier alike and tells the outcome through a
   channel the identifier's owner controls. A business change to registration, which Phase 15 does not make.
 - **Owner of the fix:** the first real customer launch, or sooner if the owner schedules it.
+
+---
+
+## PI-018 — A raw writer can close a reconciliation break with another break's resolution
+
+- **Status:** `POSTPONED` (owner, 2026-11-08, accepting the recommendation of `P15-TSK-002`'s ruling, its owner item 3). **Required before production use.**
+- **What:** reconciliation `V015` proves that an approved resolution stands behind every closure, not that it is that break's own: a raw writer holding `finapp_app` could close a break with a `RESOLVED` event naming some unrelated `APPROVED` resolution.
+- **Consequence until fixed:** only a raw writer holding the application's credential can exploit it (`THREAT_MODEL.md` T15); every domain path writes the true relation. Phase 15 narrows who holds the credential and leaves write paths as built.
+- **Fix:** tie the two per resolution kind in the schema: `break_id` equal, a sibling on the same expectation, the offset item's break, a closure row. Beside `PI-016` and `P14-REM-004`.
+- **Owner of the fix:** the post-phase clean-up, before production use, or sooner if the owner schedules it.
+
+---
+
+## PI-019 — A transfer can pre-empt an in-flight instant execution the platform cannot yet name
+
+- **Status:** `POSTPONED` (owner, 2026-11-08, accepting the recommendation of `P15-TSK-002`'s ruling, its owner item 4). **Required before production use.**
+- **What:** a scheme line carrying only `SCHEME_REF` (the optional end-to-end reference omitted) resolves through `scheme_execution_claim`, which is written at completion, so the lookup answers `UNKNOWN` while the execution is in flight and a four-eyes transfer is admitted; the late completion then posts its own credit (the re-gate's NEW-IDEM-1, 2026-10-03).
+- **Consequence until fixed:** a double credit that is not silent: the completion opens an expectation that can never reach the `RESOLVED` item, goes overdue and surfaces as `MISSING_EXTERNAL` for a person's claw-back.
+- **Fix:** the completion side learns to detect a person-resolved item (the payments-side design ADR-0071 §2 names). A payments lifecycle change, which Phase 15 must not make (`PHASE_15_PLAN.md` §22).
+- **Owner of the fix:** the post-phase clean-up, before production use, or sooner if the owner schedules it.
+
+---
+
+## PI-020 — One identity may hold both roles of a propose/approve pair
+
+- **Status:** `POSTPONED` (owner, 2026-11-08, accepting `THREAT_MODEL.md` section 6 item 9's recommendation (a)). **Required before production use.**
+- **What:** `PRIVILEGED_ACCESS_REVIEW.md` §4 names the pairs of roles no identity should hold together (`ACCOUNTANT` and `FINANCIAL_CONTROLLER`, `REGULATORY_REPORTER` and `FINANCIAL_CONTROLLER`, `LOAN_SERVICING_AGENT` and `LENDING_OFFICER`, `BNPL_SERVICING_AGENT` and `BNPL_OFFICER`), and ADR-0071 §10 makes the break-resolution roles pairwise disjoint. Role assignment refuses none of these: an administrator can grant the holding, with a required, audited reason.
+- **Consequence until fixed:** each such act still refuses its proposer by identity at the domain and at the database, so one person cannot propose and approve the same act; holding both roles narrows the population. The review of `PRIVILEGED_ACCESS_REVIEW.md` §5 finds such holdings.
+- **Fix:** refuse the holding at assignment (a new refusal on `POST /v1/identities/{id}/roles`, its answer in the contract, and a check of the holdings that already exist), ADR-0071 §10's rule among them.
+- **Owner of the fix:** the post-phase clean-up, before production use, or sooner if the owner schedules it.

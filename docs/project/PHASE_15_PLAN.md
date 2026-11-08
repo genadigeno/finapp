@@ -53,6 +53,10 @@ repository. So:
   certification or attestation under, PCI DSS, ISO 27001, SOC 2 or any other standard; technical preparation is not an
   audit, and a statement of conformity is an assessor's, not this repository's.
 
+*The owner's decision (2026-11-08, `THREAT_MODEL.md` §6 item 7), a real-environment item:* when an account exists, applies run only from a
+pipeline role on the plan a pull request showed, humans hold read-only access, and a scheduled plan reports drift. Phase 15
+builds none of it.
+
 ### 1.2 Scope
 
 The owner's twelve areas: the production architecture assessment (§3), containerisation and deployment (§5), the
@@ -629,11 +633,11 @@ alert rule** — `-025` gives each critical flow its SLO alerts and the ledger i
 | **M15.4 Infrastructure as code** | Terraform foundations and modules, tested with mock providers, never applied | `-013`…`-016` |
 | **M15.5 Delivery** | GitOps promotion by digest with the two-person production boundary | `-017` |
 | **M15.6 Secrets and keys** | every secret inventoried and delivered; key rings; rotation rehearsed | `-018`…`-020` |
-| **M15.7 Application security** | privileged access and abuse limits; callbacks as hints on every rail | `-021`, `-022`, `-036` *(added by `P15-TSK-002`, 2026-11-08, applying C15)* |
+| **M15.7 Application security** | privileged access and abuse limits; callbacks as hints on every rail | `-021`, `-022`, `-036` *(added by `P15-TSK-002`, 2026-11-08, applying C15)*, `-039` *(added by the owner, 2026-11-08)* |
 | **M15.8 Observability** | telemetry pipeline and the end-to-end trace; gauges off the scrape thread; SLOs and routing; the source-join census | `-023`…`-025`, `-035` *(added by the owner, 2026-11-08)* |
 | **M15.9 Database and messaging operations** | Kafka for production; event contracts; dead letters and replay; retention sweeps; restore rehearsed | `-026`…`-030` |
 | **M15.10 Configuration** | the configuration register and overlays | `-031` |
-| **M15.11 Operations and exit** | platform runbooks rehearsed; the postponed defects; the database pass; the readiness review; the exit review (the storm postponed) | `-032`, `-033`, `-034`, `P15-TST-002`, `P15-TST-001` (`POSTPONED`), `P15-DOC-001` |
+| **M15.11 Operations and exit** | platform runbooks rehearsed; the postponed defects; the database pass; the readiness review; the exit review (the storm postponed) | `-032`, `-033`, `-037`, `-038` *(added by the owner, 2026-11-08)*, `-034`, `P15-TST-002`, `P15-TST-001` (`POSTPONED`), `P15-DOC-001` |
 
 **Cut order:** the reporting role of `-021` (C13's cut candidate), then `-027`'s `X-TSK-014` half, then `-016`'s
 observability module. **Never cut:** the threat model (`-001`), the schema-compatibility guard (`-005`), graceful
@@ -679,7 +683,10 @@ restore rehearsal (`-030`), the runbooks' rehearsal (`-032`), the database pass.
 | `P15-TSK-033` | The postponed production defects: PI-013 and PI-014 | M15.11 | `-001` | `DOD-FIN` |
 | `P15-TSK-035` | The source-join census: every journal entry tied to the domain record that caused it *(added by the owner, 2026-11-08, `THREAT_MODEL.md` §6 item 2)* | M15.8 | `-025` | `DOD-FIN`, `DOD-OBS` |
 | `P15-TSK-036` | Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers *(added by `P15-TSK-002`, 2026-11-08, applying C15: `X-TSK-015` moved into the phase, §25)* | M15.7 | `-001`, `-002` | `DOD-SEC`, `DOD-FIN` |
-| `P15-TST-002` | The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015) | M15.11 | `-002`…`-033`, `-035`, `-036` | `DOD-TEST` |
+| `P15-TSK-037` | "The latest" by a stamp, outside the close and the terms: a census *(added by the owner, 2026-11-08, `THREAT_MODEL.md` §6 item 8)* | M15.11 | `-033` | `DOD-FIN`, `DOD-TEST` |
+| `P15-TSK-038` | `X-TSK-008`'s five stores on the database's clock *(added by the owner, 2026-11-08)* | M15.11 | `-002` | `DOD-SEC`, `DOD-FIN` |
+| `P15-TSK-039` | The wider audit class and the two step-up rulings *(added by the owner, 2026-11-08, `THREAT_MODEL.md` §6 item 10)* | M15.7 | `-021` | `DOD-SEC`, `DOD-API` |
+| `P15-TST-002` | The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015) | M15.11 | `-002`…`-033`, `-035`…`-039`, `P14-REM-009` | `DOD-TEST` |
 | `P15-TSK-034` | The production readiness review | M15.11 | `-032`, `P15-TST-002` | `DOD-DOC` |
 | `P15-TST-001` | The rolling-deploy storm — `POSTPONED` (PI-004) | M15.11 | all | `DOD-TEST` |
 | `P15-DOC-001` | The Phase 15 exit review | M15.11 | all but `TST-001` | `DOD-DOC` |
@@ -688,7 +695,7 @@ restore rehearsal (`-030`), the runbooks' rehearsal (`-032`), the database pass.
 
 **Waves** (each wave's items depend only on earlier waves; every dependency-free item of a wave may run in parallel, the
 owner's standing rule): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`, `-033`; **C** `-004`,
-`-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`, `-036`; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035`; **E** `-012`,
+`-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`, `-036`; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035`, `-037`, `-038`, `-039`, `P14-REM-009` *(the last four added by the owner, 2026-11-08)*; **E** `-012`,
 `-016`, `-019`, `-022`, `-031`; **F** `-007`, `-020`, `-023`, `-030`; **G** `-017`; **H** `-032`; **I** `P15-TST-002`;
 **J** `-034`; **K** `P15-DOC-001` (`P15-TST-001` `POSTPONED`, PI-004).
 
@@ -700,8 +707,8 @@ owner's standing rule): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-02
 `-009`; `-012` after `-004`, `-005`, `-010`, `-011` and `-026` (`kind` is not loopback, so `TransportSecurityGuard` needs `verify-full` to PostgreSQL and `KafkaTransportGuard` refuses `PLAINTEXT`: the rehearsal needs `-026`'s authenticated TLS client and a TLS PostgreSQL from the local CA - added by the transition's review, its M-5; the waves and the critical path are unchanged, `-026` being in wave B); `-007` after `-006` and `-012`; `-014` after `-013`; `-015` after
 `-014` and `-026`; `-016` after `-014` and `-018`; `-017` after `-007`, `-012` and `-016`; `-019` after `-018`; `-020`
 after `-012` and `-019`; `-022` after `-011`; `-023` and `-030` after `-012`; `-025` after `-024`; `-027` and `-028`
-after `-026`; `-031` after `-008` and `-018`; `-035` after `-025` (added by the owner, 2026-11-08); `-036` after `-001` and `-002`, whose ruling created it (added by `-002`, 2026-11-08, applying C15; wave C, off the critical path); `-032` after `-017`, `-020`, `-025`, `-028` and `-030`; `P15-TST-002` after
-every item from `-002` to `-033`, `-035` and `-036`, so that it runs on the final tree; `-034` after `-032` and `P15-TST-002`; `P15-DOC-001` after every item but
+after `-026`; `-031` after `-008` and `-018`; `-035` after `-025` (added by the owner, 2026-11-08); `-036` after `-001` and `-002`, whose ruling created it (added by `-002`, 2026-11-08, applying C15; wave C, off the critical path); `-037` after `-033`, `-038` after `-002`, `-039` after `-021` (added by the owner, 2026-11-08; off the critical path); `-032` after `-017`, `-020`, `-025`, `-028` and `-030`; `P15-TST-002` after
+every item from `-002` to `-033`, `-035` to `-039` and `P14-REM-009`, so that it runs on the final tree; `-034` after `-032` and `P15-TST-002`; `P15-DOC-001` after every item but
 `P15-TST-001`.
 
 ## 20. Exit criteria (summary — the gate is `PHASE_GATES.md` §5 Phase 15)
@@ -794,7 +801,7 @@ into has its entry widened (scope, testing, acceptance, probe): `-004`, `-019` (
 `CANCELLED` (moved, not dropped). Debt row #61 is ruled **not settled**, so `-029` sweeps no idempotency record. How the
 last row of the table was read: **security-class** rows went into the task that fits them. **Correctness-class** rows,
 the entry's instants decided off the database's clock, stayed in the phase: `X-TSK-008`'s five stores went to `-033`
-*(returned untaken by `-033`'s gate the same day, to `X-TSK-008` and the owner: the ruling reached it after its gate)*,
+*(returned untaken by `-033`'s gate the same day, to `X-TSK-008` and the owner: the ruling reached it after its gate; scheduled by the owner as `P15-TSK-038`, 2026-11-08)*,
 and A4-F1 stays `P14-REM-009`'s. **Others** were re-dated with a reason: scale, latency and contention to Phase 16;
 functional gaps that need a financial treatment §22 forbids to their own triggers; purges and providers as above. Four
 rows are owner items rather than rulings: `P14-REM-009`'s scheduling; `X-TSK-008`'s remainder (the ordering `CHECK`s

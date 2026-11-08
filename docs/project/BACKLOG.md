@@ -26784,6 +26784,7 @@ BNPL**
 - *Named by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged, not scheduled:* this entry's horizon stands, "Phase 15
   at the latest", outside every Phase 15 milestone, and it is not `P15-TSK-033`'s. Its scheduling is the owner's;
   recommended before `P15-TST-002`, so that its `ClockStep` database cases run in that pass (owner item 1 of the ruling).
+   - *The owner's decision (2026-11-08), status unchanged:* scheduled before `P15-TST-002` (wave D), so that its `ClockStep` database cases run in that pass; outside every Phase 15 milestone.
 
 **P14-REM-010 — The exit review's accepted owner items, built (G-10)** — `PLANNED` — **before production use**
 - Objective, each as `PHASE_14_REVIEW.md` §Decisions for the owner recommends and the owner accepted: **A1-D2** a shared-tier
@@ -26813,7 +26814,7 @@ gate, `P14-GATE`), initialised as documents only by the same transition and elab
 thirty-seven items (`P15-TSK-001`…`-034`, `P15-TST-001`, `P15-TST-002`, `P15-DOC-001`) across eleven milestones, with
 `P15-TSK-001` marked `READY` *(thirty-eight since 2026-11-08, when the owner added `P15-TSK-035`, the source-join
 census, by accepting `THREAT_MODEL.md` section 6 item 2; **thirty-nine** since `P15-TSK-002` added `P15-TSK-036`, callbacks
-as hints for the payment and instant providers, the same day, applying C15: `X-TSK-015` moved into the phase)*. The engineering plan is [`PHASE_15_PLAN.md`](PHASE_15_PLAN.md); decisions are
+as hints for the payment and instant providers, the same day, applying C15: `X-TSK-015` moved into the phase; **forty-two** since the owner accepted `P15-TSK-037`, `-038` and `-039` the same day)*. The engineering plan is [`PHASE_15_PLAN.md`](PHASE_15_PLAN.md); decisions are
 ADR-0120…ADR-0125 (`Proposed`). The roadmap's title is kept ("Production Hardening"); the owner's brief calls the phase
 "Production Architecture and Hardening", and its twelve areas are the plan's scope. **No new invariant**: the phase
 protects the catalogue's existing ones — `INV-LED-*`, `INV-ACC-01`, `INV-HIST-01`, `INV-IDEM-*`, `INV-EVT-*`,
@@ -26845,13 +26846,13 @@ Docker and are not the storm.
 
 **Milestones** (acceptance in `PHASE_15_PLAN.md` §17): M15.1 Foundations (`-001`, `-002`) · M15.2 Images and supply chain
 (`-003`…`-007`) · M15.3 Kubernetes and the edge (`-008`…`-012`) · M15.4 Infrastructure as code (`-013`…`-016`) · M15.5
-Delivery (`-017`) · M15.6 Secrets and keys (`-018`…`-020`) · M15.7 Application security (`-021`, `-022`, `-036` *(added by `-002`, 2026-11-08)*) · M15.8
+Delivery (`-017`) · M15.6 Secrets and keys (`-018`…`-020`) · M15.7 Application security (`-021`, `-022`, `-036` *(added by `-002`, 2026-11-08)*, `-039` *(added by the owner, 2026-11-08)*) · M15.8
 Observability (`-023`…`-025`, `-035` *(added by the owner, 2026-11-08)*) · M15.9 Database and messaging operations (`-026`…`-030`) · M15.10 Configuration (`-031`) ·
-M15.11 Operations and exit (`-032`, `-033`, `P15-TST-002`, `-034`, `P15-TST-001` `POSTPONED`, `P15-DOC-001`).
+M15.11 Operations and exit (`-032`, `-033`, `-037` and `-038` *(added by the owner, 2026-11-08)*, `P15-TST-002`, `-034`, `P15-TST-001` `POSTPONED`, `P15-DOC-001`).
 
 **Parallel waves** (`PHASE_15_PLAN.md` §19): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`,
 `-033`; **C** `-004`, `-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`, `-036` *(after `-001` and `-002`, added by `-002`,
-2026-11-08)*; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035` *(after `-025`, added by the owner, 2026-11-08)*;
+2026-11-08)*; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035` *(after `-025`, added by the owner, 2026-11-08)*, `-037`, `-038`, `-039` *(added by the owner, 2026-11-08)* and `P14-REM-009` *(scheduled by the owner, 2026-11-08)*;
 **E** `-012`, `-016`, `-019`, `-022`, `-031`; **F** `-007`, `-020`, `-023`, `-030`; **G** `-017`; **H** `-032`; **I**
 `P15-TST-002`; **J** `-034`; **K** `P15-DOC-001` (`P15-TST-001` `POSTPONED`, PI-004). **Critical path**: `-001` → `-003` →
 `-004` → `-005` → `-012` → `-007` → `-017` → `-032` → `TST-002` → `-034` → `DOC-001`. *(The transition's review, its M-5,
@@ -27048,6 +27049,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   `ThreatModelIsCompleteTest` probes this task performed, the new `-036` citation probe and the 21 earlier rows on
   the files it changed, are recorded in `MUTATION_TESTING.md` §2 (the guard probes) and in this task's change-log row
   (the check's probe and the fresh test counts).
+- *The owner's decision (2026-11-08), status unchanged:* its ruling's owner items accepted as recommended: `P14-REM-009` before the database pass; `X-TSK-008`'s remainder before production use, counted by `-034`, the `touch` leftover in `-031`; `PI-018`; `PI-019`; the six ADR promises routed (ADR-0006 to `P15-DOC-001`, ADR-0030 to the debt register and `-029`'s policy, ADR-0032 to `-020`, ADR-0052 to `-022`, ADR-0063 to `-025`, ADR-0071 §10 to `PI-020`); the Phase 9 screenings before kyc `V010` with no recorded requester re-dated to the first deployment that imports screening history.
 
 **P15-TSK-003 — The application image** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; built on branch `P15-TSK-003` from master `c1d07726`; M15.2 at 1 of 5; marks no task `READY` - the coordinator does)
 - **Objective**: one minimal, non-root, reproducible image of `app`, built from digest-pinned bases.
@@ -27073,6 +27075,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T30's built row holds `ci.yml`'s token scope (read-only, no secret, one workflow) through `CiWorkflowIsLockedDownTest`. A job this task adds that widens a `permissions` entry, references a secret or adds a workflow turns that test red: rewrite T30's row with the change, and the test with it, in this task's gate.
 - *As built (2026-11-08, branch `P15-TSK-003` from master `c1d07726`; no migration, no ADR, no application code; the record is `CURRENT_STATE.md` §Just completed):* a root `Dockerfile` of two stages - a JDK 21 builder (`eclipse-temurin:21.0.13_9-jdk-noble`) that only extracts the boot jar Gradle built (`-Djarmode=tools extract --layers --launcher`) and gives every extracted file the commit's time, and a `gcr.io/distroless/java21-debian13:nonroot` runtime that copies the four layers in order, sets the three OCI labels, `WORKDIR /app`, `USER 65532:65532` and `ENTRYPOINT ["/usr/bin/java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", …JarLauncher]`, with no `HEALTHCHECK`, `ENV` or `RUN`. **The two `FROM` lines are the pins file** (`tag@sha256`), a deviation from "one pins file" in letter only: Dependabot's `docker` ecosystem (added to `.github/dependabot.yml`, weekly, never a new major) reads `FROM` lines and does not resolve `ARG`. `.dockerignore` is an allow-list of the boot jar. `infra/scripts/image-build.sh` refuses an unpinned base (`check-pinned-images.sh --offline`, which now reads every root `Dockerfile*` by pattern), builds the jar from source (`--rerun-tasks`) and the image with no cache, twice, and refuses the image unless the jar's sha256, the image id and all 39 layer digests match, the user is `65532:65532`, there is no `HEALTHCHECK` or environment of its own, the labels read back, outside `/app` the filesystem is exactly the pinned base's 2,302 entries and `/app` exactly the jar's 2,119 files, no shell or package manager is anywhere and `java` is the only program on the `PATH`, and the flattened filesystem is within **300 MiB** (272,924,672 bytes, 260.3 MiB, measured). `infra/scripts/image-readiness.sh` runs it on the host network against compose's PostgreSQL and Kafka, read-only, `/tmp` a tmpfs, every capability dropped, and requires readiness `UP` and every process at UID 65532 (`docker top`). CI's new `image` job runs both, with compose and `flywayMigrate` between them; no permission, secret or action added (T30 unchanged). **Found by measuring, and fixed: the boot jar was not reproducible** - Spring Boot copied the CycloneDX SBOM, with a random serial and its own instant, into every jar (two `--rerun-tasks` builds, two jars; a re-archive hid it), and shipped its test-scope components as if they were the artefact's; `app/build.gradle.kts` now keeps the SBOM out of the jar (the dependency scan's SBOM is untouched). `ApplicationImageTest` (eight tests, `architecture` tier) holds the Dockerfile, the context and the CI and Dependabot wiring on every build. `THREAT_MODEL.md` T4, T5 and T27's planned rows rewritten as `EXISTS` (T27's post-deploy half to `-017`), a T6 row added. Readiness was checked on the actuator's port today, 8080; it follows `-008`'s management port (8081). The gate's probes found one more defect, in the script: its first jar build was incremental, and an up-to-date `processResources` keeps what its last run left (Gradle does not see an `eachFile` change), so a stale build and a clean one differed for the wrong reason; both builds are now from source and the test holds it. **Probes performed** (`MUTATION_TESTING.md` §2's nine `P15-TSK-003` rows and §3): the entry's probe as written - the runtime base switched to its root variant - red in the test, and on the built image green while `USER 65532:65532` stays (the explicit user is what holds) and red without it; `USER 0:0`, a base by tag, a timestamp left in, the SBOM put back, the budget at 250 MiB and an unreachable database each red. **Deviations from the entry**: the pins file is the `Dockerfile`'s `FROM` lines (above); a second script, `infra/scripts/image-readiness.sh`, beside `image-build.sh`; the SBOM out of the jar (`app/build.gradle.kts`), which the entry did not foresee.
+- *The owner's decision (2026-11-08), status unchanged:* accepted as built: the base pins are the `Dockerfile`'s `FROM` lines; the SBOM stays out of the boot jar, the per-image SBOM being `-006`'s; the `image` job's roughly ten minutes of runner time.
 
 **P15-TSK-004 — The migrator image and the migration Job contract** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-003`'s merge, master `e231357c`; every dependency `COMPLETE`)
 - **Objective**: run every module's migrations in a deployed environment exactly as the build does, as
@@ -27277,6 +27280,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   the risk gauges' virtual-thread readers are not drained (a hint and a reading); the counted database case uses the relay's
   advisory-lock claim, the timed lease's reclaim staying `CloseRunDatabaseTest`'s; "two contexts" are two schedule instances
   over one database, each with its own executor and connections.
+- *The owner's decision (2026-11-08), status unchanged:* accepted as built: requests to the management port are neither traced nor counted in `http.server.requests`; the stop bounds stand, `-012` measures them and `-009` sizes the grace from the corrected sum; the local scrape on a Linux engine stays unmeasured, a developer there sets `FINAPP_MANAGEMENT_ADDRESS`.
 
 **P15-TSK-009 — Kubernetes base manifests for the application** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-008`'s merge, master `278af2b8`; every dependency `COMPLETE`)
 - *Routed by the coordinator at `P15-TSK-008`'s merge (2026-11-08), from that branch's independent review (MERGE, three MINOR), status unchanged:* (1) the management server inherits `server.shutdown: graceful`, so a scrape in flight can hold the child context's close for its own 30 s phase timeout - `-008`'s 57 s worst case is low by up to 30 s; set the management factory to `Shutdown.IMMEDIATE` (a CHILD-context customizer) or add the 30 s, and size `terminationGracePeriodSeconds` from the corrected sum; (2) an empty, not unset, `FINAPP_MANAGEMENT_ADDRESS` resolves to no address and binds the management port to every interface (`application.yaml`'s default applies only when the variable is unset) - add a fail-closed startup guard refusing a null or any-local management address, with a test and a probe, before the overlays set the pod address; (3) "stops claiming at once" (`ScheduleDrain`'s javadoc, the DISTRIBUTED_EXECUTION row, runbook §11.1 step 3) overstates the drain: a tick with a claim loop (`AccountingCloseSchedule`, `RiskMonitoringSchedule`, `FxQuoteExpirySchedule`, `BnplDisputeSchedule`) keeps claiming for up to 10 s after `stop()` - safe, the claims are leased - so either check `drain.stopping()` in those loops or reword to "no new tick starts".
@@ -27556,6 +27560,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - *The owner's decision (2026-11-08, `THREAT_MODEL.md` section 6 item 4), status unchanged:* the owner applies branch protection and the production environment's required reviewers when the repository gains a production environment; this task writes them down. T28's `GAP` row stays held by owner item 4.
 - *Routed by `P15-TSK-003` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T27's row "Build identity asserted after deploy, against the promoted image's revision" is now this task's alone (`PHASE_15_PLAN.md` §5: the post-deploy smoke asserts `/actuator/info`'s build identity equals the promoted revision); the image's labels are built. Note for the design: `/actuator/info` publishes `build.version` (`0.1.0-SNAPSHOT` today), not the commit, while the image's `org.opencontainers.image.revision` label is the commit, so the smoke compares like with like only if the build identity gains the commit (it stays reproducible for one commit) or the smoke reads the deployed digest's label instead. This task's gate rewrites T27's row.
+- *Widened by the owner (2026-11-08, `THREAT_MODEL.md` section 6 item 7), status unchanged:* `CODEOWNERS` also covers `infra/terraform/environments/production/`, so a change to production's infrastructure code needs the same second person as a change to its overlay.
 
 **P15-TSK-018 — The secret inventory and its delivery** — `PLANNED`
 - **Objective**: every secret the application reads is inventoried, classed and delivered from the secret store — and
@@ -27643,6 +27648,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §rotation per class, with the rehearsal records.
 - **Acceptance criteria**: every rotation rehearsed green and recorded.
 - **Definition of done**: `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+- *Routed by the owner (2026-11-08, an ADR promise with no register row), status unchanged:* ADR-0032's rotation policy and its "older than X" report land here, or this task records where they went.
 
 **P15-TSK-021 — Privileged access: the operator actor, the refused step-up, the reporting role (C13)** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; built on branch `P15-TSK-021` from master `c1d07726`; read `READY` until its gate)
 - **Objective**: an operator's acts are recorded as an operator's, refused privileged attempts are recorded, and report
@@ -27710,6 +27716,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   cannot take (a)-(d)**, it says so and they return to the owner as one item (recommended: a follow-on M15.7 item after
   this task).
   *(Not taken at `-021`'s gate, returned to the owner, 2026-11-08 - `THREAT_MODEL.md` §6 owner item 10, the T38 row a `GAP` held by it:)* (a) and (b) are new audit records across Phase 7-10 doors, each a door's change with its own database case; (c) is ruled in `PRIVILEGED_ACCESS_REVIEW.md` §6 as a recommendation and built by none of this task's changes; (d)'s reason is met without touching a copy - every refused step-up, the 17 copies' included, is recorded at the error contract (`StepUpRefusals`) - so only the extraction itself returns. Recommended: one follow-on M15.7 item.
+- *The owner's decision (2026-11-08), status unchanged:* `THREAT_MODEL.md` owner item 9 is `PI-020` (with ADR-0071 §10's holding rule, which this task's review did not take); owner item 10 is `P15-TSK-039`, which also builds the review's §6 rulings.
 
 **P15-TSK-022 — Abuse limits: registration and per-source throttling, cluster-safe** — `PLANNED`
 - **Objective**: no single source can create unbounded parties or drive unbounded load, across N replicas.
@@ -27735,6 +27742,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Definition of done**: `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T40: a per-source limit keyed on a client-supplied forwarded header is evaded by setting the header, so the source is the address the edge sets (`-011`), never one the client chooses; a test sending a forged forwarded header proves it.
 - *The owner's decision (2026-11-08, `THREAT_MODEL.md` section 6 item 6), status unchanged:* T47 (registration enumeration) is `ACCEPTED by the owner`, bounded by this task's registration throttle; verify-then-tell is `PI-017`. Cutting or weakening the registration throttle reopens the acceptance for the owner.
+- *Routed by the owner (2026-11-08, an ADR promise with no register row), status unchanged:* ADR-0052's per-merchant-key rate limit: this task states a bound or records a `GAP` in `THREAT_MODEL.md`.
 
 **P15-TSK-023 — The telemetry pipeline and the end-to-end trace** — `PLANNED`
 - **Objective**: traces and logs leave every replica through one scrubbing collector, and one payment is traceable from
@@ -27852,6 +27860,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   public) and its two cases into `GaugeRefresherTest`; `ShutdownOrderTest` holds the refresher in that class's place;
   no rule file changed (the scrape target is the management port, the job still `finapp`); the records keep both sides.
   Tests after the merge: named classes only, by the owner's rule of 2026-11-08 ("avoid long running tests"): `GaugeRefresherTest` 13/0 (`platform`); in `app`, `ShutdownOrderTest`, `ManagementPortTest`, `PrometheusEndpointTest`, `NoGaugeReadsOnTheScrapeTest`, `AccountingGaugeWiringTest`, `PlatformAlertRulesTest`, `ThreatModelIsCompleteTest`, `MutationDemonstrationTest`, `PlannedMetersExistTest`, `AdrRegistersAreReconciledTest`, `AccountingRunbookTest`, `SafeguardingReturnTest`, `BnplAlertRulesTest`, `TracingTest` and the three BNPL schedule suites, with the ArchUnit suites that ride along, 136/0 in 25 classes. Before the rule arrived, `:platform:test` ran whole and green and `:app:architectureTest` ran 284 tests in 48 classes with one failure, `ThreatModelIsCompleteTest#noPromiseOutlivesItsTask`, the finished-task citations above, since fixed. Owed to `P15-TST-002`: `RiskAlertRulesTest` (it reads the changed runbook; a scrape-based suite, skipped as slow), every other suite of the touched packages, and the database tiers; no rule file changed, so `promtool` did not re-run. Probes: 51 performed on the merged bytes, every one red, none re-hashed (`MUTATION_TESTING.md` section 2; the threat register's 18 a third time, on its final bytes, after `ThreatModelIsCompleteTest#noPromiseOutlivesItsTask` refused two citations of a finished task in section 5 - T14's residual, this merge's, and T2's coordinator note, red on master `40b253ad` itself - and both ids came out): every row whose last note of this task recorded a file the merge or its resolution changed - the threat register's 18, the runbook's 23, the platform refresher's 3 and its beans' 2, production's file and the test overlay; `-008`'s stop row carried onto `GaugeRefresherTest` and performed there (the await skipped); and two new `ShutdownOrderTest` rows, the refresher's lifecycle stopped first and its bound past the phase timeout.
+- *The owner's decision (2026-11-08), status unchanged:* accepted as built: one gauge thread per instance, Phase 16 measuring how long the proofs' reads take; `GaugesStale` a ticket; `InstanceDown` after 2 minutes. Whether every instance stale at once pages stays `-025`'s to propose.
 
 **P15-TSK-025 — SLOs, error budgets, correctness alerts and routing** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-024`'s merge, master `ca40b58c`; every dependency `COMPLETE`)
 - **Objective**: every critical flow has an objective and a burn-rate alert, every correctness signal pages, and every
@@ -27894,6 +27903,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   `PHASE_15_PLAN.md` §11.2 and the runbook.
 - *Routed by `P15-TSK-026` (2026-11-08), status unchanged:* the Kafka clients publish **no consumer-lag series** (no client metrics are bound to the registry); `OPERATIONS_RUNBOOK.md` §11.6's consumer-lag part reads lag today from `finapp.inbox.consumption{outcome}` against `finapp.outbox.publication{outcome}` and the broker's group view, and names this task for the consumption and freshness SLOs. A refused consumer is visible as readiness `DOWN` through the `kafkaConsumers` contributor, which an alert on readiness would see; whether that pages is this task's routing.
 - *Routed by `P15-TSK-026`'s review fix round (2026-11-08), status unchanged:* two consumer signals with no alert. **(a)** `finapp.inbox.poll.failures{outcome}` (`refused`, `failed`) now counts every thrown consumer poll, registered eagerly on every instance (`InboxConsumptionMeters`): a failed TLS handshake with the broker - an expired or rotated broker certificate, which reaches every replica at once and deliberately fails no readiness - is visible there and in the warn line naming `SslAuthenticationException`, and nowhere that pages; an alert on `sum(increase(...{outcome="failed"}[15m])) > 0` sustained, and on `refused` beside readiness, is this task's routing. **(b)** A consumer evicted past its poll budget (`max.poll.interval.ms` 120 s; a budget, not a bound, because handler statements have no timeout and the offset commit can wait 60 s) shows today only as a failed commit counted in `outcome="failed"` and as rebalances in the logs; an eviction or commit-failure series of its own - the receiver translating the client's commit failure into a platform outcome, as it translates a refusal - with its alert. **Testing**: a hermetic meter test per series; `promtool test` per rule (fires on its planted series, silent when healthy). **Acceptance**: both series in `PHASE_15_PLAN.md` §11.2 and `OPERATIONS_RUNBOOK.md` §11.6, which names them today.
+- *Routed by the owner (2026-11-08, an ADR promise with no register row), status unchanged:* ADR-0063's instance clock-offset signal: a series and an alert, or a dated reason why not.
 
 **P15-TSK-026 — Kafka for production: authenticated TLS, topics as code, rebalance-safe consumers** — `COMPLETE` (2026-11-08; built on branch `P15-TSK-026` from master `c1d07726`; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: the clients connect over authenticated TLS, every topic is declared, and a rolling update moves
@@ -28029,6 +28039,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   scope question open: the normalised attributes, each snapshot's canonical text) and the lending and BNPL agreement and
   acceptance evidence - each period open until a real jurisdiction is chosen (C12), the purges re-dated there.
   `THREAT_MODEL.md` T16's planned row says the same.
+- *Routed by the owner (2026-11-08, an ADR promise with no register row), status unchanged:* the policy names session rows as a data class (ADR-0030 promised a retention sweep and recorded no debt); the sweep itself is re-dated to Phase 16 (`CURRENT_STATE.md` §Known Architectural Debt).
 
 **P15-TSK-030 — Backup and restore with post-restore financial verification** — `PLANNED`
 - **Objective**: a restored database is proven financially whole before it would serve money.
@@ -28078,6 +28089,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
 - *Routed by `P15-TSK-026` (2026-11-08), status unchanged:* `finapp.inbox.retention` has a **floor**: every topic's `retention.ms` plus `segment.ms` plus the broker's retention check (8 days and 5 minutes today) must stay below it, or a redelivery outlives its dedupe record. `TopicCatalogueTest` asserts it against the code's default and the committed `application.yaml`, and cannot see a deployment's `FINAPP_INBOX_RETENTION`; the register should class the property and hold an overlay's value above that floor. The new Kafka properties (`finapp.kafka.sasl.username`, `finapp.kafka.sasl.password` - `SECRET` - and `finapp.kafka.ssl.truststore-location`) join the register too.
+- *Routed by the owner (2026-11-08, `X-TSK-008`'s remainder), status unchanged:* the session `touch` leftover (it extends by the policy the touching instance holds, so a rolling deploy that lengthens the idle timeout lengthens live sessions) is part of this task's rollout-safety question.
 
 **P15-TSK-032 — Platform runbooks, incident response, and their rehearsal** — `PLANNED`
 - **Objective**: every platform procedure an operator would need is written, linked from its alert, and rehearsed with
@@ -28201,6 +28213,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   struck on `CloseRuns.java` (PI-015 down to 321).
   **`X-TSK-008`'s five stores**, routed by `P15-TSK-002`'s ruling, which reached master after this task's gate: not taken,
   returned to `X-TSK-008` and the owner (the routed note above; `THREAT_MODEL.md` T13's row for them `REMEDIATION` again).
+- *The owner's decision (2026-11-08), status unchanged:* the offering floor is kept (its cost, a fail-closed refusal of an offer whose decision lapses within a clock step, accepted). `THREAT_MODEL.md` owner item 8 is `P15-TSK-037`; `X-TSK-008`'s five stores are `P15-TSK-038`.
 
 **P15-TSK-035 — The source-join census: every journal entry tied to the domain record that caused it** — `PLANNED`
 - **Objective**: a journal entry with no domain record behind it, or whose domain record's amounts differ from its lines,
@@ -28294,11 +28307,62 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   into this phase on ratification, as its own item after `-001` (security, T8)"); `X-TSK-015` moved here whole and is
   `CANCELLED`, moved, not dropped. Milestone M15.7, wave C.*
 
+**P15-TSK-037 — "The latest" by a stamp, outside the close and the terms: a census** — `PLANNED`
+- **Objective**: no single-row read decides anything by ordering on a stamp a stepped clock can reorder, outside the close and the terms (`-033`'s), and a new such read cannot arrive unjudged.
+- **Affected components**: risk (three reads and `V002`'s policy retirement), kyc (two), payments (two), fx, reconciliation and `app`'s lending reports (one each): recounted from the code; `DISTRIBUTED_EXECUTION.md` §3; `THREAT_MODEL.md` T13.
+- **Dependencies**: `-033`.
+- **Scope**: every single-row read ordering by a stamp, `ORDER BY <stamp> DESC ... LIMIT 1`, recounted by a guard that reads the code (ten by `grep` on 2026-11-08), classified as **deciding** or **displaying**; every deciding read ranked by the rows or named by identity, its clock-step case written; every displaying read recorded with why it decides nothing; risk `V002`'s retirement given the terms' rule (one forward migration, the new function diffing against the old in only the intended lines).
+- **Exclusions**: the twenty-odd stamp-descending *page* orderings (they list and decide nothing); accounting, lending and bnpl (`-033`); backfill (a retired version's end is frozen history).
+- **Architecture changes**: none. **Infrastructure changes**: none.
+- **Security implications**: none beyond the correctness class.
+- **Multi-instance implications**: removes each remaining judgement a stepped database clock could reverse; `PASS` on the counted clock-step cases, owed to `P15-TST-002` (C14).
+- **Failure and rollback**: forward migrations only; a read left deciding by a stamp is red in the guard.
+- **Testing and validation**: a hermetic guard over every module's production SQL: a single-row stamp-descending read must appear in the census with its classification (a new one is red); hermetic pins on each fixed statement; the database clock-step cases owed.
+- **Probe**: an unregistered stamp-ordered single-row read planted → the guard red; one fixed read's order restored → its pin red (its database half owed).
+- **Operational documentation**: `DISTRIBUTED_EXECUTION.md` §3's clock-step paragraph; `THREAT_MODEL.md` T13's planned row rewritten to evidence.
+- **Acceptance criteria**: every read classified; every deciding read fixed; risk `V002` on the terms' rule; the guard holds the census.
+- **Definition of done**: `DOD-FIN` where a read decides money, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+- *Added by the owner (2026-11-08), accepting `THREAT_MODEL.md` section 6 item 8's recommendation (a); milestone M15.11, wave D. If Phase 15 must shrink it is postponed (required before production use), never accepted.*
+
+**P15-TSK-038 — `X-TSK-008`'s five stores on the database's clock** — `PLANNED`
+- **Objective**: the five statements that still judge a stored bound against an instance's instant are judged and stamped on the database's clock (ADR-0014).
+- **Affected components**: `identity` (`JdbcRecoveryRequestStore.consume`, `JdbcContactChannelStore.verify`), `checkout` (`JdbcCheckoutSessionStore`'s expiry sweep), `merchant` (`JdbcFeeScheduleStore.findEffectiveVersionFor`, `JdbcPayoutDestinationStore.findDue`), `app` (`CheckoutSessions.open`), `THREAT_MODEL.md` T13, `POSTPONED_ISSUES.md` PI-002.
+- **Dependencies**: `-002` (its ruling).
+- **Scope**: each statement in `X-TSK-008`'s treatment: the bound compared with `clock_timestamp()` or `now()` in the statement that decides, business time left alone; PI-002's card-side fee version resolved on the database's clock after its share locks, as BNPL's pin is (a merchant migration binding the pin, with the trigger rank `merchant V012` used); a build rule in the shape of `SessionTimeIsTheDatabasesTest` covering every store's bound comparison.
+- **Exclusions**: the ordering `CHECK`s and the session leftovers (`X-TSK-008`'s remainder).
+- **Architecture changes**: none (ADR-0014 applied). **Infrastructure changes**: none.
+- **Security implications**: recovery-token life, contact verification and a payout destination's cooling-off decided on one clock: a skewed instance can neither extend nor shorten them.
+- **Multi-instance implications**: removes five judgements that depended on skew being small; `PASS` on skewed-instance cases owed to `P15-TST-002` (C14).
+- **Failure and rollback**: forward migrations only; the statements change, no row is rewritten.
+- **Testing and validation**: the build rule (a planted caller-instant comparison red); hermetic pins per statement; skewed-instance database cases, each asserting its skew precondition, owed.
+- **Probe**: restore one statement's bound on a bound parameter → the build rule red.
+- **Operational documentation**: `DISTRIBUTED_EXECUTION.md` §3; `THREAT_MODEL.md` T13's planned row rewritten to evidence; PI-002 struck at this task's merge.
+- **Acceptance criteria**: all five on the database's clock; the rule holds every store; `X-TSK-008`'s first family closed.
+- **Definition of done**: `DOD-SEC`, `DOD-FIN` for the fee version. **Risk**: Medium. **Cx**: M.
+- *Added by the owner (2026-11-08), scheduling `X-TSK-008`'s five stores as `P15-TSK-033`'s gate recommended when it returned them; milestone M15.11, wave D.*
+
+**P15-TSK-039 — The wider audit class and the two step-up rulings** — `PLANNED`
+- **Objective**: every refused or failed privileged act of Phases 7 to 10 leaves an audit outcome, and the money-redirecting and Phase 9 doors require the factor the access review ruled.
+- **Affected components**: `app` (the Phase 7 to 10 operator and merchant doors), `identity` (role assignment's factor check, the step-up component), `merchant`, `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`, `PRIVILEGED_ACCESS_REVIEW.md`, `THREAT_MODEL.md` T38.
+- **Dependencies**: `-021`.
+- **Scope**: **(a)** every refused and failed Phase 7 and Phase 8 act audited with its outcome (the refused four-eyes attempts: a self-approval, a stale echo, a refused kind), a merchant's dispute act naming its API key, the void dispatch's missing dispatch record; **(b)** a failed Phase 9 operator lookup, a not-found Phase 10 operator read, the credit policy-at-an-instant read and the review queue's served cases recorded, and an evidence read's reason screened for a minimum length; **(c)** as `PRIVILEGED_ACCESS_REVIEW.md` §6 rules: a factor enrolled before `MERCHANT_ADMINISTRATOR`, `MERCHANT_PAYOUT`'s or `PAYOUT_DESTINATION_APPROVE`'s roles can be granted, and `MULTI_FACTOR` declared on Phase 9's approvals, restarts and reversals; **(d)** the conditional step-up's 17 production copies extracted into one component, behaviour unchanged.
+- **Exclusions**: refusing a propose/approve holding (`PI-020`); workforce OIDC (C13).
+- **Architecture changes**: one step-up component. **Infrastructure changes**: none.
+- **Security implications**: T38's wider class closed; a role that can redirect a merchant's money cannot be held without a factor; existing holders named by a check of the holdings that already exist.
+- **Multi-instance implications**: each audit write commits with its act or in its own transaction, as the refused step-up does; `PASS` on counted cases owed to `P15-TST-002` (C14).
+- **Failure and rollback**: an audit write that fails answers a failure, as the refused step-up's does; (c)'s refusal fails closed.
+- **Testing and validation**: a build rule that every door of Phases 7 to 10 records its refusals; hermetic tests per refusal kind; a grant refused without a factor; the extraction proven by the 17 callers' existing tests; database cases owed.
+- **Probe**: remove one door's refused-act record → the rule red; admit a grant with no factor → its test red; let one Phase 9 approval run without `MULTI_FACTOR` → red.
+- **Operational documentation**: `AUDITABLE_ACTIONS.md`; `PRIVILEGED_ACCESS_REVIEW.md` §6 marked built; `THREAT_MODEL.md` T38's planned row rewritten to evidence.
+- **Acceptance criteria**: (a) to (d) as tested; the debt rows on them closed.
+- **Definition of done**: `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: L.
+- *Added by the owner (2026-11-08), accepting `THREAT_MODEL.md` section 6 item 10's recommendation; milestone M15.7, wave D.*
+
 **P15-TST-002 — The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015)** — `PLANNED`
 - **Objective**: the owed database suites of every Phase 15 task and of PI-012…PI-015 run once, fresh, on the final tree.
 - **Affected components**: every module's `databaseTest`, own-container and `kafkaTest` tiers; `MUTATION_TESTING.md`.
 - **Dependencies**: every item from `-002` to `-033`, and `-035` *(added 2026-11-08 with that item)* and `-036` *(added
-  2026-11-08 by `P15-TSK-002`, C15, with that item)*.
+  2026-11-08 by `P15-TSK-002`, C15, with that item)*, and `-037`, `-038`, `-039` and `P14-REM-009` *(added 2026-11-08 by the owner's decisions)*.
 - **Scope**: every tier run fresh once on the tree as it then stands, including `kafkaTest` (PI-012); PI-013's and
   PI-014's regression cases; PI-014's unclassified suites classified; PI-015's struck rows performed again on present
   bytes or struck for good with a reason; counts read from the JUnit XML with their timestamps.
@@ -28344,6 +28408,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every cell evidenced or a gap with an owner; no "ready" on a started container alone.
 - **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* the standard is written: [`PRODUCTION_READINESS.md`](../architecture/PRODUCTION_READINESS.md), the twelve dimensions as checkable clauses, a multi-instance row per unit (this entry's), six unit tables and 23 module tables, the open `P14-REM-*` entries named per unit and module. Its evidence grammar is the threat model's, parsed and resolved by `EvidenceCitations` (`com.finapp.app.architecture`), which this task's guard reuses. *(The fix round, 2026-11-08:)* the evidence grammar gained content pins (`contains: …`, `lacks: …`) and a `GAP` state, and the standard gained a boundary-to-unit map for Security (i) and clause-level `N/A` for managed PostgreSQL and Kafka on Deployment (a)–(c); a file that is not a test counts only with a pin or a test asserting its property.
+- *Routed by the owner (2026-11-08), status unchanged:* `X-TSK-008`'s remainder (the ordering `CHECK`s and the second session leftover) is counted as a named gap, horizon before production use.
 
 **P15-TST-001 — The rolling-deploy storm** — `POSTPONED` (by the owner, `POSTPONED_ISSUES.md` PI-004: every later phase's
 storm runs after the project's phases)
@@ -28400,6 +28465,7 @@ storm runs after the project's phases)
 - **Operational documentation**: `reviews/PHASE_15_REVIEW.md`.
 - **Acceptance criteria**: every clause holds, holds in another form recorded, or is a recorded deviation the owner
   accepts. **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: L.
+- *Routed by the owner (2026-11-08, an ADR promise with no register row), status unchanged:* ADR-0006's coupling review is part of the exit review.
 
 ---
 
@@ -28859,6 +28925,7 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   migration). Status unchanged, `PLANNED`; `THREAT_MODEL.md` T13's row for the five is `REMEDIATION` naming this entry;
   the owner schedules them - recommended as their own Phase 15 item before `P15-TST-002`, so their skew cases run in the
   pass.)*
+- *The owner's decision (2026-11-08), status unchanged:* the five stores are `P15-TSK-038` (Phase 15, before `P15-TST-002`). What stays here, the ordering `CHECK`s and the bulk-revocation leftover, has the horizon before production use, counted by `P15-TSK-034`; the `touch` leftover is `P15-TSK-031`'s question.
 
 **X-TSK-009 — Provider receipt after a timeout, proved deterministically** — `IN_PROGRESS`
 *(implemented and demonstrated 2026-09-27; awaiting the completion gate)*
