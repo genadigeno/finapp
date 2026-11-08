@@ -327,6 +327,9 @@ extra["ownContainerSuites"] =
         // P14-TST-002: it opens the year 2001 as the database's first periods and closes all twelve for good, activates two
         // mapping versions and commits some 22,000 journal lines on operational accounts no expectation names.
         "com.finapp.app.accounting.AccountingBatteryTest",
+        // P15-TSK-033: PI-013's reproduction locks, unlocks and proposes January 1999 on a shadowed database clock, as
+        // PeriodCloseDatabaseTest does without one.
+        "com.finapp.app.accounting.CloseRunClockStepDatabaseTest",
         "com.finapp.app.accounting.GlReadModelDatabaseTest",
         "com.finapp.app.accounting.OperationalReportsDatabaseTest",
         "com.finapp.app.accounting.PeriodCloseDatabaseTest",

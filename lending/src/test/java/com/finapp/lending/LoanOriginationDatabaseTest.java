@@ -644,9 +644,9 @@ class LoanOriginationDatabaseTest {
     // ------------------------------------------------------------------ the ranks, for every writer
 
     @Test
-    @DisplayName("the offering instant is the database's for every writer (P11-TSK-036, lending V028): a raw offer naming"
-            + " one in 2999 or in 2001 is born at the insert's own clock - GREATEST(statement_timestamp(),"
-            + " transaction_timestamp()) - never at the writer's value; the expiry and the permit from it")
+    @DisplayName("the offering instant is the database's for every writer (P11-TSK-036, lending V028; P15-TSK-033, V033): a raw offer"
+            + " naming one in 2999 or in 2001 is born at the insert's own clock - GREATEST(statement_timestamp(),"
+            + " transaction_timestamp(), the pinned version's start) - never at the writer's value; the expiry and the permit from it")
     void theOfferingInstantIsTheDatabasesForEveryWriter() throws Exception {
         activate(LOAN, "0.0815");
         Application application = application(LOAN, 10);
@@ -660,7 +660,8 @@ class LoanOriginationDatabaseTest {
                                 + " correlation_id) VALUES (gen_random_uuid(), ?, ?, ?, 'OFFERED', gen_random_uuid(), ?,"
                                 + " ?::timestamptz, statement_timestamp() + interval '30 days', ?::timestamptz,"
                                 + " ?::timestamptz, 'raw') RETURNING (offered_at = GREATEST(statement_timestamp(),"
-                                + " transaction_timestamp()) AND expires_at = LEAST(decision_valid_until, offered_at"
+                                + " transaction_timestamp(), (SELECT v.effective_from FROM lending.loan_terms_version v"
+                                + " WHERE v.id = terms_version_id)) AND expires_at = LEAST(decision_valid_until, offered_at"
                                 + " + interval '14 days') AND next_step_at = expires_at)::text")) {
                     insert.setObject(1, application.id().value());
                     insert.setObject(2, application.party());

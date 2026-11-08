@@ -94,6 +94,17 @@ class CloseRunStatementsTest {
     }
 
     @Test
+    @DisplayName("PI-013 (P15-TSK-033): the latest run is ranked by the rows - the present lock's run first, then the higher revision - and"
+            + " started_at only after both, so a backward step of the database's clock cannot put an earlier lock's run first")
+    void theLatestRunIsRankedByTheRows() {
+        assertThat(JdbcCloseRunStore.LATEST_RUN_SQL)
+                .contains("JOIN accounting.accounting_period period ON period.id = run.period_id")
+                .contains(" WHERE run.period_id = ? ORDER BY (run.period_locked_at = period.locked_at) IS TRUE DESC, run.period_revision DESC,")
+                .endsWith(" run.started_at DESC, run.id DESC LIMIT 1")
+                .doesNotContain("ORDER BY run.started_at");
+    }
+
+    @Test
     @DisplayName("a reader's history is bounded per check, newest first")
     void theHistoryIsBounded() {
         assertThat(JdbcCloseRunStore.ATTEMPTS_SQL).contains("row_number() OVER (PARTITION BY c.check_code ORDER BY c.attempt DESC)")

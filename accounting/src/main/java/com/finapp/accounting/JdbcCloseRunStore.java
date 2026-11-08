@@ -121,6 +121,17 @@ public final class JdbcCloseRunStore implements CloseRunStore {
             + " run.period_revision, run.started_at, run.checks_concluded_at, run.correlation_id"
             + " FROM accounting.close_run run JOIN accounting.accounting_period period ON period.id = run.period_id";
 
+    /**
+     * The period's latest run, <strong>ranked by the rows, never by a stamp a stepped clock can reorder</strong> (`P15-TSK-033`, PI-013): the run answering
+     * the period's present lock first ({@code close_run_one_per_lock} admits one; {@code locked_at} is set exactly while the period is not {@code OPEN}, so the
+     * test is false for every run of an {@code OPEN} period), then the higher revision (it moves only at a reopen, and every run of a revision is born before any
+     * of the next), and only then {@code started_at} - which orders nothing but the earlier locks of one revision, whose runs no act reads ({@link CloseRuns#view}
+     * names the present lock's by its identity). It read {@code ORDER BY run.started_at DESC, run.id DESC} until then: after a backward step of the database's
+     * clock an earlier lock's run read as the latest, and the month could not be proposed for the life of its lock.
+     */
+    static final String LATEST_RUN_SQL = RUN + " WHERE run.period_id = ?"
+            + " ORDER BY (run.period_locked_at = period.locked_at) IS TRUE DESC, run.period_revision DESC, run.started_at DESC, run.id DESC LIMIT 1";
+
     private static final String ATTEMPT_COLUMNS = "attempt.id, attempt.close_run_id, attempt.check_code, attempt.attempt,"
             + " attempt.status, attempt.reclaims, attempt.born_at, attempt.claimed_at, attempt.judged_by, attempt.failures,"
             + " attempt.evidence, attempt.concluded_at, attempt.correlation_id";
@@ -222,8 +233,7 @@ public final class JdbcCloseRunStore implements CloseRunStore {
 
     @Override
     public Optional<RunRow> latestRun(Connection unitOfWork, AccountingPeriodId period) {
-        return oneRun(unitOfWork, RUN + " WHERE run.period_id = ? ORDER BY run.started_at DESC, run.id DESC LIMIT 1",
-                period.value(), "reading a period's latest close run");
+        return oneRun(unitOfWork, LATEST_RUN_SQL, period.value(), "reading a period's latest close run");
     }
 
     @Override
