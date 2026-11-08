@@ -182,7 +182,10 @@ Financial impact:
 
 - **`show-details: when-authorized`** once `P0-EPIC-10` provides an authority. Until then the
   aggregate status is all that is published.
-- **A separate management port**, with Phase 15's deployment topology.
+- **A separate management port**, with Phase 15's deployment topology. *(Built by `P15-TSK-008`, 2026-11-08: the
+  actuator answers on 8081 alone, bound to loopback outside Kubernetes; the API port answers `404` for it. Details stay
+  `never`: as alternative E says, a port is not an authentication mechanism, so nothing here widened what a response
+  publishes. `P15-TSK-010`'s NetworkPolicy restricts who reaches the port.)*
 - **Kafka and Redis health**, if and only if some capability is made to require them
   synchronously — which needs its own decision, not a default.
 - **A liveness signal with substance** once there is a workload that can wedge.

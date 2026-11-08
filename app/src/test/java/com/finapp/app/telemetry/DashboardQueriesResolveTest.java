@@ -121,7 +121,8 @@ class DashboardQueriesResolveTest {
      *
      * <p>{@code http_server_requests_*} is registered when the first request is served, not at
      * startup, so a test that asserted before serving one would report a dashboard error that
-     * does not exist.
+     * does not exist. The request is the API port's, the port the dashboard watches: since
+     * `P15-TSK-008` the actuator answers on a port of its own. A 404 is still a request.
      */
     @BeforeEach
     void serveOneRequestSoTheHttpTimerExists() throws Exception {
@@ -130,7 +131,7 @@ class DashboardQueriesResolveTest {
                 .build()
                 .send(
                         HttpRequest.newBuilder(
-                                        URI.create("http://127.0.0.1:" + port + "/actuator/health/liveness"))
+                                        URI.create("http://127.0.0.1:" + port + "/v1/no-such-route"))
                                 .GET()
                                 .build(),
                         HttpResponse.BodyHandlers.ofString());

@@ -51,6 +51,18 @@ some to answer the brief would break ADR-0001.
 4. **Graceful shutdown is stated and tested.** The sequence is: a `preStop` pause, graceful HTTP, schedules drained
    within a bound, consumers closed, and the connection pool closed last. Correctness never depends on the drain: a
    killed pod's leases expire and its unpublished outbox rows are re-published.
+
+   *(Application half built by `P15-TSK-008`, 2026-11-08; the `preStop` pause and the grace are `P15-TSK-009`'s
+   manifest. Decision 3: the actuator answers on 8081 only, bound to loopback unless `FINAPP_MANAGEMENT_ADDRESS` names
+   the pod's address. Decision 4, as Spring's own phases run it on a real context (`ShutdownOrderTest`): readiness turns
+   `REFUSING_TRAFFIC` before any phase stops; the API port drains (`server.shutdown: graceful`, within
+   `spring.lifecycle.timeout-per-shutdown-phase`, 30 s); the 32 schedules stop claiming at once and drain in parallel,
+   each within 10 s and an interrupt's 2 s; the consumers take no new batch, acknowledge the one they hold and leave
+   their groups, within 10 s and 2 s; the management server closes, then the web server; the accounting gauge reader
+   lets its read end, within 3 s; the beans are destroyed, the pool after every stop has returned. Every component's
+   stop bound is below the phase timeout, and the lifecycle's worst case is 30 + 12 + 12 + 3 = 57 s before the
+   producer's close (`finapp.kafka.ack-timeout`, 10 s) and the pool's. The phases are `ShutdownOrder`'s. This note
+   changes no decision; the ADR stays `Proposed` until the phase's exit review.)*
 5. **State lives outside the cluster.** PostgreSQL and Kafka are managed services. In-cluster copies exist only in the
    test-only `kind` overlay, and a policy refuses them in any other overlay. Redis is not deployed. The application uses
    no object storage.

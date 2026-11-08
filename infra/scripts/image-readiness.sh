@@ -13,8 +13,8 @@
 # 2026-11-08). The run is restricted as a pod will be: the root filesystem read-only, /tmp a tmpfs, every capability
 # dropped, no privilege escalation.
 #
-# The readiness URL is the actuator's on the API port, 8080, today. P15-TSK-008 moves the actuator to a management
-# port (8081); READINESS_URL below follows it.
+# The readiness URL is the actuator's on the management port, 8081 (P15-TSK-008): the API port answers 404 there. The
+# application binds that port to loopback by default, which --network host shares with the poller, so nothing is set.
 #
 # Usage:   infra/scripts/image-readiness.sh [image]   (default: finapp-app:<revision>, image-build.sh's tag)
 # Passes through, when set: FINAPP_DB_URL (a compose database published on another loopback port).
@@ -24,7 +24,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$ROOT"
 
-READINESS_URL=http://127.0.0.1:8080/actuator/health/readiness
+READINESS_URL=http://127.0.0.1:8081/actuator/health/readiness
 RUNTIME_UID=65532
 
 fail() {

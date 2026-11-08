@@ -46,10 +46,12 @@ import org.springframework.stereotype.Component;
  *
  * <h2>Scope</h2>
  *
- * <p>PostgreSQL only, because it is the only hop that exists. There is no Kafka or Redis client on
- * the classpath, so a guard for those connections would be guarding nothing — the expectations for
- * them are documented in {@code SECURITY_ARCHITECTURE.md} and become enforceable with their first
- * client.
+ * <p>PostgreSQL only. The Kafka hop has its own guard, {@link KafkaTransportGuard}, added with the
+ * first broker client (`P2-TSK-001`): it refuses a non-loopback bootstrap over {@code PLAINTEXT}.
+ * There is no Redis client on the classpath (sessions live in PostgreSQL, ADR-0030), so a guard
+ * for that connection would be guarding nothing. The expectations per hop are in
+ * {@code SECURITY_ARCHITECTURE.md} §Transport encryption. <em>(Until `P15-TSK-008` this paragraph
+ * said no Kafka client existed either, which stopped being true with `P2-TSK-001`.)</em>
  *
  * <p>Fails closed, like {@link DatabaseCredentialGuard}: a URL whose host cannot be read has not
  * been shown to be local.

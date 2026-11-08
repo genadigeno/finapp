@@ -25,7 +25,13 @@ scrape_configs:
   - job_name: finapp
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ["host.docker.internal:8080"]
+      # The MANAGEMENT port (P15-TSK-008): the API port answers 404 for /actuator. The application
+      # binds it to loopback outside Kubernetes. Docker Desktop forwards host.docker.internal to the
+      # host's loopback, so this scrape works unchanged there (measured 2026-11-08 with compose's own
+      # host-gateway setting). On a Linux engine host-gateway is the bridge's address, which a
+      # loopback listener does not answer: start the application with FINAPP_MANAGEMENT_ADDRESS set to
+      # that bridge address (`docker network inspect bridge` shows it) - never 0.0.0.0.
+      - targets: ["host.docker.internal:8081"]
         labels:
           # A LABEL, not a metric tag. Which target a sample came from is the scraper's question,
           # which is exactly why MetricNames forbids the application from tagging it itself.

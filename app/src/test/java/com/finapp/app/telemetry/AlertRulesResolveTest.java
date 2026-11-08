@@ -154,7 +154,10 @@ class AlertRulesResolveTest {
 
     @Autowired private MeterRegistry registry;
 
-    /** As in {@link DashboardQueriesResolveTest}: some framework series exist only after a request. */
+    /**
+     * As in {@link DashboardQueriesResolveTest}: some framework series exist only after a request - one on the API port, the
+     * port these rules watch (the actuator answers on its own port since `P15-TSK-008`); a 404 is still a request.
+     */
     @BeforeEach
     void serveOneRequest() throws Exception {
         HttpClient.newBuilder()
@@ -162,7 +165,7 @@ class AlertRulesResolveTest {
                 .build()
                 .send(
                         HttpRequest.newBuilder(
-                                        URI.create("http://127.0.0.1:" + port + "/actuator/health/liveness"))
+                                        URI.create("http://127.0.0.1:" + port + "/v1/no-such-route"))
                                 .GET()
                                 .build(),
                         HttpResponse.BodyHandlers.ofString());

@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 
 /**
  * The positive control for {@link HealthEndpointTest}: readiness reports UP against a database
@@ -40,7 +40,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class HealthReadinessDatabaseTest {
 
-    @LocalServerPort private int port;
+    @LocalManagementPort private int port; // the management port: P15-TSK-008
 
     @Autowired private DataSource dataSource;
 

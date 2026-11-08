@@ -3,6 +3,23 @@ spring:
     name: finapp
 
   # ---------------------------------------------------------------------------
+  # Shutdown (P15-TSK-008, ADR-0120 decision 4).
+  #
+  # Spring stops the context's lifecycle beans in phases and waits for each phase up to this
+  # timeout before moving on. The order is ShutdownOrder's: readiness refuses, the API port drains,
+  # the schedules drain, the consumers commit and leave their groups, the management server closes,
+  # and the connection pool closes after all of them. Every component's own stop is bounded below
+  # this (ShutdownOrderTest holds each one), so the timeout only ever cuts off the HTTP drain: a
+  # request still running 30 seconds after the port closed.
+  #
+  # The grace period a deployment gives a stopping pod must cover the sum: the preStop pause, then
+  # up to 30 s of HTTP, 12 s of schedules, 12 s of consumers, 3 s of the gauge reader, and the
+  # producer's close (finapp.kafka.ack-timeout) - P15-TSK-009's manifest states it.
+  # ---------------------------------------------------------------------------
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  # ---------------------------------------------------------------------------
   # Database.
   #
   # NO SECRET IS COMMITTED HERE, and that is enforced rather than promised:
@@ -71,6 +88,18 @@ spring:
         # choosing that number without any real queries to measure would be a guess that
         # aborts legitimate work later. It belongs with Phase 3, where the queries exist.
         ApplicationName: finapp
+
+# ---------------------------------------------------------------------------
+# The API port's shutdown (P15-TSK-008).
+#
+# GRACEFUL: when the instance stops, the port stops accepting and every request it accepted
+# finishes, within spring.lifecycle.timeout-per-shutdown-phase. It is Spring Boot's default and is
+# stated anyway, for the probes' reason below: a default nobody wrote down is one an upgrade can
+# change unnoticed, and an accepted payment request cut off mid-flight is what this prevents.
+# ShutdownOrderTest holds it on a real context.
+# ---------------------------------------------------------------------------
+server:
+  shutdown: graceful
 
 # ---------------------------------------------------------------------------
 # The connection-limit arithmetic (P1-TSK-004, ADR-0014).
@@ -142,6 +171,23 @@ logging:
 # what a developer's machine should do.
 # ---------------------------------------------------------------------------
 management:
+  # The management port (P15-TSK-008, ADR-0120 decision 3; THREAT_MODEL.md T2).
+  #
+  # The actuator - health, liveness, readiness, info and the scrape - answers on 8081 and on
+  # nothing else: the API port answers 404 for every /actuator path, so no ingress that routes the
+  # API can route these. The kubelet's probes and Prometheus reach the pod on 8081 directly.
+  #
+  # LOOPBACK BY DEFAULT, for every run outside Kubernetes: a developer's machine, a test, a
+  # container started by hand. Only the Kubernetes overlays set FINAPP_MANAGEMENT_ADDRESS, to the
+  # pod's own address (P15-TSK-009), where P15-TSK-010's NetworkPolicy admits the kubelet and
+  # Prometheus alone. Until that policy exists the endpoints stay unauthenticated, which is the two
+  # debt rows in CURRENT_STATE.md: moving them off the API port is this block, closing them is that
+  # policy. The local Prometheus reaches loopback through host.docker.internal on Docker Desktop;
+  # see infra/prometheus/prometheus.yml for a Linux engine.
+  server:
+    port: 8081
+    address: ${FINAPP_MANAGEMENT_ADDRESS:127.0.0.1}
+
   # Spring Boot 4 gates the OpenTelemetry SDK behind this, and it is off unless asked for. With
   # only the bridge on the classpath there is no SdkTracerProvider and no real Tracer, so spans
   # are recorded into a no-op and silently dropped - a tracing setup that looks configured and

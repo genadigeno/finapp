@@ -389,7 +389,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T2 | The actuator is an allow-list: `env`, `beans`, `configprops`, `threaddump`, `loggers`, `mappings`, `metrics`, `conditions` and `scheduledtasks` answer `404` | EXISTS | `app/src/test/java/com/finapp/app/api/HealthEndpointTest.java#theEndpointAllowListHolds` |
 | T2 | `heapdump`, `shutdown` and `caches` answer `404` | EXISTS | `app/src/test/java/com/finapp/app/api/HealthEndpointTest.java#theEndpointsBehindASecondGateAreAlsoAbsent` |
 | T2 | A health response is a status and nothing else, and `info` carries build identity and nothing about the machine | EXISTS | `app/src/test/java/com/finapp/app/api/HealthEndpointTest.java#healthPublishesStatusAndNothingElse`; `app/src/test/java/com/finapp/app/api/HealthEndpointTest.java#infoCarriesBuildIdentityOnly` |
-| T2 | The actuator moved to a management port, bound to loopback outside Kubernetes | PLANNED | `P15-TSK-008` |
+| T2 | The actuator answers on the management port alone: health, liveness, readiness, info and the scrape answer there, and the API port answers `404` for each, on production's own configuration | EXISTS | `app/src/test/java/com/finapp/app/api/ManagementPortTest.java#theActuatorAnswersOnlyOnTheManagementPort` |
+| T2 | The management port binds loopback unless a deployment names an address: production's file states 8081 and `${FINAPP_MANAGEMENT_ADDRESS:127.0.0.1}`, the running management connector is bound to a loopback address, and, on a host with another address, the port is refused there while the API port accepts | EXISTS | `app/src/test/java/com/finapp/app/api/ManagementPortTest.java#theManagementPortBindsLoopback`; `app/src/test/java/com/finapp/app/api/ManagementPortTest.java#productionStatesTheContract` |
 | T2 | NetworkPolicy admitting the management port from the kubelet and monitoring only | PLANNED | `P15-TSK-010` |
 | T3 | Below `MULTI_FACTOR`, the interceptor refuses the manual adjustment's and the prior-period adjustment's approvals `403` before the permission is read | EXISTS | `app/src/test/java/com/finapp/app/ledger/ApprovalAssuranceTest.java#theRefusalIsTheInterceptors` |
 | T3 | The period, rebuild and valuation-gap approvals are pinned at `MULTI_FACTOR` | EXISTS | `app/src/test/java/com/finapp/app/ledger/ApprovalAssuranceTest.java#thePeriodApprovalsArePinned`; `app/src/test/java/com/finapp/app/ledger/ApprovalAssuranceTest.java#theRebuildAndTheGapApprovalsStepUp` |
@@ -708,8 +709,10 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   `DocumentCipher`, `EvidenceCipher`, `PayoutEvidenceCipher` and `FxEvidenceCipher`. `X-TSK-010` names the first four,
   and the fifth is routed onto its entry. Every column outside these ciphers is plaintext in PostgreSQL until volume
   encryption exists (`-015`). `SECURITY_ARCHITECTURE.md` §Encryption at rest has the detail.
-- **T2.** `/actuator/health`, `/actuator/info` and `/actuator/prometheus` are served unauthenticated on the API port
-  today. Two `CURRENT_STATE.md` debt rows record this, and `-008` and `-010` close them.
+- **T2.** `/actuator/health`, `/actuator/info` and `/actuator/prometheus` are still served unauthenticated, now on
+  the management port alone: loopback outside Kubernetes, and the pod's address once `-009`'s overlays set it, where
+  anything that reaches the pod reaches them until a policy restricts it. Two `CURRENT_STATE.md` debt rows record this, and `-010`'s NetworkPolicy
+  closes them. *(Read "served unauthenticated on the API port today" until 2026-11-08, when the port moved.)*
 - **T14.** The connection budget guard checks the instance count the configuration declares. Nothing ties that
   declaration to the replicas actually running, which `-009`'s manifest policy and `-012`'s measured peak do. Today an
   unauthenticated scrape runs about sixty gauges' queries on the scrape thread (`-024`).

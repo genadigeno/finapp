@@ -233,6 +233,26 @@ class KafkaEventReceiverTest {
                 .isEqualTo(1L);
     }
 
+    @Test
+    @DisplayName("a stop's wakeup landing inside a batch still acknowledges what the batch settled (P15-TSK-008)")
+    void aWakeupInsideABatchStillAcknowledges() {
+        WakeupOnCommitConsumer woken = new WakeupOnCommitConsumer(journal);
+        woken.assign(List.of(PARTITION));
+        woken.updateBeginningOffsets(Map.of(PARTITION, 0L));
+        consumer = woken;
+        // The stop arrives while the handler runs: the real consumer then throws from the next blocking call, the commit.
+        KafkaEventReceiver receiver = receiver(handler("probe.consumer", (connection, event) -> woken.wakeup()));
+        consumer.addRecord(record(0, EventId.next(IDS), "probe.SomethingHappened", "x"));
+
+        ReceiverPollResult result = receiver.pollOnce();
+
+        assertThat(result).isEqualTo(new ReceiverPollResult(1, 0, 0, 0));
+        assertThat(journal)
+                .as("the wakeup spent on the first commit, the settled record acknowledged by the second")
+                .containsExactly("effect-committed", "commit-woken", "offsets-acknowledged");
+        assertThat(committedOffset()).as("its next owner does not redeliver it").isEqualTo(1L);
+    }
+
     // -----------------------------------------------------------------
 
     private KafkaEventReceiver receiver(InboxEventHandler... handlers) {
@@ -339,6 +359,36 @@ class KafkaEventReceiverTest {
 
         @Override
         public void commitSync(Map<TopicPartition, OffsetAndMetadata> offsets) {
+            journal.add("offsets-acknowledged");
+            super.commitSync(offsets);
+        }
+    }
+
+    /**
+     * {@code KafkaConsumer}'s wakeup where a stop meets a batch: pending until the next blocking call, which throws once
+     * and spends it - here, the commit (`P15-TSK-008`).
+     */
+    private static final class WakeupOnCommitConsumer extends MockConsumer<String, byte[]> {
+        private final List<String> journal;
+        private volatile boolean wakeupPending;
+
+        private WakeupOnCommitConsumer(List<String> journal) {
+            super("earliest");
+            this.journal = journal;
+        }
+
+        @Override
+        public void wakeup() {
+            wakeupPending = true;
+        }
+
+        @Override
+        public void commitSync(Map<TopicPartition, OffsetAndMetadata> offsets) {
+            if (wakeupPending) {
+                wakeupPending = false;
+                journal.add("commit-woken");
+                throw new org.apache.kafka.common.errors.WakeupException();
+            }
             journal.add("offsets-acknowledged");
             super.commitSync(offsets);
         }
