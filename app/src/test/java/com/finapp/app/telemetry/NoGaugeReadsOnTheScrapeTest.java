@@ -3,6 +3,7 @@ package com.finapp.app.telemetry;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.metrics.GaugeRefresher;
+import com.finapp.platform.metrics.RefreshedReading;
 import io.micrometer.core.instrument.FunctionCounter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Measurement;
@@ -16,8 +17,11 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,10 +43,16 @@ import org.springframework.test.annotation.DirtiesContext;
  * <p>The test resources' overlay is loaded, deliberately: it configures every conditional surface (the provider
  * endpoints), so the most meters exist, and nothing in it touches the mechanism - the registry has no switch. The first
  * reads' default is {@code AccountingGaugeWiringTest}'s, on production's own file.
+ *
+ * <p><strong>The main case runs first, on caches nothing has filled</strong>: the overlay turns the first reads off, so
+ * no reading of this context has been read, and every gauge class's own floor is cold, so a read on the scrape thread
+ * would reach the database rather than a class's cache. It asserts that precondition. Its probe found the need: a look
+ * made to read in line passed here when a planted case's scrape, run first, had filled every cache within its floor.
  */
 @Tag("slice")
 @SpringBootTest(properties = "spring.datasource.url=jdbc:postgresql://127.0.0.1:1/absent")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("no gauge reads the database on the scrape thread: every meter of the real context, rendered (P15-TSK-024)")
 class NoGaugeReadsOnTheScrapeTest {
 
@@ -68,8 +78,11 @@ class NoGaugeReadsOnTheScrapeTest {
     }
 
     @Test
+    @Order(1)
     @DisplayName("every finapp function-backed meter of the context is served off the scrape, and one scrape of every meter, with every meter's measurements read again on the same thread, asks the database for nothing; the refresher reads instead")
     void noGaugeReadsTheDatabaseOnTheScrapeThread() throws Exception {
+        assertThat(refresher.tracked()).as("the first look at a context nothing has read: every gauge class's cache is cold, so a read on"
+                + " the scrape thread would reach the database").isNotEmpty().noneMatch(RefreshedReading::hasBeenRead);
         OffScrapeMeterRegistry offScrape = RefreshedGauges.offScrape(registry);
         Set<Meter.Id> functionBacked = registry.getMeters().stream()
                 .filter(meter -> meter instanceof Gauge || meter instanceof FunctionCounter)
@@ -90,6 +103,7 @@ class NoGaugeReadsOnTheScrapeTest {
     }
 
     @Test
+    @Order(2)
     @DisplayName("the guard is live: a planted gauge outside the platform's names, reading the database on the scrape, is caught; one inside them is moved off the scrape")
     void aPlantedReadOnTheScrapeIsCaught() throws Exception {
         Gauge outside = Gauge.builder("planted.scrape.read", () -> read()).strongReference(true).register(registry);
@@ -114,6 +128,7 @@ class NoGaugeReadsOnTheScrapeTest {
     }
 
     @Test
+    @Order(3)
     @DisplayName("the context stopped and started (PI-014 item 2): the refresher stops with it, starts again, and every reading it holds answers - the canary and every configuration gauge a number")
     void theRefresherRestartsWithTheContext() throws Exception {
         assertThat(refresher.isRunning()).isTrue();

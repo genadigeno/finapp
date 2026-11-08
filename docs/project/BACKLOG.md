@@ -27521,7 +27521,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every leg found in one trace; no needle.
 - **Definition of done**: `DOD-OBS`, `DOD-SEC`. **Risk**: Medium. **Cx**: L.
 
-**P15-TSK-024 — Every gauge off the scrape thread, a rule on `up`, the refresher restartable** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-024 — Every gauge off the scrape thread, a rule on `up`, the refresher restartable** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`; read `READY` until its gate)
 - **Objective**: a slow database never loses a whole scrape, and a stopped instance is noticed.
 - **Affected components**: `platform` (the refresher moved from `app`'s accounting package), about sixty metric classes,
   `infra/prometheus/rules/`, `DISTRIBUTED_EXECUTION.md` §3.
@@ -27542,6 +27542,38 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; two debt rows and PI-014 item 2 closed.
 - **Definition of done**: `DOD-OBS`. **Risk**: Medium. **Cx**: L.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T14 cites this task: an unauthenticated scrape today runs about sixty gauges' database reads on the scrape thread, so taking every gauge off it also removes a cheap way to load the pool.
+- **As built** (2026-11-08; branch `P15-TSK-024` from master `c1d07726`; no migration, no new ADR - a dated as-built note on
+  ADR-0124 decision 7). **Counted first**: `Gauge.builder` at 122 sites in 78 classes of `app` (no other module registers a
+  meter): 60 classes read the database - 47 on the scrape thread, accounting's nine on `AccountingGaugeRefresher`, risk's four
+  on virtual threads of their own - and 18 `*Beans` register 24 configuration gauges; no class answered 0 for a failed or an
+  unread read; every read goes through the one `DataSource` bean. **The refresher**, moved to `platform` and framework-free:
+  `GaugeRefresher` (one daemon thread, `gauge-refresher`; its executor made in `start()` through an `AtomicReference` and shut
+  in `stop()`, every queued read dropped at the stop putting its flag down, a bounded wait) and `RefreshedReading` (one
+  meter's last value: no value before its first read, the read's own answer after it, the last value while an ask is
+  answered, no value once an ask has waited `finapp.gauges.stale-after` - 2 minutes - single flight, a stepped-back clock
+  read as "not within"). **Applied at the registry, not per class**: `app`'s `OffScrapeMeterRegistry` (the application's
+  Prometheus registry, `GaugeRefresherBeans`) hands the function of every `finapp.` gauge (time gauges with them), function
+  counter and custom meter to the refresher; a `finapp.` function timer is refused (its count could not be NaN); names, tags,
+  units and help untouched; weak references kept weak. Accounting's `AccountingGaugeRead` keeps its snapshot, timeout, floor
+  and NaN and reads in line on that thread; `AccountingGaugeRefresher` is gone; `finapp.accounting.gauges.read-at-start` is
+  now `finapp.gauges.read-at-start`. The canary `finapp.gauges.refreshed`. **The guard**, `NoGaugeReadsOnTheScrapeTest`:
+  the real context, one scrape of every meter and every meter's measurements read again on the scrape thread over a
+  recording `DataSource` - no connection asked for there; every `finapp.` gauge and function counter served off the scrape;
+  the refresher's asks at least one per database-reading class; a planted non-`finapp` gauge reading the database on the
+  scrape caught, a planted `finapp.` one moved off; the context stopped and started, every configuration gauge and the
+  canary a number. **The rules**: `infra/prometheus/rules/platform.yml` - `InstanceDown` (`up{job="finapp"} == 0`, per
+  instance, 2 m, page), `FinappTargetsAbsent` (`absent(up)`, 5 m, page), `GaugesStale` (the canary NaN, 5 m, ticket) -
+  with `promtool test` cases over two instances in `infra/prometheus/tests/platform.test.yml` (run through the locally
+  present `prom/prometheus` v3.14.0 by digest: `SUCCESS`; `promtool check rules`: 3 rules) and `PlatformAlertRulesTest`.
+  **Tests that read a context gauge's value** settle the refresher first (`RefreshedGauges`, no in-line mode), the
+  hermetic ones that prove an unreadable gauge's NaN (`AccountingAlertRulesTest`, `PrometheusEndpointTest`) included, so a
+  NaN there is a failed read and never one that did not run. **Documents**: runbook §10.14 corrected and §11.8's instance-down
+  and stale-gauge parts written; `DISTRIBUTED_EXECUTION.md` §3's row rewritten; `THREAT_MODEL.md` T14's row `EXISTS` and its
+  residual rewritten; `PRODUCTION_READINESS.md`'s readings; the debt row on the scrape thread paid, the database-pass and
+  lending-proof rows annotated; `DECISIONS.md` §Deferred's two rows settled (routing stays `-025`'s); PI-014 item 2 fixed
+  and owed its database case. **Owed to `P15-TST-002`** (C14): `AlertRulesResolveTest#theAccountingRulesResolve` on a
+  restarted context and every database suite that now settles before a value. Routed onto `-025`'s entry: the rule file,
+  the `promtool` cases for its CI step, the job name and the severities.
 
 **P15-TSK-025 — SLOs, error budgets, correctness alerts and routing** — `PLANNED`
 - **Objective**: every critical flow has an objective and a burn-rate alert, every correctness signal pages, and every

@@ -37,9 +37,10 @@ class GaugeRefresherBeans {
     static final String REFRESHED = "finapp.gauges.refreshed";
 
     /**
-     * One per instance. {@code finapp.gauges.read-at-start} is for the test contexts, where a background reader would race
-     * what a suite asserts; off in production, a gauge reads first at the first scrape, and a NaN at a {@code delta}
-     * window's edge blinds that window's growth rules. {@code NoGaugeReadsOnTheScrapeTest} boots production's own file.
+     * One per instance. {@code finapp.gauges.read-at-start} (default true) is for the test contexts, where a background
+     * reader would race what a suite asserts. Were it off in production, a gauge would read first at the first scrape, and a
+     * NaN at a {@code delta} window's edge blinds that window's growth rules. {@code AccountingGaugeWiringTest} boots
+     * production's own file and holds the default.
      */
     @Bean
     GaugeRefresher gaugeRefresher(@Value("${finapp.gauges.read-at-start:true}") boolean readAtStart,
