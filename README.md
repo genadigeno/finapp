@@ -590,6 +590,8 @@ tag and digest weekly; `check-pinned-images.sh` reports a moved tag or a newer r
 ./infra/scripts/image-scan.sh
 ```
 
+The migrator image is scanned the same way by its own job, `./infra/scripts/image-scan.sh --only finapp-migrator` (§5g).
+
 It scans every image tagged `finapp-*:<commit>` for vulnerabilities, secrets and misconfiguration, HIGH and CRITICAL
 failing; writes one CycloneDX SBOM per image to `build/image-sboms/`, and refuses one that does not list the image's
 packages and every third-party jar in it; then it builds five planted images and requires each to be refused by name.
@@ -635,7 +637,7 @@ Independent jobs, so a failure names its own gate
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved dependency set |
 | `iac` | The Terraform passes `fmt`, `tflint`, `trivy config`, `validate` and `terraform test` with mock providers, and each check refuses a planted defect; no credential, no backend. Run it yourself: `./infra/scripts/terraform-check.sh` (`OPERATIONS_RUNBOOK.md` §11.13) |
 | `image` | The application image built twice and identical, non-root, the base plus the jar and nothing else, within budget, scanned (no HIGH or CRITICAL finding beyond those carried with a reason and an expiry), one SBOM per image, and ready against compose's PostgreSQL and Kafka (§5f) |
-| `migrator-image` | The migrator image built twice and identical, non-root, the base plus its libraries and the repository's migrations and nothing else, within budget; run against a throwaway PostgreSQL: schema history and schema identical to `flywayMigrate`'s, a second run a no-op, concurrent runs each migration once, a held lock a bounded failure, the role bootstrap (§5g) |
+| `migrator-image` | The migrator image built twice and identical, non-root, the base plus its libraries and the repository's migrations and nothing else, within budget, scanned as the application image is, its own SBOM kept; run against a throwaway PostgreSQL: schema history and schema identical to `flywayMigrate`'s, a second run a no-op, concurrent runs each migration once, a held lock a bounded failure, the role bootstrap (§5g) |
 | `sast` | Semgrep over every module's production source: a statement built from anything but constants, a provider's answer read with no bound, Java security, Spring, secrets; every finding either fixed or in the baseline with a reason (§5f) |
 
 The `migrations` job starts PostgreSQL from this same `compose.yaml`, so CI and your machine

@@ -2168,7 +2168,7 @@ One gauge NaN while the canary is 1 is not this alert: that gauge's read is fail
 
 ### 11.9 A failing scan
 
-**When.** CI's `image` job or `sast` job is red, or `./infra/scripts/image-scan.sh` or `./infra/scripts/sast.sh` exits
+**When.** CI's `image`, `migrator-image` or `sast` job is red, or `./infra/scripts/image-scan.sh` or `./infra/scripts/sast.sh` exits
 non-zero on a developer's machine. They are the same scripts. A red **scheduled** run with no new commit means a new
 advisory against an unchanged image: the weekly run re-scans the last built image with a fresh database.
 
@@ -2214,6 +2214,7 @@ From `sast.sh`:
 
 ```bash
 ./infra/scripts/image-build.sh && ./infra/scripts/image-scan.sh
+./infra/scripts/migrator-image-build.sh && ./infra/scripts/image-scan.sh --only finapp-migrator
 ./infra/scripts/sast.sh
 ```
 

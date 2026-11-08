@@ -12,7 +12,7 @@
 #     row stays harmlessly silent, so check it at each base-image or dependency bump.
 #
 # As found on 2026-11-08 by Trivy 0.76.2 on the application image built from this change: 18 HIGH, 0 CRITICAL, no secret,
-# no misconfiguration.
+# no misconfiguration. The migrator image, read separately, carries the ten base-image rows below and none of the eight library rows.
 vulnerabilities:
   # The Debian 13 packages of the pinned distroless runtime base, whose digest is the current digest of its tag
   # (checked 2026-11-08): nothing here can be fixed in this repository except by a newer base image.
