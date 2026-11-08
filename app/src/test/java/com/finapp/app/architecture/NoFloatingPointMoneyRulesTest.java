@@ -428,6 +428,9 @@ class NoFloatingPointMoneyRulesTest {
                     // verbatim: ints out of ReceiverPollResult, Counter.increment(double) at
                     // the registry boundary, floating point nowhere else in the class.
                     "com.finapp.app.eventing.InboxConsumers$Loop",
+                    // P15-TSK-029. The SAME case again: the count of rows a retention sweep deleted, an int from the
+                    // function's result, published through Counter.increment(double) at the registry boundary. A row count, never an amount.
+                    "com.finapp.app.eventing.RetentionSweepSchedule",
                     // P13-TSK-019. The SAME case again: two counts - journal entries beyond the
                     // monitoring watermark (JournalEntryStore.countBeyond returns long, saturating)
                     // and UNCLASSIFIED monitored transactions (MonitoredTransactionStore

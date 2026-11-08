@@ -24,7 +24,7 @@ import lombok.extern.slf4j.Slf4j;
  * reduces retries.
  *
  * <p>{@link #stop(Runnable)} is the form Spring calls: it stops claiming on Spring's thread and waits on a thread of its own,
- * so the thirty-two schedules of one phase drain in parallel and the phase costs one bound, not thirty-two. Process-local
+ * so the schedules of one phase drain in parallel and the phase costs one bound, not one per schedule. Process-local
  * mechanics, like the executor itself: losing them costs this instance's ticks and nothing else.
  */
 @Slf4j

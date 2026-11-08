@@ -5460,6 +5460,6 @@ deny-list.
 |---|---|---|
 | A `Classification` enum in Java | Nothing would consume it. No production code today reads or writes a classified field, so an enum would be a speculative surface maintained for an imagined caller. The register plus its guard is what later tasks actually meet | Phase 1, with party data |
 | Column-level encryption or tokenisation | There is nothing restricted in the database yet, and the mechanism belongs with the data | Phase 1 (PII), `P0-TSK-034` (at rest) |
-| Per-level retention periods | Retention is a correctness bound for the idempotency, inbox and outbox tables (`DATA_MIGRATIONS.md` §8-9) and a regulatory one for audit and financial history. Those are different questions with different owners, and folding them into a classification level would answer both wrongly | Phase 15 |
+| Per-level retention periods | Retention is a correctness bound for the idempotency, inbox and outbox tables (`DATA_MIGRATIONS.md` §8-9) and a regulatory one for audit and financial history. Those are different questions with different owners, and folding them into a classification level would answer both wrongly | Phase 15 *(written by `P15-TSK-029`, 2026-11-08, by data class rather than by level: `DATA_RETENTION.md`)* |
 | Access control per level | There is no authority to authorise against. The database role split (`P0-TSK-022`) is the only access control that exists | `P0-EPIC-10` onward |
 | Classification of Kafka topics, Redis keys, object storage | None exist yet. The register covers the one store that holds data | Phase 3 onward |

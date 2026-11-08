@@ -99,8 +99,12 @@ class InboxDeliveryOrderTest {
 
     @BeforeEach
     void clean() throws SQLException {
-        try (Statement statement = connection.createStatement()) {
+        // The migrator: since platform V012 the application role deletes from the inbox only through the sweep's function.
+        try (Connection migrator = DatabaseRoles.migrator();
+                Statement statement = migrator.createStatement()) {
             statement.executeUpdate("DELETE FROM " + INBOX);
+        }
+        try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("DELETE FROM " + PROJECTION);
         }
         connection.commit();
@@ -313,9 +317,11 @@ class InboxDeliveryOrderTest {
      */
     private static void sweep(UUID transfer, int sequence) throws SQLException {
         InboxKey key = keyFor(transfer, sequence);
-        try (PreparedStatement delete =
-                connection.prepareStatement(
-                        "DELETE FROM " + INBOX + " WHERE consumer = ? AND dedupe_key = ?")) {
+        // The migrator: since platform V012 the application role cannot delete a record out of turn, which is what this does.
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement delete =
+                        migrator.prepareStatement(
+                                "DELETE FROM " + INBOX + " WHERE consumer = ? AND dedupe_key = ?")) {
             delete.setString(1, key.consumer());
             delete.setString(2, key.dedupeKey());
             delete.executeUpdate();

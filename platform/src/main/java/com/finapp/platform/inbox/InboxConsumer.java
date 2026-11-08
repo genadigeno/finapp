@@ -107,7 +107,10 @@ public final class InboxConsumer<T> {
         this.retention = retention;
     }
 
-    /** The dedupe window every record is dated with, for what must be judged against it (`P15-TSK-028`: a replay). */
+    /**
+     * The dedupe window every record is dated with, for what must be judged against it: a replay (`P15-TSK-028`) and the
+     * retention sweep's bound (`P15-TSK-029`), each read from here rather than from a copy of the setting.
+     */
     public Duration retention() {
         return retention;
     }

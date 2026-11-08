@@ -19,6 +19,8 @@ import com.finapp.platform.outbox.BrokerConnection;
 import com.finapp.platform.outbox.EventPublisher;
 import com.finapp.platform.outbox.KafkaEventPublisher;
 import com.finapp.platform.outbox.OutboxRelay;
+import com.finapp.platform.retention.RetentionConnectionSource;
+import com.finapp.platform.retention.RetentionSweep;
 import com.finapp.platform.telemetry.Spans;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.security.Sensitive;
@@ -151,6 +153,65 @@ public class EventingBeans {
     InboxConsumer<Connection> inboxConsumer(
             Clock clock, @Value("${finapp.inbox.retention:P14D}") Duration retention) {
         return new InboxConsumer<>(new JdbcInboxRecordStore(), clock, retention);
+    }
+
+    /** The connection a retention sweep's batch runs on: the instance's own pool, so the fleet's budget does not move (`P15-TSK-029`). */
+    @Bean
+    RetentionConnectionSource retentionConnections(DataSource dataSource) {
+        return dataSource::getConnection;
+    }
+
+    /** Eager either way, as the consumers' counters are: the two tables' series exist on an instance whose sweeps are off. */
+    @Bean
+    RetentionSweepMeters retentionSweepMeters(MeterRegistry registry) {
+        return new RetentionSweepMeters(registry, List.of("outbox_event", "inbox_message"));
+    }
+
+    // The relay schedule's gate, for its reason: a background worker deleting rows would race the suites' assertions.
+    /**
+     * Published outbox rows, kept {@code finapp.outbox.retention} for diagnosis and replay. Refused at start below the inbox's
+     * dedupe window, read from the consumer itself, because an audited replay reads the outbox across that window.
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "finapp.retention.sweep.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    RetentionSweepSchedule outboxRetentionSweepSchedule(
+            RetentionConnectionSource connections,
+            InboxConsumer<Connection> inboxConsumer,
+            @Value("${finapp.outbox.retention:P30D}") Duration retention,
+            @Value("${finapp.retention.sweep.interval:PT5M}") Duration interval,
+            @Value("${finapp.retention.sweep.batch-size:500}") int batchSize,
+            RetentionSweepMeters meters) {
+        return new RetentionSweepSchedule(
+                "outbox-retention-sweep",
+                RetentionSweep.ofPublishedOutboxEvents(connections, retention, inboxConsumer.retention(), batchSize),
+                interval,
+                meters);
+    }
+
+    /**
+     * Expired inbox records. The bound is the retention the consumer writes with, from the consumer, so this sweep has no setting
+     * of its own. {@link RetentionSweep} refuses that retention at or below the oldest record the broker can redeliver, so an
+     * instance whose {@code finapp.inbox.retention} would admit a second effect does not start.
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "finapp.retention.sweep.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    RetentionSweepSchedule inboxRetentionSweepSchedule(
+            RetentionConnectionSource connections,
+            InboxConsumer<Connection> inboxConsumer,
+            @Value("${finapp.retention.sweep.interval:PT5M}") Duration interval,
+            @Value("${finapp.retention.sweep.batch-size:500}") int batchSize,
+            RetentionSweepMeters meters) {
+        return new RetentionSweepSchedule(
+                "inbox-retention-sweep",
+                RetentionSweep.ofExpiredInboxMessages(connections, inboxConsumer.retention(), batchSize),
+                interval,
+                meters);
     }
 
     /**

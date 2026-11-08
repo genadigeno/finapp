@@ -453,10 +453,14 @@ short costs money.**
 **The ceiling is real too.** Records accumulate, and an unbounded table degrades the index that
 `INV-IDEM-01` depends on. Retention is therefore explicit and swept, not left to grow.
 
-**Sweeping.** Deleting expired records is the retention job's work, not the schema's. No index on
-`expires_at` is created by `V002`: its right shape depends on the predicate that sweep uses — a
-plain btree and a partial index restricted to terminal states have different write costs — and an
-index maintained on every insert for a query nobody has written yet is a cost with no benefit.
+**Sweeping — not built, by ruling.** This record is **not swept**: `P15-TSK-002` (C15, debt row #61)
+ruled that `journal_entry.idempotency_scope` is not `UNIQUE`, so the record is posting once-ness's
+second rank, and any later sweep lands that uniqueness first (both Phase 16). `P15-TSK-029` swept the
+outbox and the inbox and left this table alone, and `NoIdempotencyRecordIsSweptTest` holds that no
+production statement deletes from it. Deleting expired records remains the retention job's work when
+it comes. No index on `expires_at` is created by `V002`: its right shape depends on the predicate that
+sweep uses — a plain btree and a partial index restricted to terminal states have different write costs
+— and an index maintained on every insert for a query nobody has written yet is a cost with no benefit.
 The task that writes the sweep adds the index its query needs.
 
 **Never sweep a non-terminal record.** An `IN_PROGRESS` claim older than its expiry is not
@@ -507,12 +511,25 @@ application-supplied — recorded here so the divergence is read as a decision r
 inconsistency. An instance whose clock ran slow would otherwise write an expiry already in the
 past and have its own dedupe record swept minutes later.
 
-**Sweeping.** Deleting expired records is the retention job's work, not the schema's, and no index
-on `expires_at` is created by `V007` — for the reason §8 gives: the sweep's predicate is not
-written yet, and a plain btree, a BRIN and a partial index have different write costs on a table
-whose entire traffic is inserts. The task that writes the sweep adds the index its query needs.
+**Sweeping** *(built by `P15-TSK-029`, 2026-11-08; `DATA_RETENTION.md` is the policy)*. A leaderless,
+batched sweep deletes a record only past **both** of its bounds: the written `expires_at`, on the
+server's clock, and `finapp.inbox.retention` as it stands now, compared with `processed_at`, so that
+raising the setting also protects rows already written. The sweep's bound is read from the
+`InboxConsumer` bean and has no setting of its own, and that retention is refused at start at or below
+the oldest record the broker can redeliver (`RetentionSweep.BROKER_REDELIVERY_HORIZON`, held equal to the
+catalogue by `TopicCatalogueTest`; the function refuses such a bound too, `22023`). The
+application role has no `DELETE` on this table: platform `V012`'s `SECURITY DEFINER` function is the
+one path, `FOR UPDATE SKIP LOCKED` in a materialised CTE, so N sweepers delete disjoint batches.
+A replay order extends `expires_at` (platform `V011`), so a row a replay depends on stays. Published
+outbox rows go the same way, past `finapp.outbox.retention` (default 30 days, refused below this
+window, across which an audited replay reads the outbox), unless a parked record not yet settled still
+names the row, because a release republishes it. `V012` adds a plain btree on
+`expires_at`: the query orders by it and stops at the batch, which a BRIN cannot serve.
 
-**Every record is terminal.** Unlike §8, there is no "never sweep a non-terminal record" caveat,
-because an inbox record has no non-terminal state: it is written in the same transaction as the
-effect, so it exists only for messages that were fully handled. That absence is a consequence of
-the design in `V007`, not an oversight.
+**Every record is terminal, and the sweep does not take that on trust.** Unlike §8, there is no state
+column to filter on, because an inbox record has no non-terminal state: it is written in the same
+transaction as the effect, so it exists only for messages that were fully handled. That absence is
+a consequence of the design in `V007`, not an oversight. A later state would live in a new column
+the predicate cannot see, so the sweep's function lists the columns it was reviewed against and stops
+when it finds another: a column added to this table needs a migration that says which of its values
+are terminal, and `RetentionSweepMigrationTest` goes red until one does.
