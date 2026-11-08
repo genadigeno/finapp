@@ -107,7 +107,7 @@ public final class CloseRunDesk {
         CloseCheckCode check = check(rawCheck);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(("rerun|" + id.value() + "|" + check.name() + "|" + reason)
                 .getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome = flow.door(RERUN_SPAN, () -> guarded(() ->

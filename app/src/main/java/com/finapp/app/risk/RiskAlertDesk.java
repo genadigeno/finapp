@@ -105,7 +105,7 @@ public final class RiskAlertDesk {
      */
     private String keyed(Actor actor, RiskAlertId alertId, String idempotencyKey, String fingerprinted,
             Function<Connection, String> act) {
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> refusalsRecorded(actor, alertId,
                 () -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow ->

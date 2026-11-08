@@ -213,7 +213,7 @@ public final class PriorPeriodAdjustmentDesk {
 
     /** One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing; a self-approval is recorded {@code FAILED} in a transaction of its own. */
     private PriorPeriodAdjustmentReceipt keyed(Actor actor, String idempotencyKey, String fingerprinted, Function<Connection, PriorPeriodAdjustmentReceipt> act) {
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> selfApprovalRecorded(actor,
                 () -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow ->

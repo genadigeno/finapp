@@ -7,7 +7,9 @@ import com.finapp.accounts.IllegalCustomerAccountTransitionException;
 import com.finapp.accounts.AccountsErrorCode;
 import com.finapp.accounts.UnsupportedAccountCurrencyException;
 import com.finapp.consent.ConsentErrorCode;
+import com.finapp.app.session.StepUpRefusals;
 import com.finapp.consent.ConsentNotGrantedException;
+import com.finapp.identity.IdentityErrorCode;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.ErrorCode;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -17,7 +19,9 @@ import com.finapp.platform.idempotency.IdempotencyConflictException;
 import com.finapp.platform.idempotency.IdempotencyInProgressException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -69,10 +73,18 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  */
 @RestControllerAdvice
 @Slf4j
+@RequiredArgsConstructor
 public class ApiErrorHandler extends ResponseEntityExceptionHandler {
 
     /** RFC 9457's media type. Not {@code application/json}: the shape is a contract of its own. */
     public static final MediaType PROBLEM_JSON = MediaType.valueOf("application/problem+json");
+
+    /**
+     * The recorder of an operation's own refused step-ups (`P15-TSK-021`). A provider, so a context without the session
+     * beans - a slice that renders the contract alone - still builds this advice; the application's context always
+     * holds it.
+     */
+    private final ObjectProvider<StepUpRefusals> stepUpRefusals;
 
     /** Raised deliberately by our own code, carrying the code that says what went wrong. */
     @ExceptionHandler(ApiException.class)
@@ -80,6 +92,9 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         // Warn, not error: a client error is the API working. The message may name whatever makes
         // it diagnosable, because it goes to the log and not to the wire.
         log.warn("API error {}: {}", exception.errorCode().code(), exception.getMessage(), exception);
+        if (exception.errorCode() == IdentityErrorCode.ASSURANCE_REQUIRED) {
+            recordStepUpRefusal(request);
+        }
         return render(
                 ProblemDetail.of(
                         exception.errorCode(),
@@ -93,6 +108,23 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
      * <p>Logged at error, because nobody expected it; rendered with a body that says nothing,
      * because its message is the least trustworthy string in the system to be publishing.
      */
+    /**
+     * Records a refused step-up an operation answered itself (`P15-TSK-021`), once per request: the interceptor's own
+     * refusals are recorded and marked before they reach here. The request was refused either way, so a record that
+     * cannot be written is logged and the refusal still answered - never a {@code 500} in place of a {@code 403}.
+     */
+    private void recordStepUpRefusal(HttpServletRequest request) {
+        StepUpRefusals recorder = stepUpRefusals.getIfAvailable();
+        if (recorder == null) {
+            return;
+        }
+        try {
+            recorder.record(request);
+        } catch (RuntimeException unrecorded) {
+            log.error("A refused step-up on {} could not be recorded", routeOf(request), unrecorded);
+        }
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetailBody> handleUnexpected(Exception exception, HttpServletRequest request) {
         log.error("Unhandled error on {}", routeOf(request), exception);

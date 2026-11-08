@@ -67,7 +67,7 @@ public final class LineClosureDesk {
         LoanId id = loanId(rawLoanId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(CLOSURE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(CLOSURE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "lending.closure",
                 id.value().toString()).getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome;

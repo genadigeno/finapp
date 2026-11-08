@@ -944,4 +944,4 @@ points remain their tasks' to confirm.*
   committed (§3's B4 row).
 - **Operator keys are `CUSTOMER`-typed** (A5-04): every operator door keys `<scope>:<actor type>:<id>`, and an operator
   session's actor type is `CUSTOMER` today — `bnpl.terms:`, `bnpl.refund:`, `bnpl.servicing:` alike — never the plan's
-  `EMPLOYEE`.
+  `EMPLOYEE`. *(Since `P15-TSK-021`, 2026-11-08, an operator act is typed `EMPLOYEE`; its key still reads `CUSTOMER`, because a scope keys a person by `Actor.keyedType`, so no key changed.)*

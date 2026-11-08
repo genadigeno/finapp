@@ -108,7 +108,7 @@ Each table carries **Today**, the survey's reading in `PHASE_15_PLAN.md` §15 (`
 | Metrics | Partial: the naming contract enforced; about sixty gauge classes read on the scrape thread; scraped from the API port | — | — | — |
 | Tracing | Partial: spans recorded and dropped, no exporter | — | — | — |
 | Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run | — | — | — |
-| Security | Partial: transport guards off loopback, secrets externalised and confined; no image, pod profile, NetworkPolicy, workload identity or secret store | — | — | — |
+| Security | Partial: transport guards off loopback, secrets externalised and confined; an operator's acts recorded as the operator population and every refused step-up recorded, report generation reading as a `SELECT`-only role (`P15-TSK-021`); no image, pod profile, NetworkPolicy, workload identity or secret store | — | — | — |
 | Resource limits | Missing (the connection budget is a startup guard, not a manifest) | — | — | — |
 | Failure handling | Partial: graceful shutdown unasserted; schedules' `stop()` does not wait; consumers join for 10 s | — | — | — |
 | Recovery | Missing | — | — | — |
@@ -156,7 +156,7 @@ gaps of the module they touch (§4).
 | Metrics | Missing | — | — | — |
 | Tracing | — | — | — | — |
 | Alerting | Missing | — | — | — |
-| Security | Partial: two least-privilege roles, per-table grants in every migration, `verify-full` required off loopback; no encryption at rest beyond the application's field-level ciphers (`SECURITY_ARCHITECTURE.md` §Encryption at rest) | — | — | — |
+| Security | Partial: three least-privilege roles - the migrator, the application and report generation's `SELECT`-only `finapp_reporting` (`P15-TSK-021`) - per-table grants in every migration, `verify-full` required off loopback; no encryption at rest beyond the application's field-level ciphers (`SECURITY_ARCHITECTURE.md` §Encryption at rest) | — | — | — |
 | Resource limits | Partial: the connection budget guarded by `ConnectionPoolSizingGuard` against a declared instance count | — | — | — |
 | Failure handling | — | — | — | — |
 | Recovery | Missing: no backup, no restore, no rehearsal | — | — | — |

@@ -269,6 +269,22 @@ execution and attributes nothing to anybody; an actor names a party. Merging the
 customer identifier into every log line and every span, which is a disclosure into systems with
 different access control and retention (`INV-AUD-02`).
 
+**An operator acts as an operator** (`P15-TSK-021`, C13; `THREAT_MODEL.md` T3, T38). Until 2026-11-08 the
+interceptor typed every session `CUSTOMER`, so an operator's adjustment, reversal or refund named the right person in
+the wrong population. Now the population is decided per request from the server's record: on an **operator act** - a
+handler declaring `@RequiresPermission` - the identity's live roles are read once, in the session's own transaction,
+and an identity holding any role is `EMPLOYEE` (the operator population; the plan calls it `OPERATOR`, and every
+person `CHECK` already admitted `EMPLOYEE`); every other session request is `CUSTOMER`, a role holder on their own
+wallet or loan application included. The same read decides the permission, so a permitted operator act is always
+`EMPLOYEE`, and a role granted or revoked mid-session is honoured on the next request. Nothing the client sends takes
+part. Records written before stay `CUSTOMER`. **An idempotency scope keys a person once** (`Actor.keyedType`,
+`IdempotencyScopesKeyThePersonTest`): eighty scopes named the actor's type, and a retry crossing a role change or the
+release that introduced the typing would otherwise have found no record and acted twice. **A refused step-up is
+recorded** (`identity.StepUpRefused`), by the interceptor at a declared `@RequiresAssurance` and by the error contract
+at an operation's own step-up, once per refused request, committed before the refusal is answered. The privileged
+access review - who may hold which role, the propose/approve partition, break-glass - is
+[`PRIVILEGED_ACCESS_REVIEW.md`](PRIVILEGED_ACCESS_REVIEW.md).
+
 ## Who may act
 
 Roles grant permissions and ownership is checked separately (ADR-0031), and both halves of the
@@ -281,7 +297,11 @@ re-permissioned fails the build until the register says so. That is the half
 `EveryEndpointDeclaresARuleTest` (a rule is declared) and `DenyByDefaultDatabaseTest` (a caller
 without it is refused and audited) could not see: the Phase 6 review found that moving a route to
 another permission the same role holds passed every test. *(Added at the Phase 6 review,
-`P6-DOC-001`.)*
+`P6-DOC-001`.)* **Every route under `/v1/operator` declares a permission** (`P15-TSK-021`, `THREAT_MODEL.md` T31):
+`RoutePermissionRegisterTest#everyOperatorRouteIsPermissionGuarded` refuses one that declares only a session, which
+both earlier guards admitted. Who may hold which role, the propose/approve partition of role holdings and break-glass
+are [`PRIVILEGED_ACCESS_REVIEW.md`](PRIVILEGED_ACCESS_REVIEW.md); its registers are held by
+`PrivilegedAccessReviewTest`.
 
 ## The merchant's credentials (Phase 6)
 

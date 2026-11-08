@@ -52,7 +52,7 @@ public final class CounterpartyScreeningDesk {
         ReasonCode code = parse(ReasonCode.class, request.reasonCode());
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         // The narrative enters the fingerprint as its digest, so the stored key carries no prose.
         RequestFingerprint fingerprint = RequestFingerprint.sha256(
                 (id.value() + "|" + decision.name() + "|" + code.name() + "|" + digest(request.narrative()))

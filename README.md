@@ -295,19 +295,20 @@ docker compose ps
 
 ### Database roles
 
-PostgreSQL is provisioned with three roles, not one:
+PostgreSQL is provisioned with four roles, not one:
 
 | Role | Used by | Holds |
 |---|---|---|
 | `finapp` | The container's own bootstrap | Cluster superuser. Nothing in this project connects as it except one test fixture |
 | `finapp_migrator` | Flyway | Owns the `platform` schema. DDL only, **not** a superuser |
 | `finapp_app` | The application | Per-table DML, granted by the migration that creates each table. No DDL |
+| `finapp_reporting` | Report generation's own pool (`P15-TSK-021`) | `SELECT` on the tables a report run reads, granted by the migrations of the modules that own them. Nothing else |
 
 The split is not cosmetic. `INV-LED-03`, `INV-HIST-01` and `INV-HIST-03` are enforced by the
 application role **lacking** a privilege, and a superuser ignores every permission check — so
 running as one would make those invariants untestable rather than merely unenforced.
 
-`finapp_migrator` and `finapp_app` are created by
+`finapp_migrator`, `finapp_app` and `finapp_reporting` are created by
 `infra/postgres/initdb/00-roles.sql`, which the container runs on **first initialisation only**.
 Roles are cluster objects and so cannot live in a Flyway migration; see the script's header.
 
@@ -326,6 +327,11 @@ MSYS_NO_PATHCONV=1 docker compose exec -T postgres psql -U finapp -d finapp -f /
 
 Without the roles, `./gradlew :platform:flywayMigrate` fails with
 `FATAL: password authentication failed for user "finapp_migrator"`.
+
+**If your volume predates `finapp_reporting`** (added 2026-11-08, `P15-TSK-021`), apply the same script
+once more - it is idempotent and creates only what is missing - before migrating: the accounting,
+ledger, reconciliation and lending migrations grant to that role, and fail with
+`role "finapp_reporting" does not exist` without it.
 
 ---
 
@@ -453,7 +459,10 @@ is a security decision, not an oversight; see `docs/architecture/SECURITY_ARCHIT
 
 Database settings come from `FINAPP_DB_URL` and the application role's own
 `FINAPP_DB_APP_USER` and `FINAPP_DB_APP_PASSWORD` - the application connects as `finapp_app`,
-never as the superuser `compose.yaml`'s `FINAPP_DB_USER` names.
+never as the superuser `compose.yaml`'s `FINAPP_DB_USER` names. Report generation reads through
+its own one-connection pool as `finapp_reporting` (`FINAPP_DB_REPORTING_USER`,
+`FINAPP_DB_REPORTING_PASSWORD`, `FINAPP_DB_REPORTING_POOL_SIZE`), counted in the connection budget
+and never on the readiness path.
 
 ---
 

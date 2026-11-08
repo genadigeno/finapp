@@ -1480,7 +1480,7 @@ identifier.
 
 The terms doors (`P12-TSK-004`, ADR-0102 decision 4; `POST /v1/operator/bnpl/terms` (+ `/{versionId}/approval`,
 `/rejection`), `GET /v1/operator/bnpl/terms?product=&at=` and `GET /v1/operator/bnpl/terms/{versionId}`, every route
-`BNPL_ADMINISTER`; the acts keyed `bnpl.terms:<type>:<id>` - `CUSTOMER`-typed for an operator session today,
+`BNPL_ADMINISTER`; the acts keyed `bnpl.terms:<type>:<id>` - `CUSTOMER` for an operator (the keyed type since `P15-TSK-021`),
 `LENDING_LIFECYCLES.md` §4.1's A5-04 note): `TermsInvalid` refuses a proposal whole - an unknown product, convention,
 frequency or engine, an unregistered template, a non-zero pay-in-4 rate, another product's plan part, a plan the product
 does not list or credit cannot decide, an incomplete allocation order, a value outside the bounds bnpl declares;

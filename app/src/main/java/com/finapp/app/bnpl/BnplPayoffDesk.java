@@ -126,7 +126,7 @@ public final class BnplPayoffDesk {
         Optional<LocalDate> goodThrough = goodThrough(body);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(QUOTE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(QUOTE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "bnpl.payoff-quote",
                 id.value().toString(), goodThrough.map(LocalDate::toString).orElse("")).getBytes(StandardCharsets.UTF_8));
         BnplPayoffs.QuoteRequest request = new BnplPayoffs.QuoteRequest(idempotencyKey, goodThrough);
@@ -174,7 +174,7 @@ public final class BnplPayoffDesk {
         UUID quoteId = quoteId(body);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(PAYOFF_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(PAYOFF_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "bnpl.payoff",
                 id.value().toString(), quoteId.toString()).getBytes(StandardCharsets.UTF_8));
         AtomicReference<BnplPayoffs.Executed> acted = new AtomicReference<>();

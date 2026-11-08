@@ -1,5 +1,6 @@
 package com.finapp.app.session;
 
+import com.finapp.identity.Authorization;
 import com.finapp.identity.Session;
 import com.finapp.identity.SessionPolicy;
 import com.finapp.identity.SessionStore;
@@ -104,28 +105,41 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         // on this path. The opposite choice from P1-TSK-010, where the refusal is RETURNED because
         // a failed authentication writes an audit record that throwing would roll back. Presenting
         // a dead session is not an authentication attempt against a credential.
-        Session session =
+        RequiresPermission operatorAct = annotation(handlerMethod, RequiresPermission.class);
+        Established established =
                 presentedToken(request)
-                        .flatMap(this::authenticate)
+                        .flatMap(token -> authenticate(token, operatorAct != null))
                         .orElseThrow(
                                 () ->
                                         new ApiException(
                                                 PlatformErrorCode.UNAUTHENTICATED,
                                                 "No live session was presented"));
+        Session session = established.session();
 
-        requireAssurance(handler, session);
-
-        request.setAttribute(CURRENT_SESSION, session);
+        // WHO is acting, then WHETHER they may (P15-TSK-021). The population is decided here, per
+        // request, from the server's record and the server's code - never from anything the client
+        // sends: an operator act (the handler declares a permission) by an identity holding a live
+        // role is EMPLOYEE; everything else a person does through a session is CUSTOMER, a role
+        // holder on their own wallet or loan application included. The roles were read once, in
+        // the session's own transaction, so the type and the permission below are the same
+        // instant's. A role granted or revoked mid-session is honoured on the next request.
         request.setAttribute(
                 SCOPE_ATTRIBUTE,
                 SecurityContext.enter(
-                        new Actor(session.identityId().value().toString(), ActorType.CUSTOMER)));
+                        new Actor(
+                                session.identityId().value().toString(),
+                                established.standing().map(Authorization.Standing::actorType)
+                                        .orElse(ActorType.CUSTOMER))));
 
-        // AFTER the scope is established, deliberately: a denial is audited, and an audit
+        // AFTER the scope is established, deliberately: both refusals are audited, and an audit
         // record needs an actor. Checking first would record the refusal as the platform's own
-        // action, which is precisely the wrong party (P0-TSK-032).
+        // action, which is precisely the wrong party (P0-TSK-032). The assurance is still judged
+        // before the permission is read: a refused step-up answers the same whatever the caller
+        // holds.
         try {
-            requirePermission(handlerMethod, session);
+            requireAssurance(request, handlerMethod, session);
+            requirePermission(handlerMethod, established);
+            request.setAttribute(CURRENT_SESSION, session);
         } catch (RuntimeException refused) {
             // ...and closed HERE when the check throws - a denial, or a storage failure reading
             // the roles - because Spring runs afterCompletion only for an interceptor whose
@@ -187,7 +201,7 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
      * compared the bounds with this instance's {@code Instant.now(clock)}, so an instance running
      * fast ended live sessions early and one running slow honoured expired sessions late.
      */
-    private Optional<Session> authenticate(SessionToken token) {
+    private Optional<Established> authenticate(SessionToken token, boolean operatorAct) {
         return Optional.ofNullable(
                 transactions.execute(
                         status -> {
@@ -196,12 +210,31 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
                                 Optional<Session> live = sessions.findLive(unitOfWork, token);
                                 live.ifPresent(
                                         session -> sessions.touch(unitOfWork, session.id(), policy));
-                                return live.orElse(null);
+                                // The roles, on an operator act only: read in this transaction,
+                                // once, for both the population and the permission. A customer
+                                // route reads none, so the hot path pays nothing for it.
+                                return live.map(
+                                                session ->
+                                                        new Established(
+                                                                session,
+                                                                operatorAct
+                                                                        ? Optional.of(
+                                                                                authorization.standingOf(
+                                                                                        unitOfWork,
+                                                                                        session.identityId()))
+                                                                        : Optional.empty()))
+                                        .orElse(null);
                             } finally {
                                 DataSourceUtils.releaseConnection(unitOfWork, dataSource);
                             }
                         }));
     }
+
+    /**
+     * A live session and, on an operator act, its identity's standing - read together, in one
+     * transaction (`P15-TSK-021`).
+     */
+    private record Established(Session session, Optional<Authorization.Standing> standing) {}
 
     /**
      * The presented value, or nothing.
@@ -236,11 +269,16 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
      * <p>A distinct error code rather than a bare 403 — a client must be able to tell
      * <em>"you may never do this"</em> from <em>"step up and retry"</em>, which are different
      * actions.
+     *
+     * <p><strong>The refusal is recorded</strong> (`P15-TSK-021`, {@code identity.StepUpRefused}):
+     * in a transaction of its own that commits before the refusal is thrown - there is no
+     * operation to record it, as there is none for a denial - against the actor just established,
+     * naming the operation by its route pattern and nothing else. The request is marked recorded,
+     * so the error contract, which records an operation's own step-up refusals, does not record
+     * this one twice.
      */
-    private static void requireAssurance(Object handler, Session session) {
-        if (!(handler instanceof HandlerMethod handlerMethod)) {
-            return;
-        }
+    private void requireAssurance(
+            HttpServletRequest request, HandlerMethod handlerMethod, Session session) {
         RequiresAssurance declared = handlerMethod.getMethodAnnotation(RequiresAssurance.class);
         if (declared == null) {
             declared = handlerMethod.getBeanType().getAnnotation(RequiresAssurance.class);
@@ -249,6 +287,17 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
             return;
         }
         if (!session.assurance().atLeast(declared.value())) {
+            transactions.executeWithoutResult(
+                    status -> {
+                        Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+                        try {
+                            authorization.recordStepUpRefusal(
+                                    unitOfWork, session.identityId(), StepUpRefusals.operationOf(request));
+                        } finally {
+                            DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+                        }
+                    });
+            StepUpRefusals.markRecorded(request);
             throw new ApiException(
                     com.finapp.identity.IdentityErrorCode.ASSURANCE_REQUIRED,
                     "A session at " + session.assurance() + " was presented where "
@@ -378,42 +427,42 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
      * <p><strong>{@code api.Forbidden}, deliberately not a distinct code.</strong> Unlike
      * {@code identity.AssuranceRequired} this is not actionable: a client cannot grant itself a
      * role, so a special code would imply a remedy that does not exist.
+     *
+     * <p><strong>Decided from the standing read with the session</strong> (`P15-TSK-021`): the
+     * same read typed the actor, so a permitted act is always typed by the standing that permitted
+     * it. The denial is written in its own transaction, committed before the refusal is thrown.
      */
-    private void requirePermission(HandlerMethod handlerMethod, Session session) {
+    private void requirePermission(HandlerMethod handlerMethod, Established established) {
         RequiresPermission declared = annotation(handlerMethod, RequiresPermission.class);
         if (declared == null) {
             return;
         }
-        boolean permitted =
-                Boolean.TRUE.equals(
-                        transactions.execute(
-                                status -> {
-                                    Connection unitOfWork =
-                                            DataSourceUtils.getConnection(dataSource);
-                                    try {
-                                        if (authorization.permits(
-                                                unitOfWork,
-                                                session.identityId(),
-                                                declared.value())) {
-                                            return true;
-                                        }
-                                        // Audited inside the transaction that read the roles: a
-                                        // refused privileged attempt is the only trace an attacker
-                                        // leaves, because an accepted one is audited by the
-                                        // operation and a refused one has no operation to do it
-                                        // (INV-AUD-03).
-                                        authorization.recordDenial(
-                                                unitOfWork, session.identityId(), declared.value());
-                                        return false;
-                                    } finally {
-                                        DataSourceUtils.releaseConnection(unitOfWork, dataSource);
-                                    }
-                                }));
-        if (!permitted) {
-            throw new ApiException(
-                    PlatformErrorCode.FORBIDDEN,
-                    "A session without " + declared.value() + " was presented");
+        Authorization.Standing standing =
+                established
+                        .standing()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "an operator act's standing is read with its session"));
+        if (standing.permits(declared.value())) {
+            return;
         }
+        // A refused privileged attempt is the only trace an attacker leaves, because an accepted
+        // one is audited by the operation and a refused one has no operation to do it
+        // (INV-AUD-03).
+        transactions.executeWithoutResult(
+                status -> {
+                    Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+                    try {
+                        authorization.recordDenial(
+                                unitOfWork, established.session().identityId(), declared.value());
+                    } finally {
+                        DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+                    }
+                });
+        throw new ApiException(
+                PlatformErrorCode.FORBIDDEN,
+                "A session without " + declared.value() + " was presented");
     }
 
     /** Method first, then the declaring class - the {@code RequiresIdempotencyKey} idiom. */

@@ -13,8 +13,11 @@ import org.junit.jupiter.api.Test;
  * <p>Hermetic and pure. The check that the <em>shipped configuration</em> actually satisfies the
  * relationship is {@link ConnectionPoolSizingIsConfiguredTest}, which reads the real
  * {@code application.yaml} — the two are different claims and one does not imply the other.
+ *
+ * <p>Since `P15-TSK-021` every instance holds two pools, the writer's and report generation's, and the relationship
+ * counts both: {@code instances × (writer + reporting) ≤ max_connections − reserved}.
  */
-@DisplayName("Connection-pool sizing (P1-TSK-004)")
+@DisplayName("Connection-pool sizing (P1-TSK-004; both pools since P15-TSK-021)")
 class ConnectionPoolSizingGuardTest {
 
     @Test
@@ -23,39 +26,56 @@ class ConnectionPoolSizingGuardTest {
         // The case the debt row and ADR-0014 both name, asserted rather than described. 10 x 10 is
         // 100 against a server that has 100 in total and has already reserved some - so the fleet
         // exhausts the database before a single connection does any work.
-        ConnectionPoolSizing defaults = new ConnectionPoolSizing(10, 10, 100, 12);
+        ConnectionPoolSizing defaults = new ConnectionPoolSizing(10, 10, 1, 100, 12);
 
         assertThat(defaults.fits()).isFalse();
-        assertThat(defaults.fleetDemand()).isEqualTo(100);
+        assertThat(defaults.fleetDemand()).isEqualTo(110);
         assertThat(defaults.available()).isEqualTo(88);
 
         assertThatThrownBy(() -> ConnectionPoolSizingGuard.verify(defaults))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("10 instances x 10 connections = 100")
+                .hasMessageContaining("10 instances x (10 writer + 1 reporting) connections = 110")
                 .hasMessageContaining("exceeds the 88 available")
                 // The message must say what to do, not only that something is wrong: an operator
                 // meeting this at 3am should not have to derive the fix.
-                .hasMessageContaining("to at most 8");
+                .hasMessageContaining("to at most 7");
     }
 
     @Test
     @DisplayName("the shipped relationship holds, and holds exactly at the boundary")
     void theBoundaryIsInclusive() {
-        // 10 x 8 = 80 <= 88. Fits.
-        assertThatCode(() -> ConnectionPoolSizingGuard.verify(new ConnectionPoolSizing(10, 8, 100, 12)))
+        // 10 x (7 + 1) = 80 <= 88. Fits.
+        assertThatCode(() -> ConnectionPoolSizingGuard.verify(new ConnectionPoolSizing(10, 7, 1, 100, 12)))
                 .doesNotThrowAnyException();
 
         // Exactly equal must PASS. An off-by-one here would refuse a deployment that is precisely
         // sized, which is the deployment most likely to have been thought about.
-        assertThatCode(() -> ConnectionPoolSizingGuard.verify(new ConnectionPoolSizing(11, 8, 100, 12)))
+        assertThatCode(() -> ConnectionPoolSizingGuard.verify(new ConnectionPoolSizing(11, 7, 1, 100, 12)))
                 .doesNotThrowAnyException();
-        assertThat(new ConnectionPoolSizing(11, 8, 100, 12).fleetDemand())
-                .isEqualTo(new ConnectionPoolSizing(11, 8, 100, 12).available());
+        assertThat(new ConnectionPoolSizing(11, 7, 1, 100, 12).fleetDemand())
+                .isEqualTo(new ConnectionPoolSizing(11, 7, 1, 100, 12).available());
 
         // One more instance does not.
         assertThatThrownBy(
-                        () -> ConnectionPoolSizingGuard.verify(new ConnectionPoolSizing(12, 8, 100, 12)))
+                        () -> ConnectionPoolSizingGuard.verify(new ConnectionPoolSizing(12, 7, 1, 100, 12)))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("the reporting pool is counted: a fleet whose writer pools alone fit is refused when its reporting"
+            + " pools do not (P15-TSK-021)")
+    void theReportingPoolIsCounted() {
+        // 11 x 8 = 88 would fit on the writer alone; 11 x (8 + 1) = 99 does not. A guard that
+        // forgot the second pool would start a fleet that exhausts the server under its first
+        // round of reports.
+        ConnectionPoolSizing both = new ConnectionPoolSizing(11, 8, 1, 100, 12);
+        assertThat(both.perInstance()).isEqualTo(9);
+        assertThat(both.fleetDemand()).isEqualTo(99);
+        assertThatThrownBy(() -> ConnectionPoolSizingGuard.verify(both))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("(8 writer + 1 reporting)");
+        assertThat(new ConnectionPoolSizing(10, 7, 2, 100, 12).fleetDemand()).isEqualTo(90);
+        assertThat(new ConnectionPoolSizing(10, 7, 2, 100, 12).fits()).isFalse();
     }
 
     @Test
@@ -64,21 +84,21 @@ class ConnectionPoolSizingGuardTest {
         // The realistic path to this failure is not someone choosing a bad pool size. It is a
         // deployment scaling from a fleet that fits to one that does not, months later, by someone
         // changing a replica count.
-        ConnectionPoolSizing fits = new ConnectionPoolSizing(10, 8, 100, 12);
+        ConnectionPoolSizing fits = new ConnectionPoolSizing(10, 7, 1, 100, 12);
         assertThat(fits.fits()).isTrue();
 
         ConnectionPoolSizing scaledOut =
-                new ConnectionPoolSizing(20, 8, 100, 12);
+                new ConnectionPoolSizing(20, 7, 1, 100, 12);
         assertThat(scaledOut.fits()).isFalse();
-        assertThat(scaledOut.largestPoolThatFits()).isEqualTo(4);
+        assertThat(scaledOut.largestPoolThatFits()).isEqualTo(3);
     }
 
     @Test
     @DisplayName("raising the server's limit is a legitimate fix, and is accepted")
     void raisingTheServerLimitIsAFix() {
         // The guard must not force the pool to be the thing that gives way. Twenty instances at
-        // eight connections is fine against a server configured for it.
-        assertThatCode(() -> ConnectionPoolSizingGuard.verify(new ConnectionPoolSizing(20, 8, 200, 12)))
+        // eight connections each is fine against a server configured for it.
+        assertThatCode(() -> ConnectionPoolSizingGuard.verify(new ConnectionPoolSizing(20, 7, 1, 200, 12)))
                 .doesNotThrowAnyException();
     }
 
@@ -87,9 +107,9 @@ class ConnectionPoolSizingGuardTest {
     void reservedConnectionsAreLoadBearing() {
         // Same fleet, same server, different reservation: the whole point of the reservation is
         // that it is unavailable, so removing it must change the answer.
-        assertThat(new ConnectionPoolSizing(11, 8, 100, 12).fits()).isTrue();
-        assertThat(new ConnectionPoolSizing(12, 8, 100, 12).fits()).isFalse();
-        assertThat(new ConnectionPoolSizing(12, 8, 100, 0).fits()).isTrue();
+        assertThat(new ConnectionPoolSizing(11, 7, 1, 100, 12).fits()).isTrue();
+        assertThat(new ConnectionPoolSizing(12, 7, 1, 100, 12).fits()).isFalse();
+        assertThat(new ConnectionPoolSizing(12, 7, 1, 100, 0).fits()).isTrue();
     }
 
     @Test
@@ -98,13 +118,15 @@ class ConnectionPoolSizingGuardTest {
         // A zero or negative instance count would make largestPoolThatFits divide by zero, and a
         // zero pool would "fit" any fleet - a check that passes on absurd input is a check that
         // will one day pass on a typo.
-        assertThatThrownBy(() -> new ConnectionPoolSizing(0, 8, 100, 12))
+        assertThatThrownBy(() -> new ConnectionPoolSizing(0, 7, 1, 100, 12))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new ConnectionPoolSizing(10, 0, 100, 12))
+        assertThatThrownBy(() -> new ConnectionPoolSizing(10, 0, 1, 100, 12))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new ConnectionPoolSizing(10, 8, 0, 12))
+        assertThatThrownBy(() -> new ConnectionPoolSizing(10, 7, 0, 100, 12))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new ConnectionPoolSizing(10, 8, 100, -1))
+        assertThatThrownBy(() -> new ConnectionPoolSizing(10, 7, 1, 0, 12))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ConnectionPoolSizing(10, 7, 1, 100, -1))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

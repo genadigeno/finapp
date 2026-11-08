@@ -56,16 +56,18 @@ class ConnectionPoolSizingIsConfiguredTest {
                 new ConnectionPoolSizing(
                         setting(ConnectionPoolSizingGuard.INSTANCES),
                         setting(ConnectionPoolSizingGuard.POOL_SIZE),
+                        setting(ConnectionPoolSizingGuard.REPORTING_POOL_SIZE),
                         setting(ConnectionPoolSizingGuard.SERVER_MAX),
                         setting(ConnectionPoolSizingGuard.RESERVED));
 
         assertThat(shipped.fits())
                 .as(
-                        "%d instances x %d connections = %d, against %d available (%d server max less "
-                                + "%d reserved). Lower the pool to at most %d, run fewer instances, or "
-                                + "raise the server's max_connections and %s with it.",
+                        "%d instances x (%d writer + %d reporting) connections = %d, against %d available (%d"
+                                + " server max less %d reserved). Lower the pool to at most %d, run fewer instances,"
+                                + " or raise the server's max_connections and %s with it.",
                         shipped.instances(),
                         shipped.maximumPoolSize(),
+                        shipped.reportingPoolSize(),
                         shipped.fleetDemand(),
                         shipped.available(),
                         shipped.serverMaxConnections(),
@@ -89,6 +91,19 @@ class ConnectionPoolSizingIsConfiguredTest {
         assertThat(setting("spring.datasource.hikari.minimum-idle"))
                 .as("minimum-idle must equal maximum-pool-size, or the fleet demand is a guess")
                 .isEqualTo(setting(ConnectionPoolSizingGuard.POOL_SIZE));
+    }
+
+    @Test
+    @DisplayName("the shipped split gives the reporting pool one connection out of the writer's eight, so the fleet's"
+            + " demand did not move (P15-TSK-021)")
+    void theReportingPoolCameOutOfTheWritersShare() {
+        assertThat(setting(ConnectionPoolSizingGuard.POOL_SIZE)).isEqualTo(7);
+        assertThat(setting(ConnectionPoolSizingGuard.REPORTING_POOL_SIZE)).isEqualTo(1);
+        assertThat(setting(ConnectionPoolSizingGuard.INSTANCES)
+                        * (setting(ConnectionPoolSizingGuard.POOL_SIZE)
+                                + setting(ConnectionPoolSizingGuard.REPORTING_POOL_SIZE)))
+                .as("10 x 8, the fleet demand the deployment arithmetic was built on")
+                .isEqualTo(80);
     }
 
     @Test

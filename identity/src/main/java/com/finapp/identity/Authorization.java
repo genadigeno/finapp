@@ -5,6 +5,7 @@ import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -60,12 +61,51 @@ public final class Authorization {
      */
     public boolean permits(
             Connection unitOfWork, IdentityId identityId, PermissionName permission) {
+        Objects.requireNonNull(permission, "permission must not be null");
+        return standingOf(unitOfWork, identityId).permits(permission);
+    }
+
+    /**
+     * What the identity holds <em>now</em>, read once (`P15-TSK-021`): the roles that decide both whether it may perform
+     * an operator act and the population its act is recorded in.
+     *
+     * <p>One read for both, deliberately. Read twice, a role granted between the reads would admit an act typed by the
+     * standing before it, and a role revoked between them would type an act by a standing it no longer has. Read once,
+     * the permission and the type are always the same instant's.
+     */
+    public Standing standingOf(Connection unitOfWork, IdentityId identityId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(identityId, "identityId must not be null");
-        Objects.requireNonNull(permission, "permission must not be null");
+        return new Standing(assignments.liveRolesOf(unitOfWork, identityId));
+    }
 
-        Set<RoleName> roles = assignments.liveRolesOf(unitOfWork, identityId);
-        return roles.stream().anyMatch(role -> role.permissions().contains(permission));
+    /**
+     * An identity's live roles at one instant (`P15-TSK-021`; {@code INV-IDN-03}, {@code INV-IDN-04}).
+     *
+     * <p><strong>Holding a role makes a person staff.</strong> Every {@link RoleName} is an operational role - a customer
+     * acts on their own account and holds none - so an identity holding any live role is the operator population,
+     * {@link ActorType#EMPLOYEE}, and one holding none is a customer. The session interceptor applies this on an operator
+     * act only (a handler declaring a permission): the same identity acting on its own wallet or its own loan
+     * application acts as a customer, which is what {@link ActorType#CUSTOMER} means.
+     *
+     * @param roles the roles held, never {@code null}
+     */
+    public record Standing(Set<RoleName> roles) {
+
+        public Standing {
+            roles = Set.copyOf(Objects.requireNonNull(roles, "roles must not be null"));
+        }
+
+        /** Whether any role held grants {@code permission}: deny-by-default read from the other end. */
+        public boolean permits(PermissionName permission) {
+            Objects.requireNonNull(permission, "permission must not be null");
+            return roles.stream().anyMatch(role -> role.permissions().contains(permission));
+        }
+
+        /** The population an operator act by this identity is recorded in: {@code EMPLOYEE} with any live role. */
+        public ActorType actorType() {
+            return roles.isEmpty() ? ActorType.CUSTOMER : ActorType.EMPLOYEE;
+        }
     }
 
     /**
@@ -86,6 +126,30 @@ public final class Authorization {
                 IdentityAuditAction.AUTHORIZATION_DENIED,
                 AuditOutcome.FAILED,
                 "permission=" + permission,
+                Optional.empty());
+    }
+
+    /**
+     * Records that a request was refused because its session had not stepped up (`P15-TSK-021`;
+     * {@link IdentityAuditAction#STEP_UP_REFUSED}).
+     *
+     * <p>The caller commits it in a transaction of its own <em>before</em> the refusal is answered, as
+     * {@link #recordDenial} is: the refused request has no operation to record it, and the handler's own transaction,
+     * where there is one, rolls back with the refusal.
+     *
+     * @param operation the refused operation as {@code <METHOD> <route pattern>} - a pattern, never a path's values, and
+     *     never the presented code, the factor or the session
+     */
+    public void recordStepUpRefusal(Connection unitOfWork, IdentityId identityId, String operation) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(operation, "operation must not be null");
+
+        audit(
+                unitOfWork,
+                identityId,
+                IdentityAuditAction.STEP_UP_REFUSED,
+                AuditOutcome.FAILED,
+                "operation=" + operation,
                 Optional.empty());
     }
 

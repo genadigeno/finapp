@@ -398,7 +398,9 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T3 | A privileged endpoint refuses a session whose identity holds no role, and the denial is audited; a revoked role stops working on the next request | EXISTS | `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#negativeAuthorizationForPrivilegedEndpoints`; `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#aDenialIsAudited`; `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#roleRevocationIsImmediate` |
 | T3 | An operator's read of a KYC document's content, and of a settlement file's raw content, is audited: who looked, and for the settlement file a required reason | EXISTS | `app/src/test/java/com/finapp/app/kyc/DocumentUploadDatabaseTest.java#theReadPathDecryptsVerifiesAndAudits`; `app/src/test/java/com/finapp/app/settlement/SettlementRoutesDatabaseTest.java#contentReadsAreReasonedAuditedAndByteIdentical` |
 | T3 | Operator routes served only on the internal ingress | PLANNED | `P15-TSK-011` |
-| T3 | Operator sessions audited as `OPERATOR`, refused step-ups audited, the privileged access review of role holdings | PLANNED | `P15-TSK-021` |
+| T3 | An operator act is recorded in the operator population (`EMPLOYEE`): the interceptor types the request from the identity's live roles, read once with the session, on a route declaring a permission; a customer refused at an operator route is recorded `CUSTOMER`, and a role holder on their own account acts as a customer | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#anOperatorActIsTypedEmployee`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusalIsTypedByWhoTried`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRoleHolderOnACustomerRouteIsACustomer` |
+| T3 | A refused step-up is recorded once, in a transaction of its own committed before the refusal is answered: the interceptor's at a declared step-up, the error contract's at an operation's own | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusedStepUpIsRecorded`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#anOperationsRefusalIsRecordedOnce` |
+| T3 | The privileged access review's role register and propose/approve partition are the code's, role by role and pair by pair | EXISTS | `app/src/test/java/com/finapp/app/architecture/PrivilegedAccessReviewTest.java#theRoleRegisterIsTheCodes`; `app/src/test/java/com/finapp/app/architecture/PrivilegedAccessReviewTest.java#thePartitionIsTheCodes` |
 | T3 | Break-glass and compromise procedures, audited and rehearsed | PLANNED | `P15-TSK-032` |
 | T4 | A minimal image: non-root, no shell, no package manager | PLANNED | `P15-TSK-003` |
 | T4 | The restricted pod profile: read-only root, no capabilities, no privilege escalation, a seccomp profile, no service-account token | PLANNED | `P15-TSK-009` |
@@ -423,7 +425,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T6 | Humans denied `get secrets` | PLANNED | `P15-TSK-010` |
 | T6 | Images scanned for secrets | PLANNED | `P15-TSK-006` |
 | T6 | Rotation and revocation of every credential class, rehearsed | PLANNED | `P15-TSK-020` |
-| T7 | Locally (compose and the test databases built from the initialisation scripts), both roles are `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
+| T7 | Locally (compose and the test databases built from the initialisation scripts), every role - the migrator, the application and report generation's - is `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
 | T7 | In a deployed database, the roles created by the one-time bootstrap step with the same attributes | PLANNED | `P15-TSK-004` |
 | T7 | The application role cannot become the migrator, create a role, make itself a superuser, run a program on the host or read password hashes | EXISTS | `platform/src/test/java/com/finapp/platform/audit/ApplicationRoleGrantsTest.java#theRoleCannotEscalate` |
 | T7 | The application role holds no DDL and cannot reach the migration history | EXISTS | `platform/src/test/java/com/finapp/platform/audit/ApplicationRoleGrantsTest.java#theRoleIsConfinedToData` |
@@ -432,7 +434,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T7 | Private subnets, managed volumes and backups encrypted under separate KMS keys, `rds.force_ssl` | PLANNED | `P15-TSK-015` |
 | T7 | A private network with no public workload subnet | PLANNED | `P15-TSK-014` |
 | T7 | Field-level keys as key rings, so a leaked version is bounded to its rows | PLANNED | `P15-TSK-019` |
-| T7 | A `SELECT`-only reporting role (C13's cut candidate) | PLANNED | `P15-TSK-021` |
+| T7 | Report generation reads as `finapp_reporting`: every migration's grant to it is `SELECT` on one of the report run's 23 tables or `USAGE` on their four schemas, the whole register is granted, and the role is created `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT` | EXISTS | `app/src/test/java/com/finapp/app/architecture/ReportingRoleIsSelectOnlyTest.java#theRoleReadsTheRegisterAndNothingElse`; `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
 | T8 | KYC callbacks: HMAC-SHA256 over the raw request, compared in constant time, the wrong signature refused | EXISTS | `kyc/src/test/java/com/finapp/kyc/CallbackSignatureTest.java#aWrongSignatureIsRefused`; `kyc/src/test/java/com/finapp/kyc/CallbackSignatureTest.java#theComparisonIsConstantTime` |
 | T8 | Payment webhooks: a signature that tampering breaks, and a two-sided freshness window | EXISTS | `payments/src/test/java/com/finapp/payments/WebhookSignatureTest.java#roundTripAndTamper`; `payments/src/test/java/com/finapp/payments/WebhookSignatureTest.java#theWindowIsTwoSided` |
 | T8 | The instant-rail door: a wrong signature, a missing header and a stale timestamp are one uniform `401`, with nothing written | EXISTS | `app/src/test/java/com/finapp/app/payments/PayByBankDatabaseTest.java#anUnsignedCallbackDiesAtTheDoor` |
@@ -448,7 +450,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T9 | `SASL_SSL` with SCRAM per principal and ACLs per topic; the transport guard widened to require it off loopback | PLANNED | `P15-TSK-026` |
 | T10 | The application role cannot `UPDATE` any column of, `DELETE` from or `TRUNCATE` the audit record | EXISTS | `platform/src/test/java/com/finapp/platform/audit/AuditImmutabilityTest.java#updateIsDeniedOnEveryColumn`; `platform/src/test/java/com/finapp/platform/audit/AuditImmutabilityTest.java#deleteIsDenied`; `platform/src/test/java/com/finapp/platform/audit/AuditImmutabilityTest.java#truncateIsDenied` |
 | T10 | Every catalogued auditable action is referenced by production code, or declared not yet emitted with its owner | EXISTS | `app/src/test/java/com/finapp/app/audit/AuditCompletenessTest.java#everyActionIsEmittedOrDeclaredNotToBe` |
-| T10 | The operator actor typed, and a refused step-up recorded | PLANNED | `P15-TSK-021` |
+| T10 | An operator act's records carry the operator population, and a refused step-up writes its record in its own committed transaction, once per refused request | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#anOperatorActIsTypedEmployee`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusedStepUpIsRecorded`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#anOperationsRefusalIsRecordedOnce` |
 | T10 | The retention policy by data class, and the audit archival design to write-once storage | PLANNED | `P15-TSK-029` |
 | T10 | Write-once (Object Lock) on the audit archive bucket | PLANNED | `P15-TSK-015` |
 | T11 | Startup guards refuse an unsafe configuration on every replica: a fleet whose pools exceed the database's connections (the guard wired, so a violation stops the instance), any configured `sslmode` source weaker than `verify-full`, a settlement pull source in cleartext | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired`; `app/src/test/java/com/finapp/app/security/TransportSecurityGuardTest.java#everyConfiguredSourceMustVerify`; `app/src/test/java/com/finapp/app/security/ProviderTransportGuardTest.java#startupConsultsEverySourceUrl` |
@@ -507,7 +509,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T18 | A period close's proposer cannot approve it | EXISTS | `accounting/src/test/java/com/finapp/accounting/PeriodClosesTest.java#theProposerCannotApprove` |
 | T18 | A break's resolution under `MULTI_FACTOR`, and never one person's word for an aggregate subject | REMEDIATION | `P14-REM-001` |
 | T18 | Step-up on the mapping activation and the acknowledgement approval | REMEDIATION | `P14-REM-002` |
-| T18 | The privileged access review, including the propose/approve partition of role holdings | PLANNED | `P15-TSK-021` |
+| T18 | The privileged access review names, for each of the six propose/approve pairs, the two roles no identity holds together, and its partition is the code's | EXISTS | `app/src/test/java/com/finapp/app/architecture/PrivilegedAccessReviewTest.java#thePartitionIsTheCodes` |
+| T18 | Role assignment refusing an identity both roles of a propose/approve pair (today an administrator can grant it, audited; each act still refuses its proposer by identity) | GAP | `owner item 7`; owner: the owner, since 2026-11-08 |
 | T19 | An owner-scoped statement carries the owner predicate, and each owner-scoped operation has a named negative test | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnershipIsScopedTest.java#ownerScopedStatementsCarryThePredicate`; `app/src/test/java/com/finapp/app/architecture/OwnershipIsScopedTest.java#ownerScopedOperationsHaveNegativeTests` |
 | T19 | A session-derived endpoint takes no identifier | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnershipIsScopedTest.java#sessionDerivedEndpointsTakeNoIdentifier` |
 | T19 | Every merchant route the application serves is in the battery's derived table, each addressed route carrying a cross-tenant probe (in the battery or a named delegate); the battery's own probes answer another tenant's resource exactly as an unknown one (`INV-MER-01`) | EXISTS | `app/src/test/java/com/finapp/app/merchant/MerchantTenancyBatteryDatabaseTest.java#theTableIsEveryMerchantRoute`; `app/src/test/java/com/finapp/app/merchant/MerchantTenancyBatteryDatabaseTest.java#everyAddressedRouteAnswersAnotherTenantsResourceAsUnknown` |
@@ -554,7 +557,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T30 | Keyless signing from CI's identity, its trust narrowed at admission | PLANNED | `P15-TSK-007` |
 | T31 | No handler is served without a declared rule, and every permission-guarded route requires exactly the permission the register names | EXISTS | `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#everyGuardedRouteRequiresItsRegisteredPermission`; `app/src/test/java/com/finapp/app/api/EveryEndpointDeclaresARuleTest.java#everyHandlerDeclaresSomething` |
 | T31 | The public allow-list generated from the permission register, with an operator route refused on the public host | PLANNED | `P15-TSK-011` |
-| T31 | The privileged access review asserting every route under `/v1/operator` is permission-guarded | PLANNED | `P15-TSK-021` |
+| T31 | Every route under `/v1/operator` declares a permission, read from the handler mapping that serves requests; a planted operator route declaring only a session is caught | EXISTS | `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#everyOperatorRouteIsPermissionGuarded`; `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#anUnguardedOperatorRouteIsCaught` |
 | T32 | Automated backups with point-in-time recovery under a separate KMS key, and deletion protection | PLANNED | `P15-TSK-015` |
 | T32 | A restore rehearsed into a fresh database, ending in the financial verification, with the backup handled as a copy of the ledger | PLANNED | `P15-TSK-030` |
 | T33 | Locally (compose and the test databases), the migrator is `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
@@ -573,8 +576,9 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T36 | `rds.force_ssl` and private subnets | PLANNED | `P15-TSK-015` |
 | T36 | Egress to PostgreSQL only from the application's and the migrator's pods | PLANNED | `P15-TSK-010` |
 | T37 | Outbox and inbox retention sweeps, leaderless and batched, never a non-terminal row | PLANNED | `P15-TSK-029` |
-| T38 | A permission denial is audited (a refused step-up is not: the gap this threat names) | EXISTS | `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#aDenialIsAudited` |
-| T38 | Operator sessions typed `OPERATOR`, and a refused step-up recorded | PLANNED | `P15-TSK-021` |
+| T38 | A permission denial is audited | EXISTS | `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#aDenialIsAudited` |
+| T38 | An operator act is recorded `EMPLOYEE`, decided per request from the server's record of roles and never from the client; a customer refused at an operator route `CUSTOMER` | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#anOperatorActIsTypedEmployee`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusalIsTypedByWhoTried`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRoleHolderOnACustomerRouteIsACustomer` |
+| T38 | A refused step-up is recorded once per refused request, committed on its own, naming the route pattern and no session, code or factor | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusedStepUpIsRecorded`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#anOperationsRefusalIsRecordedOnce` |
 | T39 | An audited operator door to retry or discard an abandoned event (discard four-eyes), emitting the three platform actions | PLANNED | `P15-TSK-028` |
 | T40 | The edge sets the client address, and only the edge's is trusted | PLANNED | `P15-TSK-011` |
 | T40 | Per-source limits keyed on the address the edge sets | PLANNED | `P15-TSK-022` |
@@ -587,7 +591,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T43 | Static analysis over the adapters in CI | PLANNED | `P15-TSK-006` |
 | T43 | Static analysis flags an unbounded read of a provider's answer in an adapter, with a planted case | PLANNED | `P15-TSK-006` |
 | T44 | Report generation reaches no writer, and no write path, by any route the build can see (`INV-ACC-14`) | EXISTS | `app/src/test/java/com/finapp/app/architecture/ReportingNeverWritesTest.java` |
-| T44 | A `SELECT`-only reporting role for report generation (C13's cut candidate) | PLANNED | `P15-TSK-021` |
+| T44 | Report generation's snapshots open connections from the reporting pool alone, as `finapp_reporting`; with the pool unreachable no content is produced, no run completes and the application's pool is never asked | EXISTS | `app/src/test/java/com/finapp/app/accounting/ReportGenerationReadsAsTheReportingRoleTest.java#aRunsGenerationFailsClosedAtTheReportingPool`; `app/src/test/java/com/finapp/app/accounting/ReportGenerationReadsAsTheReportingRoleTest.java#aRegenerationReadsAsTheReportingRole` |
+| T44 | The reporting role holds `SELECT` on the report run's tables and nothing else | EXISTS | `app/src/test/java/com/finapp/app/architecture/ReportingRoleIsSelectOnlyTest.java#theRoleReadsTheRegisterAndNothingElse`; `app/src/test/java/com/finapp/app/architecture/ReportingRoleIsSelectOnlyTest.java#theRuleCanFail` |
 | T45 | Static analysis refusing a statement whose text is built from anything but constants, and a planted concatenation caught | PLANNED | `P15-TSK-006` |
 | T46 | A field or accessor named for a secret must be held in `Sensitive`, and only the correlation context writes the logging context (the build rules) | EXISTS | `app/src/test/java/com/finapp/app/architecture/NoUnwrappedSecretRulesTest.java#secretsAreWrapped`; `app/src/test/java/com/finapp/app/architecture/NoUnwrappedSecretRulesTest.java#onlyCorrelationContextWritesTheMdc` |
 | T46 | A `Sensitive` value is masked on every rendering path and on both appenders | EXISTS | `app/src/test/java/com/finapp/app/observability/LogRedactionTest.java#everyRenderingPathIsMasked`; `app/src/test/java/com/finapp/app/observability/RedactionAcrossAppendersTest.java#redactionHoldsOnBothAppenders` |
@@ -693,22 +698,29 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 - **T14.** The connection budget guard checks the instance count the configuration declares. Nothing ties that
   declaration to the replicas actually running, which `-009`'s manifest policy and `-012`'s measured peak do. Today an
   unauthenticated scrape runs about sixty gauges' queries on the scrape thread (`-024`).
-- **T38.** Today **every session actor is audited as `CUSTOMER`, operators included**, and a refused step-up writes no
-  record. Both are debt rows that `-021` closes. The actor's identity is right; only its type is wrong.
+- **T38.** *(Rewritten 2026-11-08: this read "every session actor is audited as `CUSTOMER`, operators included, and a
+  refused step-up writes no record".)* An operator act is now recorded `EMPLOYEE` and every refused step-up is recorded.
+  **Operator acts recorded before 2026-11-08 read `CUSTOMER` and stay so**: the audit record is append-only and the
+  domain's `*_by_type` columns are frozen by trigger, so a report separating staff from customers reads the population
+  from the record's date onward, and before it reconstructs it from `identity.role_assignment` and `identity.RoleAssigned`.
+  The database cases (an operator act's row, a refused step-up's row) are written and wait for the exit database pass.
 - **T43.** No general bound on the size of a provider's answer exists across the adapters. The regulatory adapter is
   the one evidenced. The adapters call simulated providers in this programme. **Owner item 5, decided 2026-11-08**:
   `-006`'s static analysis flags an unbounded read of a provider's answer in an adapter.
-- **T31.** The build pins the permission of every route that declares one, and refuses a handler that declares no
-  rule. **It does not assert that every route under `/v1/operator` is permission-guarded.** A route declaring only
-  `@RequiresSession` would pass both guards. `P15-TSK-011`'s allow-list moves only the routes an operator permission
-  guards, so such a route would stay on the public ingress. `-021`'s access review is to assert the guard by prefix,
-  and `-011` is to keep `/v1/operator` off the public host by path as well as by permission (both routed on their
-  entries).
+- **T31.** The build pins the permission of every route that declares one, refuses a handler that declares no rule,
+  and *(since 2026-11-08)* refuses a route under `/v1/operator` that declares no permission. Operator routes outside
+  that prefix (identity administration, the ledger's adjustments, KYC review, a payment's refund and void, a transfer's
+  reversal) are guarded by permission and pinned by the register, not by the prefix: `P15-TSK-011` keeps `/v1/operator`
+  off the public host by path as well as by permission (routed on its entry), and moves the others by permission.
 - **T42.** A replica rescheduled while the registry is unreachable cannot pull its image. Nothing in Phase 15 caches
   or mirrors images. **Accepted by the owner on 2026-11-08, until 2027-06-30** (owner item 1), and re-owned to Phase
   16, where registry availability, image pre-pulling and disaster recovery belong.
-- **T44.** The reporting role is C13's first cut candidate. If it is cut, `-021`'s gate rewrites T7's and T44's
-  planned rows as `GAP` rows with an owner.
+- **T44, T7.** The reporting role was built (2026-11-08), not cut. Its grants are pinned by a register of the 23 tables a
+  report run reads, recounted from the code; whether production's definitions generate within them is the definition
+  suites' at the exit database pass, which open their generation snapshots as the role. Only report generation reads
+  as it: the operational door, the close checks and the final statements read through the application's role in
+  `REPEATABLE READ READ ONLY` snapshots. In a deployed database the role is created by the one-time bootstrap step
+  (`P15-TSK-004`, routed on its entry) before the migrations that grant to it.
 - **T13.** Time sync on nodes is a property of the managed cluster. No task asserts it, and the register does not
   claim it. The platform's answer is to decide financial instants on the database's clock.
 
@@ -716,9 +728,10 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 
 ## 6. Owner items
 
-Only the owner can accept a risk or choose between the options below. **The owner decided all six on 2026-11-08,
+Only the owner can accept a risk or choose between the options below. **The owner decided items 1 to 6 on 2026-11-08,
 accepting each recommendation** ("accept recommendations", after `P15-TSK-001`'s merge); each item's decision follows
-its options. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
+its options. Item 7 was added on 2026-11-08 by the privileged access review (`PRIVILEGED_ACCESS_REVIEW.md`) and is
+open. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
 work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)*
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
@@ -767,6 +780,16 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
    to registration (verify-then-tell, by a channel the identifier's owner controls), which Phase 15 does not make.
    *Recommendation*: accept it, bounded by `-022`'s throttle, and record the alternative for the first real customer
    launch. **Decided 2026-11-08**: `ACCEPTED by the owner on 2026-11-08`; the alternative is `PI-017`.
+7. **T18's residual: one identity may hold both roles of a propose/approve pair** *(added 2026-11-08 by the privileged
+   access review; open)*. `PRIVILEGED_ACCESS_REVIEW.md` §4 names the pairs of roles no identity should hold together
+   (`ACCOUNTANT` and `FINANCIAL_CONTROLLER`, `REGULATORY_REPORTER` and `FINANCIAL_CONTROLLER`, `LOAN_SERVICING_AGENT` and
+   `LENDING_OFFICER`, `BNPL_SERVICING_AGENT` and `BNPL_OFFICER`). Role assignment does not refuse such a holding: an
+   administrator can grant it, with a required, audited reason. Every such act still refuses its proposer by identity,
+   at the domain and at the database, so one person cannot propose and approve the same act; holding both roles narrows
+   the population. The options: (a) refuse the holding at assignment (a new refusal on `POST
+   /v1/identities/{id}/roles`, its answer in the contract, and a check of the holdings that already exist); (b) leave it
+   to the review of `PRIVILEGED_ACCESS_REVIEW.md` §5, which finds it. *Recommendation*: (a), as a remediation entry before
+   production use, so the rule does not rest on a human review alone; meanwhile (b). Held by a `GAP` row in §4.
 
 ---
 

@@ -219,6 +219,25 @@ public enum IdentityAuditAction implements AuditableAction {
             "A privileged action was refused because the actor lacked the permission.",
             false),
 
+    /**
+     * A request was refused {@code identity.AssuranceRequired}: its session had not stepped up to the assurance the
+     * operation requires (`P15-TSK-021`; {@code THREAT_MODEL.md} T38).
+     *
+     * <p>The other refused privileged attempt. {@link #AUTHORIZATION_DENIED} records a caller without the permission;
+     * this records a caller who may hold it and presented a session below the operation's level - the trace an
+     * attacker holding only a password leaves at a four-eyes door. One record per refused request, committed in its
+     * own transaction before the refusal is answered, whether the refusal is the session interceptor's (a declared
+     * {@code @RequiresAssurance}) or an operation's own conditional step-up; a retry is a second attempt and a second
+     * record, as a denial is.
+     *
+     * <p>Its summary names the operation by its route pattern - never the path's values, the presented code, the
+     * factor or the session. No reason: nobody chose it.
+     */
+    STEP_UP_REFUSED(
+            "identity.StepUpRefused",
+            "A request was refused because its session had not stepped up to the assurance the operation requires.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

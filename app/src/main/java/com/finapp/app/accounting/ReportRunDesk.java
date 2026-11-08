@@ -98,7 +98,7 @@ public final class ReportRunDesk {
         CorrelationId correlation = correlation();
         return flow.door(GENERATE_SPAN, () -> guarded(() -> {
             AtomicReference<ReportRuns.Claimed> claimed = new AtomicReference<>();
-            IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+            IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
             RequestFingerprint fingerprint = RequestFingerprint.sha256(("generate|" + definition + "|"
                     + periodId.value() + "|" + asked.canonical()).getBytes(StandardCharsets.UTF_8));
             IdempotentExecutor.ExecutionOutcome outcome = transactions.inTransaction(unitOfWork -> executor.execute(
@@ -150,7 +150,7 @@ public final class ReportRunDesk {
         ReportRunId id = runId(rawRunId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(("regenerate|" + id.value())
                 .getBytes(StandardCharsets.UTF_8));
         return flow.door(REGENERATE_SPAN, () -> {

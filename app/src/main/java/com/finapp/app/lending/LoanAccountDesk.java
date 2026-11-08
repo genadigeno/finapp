@@ -264,7 +264,7 @@ public final class LoanAccountDesk {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         Optional<UUID> payoutMethod = payoutMethod(body.payoutMethodId());
-        IdempotencyKey key = new IdempotencyKey(ACCEPTANCE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(ACCEPTANCE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "lending.offer-acceptance",
                         id.value().toString(), body.termsSha256(), payoutMethod.map(UUID::toString).orElse("-"))
                 .getBytes(StandardCharsets.UTF_8));

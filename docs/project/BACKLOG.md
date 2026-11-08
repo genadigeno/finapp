@@ -27049,6 +27049,12 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §deploy (migration step), §migration failure (`-032`).
 - **Acceptance criteria**: identical schema to the build's; idempotent; serialised; bounded by `lock_timeout`.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-021` (2026-11-08), status unchanged:* `finapp_reporting` exists and the migrations grant to it
+  (accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V033`), so **the one-time bootstrap step creates it
+  before the first migrator run that includes them** - `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, `CONNECT`
+  on the database, its password from the secret store - exactly as `infra/postgres/initdb/00-roles.sql` does locally;
+  a migrator run against a database without it fails those migrations (`role "finapp_reporting" does not exist`),
+  never silently. The image's schema-history comparison covers the four grant migrations like any other.
 
 **P15-TSK-005 — Schema compatibility across a rolling deploy: the expand-only lint and the schema-version guard** —
 `PLANNED`
@@ -27242,7 +27248,9 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   digest; the financial census after each step. **The connection budget measured** (I-1): run with
   `finapp.database.instances` set to `PHASE_15_PLAN.md` §6.1's formula exactly and `max_connections = instances × pool +
   reserved`, record the peak `pg_stat_activity` count for `application_name = 'finapp'` during the rolling update and
-  the pod kill, assert it at most `instances × pool`, and assert an operator connection is admitted at the peak. **A
+  the pod kill, assert it at most `instances × pool`, and assert an operator connection is admitted at the peak
+  *(routed by `P15-TSK-021`, 2026-11-08: `pool` is both of an instance's pools - `maximum-pool-size` plus
+  `finapp.database.reporting.pool-size`, 7 + 1 shipped - and both connect as `application_name = finapp`)*. **A
   handler added in release N** (I-2): release N registers a handler for an event type the module already produces;
   that type is produced during the mixed window; the census finds the records an N − 1 replica committed unseen
   (`UNHANDLED`), and the audited replay of `-028` over the rollout window applies each exactly once (the inbox
@@ -27383,6 +27391,10 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Failure and rollback**: a missing secret fails startup (the existing guards), never readiness after traffic.
 - **Testing and validation**: the inventory test both ways (a new property without a row fails; a row without a property
   fails); the policy's planted Secret refused.
+- *Routed by `P15-TSK-021` (2026-11-08), status unchanged:* the reporting role's credential
+  (`finapp.database.reporting.password`, `FINAPP_DB_REPORTING_PASSWORD`, user `FINAPP_DB_REPORTING_USER`) joins the
+  inventory beside the datasource's, with its ExternalSecret; `DatabaseCredentialGuard` already confines its marked
+  default to loopback.
 - **Probe**: add a `finapp.x.secret` property without an inventory row → red.
 - **Operational documentation**: `SECRET_MANAGEMENT.md` §3 and §5 rewritten for deployed environments.
 - **Acceptance criteria**: as tested.
@@ -27427,7 +27439,9 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Dependencies**: `-012`, `-019`.
 - **Scope**: the application's database password by alternating users - **each alternating user holding exactly the
   per-table grants made to `finapp_app`** (by membership of a role carrying them; the grants stay in the migrations;
-  the users created by `-004`'s bootstrap step), a user missing one grant failing the rehearsal; a Kafka SCRAM
+  the users created by `-004`'s bootstrap step), a user missing one grant failing the rehearsal *(routed by
+  `P15-TSK-021`, 2026-11-08: the reporting role's password rotates the same way, its alternating users carrying exactly
+  `finapp_reporting`'s `SELECT` grants)*; a Kafka SCRAM
   credential; an HMAC callback secret
   through its window; a field-level key version; the ingress certificate renewed early; each followed by the census.
 - **Exclusions**: a cloud-managed rotation (deferred).
@@ -27441,7 +27455,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every rotation rehearsed green and recorded.
 - **Definition of done**: `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P15-TSK-021 — Privileged access: the operator actor, the refused step-up, the reporting role (C13)** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-021 — Privileged access: the operator actor, the refused step-up, the reporting role (C13)** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; built on branch `P15-TSK-021` from master `c1d07726`; read `READY` until its gate)
 - **Objective**: an operator's acts are recorded as an operator's, refused privileged attempts are recorded, and report
   generation holds no write privilege at the database.
 - **Affected components**: `app` (`SessionAuthenticationInterceptor`, the step-up path, `RequiresAssurance`'s note),
@@ -27471,6 +27485,14 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; two debt rows closed.
 - **Definition of done**: `DOD-SEC`, `DOD-ARCH`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `RequiresAssurance`'s note, recounted: **21** handlers declare it, all `MULTI_FACTOR`, all on the method (the plan's "25" is a text count that also matches four mentions in comments and the interceptor's message). `THREAT_MODEL.md` T3, T7, T10, T18, T38 and T44 cite this task; if the reporting role is cut, this task's gate rewrites T7's and T44's rows as gaps with an owner. *(The fix round, 2026-11-08:)* `THREAT_MODEL.md` T31: the privileged access review asserts that every route under `/v1/operator` is permission-guarded (today no build rule does). If the reporting role is cut, T7's and T44's planned rows become `GAP` rows naming the owner item or postponed issue that holds them (the grammar of the model's §1.4).
+- **As built (2026-11-08, its gate)** - the design corrected the entry in four places, each recorded:
+  - **The operator population is `EMPLOYEE`, the plan's "`OPERATOR`".** `ActorType` has no `OPERATOR`; `platform.audit_record`'s `CHECK` and the modules' person `CHECK`s list `'CUSTOMER', 'EMPLOYEE'` (65 times in 23 migrations of five modules, counted), and `EMPLOYEE`'s own definition is the operator population, so no migration and no domain check changed. **The role decides, per request**: `SessionAuthenticationInterceptor` reads the identity's live roles once, in the session's own transaction, on an operator act (a handler declaring `@RequiresPermission`); any live role types it `EMPLOYEE`, and the same read decides the permission (`Authorization.Standing`, identity). A customer route reads no roles and stays `CUSTOMER`, a role holder on their own account included - two `CHECK`s (`lending V004`, `bnpl V003`) require a customer to submit their own application, and the risk judgements read a customer's identity. A role granted or revoked mid-session is honoured on the next request.
+  - **Idempotency scopes key a person once.** 79 scopes (62 files), a merchant-key fingerprint and the dispute-response scope named `actor.type()`; typing operator acts `EMPLOYEE` would have split one person's retries across `CUSTOMER:<id>` and `EMPLOYEE:<id>` - a retry crossing the deploy or a role change acting twice. `Actor.keyedType()` (platform) names a person `CUSTOMER` in every scope; persisted scopes are byte-identical; `IdempotencyScopesKeyThePersonTest` refuses `type()` in a scope or fingerprint (all modules' sources, planted cases). Four-eyes compares ids everywhere (re-verified).
+  - **A refused step-up is recorded everywhere it happens.** `identity.StepUpRefused` (identity), committed in its own `REQUIRES_NEW` transaction before the `403`: by the interceptor at a declared `@RequiresAssurance` (21 handlers, recounted, all `MULTI_FACTOR`, all on the method), and by the error contract (`ApiErrorHandler` → `StepUpRefusals`) at the ~34 operations' own step-ups, once per request (the interceptor marks its own). Summary: the route pattern only.
+  - **The reporting role reads 23 tables, not "the journal and accounting tables only".** Recounted from the code across the 14 definitions: accounting 10, ledger 5, reconciliation 3, lending 5 (+ `lending.business_date`). Grants: accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V033` (USAGE + SELECT, no default privileges); `ReportingRoleIsSelectOnlyTest` pins the register. Only `ReportRunGenerator`'s snapshots (generation, regeneration) use `ReportingPool` (`app.database`, not a `DataSource` bean, lazy, fixed-size, `application_name = finapp`); the operational door, close checks and final statements keep the writer's read-only snapshots. **Not cut.**
+  - **Built**: `finapp_reporting` in `00-roles.sql` (CONNECT; `LocalDatabaseRolesAreUnprivilegedTest` holds three roles); the pool's credential guarded (`DatabaseCredentialGuard`, `FINAPP_DB_REPORTING_PASSWORD`); the budget `instances × (writer + reporting)`, the writer pool 8 → 7 with reporting 1 so the fleet demand stays 80 of 88; `DatabaseUnderTest` publishes the role; T31's rule in `RoutePermissionRegisterTest` with a planted route; `PRIVILEGED_ACCESS_REVIEW.md` (roles, the propose/approve partition of holdings, the review, break-glass) held by `PrivilegedAccessReviewTest`; ADR-0113 and ADR-0031 dated notes, no new ADR.
+  - **Owed (C14)**: `ReportingRoleDatabaseTest` (a planted write refused by the role outside `READ ONLY`, every register table readable, restricted tables refused, the catalogue exact); `DenyByDefaultDatabaseTest#theOperatorActorIsTyped` and `#aRefusedStepUpIsRecorded`; the definition suites (trial balance, statements, safeguarding, operational) now generate as `DatabaseRoles::reporting`; the three schema-ACL migration tests widened. Walked by hand, not run.
+  - **Owner item**: `THREAT_MODEL.md` §6 item 7 - refuse, at role assignment, one identity holding both roles of a propose/approve pair (recommended as a remediation before production use; the review finds it meanwhile).
 
 **P15-TSK-022 — Abuse limits: registration and per-source throttling, cluster-safe** — `PLANNED`
 - **Objective**: no single source can create unbounded parties or drive unbounded load, across N replicas.

@@ -228,7 +228,7 @@ public class OpeningPosition {
         // alone; the retry re-walks and converges.
         IdempotencyKey key =
                 new IdempotencyKey(
-                        SCOPE_PREFIX + actor.type().name() + ":" + actor.id(), idempotencyKey);
+                        SCOPE_PREFIX + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(reason.getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome =
