@@ -1336,46 +1336,158 @@ public class PaymentBeans {
             com.finapp.payments.WebhookSignature webhookSignature,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
-            PaymentIntentStore<Connection> paymentIntentStore,
             com.finapp.payments.RefundStore<Connection> refundStore,
             com.finapp.app.telemetry.PaymentMeters paymentMeters,
-            com.finapp.payments.PaymentOutcomes paymentOutcomes,
             com.finapp.platform.inbox.InboxConsumer<Connection> inboxConsumer,
-            OutboxWriter<Connection> outboxWriter,
-            IdGenerator idGenerator,
             tools.jackson.databind.ObjectMapper objectMapper,
             Clock clock,
-            TransactionTemplate paymentTransactions,
-            DataSource dataSource,
-            com.finapp.payments.DisputeNotifications disputeNotifications,
-            com.finapp.payments.PaymentRails paymentRails,
-            com.finapp.payments.SettlementExpectations settlementExpectations) {
+            TransactionRunner paymentTransactionRunner,
+            com.finapp.payments.CardCallbackInquiry cardCallbackInquiry,
+            com.finapp.payments.CallbackHintStore<Connection> callbackHintStore,
+            com.finapp.payments.CallbackHintResolution callbackHintResolution) {
         return new PaymentWebhookService(
                 webhookSignature,
                 providerEvidenceStore,
                 paymentAttemptStore,
-                paymentIntentStore,
                 refundStore,
                 paymentMeters,
-                paymentOutcomes,
-                // The clearing recorder (P7-TSK-005): the door's non-transition effect,
-                // over the same outbox the outcome events travel - and, since P8-TSK-004,
-                // the ARN alias's registrar (ADR-0067 §5), judged from the stored rail's
-                // declaration.
-                new com.finapp.payments.PaymentClearing(
-                        new com.finapp.payments.JdbcClearingRecordStore(),
-                        outboxWriter,
-                        idGenerator,
-                        clock,
-                        paymentRails,
-                        settlementExpectations),
                 inboxConsumer,
                 objectMapper,
                 clock,
-                paymentTransactions,
-                dataSource,
-                // The dispute notifications (P7-TSK-012): the door's fourth statement kind.
-                disputeNotifications);
+                paymentTransactionRunner,
+                cardCallbackInquiry,
+                callbackHintStore,
+                callbackHintResolution,
+                // The rail this door serves - bound HERE (INV-RAIL-01).
+                SimulatedCardPspAdapter.RAIL.id());
+    }
+
+    // ------------------------------------------------------------------
+    // Callbacks as hints (P15-TSK-036, ADR-0083 decision 4).
+    // ------------------------------------------------------------------
+
+    @Bean
+    com.finapp.payments.CallbackHintStore<Connection> callbackHintStore(IdGenerator idGenerator) {
+        return new com.finapp.payments.JdbcCallbackHintStore(idGenerator);
+    }
+
+    /** The clearing recorder (P7-TSK-005), over the same outbox the outcome events travel; the ARN alias's registrar. */
+    @Bean
+    com.finapp.payments.PaymentClearing paymentClearing(
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            com.finapp.payments.PaymentRails paymentRails,
+            com.finapp.payments.SettlementExpectations settlementExpectations) {
+        return new com.finapp.payments.PaymentClearing(
+                new com.finapp.payments.JdbcClearingRecordStore(),
+                outboxWriter,
+                idGenerator,
+                clock,
+                paymentRails,
+                settlementExpectations);
+    }
+
+    /** The one seam a hinted inquiry reaches: the same appliers the resolution sweeps use. */
+    @Bean
+    com.finapp.payments.CallbackAppliers callbackAppliers(
+            com.finapp.payments.PaymentOutcomes paymentOutcomes,
+            com.finapp.payments.PaymentClearing paymentClearing,
+            com.finapp.payments.DisputeNotifications disputeNotifications,
+            com.finapp.payments.UnmatchedConfirmations unmatchedConfirmations,
+            com.finapp.payments.WithdrawalOutcomes withdrawalOutcomes) {
+        return new com.finapp.payments.PaymentCallbackAppliers(
+                paymentOutcomes,
+                paymentClearing,
+                disputeNotifications,
+                unmatchedConfirmations,
+                withdrawalOutcomes);
+    }
+
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    com.finapp.payments.CardCallbackInquiry cardCallbackInquiry(
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.RefundStore<Connection> refundStore,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            PaymentProvider paymentProvider,
+            com.finapp.payments.CallbackAppliers callbackAppliers,
+            TransactionRunner paymentTransactionRunner,
+            Clock clock) {
+        return new com.finapp.payments.CardCallbackInquiry(
+                paymentAttemptStore,
+                paymentIntentStore,
+                refundStore,
+                providerEvidenceStore,
+                paymentProvider,
+                callbackAppliers,
+                paymentTransactionRunner,
+                clock);
+    }
+
+    @Bean
+    @ConditionalOnProperty("finapp.payments.instant.url")
+    com.finapp.payments.InstantCallbackInquiry instantCallbackInquiry(
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.RefundStore<Connection> refundStore,
+            com.finapp.payments.WithdrawalStore<Connection> withdrawalStore,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            com.finapp.payments.PushRail instantRail,
+            com.finapp.payments.CallbackAppliers callbackAppliers,
+            TransactionRunner paymentTransactionRunner,
+            Clock clock) {
+        return new com.finapp.payments.InstantCallbackInquiry(
+                paymentAttemptStore,
+                paymentIntentStore,
+                refundStore,
+                withdrawalStore,
+                providerEvidenceStore,
+                instantRail,
+                callbackAppliers,
+                // The rail this door serves - bound HERE (INV-RAIL-01).
+                com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(),
+                paymentTransactionRunner,
+                clock);
+    }
+
+    /**
+     * The door's immediate inquiry and the leaderless sweep over the durable hints, one path. The first ask outlasts
+     * the door's own inquiry, the provider's timeout included, so the sweep does not routinely race it; giving up
+     * outlasts any provider outage the platform would ride out rather than page on.
+     */
+    @Bean
+    com.finapp.payments.CallbackHintResolution callbackHintResolution(
+            com.finapp.payments.CallbackHintStore<Connection> callbackHintStore,
+            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.HintedInquiry> hintedInquiries,
+            @Value("${finapp.payments.callback-hint.first-ask:PT1M}") java.time.Duration firstAsk,
+            @Value("${finapp.payments.callback-hint.retry-after:PT1M}") java.time.Duration retryAfter,
+            @Value("${finapp.payments.callback-hint.give-up-after:P7D}") java.time.Duration giveUpAfter,
+            @Value("${finapp.payments.callback-hint.batch:50}") int batchSize,
+            IdGenerator idGenerator,
+            TransactionRunner paymentTransactionRunner) {
+        return new com.finapp.payments.CallbackHintResolution(
+                callbackHintStore,
+                hintedInquiries.orderedStream().toList(),
+                new com.finapp.payments.CallbackHintResolution.Config(firstAsk, retryAfter, giveUpAfter, batchSize),
+                idGenerator,
+                paymentTransactionRunner);
+    }
+
+    /**
+     * The schedule: the {@code PaymentSweeperSchedule} gate, for the identical reason. A deployment that says nothing
+     * gets the sweep, because a deployment that forgets it loses every notice whose first inquiry failed.
+     */
+    @Bean
+    @ConditionalOnProperty(
+            name = "finapp.payments.callback-hint.sweeper.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    CallbackHintResolutionSchedule callbackHintResolutionSchedule(
+            com.finapp.payments.CallbackHintResolution callbackHintResolution,
+            @Value("${finapp.payments.callback-hint.sweeper.poll:PT30S}") java.time.Duration pollInterval) {
+        return new CallbackHintResolutionSchedule(callbackHintResolution, pollInterval);
     }
 
     /**
@@ -1405,37 +1517,34 @@ public class PaymentBeans {
             com.finapp.payments.WebhookSignature instantWebhookSignature,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
-            PaymentIntentStore<Connection> paymentIntentStore,
-            com.finapp.payments.PaymentOutcomes paymentOutcomes,
-            com.finapp.payments.UnmatchedConfirmations unmatchedConfirmations,
             com.finapp.app.telemetry.PaymentMeters paymentMeters,
             com.finapp.platform.inbox.InboxConsumer<Connection> inboxConsumer,
             tools.jackson.databind.ObjectMapper objectMapper,
             Clock clock,
-            TransactionTemplate paymentTransactions,
-            DataSource dataSource,
+            TransactionRunner paymentTransactionRunner,
+            com.finapp.payments.InstantCallbackInquiry instantCallbackInquiry,
+            com.finapp.payments.CallbackHintStore<Connection> callbackHintStore,
+            com.finapp.payments.CallbackHintResolution callbackHintResolution,
             com.finapp.payments.RefundStore<Connection> refundStore,
             com.finapp.payments.WithdrawalStore<Connection> withdrawalStore) {
         return new InstantCallbackService(
                 instantWebhookSignature,
                 providerEvidenceStore,
                 paymentAttemptStore,
-                paymentIntentStore,
-                paymentOutcomes,
-                unmatchedConfirmations,
                 paymentMeters,
                 inboxConsumer,
                 objectMapper,
                 clock,
-                paymentTransactions,
-                dataSource,
+                paymentTransactionRunner,
+                instantCallbackInquiry,
+                callbackHintStore,
+                callbackHintResolution,
                 // The rail this door serves - bound HERE, the composition root, so the
                 // door holds no rail by name (INV-RAIL-01; the Withdrawals binding).
                 com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(),
-                // The park guard's attribution read (P7-TSK-010): a return's own echo
-                // must never park as unmatched money.
+                // Every reference we mint on the rail is recognised (P7-TSK-010; the Phase 7 -> 8
+                // transition): a return's or a withdrawal's is asked about through that row's inquiry.
                 refundStore,
-                // And a withdrawal's (the Phase 7 -> 8 transition): value that went OUT.
                 withdrawalStore);
     }
 

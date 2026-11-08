@@ -582,6 +582,47 @@ class SimulatedInstantSchemeAdapterTest {
     }
 
     // ------------------------------------------------------------------
+    // The execution inquiry a statement naming nothing of ours triggers (P15-TSK-036)
+    // ------------------------------------------------------------------
+
+    private static final ProviderReference EXECUTION = new ProviderReference("scheme_exec_1");
+    private static final String EXECUTION_PATH =
+            SimulatedInstantSchemeAdapter.EXECUTION_STATUS_PATH + EXECUTION.value();
+
+    @Test
+    @DisplayName("the execution inquiry answers the scheme's reference, the executed amount, the cycle and what it carried")
+    void executionInquiryAnswers() {
+        scheme.succeedsWith(
+                EXECUTION_PATH,
+                200,
+                "{\"status\":\"accepted\",\"reference\":\"scheme_exec_1\",\"endToEndReference\":\"Ref1\","
+                        + "\"cycle\":\"2026-11-08-1\",\"amount\":\"5.40\",\"currency\":\"EUR\"}");
+
+        ExecutionAnswer answer = adapter().inquireExecution(EXECUTION);
+
+        assertThat(answer.verdict()).isEqualTo(ExecutionAnswer.Verdict.EXECUTED);
+        assertThat(answer.schemeReference()).contains(EXECUTION);
+        assertThat(answer.endToEndReference()).contains(new EndToEndReference("Ref1"));
+        assertThat(answer.settlementCycle()).contains("2026-11-08-1");
+        assertThat(answer.executed()).contains(Money.ofMinorUnits(540, CurrencyCode.of("EUR")));
+    }
+
+    @Test
+    @DisplayName("the execution inquiry is total: unrecognised is the explicit word, anything unusable is indeterminate")
+    void executionInquiryIsTotal() {
+        scheme.succeedsWith(EXECUTION_PATH, 200, "{\"status\":\"unrecognised\"}");
+        assertThat(adapter().inquireExecution(EXECUTION).verdict()).isEqualTo(ExecutionAnswer.Verdict.UNRECOGNISED);
+
+        scheme.succeedsWith(EXECUTION_PATH, 200, "{\"status\":\"accepted\",\"reference\":\"scheme_exec_1\"}");
+        assertThat(adapter().inquireExecution(EXECUTION).verdict())
+                .as("an execution with no amount cannot park")
+                .isEqualTo(ExecutionAnswer.Verdict.INDETERMINATE);
+
+        scheme.failsWith(EXECUTION_PATH, 404);
+        assertThat(adapter().inquireExecution(EXECUTION).verdict()).isEqualTo(ExecutionAnswer.Verdict.INDETERMINATE);
+    }
+
+    // ------------------------------------------------------------------
     // The reference's own shape (ISO 20022's bound)
     // ------------------------------------------------------------------
 

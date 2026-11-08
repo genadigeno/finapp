@@ -93,11 +93,163 @@ class PaymentWebhookTransitionDatabaseTest {
         registry.add(
                 "finapp.payments.webhook.key",
                 () -> Base64.getEncoder().encodeToString(WEBHOOK_KEY));
+        // P15-TSK-036's sweeps, driven directly by the cases that need them.
+        registry.add("finapp.payments.sweeper.unknown-age", () -> "PT0.001S");
+        registry.add("finapp.payments.callback-hint.first-ask", () -> "PT0.001S");
+        registry.add("finapp.payments.callback-hint.retry-after", () -> "PT0.001S");
     }
 
     @BeforeEach
     void reset() {
         provider.reset();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.finapp.payments.PaymentSweeper paymentSweeper;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.finapp.payments.CallbackHintResolution callbackHintResolution;
+
+    // -----------------------------------------------------------------
+    // Callbacks are hints (P15-TSK-036, ADR-0083): the database cases, owed to P15-TST-002 (C14)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a forged-but-signed capture moves nothing over the real chain: the row, the journal and the"
+            + " customer's balance are untouched, and both statements are retained")
+    void aForgedSignedCaptureMovesNothing() throws Exception {
+        Flow flow = captureUnknownFlow();
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH + flow.captureReference(), 200, "{\"status\":\"unrecognised\"}");
+
+        assertThat(deliverRaw(body(someEvent(), flow.captureReference(), "approved", "psp_forged-" + suffix()))
+                .statusCode())
+                .isEqualTo(204);
+
+        assertThat(attemptStatus(flow.intentId())).isEqualTo("CAPTURE_UNKNOWN");
+        assertThat(entriesByReference(flow.attemptId())).isZero();
+        assertThat(evidenceCount(flow.attemptId())).as("the signed bytes").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ? AND kind = 'QUERY_RESULT'",
+                        flow.attemptId()))
+                .as("and the inquiry's answer")
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("ten contexts delivering one signed callback while a sweep inquires the same attempt: one outcome"
+            + " applied, one posting, and the inbox lets one delivery ask")
+    void tenContextsAndASweepApplyOneOutcome() throws Exception {
+        Flow flow = captureUnknownFlow();
+        String inquiry = SimulatedCardPspAdapter.OPERATIONS_PATH + flow.captureReference();
+        String pspReference = "psp_cap-ten-" + suffix();
+        provider.succeedsWith(inquiry, 200, "{\"status\":\"approved\",\"reference\":\"" + pspReference + "\"}");
+        String delivery = body(someEvent(), flow.captureReference(), "approved", pspReference);
+
+        ExecutorService pool = Executors.newFixedThreadPool(11);
+        CountDownLatch open = new CountDownLatch(1);
+        try {
+            List<Future<Integer>> deliveries =
+                    java.util.stream.IntStream.range(0, 10)
+                            .mapToObj(i -> pool.submit(() -> {
+                                open.await();
+                                return deliverUntilAcknowledged(delivery);
+                            }))
+                            .toList();
+            Future<?> sweep = pool.submit(() -> {
+                open.await();
+                return paymentSweeper.sweep();
+            });
+            open.countDown();
+            for (Future<Integer> answer : deliveries) {
+                assertThat(answer.get()).isEqualTo(204);
+            }
+            sweep.get();
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(entriesByReference(flow.attemptId())).as("one posting").isEqualTo(1);
+        assertThat(transitionCount(flow.attemptId(), "CAPTURED")).as("one outcome applied").isEqualTo(1);
+        assertThat(attemptStatus(flow.intentId())).isEqualTo("CAPTURED");
+        assertThat(count("SELECT count(*) FROM platform.inbox_message WHERE consumer = ?"
+                        + " AND dedupe_key LIKE ?", "payments.provider-webhook", "simulated-card:%"))
+                .isGreaterThanOrEqualTo(1);
+        assertThat(provider.requestCount(inquiry))
+                .as("one delivery's inquiry, and at most one from the sweep: a duplicate asks nothing")
+                .isBetween(1, 2);
+    }
+
+    @Test
+    @DisplayName("an inquiry that fails adopts nothing and acknowledges: the sweep then concludes it through its own"
+            + " inquiry, posting once")
+    void anInquiryFailureIsFinishedByTheSweep() throws Exception {
+        Flow flow = captureUnknownFlow();
+        String inquiry = SimulatedCardPspAdapter.OPERATIONS_PATH + flow.captureReference();
+        provider.isUnavailable(inquiry);
+
+        assertThat(deliverRaw(body(someEvent(), flow.captureReference(), "approved", "psp_cap-" + suffix()))
+                .statusCode())
+                .isEqualTo(204);
+        assertThat(attemptStatus(flow.intentId())).isEqualTo("CAPTURE_UNKNOWN");
+        assertThat(entriesByReference(flow.attemptId())).isZero();
+
+        String pspReference = "psp_cap-swept-" + suffix();
+        provider.succeedsWith(inquiry, 200, "{\"status\":\"approved\",\"reference\":\"" + pspReference + "\"}");
+        paymentSweeper.sweep();
+
+        assertThat(attemptStatus(flow.intentId())).isEqualTo("CAPTURED");
+        assertThat(entriesByReference(flow.attemptId())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a forged clearing records nothing, its hint concluded REFUTED, while a genuine one records the PSP's"
+            + " references, and one whose inquiry failed is finished by the hint sweep")
+    void clearingHintsAcrossTheRealChain() throws Exception {
+        Flow forged = capturedFlow();
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH + forged.captureReference() + SimulatedCardPspAdapter.CLEARING_SUFFIX,
+                200, "{\"status\":\"not_cleared\"}");
+        deliverRaw(clearingBody(someEvent(), forged.captureReference(), "arn-forged-" + suffix(), "nti-forged-" + suffix()));
+        assertThat(clearingCount(forged.attemptId())).isZero();
+        assertThat(oneString("SELECT conclusion FROM payments.callback_hint WHERE attempt_id = ?", forged.attemptId()))
+                .isEqualTo("REFUTED");
+
+        Flow delayed = capturedFlow();
+        String inquiry = SimulatedCardPspAdapter.OPERATIONS_PATH + delayed.captureReference()
+                + SimulatedCardPspAdapter.CLEARING_SUFFIX;
+        provider.isUnavailable(inquiry);
+        deliverRaw(clearingBody(someEvent(), delayed.captureReference(), "arn-claimed-" + suffix(), "nti-claimed-" + suffix()));
+        assertThat(clearingCount(delayed.attemptId())).as("no answer, no clearing").isZero();
+        assertThat(count("SELECT count(*) FROM payments.callback_hint WHERE attempt_id = ? AND concluded_at IS NULL",
+                        delayed.attemptId()))
+                .as("the hint stands for the sweep")
+                .isEqualTo(1);
+
+        String arn = "arn-real-" + suffix();
+        String nti = "nti-real-" + suffix();
+        provider.succeedsWith(inquiry, 200,
+                "{\"status\":\"cleared\",\"arn\":\"" + arn + "\",\"networkTransactionId\":\"" + nti + "\"}");
+        Thread.sleep(50);
+        callbackHintResolution.sweep();
+
+        assertThat(oneString(
+                        "SELECT acquirer_reference || '|' || network_transaction_id FROM payments.clearing_record"
+                                + " WHERE attempt_id = ?", delayed.attemptId()))
+                .as("the inquiry's references, never the callback's")
+                .isEqualTo(arn + "|" + nti);
+        assertThat(oneString("SELECT conclusion FROM payments.callback_hint WHERE attempt_id = ?", delayed.attemptId()))
+                .isEqualTo("ADOPTED");
+    }
+
+    private int deliverUntilAcknowledged(String delivery) throws Exception {
+        for (int attempt = 0; attempt < 200; attempt++) {
+            int status = deliverRaw(delivery).statusCode();
+            if (status != 409) {
+                return status;
+            }
+            Thread.sleep(20);
+        }
+        return 409;
     }
 
     // -----------------------------------------------------------------
@@ -182,7 +334,7 @@ class PaymentWebhookTransitionDatabaseTest {
         assertThat(transitionCount(flow.attemptId(), "CAPTURED")).isEqualTo(1);
         assertThat(evidenceCount(flow.attemptId()))
                 .as("ten genuine statements retained (INV-HIST-02)")
-                .isEqualTo(10 + 1); // + the confirm's own capture-response evidence
+                .isEqualTo(10);
         assertThat(field(get("/v1/payments/" + flow.intentId(), flow.token()).body(), "status"))
                 .isEqualTo("SUCCEEDED");
     }
@@ -758,6 +910,12 @@ class PaymentWebhookTransitionDatabaseTest {
 
     /** A legitimately signed, fresh delivery — the webhook door's own scheme. */
     private HttpResponse<String> deliverWebhook(String body) throws Exception {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(provider, body);
+        return deliverRaw(body);
+    }
+
+    /** A signed delivery the provider has NOT been told to agree with: the forged-callback tests' door. */
+    private HttpResponse<String> deliverRaw(String body) throws Exception {
         String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
         String signature = hmacHex(timestamp + "." + body);
         HttpRequest request =
@@ -926,7 +1084,7 @@ class PaymentWebhookTransitionDatabaseTest {
 
     private static long evidenceCount(UUID attemptId) throws SQLException {
         return count(
-                "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ?",
+                "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ? AND kind = 'WEBHOOK'",
                 attemptId);
     }
 

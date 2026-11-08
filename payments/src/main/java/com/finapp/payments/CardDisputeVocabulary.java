@@ -1,15 +1,13 @@
-package com.finapp.app.payments;
+package com.finapp.payments;
 
-import com.finapp.payments.DisputeReason;
-import com.finapp.payments.DisputeStage;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * The card PSP's dispute words, confined to the webhook door that receives them (`P7-TSK-012`,
+ * The card PSP's dispute words, confined to the adapter that reads them (`P7-TSK-012`, moved from the webhook door by `P15-TSK-036`,
  * ADR-0061 §6, {@code INV-PAY-03}): its stage words and its reason codes, each through a
  * <strong>total</strong> table whose default is indeterminate — never a guess. The wire is the
- * simulated PSP's (ours end to end, Stripe-shaped); what crosses into {@code payments} is only
+ * simulated PSP's (ours end to end, Stripe-shaped); what crosses this class is only
  * {@link DisputeStage} and {@link DisputeReason}, and the raw words rest verbatim in the
  * retained evidence (`INV-HIST-02`).
  *
@@ -64,12 +62,12 @@ final class CardDisputeVocabulary {
                 : REASONS.getOrDefault(code, DisputeReason.UNCATEGORISED);
     }
 
-    /** Every stage word the door reads — the mapping table's test enumerates it. */
+    /** Every stage word the adapter reads — the mapping table's test enumerates it. */
     static Map<String, DisputeStage> stageWords() {
         return STAGES;
     }
 
-    /** Every reason code the door places — as {@link #stageWords()}. */
+    /** Every reason code the adapter places — as {@link #stageWords()}. */
     static Map<String, DisputeReason> reasonCodes() {
         return REASONS;
     }

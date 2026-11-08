@@ -2,7 +2,6 @@ package com.finapp.app.payments;
 
 import com.finapp.payments.EndToEndReference;
 import com.finapp.payments.EvidenceKind;
-import com.finapp.payments.OutboundCreditResolution;
 import com.finapp.payments.OutboundCreditStore;
 import com.finapp.payments.ProviderEvidenceStore;
 import com.finapp.payments.TransactionRunner;
@@ -17,6 +16,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.JsonNode;
@@ -26,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
  * The corridor provider's callback door (`P9-TSK-020`, ADR-0083 - callbacks are hints): authenticate (HMAC and
  * freshness), retain the bytes under the outbound credit our reference names, dedupe on the provider's event id
  * through the inbox, then - after the commit, holding no connection - the authenticated {@code inquire(E)} through
- * {@link OutboundCreditResolution}, whose answer alone moves the credit. The callback's own content decides
+ * {@code OutboundCreditResolution.resolve}, whose answer alone moves the credit. The callback's own content decides
  * nothing: a forged but correctly signed callback claiming an acceptance moves nothing the inquiry does not
  * confirm.
  *
@@ -50,7 +50,8 @@ public class CorridorCallbackService {
     private final OutboundCreditStore credits;
     private final ProviderEvidenceStore<Connection> evidence;
     private final InboxConsumer<Connection> inbox;
-    private final OutboundCreditResolution resolution;
+    /** The hinted inquiry: {@code OutboundCreditResolution.resolve}. */
+    private final Consumer<EndToEndReference> resolution;
     private final TransactionRunner transactions;
     private final ObjectMapper json;
     private final Clock clock;
@@ -61,7 +62,7 @@ public class CorridorCallbackService {
             OutboundCreditStore credits,
             ProviderEvidenceStore<Connection> evidence,
             InboxConsumer<Connection> inbox,
-            OutboundCreditResolution resolution,
+            Consumer<EndToEndReference> resolution,
             TransactionRunner transactions,
             ObjectMapper json,
             Clock clock) {
@@ -109,8 +110,14 @@ public class CorridorCallbackService {
                 .filter(ref -> END_TO_END_REFERENCE.matcher(ref).matches())
                 .map(EndToEndReference::new);
         if (eventId.isEmpty() || reference.isEmpty()) {
+            // No dedupe is possible without an event id, and nothing names a credit: the bytes alone are the record
+            // (P15-TSK-036, the Phase 9 residue; the card door's anti-stall evidence, ADR-0047 section 5).
+            transactions.inTransaction(unitOfWork -> {
+                retainUnattributed(unitOfWork, rawBody);
+                return null;
+            });
             log.warn("An authenticated corridor provider callback carried no usable event id or reference; it is"
-                    + " acknowledged and moves nothing");
+                    + " retained, acknowledged and moves nothing");
             return Delivered.UNMAPPABLE;
         }
         record Consumed(InboxConsumer.Outcome outcome, boolean known) {}
@@ -119,8 +126,12 @@ public class CorridorCallbackService {
             // one provider's key names nothing on another's - no evidence filed under it, no inquiry triggered.
             Optional<OutboundCreditStore.Row> credit = credits.byReference(unitOfWork, reference.get())
                     .filter(row -> row.rail().value().equals(rail));
-            credit.ifPresent(row -> evidence.appendForOutboundCredit(unitOfWork, row.id(), EvidenceKind.WEBHOOK, rawBody,
-                    Instant.now(clock)));
+            credit.ifPresentOrElse(
+                    row -> evidence.appendForOutboundCredit(unitOfWork, row.id(), EvidenceKind.WEBHOOK, rawBody,
+                            Instant.now(clock)),
+                    // An authenticated callback naming no credit of this rail still happened (INV-HIST-02): retained with
+                    // no subject, which V005 admits, and no inquiry follows.
+                    () -> retainUnattributed(unitOfWork, rawBody));
             // The handler records nothing but the dedupe: the callback's claim is never an effect.
             return new Consumed(inbox.consume(unitOfWork, new InboxKey(CONSUMER, rail + ":" + eventId.get()), MESSAGE_TYPE,
                     uow -> { }), credit.isPresent());
@@ -133,19 +144,23 @@ public class CorridorCallbackService {
             return Delivered.DUPLICATE;
         }
         if (!consumed.known()) {
-            // A reference naming no credit of ours: the provider's echo of nothing we sent - recorded by its dedupe
-            // only; its settlement line, if it moved money, is parked UNKNOWN_EXTERNAL.
-            log.warn("An authenticated corridor provider callback named no outbound credit of ours; acknowledged");
+            // A reference naming no credit of ours: the provider's echo of nothing we sent. Its bytes rest with no subject;
+            // its settlement line, if it moved money, is parked UNKNOWN_EXTERNAL.
+            log.warn("An authenticated corridor provider callback named no outbound credit of ours; retained and acknowledged");
             return Delivered.UNMAPPABLE;
         }
         // After the commit, holding no connection: the inquiry, whose answer alone moves the credit.
         try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {
-            resolution.resolve(reference.get());
+            resolution.accept(reference.get());
         } catch (RuntimeException failure) {
             // The evidence and the dedupe record are committed; the sweep inquires on its own.
             log.warn("The inquiry a corridor provider callback triggered failed: {}", failure.getClass().getSimpleName());
         }
         return Delivered.HINTED;
+    }
+
+    private void retainUnattributed(Connection unitOfWork, byte[] rawBody) {
+        evidence.append(unitOfWork, Optional.empty(), Optional.empty(), EvidenceKind.WEBHOOK, rawBody, Instant.now(clock));
     }
 
     private Optional<JsonNode> parse(byte[] rawBody) {

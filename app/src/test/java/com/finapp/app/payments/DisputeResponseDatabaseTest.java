@@ -1157,9 +1157,10 @@ class DisputeResponseDatabaseTest {
                 chargeback(sale, someDisputeReference(), "needs_response", null)
                         .replace("}", ",\"respondBy\":\"next tuesday\"}");
         assertThat(deliver(unreadable).statusCode()).isEqualTo(204);
+        // The inquiry's statement could not be read: nothing moves, and the hint waits (P15-TSK-036).
         assertThat(registry.find("finapp.payments.webhook").tag("outcome", "unmappable").counter()
                         .count())
-                .isEqualTo(unmappable + 1);
+                .isEqualTo(unmappable);
     }
 
     // -----------------------------------------------------------------
@@ -1380,6 +1381,7 @@ class DisputeResponseDatabaseTest {
     }
 
     private HttpResponse<String> deliver(String body) throws Exception {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(provider, body);
         String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
         return send(
                 HttpRequest.newBuilder(

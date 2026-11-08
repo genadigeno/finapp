@@ -636,7 +636,10 @@ class DisputeNotificationDatabaseTest {
         assertThat(disputeCount(scaleless)).isZero();
         assertThat(disputeCount(wrongScale)).isZero();
         assertThat(disputeCount(decimal)).isZero();
-        assertThat(webhooks("unmappable")).isEqualTo(unmappable + 5);
+        // Only the reference we could not ask about is the door's to count (P15-TSK-036). The other
+        // statements are the inquiry's to read: unreadable there moves nothing and stays undecided,
+        // the hint open for the sweep.
+        assertThat(webhooks("unmappable")).isEqualTo(unmappable + 1);
 
         String uncategorised = someDisputeReference();
         deliver(notice(someEvent(), payment.operation(), uncategorised, "needs_response",
@@ -664,7 +667,8 @@ class DisputeNotificationDatabaseTest {
                 "1500"));
         assertThat(disputeCount(unreadableFee)).isZero();
         assertThat(disputeCount(inquiryFee)).isZero();
-        assertThat(webhooks("unmappable")).isEqualTo(beforeFees + 2);
+        // The inquiry's answer could not be read: nothing moves, nothing is counted a break (P15-TSK-036).
+        assertThat(webhooks("unmappable")).isEqualTo(beforeFees);
     }
 
     /** The statement with the PSP's dispute fee field added, verbatim. */
@@ -1047,6 +1051,7 @@ class DisputeNotificationDatabaseTest {
 
     /** A legitimately signed, fresh delivery — the webhook door's own scheme. */
     private HttpResponse<String> deliver(String body) throws Exception {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(provider, body);
         String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
         return send(
                 HttpRequest.newBuilder(
@@ -1231,7 +1236,7 @@ class DisputeNotificationDatabaseTest {
 
     private static long evidenceCount(UUID attempt) throws SQLException {
         return count(
-                "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ?", attempt);
+                "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ? AND kind = 'WEBHOOK'", attempt);
     }
 
     /**

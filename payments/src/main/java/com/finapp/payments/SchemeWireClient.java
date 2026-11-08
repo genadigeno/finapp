@@ -57,6 +57,8 @@ final class SchemeWireClient {
     private static final Pattern AMOUNT_FIELD = Pattern.compile("\"amount\"\\s*:\\s*\"([^\"]*)\"");
     private static final Pattern CURRENCY_FIELD =
             Pattern.compile("\"currency\"\\s*:\\s*\"([^\"]*)\"");
+    private static final Pattern END_TO_END_FIELD =
+            Pattern.compile("\"endToEndReference\"\\s*:\\s*\"([^\"]*)\"");
 
     private final HttpClient http;
     private final URI baseUrl;
@@ -203,6 +205,46 @@ final class SchemeWireClient {
             case "unrecognised" -> PushInquiryAnswer.unrecognised(received);
             default -> PushInquiryAnswer.indeterminate(received);
         };
+    }
+
+    /**
+     * GETs the scheme's record of one execution by ITS reference (`P15-TSK-036`), the same totality: {@code accepted}
+     * carries the scheme reference and the executed amount (one missing either is {@code INDETERMINATE}), and
+     * {@code unrecognised} is the explicit word.
+     */
+    ExecutionAnswer inquireExecution(String path) {
+        Fetched fetched = fetch(path);
+        if (fetched.answer().isPresent()) {
+            return fetched.bytes() == null
+                    ? ExecutionAnswer.indeterminate()
+                    : ExecutionAnswer.indeterminate(fetched.bytes());
+        }
+        String text = fetched.text();
+        byte[] received = fetched.bytes();
+        return switch (statusOf(text)) {
+            case "accepted" -> {
+                Optional<ProviderReference> scheme = referenceOf(text);
+                Optional<Money> amount = executedOf(text);
+                yield scheme.isPresent() && amount.isPresent()
+                        ? ExecutionAnswer.executed(
+                                scheme.get(),
+                                fieldOf(text, END_TO_END_FIELD).flatMap(SchemeWireClient::endToEnd),
+                                fieldOf(text, CYCLE_FIELD).filter(SchemeWireClient::cycleFits),
+                                amount.get(),
+                                received)
+                        : ExecutionAnswer.indeterminate(received);
+            }
+            case "unrecognised" -> ExecutionAnswer.unrecognised(received);
+            default -> ExecutionAnswer.indeterminate(received);
+        };
+    }
+
+    private static Optional<EndToEndReference> endToEnd(String value) {
+        try {
+            return Optional.of(new EndToEndReference(value));
+        } catch (IllegalArgumentException unusable) {
+            return Optional.empty();
+        }
     }
 
     /** An inquiry's usable body, or the answer its transport or status already decided. */

@@ -81,6 +81,12 @@ public final class SimulatedCardPspAdapter implements PaymentProvider, DisputeRe
     /** Query prefix; the platform-minted reference is the path segment (`INV-PAY-04`). */
     public static final String OPERATIONS_PATH = "/operations/";
 
+    /** The clearing inquiry (`P15-TSK-036`): {@link #OPERATIONS_PATH}, our reference, then this. */
+    public static final String CLEARING_SUFFIX = "/clearing";
+
+    /** The dispute inquiry's prefix (`P15-TSK-036`); the PSP's dispute reference is the path segment. */
+    public static final String DISPUTES_PATH = "/disputes/";
+
     /** A dispute answer's path (`P7-TSK-014`): a representment or an acceptance, never money. */
     public static final String DISPUTE_RESPONSES_PATH = "/dispute-responses";
 
@@ -153,6 +159,16 @@ public final class SimulatedCardPspAdapter implements PaymentProvider, DisputeRe
         // The reference's charset makes it a legal path segment with no escaping machinery -
         // its recorded design property.
         return client.query(OPERATIONS_PATH + ourReference.value());
+    }
+
+    @Override
+    public ClearingAnswer queryClearing(ProviderIdempotencyReference ourReference) {
+        return client.queryClearing(OPERATIONS_PATH + ourReference.value() + CLEARING_SUFFIX);
+    }
+
+    @Override
+    public DisputeAnswer queryDispute(ProviderReference disputeReference) {
+        return client.queryDispute(DISPUTES_PATH + disputeReference.value(), NAME, disputeReference);
     }
 
     /**

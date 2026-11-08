@@ -423,6 +423,109 @@ class SimulatedCardPspAdapterTest {
         assertThat(adapter().query(OUR_REF).verdict()).isEqualTo(QueryAnswer.Verdict.INDETERMINATE);
     }
 
+    // ------------------------------------------------------------------
+    // The inquiries a callback triggers (P15-TSK-036, ADR-0083): every kind has one
+    // ------------------------------------------------------------------
+
+    private static final ProviderReference DISPUTE = new ProviderReference("dsp_1");
+
+    private static final String CHARGEBACK_BODY =
+            "{\"status\":\"disputed\",\"operation\":\"pay-auth-0192a7b2\",\"dispute\":\"dsp_1\",\"stage\":\"needs_response\","
+                    + "\"reasonCode\":\"fraudulent\",\"amountMinor\":\"1000\",\"currency\":\"USD\",\"scale\":2,"
+                    + "\"feeMinor\":\"1500\",\"respondBy\":\"2026-12-01T00:00:00Z\"}";
+
+    private void stubClearing(String body) {
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH + OUR_REF.value() + SimulatedCardPspAdapter.CLEARING_SUFFIX, 200, body);
+    }
+
+    private void stubDispute(String body) {
+        provider.succeedsWith(SimulatedCardPspAdapter.DISPUTES_PATH + DISPUTE.value(), 200, body);
+    }
+
+    @Test
+    @DisplayName("a clearing inquiry answers the network's two references, carrying the credential")
+    void clearingInquiryAnswersTheNetworksReferences() {
+        stubClearing("{\"status\":\"cleared\",\"arn\":\"arn_1\",\"networkTransactionId\":\"ntid_1\"}");
+
+        ClearingAnswer answer = adapter().queryClearing(OUR_REF);
+
+        assertThat(answer.verdict()).isEqualTo(ClearingAnswer.Verdict.CLEARED);
+        assertThat(answer.acquirerReference()).contains(new ProviderReference("arn_1"));
+        assertThat(answer.networkTransactionId()).contains(new ProviderReference("ntid_1"));
+        assertThat(answer.evidence()).isPresent();
+        assertThat(provider.headerValues(
+                        SimulatedCardPspAdapter.OPERATIONS_PATH + OUR_REF.value() + SimulatedCardPspAdapter.CLEARING_SUFFIX,
+                        "Authorization"))
+                .containsExactly("Bearer " + Base64.getEncoder().encodeToString(KEY));
+    }
+
+    @Test
+    @DisplayName("a clearing inquiry's other words: not cleared, unrecognised, and every unusable answer indeterminate")
+    void clearingInquiryIsTotal() {
+        stubClearing("{\"status\":\"not_cleared\"}");
+        assertThat(adapter().queryClearing(OUR_REF).verdict()).isEqualTo(ClearingAnswer.Verdict.NOT_CLEARED);
+
+        stubClearing("{\"status\":\"unrecognised\"}");
+        assertThat(adapter().queryClearing(OUR_REF).verdict()).isEqualTo(ClearingAnswer.Verdict.UNRECOGNISED);
+
+        stubClearing("{\"status\":\"cleared\",\"arn\":\"arn_1\"}");
+        assertThat(adapter().queryClearing(OUR_REF).verdict())
+                .as("cleared without both references is unactionable")
+                .isEqualTo(ClearingAnswer.Verdict.INDETERMINATE);
+
+        provider.failsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH + OUR_REF.value() + SimulatedCardPspAdapter.CLEARING_SUFFIX, 404);
+        assertThat(adapter().queryClearing(OUR_REF).verdict())
+                .as("a status code is not an answer")
+                .isEqualTo(ClearingAnswer.Verdict.INDETERMINATE);
+    }
+
+    @Test
+    @DisplayName("a dispute inquiry answers the PSP's statement in our vocabulary, and the operation it contests")
+    void disputeInquiryAnswersTheStatementInOurVocabulary() {
+        stubDispute(CHARGEBACK_BODY);
+
+        DisputeAnswer answer = adapter().queryDispute(DISPUTE);
+
+        assertThat(answer.verdict()).isEqualTo(DisputeAnswer.Verdict.FOUND);
+        assertThat(answer.operation()).contains(OUR_REF);
+        DisputeNotice notice = answer.notice().orElseThrow();
+        assertThat(notice.reference()).isEqualTo(DISPUTE);
+        assertThat(notice.stage()).isEqualTo(DisputeStage.CHARGED_BACK);
+        assertThat(notice.reason()).isEqualTo(DisputeReason.FRAUD);
+        assertThat(notice.amount()).isEqualTo(TEN_USD);
+        assertThat(notice.fee()).contains(Money.ofMinorUnits(1500, CurrencyCode.of("USD")));
+        assertThat(notice.respondBy()).contains(java.time.Instant.parse("2026-12-01T00:00:00Z"));
+        assertThat(notice.provider()).isEqualTo(SimulatedCardPspAdapter.NAME);
+    }
+
+    @Test
+    @DisplayName("a dispute inquiry is total: unrecognised is the explicit word, and anything unreadable is indeterminate")
+    void disputeInquiryIsTotal() {
+        stubDispute("{\"status\":\"unrecognised\"}");
+        assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.UNRECOGNISED);
+
+        stubDispute(CHARGEBACK_BODY.replace("needs_response", "a_stage_nobody_mapped"));
+        assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.INDETERMINATE);
+
+        stubDispute(CHARGEBACK_BODY.replace("\"1000\"", "\"not-digits\""));
+        assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.INDETERMINATE);
+
+        stubDispute(CHARGEBACK_BODY.replace("\"dsp_1\"", "\"dsp_another\""));
+        assertThat(adapter().queryDispute(DISPUTE).verdict())
+                .as("an answer about another dispute does not answer this question")
+                .isEqualTo(DisputeAnswer.Verdict.INDETERMINATE);
+
+        stubDispute(CHARGEBACK_BODY.replace("\"operation\":\"pay-auth-0192a7b2\",", ""));
+        assertThat(adapter().queryDispute(DISPUTE).verdict())
+                .as("a statement that does not say what it contests attributes nothing")
+                .isEqualTo(DisputeAnswer.Verdict.INDETERMINATE);
+
+        provider.failsWith(SimulatedCardPspAdapter.DISPUTES_PATH + DISPUTE.value(), 503);
+        assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.INDETERMINATE);
+    }
+
     @Test
     @DisplayName("the declared card rail matches ADR-0049's decided semantics, field by field"
             + " (P7-TSK-001, ADR-0059)")

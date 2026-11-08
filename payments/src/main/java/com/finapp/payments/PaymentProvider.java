@@ -78,6 +78,18 @@ public interface PaymentProvider {
     QueryAnswer query(ProviderIdempotencyReference ourReference);
 
     /**
+     * Asks the provider whether the capture our reference names has cleared, and under which network references
+     * (`P15-TSK-036`, ADR-0083): what a clearing notice triggers. Read-only, idempotent, and {@link #query}'s totality.
+     */
+    ClearingAnswer queryClearing(ProviderIdempotencyReference ourReference);
+
+    /**
+     * Asks the provider for its own statement of the dispute this reference names, the operation it contests included
+     * (`P15-TSK-036`, ADR-0083): what a dispute notice triggers. Read-only, idempotent, and {@link #query}'s totality.
+     */
+    DisputeAnswer queryDispute(ProviderReference disputeReference);
+
+    /**
      * An authorization dispatch: the reference, the tokenised instrument, the amount.
      *
      * <p>The token is an opaque {@link InstrumentToken} on purpose — {@code paymentmethods} is

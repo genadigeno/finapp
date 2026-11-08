@@ -603,6 +603,7 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
 
     /** The REAL webhook resolver (the P5-TSK-014 composition) for the contradiction scenario. */
     private void deliverWebhook(String body) {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(psp, body);
         org.springframework.jdbc.datasource.DriverManagerDataSource dataSource =
                 new org.springframework.jdbc.datasource.DriverManagerDataSource(
                         DatabaseRoles.required("finapp.db.url"),
@@ -614,7 +615,7 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
         template.setPropagationBehavior(
                 org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         PaymentWebhookService webhooks =
-                new PaymentWebhookService(
+                CallbackDoors.card(
                         new WebhookSignature(WEBHOOK_KEY, Duration.ofMinutes(5), CLOCK),
                         evidence,
                         attempts,
@@ -669,7 +670,9 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                                         com.finapp.payments.PaymentRails.of(
                                                 java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                                         IDS,
-                                        CLOCK)));
+                                        CLOCK)),
+                adapter(),
+                IDS);
         String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
         webhooks.deliver(
                 body.getBytes(StandardCharsets.UTF_8),
@@ -771,7 +774,7 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
 
     private static long evidenceCount(PaymentAttemptId attempt) throws SQLException {
         return count(
-                "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ?",
+                "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ? AND kind = 'WEBHOOK'",
                 attempt.value());
     }
 

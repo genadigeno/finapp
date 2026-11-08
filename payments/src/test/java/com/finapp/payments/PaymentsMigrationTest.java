@@ -1057,6 +1057,36 @@ class PaymentsMigrationTest {
         }
     }
 
+    @Test
+    @DisplayName("V036's callback hints are generated from the enums and pinned: expand-only, the moving columns' grant"
+            + " only, every name declared once (P15-TSK-036)")
+    void theCallbackHintIsPinned() {
+        String v036 = earlierMigration(36);
+        for (CallbackHint.Kind kind : CallbackHint.Kind.values()) {
+            assertThat(v036).contains("'" + kind.name() + "'");
+        }
+        for (HintedOutcome outcome : HintedOutcome.values()) {
+            if (outcome.concludes()) {
+                assertThat(v036).contains("'" + outcome.name() + "'");
+            } else {
+                assertThat(v036).as("UNDECIDED concludes nothing, so no row can hold it").doesNotContain("'" + outcome.name() + "'");
+            }
+        }
+        assertThat(v036).contains("char_length(asked_about) BETWEEN 1 AND " + ProviderReference.MAX_LENGTH);
+        assertThat(v036).contains("GRANT SELECT, INSERT ON payments.callback_hint TO finapp_app;");
+        assertThat(v036).contains("GRANT UPDATE (next_inquiry_at, concluded_at, conclusion) ON payments.callback_hint TO finapp_app;");
+        assertThat(v036).doesNotContainPattern("(?i)\\bDROP\\b|\\bALTER TABLE\\b");
+        java.util.List<String> names = new java.util.ArrayList<>();
+        java.util.regex.Matcher declared =
+                java.util.regex.Pattern.compile("(?:CONSTRAINT|CREATE INDEX)\\s+([a-z0-9_]+)").matcher(v036);
+        while (declared.find()) {
+            names.add(declared.group(1));
+        }
+        assertThat(names).as("the guard is not vacuous").hasSizeGreaterThanOrEqualTo(7);
+        assertThat(names).doesNotHaveDuplicates();
+        assertThat(names).allMatch(name -> name.startsWith("callback_hint_"));
+    }
+
     /** The text of payments' migration {@code V<n>}, whatever its description. */
     private static String earlierMigration(int number) {
         String prefix = String.format("V%03d__", number);
