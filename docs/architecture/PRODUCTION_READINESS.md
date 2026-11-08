@@ -168,19 +168,19 @@ gaps of the module they touch (§4).
 
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
-| Deployment | Missing: compose only, single node, `PLAINTEXT`, replication factor 1 | — | — | — |
+| Deployment | Missing: compose only, single node, `PLAINTEXT`, replication factor 1. The topics and the broker posture exist as code (`infra/kafka/`, `P15-TSK-026`), applied by no broker yet (`P15-TSK-015`, `-012`) | — | — | — |
 | Health checks | — | — | — | — |
 | Logging | — | — | — | — |
 | Metrics | Missing | — | — | — |
 | Tracing | — | — | — | — |
 | Alerting | Missing | — | — | — |
-| Security | Partial: `PLAINTEXT` refused off loopback; **`SASL_PLAINTEXT` admitted** (`THREAT_MODEL.md` T9); no SASL or TLS configuration, no ACLs | — | — | — |
+| Security | Partial: off loopback the clients require `SASL_SSL` with SCRAM-SHA-512 and the marked local password is refused (`KafkaTransportGuard`); ACLs per principal written in `infra/kafka/topics.yaml`, not yet applied (`P15-TSK-015`); no real TLS handshake run yet (`P15-TSK-012`) (`THREAT_MODEL.md` T9) *(read "`PLAINTEXT` refused off loopback; `SASL_PLAINTEXT` admitted; no SASL or TLS configuration, no ACLs" until 2026-11-08)* | — | — | — |
 | Resource limits | — | — | — | — |
 | Failure handling | — | — | — | — |
 | Recovery | — | — | — | — |
 | Ownership | Missing | — | — | — |
-| Runbooks | Missing | — | — | — |
-| Multi-instance | Consumer groups per module, manual commit after the inbox record, dedupe window `finapp.inbox.retention` (14 days by default) | — | — | — |
+| Runbooks | Partial: `OPERATIONS_RUNBOOK.md` §11.6, broker outage and consumer lag, written and not yet rehearsed | — | — | — |
+| Multi-instance | Consumer groups per module, manual commit after the inbox record, dedupe window `finapp.inbox.retention` (14 days by default); every topic's retention plus one segment below that window, and the cooperative assignor with bounded session and poll timeouts (`P15-TSK-026`) | — | — | — |
 
 ### 3.5 Telemetry
 

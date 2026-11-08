@@ -306,7 +306,16 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // provider's own handle for the account, sent to the provider that issued
                     // it, which is the one place besides its column it must exist bare. The
                     // request's toString names neither it nor the amount.
-                    "com.finapp.merchant.SimulatedPayoutProvider");
+                    "com.finapp.merchant.SimulatedPayoutProvider",
+                    // P15-TSK-026. The platform's own credential for the broker: the SCRAM
+                    // password comes off its wrapper once, into the JAAS line the Kafka client
+                    // parses - the SimulatedCardPspAdapter claim for the integration bus, a value
+                    // whose purpose is to be presented, unwrapped at the presenting edge and
+                    // nowhere else. Also asks, wrapped, whether it is blank. The client logs its
+                    // configuration with that line hidden (a PASSWORD-typed setting), and the
+                    // record's toString prints the mask. The composition root that reads it from
+                    // the environment never holds it in a field.
+                    "com.finapp.platform.outbox.BrokerConnection");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

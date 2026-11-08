@@ -1855,3 +1855,74 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.10 Edge, abuse and break-glass | `-010`, `-011`, `-022` | `-032` |
 | 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
 | 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |
+
+### 11.6 Broker outage and consumer lag
+
+*Written by `P15-TSK-026` (2026-11-08) from the clients it built; **not yet rehearsed** - no deployed broker exists, and
+the rehearsal is `P15-TSK-028`'s and `-032`'s. A poison record, dead letters and replay are `P15-TSK-028`'s part of this
+subsection. The consumption and freshness SLOs, and their alerts, are `P15-TSK-025`'s; the signals below exist today.*
+
+**What is at stake.** Kafka carries hints, never truth (`INV-EVT-02`). While the broker is away nothing financial is lost
+or wrong: every event waits in the outbox in PostgreSQL, in its aggregate's order, and every consumer's place is its
+group's committed offset with the inbox behind it. Both procedures below are therefore about restoring flow, never about
+repairing data, and neither ever edits a ledger table.
+
+#### A broker outage
+
+*Signals*: `finapp.outbox.pending` and `finapp.outbox.oldest` rising on every replica;
+`finapp.outbox.publication{outcome="failed"}` counting, the relay's `last_error` on the waiting rows naming a timeout or
+network failure class; `finapp.inbox.consumption{outcome="processed"}` flat. **Readiness stays UP, deliberately**: an
+outage is not a refusal, and the replicas keep serving, because the outbox holds what the broker cannot take. Liveness
+never reads the broker.
+
+1. **Leave the application alone.** Do not restart or scale replicas: the relay already backs off per event and holds each
+   aggregate's order, and a restart only adds a rebalance of every group to the broker's return.
+2. **Diagnose the broker where it lives**: the managed service's own health (`P15-TSK-015`'s module), or the broker pod on
+   the `kind` rehearsal.
+3. **When it returns**, the relay drains the backlog in per-aggregate order and `finapp.outbox.oldest` falls; the
+   consumers resume from their committed offsets. A short rise of `finapp.inbox.consumption{outcome="duplicate"}` is the
+   inbox absorbing redeliveries, and is expected.
+4. **If the outage outlasted the relay's bounded attempts**, the rows past them are dead-lettered and block their
+   aggregates: resolve them as `EVENT_ARCHITECTURE.md` §Handling an abandoned event says (retry once the broker is back;
+   the cause was environmental), and never by deleting a row.
+
+#### A refused credential or permission
+
+*Signals*: readiness `503` on the replicas whose consumers are refused (the contributor `kafkaConsumers`); a warning per
+attempt, `Inbox consumer finapp.<module> refused by the broker:` followed by the refusing class
+(`SaslAuthenticationException`, `TopicAuthorizationException`, `GroupAuthorizationException`); the relay's `last_error`
+naming the same classes. A broker that refuses is reachable: this is configuration, not an outage.
+
+1. **A rollout stalled on it** (the new replicas never became ready, the old ones still serve): the release carries a wrong
+   credential or its principal lacks a permission. Roll back by digest (§11.3), then fix the release's secret or the grant.
+2. **Every replica went unready at once**: the credential was revoked or rotated out of order. Restore the previous
+   credential first, then roll. Rotation is add, roll, remove (ADR-0123 decision 5; §11.7), never remove first.
+3. **A permission missing**: the grants are `infra/kafka/topics.yaml`'s principals, as `P15-TSK-015` applies them; the
+   application's principal needs read, write and describe on every catalogued topic and read on the groups
+   `finapp.<module>`, and nothing more.
+
+Never take a refused replica out of readiness's reach, or point it at the broker without `SASL_SSL`: off this machine the
+application refuses to start on anything else (`KafkaTransportGuard`).
+
+#### Consumer lag
+
+*Signals*: `finapp.inbox.consumption{outcome="processed"}` below the rate of
+`finapp.outbox.publication{outcome="published"}`; `InboxConsumptionFailing` (§9.12) for a stalled partition. The clients
+publish no lag series yet (`P15-TSK-025`); a group's lag in records is the broker's consumer-group view of
+`finapp.<module>`, read with the provider's tooling.
+
+1. **A stalled partition** (a record that fails or is contended): §9.12. The record is retried, never skipped. Fix the
+   cause - deploy the build that reads the event's version, restore the upstream data - and the partition drains. Never
+   move the group's offset past it by hand: the effect would never happen.
+2. **Too slow, not stalled**: a group's parallelism is its partitions (12 per topic) and its members (one per replica).
+   Adding replicas adds members, and the cooperative assignor pauses only the partitions that move. Repeated rebalances in
+   the logs mean a member is being evicted for exceeding the poll bound (10 records in 120 seconds): the inbox still
+   prevents a second effect, but throughput collapses - find the slow statement in the handler.
+3. **A group stopped for days**: a topic keeps a record for 7 days, so restore consumption before the oldest unconsumed
+   record reaches that age. Past it, the deleted records are lost hints: the group resumes at the earliest one retained,
+   and the gap is recovered from the outbox by `P15-TSK-028`'s audited replay, bounded by the inbox's 14-day window. A
+   group with no members loses its committed offsets after 7 days and restarts from the earliest retained record; every
+   such record is inside the dedupe window, so the replay is absorbed.
+
+Never reset a group's offsets to the latest record: it skips facts silently. Resetting to the earliest retained record is
+safe, because the inbox deduplicates everything the topic still holds.

@@ -220,8 +220,15 @@ management:
         # so adding the actuator and a DataSource yields a readiness endpoint that returns UP
         # while PostgreSQL is unreachable - the opposite of what it is for, and indisting-
         # uishable from working. HealthEndpointTest fails if this is reverted.
+        #
+        # `kafkaConsumers` (P15-TSK-026): DOWN while the broker REFUSES a consumer loop - a
+        # credential that does not authenticate, a missing topic or group permission - which is
+        # the fault a release with a wrong secret carries, so the rollout halts on it. A broker
+        # that is merely down is not a refusal and fails nothing: Kafka is not truth, and the
+        # outbox holds every event until it returns. Never in liveness, for the reason above.
+        # KafkaConsumersReadinessTest fails if it leaves this group or joins liveness.
         readiness:
-          include: readinessState,db
+          include: readinessState,db,kafkaConsumers
 
   info:
     build:

@@ -210,7 +210,8 @@ roll back. A consumer never waits long for a race it does not need to win.
 producer can still redeliver admits exactly the duplicate effect it existed to refuse.
 `DATA_MIGRATIONS.md` §9 states the policy and what the window must exceed — for Kafka the
 redelivery window is bounded by topic retention, which is what the shell's default dedupe
-retention is sized against.
+retention is sized against. *(Since `P15-TSK-026` the bound is asserted rather than sized by
+hand, and it is retention **plus one segment** plus the broker's retention check: §Topics below.)*
 
 **The shell acknowledges only what has committed** (`P2-TSK-002`). `KafkaEventReceiver` commits
 the broker offset strictly after the inbox transaction commits, with auto-commit disabled; the
@@ -220,6 +221,77 @@ is **seeked back to rather than skipped**: acknowledging past it would be an und
 the relay's block-don't-skip rule on the consuming side. Consumer-group offsets are transport
 bookkeeping, never truth (`DISTRIBUTED_EXECUTION.md` §3): losing them replays the topic and the
 inbox absorbs it.
+
+## Topics, transport security and consumer groups — *Implemented* (`P15-TSK-026`)
+
+Kafka stays transport (`INV-EVT-02`). What a deployed broker needs from the platform is three
+things, each held by a test rather than a convention.
+
+**Every topic is declared.** A deployed broker creates no topic on first use
+(`auto.create.topics.enable=false`), so a producer naming an undeclared topic blocks until its
+acknowledgement times out and the event's aggregate stalls until the outbox dead-letters it.
+[`infra/kafka/topics.yaml`](../../infra/kafka/topics.yaml) is the catalogue: every topic
+`finapp.<producer>`, its configuration by class, and the permissions of each principal.
+`TopicCatalogueTest` derives the producers from the compiled code — every `new EventEnvelope(...)`
+in production output and the constant it names as its producer, read by a stack simulation and
+cross-checked against ArchUnit's import of the same construction sites — maps each through
+`KafkaEventPublisher.topicFor`, and fails on a produced topic the catalogue lacks, on a declared
+topic nothing produces, and on a producer that is not a compile-time constant. Nineteen topics
+today, one per producing module. The local compose broker still creates topics on first use; it is
+loopback development and the catalogue does not apply to it.
+
+**Retention is below the inbox's dedupe window.** The broker deletes whole segments, and a segment
+only once its *newest* record is past retention, so a record can outlive `retention.ms` by up to one
+`segment.ms`, and by the broker's retention check interval. With the broker defaults (seven-day
+retention, seven-day segments) a record could be redelivered fourteen days after it was written —
+the whole of the inbox's window. So the one class today, `domain-events`, takes `retention.ms` of 7
+days, `segment.ms` of 1 day, `cleanup.policy=delete` (compaction keeps a key's last record
+indefinitely), `message.timestamp.type=LogAppendTime` (retention on the broker's clock, not a
+producing replica's), 12 partitions, replication 3 and `min.insync.replicas` 2; and the test asserts
+`retention.ms + segment.ms + log.retention.check.interval.ms < finapp.inbox.retention` for every
+topic, reading the window from `EventingBeans`' own `@Value` and the committed `application.yaml`:
+7 days + 1 day + 5 minutes against 14 days. A deployment that lowers `FINAPP_INBOX_RETENTION` is not
+seen by a build; the configuration register (`P15-TSK-031`) carries that floor. The broker posture
+the clients rely on is [`infra/kafka/broker.properties`](../../infra/kafka/broker.properties): no
+auto-creation, no unclean leader election, three replicas with two in sync, SCRAM-SHA-512 only, and
+nothing permitted that no ACL grants. `P15-TSK-015` provisions both files on the managed brokers and
+`P15-TSK-012` on its test-only `kind` broker (one node: replication 1, nothing else changed).
+
+**Off loopback the clients speak `SASL_SSL` with SCRAM-SHA-512** (owner decision C11).
+`KafkaTransportGuard` refuses to start when a bootstrap off this machine is reached by any protocol
+but `SASL_SSL` — `PLAINTEXT`, `SASL_PLAINTEXT` and `SSL` alike — when a SASL protocol has no
+credential, when the credential is the marked local default, and when the protocol is one Kafka does
+not define. `BrokerConnection` renders both clients' connection settings once: the SCRAM login
+(mechanism fixed in code, so `PLAIN` cannot be chosen), hostname verification fixed on, and a PEM CA
+bundle as the truststore when one is configured (`finapp.kafka.ssl.truststore-location`; otherwise
+the JVM's trust store). The credential is `FINAPP_KAFKA_SASL_USERNAME` and
+`FINAPP_KAFKA_SASL_PASSWORD` (`SECRET_MANAGEMENT.md`). Each principal's ACLs are data in the
+catalogue: the application may describe, read and write the catalogued topics and read the groups
+`finapp.<module>`, and nothing more; the provisioner creates and configures but deletes nothing.
+
+**A rolling update moves partitions without stopping a group.** Every replica runs every module's
+consumer loop, so under the eager protocol every rolling step stopped every member of every group
+while partitions were revoked and reassigned. The consumers now use the cooperative assignor alone
+(`group.protocol=classic` pinned, so a client default cannot move the group to a protocol where
+these settings are the broker's), a 30-second session timeout (a killed pod's partitions move within
+half a minute; a pod that leaves gracefully says so at once), and `max.poll.records` 10 within
+`max.poll.interval.ms` of 120 seconds: a record costs at most a full pool wait (5 s), the inbox
+claim's bounded wait (0.5 s) and its handler's own statements, so 12 seconds a record leaves 6.5 for
+the statements. No static membership: a Deployment's pod names change on every rollout. **None of
+this is the correctness argument.** A rebalance, cooperative or not, redelivers whatever was settled
+and not yet committed, and the inbox deduplicates it; the assignor only keeps the other members
+consuming meanwhile. `KafkaRebalanceKafkaTest` (owed to the exit's database pass) shows both on a
+real broker.
+
+**A refused consumer fails readiness, never liveness.** When the broker refuses a consumer loop —
+a credential that does not authenticate, a missing topic or group permission — the receiver raises
+`BrokerAccessRefusedException` (the client's class name only), the loop records it until a poll is
+admitted, and the readiness contributor `kafkaConsumers` reports DOWN. That is the fault a release
+with a wrong secret carries, so the rollout halts on it. A broker that is merely down is not a
+refusal: its polls return empty and readiness is unaffected, because the outbox holds every event
+until it returns. The cost: replicas share one credential, so revoking it before the fleet has
+rolled onto its successor takes every replica's readiness down — rotation is add, roll, remove
+(ADR-0123 decision 5; `OPERATIONS_RUNBOOK.md` §11.6).
 
 ## Delivery Assumptions
 

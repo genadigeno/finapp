@@ -2,6 +2,7 @@ package com.finapp.app.eventing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.platform.outbox.BrokerConnection;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.outbox.KafkaEventPublisher;
 import com.finapp.platform.outbox.OutboxRelay;
@@ -83,8 +84,7 @@ class OutboxRelayScheduleKafkaTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         try (KafkaEventPublisher publisher =
                 KafkaEventPublisher.connect(
-                        System.getProperty("finapp.kafka.bootstrap"),
-                        "PLAINTEXT",
+                        BrokerConnection.plaintext(System.getProperty("finapp.kafka.bootstrap")),
                         Duration.ofSeconds(10))) {
             OutboxRelaySchedule schedule =
                     new OutboxRelaySchedule(

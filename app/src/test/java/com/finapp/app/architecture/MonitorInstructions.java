@@ -75,11 +75,16 @@ final class MonitorInstructions {
     }
 
     @FunctionalInterface
-    private interface ClassSink {
+    interface ClassSink {
         void accept(String module, byte[] bytes);
     }
 
-    private static void forEachProductionClass(ClassSink sink) {
+    /**
+     * Every production class file's bytes, with its module. Package-visible since `P15-TSK-026`:
+     * {@code EnvelopeProducers} reads the same production output for the topic catalogue's test,
+     * and a second walk of it would be a second definition of "production code" to drift.
+     */
+    static void forEachProductionClass(ClassSink sink) {
         for (Map.Entry<Path, String> entry : ProductionModules.mainOutputEntries().entrySet()) {
             Path path = entry.getKey();
             String module = entry.getValue();

@@ -445,7 +445,13 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T9 | A non-loopback bootstrap over `PLAINTEXT` refuses startup | EXISTS | `app/src/test/java/com/finapp/app/security/KafkaTransportGuardTest.java#plaintextOffTheMachineIsRefused` |
 | T9 | Lending's origination consumers treat an event as a hint: a forged or late event changes nothing the authoritative read would not | EXISTS | `lending/src/test/java/com/finapp/lending/LoanOriginationDatabaseTest.java#aForgedOrLateEventChangesNothing` |
 | T9 | An event payload cannot carry a credential derivation | EXISTS | `app/src/test/java/com/finapp/app/domain/CredentialReachesNoEmittedSinkTest.java#anEventPayloadRefusesADerivation` |
-| T9 | `SASL_SSL` with SCRAM per principal and ACLs per topic; the transport guard widened to require it off loopback | PLANNED | `P15-TSK-026` |
+| T9 | Off loopback every protocol but `SASL_SSL` refuses startup, `SASL_PLAINTEXT` and `SSL` included, and a protocol Kafka does not define is refused on loopback too | EXISTS | `app/src/test/java/com/finapp/app/security/KafkaTransportGuardTest.java#saslWithoutTlsOffTheMachineIsRefused`; `app/src/test/java/com/finapp/app/security/KafkaTransportGuardTest.java#everyProtocolButSaslSslIsRefusedOffTheMachine`; `app/src/test/java/com/finapp/app/security/KafkaTransportGuardTest.java#anUnknownProtocolIsRefusedEverywhere` |
+| T9 | A SASL client with no credential refuses startup, and so does the marked local SCRAM password off loopback | EXISTS | `app/src/test/java/com/finapp/app/security/KafkaTransportGuardTest.java#saslNeedsACredential`; `app/src/test/java/com/finapp/app/security/KafkaTransportGuardTest.java#theMarkedLocalPasswordIsConfinedToLoopback` |
+| T9 | Both clients' connection is rendered in one place: SCRAM-SHA-512 with the password reaching the client's own JAAS reading intact, hostname verification fixed on, a PEM truststore when one is configured | EXISTS | `platform/src/test/java/com/finapp/platform/outbox/BrokerConnectionTest.java#saslSslRendersScramAndTls`; `platform/src/test/java/com/finapp/platform/outbox/BrokerConnectionTest.java#theJaasLineIsEscaped`; `platform/src/test/java/com/finapp/platform/outbox/KafkaEventPublisherTest.java#theProducerConnectsAsTheConsumerDoes`; `platform/src/test/java/com/finapp/platform/inbox/kafka/KafkaEventReceiverConfigurationTest.java#theConnectionIsTheShared` |
+| T9 | No committed file holds a SCRAM password, the one inside a JAAS line included | EXISTS | `app/src/test/java/com/finapp/app/security/CommittedConfigurationHoldsNoSecretTest.java#credentialShapesAreRejected`; `app/src/test/java/com/finapp/app/security/CommittedConfigurationHoldsNoSecretTest.java#noCommittedConfigurationHoldsACredentialLiteral` |
+| T9 | The ACLs written for the managed broker: the application's principal may describe, read and write the catalogued topics and read its consumer groups, and holds no cluster operation; no principal may delete a topic | EXISTS | `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#theApplicationHoldsLeastPrivilege`; `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#noPrincipalMayDelete` |
+| T9 | The catalogue's ACLs and the SCRAM users applied to the managed brokers | PLANNED | `P15-TSK-015` |
+| T9 | A TLS and SCRAM handshake against a real broker, with the local CA | PLANNED | `P15-TSK-012` |
 | T10 | The application role cannot `UPDATE` any column of, `DELETE` from or `TRUNCATE` the audit record | EXISTS | `platform/src/test/java/com/finapp/platform/audit/AuditImmutabilityTest.java#updateIsDeniedOnEveryColumn`; `platform/src/test/java/com/finapp/platform/audit/AuditImmutabilityTest.java#deleteIsDenied`; `platform/src/test/java/com/finapp/platform/audit/AuditImmutabilityTest.java#truncateIsDenied` |
 | T10 | Every catalogued auditable action is referenced by production code, or declared not yet emitted with its owner | EXISTS | `app/src/test/java/com/finapp/app/audit/AuditCompletenessTest.java#everyActionIsEmittedOrDeclaredNotToBe` |
 | T10 | The operator actor typed, and a refused step-up recorded | PLANNED | `P15-TSK-021` |
@@ -495,7 +501,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T16 | No idempotency record swept until posting once-ness's second rank (debt row #61) is ruled | PLANNED | `P15-TSK-029` |
 | T17 | A redelivered message produces no second effect, and its dedupe record commits with its effect (`INV-IDEM-04`) | EXISTS | `platform/src/test/java/com/finapp/platform/inbox/InboxConsumerTest.java#redeliveryProducesNoSecondEffect`; `platform/src/test/java/com/finapp/platform/inbox/InboxConsumerTest.java#theRecordAndTheEffectCommitTogether` |
 | T17 | Reordering and duplication together leave the right answer under an ordering key (`INV-EVT-04`) | EXISTS | `platform/src/test/java/com/finapp/platform/inbox/InboxDeliveryOrderTest.java#reorderingAndDuplicationTogether` |
-| T17 | Every topic's retention below the inbox's dedupe window, and cooperative rebalancing | PLANNED | `P15-TSK-026` |
+| T17 | Every catalogued topic's retention, plus one segment and the broker's retention check, is below the inbox's dedupe window read from the code, and every topic deletes rather than compacts, on the broker's clock | EXISTS | `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#everyRetentionIsBelowTheDedupeWindow`; `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#retentionIsTimeBasedOnTheBrokersClock` |
+| T17 | The consumers rebalance cooperatively, under the classic protocol pinned, with bounded session and poll timeouts and no static membership, so a rolling step redelivers only what moved, into the dedupe above | EXISTS | `platform/src/test/java/com/finapp/platform/inbox/kafka/KafkaEventReceiverConfigurationTest.java#theAssignorIsCooperative`; `platform/src/test/java/com/finapp/platform/inbox/kafka/KafkaEventReceiverConfigurationTest.java#theTimeoutsAreBounded` |
 | T17 | A handler added to an existing consumer group is caught by the handler-set catalogue | PLANNED | `P15-TSK-027` |
 | T17 | A replay older than the dedupe window refused unless every consumer of the type is naturally idempotent | PLANNED | `P15-TSK-028` |
 | T17 | The inbox sweep never deletes a record younger than its bound | PLANNED | `P15-TSK-029` |
@@ -530,6 +537,9 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T24 | FX provider evidence is append-only | EXISTS | `fx/src/test/java/com/finapp/fx/FxProviderEvidenceDatabaseTest.java#evidenceIsAppendOnly` |
 | T24 | Backup and restore rehearsed, ending in the financial verification | PLANNED | `P15-TSK-030` |
 | T25 | The outbox row commits and rolls back with the business transaction (`INV-EVT-01`) | EXISTS | `platform/src/test/java/com/finapp/platform/outbox/OutboxWriterTest.java#rollbackTakesTheOutboxRowWithIt`; `platform/src/test/java/com/finapp/platform/outbox/OutboxWriterTest.java#commitKeepsThemTogether` |
+| T25 | Every topic a produced event names is declared, the producers read from the compiled code, so a broker that creates no topic on first use stalls no aggregate | EXISTS | `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#everyProducedTopicIsDeclared`; `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#everyProducerIsReadable` |
+| T25 | The broker posture as code: no topic created on first use, no unclean leader election, three replicas with two in sync, and the consumers' session timeout inside the broker's bounds | EXISTS | `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#theBrokerPostureHolds`; `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#theSessionTimeoutIsAdmitted` |
+| T25 | A consumer the broker refuses fails the instance's readiness and never its liveness; a failure that is not a refusal fails neither | EXISTS | `app/src/test/java/com/finapp/app/eventing/KafkaConsumersReadinessTest.java#readinessAndNotLiveness`; `app/src/test/java/com/finapp/app/eventing/KafkaConsumersHealthIndicatorTest.java#aRefusalIsDown`; `app/src/test/java/com/finapp/app/eventing/InboxConsumersTest.java#aFailureIsNotARefusal` |
 | T25 | Brokers across three zones with `min.insync.replicas` 2 | PLANNED | `P15-TSK-015` |
 | T25 | Event freshness and consumption SLOs, and an outbox dead letter paging | PLANNED | `P15-TSK-025` |
 | T25 | The broker outage procedure, rehearsed | PLANNED | `P15-TSK-032` |
@@ -676,9 +686,13 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 - **T4, T21, T27, T28, T29, T32, T45.** Today **no built control exists** for these CRITICAL and HIGH threats: nothing
   is deployed, and T45's rule is unwritten. Each is answered only by its planned tasks, and rule 9 and the exit rule
   (§1.5) hold them to it.
-- **T9.** `KafkaTransportGuard` refuses only `PLAINTEXT` off loopback. **`SASL_PLAINTEXT`, authenticated but
-  unencrypted, is admitted today.** `P15-TSK-026` widens the guard (routed on its entry). Not every consumer is
-  evidenced as a hint: the earliest consumers act on what an event names, with the platform as actor
+- **T9.** Off loopback the clients require `SASL_SSL` with a SCRAM identity: `KafkaTransportGuard` refuses
+  `SASL_PLAINTEXT`, `SSL`, an unknown protocol and the marked local password *(read "`KafkaTransportGuard` refuses only
+  `PLAINTEXT` off loopback; `SASL_PLAINTEXT` is admitted today" until 2026-11-08)*. What remains: the ACLs and the SCRAM
+  users are data in `infra/kafka/topics.yaml` until `-015` applies them to the managed brokers, and no real TLS
+  handshake runs until `-012`'s rehearsal. A credential taken from a pod authenticates as the application, whose
+  principal may read and write every catalogued topic, so the consumers' discipline is the remaining defence. Not every
+  consumer is evidenced as a hint: the earliest consumers act on what an event names, with the platform as actor
   (`SECURITY_ARCHITECTURE.md` §Who is acting). Lending's origination consumers are the ones evidenced as hints here.
 - **T7, T34, T35, the field-level ciphers.** Eight AES-256-GCM classes, built as nine instances over eight keys, stamp
   a key version on every row. **Each instance holds one key.** Only `CounterpartySubjectCipher` refuses a mismatched
@@ -776,7 +790,8 @@ As `PHASE_15_PLAN.md` §9.3 decided, and kept here so that the model does not co
 
 - **mTLS inside the cluster, and a service mesh.** With one deployable there is no service-to-service hop. The hops
   that leave a pod (B4, B5, B6) each have, or are given by a Phase 15 task, their own TLS and authentication. Today
-  B4 and B6 require verified TLS off loopback; B5's TLS and SASL are `P15-TSK-026`'s.
+  B4, B5 and B6 each require verified TLS off loopback, and B5 a SCRAM identity as well (B5 since 2026-11-08, when
+  the Kafka clients' authenticated TLS was built).
 - **An API gateway product.** Authentication and authorisation are the application's (ADR-0030, ADR-0031). A gateway
   would be a second policy point that can disagree with the first. The edge does TLS, allow-lists and coarse limits.
 - **OIDC for customers.** Customer identity is the platform's own product. Workforce federation waits for a workforce

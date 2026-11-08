@@ -36,6 +36,33 @@ class KafkaEventPublisherTest {
             new IdGenerator(Clock.systemUTC(), new SecureRandom());
 
     @Test
+    @DisplayName("the producer takes the shared connection's SCRAM and TLS, and keeps its acks (P15-TSK-026)")
+    void theProducerConnectsAsTheConsumerDoes() {
+        java.util.Properties rendered =
+                KafkaEventPublisher.producerProperties(
+                        new BrokerConnection(
+                                "broker:9096",
+                                "SASL_SSL",
+                                "u",
+                                com.finapp.sharedkernel.security.Sensitive.of("p"),
+                                "/etc/ca.pem"),
+                        Duration.ofSeconds(10));
+
+        assertThat(rendered)
+                .containsEntry("security.protocol", "SASL_SSL")
+                .containsEntry("sasl.mechanism", "SCRAM-SHA-512")
+                .containsEntry("ssl.endpoint.identification.algorithm", "https")
+                .containsEntry("ssl.truststore.location", "/etc/ca.pem")
+                .containsEntry("acks", "all")
+                .containsEntry("enable.idempotence", "true");
+        // Kafka's own reading of it, which refuses an unknown or mistyped setting.
+        org.assertj.core.api.Assertions.assertThatCode(
+                        () -> new org.apache.kafka.clients.producer.ProducerConfig(rendered))
+                .doesNotThrowAnyException();
+        assertThat(KafkaEventPublisher.topicFor("transfers")).isEqualTo("finapp.transfers");
+    }
+
+    @Test
     @DisplayName("one event becomes one record: topic, key, verbatim bytes, all eleven headers")
     void theWireMappingIsComplete() {
         MockProducer<String, byte[]> producer =

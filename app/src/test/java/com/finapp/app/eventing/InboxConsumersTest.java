@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.ReceivedEvent;
+import com.finapp.platform.inbox.kafka.BrokerAccessRefusedException;
+import com.finapp.platform.inbox.kafka.ReceiverPollResult;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.sql.Connection;
 import java.time.Duration;
@@ -72,6 +74,63 @@ class InboxConsumersTest {
                 .containsExactlyInAnyOrder("kyc", "party");
         assertThat(groups.get("kyc")).hasSize(2);
         assertThat(groups.get("party")).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a refused poll marks the instance refused until a poll is admitted (P15-TSK-026)")
+    void aRefusalIsHeldUntilAPollIsAdmitted() {
+        InboxConsumers consumers =
+                new InboxConsumers(
+                        List.of(), (group, handlers) -> failConnecting(), Duration.ofMillis(1),
+                        new SimpleMeterRegistry());
+        assertThat(consumers.brokerAccessRefused()).as("nothing has polled").isFalse();
+
+        consumers.settle("kyc", InboxConsumersTest::refused);
+        assertThat(consumers.brokerAccessRefused()).as("kyc's loop was refused").isTrue();
+
+        consumers.settle("risk", () -> ReceiverPollResult.NOTHING);
+        assertThat(consumers.brokerAccessRefused())
+                .as("another module's admitted poll does not clear kyc's refusal")
+                .isTrue();
+
+        consumers.settle("kyc", () -> new ReceiverPollResult(1, 0, 0, 0));
+        assertThat(consumers.brokerAccessRefused())
+                .as("kyc's next admitted poll clears it")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("an ordinary poll failure is not a refusal, so it fails no readiness (P15-TSK-026)")
+    void aFailureIsNotARefusal() {
+        InboxConsumers consumers =
+                new InboxConsumers(
+                        List.of(), (group, handlers) -> failConnecting(), Duration.ofMillis(1),
+                        new SimpleMeterRegistry());
+
+        assertThat(
+                        consumers.settle(
+                                "kyc",
+                                () -> {
+                                    throw new IllegalStateException("a client failure");
+                                }))
+                .as("a failed poll is logged and backed off, and yields no result to count")
+                .isNull();
+        ReceiverPollResult stalled = new ReceiverPollResult(0, 0, 0, 1);
+        assertThat(consumers.settle("kyc", () -> stalled))
+                .as("a stalled record is the loop's to count, as it always was")
+                .isSameAs(stalled);
+
+        assertThat(consumers.brokerAccessRefused()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a module's consumer group is finapp.<module> (P15-TSK-026)")
+    void theGroupIsNamedForTheModule() {
+        assertThat(InboxConsumers.groupIdOf("kyc")).isEqualTo("finapp.kyc");
+    }
+
+    private static ReceiverPollResult refused() {
+        throw new BrokerAccessRefusedException("SaslAuthenticationException");
     }
 
     private static com.finapp.platform.inbox.kafka.KafkaEventReceiver failConnecting() {

@@ -75,6 +75,13 @@ rest holds the current position, and `THREAT_MODEL.md` T7, T34 and T35 the threa
 with `P2-TSK-001`, which added `KafkaTransportGuard`. The same stale claim in `TransportSecurityGuard`'s Javadoc is
 `P15-TSK-008`'s to correct.)*
 
+*(Read-note, `P15-TSK-026`, 2026-11-08: the Kafka guard's bar, "not `PLAINTEXT` off loopback", admitted
+`SASL_PLAINTEXT` and any protocol string but `PLAINTEXT`. Under owner decision C11 it is now this ADR's database rule
+applied to the broker: off loopback the clients connect with `SASL_SSL` - TLS with hostname verification fixed on, and a
+SCRAM-SHA-512 identity - or the application refuses to start; the marked local SCRAM password is confined to loopback as
+the database's credential is; an unknown protocol is refused everywhere. No new decision is taken here: C11 took it, and
+`SECURITY_ARCHITECTURE.md` §Transport encryption holds the row.)*
+
 ## Alternatives rejected
 
 **Requiring TLS everywhere, including loopback.** Consistent, and it makes a clean clone unable to

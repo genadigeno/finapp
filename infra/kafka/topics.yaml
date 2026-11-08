@@ -1,0 +1,93 @@
+# The topic catalogue (P15-TSK-026): every topic the platform produces to, its configuration by
+# class, and the permissions each principal holds on them.
+#
+# WHO READS THIS
+#   - TopicCatalogueTest (app, the architecture tier) derives every producer from the compiled
+#     code - each `new EventEnvelope(...)` and the constant it names as its producer - and fails
+#     on a produced topic missing here, on a topic here that nothing produces, and on a retention
+#     the inbox's dedupe window does not outlive.
+#   - P15-TSK-015's Kafka module creates these topics on the managed brokers, with these settings.
+#   - P15-TSK-012's test-only `kind` broker creates them too. It is one node, so it takes
+#     replication 1 and min.insync.replicas 1 and every other setting from here.
+#
+# WHY TOPICS ARE DECLARED AT ALL. A deployed broker creates no topic on first use
+# (`auto.create.topics.enable=false`, infra/kafka/broker.properties). A producer naming an
+# undeclared topic blocks until its acknowledgement times out, the relay retries, and the event's
+# aggregate stalls until the outbox dead-letters it. The local compose broker still creates topics
+# on first use; it is loopback-only development, and nothing here applies to it.
+#
+# THE NAMING SCHEME is finapp.<producer>, one topic per producing module (KafkaEventPublisher).
+# Consumers filter by the finapp.eventType header.
+#
+# Values are Kafka's own configuration names and units (milliseconds), so a provisioner passes
+# them through unchanged. No credential, endpoint or hostname belongs in this file.
+
+classes:
+  # Every topic today. Events are hints and transport, never truth: the outbox in PostgreSQL is
+  # the durable source and replays from there (P15-TSK-028), so retention bounds diagnosis and a
+  # consumer outage, nothing more.
+  domain-events:
+    # At least as many as a group can have members: ADR-0120 bounds the replicas at
+    # maxReplicas + 2 x maxSurge + 1 <= finapp.database.instances (10 by default), so at most nine
+    # members during a rollout. Divisible by 3, 4 and 6, so common replica counts split evenly.
+    # ADDING partitions later remaps keys to partitions, and per-aggregate order does not hold
+    # across that change; the number is chosen generously now for that reason.
+    partitions: 12
+    replication-factor: 3
+    config:
+      # With acks=all (KafkaEventPublisher) a record is acknowledged once two replicas hold it, so
+      # one broker can be lost or restarted without losing an acknowledged record or refusing
+      # writes.
+      min.insync.replicas: "2"
+      # Never `compact`: compaction keeps each key's last record indefinitely, past any window
+      # the inbox's dedupe can outlive.
+      cleanup.policy: delete
+      # 7 days: a consumer group can be stopped for a week and lose nothing.
+      retention.ms: "604800000"
+      # 1 day. The broker deletes whole segments, and a segment goes only when its NEWEST record
+      # is past retention, so a record can outlive retention.ms by up to one segment. With the
+      # default (7 days) a record could survive 14 days - the whole of the inbox's dedupe window.
+      segment.ms: "86400000"
+      # Retention measured on the broker's clock, not on a producing replica's.
+      message.timestamp.type: LogAppendTime
+
+topics:
+  finapp.accounting: domain-events
+  finapp.accounts: domain-events
+  finapp.bnpl: domain-events
+  finapp.checkout: domain-events
+  finapp.credit: domain-events
+  finapp.crossborder: domain-events
+  finapp.fx: domain-events
+  finapp.identity: domain-events
+  finapp.kyc: domain-events
+  finapp.ledger: domain-events
+  finapp.lending: domain-events
+  finapp.merchant: domain-events
+  finapp.party: domain-events
+  finapp.paymentmethods: domain-events
+  finapp.payments: domain-events
+  finapp.reconciliation: domain-events
+  finapp.risk: domain-events
+  finapp.settlement: domain-events
+  finapp.transfers: domain-events
+
+# Kafka ACLs, written for the managed broker (owner decision C11): what each principal may do,
+# and nothing more. A principal is a role here; the provisioner binds it to its SCRAM user, whose
+# name and password come from the secret store, never from this file.
+principals:
+  # The SCRAM user every finapp-app replica authenticates as. It publishes to and consumes from
+  # the catalogued topics by their literal names, and joins the consumer groups finapp.<module>.
+  # It creates, alters and deletes nothing, and holds no cluster permission.
+  application:
+    topics: [Describe, Read, Write]
+    groups:
+      prefix: finapp.
+      operations: [Describe, Read]
+    cluster: []
+  # The provisioner: P15-TSK-015's module, and the kind rehearsal's bootstrap. Never the
+  # application. It creates and configures the catalogued topics and manages ACLs (ALTER on the
+  # cluster); it deletes no topic, because deleting one is a break-glass act, not provisioning.
+  administrator:
+    topics: [Alter, AlterConfigs, Create, Describe, DescribeConfigs]
+    cluster: [Alter, Describe]
