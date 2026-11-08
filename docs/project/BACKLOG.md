@@ -27383,7 +27383,10 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   red; a KMS key without `prevent_destroy` turns the guard red. The five `ci.yml` rows of
   `CiWorkflowIsLockedDownTest` were performed again on this branch's bytes. **Threat model**: T11 and T30 are
   `EXISTS`; T11's remainder (an apply only from a reviewed plan, drift reported) is a `GAP` held by owner item 7.
-  **Runbook**: `OPERATIONS_RUNBOOK.md` §11.13. **Not verified**: CI's own run of the `iac` job, because nothing is
+  **Runbook**: `OPERATIONS_RUNBOOK.md` §11.13. **Tests** (the owner's rule of 2026-11-08: no production Java changed):
+  the new guard, the guards reading a changed file, and the check script, fresh. `:app:architectureTest`, the module
+  unit tests and the brief's package filters were skipped under that rule. `SafeguardingReturnDatabaseTest` (it reads
+  the runbook) is owed to `P15-TST-002`. **Not verified**: CI's own run of the `iac` job, because nothing is
   pushed. This laptop's antivirus intercepts TLS, so the local runs used the pinned Terraform image plus that machine's
   root certificate, through the script's `TERRAFORM_IMAGE` override, which CI never sets.
 
