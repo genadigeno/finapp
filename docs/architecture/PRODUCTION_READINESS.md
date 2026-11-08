@@ -102,13 +102,13 @@ Each table carries **Today**, the survey's reading in `PHASE_15_PLAN.md` §15 (`
 
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
-| Deployment | Missing: no image, manifest or pipeline stage | — | — | — |
+| Deployment | Missing: no image, manifest or pipeline stage *(2026-11-08, `P15-TSK-003`: the image is built by CI from the commit, twice and compared, and pushed nowhere; unsigned; no manifest or delivery)* | — | — | — |
 | Health checks | Partial: liveness `livenessState`, readiness `readinessState,db`, details never; no schema-version check, no startup probe; the actuator on the API port | — | — | — |
 | Logging | Partial: ECS JSON with correlation and trace ids, default-deny redaction; no shipping, retention or central search | — | — | — |
 | Metrics | Partial: the naming contract enforced; every gauge read off the scrape thread on one gauge thread per instance, restartable (`P15-TSK-024`, 2026-11-08; read "about sixty gauge classes read on the scrape thread" until then); scraped from the API port | — | — | — |
 | Tracing | Partial: spans recorded and dropped, no exporter | — | — | — |
 | Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run. Since 2026-11-08 (`P15-TSK-024`): 139 rules in eight files, `platform.yml` adding a rule on `up` per instance, the fleet absent and the gauges stale, its own `promtool test` cases run by hand | — | — | — |
-| Security | Partial: transport guards off loopback, secrets externalised and confined; no image, pod profile, NetworkPolicy, workload identity or secret store | — | — | — |
+| Security | Partial: transport guards off loopback, secrets externalised and confined; no image, pod profile, NetworkPolicy, workload identity or secret store *(2026-11-08, `P15-TSK-003`: the image runs as UID 65532 with no shell or package manager, asserted on the built image; still no pod profile, NetworkPolicy, workload identity, secret store, scan or signature)* | — | — | — |
 | Resource limits | Missing (the connection budget is a startup guard, not a manifest) | — | — | — |
 | Failure handling | Partial: graceful shutdown unasserted; schedules' `stop()` does not wait; consumers join for 10 s | — | — | — |
 | Recovery | Missing | — | — | — |

@@ -270,7 +270,9 @@ jobs:
   # Dependabot proposes updates for the SHA-pinned actions above. It does not read a shell
   # variable, so the two scanner image pins need their own mechanism - and they are the pins
   # whose rot is least visible, because an outdated scanner does not fail. It reports nothing
-  # and looks exactly like a clean scan.
+  # and looks exactly like a clean scan. Since P15-TSK-003 the same script also reads the
+  # application image's two base pins from the Dockerfile's FROM lines (which Dependabot reads
+  # as well), and the image job runs its offline half - an unpinned base refused - on every change.
   #
   # This job asks two different questions, and distinguishes them: has the tag MOVED (the
   # attack digest-pinning defends against, and the more serious answer), and is there a NEWER
@@ -280,7 +282,7 @@ jobs:
   # on every push is one people learn to ignore.
   # ---------------------------------------------------------------------------
   pinned-images:
-    name: Scanner pin freshness
+    name: Image pin freshness
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Scheduled and manual only. It talks to public registries, so it would otherwise fail on a
@@ -290,7 +292,7 @@ jobs:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check the pinned scanner images
+      - name: Check the pinned scanner and base images
         run: ./infra/scripts/check-pinned-images.sh
 
   # ---------------------------------------------------------------------------
@@ -315,3 +317,61 @@ jobs:
       - name: Check the Terraform, and that every check refuses its plant
         # The same script a developer runs; the tool pins live in infra/scanner-pins.sh.
         run: ./infra/scripts/terraform-check.sh
+
+  # ---------------------------------------------------------------------------
+  # The application image (P15-TSK-003, owner decision C4).
+  #
+  # Built twice from this commit - the boot jar each time from source, every task re-run - and
+  # refused unless the two builds are the same bytes (the image id and every layer
+  # digest), it runs as UID 65532, it holds nothing but the pinned distroless base and the boot
+  # jar's entries (no shell, no package manager), and it is within its size budget. Then it is
+  # run against compose's PostgreSQL and Kafka on loopback, the root filesystem read-only and
+  # every capability dropped, until readiness reports UP.
+  #
+  # It pushes nothing, so it needs no permission beyond the workflow's read-only token and no
+  # secret (THREAT_MODEL.md T30). Both scripts are the ones a developer runs. Scanning the image
+  # is P15-TSK-006's; signing and any push P15-TSK-007's.
+  # ---------------------------------------------------------------------------
+  image:
+    name: Application image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read the pinned Java version from the version catalog
+        id: toolchain
+        run: |
+          version=$(grep -E '^javaToolchain[[:space:]]*=' gradle/libs.versions.toml | cut -d'"' -f2)
+          if [ -z "$version" ]; then
+            echo "::error::javaToolchain not found in gradle/libs.versions.toml"
+            exit 1
+          fi
+          echo "java-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Build the image twice, compare the builds, assert the image
+        run: ./infra/scripts/image-build.sh
+
+      - name: Start PostgreSQL and Kafka
+        run: docker compose up -d postgres kafka --wait
+
+      - name: Apply migrations
+        # The application never migrates (ADR-0011); the image is run against a migrated schema.
+        run: ./gradlew flywayMigrate --stacktrace
+
+      - name: Run the image until readiness reports UP
+        run: ./infra/scripts/image-readiness.sh
+
+      - name: Stop PostgreSQL and Kafka
+        if: always()
+        run: docker compose down -v
