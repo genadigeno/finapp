@@ -1855,3 +1855,64 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.10 Edge, abuse and break-glass | `-010`, `-011`, `-022` | `-032` |
 | 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
 | 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |
+| 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) |
+
+*(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
+procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
+row.)*
+
+### 11.13 Infrastructure code: running the Terraform checks, and changing a pin
+
+**When.** Before pushing any change under `infra/terraform/`, and when Dependabot proposes a provider update or
+`check-pinned-images.sh` reports a newer Terraform or `tflint`. **Why.** The code is never applied in Phase 15
+(ADR-0121 decision 6), so these checks are the only thing that holds it. CI's `iac` job runs the same script.
+
+**Run the checks** (Docker required, no account and no credential):
+
+```bash
+./infra/scripts/terraform-check.sh
+```
+
+It runs `terraform fmt -check`, `tflint`, `trivy config` (HIGH and CRITICAL fail), and then, in every directory that
+holds a `.tf` file, `terraform init -backend=false -lockfile=readonly`, `terraform validate` and `terraform test`.
+Each test plans against a mock provider. It then plants six defects in copies of the tree and requires each check to
+refuse its plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
+reason`, and the exit status is 0. A line starting `!!` names what failed:
+
+- **a check failed** on the tree: fix the code. For a formatting failure, `terraform fmt -recursive infra/terraform`
+  run with the pinned version rewrites the files;
+- **a plant was NOT refused**, or was **refused, but not for its reason**: the check has stopped working. Do not
+  merge: a check that cannot fail is the defect this script exists to find;
+- **a plant was not planted**: a change moved the line its mutation edits. Update the mutation in the script so that
+  it still plants the same defect.
+
+The script never writes the tree: it mounts `infra/` read-only and works in a Docker volume it removes at exit.
+On a machine whose TLS is intercepted (a corporate proxy, or an antivirus's HTTPS scanning), `terraform init` in the
+container cannot reach the provider registry. In that case, build a local image `FROM` the pinned Terraform digest with
+that machine's root certificate added, and set `TERRAFORM_IMAGE` to it for the run. The Terraform binary stays the
+pinned one, and the providers are still verified against the committed lock file. CI never sets the variable.
+
+**The conventions** (each enforced where it says, so a violation fails the build or the job):
+
+| Convention | Enforced by |
+|---|---|
+| Terraform and every provider pinned exactly; `required_version` equals the pinned image's version; the two roots on the same versions; the lock file holding exactly those | `TerraformIsPinnedAndCheckedTest`; `tflint` (`terraform_required_version`, `terraform_required_providers`); `init -lockfile=readonly` |
+| One `s3` backend per root, its own key, `encrypt = true`, `use_lockfile = true`; no credential argument in a backend or provider block | `TerraformIsPinnedAndCheckedTest` |
+| snake_case identifiers; `main.tf`, `variables.tf`, `outputs.tf` per directory; every variable and output typed and described | `tflint` |
+| Names start `finapp-<environment>` and every resource carries `Project`, `Environment` and `ManagedBy`, from `modules/conventions` through the AWS provider's `default_tags` | `terraform test` (the conventions module and each root); `TerraformIsPinnedAndCheckedTest` (each root's provider takes the tags, each root calls the module as itself). That each new resource uses the prefix is a review point until `-014`…`-016` |
+| `prevent_destroy = true` on the database, its backups and every KMS key | `TerraformIsPinnedAndCheckedTest` |
+| No resource or data source that writes a secret value into state, and no database given its password (use `manage_master_user_password`) | `TerraformIsPinnedAndCheckedTest` |
+| Every test file mocks every provider its directory requires, and configures no real one | `TerraformIsPinnedAndCheckedTest` |
+
+**Change a provider pin.** Use the same version in every root's `versions.tf`. Then regenerate each root's lock file
+with the pinned Terraform, for the platforms the checks run on:
+`terraform providers lock -platform=linux_amd64 -platform=linux_arm64`, run in each root after an
+`init -backend=false`. Review the lock file's diff and run the checks. A Dependabot pull request updates one root at
+a time, and it fails `TerraformIsPinnedAndCheckedTest` until both roots agree.
+
+**Change the Terraform or `tflint` version.** Bump `VERSION` in `infra/scanner-pins.sh` and re-resolve `DIGEST` with
+`docker buildx imagetools inspect <repository>:<version>`, as for the scanners. For Terraform, set every root's
+`required_version` to the same version. The build refuses a mismatch.
+
+**What this does not cover.** An apply, a plan against an account, and a drift check. Each needs a real account, which
+Phase 15 does not have (`THREAT_MODEL.md` §6 item 7).

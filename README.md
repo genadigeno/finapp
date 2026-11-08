@@ -513,8 +513,9 @@ for that (`CURRENT_STATE.md` §Known Architectural Debt).
 
 ## 6. What CI checks
 
-Four independent jobs, so a failure names its own gate
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+Independent jobs, so a failure names its own gate
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). *(This read "Four independent jobs" until
+`P15-TSK-013` added `iac`.)*
 
 | Job | Gate |
 |---|---|
@@ -523,6 +524,7 @@ Four independent jobs, so a failure names its own gate
 | `secret-scan` | No secret anywhere in git history — not just at the tip |
 | | *and in `build`:* no credential literal in any committed configuration file |
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved dependency set |
+| `iac` | The Terraform passes `fmt`, `tflint`, `trivy config`, `validate` and `terraform test` with mock providers, and each check refuses a planted defect; no credential, no backend. Run it yourself: `./infra/scripts/terraform-check.sh` (`OPERATIONS_RUNBOOK.md` §11.13) |
 
 The `migrations` job starts PostgreSQL from this same `compose.yaml`, so CI and your machine
 run the identical pinned image.
@@ -634,7 +636,8 @@ of them reaches all of it (ADR-0026):
 |---|---|---|
 | Four GitHub Actions (commit SHA) | `.github/workflows/ci.yml` | Dependabot, weekly - a pull request |
 | Library versions | `gradle/libs.versions.toml` | Dependabot, weekly - the PR **will fail its build** until you run §7a's regeneration |
-| Two scanner images (digest) | `infra/scanner-pins.sh` | `infra/scripts/check-pinned-images.sh`, weekly in CI |
+| Scanner and tool images (digest): gitleaks, Trivy, and since `P15-TSK-013` Terraform and tflint | `infra/scanner-pins.sh` | `infra/scripts/check-pinned-images.sh`, weekly in CI |
+| Terraform provider versions and their lock files | `infra/terraform/environments/*/versions.tf`, `.terraform.lock.hcl` | Dependabot (`terraform`), weekly - the PR fails `TerraformIsPinnedAndCheckedTest` until both roots agree; `OPERATIONS_RUNBOOK.md` §11.13 |
 | Infrastructure images | `compose.yaml` + the catalog | `verifyInfrastructureVersions` fails the build on drift |
 | Gradle distribution | `gradle-wrapper.properties` | Manual, with the checksum from `services.gradle.org` |
 
@@ -654,8 +657,9 @@ To update a scanner: bump `VERSION` in `infra/scanner-pins.sh`, re-resolve the d
 `docker buildx imagetools inspect <repository>:<version>`, and re-run the check.
 
 **Why the scanner pins are not Dependabot's job.** They live in a shell-sourced file it does not
-read, and they stay there deliberately: both scanners are invoked through `infra/scripts/`, which
-CI calls, so a developer and CI run the identical image. Moving a digest into the workflow so a bot
+read, and they stay there deliberately: every scanner and tool is invoked through `infra/scripts/`,
+which CI calls, so a developer and CI run the identical image. *(This read "both scanners" until
+`P15-TSK-013` added Terraform and tflint.)* Moving a digest into the workflow so a bot
 could see it would put the same fact in two places.
 
 ---

@@ -27101,6 +27101,10 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: `SYSTEM_ARCHITECTURE.md` §Continuous Integration's table; runbook §a failing scan.
 - **Acceptance criteria**: every planted finding fails its job; the final tree green.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* on 2026-11-08 `infra/scripts/check-pinned-images.sh`
+  reported Trivy 0.76.2 released beside the pinned 0.74.0. `-013` observed this and did not change the pin. This task
+  pins Trivy for the image scans. A bump also moves the checks embedded in the binary, which `trivy config` runs over
+  the Terraform (`--skip-check-update`), so re-run `infra/scripts/terraform-check.sh` with it.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T45 (injection through hand-written JDBC, CRITICAL) has this task's static analysis as its only control: include a vendored rule refusing a statement whose SQL text is built from anything but constants (not only a concatenation pattern), with the planted case of this entry's testing. Findings accepted here are accepted in the threat model with an `until` date (the model's §1.4). T30's built row holds `ci.yml`'s token scope through `CiWorkflowIsLockedDownTest`: a job that widens it rewrites that row in this task's gate.
 - *Widened by the owner (2026-11-08, `THREAT_MODEL.md` section 6 item 5), status unchanged:* the static analysis also flags an unbounded read of a provider's answer in an adapter (a body read with no size bound), with a planted case among this entry's tests; this task's gate rewrites T43's planned row with the evidence.
 
@@ -27299,6 +27303,12 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: module READMEs referenced from the runbook.
 - **Acceptance criteria**: all checks green; each property asserted.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* the modules land in the frame `-013` built. Call
+  them from both roots (`infra/terraform/environments/{staging,production}/main.tf`). Name resources from
+  `module.conventions.name_prefix`; that use is a review point, because no check reads it. The tags arrive through each
+  root's AWS provider `default_tags`. `infra/scripts/terraform-check.sh` finds a new directory by itself.
+  `TerraformIsPinnedAndCheckedTest` requires every test file in it to mock every provider the directory requires. A new
+  provider is pinned exactly in both roots and locked in each (`OPERATIONS_RUNBOOK.md` §11.13).
 
 **P15-TSK-015 — Data-tier modules: PostgreSQL, Kafka, object storage** — `PLANNED`
 - **Objective**: the financial record's database and the integration transport provisioned to the bar C3 sets.
@@ -27321,6 +27331,11 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §restore (managed half, deferred), §broker outage.
 - **Acceptance criteria**: every property asserted; checks green.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* `TerraformIsPinnedAndCheckedTest` refuses a guarded
+  type without `lifecycle { prevent_destroy = true }`. The guarded types this task adds are `aws_db_instance`,
+  `aws_rds_cluster`, the database snapshots and `aws_backup_vault`. The test also refuses a database given `password`
+  or `master_password`, so use `manage_master_user_password`. The state buckets built here are the ones each root's
+  partial `s3` backend names at `init` (`OPERATIONS_RUNBOOK.md` §11.13).
 
 **P15-TSK-016 — Security modules: KMS, secrets, workload identities, registry** — `PLANNED`
 - **Objective**: keys, secret entries, workload permissions and the registry as least-privilege code.
@@ -27340,6 +27355,11 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §rotation (cloud half).
 - **Acceptance criteria**: every assertion green; the secret entries equal the inventory.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* every `aws_kms_key`, `aws_kms_replica_key` and
+  `aws_kms_external_key` needs `lifecycle { prevent_destroy = true }`. `TerraformIsPinnedAndCheckedTest` refuses one
+  without it. The same test refuses `aws_secretsmanager_secret_version` (resource or data source), `random_password`,
+  `tls_private_key`, `aws_iam_access_key`, `aws_iam_user_login_profile`, `aws_kms_ciphertext` and the data source
+  `aws_kms_secrets`, so the secret entries stay without values in state as well as in the files.
 - *Widened by the owner (2026-11-08, `THREAT_MODEL.md` section 6 item 3), status unchanged:* a **human IAM baseline** in `modules/security`: MFA required by policy for every human principal, no long-lived human access keys, permission boundaries on human roles; asserted by `terraform test` with mock providers (a human user with an access key, a policy without the MFA condition, a human role without its boundary: each red), with its probe (drop the MFA condition → red). Workforce federation waits for a workforce identity provider (C13). This task's gate rewrites T29's planned row with the evidence.
 
 **P15-TSK-017 — GitOps delivery, promotion and the production approval boundary** — `PLANNED`
