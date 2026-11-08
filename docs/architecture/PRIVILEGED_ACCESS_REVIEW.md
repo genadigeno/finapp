@@ -168,7 +168,9 @@ There is no standing emergency identity in the application, and none is created.
 Report generation reads as `finapp_reporting`, a database role holding `SELECT` on the 23 tables a report run reads
 and nothing else - no write, no DDL, no restricted table (`ReportingRoleIsSelectOnlyTest`;
 `ReportingRoleDatabaseTest`, owed). It connects through its own pool, counted in the connection budget, and never falls
-back to the application's role (`ReportGenerationReadsAsTheReportingRoleTest`). A role is a cluster object: the local
+back to the application's role (`ReportGenerationReadsAsTheReportingRoleTest`). It reaches the database the way the
+application's pool does - the same URL and the same driver settings, `sslmode` among them - so the transport guard's
+judgement covers it (`ReportingPoolTransportTest`). A role is a cluster object: the local
 initialisation script creates it, and in a deployed database the one-time bootstrap step does (`P15-TSK-004`).
 
 ## 9. What this review does not claim

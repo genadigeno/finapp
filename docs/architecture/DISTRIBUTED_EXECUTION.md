@@ -881,7 +881,9 @@ instances × (maximum-pool-size + finapp.database.reporting.pool-size)  ≤  ser
 The shipped numbers give the reporting pool one connection out of the writer's eight (writer 7, reporting 1), so the
 fleet's demand stays 10 × 8 = 80 of 88 and every deployment rule built on it (§6.1 of `PHASE_15_PLAN.md`, `-009`'s
 manifest policy, `-012`'s measured peak) is unchanged. Both pools connect with `application_name = finapp`, so a count
-of the fleet's backends counts both. The reporting pool is fixed-size too and lazy (nothing connects until the first
+of the fleet's backends counts both, and the reporting pool connects with the writer's URL and driver settings
+(`sslmode` among them), so the transport guard that judges one judges both (`ReportingPoolTransportTest`). The
+reporting pool is fixed-size too and lazy (nothing connects until the first
 report), it is not a `DataSource` bean and so not on the readiness path, and it never falls back to the writer's: a
 reporting role that cannot connect fails report generation alone, the run staying `GENERATING` until its lease runs out
 and the orphan leg retries it (`ConnectionPoolSizingGuardTest#theReportingPoolIsCounted`,

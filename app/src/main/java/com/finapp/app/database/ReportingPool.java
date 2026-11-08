@@ -3,6 +3,7 @@ package com.finapp.app.database;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -59,10 +60,14 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
 
     /**
      * @param jdbcUrl the database the writer's pool reaches - the same database, the same transport rules
+     * @param transport the writer's driver properties ({@code spring.datasource.hikari.data-source-properties}), applied
+     *     first: an {@code sslmode} set there rather than in the URL is what {@code TransportSecurityGuard} judged, and a
+     *     pool that dropped it would reach the same remote database under the driver's default - unencrypted, silently
      * @param size connections this instance holds, at least one
      */
-    public ReportingPool(String jdbcUrl, String username, String password, int size) {
+    public ReportingPool(String jdbcUrl, Map<String, String> transport, String username, String password, int size) {
         Objects.requireNonNull(jdbcUrl, "jdbcUrl");
+        Objects.requireNonNull(transport, "transport");
         Objects.requireNonNull(username, "username");
         Objects.requireNonNull(password, "password");
         if (size < 1) {
@@ -80,9 +85,15 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
         built.setConnectionTimeout(5_000);
         built.setValidationTimeout(2_000);
         built.setReadOnly(true);
+        transport.forEach(built::addDataSourceProperty);
         built.addDataSourceProperty("connectTimeout", "5");
         built.addDataSourceProperty("ApplicationName", "finapp");
         this.pool = built;
+    }
+
+    /** A driver property this pool connects with, or null - read by the transport test, never by production code. */
+    String driverProperty(String name) {
+        return pool.getDataSourceProperties().getProperty(name);
     }
 
     /**
