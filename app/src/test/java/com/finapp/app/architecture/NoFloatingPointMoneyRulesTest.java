@@ -142,6 +142,11 @@ class NoFloatingPointMoneyRulesTest {
      */
     private static final Set<String> EXEMPT_CLASSES =
             Set.of(
+                    // P15-TSK-028. A count of parked records per consumer group, a `long` all the way down, published through the
+                    // ToDoubleFunction Micrometer's Gauge imposes (NaN when the database cannot be read).
+                    "com.finapp.app.telemetry.DeadLetterMetrics",
+                    "com.finapp.app.telemetry.DeadLetterMetrics$Cached",
+                    "com.finapp.app.telemetry.DeadLetterMetrics$Series",
                     "com.finapp.app.telemetry.OutboxMetrics",
                     // P9-TSK-027. Counts and the oldest in-transit AGE per corridor - seconds between two
                     // instants the database recorded, never an amount - published through the ToDoubleFunction

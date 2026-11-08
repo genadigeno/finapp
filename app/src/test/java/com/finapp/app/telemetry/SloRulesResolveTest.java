@@ -40,9 +40,7 @@ class SloRulesResolveTest {
     /** What this context does not publish, each for a stated reason. */
     private static final Set<String> ELSEWHERE = Set.of(
             // A consumer loop's gauge: consumers are off in the test contexts; InboxConsumersTest holds its registration.
-            "finapp_inbox_lag",
-            // P15-TSK-028's meter: PHASE_15_PLAN.md section 11.2.
-            "finapp_deadletter_parked");
+            "finapp_inbox_lag");
 
     @Autowired private PrometheusMeterRegistry registry;
 

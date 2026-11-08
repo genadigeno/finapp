@@ -51,16 +51,20 @@ public final class OutboxBacklog {
      * {@code occurred_at} itself is the writing instance's stamp, so a row from an instance ahead of
      * the database can be younger than zero: floored here (`P15-TSK-025`'s fix round), or the
      * reading's own guard refuses it and every gauge of the backlog answers NaN on every instance.
+     *
+     * <p><strong>A discarded row is not backlog, and a replay is young</strong> (`P15-TSK-028`). A discard is decided and
+     * final, so counting it would hold the gauge above zero for ever. A replayed row waits from the moment the replay was
+     * ordered: aged from {@code occurred_at}, a replay of last week's events would read as a week-old stuck event.
      */
     private static final String BACKLOG_SQL =
             """
             SELECT count(*) AS pending,
-                   greatest(coalesce(extract(epoch FROM now() - min(occurred_at))::bigint, 0), 0) AS oldest_seconds,
+                   greatest(coalesce(extract(epoch FROM now() - min(coalesce(replay_ordered_at, occurred_at)))::bigint, 0), 0) AS oldest_seconds,
                    count(dead_lettered_at) AS dead_lettered,
-                   greatest(coalesce(extract(epoch FROM now() - min(occurred_at) FILTER (WHERE dead_lettered_at IS NULL))::bigint, 0), 0)
+                   greatest(coalesce(extract(epoch FROM now() - min(coalesce(replay_ordered_at, occurred_at)) FILTER (WHERE dead_lettered_at IS NULL))::bigint, 0), 0)
                        AS oldest_publishable_seconds
               FROM platform.outbox_event
-             WHERE published_at IS NULL
+             WHERE published_at IS NULL AND discarded_at IS NULL
             """;
 
     private final OutboxConnectionSource connections;
@@ -101,14 +105,14 @@ public final class OutboxBacklog {
 
     /**
      * @param pending unpublished events, including any that are dead-lettered and therefore
-     *     blocking their aggregate
-     * @param oldest how long the oldest unpublished event has been waiting; {@link Duration#ZERO}
-     *     when there is nothing pending
+     *     blocking their aggregate; never one that was discarded
+     * @param oldest how long the oldest unpublished event has been waiting, a replayed one from when
+     *     it was ordered; {@link Duration#ZERO} when there is nothing pending
      * @param deadLettered rows abandoned after their attempts and still unresolved (`P15-TSK-025`): the
      *     relay's counter says one was abandoned, and only this says one still stands
-     * @param oldestPublishable how long the oldest row the relay may still publish has waited - a
-     *     dead-lettered row excluded, the rows queued behind it not - so a lone dead letter, which
-     *     pages on its own, does not read as a stalled relay for ever
+     * @param oldestPublishable how long the oldest row the relay may still publish has waited, a
+     *     replayed one from when it was ordered - a dead-lettered row excluded, the rows queued behind
+     *     it not - so a lone dead letter, which pages on its own, does not read as a stalled relay for ever
      */
     public record Reading(long pending, Duration oldest, long deadLettered, Duration oldestPublishable) {
 

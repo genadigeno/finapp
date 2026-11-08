@@ -72,6 +72,26 @@ Failures of the *protocol*, raised before any business module is reached.
 | `api.IdempotencyKeyRequired` | 422 | An operation requiring `Idempotency-Key` was called without one. |
 | `api.InternalError` | 500 | Something failed that the client cannot act on. |
 
+### `deadletter` — `DeadLetterErrorCode` *(`P15-TSK-028`)*
+
+The refusals of the operator doors over an abandoned event, a parked record and a replay. Each is recorded
+(`deadletter.ActRefused`).
+
+| Code | Status | Meaning |
+|---|---|---|
+| `deadletter.NotFound` | 404 | No dead letter matches the requested identifier. |
+| `deadletter.ReasonRequired` | 422 | A reason is required. |
+| `deadletter.NotAbandoned` | 409 | The event is not abandoned, or has already been discarded. |
+| `deadletter.NotParked` | 409 | The record is not parked. |
+| `deadletter.DiscardStanding` | 409 | A proposed discard already stands: decide it before acting on the subject. |
+| `deadletter.DiscardNotStanding` | 409 | The proposed discard has been decided, or its subject has moved on. |
+| `deadletter.SelfApprovalRefused` | 403 | One's own proposal: a discard needs a second person. |
+| `deadletter.ReplayOutsideDedupeWindow` | 409 | An event in this replay is older than the inbox's dedupe window, and not every consumer of its type is marked naturally idempotent. |
+| `deadletter.RetryOutsideDedupeWindow` | 409 | The abandoned event is older than the inbox's dedupe window. An earlier attempt may have reached the broker with its acknowledgement lost, so a consumer may have applied it and lost its record. |
+| `deadletter.ReplayTooLarge` | 422 | The replay selects more events than one command may requeue (1000). Narrow its window. |
+| `deadletter.ReplayInvalid` | 422 | The replay's event type or time window is not valid. |
+| `deadletter.NotReleasable` | 409 | The parked record cannot be republished from the outbox: it never had an outbox event, or that event is no longer published there. |
+
 ### `party` — `PartyErrorCode`
 
 | Code | Status | Meaning |

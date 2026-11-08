@@ -247,9 +247,9 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | — | — | — | — |
-| Alerting | Partial: `OutboxPublicationStalled`, `OutboxDeadLetter`, `InboxLagHigh`, `InboxPollFailing`, `InboxPollRefused` and `InboxConsumerEvicted` (`P15-TSK-025`, 2026-11-08); parked inbox records alert once their meter exists | — | — | — |
+| Alerting | Partial: `OutboxPublicationStalled`, `OutboxDeadLetter`, `InboxLagHigh`, `InboxPollFailing`, `InboxPollRefused`, `InboxConsumerEvicted` and `InboxDeadLetterParked` (`P15-TSK-025`, 2026-11-08) | — | — | — |
 | Ownership | — | — | — | — |
-| Runbooks | No platform section; dead letters resolved by a manual change (`-028`, `-032`) | — | — | — |
+| Runbooks | Dead letters, a poison record and replay have doors and a written section (`OPERATIONS_RUNBOOK.md` §11.6); no raw `UPDATE` remains; rehearsal is `-032`'s | — | — | — |
 
 ### 4.3 `party`
 

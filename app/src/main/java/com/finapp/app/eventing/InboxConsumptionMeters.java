@@ -18,7 +18,7 @@ import java.util.Objects;
 public final class InboxConsumptionMeters {
 
     /** The outcomes the consumption counter carries - {@link InboxConsumers}' own. */
-    public static final List<String> OUTCOMES = List.of("processed", "duplicate", "contended", "failed");
+    public static final List<String> OUTCOMES = List.of("processed", "duplicate", "contended", "failed", "parked");
 
     /** The outcomes the poll-failure counter carries (`P15-TSK-026`'s review fix round). */
     public static final List<String> POLL_FAILURE_OUTCOMES = List.of("refused", "failed");

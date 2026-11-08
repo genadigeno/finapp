@@ -381,7 +381,9 @@ must exceed:
 
 - the broker's own retry and redelivery schedule, including its dead-letter and replay windows;
 - any provider's webhook retry schedule, which for payment providers is routinely **days**;
-- any manual replay a support process might perform;
+- any manual replay a support process might perform *(`P15-TSK-028`: a replay is an audited door now, refused at or past this
+  window, and the order itself extends every consumer's row a full retention, so a row outlives the record it was
+  ordered to protect; `expires_at` is the one column of this table the application may update, `V011`);*
 - the maximum time a consumer may be down while messages accumulate.
 
 *(Added by `P15-TSK-026`, 2026-11-08.)* For Kafka the first bound is now asserted rather than

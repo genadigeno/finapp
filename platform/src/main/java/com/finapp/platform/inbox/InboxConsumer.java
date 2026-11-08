@@ -107,6 +107,11 @@ public final class InboxConsumer<T> {
         this.retention = retention;
     }
 
+    /** The dedupe window every record is dated with, for what must be judged against it (`P15-TSK-028`: a replay). */
+    public Duration retention() {
+        return retention;
+    }
+
     /**
      * Handles {@code key} exactly once for its consumer.
      *

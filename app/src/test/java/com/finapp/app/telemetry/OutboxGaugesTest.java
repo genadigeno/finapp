@@ -43,8 +43,8 @@ class OutboxGaugesTest {
         new OutboxBacklog(() -> connection(Map.of("pending", 1L, "oldest_seconds", 0L, "dead_lettered", 0L, "oldest_publishable_seconds", 0L), statements)).read();
 
         assertThat(statements).singleElement().satisfies(sql -> assertThat(sql)
-                .contains("greatest(coalesce(extract(epoch FROM now() - min(occurred_at))::bigint, 0), 0) AS oldest_seconds")
-                .contains("greatest(coalesce(extract(epoch FROM now() - min(occurred_at) FILTER (WHERE dead_lettered_at IS NULL))::bigint, 0), 0)"));
+                .contains("greatest(coalesce(extract(epoch FROM now() - min(coalesce(replay_ordered_at, occurred_at)))::bigint, 0), 0) AS oldest_seconds")
+                .contains("greatest(coalesce(extract(epoch FROM now() - min(coalesce(replay_ordered_at, occurred_at)) FILTER (WHERE dead_lettered_at IS NULL))::bigint, 0), 0)"));
     }
 
     @Test

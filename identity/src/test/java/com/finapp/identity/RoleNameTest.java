@@ -369,6 +369,16 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("EVENT_OPERATOR grants exactly EVENT_OPERATE: the platform's plumbing, none of its money or books")
+    void eventOperatorGrantsExactlyOne() {
+        // The twenty-first population (P15-TSK-028): deciding that an event is republished or never delivered is a distinct
+        // trust decision. Its four eyes are two holders of this role, the second person a CHECK (platform V011).
+        assertThat(RoleName.EVENT_OPERATOR.permissions())
+                .as("the dead-letter doors and nothing else")
+                .containsExactly(PermissionName.EVENT_OPERATE);
+    }
+
+    @Test
     @DisplayName("REGULATORY_REPORTER grants exactly REGULATORY_REPORT_PREPARE and REGULATORY_REPORT_SUBMIT - never the"
             + " approval")
     void regulatoryReporterGrantsExactlyTwo() {
@@ -480,6 +490,6 @@ class RoleNameTest {
                                 + " 'LENDING_OFFICER', 'LENDING_TREASURY_OFFICER', 'LOAN_SERVICING_AGENT',"
                                 + " 'BNPL_OFFICER', 'BNPL_SERVICING_AGENT',"
                                 + " 'RISK_ANALYST', 'RISK_OFFICER', 'AML_OFFICER',"
-                                + " 'ACCOUNTANT', 'FINANCIAL_CONTROLLER', 'REGULATORY_REPORTER'");
+                                + " 'ACCOUNTANT', 'FINANCIAL_CONTROLLER', 'REGULATORY_REPORTER', 'EVENT_OPERATOR'");
     }
 }

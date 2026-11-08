@@ -108,8 +108,9 @@ class KafkaEventReceiverTest {
         assertThat(result.failed()).isEqualTo(1);
         assertThat(journal)
                 .as("rolled back - dedupe record included - and never acknowledged, so the"
-                        + " redelivery retries rather than the stream gaining a silent gap")
-                .containsExactly("rolled-back");
+                        + " redelivery retries rather than the stream gaining a silent gap; the"
+                        + " one commit after the rollback is the failure's own count (P15-TSK-028)")
+                .containsExactly("rolled-back", "effect-committed");
         assertThat(consumer.position(PARTITION)).as("seeked back to the record").isEqualTo(0L);
         assertThat(store.committed).isEmpty();
     }
@@ -213,7 +214,7 @@ class KafkaEventReceiverTest {
                         + " and a skip is an undetectable gap")
                 .isEqualTo(1);
         assertThat(effects).hasValue(0);
-        assertThat(journal).isEmpty();
+        assertThat(journal).as("the failure's own count, committed; nothing acknowledged (P15-TSK-028)").containsExactly("effect-committed");
         assertThat(consumer.position(PARTITION)).isEqualTo(0L);
     }
 
@@ -291,7 +292,8 @@ class KafkaEventReceiverTest {
                 new InboxConsumer<>(store, Clock.systemUTC(), Duration.ofDays(1));
         InboxConnectionSource connections = () -> fakeConnection(journal, store);
         return new KafkaEventReceiver(
-                consumer, connections, inbox, List.of(handlers), Duration.ofMillis(50));
+                consumer, "finapp.probe", connections, inbox, com.finapp.platform.testing.InboxParkingDoubles.NEVER_PARKS,
+                List.of(handlers), Duration.ofMillis(50));
     }
 
     private long committedOffset() {

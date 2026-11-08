@@ -486,7 +486,7 @@ rehearsal's exported spans for the planted needles of `DATA_CLASSIFICATION.md`.
 | `finapp.credit.scorecard.awaited` | gauge: requests admitted and waiting because no `RETAIL_SCORECARD` is `ACTIVE` | `-025` |
 | `finapp.platform.clock.offset` | gauge in seconds, per instance: this instance's clock minus the database's (ADR-0063's Follow-up) | `-025` |
 
-*`finapp.inbox.lag` (`-025`, by module, the consumption SLI) is not a row here: it exists only on an instance whose consumers run, and `InboxConsumersTest` holds its registration; `finapp.deadletter.parked` above is read by `correctness.yml`'s `InboxDeadLetterParked`, which is silent until `-028`'s meter exists.*
+*`finapp.inbox.lag` (`-025`, by module, the consumption SLI) is not a row here: it exists only on an instance whose consumers run, and `InboxConsumersTest` holds its registration; `finapp.deadletter.parked` above is read by `correctness.yml`'s `InboxDeadLetterParked`.*
 
 ---
 
