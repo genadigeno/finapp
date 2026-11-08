@@ -12,6 +12,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -104,7 +105,7 @@ public final class HandlerSet {
                                 replay == null
                                         ? Set.of()
                                         : Set.copyOf((List<String>) replay.getOrDefault("windows", List.of())),
-                                newGroup == null ? null : Objects.toString(newGroup.get("startingOffsets"), null),
+                                newGroup == null ? null : offsetsOf(newGroup.get("startingOffsets")),
                                 newGroup != null && Boolean.TRUE.equals(newGroup.get("naturallyIdempotent"))));
             }
             List<VersionStep> versions = new ArrayList<>();
@@ -117,6 +118,11 @@ public final class HandlerSet {
             }
             return new ReleaseRecord(List.copyOf(handlers), List.copyOf(versions));
         }
+    }
+
+    /** An unquoted instant is a YAML timestamp, which the parser hands over as a {@code Date}. */
+    private static String offsetsOf(Object value) {
+        return value instanceof Date date ? date.toInstant().toString() : Objects.toString(value, null);
     }
 
     private HandlerSet() {}

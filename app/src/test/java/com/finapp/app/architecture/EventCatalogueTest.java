@@ -160,7 +160,7 @@ class EventCatalogueTest {
     // -----------------------------------------------------------------
 
     @Test
-    @DisplayName("every amount is integer minor units with an explicit currency and scale (DOD-EVENT)")
+    @DisplayName("every <name>Minor field is integer minor units beside an explicit currency and scale (DOD-EVENT)")
     void everyAmountHasItsCurrencyAndScale() {
         Map<String, String> defects = new TreeMap<>();
         current.events()

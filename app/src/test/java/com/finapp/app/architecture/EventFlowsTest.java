@@ -95,6 +95,9 @@ class EventFlowsTest {
 
         assertThat(fields.get("rate").kind()).isEqualTo("decimal");
         assertThat(fields.get("other").kind()).isEqualTo("decimal");
+        assertThat(FLOWS.get("probe.Concatenated").fields().get("rate").kind())
+                .as("concatenated into the text")
+                .isEqualTo("decimal");
     }
 
     @Test
@@ -104,7 +107,9 @@ class EventFlowsTest {
                 .anyMatch(line -> line.contains("computedType"))
                 .anyMatch(line -> line.contains("noPayloadBuilder"))
                 .anyMatch(line -> line.contains("uncalledParameter"))
-                .hasSize(3);
+                .anyMatch(line -> line.contains("handedToAnInterface"))
+                .anyMatch(line -> line.contains("reboundInALoop"))
+                .hasSize(5);
     }
 
     @Test

@@ -202,6 +202,7 @@ final class EventFlows {
         final Map<Integer, List<Integer>> successors = new HashMap<>();
         int nextAllocation;
         Val returned;
+        boolean rebindsAConstantInALoop;
 
         Facts(String module, MethodKey key) {
             this.module = module;
@@ -310,6 +311,7 @@ final class EventFlows {
         private Map<Integer, Val> locals = new HashMap<>();
         private final Map<Integer, Val> entryLocals;
         private final Map<Label, State> pending = new HashMap<>();
+        private final Map<Label, State> visited = new HashMap<>();
         private final Map<Label, Integer> positions = new HashMap<>();
         private final List<Object[]> jumps = new ArrayList<>();
         private boolean reachable = true;
@@ -348,8 +350,28 @@ final class EventFlows {
 
         private void flowTo(Label label, int from) {
             jumps.add(new Object[] {from, label});
+            State arrived = visited.get(label);
+            if (arrived != null) {
+                noticeRebinding(arrived);
+            }
             State here = new State(new ArrayList<>(stack), new HashMap<>(locals));
             pending.merge(label, here, Reader::joined);
+        }
+
+        /**
+         * A backward jump carries a value this single pass will not join into the loop's head. That
+         * loses nothing for a payload, which is one object however often it is rebound, and nothing
+         * for a counter; a string constant rebound in a loop could be a type this pass never sees.
+         */
+        private void noticeRebinding(State arrived) {
+            arrived.locals.forEach(
+                    (slot, value) -> {
+                        boolean constant =
+                                !value.isTop() && value.atoms().stream().anyMatch(Str.class::isInstance);
+                        if (constant && !value.equals(locals.getOrDefault(slot, Val.TOP))) {
+                            method.rebindsAConstantInALoop = true;
+                        }
+                    });
         }
 
         private static State joined(State a, State b) {
@@ -374,14 +396,13 @@ final class EventFlows {
         public void visitLabel(Label label) {
             positions.put(label, position);
             State arriving = pending.get(label);
-            if (arriving == null) {
-                return;
+            if (arriving != null) {
+                State merged = reachable ? joined(new State(stack, locals), arriving) : arriving;
+                stack = new ArrayList<>(merged.stack);
+                locals = new HashMap<>(merged.locals);
+                reachable = true;
             }
-            State merged =
-                    reachable ? joined(new State(stack, locals), arriving) : arriving;
-            stack = new ArrayList<>(merged.stack);
-            locals = new HashMap<>(merged.locals);
-            reachable = true;
+            visited.put(label, new State(List.copyOf(stack), Map.copyOf(locals)));
         }
 
         @Override
@@ -673,7 +694,11 @@ final class EventFlows {
             String bootstrap = bootstrapMethodHandle.getName();
             Val result = Val.TOP;
             if (bootstrap.equals("makeConcatWithConstants")) {
-                result = Val.of(new Concat((String) bootstrapMethodArguments[0], List.copyOf(nonNull(arguments))));
+                boolean floating =
+                        Arrays.stream(captured).anyMatch(type -> type == Type.DOUBLE_TYPE || type == Type.FLOAT_TYPE);
+                result = floating
+                        ? Val.of(new Kind("decimal"))
+                        : Val.of(new Concat((String) bootstrapMethodArguments[0], List.copyOf(nonNull(arguments))));
             } else if (bootstrap.equals("metafactory") || bootstrap.equals("altMetafactory")) {
                 captureInto((Handle) bootstrapMethodArguments[1], arguments, at);
             }
@@ -916,6 +941,9 @@ final class EventFlows {
         List<Flow> flows = new ArrayList<>();
         List<String> unreadable = new ArrayList<>();
         for (Facts method : facts.values()) {
+            if (method.rebindsAConstantInALoop && !method.writes.isEmpty()) {
+                unreadable.add(method.where() + ": a string constant is rebound in a loop, which this reader does not follow");
+            }
             for (Write write : method.writes) {
                 Frame frame = new Frame(method);
                 expand(frame, write, frame, flows, unreadable);
@@ -1256,7 +1284,11 @@ final class EventFlows {
                     }
                     Facts callee = target(call.callee());
                     if (callee == null) {
-                        continue;
+                        if (call.callee().owner().startsWith("com/finapp/")) {
+                            unreadable.add(frame.facts.where() + ": a payload handed to a method this reader cannot follow");
+                            read = false;
+                        }
+                        continue; // the JDK adds no field to an EventPayload
                     }
                     Set<Integer> others = new HashSet<>(consumed);
                     others.remove(call.position());

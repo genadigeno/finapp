@@ -59,7 +59,7 @@ class RiskSignalsReadTheCatalogueTest {
                         (number, version) -> {
                             assertThat(number)
                                     .as("%s: a version the intake does not accept would stall its partition", source.eventType())
-                                    .isEqualTo(1);
+                                    .isLessThanOrEqualTo(RiskSignalIntake.Source.NEWEST_VERSION);
                             assertThat(parsesInSomeForm(kind, source.eventType(), number, version.fields()))
                                     .as("%s v%s", source.eventType(), number)
                                     .isTrue();

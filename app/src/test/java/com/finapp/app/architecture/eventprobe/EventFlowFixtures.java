@@ -115,6 +115,29 @@ public final class EventFlowFixtures {
         outbox.write(null, envelope(nobodyNames, 1), EventPayload.of().with("a", "B").toBytes(), "x");
     }
 
+    public void handedToAnInterface(Enrichment enrichment) {
+        EventPayload payload = EventPayload.of().with("a", "B");
+        enrichment.enrich(payload);
+        outbox.write(null, envelope("probe.Handed", 1), payload.toBytes(), "x");
+    }
+
+    /** A port a payload could be handed to, whose implementation this reader cannot pick. */
+    public interface Enrichment {
+        void enrich(EventPayload payload);
+    }
+
+    public void reboundInALoop(List<String> values) {
+        String type = "probe.First";
+        for (String value : values) {
+            outbox.write(null, envelope(type, 1), EventPayload.of().with("a", "B").toBytes(), "x");
+            type = "probe.Second";
+        }
+    }
+
+    public void concatenatedDecimal(double rate) {
+        outbox.write(null, envelope("probe.Concatenated", 1), EventPayload.of().with("rate", "r" + rate).toBytes(), "x");
+    }
+
     public void ownVersion() {
         outbox.write(null, envelope("probe.Own", ProbeEventVersions.of("probe.Own")), EventPayload.of().with("a", "B").toBytes(), "x");
     }

@@ -219,11 +219,16 @@ class HandlerSetDiffTest {
                              change: added, replay: {eventType: party.PartyArchived, windows: [rollout, rollback]}}
                           - {group: finapp.audit, topic: finapp.party, eventType: party.CustomerOpened, consumerName: audit.trail,
                              newGroup: {startingOffsets: earliest, naturallyIdempotent: true}}
+                          - {group: finapp.other, topic: finapp.party, eventType: party.CustomerOpened, consumerName: other.trail,
+                             newGroup: {startingOffsets: 2026-11-08T00:00:00Z}}
                         versions:
                           - {eventType: party.CustomerOpened, version: 2, consumersLearnedItIn: "2026.11"}
                         """);
 
-        assertThat(record.handlers()).hasSize(2);
+        assertThat(record.handlers()).hasSize(3);
+        assertThat(record.handlers().get(2).startingOffsets())
+                .as("an unquoted instant is read as the instant it is")
+                .isEqualTo("2026-11-08T00:00:00Z");
         assertThat(record.handlers().get(0).replayWindows()).containsExactlyInAnyOrder("rollout", "rollback");
         assertThat(record.handlers().get(1).startingOffsets()).isEqualTo("earliest");
         assertThat(record.handlers().get(1).naturallyIdempotent()).isTrue();
