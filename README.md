@@ -637,7 +637,7 @@ of them reaches all of it (ADR-0026):
 | Four GitHub Actions (commit SHA) | `.github/workflows/ci.yml` | Dependabot, weekly - a pull request |
 | Library versions | `gradle/libs.versions.toml` | Dependabot, weekly - the PR **will fail its build** until you run §7a's regeneration |
 | Scanner and tool images (digest): gitleaks, Trivy, and since `P15-TSK-013` Terraform and tflint | `infra/scanner-pins.sh` | `infra/scripts/check-pinned-images.sh`, weekly in CI |
-| Terraform provider versions and their lock files | `infra/terraform/environments/*/versions.tf`, `.terraform.lock.hcl` | Dependabot (`terraform`), weekly - the PR fails `TerraformIsPinnedAndCheckedTest` until both roots agree; `OPERATIONS_RUNBOOK.md` §11.13 |
+| Terraform provider versions and their lock files | `infra/terraform/environments/*/versions.tf`, `.terraform.lock.hcl` | Dependabot (`terraform`), weekly - a PR moving one root and not the other fails `TerraformIsPinnedAndCheckedTest` until both agree; `OPERATIONS_RUNBOOK.md` §11.13 |
 | Infrastructure images | `compose.yaml` + the catalog | `verifyInfrastructureVersions` fails the build on drift |
 | Gradle distribution | `gradle-wrapper.properties` | Manual, with the checksum from `services.gradle.org` |
 

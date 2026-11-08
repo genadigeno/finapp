@@ -1907,8 +1907,8 @@ pinned one, and the providers are still verified against the committed lock file
 **Change a provider pin.** Use the same version in every root's `versions.tf`. Then regenerate each root's lock file
 with the pinned Terraform, for the platforms the checks run on:
 `terraform providers lock -platform=linux_amd64 -platform=linux_arm64`, run in each root after an
-`init -backend=false`. Review the lock file's diff and run the checks. A Dependabot pull request updates one root at
-a time, and it fails `TerraformIsPinnedAndCheckedTest` until both roots agree.
+`init -backend=false`. Review the lock file's diff and run the checks. A Dependabot pull request that moves one root
+and not the other fails `TerraformIsPinnedAndCheckedTest` until both roots agree.
 
 **Change the Terraform or `tflint` version.** Bump `VERSION` in `infra/scanner-pins.sh` and re-resolve `DIGEST` with
 `docker buildx imagetools inspect <repository>:<version>`, as for the scanners. For Terraform, set every root's

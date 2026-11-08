@@ -169,11 +169,13 @@ if ! docker info >/dev/null 2>&1; then
     exit 2
 fi
 
-# One volume per run, so two runs on one machine never share a plant, a data directory or a provider
-# cache (Terraform's plugin cache is not safe for concurrent writers).
-VOLUME="finapp-terraform-check-$$"
+# One volume per run, so two runs on one Docker host never share a plant, a data directory or a
+# provider cache (Terraform's plugin cache is not safe for concurrent writers). The process id alone
+# can repeat across containers sharing a host's Docker, so a random suffix goes with it.
+VOLUME="finapp-terraform-check-$$-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
 docker volume create "$VOLUME" >/dev/null
-trap 'docker volume rm -f "$VOLUME" >/dev/null 2>&1 || true' EXIT INT TERM
+trap 'docker volume rm -f "$VOLUME" >/dev/null 2>&1 || true' EXIT
+trap 'exit 130' INT TERM
 
 # MSYS_NO_PATHCONV stops Git Bash on Windows rewriting /repo and /scratch into host paths. Unset and
 # harmless on Linux, where CI runs.
