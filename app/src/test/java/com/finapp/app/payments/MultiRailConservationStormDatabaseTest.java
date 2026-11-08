@@ -2849,12 +2849,14 @@ class MultiRailConservationStormDatabaseTest {
     }
 
     private int deliverCard(String body) {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(provider, body);
         return provider.deliverTimestampSignedCallback(
                 URI.create("http://localhost:" + port + "/v1/providers/payments/webhooks"),
                 body, CARD_WEBHOOK_KEY, Instant.now(CLOCK).getEpochSecond(), 1);
     }
 
     private int deliverInstant(String body) {
+        com.finapp.app.payments.ProviderInquiryStubs.instantAgrees(provider, body);
         return provider.deliverTimestampSignedCallback(
                 URI.create("http://localhost:" + port + "/v1/providers/payments/instant/webhooks"),
                 body, INSTANT_WEBHOOK_KEY, Instant.now(CLOCK).getEpochSecond(), 1);

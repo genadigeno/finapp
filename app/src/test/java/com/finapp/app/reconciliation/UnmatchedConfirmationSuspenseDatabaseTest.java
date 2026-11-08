@@ -1222,6 +1222,7 @@ class UnmatchedConfirmationSuspenseDatabaseTest {
     }
 
     private int callback(String body) {
+        com.finapp.app.payments.ProviderInquiryStubs.instantAgrees(provider, body);
         return provider.deliverTimestampSignedCallback(
                 door(), body, WEBHOOK_KEY, Instant.now(CLOCK).getEpochSecond(), 1);
     }

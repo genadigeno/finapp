@@ -104,7 +104,7 @@ public final class RiskSignalIntake implements InboxEventHandler {
         /** {@code crossborder.CrossBorderPaymentDelivered} - a hint. */
         CROSS_BORDER_DELIVERED("finapp.crossborder", "crossborder.CrossBorderPaymentDelivered");
 
-        private static final int NEWEST_VERSION = 1;
+        static final int NEWEST_VERSION = 1;
 
         private final String topic;
         private final String eventType;

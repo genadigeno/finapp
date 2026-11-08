@@ -1239,6 +1239,7 @@ class ChargebackAccountingDatabaseTest {
     }
 
     private HttpResponse<String> deliver(String body) throws Exception {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(provider, body);
         String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
         try (HttpClient client =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
@@ -1402,7 +1403,7 @@ class ChargebackAccountingDatabaseTest {
     }
 
     private static long evidenceCount(UUID attempt) throws SQLException {
-        return count("SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ?",
+        return count("SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ? AND kind = 'WEBHOOK'",
                 attempt);
     }
 

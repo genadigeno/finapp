@@ -267,7 +267,7 @@ public class CrossBorderOutcomeBeans {
             tools.jackson.databind.ObjectMapper objectMapper,
             Clock clock) {
         return new CorridorCallbackService(corridorWebhookSignature, corridorRail.id().value(),
-                outboundCreditStore, providerEvidenceStore, inboxConsumer, outboundCreditResolution,
+                outboundCreditStore, providerEvidenceStore, inboxConsumer, outboundCreditResolution::resolve,
                 paymentTransactionRunner, objectMapper, clock);
     }
 }

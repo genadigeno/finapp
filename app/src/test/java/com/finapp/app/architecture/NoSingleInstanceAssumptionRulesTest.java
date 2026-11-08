@@ -184,6 +184,13 @@ class NoSingleInstanceAssumptionRulesTest {
                     // DISTRIBUTED_EXECUTION.md section 3; the races are
                     // PayByBankDatabaseTest's.
                     "com.finapp.app.payments.PayInResolutionSchedule",
+                    // P15-TSK-036: the durable callback hints. A provider inquiry is read-only
+                    // by a stored reference, the permit is a conditional on the database's
+                    // clock, and every effect is the appliers' conditional on a locked row, so
+                    // N schedules and the door's own inquiry are one harmless race. Register
+                    // row: DISTRIBUTED_EXECUTION.md section 3; the race is
+                    // PaymentWebhookTransitionDatabaseTest's.
+                    "com.finapp.app.payments.CallbackHintResolutionSchedule",
                     // P7-TSK-010: the card sweeper's refund leg at the push rail. The
                     // return inquiry is read-only by OUR reference, the re-drive rides a
                     // conditionally renewed send permit (V009's arbiter) and the scheme's
