@@ -709,7 +709,7 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   `DocumentCipher`, `EvidenceCipher`, `PayoutEvidenceCipher` and `FxEvidenceCipher`. `X-TSK-010` names the first four,
   and the fifth is routed onto its entry. Every column outside these ciphers is plaintext in PostgreSQL until volume
   encryption exists (`-015`). `SECURITY_ARCHITECTURE.md` §Encryption at rest has the detail.
-- **T2.** `/actuator/health`, `/actuator/info` and `/actuator/prometheus` are still served unauthenticated, now on
+- **T2.** `/actuator/health`, `/actuator/info` and `/actuator/prometheus` are still served unauthenticated, now on *(The coordinator at `P15-TSK-008`'s merge, 2026-11-08: an empty, not unset, `FINAPP_MANAGEMENT_ADDRESS` binds the management port to every interface, so "loopback unless a deployment names an address" holds only while the variable is unset or names one; the fail-closed guard is routed to `P15-TSK-009`.)*
   the management port alone: loopback outside Kubernetes, and the pod's address once `-009`'s overlays set it, where
   anything that reaches the pod reaches them until a policy restricts it. Two `CURRENT_STATE.md` debt rows record this, and `-010`'s NetworkPolicy
   closes them. *(Read "served unauthenticated on the API port today" until 2026-11-08, when the port moved.)*
