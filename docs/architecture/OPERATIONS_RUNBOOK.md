@@ -1875,7 +1875,7 @@ row.)*
 
 It runs `terraform fmt -check`, `tflint`, `trivy config` (HIGH and CRITICAL fail), and then, in every directory that
 holds a `.tf` file, `terraform init -backend=false -lockfile=readonly`, `terraform validate` and `terraform test`.
-Each test plans against a mock provider. It then plants six defects in copies of the tree and requires each check to
+Each test only plans; a root's tests plan against a mock AWS provider, and the conventions module uses no provider. It then plants six defects in copies of the tree and requires each check to
 refuse its plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
 reason`, and the exit status is 0. A line starting `!!` names what failed:
 

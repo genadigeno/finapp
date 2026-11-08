@@ -27297,8 +27297,8 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   with its own key, `encrypt = true` and `use_lockfile = true`; the bucket and region are given at `init` in a real
   environment. **No backend initialised in CI**: every `init` is `-backend=false -lockfile=readonly`, and the tests keep
   state in memory. **Checks**: `infra/scripts/terraform-check.sh` runs `fmt`, `tflint` (the bundled ruleset, every
-  rule), `trivy config` (HIGH and CRITICAL fail, the binary's embedded checks), and then `validate` and `test` (mock
-  providers, seven runs) in every directory holding a `.tf` file. It then runs each check over a planted defect, which
+  rule), `trivy config` (HIGH and CRITICAL fail, the binary's embedded checks), and then `validate` and `test` (seven
+  runs, each only a plan; the roots' against a mock AWS provider) in every directory holding a `.tf` file. It then runs each check over a planted defect, which
   the check must refuse by name. Those are the entry's three plants (unformatted, public bucket, unpinned provider) and
   three more: a camel-case identifier, an undeclared reference and a dropped tag. CI's `iac` job runs the script on every
   change with no env, permission or secret. **Conventions**, each enforced: snake_case identifiers and the standard file
