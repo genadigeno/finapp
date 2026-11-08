@@ -1,0 +1,102 @@
+# promtool unit tests for infra/prometheus/rules/platform.yml (P15-TSK-024). Run from the repository root:
+#   docker run --rm --pull=never -v "$PWD/infra/prometheus:/prometheus-rules:ro" -w /prometheus-rules/tests \
+#     --entrypoint promtool prom/prometheus@sha256:<the v3.14.0 digest> test rules platform.test.yml
+# Two instances throughout: the multi-instance case is that only the down one fires, and a healthy fleet fires nothing.
+
+rule_files:
+  - ../rules/platform.yml
+
+evaluation_interval: 15s
+
+tests:
+  # Instance b stops answering at minute 3; instance a stays up. Only b fires, and only once its two minutes hold.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081"}'
+        values: '1x40'
+      - series: 'up{job="finapp", instance="b:8081"}'
+        values: '1x11 0x28'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: InstanceDown
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: InstanceDown
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: InstanceDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: finapp
+              instance: b:8081
+            exp_annotations:
+              summary: "A finapp instance cannot be scraped: b:8081"
+              description: "Its last scrapes failed for 2 minutes. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 6m
+        alertname: FinappTargetsAbsent
+        exp_alerts: []
+
+  # A healthy fleet: nothing fires.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081"}'
+        values: '1x40'
+      - series: 'up{job="finapp", instance="b:8081"}'
+        values: '1x40'
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="a:8081"}'
+        values: '1x40'
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="b:8081"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: InstanceDown
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: FinappTargetsAbsent
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: GaugesStale
+        exp_alerts: []
+
+  # No finapp target at all for five minutes: the fleet is gone from the discovery.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="other", instance="x:9090"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: FinappTargetsAbsent
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: FinappTargetsAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: finapp
+            exp_annotations:
+              summary: "No finapp instance is being scraped"
+              description: "No target of the finapp job exists for 5 minutes, so every finapp alert is blind. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # Instance b's refresher stops answering at minute 1 (its canary NaN); a's keeps answering. b alone, after five minutes.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="a:8081"}'
+        values: '1x40'
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="b:8081"}'
+        # promtool's expanding notation takes no NaN, so the 36 samples are written out.
+        values: '1x3 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: GaugesStale
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: GaugesStale
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+            exp_annotations:
+              summary: "The gauges of b:8081 are stale"
+              description: "Its gauge refresher has not answered for 5 minutes past its bound, so every finapp gauge it publishes is NaN. See OPERATIONS_RUNBOOK.md section 11.8."

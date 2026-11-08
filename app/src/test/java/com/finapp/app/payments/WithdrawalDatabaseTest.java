@@ -677,6 +677,8 @@ class WithdrawalDatabaseTest {
             assertThat(reading.oldestAgeSeconds())
                     .as("the age is the oldest wait, measured from the latest send permit")
                     .isGreaterThanOrEqualTo(Duration.ofMinutes(55).toSeconds());
+            // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+            com.finapp.app.telemetry.RefreshedGauges.settle(meterRegistry, "finapp.payments.withdrawal.unknown.");
             assertThat(meterRegistry.find("finapp.payments.withdrawal.unknown.active").gauge()
                             .value())
                     .as("published eagerly, and a number from a readable database")

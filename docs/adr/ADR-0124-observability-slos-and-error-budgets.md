@@ -49,6 +49,21 @@ exporter is configured. Several gaps remain:
    needles of `DATA_CLASSIFICATION.md`.
 7. **Gauges read off the scrape thread.** The `AccountingGaugeRefresher` pattern moves to `platform`, behind every gauge
    that reads the database. The refresher is made restartable (PI-014 item 2). A rule on `up` fires per instance.
+
+   *(As built by `P15-TSK-024`, 2026-11-08; the decision is unchanged, and this note records how it was built.)*
+   - **The refresher.** It is `platform`'s `GaugeRefresher` and `RefreshedReading`, framework-free. Its one thread's
+     executor is made in `start()` and shut in `stop()`.
+   - **Applied at the registry, not per class.** `app`'s `OffScrapeMeterRegistry`, the application's Prometheus
+     registry, hands the function of every `finapp.` gauge, function counter and custom meter to the refresher. That
+     covers the sixty database-reading gauge classes and the configuration gauges. A `finapp.` function timer is
+     refused. Names, tags and help are untouched.
+   - **What a reading answers.** No value before its first read and after a failed one. Once an ask has waited
+     `finapp.gauges.stale-after` (2 minutes), no value until a read completes.
+   - **The guard.** `NoGaugeReadsOnTheScrapeTest` renders every meter of the real context with the scrape thread
+     watched.
+   - **The rules.** `infra/prometheus/rules/platform.yml` holds `InstanceDown` (`up == 0` per instance, page),
+     `FinappTargetsAbsent` (`absent(up)`, page) and `GaugesStale` (the refresher's canary, ticket), with `promtool test`
+     cases.
 8. **End-to-end tracing is proven on one real flow.** On `kind`, one payment's trace runs customer → request → domain →
    provider → ledger → settlement → reconciliation. The asynchronous legs are linked through the envelope's correlation
    and causation ids.

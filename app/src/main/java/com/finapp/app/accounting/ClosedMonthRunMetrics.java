@@ -20,9 +20,9 @@ public final class ClosedMonthRunMetrics {
 
     private final AccountingGaugeRead<Long> read;
 
-    public ClosedMonthRunMetrics(ClosedMonthRuns months, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
+    public ClosedMonthRunMetrics(ClosedMonthRuns months, GlSnapshots snapshots, Clock clock, MeterRegistry registry) {
         Objects.requireNonNull(months, "months");
-        this.read = new AccountingGaugeRead<>("The latest closed month's runs", snapshots, refresher, clock, MIN_REFRESH, months::repudiatedWithoutARun);
+        this.read = new AccountingGaugeRead<>("The latest closed month's runs", snapshots, clock, MIN_REFRESH, months::repudiatedWithoutARun);
         Gauge.builder(UNRUN, this::unrun)
                 .description("Sources the latest CLOSED month requires holding a repudiated run and no run that counts; no value when unreadable."
                         + " Fleet-wide from every instance: aggregate with max(), never sum()")

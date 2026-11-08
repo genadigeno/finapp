@@ -1192,6 +1192,8 @@ class LoanAccountDatabaseTest {
         HttpResponse<String> operatorRead = client.get("/v1/operator/loans/" + loanId, operator);
         assertThat(operatorRead.statusCode()).as(operatorRead.body()).isEqualTo(200);
         assertThat(operatorRead.body()).contains(condition);
+        // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(meterRegistry, LoanConditionMetrics.DELINQUENCY);
         assertThat(meterRegistry.find(LoanConditionMetrics.DELINQUENCY).tag("product", "personal_loan")
                 .tag("bucket", "b1_1_29").gauge().value()).as("counted from the recorded condition").isGreaterThanOrEqualTo(1);
         assertThat(meterRegistry.find(LoanConditionMetrics.DEFAULT).tag("product", "credit_line").gauge()).isNotNull();

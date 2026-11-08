@@ -277,6 +277,8 @@ class Phase10ReportsDatabaseTest {
         assertThat(ages).containsKey(DecisionRequestStatus.SUBMITTED);
         assertThat(DecisionRequestStatus.OPEN).containsAll(ages.keySet());
         assertThat(ages.values()).allSatisfy(age -> assertThat(age.isNegative()).isFalse());
+        // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(meters, com.finapp.app.telemetry.CreditRequestAgeMetrics.AGE);
         double submitted = meters.get(com.finapp.app.telemetry.CreditRequestAgeMetrics.AGE).tag("status", "submitted")
                 .gauge().value();
         assertThat(submitted).as("a live database reads a number").isNotNaN().isGreaterThanOrEqualTo(0.0);

@@ -408,6 +408,8 @@ class SettlementRoutesDatabaseTest {
                 uploadBody("gauge-" + suffix() + ",delta\n"),
                 operator,
                 someKey());
+        // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(registry, SettlementFileMetrics.PENDING);
         double pending =
                 registry.find(SettlementFileMetrics.PENDING).tag("source", SOURCE).gauge()
                         .value();
@@ -511,6 +513,8 @@ class SettlementRoutesDatabaseTest {
                         .timer())
                 .isNotNull()
                 .satisfies(timer -> assertThat(timer.count()).isGreaterThanOrEqualTo(1L));
+        // P15-TSK-024: a configuration gauge is read on the refresher too, so ask it to read now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(registry, "finapp.settlement.intake.sweeper.enabled");
         assertThat(registry.find("finapp.settlement.intake.sweeper.enabled").gauge())
                 .isNotNull()
                 .satisfies(gauge -> assertThat(gauge.value()).isEqualTo(0.0));

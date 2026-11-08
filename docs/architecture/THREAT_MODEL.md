@@ -474,7 +474,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T14 | Requests and limits, and an HPA bounded by the declared budget counting terminating pods | PLANNED | `P15-TSK-009` |
 | T14 | `ResourceQuota` and `LimitRange` | PLANNED | `P15-TSK-010` |
 | T14 | The budget's peak measured during a rollout and a pod kill | PLANNED | `P15-TSK-012` |
-| T14 | Every gauge read off the scrape thread, so a scrape (today unauthenticated) costs no database work and a slow database never loses the whole scrape | PLANNED | `P15-TSK-024` |
+| T14 | Every gauge read off the scrape thread: one scrape of every meter of the real context, each meter's measurements read again on the same thread, asks the database for nothing there (a planted gauge reading it on the scrape is caught), and the reads run on the instance's one gauge thread, where ten concurrent looks at a blocked read start one read. A scrape, still unauthenticated, therefore holds no connection of its own, and a slow database never loses the whole scrape | EXISTS | `app/src/test/java/com/finapp/app/telemetry/NoGaugeReadsOnTheScrapeTest.java#noGaugeReadsTheDatabaseOnTheScrapeThread`; `app/src/test/java/com/finapp/app/telemetry/NoGaugeReadsOnTheScrapeTest.java#aPlantedReadOnTheScrapeIsCaught`; `platform/src/test/java/com/finapp/platform/metrics/GaugeRefresherTest.java#aBlockedReadNeverBlocksALookAndFliesOnce` |
 | T15 | An unbalanced journal entry is refused at commit, whoever writes it, raw SQL included (`INV-LED-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#aDirectUnbalancedInsertIsRefusedAtCommit` |
 | T15 | The application role holds no `UPDATE`, `DELETE` or `TRUNCATE` on the journal | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theColumnSweep` |
 | T15 | The journal's append-only trigger binds even the migrator (`INV-HIST-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
@@ -691,8 +691,11 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 - **T2.** `/actuator/health`, `/actuator/info` and `/actuator/prometheus` are served unauthenticated on the API port
   today. Two `CURRENT_STATE.md` debt rows record this, and `-008` and `-010` close them.
 - **T14.** The connection budget guard checks the instance count the configuration declares. Nothing ties that
-  declaration to the replicas actually running, which `-009`'s manifest policy and `-012`'s measured peak do. Today an
-  unauthenticated scrape runs about sixty gauges' queries on the scrape thread (`-024`).
+  declaration to the replicas actually running, which `-009`'s manifest policy and `-012`'s measured peak do. No gauge
+  reads on the scrape thread any more (2026-11-08), but a scrape still *asks* for reads: an unauthenticated scraper can
+  keep each instance's one gauge thread, and so one of its pool's connections, busy at the floors' rate (each gauge at
+  most once per 5 s, each class's own floor beyond that), until the management port leaves the API port (`-008`) and a
+  NetworkPolicy restricts it (`-010`).
 - **T38.** Today **every session actor is audited as `CUSTOMER`, operators included**, and a refused step-up writes no
   record. Both are debt rows that `-021` closes. The actor's identity is right; only its type is wrong.
 - **T43.** No general bound on the size of a provider's answer exists across the adapters. The regulatory adapter is

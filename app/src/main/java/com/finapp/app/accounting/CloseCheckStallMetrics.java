@@ -29,10 +29,10 @@ public final class CloseCheckStallMetrics {
 
     private final AccountingGaugeRead<Long> read;
 
-    public CloseCheckStallMetrics(CloseRunStore store, CloseRunStall stall, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
+    public CloseCheckStallMetrics(CloseRunStore store, CloseRunStall stall, GlSnapshots snapshots, Clock clock, MeterRegistry registry) {
         Objects.requireNonNull(store, "store");
         Objects.requireNonNull(stall, "stall");
-        this.read = new AccountingGaugeRead<>("The stalled close checks", snapshots, refresher, clock, MIN_REFRESH,
+        this.read = new AccountingGaugeRead<>("The stalled close checks", snapshots, clock, MIN_REFRESH,
                 connection -> store.stalledAttempts(connection, stall.after()));
         Gauge.builder(STALLED, this::stalled)
                 .description("Attempts of a present close run claimable past the bound with nobody claiming them and no claim live - the check leg stopped after the run's"

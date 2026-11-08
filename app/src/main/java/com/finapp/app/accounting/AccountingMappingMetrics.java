@@ -28,9 +28,9 @@ public final class AccountingMappingMetrics {
 
     private final AccountingGaugeRead<Long> read;
 
-    public AccountingMappingMetrics(GlMappingGap gap, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
+    public AccountingMappingMetrics(GlMappingGap gap, GlSnapshots snapshots, Clock clock, MeterRegistry registry) {
         Objects.requireNonNull(gap, "gap");
-        this.read = new AccountingGaugeRead<>("The unmapped GL lines", snapshots, refresher, clock, MIN_REFRESH, gap::unmappedLines);
+        this.read = new AccountingGaugeRead<>("The unmapped GL lines", snapshots, clock, MIN_REFRESH, gap::unmappedLines);
         Gauge.builder(UNMAPPED, this::unmappedLines)
                 .description("Journal lines in the open period whose purpose the active GL mapping version does not map"
                         + " - shown in the GL's unmapped bucket, never dropped; 0 under a total version or none, no value"

@@ -319,6 +319,8 @@ class LoanOfferDatabaseTest {
         assertThat(failures("offer")).as("the other kind registered, eagerly").isNotNegative();
         assertThat(field(client.read(customer.token(), application).body(), "status"))
                 .as("nothing written - the application keeps waiting").isEqualTo("AWAITING_DECISION");
+        // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(meterRegistry, LoanAwaitingDecisionMetrics.AWAITING_AGE);
         assertThat(meterRegistry.get(LoanAwaitingDecisionMetrics.AWAITING_AGE).gauge().value())
                 .as("the oldest application awaiting a decision, read from the database").isPositive();
     }

@@ -79,7 +79,7 @@ holds.
 | **Deployment** | (a) built by CI from a reviewed commit; (b) signed, with provenance; (c) deployed by digest through GitOps; (d) rolled and rolled back on `kind` | CI workflow and image build (`-003`, `-004`); signature and admission policy (`-007`); the digest overlay and promotion script (`-017`); the rehearsal record (`-012`) |
 | **Health checks** | (a) liveness reads the process alone; (b) readiness includes the database and the schema version; (c) a startup probe | Probe tests and manifests (`-005`, `-008`, `-009`) |
 | **Logging** | (a) structured; (b) correlated (correlation and trace ids); (c) shipped through the one collector; (d) retained by class; (e) the needle test clean over a rehearsal's whole output | The ECS encoder's tests; the collector configuration and the needle test (`-023`) |
-| **Metrics** | (a) registered per the naming contract; (b) every gauge read off the scrape thread; (c) scraped from the management port | `MetricConventionTest`; the off-thread guard (`-024`); the management port and its policy (`-008`, `-010`) |
+| **Metrics** | (a) registered per the naming contract; (b) every gauge read off the scrape thread; (c) scraped from the management port | `MetricConventionTest`; the off-thread guard, `NoGaugeReadsOnTheScrapeTest` (built by `P15-TSK-024`); the management port and its policy (`-008`, `-010`) |
 | **Tracing** | (a) exported; (b) span attributes an allow-list; (c) one critical flow traced end to end | The exporter and collector allow-list; the end-to-end trace record (`-023`) |
 | **Alerting** | (a) SLO burn-rate alerts and correctness alerts exist for the unit's flows; (b) routed by severity; (c) every alert names its runbook section | `promtool` cases, Alertmanager configuration and the runbook-link test (`-025`) |
 | **Security** | (a) non-root; (b) read-only root filesystem; (c) no capabilities; (d) NetworkPolicy default-deny with its allowed flows; (e) workload identity; (f) secrets from the secret store; (g) scanned; (h) signed; (i) every CRITICAL and HIGH threat at the unit's boundaries (§1's map) has `EXISTS` evidence in `THREAT_MODEL.md` or the owner's acceptance | Image assertions (`-003`); pod profile policies (`-009`); NetworkPolicy tests (`-010`); identity modules (`-016`); secret delivery (`-018`); scans (`-006`); signatures (`-007`); the threat register's rows (`ThreatModelIsCompleteTest`) |
@@ -105,16 +105,16 @@ Each table carries **Today**, the survey's reading in `PHASE_15_PLAN.md` §15 (`
 | Deployment | Missing: no image, manifest or pipeline stage | — | — | — |
 | Health checks | Partial: liveness `livenessState`, readiness `readinessState,db`, details never; no schema-version check, no startup probe; the actuator on the API port | — | — | — |
 | Logging | Partial: ECS JSON with correlation and trace ids, default-deny redaction; no shipping, retention or central search | — | — | — |
-| Metrics | Partial: the naming contract enforced; about sixty gauge classes read on the scrape thread; scraped from the API port | — | — | — |
+| Metrics | Partial: the naming contract enforced; every gauge read off the scrape thread on one gauge thread per instance, restartable (`P15-TSK-024`, 2026-11-08; read "about sixty gauge classes read on the scrape thread" until then); scraped from the API port | — | — | — |
 | Tracing | Partial: spans recorded and dropped, no exporter | — | — | — |
-| Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run | — | — | — |
+| Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run. Since 2026-11-08 (`P15-TSK-024`): 139 rules in eight files, `platform.yml` adding a rule on `up` per instance, the fleet absent and the gauges stale, its own `promtool test` cases run by hand | — | — | — |
 | Security | Partial: transport guards off loopback, secrets externalised and confined; no image, pod profile, NetworkPolicy, workload identity or secret store | — | — | — |
 | Resource limits | Missing (the connection budget is a startup guard, not a manifest) | — | — | — |
 | Failure handling | Partial: graceful shutdown unasserted; schedules' `stop()` does not wait; consumers join for 10 s | — | — | — |
 | Recovery | Missing | — | — | — |
 | Ownership | Partial: seven alert files cover eight modules (§4); no owner label on an alert, no person or rota | — | — | — |
 | Runbooks | Partial: `OPERATIONS_RUNBOOK.md` §1–§10 domain sections; §11 (platform) planned | — | — | — |
-| Multi-instance | Leaderless by design; 34 `SmartLifecycle` components (32 schedules, the accounting gauge refresher, the inbox consumers), guarded by `NoSingleInstanceAssumptionRulesTest`; the deployed fleet not yet rehearsed | — | — | — |
+| Multi-instance | Leaderless by design; 34 `SmartLifecycle` components (32 schedules, the gauge refresher - accounting's until `P15-TSK-024` made it every gauge's, 2026-11-08 - the inbox consumers), guarded by `NoSingleInstanceAssumptionRulesTest`; the deployed fleet not yet rehearsed | — | — | — |
 
 **Named gaps of `finapp-app`** (open Phase 14 remediation entries; each `PLANNED` with its horizon; none may be read as
 met): `P14-REM-001` (a break's resolution under `MULTI_FACTOR`), `P14-REM-002` (step-up on two approvals),
@@ -449,7 +449,7 @@ Pure calculation with no state, schedule or route: every row is `N/A` by constru
 
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
-| Metrics | Its nine gauges read on the refresher's own thread (`-024` makes the refresher restartable) | — | — | — |
+| Metrics | Its nine gauges read on the instance's gauge thread, the platform's since `P15-TSK-024` made it every gauge's and restartable (2026-11-08; read "the refresher's own thread" until then) | — | — | — |
 | Alerting | `infra/prometheus/rules/accounting.yml`, 32 rules (counted) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | §10 | — | — | — |

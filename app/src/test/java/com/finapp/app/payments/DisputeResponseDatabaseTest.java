@@ -276,6 +276,8 @@ class DisputeResponseDatabaseTest {
         assertThat(standing(com.finapp.payments.DisputeStage.WON, stagesBefore)).isEqualTo(1);
         assertThat(standing(com.finapp.payments.DisputeStage.CHARGED_BACK, stagesBefore)).isZero();
         assertThat(standing(com.finapp.payments.DisputeStage.REPRESENTED, stagesBefore)).isZero();
+        // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(registry, "finapp.payments.dispute");
         assertThat(registry.find("finapp.payments.dispute").tag("stage", "won").gauge().value())
                 .as("the WIRED stage gauge reads the real schema: a number, never NaN")
                 .isNotNaN();
@@ -998,6 +1000,8 @@ class DisputeResponseDatabaseTest {
                     .isEqualTo(before + 2);
             assertThat(reading.oldestAgeSeconds())
                     .isGreaterThanOrEqualTo(Duration.ofMinutes(55).toSeconds());
+            // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+            com.finapp.app.telemetry.RefreshedGauges.settle(registry, "finapp.payments.dispute.response.unknown.");
             assertThat(registry.find("finapp.payments.dispute.response.unknown.active").gauge()
                             .value())
                     .as("published eagerly, and a number from a readable database")

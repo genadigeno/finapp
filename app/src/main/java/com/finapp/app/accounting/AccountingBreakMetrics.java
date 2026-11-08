@@ -28,9 +28,9 @@ public final class AccountingBreakMetrics {
 
     private final AccountingGaugeRead<Map<BreakType, Long>> read;
 
-    public AccountingBreakMetrics(AccountingBreaks breaks, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
+    public AccountingBreakMetrics(AccountingBreaks breaks, GlSnapshots snapshots, Clock clock, MeterRegistry registry) {
         Objects.requireNonNull(breaks, "breaks");
-        this.read = new AccountingGaugeRead<>("The open accounting breaks", snapshots, refresher, clock, MIN_REFRESH,
+        this.read = new AccountingGaugeRead<>("The open accounting breaks", snapshots, clock, MIN_REFRESH,
                 connection -> Map.copyOf(breaks.openByType(connection)));
         for (BreakType type : BreakType.values()) {
             Gauge.builder(OPEN, () -> open(type))

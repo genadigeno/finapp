@@ -541,6 +541,8 @@ class MerchantPayoutDatabaseTest {
                                         .as("an unknown payout the running instance can see")
                                         .isNotNaN()
                                         .isGreaterThanOrEqualTo(1.0d));
+        // P15-TSK-024: each gauge answers the refresher's last read of it, so ask for the age's now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(meterRegistry, "finapp.merchant.payout.unknown.age");
         assertThat(meterRegistry.get("finapp.merchant.payout.unknown.age").gauge().value())
                 .isNotNaN()
                 .isGreaterThanOrEqualTo(0.0d);

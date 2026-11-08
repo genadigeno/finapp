@@ -465,23 +465,21 @@ class AlertRulesResolveTest {
 
     /**
      * The same resolution as {@code AccountingAlertRulesTest#everySelectorResolvesInARealScrape}, here with a database behind the scrape, so what it adds is what a dead database cannot show: <strong>every read gauge's statement ran on
-     * PostgreSQL and answered a number</strong>. The refresher reads them off the scrape, so this waits for it: a NaN that stays is a statement that does not run, a grant that is missing, or a read past its 2 s, each a real finding. Order free: it reads no state another case leaves, and a count of anything is a number.
+     * PostgreSQL and answered a number</strong>. The gauge refresher reads them off the scrape, so this asks it to read now and waits for it: a NaN that stays is a statement that does not run, a grant that is missing, or a read past its 2 s, each a real finding. Order free: it reads no state another case leaves, and a count of anything is a number.
+     * <strong>On a restarted context too</strong> (PI-014 item 2): this suite's context is cached and paused between classes, and the refresher's executor is now made in its start, so it reads after the restart (`P15-TSK-024`; the hermetic proof is {@code GaugeRefresherTest#startStopStartLeavesEveryReadingANumber}).
      */
     @Test
     @DisplayName("the accounting rules: every selector published on a live instance with the labels it filters on, every read gauge a number and never NaN, the file loaded (P14-TSK-020)")
-    // POSTPONED_ISSUES.md PI-014 (2), P14-DOC-001: red after a paused context restarts - AccountingGaugeRefresher cannot restart, a production defect, not fixed.
+    // POSTPONED_ISSUES.md PI-014 (2), P14-DOC-001: was red after a paused context restarted - AccountingGaugeRefresher could not restart. Fixed by P15-TSK-024 (the platform's GaugeRefresher makes its executor in start()); owed to P15-TST-002's pass.
     void theAccountingRulesResolve() throws InterruptedException {
         List<Map<String, Object>> accounting = rules(ACCOUNTING_RULES, ACCOUNTING_GROUP);
         assertThat(accounting).hasSizeGreaterThan(20);
         Set<String> queried = accounting.stream().map(rule -> String.valueOf(rule.get("expr"))).flatMap(AlertRulesResolveTest::seriesIn)
                 .collect(Collectors.toCollection(TreeSet::new));
         assertThat(publishedSeriesNames()).containsAll(queried);
+        // The reads are the refresher's, off the scrape: ask for them now, and wait.
+        RefreshedGauges.settle(registry, "finapp.accounting.");
         List<RuleEvaluator.Sample> samples = RuleEvaluator.samples(scrape(), Map.of());
-        // The reads are the refresher's, off the scrape: the first ones may still be running. A minute covers nine reads at their 2 s and more.
-        for (int attempt = 0; attempt < 120 && samples.stream().anyMatch(sample -> sample.name().startsWith("finapp_accounting_") && Double.isNaN(sample.value())); attempt++) {
-            Thread.sleep(500);
-            samples = RuleEvaluator.samples(scrape(), Map.of());
-        }
         for (Map<String, Object> rule : accounting) {
             for (String selector : RuleEvaluator.selectorsOf(String.valueOf(rule.get("expr")))) {
                 assertThat(RuleEvaluator.matching(samples, selector)).as("%s reads %s", rule.get("alert"), selector).isNotEmpty();
