@@ -841,3 +841,7 @@ postings (ADR-0071) move money, each in a transaction that names its break.
   — `FX_LEG_DIFFERS` under `AMOUNT_MISMATCH` and `VALUE_DATE_DIFFERS` under
   `TIMING_DIFFERENCE` — and no fifteenth type, by §2's own split criterion; leg base
   severities, with a missing FX leg whose paired leg settled escalating to CRITICAL.
+
+## Read-note: the carried items' ruling (2026-11-08)
+
+The recorded debt that `V015` proves an approved resolution behind a closure, and not that the resolution is the break's own, was not scheduled by C15 (`P15-TSK-002`). It is security-class: only a raw writer holding the application role can exploit it, the threat model's T15. No Phase 15 task closes a schema to raw writers, so the row is the owner's to decide, recommended as a reconciliation remediation entry before production use, beside `PI-016`. The rows carry the disposition, marked **C15** (`P15-TSK-002`, 2026-11-08); this record's decision and status are unchanged.
