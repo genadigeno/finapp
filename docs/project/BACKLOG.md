@@ -28277,7 +28277,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   returned to `X-TSK-008` and the owner (the routed note above; `THREAT_MODEL.md` T13's row for them `REMEDIATION` again).
 - *The owner's decision (2026-11-08), status unchanged:* the offering floor is kept (its cost, a fail-closed refusal of an offer whose decision lapses within a clock step, accepted). `THREAT_MODEL.md` owner item 8 is `P15-TSK-037`; `X-TSK-008`'s five stores are `P15-TSK-038`.
 
-**P15-TSK-035 — The source-join census: every journal entry tied to the domain record that caused it** — `PLANNED`
+**P15-TSK-035 — The source-join census: every journal entry tied to the domain record that caused it** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-025`'s merge, master `c932cfbc`; every dependency `COMPLETE`)
 - **Objective**: a journal entry with no domain record behind it, or whose domain record's amounts differ from its lines,
   is detected on every book - the ten accounts no proof reads among them (`THREAT_MODEL.md` T15, section 5) - and pages
   on its first occurrence.
