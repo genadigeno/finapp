@@ -3,12 +3,20 @@ package com.finapp.app.telemetry;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.testing.RepositoryPaths;
+import java.io.IOException;
 import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.YamlMapFactoryBean;
@@ -19,9 +27,10 @@ import org.springframework.core.io.FileSystemResource;
  * gauge refresher's canary - as written, linked to their runbook section and loaded by the committed configuration.
  * <strong>Whether they fire is {@code promtool}'s</strong>: {@code infra/prometheus/tests/platform.test.yml}, run through
  * the digest-pinned Prometheus image (not yet in CI: `P15-TSK-025`). This suite holds what a build can hold without one:
- * the rule removed, made fleet-wide, demoted or unlinked is red here.
+ * the rule removed, made fleet-wide, demoted or unlinked is red here. And, over every rule file, that every gauge an alert
+ * reads has an unreadable rule, since every gauge can now be NaN (the fix round's guard).
  */
-@DisplayName("the platform rules: up per instance at page, the fleet absent, the gauges stale (P15-TSK-024)")
+@DisplayName("the platform rules: up per instance at page, the fleet absent, the gauges stale, every read gauge seen unreadable (P15-TSK-024)")
 class PlatformAlertRulesTest {
 
     private static final String RULES = "infra/prometheus/rules/platform.yml";
@@ -40,14 +49,63 @@ class PlatformAlertRulesTest {
     }
 
     @Test
-    @DisplayName("a fleet gone from the scrape pages, and a stale refresher tickets on its canary - the meter GaugeRefresherBeans registers, per instance")
+    @DisplayName("a fleet gone from the scrape pages, and a stale refresher tickets on its canary - the meter GaugeRefresherBeans registers, per instance, its stale evaluations counted over 30 minutes, never a NaN held for a duration that a thread behind but not stuck never gives")
     void theFleetAbsentAndTheGaugesStale() {
         Map<String, Map<String, Object>> rules = rules();
         assertThat(String.valueOf(rules.get("FinappTargetsAbsent").get("expr")).strip()).isEqualTo("absent(up{job=\"finapp\"})");
         assertThat(severity(rules.get("FinappTargetsAbsent"))).isEqualTo("page");
         String canary = GaugeRefresherBeans.REFRESHED.replace('.', '_');
-        assertThat(String.valueOf(rules.get("GaugesStale").get("expr")).strip()).isEqualTo(canary + " != " + canary);
+        assertThat(String.valueOf(rules.get("GaugesStale").get("expr")).strip())
+                .isEqualTo("sum_over_time((" + canary + " != bool " + canary + ")[30m:15s]) > 6");
         assertThat(severity(rules.get("GaugesStale"))).isEqualTo("ticket");
+    }
+
+    /** {@code x != x}, or {@code x != bool x}: true only for NaN. */
+    private static final Pattern NAN_CHECK = Pattern.compile("(finapp_[a-z0-9_]+)(\\{[^}]*})?\\s*!=\\s*(?:bool\\s+)?\\1\\b");
+    private static final Pattern SERIES = Pattern.compile("\\bfinapp_[a-z0-9_]+");
+    /** A counter's or a histogram's series: never NaN, so never needs an unreadable rule. */
+    private static final Pattern NOT_A_GAUGE = Pattern.compile(".*_(total|count|sum|bucket)$");
+    /**
+     * A sweep's switch, {@code enabled ? 1 : 0} from its configuration: it reads no database, so its only no-value is the
+     * refresher's - before its first read, or once an ask has waited stale-after - which is exactly the canary's, and
+     * {@code GaugesStale} counts that per instance.
+     */
+    private static final Pattern CONFIGURATION_CONSTANT = Pattern.compile("finapp_.+_sweeper_enabled");
+
+    @Test
+    @DisplayName("every gauge an alert of any rule file reads has an unreadable rule (x != x) in some rule file, or is a sweep's configuration switch, whose only NaN is the refresher's and GaugesStale's - P15-TSK-024's fix round: since every gauge reads off the scrape, every gauge can be NaN, and a threshold never compares a NaN")
+    void everyGaugeAnAlertReadsCanBeSeenUnreadable() throws IOException {
+        Map<String, Set<String>> readBy = new TreeMap<>();
+        Set<String> unreadable = new TreeSet<>();
+        Path directory = RepositoryPaths.locate(RULES).getParent();
+        try (Stream<Path> files = Files.list(directory)) {
+            for (Path file : files.filter(path -> path.getFileName().toString().endsWith(".yml")).sorted().toList()) {
+                YamlMapFactoryBean factory = new YamlMapFactoryBean();
+                factory.setResources(new FileSystemResource(file));
+                for (Object group : (List<?>) factory.getObject().get("groups")) {
+                    for (Object node : (List<?>) map(group).get("rules")) {
+                        Map<String, Object> rule = map(node);
+                        String expr = String.valueOf(rule.get("expr"));
+                        Matcher nan = NAN_CHECK.matcher(expr);
+                        while (nan.find()) {
+                            unreadable.add(nan.group(1));
+                        }
+                        Matcher series = SERIES.matcher(expr.replaceAll("\"[^\"]*\"", "\"\""));
+                        while (series.find()) {
+                            readBy.computeIfAbsent(series.group(), name -> new TreeSet<>())
+                                    .add(file.getFileName() + " " + rule.get("alert"));
+                        }
+                    }
+                }
+            }
+        }
+        readBy.keySet().removeIf(name -> NOT_A_GAUGE.matcher(name).matches() || CONFIGURATION_CONSTANT.matcher(name).matches());
+        assertThat(readBy).as("not vacuous: the gauges the fix round found uncovered are read")
+                .containsKeys("finapp_fx_proof", "finapp_payments_outbound_unknown_age", "finapp_reconciliation_break_age",
+                        "finapp_ledger_negative_positions", GaugeRefresherBeans.REFRESHED.replace('.', '_'));
+        assertThat(readBy).allSatisfy((gauge, alerts) -> assertThat(unreadable)
+                .as("%s, read by %s, has an unreadable rule - or every alert on it is blind while it is NaN", gauge, alerts)
+                .contains(gauge));
     }
 
     @Test

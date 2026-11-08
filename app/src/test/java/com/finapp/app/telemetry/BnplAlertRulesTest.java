@@ -174,7 +174,8 @@ class BnplAlertRulesTest {
         }
 
         // Every gauge read from the database, unreadable: the unreadable rule alone - no threshold rule reads NaN.
-        for (String gauge : List.of(THREE_WAY, SUBLEDGER, REPLAY, ACCRUAL_LAG, AWAITING_AGE, CONTESTED_AGE)) {
+        // The negative merchant payables too (P15-TSK-024's fix round): MerchantPayableNegative compares them.
+        for (String gauge : List.of(THREE_WAY, SUBLEDGER, REPLAY, ACCRUAL_LAG, AWAITING_AGE, CONTESTED_AGE, NEGATIVE)) {
             List<RuleEvaluator.Sample> unreadable = set(healthy, named(gauge), value -> Double.NaN);
             assertThat(firing(rules, unreadable, unreadable)).as(gauge).containsExactly("BnplGaugesUnreadable");
         }

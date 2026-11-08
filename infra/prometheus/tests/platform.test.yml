@@ -1,7 +1,9 @@
 # promtool unit tests for infra/prometheus/rules/platform.yml (P15-TSK-024). Run from the repository root:
 #   docker run --rm --pull=never -v "$PWD/infra/prometheus:/prometheus-rules:ro" -w /prometheus-rules/tests \
 #     --entrypoint promtool prom/prometheus@sha256:<the v3.14.0 digest> test rules platform.test.yml
-# Two instances throughout: the multi-instance case is that only the down one fires, and a healthy fleet fires nothing.
+# Two instances in every case but the last: the multi-instance case is that only the down, stuck or behind one fires, and a
+# healthy fleet fires nothing. GaugesStale's cases (P15-TSK-024's fix round) cover a stuck refresher, one behind by a long pass,
+# one a step past its bound, and a healthy one's own slow start and burst, which must not fire.
 
 rule_files:
   - ../rules/platform.yml
@@ -78,7 +80,8 @@ tests:
               summary: "No finapp instance is being scraped"
               description: "No target of the finapp job exists for 5 minutes, so every finapp alert is blind. See OPERATIONS_RUNBOOK.md section 11.8."
 
-  # Instance b's refresher stops answering at minute 1 (its canary NaN); a's keeps answering. b alone, after five minutes.
+  # Instance b's refresher stops answering (a read that never returns): its canary NaN from minute 1 at every evaluation;
+  # a's keeps answering. The seventh stale evaluation is at 2m30s, so b alone fires five minutes later.
   - interval: 15s
     input_series:
       - series: 'finapp_gauges_refreshed{job="finapp", instance="a:8081"}'
@@ -92,6 +95,9 @@ tests:
         exp_alerts: []
       - eval_time: 7m
         alertname: GaugesStale
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: GaugesStale
         exp_alerts:
           - exp_labels:
               severity: ticket
@@ -99,4 +105,79 @@ tests:
               instance: b:8081
             exp_annotations:
               summary: "The gauges of b:8081 are stale"
-              description: "Its gauge refresher has not answered for 5 minutes past its bound, so every finapp gauge it publishes is NaN. See OPERATIONS_RUNBOOK.md section 11.8."
+              description: "Its gauge refresher left asks unanswered past their bound for over 90 s of the last 30 minutes, so its finapp gauges have been going NaN. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # Instance b's refresher behind but not stuck (the runbook's database in trouble: about sixty reads each waiting out the
+  # pool's 5 s, a pass of about 300 s): each answer comes a pass after its ask, so the canary is a number for 135 s and NaN
+  # for 180 s, over and over. Never NaN for five minutes together, so a rule holding NaN for 5m never fired here; the
+  # seventh stale evaluation is at 3m45s, and b alone fires five minutes later.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="a:8081"}'
+        values: '1x62'
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="b:8081"}'
+        values: '1x8 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x8 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x8 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: GaugesStale
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: GaugesStale
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+            exp_annotations:
+              summary: "The gauges of b:8081 are stale"
+              description: "Its gauge refresher left asks unanswered past their bound for over 90 s of the last 30 minutes, so its finapp gauges have been going NaN. See OPERATIONS_RUNBOOK.md section 11.8."
+      - eval_time: 15m
+        alertname: GaugesStale
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+            exp_annotations:
+              summary: "The gauges of b:8081 are stale"
+              description: "Its gauge refresher left asks unanswered past their bound for over 90 s of the last 30 minutes, so its finapp gauges have been going NaN. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # Instance b's refresher a step past its bound: a pass of about 150 s, so one stale evaluation in every eleven - already
+  # enough to restart every threshold rule's for on that instance. The seventh is at 19m; b alone fires at 24m.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="a:8081"}'
+        values: '1x120'
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="b:8081"}'
+        values: '1x9 NaN 1x9 NaN 1x9 NaN 1x9 NaN 1x9 NaN 1x9 NaN 1x9 NaN 1x9 NaN 1x9 NaN 1x9 NaN 1x9 NaN'
+    alert_rule_test:
+      - eval_time: 23m
+        alertname: GaugesStale
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: GaugesStale
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+            exp_annotations:
+              summary: "The gauges of b:8081 are stale"
+              description: "Its gauge refresher left asks unanswered past their bound for over 90 s of the last 30 minutes, so its finapp gauges have been going NaN. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # A healthy refresher's own NaN: a start whose first reads took a minute (four evaluations before the canary's first
+  # read) and one 30 s burst later - six stale evaluations in 30 minutes, never more: no ticket.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN 1x39 NaN NaN 1x73'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: GaugesStale
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: GaugesStale
+        exp_alerts: []
+      - eval_time: 29m
+        alertname: GaugesStale
+        exp_alerts: []

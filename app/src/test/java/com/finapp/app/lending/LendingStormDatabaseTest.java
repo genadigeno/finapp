@@ -1391,6 +1391,9 @@ class LendingStormDatabaseTest {
             softly.assertThat(on.beans().getBean(ExposureCensusMetrics.class).readNow().failing())
                     .as("C18 %s exposure census failing", on.name()).isZero();
             for (String sweeper : List.of("origination", "disbursement", "payout", "servicing")) {
+                // P15-TSK-024: the switch answers the gauge refresher's last read, none yet under the test contexts' first
+                // reads off, so ask it to read now.
+                com.finapp.app.telemetry.RefreshedGauges.settle(on.meters(), "finapp.lending." + sweeper + ".sweeper.enabled");
                 softly.assertThat(gauge(on, "finapp.lending." + sweeper + ".sweeper.enabled"))
                         .as("C18 %s runs the %s sweep", on.name(), sweeper).isEqualTo(1.0);
             }

@@ -1,0 +1,189 @@
+# promtool unit tests for FxGaugesUnreadable in infra/prometheus/rules/fx.yml (P15-TSK-024's fix round,
+# 2026-11-08). Run from the repository root, as platform.test.yml says:
+#   ... --entrypoint promtool prom/prometheus@sha256:<the v3.14.0 digest> test rules fx.test.yml
+# Two instances: every gauge the rule names NaN on b (its read failing, or its refresher behind), numbers on a. One
+# alert per gauge, on b alone, its series named in `gauge` - each leg present, every label of a series folded into it.
+
+rule_files:
+  - ../rules/fx.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'finapp_fx_cover_unknown_age_seconds{job="finapp", instance="a:8081", provider="fx-sim-a"}'
+        values: '0x16'
+      - series: 'finapp_fx_cover_unknown_age_seconds{job="finapp", instance="b:8081", provider="fx-sim-a"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_fx_cover_unknown_age_seconds{job="finapp", instance="a:8081", provider="fx-sim-b"}'
+        values: '0x16'
+      - series: 'finapp_fx_cover_unknown_age_seconds{job="finapp", instance="b:8081", provider="fx-sim-b"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_fx_cover_open_age_seconds{job="finapp", instance="a:8081", provider="fx-sim-a"}'
+        values: '0x16'
+      - series: 'finapp_fx_cover_open_age_seconds{job="finapp", instance="b:8081", provider="fx-sim-a"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_fx_proof{job="finapp", instance="a:8081", purpose="FX_POSITION"}'
+        values: '0x16'
+      - series: 'finapp_fx_proof{job="finapp", instance="b:8081", purpose="FX_POSITION"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_fx_proof{job="finapp", instance="a:8081", purpose="FX_SPREAD"}'
+        values: '0x16'
+      - series: 'finapp_fx_proof{job="finapp", instance="b:8081", purpose="FX_SPREAD"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_fx_plan_verdict{job="finapp", instance="a:8081"}'
+        values: '1x16'
+      - series: 'finapp_fx_plan_verdict{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_payments_outbound_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x16'
+      - series: 'finapp_payments_outbound_unknown_age{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_payments_outbound_received_age{job="finapp", instance="a:8081"}'
+        values: '0x16'
+      - series: 'finapp_payments_outbound_received_age{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_crossborder_payment_in_transit_age{job="finapp", instance="a:8081", corridor="EUR-GBP"}'
+        values: '0x16'
+      - series: 'finapp_crossborder_payment_in_transit_age{job="finapp", instance="b:8081", corridor="EUR-GBP"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_kyc_counterparty_review_age_seconds{job="finapp", instance="a:8081"}'
+        values: '0x16'
+      - series: 'finapp_kyc_counterparty_review_age_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_reconciliation_rule_set_missing{job="finapp", instance="a:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_rule_set_missing{job="finapp", instance="b:8081", source="PSP_SIM"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: FxGaugesUnreadable
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: FxGaugesUnreadable
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_fx_cover_unknown_age_seconds
+            exp_annotations:
+              summary: "An FX or cross-border gauge has no value: finapp_fx_cover_unknown_age_seconds"
+              description: "finapp_fx_cover_unknown_age_seconds on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_fx_cover_open_age_seconds
+            exp_annotations:
+              summary: "An FX or cross-border gauge has no value: finapp_fx_cover_open_age_seconds"
+              description: "finapp_fx_cover_open_age_seconds on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_fx_proof
+            exp_annotations:
+              summary: "An FX or cross-border gauge has no value: finapp_fx_proof"
+              description: "finapp_fx_proof on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_fx_plan_verdict
+            exp_annotations:
+              summary: "An FX or cross-border gauge has no value: finapp_fx_plan_verdict"
+              description: "finapp_fx_plan_verdict on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_payments_outbound_unknown_age
+            exp_annotations:
+              summary: "An FX or cross-border gauge has no value: finapp_payments_outbound_unknown_age"
+              description: "finapp_payments_outbound_unknown_age on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_payments_outbound_received_age
+            exp_annotations:
+              summary: "An FX or cross-border gauge has no value: finapp_payments_outbound_received_age"
+              description: "finapp_payments_outbound_received_age on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_crossborder_payment_in_transit_age
+            exp_annotations:
+              summary: "An FX or cross-border gauge has no value: finapp_crossborder_payment_in_transit_age"
+              description: "finapp_crossborder_payment_in_transit_age on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_kyc_counterparty_review_age_seconds
+            exp_annotations:
+              summary: "An FX or cross-border gauge has no value: finapp_kyc_counterparty_review_age_seconds"
+              description: "finapp_kyc_counterparty_review_age_seconds on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_reconciliation_rule_set_missing
+            exp_annotations:
+              summary: "An FX or cross-border gauge has no value: finapp_reconciliation_rule_set_missing"
+              description: "finapp_reconciliation_rule_set_missing on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # Every gauge a number on both instances: nothing.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_fx_cover_unknown_age_seconds{job="finapp", instance="a:8081", provider="fx-sim-a"}'
+        values: '0x16'
+      - series: 'finapp_fx_cover_unknown_age_seconds{job="finapp", instance="b:8081", provider="fx-sim-a"}'
+        values: '0x16'
+      - series: 'finapp_fx_cover_unknown_age_seconds{job="finapp", instance="a:8081", provider="fx-sim-b"}'
+        values: '0x16'
+      - series: 'finapp_fx_cover_unknown_age_seconds{job="finapp", instance="b:8081", provider="fx-sim-b"}'
+        values: '0x16'
+      - series: 'finapp_fx_cover_open_age_seconds{job="finapp", instance="a:8081", provider="fx-sim-a"}'
+        values: '0x16'
+      - series: 'finapp_fx_cover_open_age_seconds{job="finapp", instance="b:8081", provider="fx-sim-a"}'
+        values: '0x16'
+      - series: 'finapp_fx_proof{job="finapp", instance="a:8081", purpose="FX_POSITION"}'
+        values: '0x16'
+      - series: 'finapp_fx_proof{job="finapp", instance="b:8081", purpose="FX_POSITION"}'
+        values: '0x16'
+      - series: 'finapp_fx_proof{job="finapp", instance="a:8081", purpose="FX_SPREAD"}'
+        values: '0x16'
+      - series: 'finapp_fx_proof{job="finapp", instance="b:8081", purpose="FX_SPREAD"}'
+        values: '0x16'
+      - series: 'finapp_fx_plan_verdict{job="finapp", instance="a:8081"}'
+        values: '1x16'
+      - series: 'finapp_fx_plan_verdict{job="finapp", instance="b:8081"}'
+        values: '1x16'
+      - series: 'finapp_payments_outbound_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x16'
+      - series: 'finapp_payments_outbound_unknown_age{job="finapp", instance="b:8081"}'
+        values: '0x16'
+      - series: 'finapp_payments_outbound_received_age{job="finapp", instance="a:8081"}'
+        values: '0x16'
+      - series: 'finapp_payments_outbound_received_age{job="finapp", instance="b:8081"}'
+        values: '0x16'
+      - series: 'finapp_crossborder_payment_in_transit_age{job="finapp", instance="a:8081", corridor="EUR-GBP"}'
+        values: '0x16'
+      - series: 'finapp_crossborder_payment_in_transit_age{job="finapp", instance="b:8081", corridor="EUR-GBP"}'
+        values: '0x16'
+      - series: 'finapp_kyc_counterparty_review_age_seconds{job="finapp", instance="a:8081"}'
+        values: '0x16'
+      - series: 'finapp_kyc_counterparty_review_age_seconds{job="finapp", instance="b:8081"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_rule_set_missing{job="finapp", instance="a:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_rule_set_missing{job="finapp", instance="b:8081", source="PSP_SIM"}'
+        values: '0x16'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: FxGaugesUnreadable
+        exp_alerts: []

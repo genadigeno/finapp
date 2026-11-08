@@ -125,7 +125,9 @@ class AlertRulesResolveTest {
                     // read their own TARGET label.
                     "operation", "reason_code", "kind", "instance", "risk_judging",
                     // P14-TSK-020: the accounting rules select a check's outcome, and group by check, leg, command and definition.
-                    "check", "leg", "command", "definition");
+                    "check", "leg", "command", "definition",
+                    // P15-TSK-024's fix round: FxGaugesUnreadable and ReconciliationGaugesUnreadable group by job and instance.
+                    "job");
 
     /** Every series PHASE_8_PLAN section 15 says is alerted, in its published form. */
     private static final Set<String> ALERTED_SERIES =
@@ -562,7 +564,9 @@ class AlertRulesResolveTest {
         Map<String, Long> found = new TreeMap<>();
         for (Map<String, Object> rule : rules()) {
             String expr = String.valueOf(rule.get("expr")).strip();
-            if (!expr.contains("finapp_reconciliation_break_age")) {
+            // ReconciliationGaugesUnreadable (P15-TSK-024's fix round) reads the break age for NaN, no threshold and no severity.
+            if (!expr.contains("finapp_reconciliation_break_age")
+                    || expr.contains("finapp_reconciliation_break_age != finapp_reconciliation_break_age")) {
                 continue;
             }
             Matcher severity = SEVERITY_SELECTOR.matcher(expr);

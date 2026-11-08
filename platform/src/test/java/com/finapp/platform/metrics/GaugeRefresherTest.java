@@ -203,6 +203,26 @@ class GaugeRefresherTest {
         clock.advance(Duration.ofHours(-3));
         reading.current();
         awaitValue(reading, 2.0);
+
+        // An ask outstanding when the clock steps back: its age is negative, read as "not within", so no value until a
+        // read completes - never the last number kept until time catches up with the ask.
+        AtomicInteger reads = new AtomicInteger();
+        CountDownLatch inTheRead = new CountDownLatch(1);
+        RefreshedReading outstanding = refresher.track("an outstanding reading", () -> {
+            if (reads.incrementAndGet() == 2) {
+                inTheRead.countDown();
+                await(release);
+            }
+            return 9;
+        });
+        awaitValue(outstanding, 9.0);
+        clock.advance(FLOOR);
+        assertThat(outstanding.current()).as("past its floor: it asks, and its last value stands").isEqualTo(9.0);
+        assertThat(inTheRead.await(WAIT.toSeconds(), TimeUnit.SECONDS)).as("the read is in, on the one thread").isTrue();
+        clock.advance(Duration.ofHours(-3));
+        assertThat(outstanding.current()).as("the clock stepped back under an unanswered ask: no value").isNaN();
+        release.countDown();
+        awaitValue(outstanding, 9.0);
     }
 
     // ------------------------------------------------------------------ the lifecycle: PI-014 item 2
