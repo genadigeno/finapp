@@ -3094,6 +3094,24 @@ reads the intent's generic `FAILED` or `PROCESSING`, and none of these columns.
 | `payment_capture_hold` | `resolution_key` | `INTERNAL` | The keyed door's idempotency key (`risk.action:<id>`) - an identifier of a risk action, never a note or a reason |
 | `payment_capture_hold` | `resolved_at` | `CONFIDENTIAL` | Dates the resolution - the `held_at` reasoning |
 
+### `payments` - the callback hint - *added by `P15-TSK-036`*
+
+`payments V036`: a callback still to be asked about, for the kinds with no payment row a sweep could find. Operational state,
+never financial truth. No amount, no personal data and nothing the callback claimed: the claim rests encrypted in
+`provider_evidence`. Concluded rows are operational history with no retention sweep yet (routed to `P15-TSK-029`).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `callback_hint` | `id` | `INTERNAL` | An identifier of a thing - one question still to ask |
+| `callback_hint` | `kind` | `INTERNAL` | One of four enumerated kinds, never a value about a person |
+| `callback_hint` | `attempt_id` | `INTERNAL` | An identifier of a thing - the attempt the callback was attributed to; null only for value naming nothing of ours |
+| `callback_hint` | `asked_about` | `CONFIDENTIAL` | One opaque reference: ours, the PSP's dispute reference or the scheme's transaction reference, each shape-checked by its type - the `acquirer_reference` class |
+| `callback_hint` | `received_at` | `INTERNAL` | When the callback arrived, on the database's clock - a scheduling instant, and the refutation bound's origin |
+| `callback_hint` | `next_inquiry_at` | `INTERNAL` | The sweep's permit: a scheduling instant |
+| `callback_hint` | `asked_count` | `INTERNAL` | How many times the sweep has asked - the backoff's exponent |
+| `callback_hint` | `concluded_at` | `INTERNAL` | When the question ended - a scheduling instant |
+| `callback_hint` | `conclusion` | `INTERNAL` | One of five enumerated outcomes, or null while open |
+
 ### `lending` - the interest accrual and the servicing permit - *added by `P11-TSK-016`*
 
 `lending V010`: one row per account and accrued date - the base, the period's exact cumulative interest and what the date
@@ -5416,11 +5434,3 @@ deny-list.
 | Per-level retention periods | Retention is a correctness bound for the idempotency, inbox and outbox tables (`DATA_MIGRATIONS.md` §8-9) and a regulatory one for audit and financial history. Those are different questions with different owners, and folding them into a classification level would answer both wrongly | Phase 15 |
 | Access control per level | There is no authority to authorise against. The database role split (`P0-TSK-022`) is the only access control that exists | `P0-EPIC-10` onward |
 | Classification of Kafka topics, Redis keys, object storage | None exist yet. The register covers the one store that holds data | Phase 3 onward |
-
-### `payments.callback_hint` (`P15-TSK-036`, payments `V036`)
-
-A callback still to be asked about, for the kinds with no payment row a sweep could find. Operational state, never
-financial truth. `asked_about` holds one opaque reference: ours, the PSP's dispute reference or the scheme's transaction
-reference, each shape-checked by its type, the same class as those columns elsewhere in `payments`. No amount, no personal
-data, and nothing the callback claimed: the claim rests encrypted in `provider_evidence`. Concluded rows are operational
-history with no retention sweep yet; `P15-TSK-029`'s policy covers operational tables by class.

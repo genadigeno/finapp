@@ -461,7 +461,7 @@ class SimulatedCardPspAdapterTest {
     }
 
     @Test
-    @DisplayName("a clearing inquiry's other words: not cleared, unrecognised, and every unusable answer indeterminate")
+    @DisplayName("a clearing inquiry's other words: not cleared, unrecognised; a 200 we cannot read is unreadable, and no answer indeterminate")
     void clearingInquiryIsTotal() {
         stubClearing("{\"status\":\"not_cleared\"}");
         assertThat(adapter().queryClearing(OUR_REF).verdict()).isEqualTo(ClearingAnswer.Verdict.NOT_CLEARED);
@@ -471,8 +471,11 @@ class SimulatedCardPspAdapterTest {
 
         stubClearing("{\"status\":\"cleared\",\"arn\":\"arn_1\"}");
         assertThat(adapter().queryClearing(OUR_REF).verdict())
-                .as("cleared without both references is unactionable")
-                .isEqualTo(ClearingAnswer.Verdict.INDETERMINATE);
+                .as("cleared without both references is an answer we cannot read")
+                .isEqualTo(ClearingAnswer.Verdict.UNREADABLE);
+
+        stubClearing("{\"status\":\"a_word_nobody_mapped\"}");
+        assertThat(adapter().queryClearing(OUR_REF).verdict()).isEqualTo(ClearingAnswer.Verdict.UNREADABLE);
 
         provider.failsWith(
                 SimulatedCardPspAdapter.OPERATIONS_PATH + OUR_REF.value() + SimulatedCardPspAdapter.CLEARING_SUFFIX, 404);
@@ -501,26 +504,29 @@ class SimulatedCardPspAdapterTest {
     }
 
     @Test
-    @DisplayName("a dispute inquiry is total: unrecognised is the explicit word, and anything unreadable is indeterminate")
+    @DisplayName("a dispute inquiry is total: unrecognised is the explicit word, a 200 we cannot read is unreadable, no answer indeterminate")
     void disputeInquiryIsTotal() {
         stubDispute("{\"status\":\"unrecognised\"}");
         assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.UNRECOGNISED);
 
         stubDispute(CHARGEBACK_BODY.replace("needs_response", "a_stage_nobody_mapped"));
-        assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.INDETERMINATE);
+        assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.UNREADABLE);
 
         stubDispute(CHARGEBACK_BODY.replace("\"1000\"", "\"not-digits\""));
-        assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.INDETERMINATE);
+        assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.UNREADABLE);
+
+        stubDispute(CHARGEBACK_BODY.replace("2026-12-01T00:00:00Z", "next tuesday"));
+        assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.UNREADABLE);
 
         stubDispute(CHARGEBACK_BODY.replace("\"dsp_1\"", "\"dsp_another\""));
         assertThat(adapter().queryDispute(DISPUTE).verdict())
                 .as("an answer about another dispute does not answer this question")
-                .isEqualTo(DisputeAnswer.Verdict.INDETERMINATE);
+                .isEqualTo(DisputeAnswer.Verdict.UNREADABLE);
 
         stubDispute(CHARGEBACK_BODY.replace("\"operation\":\"pay-auth-0192a7b2\",", ""));
         assertThat(adapter().queryDispute(DISPUTE).verdict())
                 .as("a statement that does not say what it contests attributes nothing")
-                .isEqualTo(DisputeAnswer.Verdict.INDETERMINATE);
+                .isEqualTo(DisputeAnswer.Verdict.UNREADABLE);
 
         provider.failsWith(SimulatedCardPspAdapter.DISPUTES_PATH + DISPUTE.value(), 503);
         assertThat(adapter().queryDispute(DISPUTE).verdict()).isEqualTo(DisputeAnswer.Verdict.INDETERMINATE);

@@ -79,7 +79,8 @@ public interface PaymentProvider {
 
     /**
      * Asks the provider whether the capture our reference names has cleared, and under which network references
-     * (`P15-TSK-036`, ADR-0083): what a clearing notice triggers. Read-only, idempotent, and {@link #query}'s totality.
+     * (`P15-TSK-036`, ADR-0083): what a clearing notice triggers. Read-only, idempotent, and {@link #query}'s totality. The
+     * contract is the operation's LATEST presentment, which is how a second presentment is seen ({@link ClearingAnswer}).
      */
     ClearingAnswer queryClearing(ProviderIdempotencyReference ourReference);
 

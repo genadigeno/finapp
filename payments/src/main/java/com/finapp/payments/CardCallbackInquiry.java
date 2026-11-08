@@ -161,6 +161,7 @@ public final class CardCallbackInquiry implements HintedInquiry {
             HintedOutcome outcome = switch (answer.verdict()) {
                 case CLEARED -> recorded(uow, locked, answer, correlation);
                 case NOT_CLEARED, UNRECOGNISED -> refuted("clearing notice", locked.id());
+                case UNREADABLE -> unreadable("clearing inquiry", locked.id());
                 case INDETERMINATE -> HintedOutcome.UNDECIDED;
             };
             retainForAttempt(uow, locked.id(), answer.evidence());
@@ -204,6 +205,7 @@ public final class CardCallbackInquiry implements HintedInquiry {
             HintedOutcome outcome = switch (answer.verdict()) {
                 case FOUND -> applied(uow, attempt, answer, correlation);
                 case UNRECOGNISED -> refuted("dispute notice", attempt.id());
+                case UNREADABLE -> unreadable("dispute inquiry", attempt.id());
                 case INDETERMINATE -> HintedOutcome.UNDECIDED;
             };
             retainForAttempt(uow, attempt.id(), answer.evidence());
@@ -235,10 +237,16 @@ public final class CardCallbackInquiry implements HintedInquiry {
         };
     }
 
+    /** The provider says no. Whether that is final, or its read model lagging, is {@link CallbackHintResolution}'s to judge. */
     private static HintedOutcome refuted(String kind, PaymentAttemptId attempt) {
-        log.warn("The PSP's inquiry denies a signed {} naming attempt {}: nothing moves. A refuted callback is what a"
-                + " compromised webhook key looks like", kind, attempt);
+        log.info("The PSP's inquiry denies a signed {} naming attempt {}: nothing moves", kind, attempt);
         return HintedOutcome.REFUTED;
+    }
+
+    private static HintedOutcome unreadable(String kind, PaymentAttemptId attempt) {
+        log.warn("The PSP answered a {} for attempt {} and we cannot read it: nothing moves, the question stays open and the"
+                + " answer rests as evidence - an integration break", kind, attempt);
+        return HintedOutcome.UNREADABLE;
     }
 
     private static HintedOutcome applied(PaymentOutcomes.Applied applied) {

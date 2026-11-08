@@ -11,8 +11,12 @@ import java.util.UUID;
  */
 public interface CallbackHintStore<T> {
 
-    /** Records a hint, asked about first after {@code firstAsk} unless the door's own inquiry concludes it sooner. */
-    CallbackHint insert(
+    /**
+     * Records a hint, asked about first after {@code firstAsk} unless the door's own inquiry concludes it sooner.
+     *
+     * @return the hint, or empty when the same question already stands open: a fresh event id adds no row and no inquiry
+     */
+    Optional<CallbackHint> insert(
             T unitOfWork, CallbackHint.Kind kind, Optional<PaymentAttemptId> attempt, String askedAbout, Duration firstAsk);
 
     /** The unconcluded hints whose time has come, oldest due first. Lock-free: the permit arbitrates. */
@@ -20,14 +24,23 @@ public interface CallbackHintStore<T> {
 
     /**
      * Stamps the permit forward, conditionally: the winner asks this tick, a losing instance skips. A wire-noise arbiter
-     * among instances, never a money guard (the appliers' conditionals are).
+     * among instances, never a money guard (the appliers' conditionals are). Each renewal doubles the wait from
+     * {@code retryAfter}, up to {@code retryCap}, so a stuck hint costs tens of inquiries rather than thousands.
      *
      * @return whether this call won
      */
-    boolean renewPermit(T unitOfWork, CallbackHint hint, Duration retryAfter);
+    boolean renewPermit(T unitOfWork, CallbackHint hint, Duration retryAfter, Duration retryCap);
 
     /** Concludes the hint, once. A loser of the race changes nothing. */
     boolean conclude(T unitOfWork, UUID hint, HintedOutcome conclusion);
+
+    /**
+     * Concludes as {@code REFUTED}, but only once the hint is older than {@code refuteAfter} on the database's clock: inside
+     * that bound a provider's "no such thing" may be its read model lagging.
+     *
+     * @return whether this call concluded it
+     */
+    boolean concludeRefuted(T unitOfWork, UUID hint, Duration refuteAfter);
 
     /** Concludes as {@code EXPIRED} at most {@code batchSize} hints older than {@code giveUpAfter}. */
     int expire(T unitOfWork, Duration giveUpAfter, int batchSize);

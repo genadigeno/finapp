@@ -608,15 +608,18 @@ class SimulatedInstantSchemeAdapterTest {
     }
 
     @Test
-    @DisplayName("the execution inquiry is total: unrecognised is the explicit word, anything unusable is indeterminate")
+    @DisplayName("the execution inquiry is total: unrecognised is the explicit word, a 200 we cannot read is unreadable, no answer indeterminate")
     void executionInquiryIsTotal() {
         scheme.succeedsWith(EXECUTION_PATH, 200, "{\"status\":\"unrecognised\"}");
         assertThat(adapter().inquireExecution(EXECUTION).verdict()).isEqualTo(ExecutionAnswer.Verdict.UNRECOGNISED);
 
         scheme.succeedsWith(EXECUTION_PATH, 200, "{\"status\":\"accepted\",\"reference\":\"scheme_exec_1\"}");
         assertThat(adapter().inquireExecution(EXECUTION).verdict())
-                .as("an execution with no amount cannot park")
-                .isEqualTo(ExecutionAnswer.Verdict.INDETERMINATE);
+                .as("an execution with no amount is an answer we cannot read")
+                .isEqualTo(ExecutionAnswer.Verdict.UNREADABLE);
+
+        scheme.succeedsWith(EXECUTION_PATH, 200, "{\"status\":\"a_word_nobody_mapped\"}");
+        assertThat(adapter().inquireExecution(EXECUTION).verdict()).isEqualTo(ExecutionAnswer.Verdict.UNREADABLE);
 
         scheme.failsWith(EXECUTION_PATH, 404);
         assertThat(adapter().inquireExecution(EXECUTION).verdict()).isEqualTo(ExecutionAnswer.Verdict.INDETERMINATE);

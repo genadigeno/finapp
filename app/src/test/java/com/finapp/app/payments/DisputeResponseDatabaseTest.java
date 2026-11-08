@@ -1157,10 +1157,9 @@ class DisputeResponseDatabaseTest {
                 chargeback(sale, someDisputeReference(), "needs_response", null)
                         .replace("}", ",\"respondBy\":\"next tuesday\"}");
         assertThat(deliver(unreadable).statusCode()).isEqualTo(204);
-        // The inquiry's statement could not be read: nothing moves, and the hint waits (P15-TSK-036).
         assertThat(registry.find("finapp.payments.webhook").tag("outcome", "unmappable").counter()
                         .count())
-                .isEqualTo(unmappable);
+                .isEqualTo(unmappable + 1);
     }
 
     // -----------------------------------------------------------------

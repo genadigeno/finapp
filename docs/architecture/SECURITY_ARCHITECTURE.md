@@ -389,8 +389,8 @@ connection, and only the answer moves anything: on the card door an authorizatio
 dispute; on the instant door an execution, a rejection, a return, a withdrawal, or value parked in suspense. The webhook keys
 are no longer money-moving credentials: a stolen one can hasten what the platform learns and nothing else. A hint is
 deliberately narrower than a sweep: an answer of "never saw it" or no answer at all adopts nothing and writes no state, and
-a hint re-sends nothing. A signed callback the provider's own inquiry denies is counted on `finapp.payments.webhook`'s
-`unmappable` series, because that is what a stolen webhook key looks like. KYC's callbacks are outside this rule: no money
+a hint re-sends nothing. A signed callback the provider's own inquiry still denies past its bound is counted on `finapp.payments.webhook`'s
+`unmappable` series, because that is what a stolen webhook key looks like; inside the bound the denial may be a lagging read. KYC's callbacks are outside this rule: no money
 rail, and T8's KYC rows stand.
 
 ## Secrets

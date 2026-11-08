@@ -44,19 +44,26 @@ public final class InstantCallbackInquiry implements HintedInquiry {
     public HintedOutcome inquire(CallbackHint hint) {
         Objects.requireNonNull(hint, "hint must not be null");
         return switch (hint.kind()) {
-            case INSTANT_CONCLUDED_EXECUTION -> payIn(hint.requireAttempt(), new EndToEndReference(hint.askedAbout()));
+            case INSTANT_CONCLUDED_EXECUTION -> concludedPayIn(hint.requireAttempt(), new EndToEndReference(hint.askedAbout()));
             case INSTANT_UNATTRIBUTED_EXECUTION -> unattributed(new ProviderReference(hint.askedAbout()));
             default -> throw new IllegalArgumentException("the instant rail does not answer a " + hint.kind() + " hint");
         };
     }
 
-    /**
-     * The pay-in {@code reference} names, waiting or concluded. A concluded row reaches the applier through its stale-source
-     * branch, the one place that judges value arriving on a concluded pay-in, so this inquiry cannot judge it differently.
-     */
+    /** The pay-in {@code reference} names, still waiting at delivery. Its own sweep decides whatever this cannot. */
     public HintedOutcome payIn(PaymentAttemptId attemptId, EndToEndReference reference) {
         Objects.requireNonNull(attemptId, "attemptId must not be null");
         Objects.requireNonNull(reference, "reference must not be null");
+        return askAboutPayIn(attemptId, reference, HintedOutcome.UNDECIDED);
+    }
+
+    /** Value claimed on a pay-in that had concluded. No sweep looks at it, so the scheme's "no such thing" is a refutation. */
+    private HintedOutcome concludedPayIn(PaymentAttemptId attemptId, EndToEndReference reference) {
+        return askAboutPayIn(attemptId, reference, HintedOutcome.REFUTED);
+    }
+
+    private HintedOutcome askAboutPayIn(
+            PaymentAttemptId attemptId, EndToEndReference reference, HintedOutcome whenUnrecognised) {
         PushInquiryAnswer answer = rail.inquireInitiation(reference);
         Correlation correlation = PaymentCreation.resolvedCorrelation();
         boolean noAmount = answer.verdict() == PushInquiryAnswer.Verdict.ACCEPTED && answer.executed().isEmpty();
@@ -65,33 +72,61 @@ public final class InstantCallbackInquiry implements HintedInquiry {
                 retainForAttempt(uow, attemptId, bytes);
                 return null;
             }));
-            return HintedOutcome.UNDECIDED;
+            return answer.verdict() == PushInquiryAnswer.Verdict.UNRECOGNISED ? whenUnrecognised : HintedOutcome.UNDECIDED;
         }
         return transactions.inTransaction(uow -> {
             PaymentAttempt current = attempts.findById(uow, attemptId)
                     .orElseThrow(() -> new PaymentsStorageException("a hinted attempt vanished"));
-            PaymentIntent intent = intents.findById(uow, current.intentId())
-                    .orElseThrow(() -> new IllegalStateException("an attempt row's intent exists: V003's foreign key holds it"));
-            boolean waiting = pushResolvable(current.status());
-            boolean accepted = answer.verdict() == PushInquiryAnswer.Verdict.ACCEPTED;
-            if (!waiting && !accepted) {
-                retainAnswer(uow, Optional.empty(), attemptId, answer);
-                return rejectionOnConcluded(current);
+            if (answer.verdict() == PushInquiryAnswer.Verdict.REJECTED) {
+                if (!pushResolvable(current.status())) {
+                    retainAnswer(uow, Optional.empty(), attemptId, answer);
+                    return rejectionOnConcluded(current);
+                }
+                PaymentIntent intent = intentOf(uow, current);
+                PaymentOutcomes.Applied applied = appliers.applyExecution(
+                        uow, intent.id(), current.id(), current.status(), answer.verdict(), answer.schemeReference(),
+                        answer.settlementCycle(), intent.creditAccount(), intent.amount(), answer.executed(), correlation);
+                retainAnswer(uow, applied.parking(), attemptId, answer);
+                return applied.acting() ? HintedOutcome.ADOPTED : HintedOutcome.CONVERGED;
             }
-            if (!waiting && !appliers.canPark(uow, railId, answer.executed().orElseThrow().currency())) {
-                log.warn("The scheme's inquiry reports an execution on concluded attempt {} in a currency this rail cannot"
-                        + " park; the answer rests as evidence - a break reconciliation must see", attemptId);
-                retainAnswer(uow, Optional.empty(), attemptId, answer);
-                return HintedOutcome.CONTRADICTED;
-            }
-            PaymentOutcomes.Applied applied = appliers.applyExecution(
-                    uow, intent.id(), current.id(),
-                    waiting ? current.status() : PaymentAttemptStatus.AWAITING_PAYER,
-                    answer.verdict(), answer.schemeReference(), answer.settlementCycle(), intent.creditAccount(),
-                    intent.amount(), answer.executed(), correlation);
-            retainAnswer(uow, applied.parking(), attemptId, answer);
-            return applied.acting() || applied.parking().isPresent() ? HintedOutcome.ADOPTED : HintedOutcome.CONVERGED;
+            OnAttempt judged = executionOn(
+                    uow, current, answer.schemeReference(), answer.settlementCycle(), answer.executed(), correlation);
+            retainAnswer(uow, judged.parking(), attemptId, answer);
+            return judged.outcome();
         });
+    }
+
+    /** What an execution the scheme confirmed came to on one of our pay-ins, and the parking it rests in, if any. */
+    private record OnAttempt(HintedOutcome outcome, Optional<java.util.UUID> parking) {}
+
+    /**
+     * An execution the scheme confirmed, on a pay-in of ours, waiting or concluded. A concluded row reaches the applier
+     * through its stale-source branch, the one place that judges value arriving on a concluded pay-in, so no inquiry can judge
+     * it differently.
+     */
+    private OnAttempt executionOn(
+            Connection uow, PaymentAttempt current, Optional<ProviderReference> scheme, Optional<String> cycle,
+            Optional<com.finapp.sharedkernel.money.Money> executed, Correlation correlation) {
+        boolean waiting = pushResolvable(current.status());
+        if (!waiting && !appliers.canPark(uow, railId, executed.orElseThrow().currency())) {
+            log.warn("The scheme's inquiry reports an execution on concluded attempt {} in a currency this rail cannot"
+                    + " park; the answer rests as evidence - a break reconciliation must see", current.id());
+            return new OnAttempt(HintedOutcome.CONTRADICTED, Optional.empty());
+        }
+        PaymentIntent intent = intentOf(uow, current);
+        PaymentOutcomes.Applied applied = appliers.applyExecution(
+                uow, intent.id(), current.id(),
+                waiting ? current.status() : PaymentAttemptStatus.AWAITING_PAYER,
+                PushInquiryAnswer.Verdict.ACCEPTED, scheme, cycle, intent.creditAccount(), intent.amount(), executed,
+                correlation);
+        return new OnAttempt(
+                applied.acting() || applied.parking().isPresent() ? HintedOutcome.ADOPTED : HintedOutcome.CONVERGED,
+                applied.parking());
+    }
+
+    private PaymentIntent intentOf(Connection uow, PaymentAttempt attempt) {
+        return intents.findById(uow, attempt.intentId())
+                .orElseThrow(() -> new IllegalStateException("an attempt row's intent exists: V003's foreign key holds it"));
     }
 
     /** The return a refund row carries on this rail. */
@@ -151,19 +186,34 @@ public final class InstantCallbackInquiry implements HintedInquiry {
         return transactions.inTransaction(uow -> {
             HintedOutcome outcome;
             Optional<java.util.UUID> parkedIn = Optional.empty();
+            Optional<PaymentAttemptId> onAttempt = Optional.empty();
             switch (answer.verdict()) {
                 case UNRECOGNISED -> {
-                    log.warn("The scheme's inquiry denies a signed execution statement naming nothing of ours: nothing parks."
-                            + " A refuted callback is what a compromised webhook key looks like");
+                    log.info("The scheme's inquiry denies a signed execution statement naming nothing of ours: nothing parks");
                     outcome = HintedOutcome.REFUTED;
+                }
+                case UNREADABLE -> {
+                    log.warn("The scheme answered an execution inquiry and we cannot read it: nothing parks, the question stays"
+                            + " open and the answer rests as evidence - an integration break");
+                    outcome = HintedOutcome.UNREADABLE;
                 }
                 case INDETERMINATE -> outcome = HintedOutcome.UNDECIDED;
                 case EXECUTED -> {
-                    if (answer.endToEndReference().filter(reference -> names(uow, reference)).isPresent()) {
-                        // The scheme says this execution carries a reference of ours, so a row of ours explains it and that
-                        // row's own sweep concludes it. Parking would book it twice, or book value that went out as value
-                        // that came in.
-                        log.info("The scheme's inquiry places a claimed execution on a reference of ours; nothing parks");
+                    Optional<PaymentAttempt> onOurPayIn = answer.endToEndReference()
+                            .flatMap(reference -> attempts.findByEndToEndReference(uow, reference));
+                    if (onOurPayIn.isPresent()) {
+                        // The scheme places it on a pay-in of ours. A waiting one takes it through the applier; a concluded
+                        // one is the concluded branch's, which parks it, because no sweep would ever find that row again.
+                        OnAttempt judged = executionOn(
+                                uow, onOurPayIn.get(), answer.schemeReference(), answer.settlementCycle(), answer.executed(),
+                                correlation);
+                        outcome = judged.outcome();
+                        parkedIn = judged.parking();
+                        onAttempt = Optional.of(onOurPayIn.get().id());
+                    } else if (answer.endToEndReference().filter(reference -> namesAReturnOrAWithdrawal(uow, reference)).isPresent()) {
+                        // A row of ours explains it and that row's own sweep concludes it. Parking would book it twice, or book
+                        // value that went out as value that came in.
+                        log.info("The scheme's inquiry places a claimed execution on a return or withdrawal of ours; nothing parks");
                         outcome = HintedOutcome.CONVERGED;
                     } else if (!appliers.canPark(uow, railId, answer.executed().orElseThrow().currency())) {
                         log.warn("The scheme's inquiry confirms an unattributed execution in a currency this rail cannot"
@@ -183,24 +233,23 @@ public final class InstantCallbackInquiry implements HintedInquiry {
                         outcome = parked.acting() ? HintedOutcome.ADOPTED : HintedOutcome.CONVERGED;
                     }
                 }
-                default -> throw new IllegalStateException("an execution answer's verdict is one of the three");
+                default -> throw new IllegalStateException("an execution answer's verdict is one of the four");
             }
             Optional<java.util.UUID> parking = parkedIn;
+            Optional<PaymentAttemptId> subject = onAttempt;
             answer.evidence().ifPresent(bytes -> {
                 if (parking.isPresent()) {
                     evidence.appendForUnmatched(uow, parking.get(), EvidenceKind.QUERY_RESULT, bytes, Instant.now(clock));
                 } else {
-                    evidence.append(
-                            uow, Optional.empty(), Optional.empty(), EvidenceKind.QUERY_RESULT, bytes, Instant.now(clock));
+                    evidence.append(uow, subject, Optional.empty(), EvidenceKind.QUERY_RESULT, bytes, Instant.now(clock));
                 }
             });
             return outcome;
         });
     }
 
-    private boolean names(Connection uow, EndToEndReference reference) {
-        return attempts.findByEndToEndReference(uow, reference).isPresent()
-                || refunds.findByOperationReference(uow, new ProviderIdempotencyReference(reference.value())).isPresent()
+    private boolean namesAReturnOrAWithdrawal(Connection uow, EndToEndReference reference) {
+        return refunds.findByOperationReference(uow, new ProviderIdempotencyReference(reference.value())).isPresent()
                 || withdrawals.findByEndToEndReference(uow, reference).isPresent();
     }
 

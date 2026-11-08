@@ -28364,6 +28364,10 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   kind, the provider double failing any call made inside a transaction. **Owed to `P15-TST-002` (C14)**: every database
   case, among them `PaymentWebhookTransitionDatabaseTest#tenContextsAndASweepApplyOneOutcome`, the entry's counted case,
   and the existing suites whose delivery helpers now also stub the agreeing inquiry.
+  *The review's fix round (2026-11-08):* a denial is believed only past a per-kind bound on the database's clock (disputes
+  2 h, clearing 30 min, executions 15 min); an answer we cannot read is a break at the door and the sweep; a stuck hint backs
+  off (1 min doubling to 6 h); one open hint per kind, reference and attempt; a per-instance bulkhead on the inquiries;
+  value the scheme places on a concluded pay-in of ours reaches the concluded branch.
 
 **P15-TSK-037 — "The latest" by a stamp, outside the close and the terms: a census** — `PLANNED`
 - **Objective**: no single-row read decides anything by ordering on a stamp a stepped clock can reorder, outside the close and the terms (`-033`'s), and a new such read cannot arrive unjudged.

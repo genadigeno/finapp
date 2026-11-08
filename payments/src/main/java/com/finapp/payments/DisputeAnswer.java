@@ -22,7 +22,9 @@ public record DisputeAnswer(
         FOUND,
         /** The PSP explicitly answered that it never saw this reference. */
         UNRECOGNISED,
-        /** Everything else, an unreadable stage or amount included: ask again. */
+        /** A 200 body we cannot read: a new stage word, a changed amount or deadline format. Counted as a break. */
+        UNREADABLE,
+        /** No answer at all: a transport failure, a 404, a 5xx, a truncated body. Ask again. */
         INDETERMINATE
     }
 
@@ -46,6 +48,10 @@ public record DisputeAnswer(
 
     public static DisputeAnswer unrecognised(byte[] evidence) {
         return new DisputeAnswer(Verdict.UNRECOGNISED, Optional.empty(), Optional.empty(), Optional.of(evidence));
+    }
+
+    public static DisputeAnswer unreadable(byte[] evidence) {
+        return new DisputeAnswer(Verdict.UNREADABLE, Optional.empty(), Optional.empty(), Optional.of(evidence));
     }
 
     public static DisputeAnswer indeterminate() {

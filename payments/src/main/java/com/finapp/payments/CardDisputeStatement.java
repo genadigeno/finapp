@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 /**
  * The card PSP's own dispute statement read off the wire (`P15-TSK-036`, {@code INV-PAY-03}): the fields the webhook door
  * read until the inquiry replaced the callback as the source. Total: anything the statement needs and this cannot read is
- * an {@code INDETERMINATE} answer, never half a statement.
+ * an {@code UNREADABLE} answer, never half a statement.
  */
 final class CardDisputeStatement {
 
@@ -37,12 +37,12 @@ final class CardDisputeStatement {
         Optional<DisputeStage> stage = value(text, STAGE).flatMap(CardDisputeVocabulary::stage);
         Optional<Money> amount = amount(text);
         if (operation.isEmpty() || !aboutAsked || stage.isEmpty() || amount.isEmpty()) {
-            return DisputeAnswer.indeterminate(received);
+            return DisputeAnswer.unreadable(received);
         }
         Optional<Optional<Money>> fee = fee(text, amount.get());
         Optional<Optional<Instant>> respondBy = respondBy(text, stage.get());
         if (fee.isEmpty() || respondBy.isEmpty()) {
-            return DisputeAnswer.indeterminate(received);
+            return DisputeAnswer.unreadable(received);
         }
         try {
             return DisputeAnswer.found(
@@ -58,7 +58,7 @@ final class CardDisputeStatement {
                     received);
         } catch (IllegalArgumentException incoherent) {
             // A fee on an inquiry: the statement contradicts itself, so it is not knowledge.
-            return DisputeAnswer.indeterminate(received);
+            return DisputeAnswer.unreadable(received);
         }
     }
 

@@ -8,8 +8,11 @@ import java.util.Optional;
  * clearing notice triggers, asked over the provider credential. Only {@link Verdict#CLEARED} carries the network's
  * references, and only it records anything; the callback's own references are never read.
  *
- * <p>Total, like {@link QueryAnswer}: a 404, a 5xx, a truncated body and a cleared answer missing either reference are all
- * {@link Verdict#INDETERMINATE}.
+ * <p>Total, like {@link QueryAnswer}: a 404, a 5xx and a truncated body are {@link Verdict#INDETERMINATE}, and a 200 nobody
+ * can read is {@link Verdict#UNREADABLE}.
+ *
+ * <p><strong>The contract, and its limit:</strong> the PSP answers the operation's latest presentment. A PSP that answered only
+ * the first would hide a second presentment from this inquiry; the settlement file's line is then what shows it.
  */
 public record ClearingAnswer(
         Verdict verdict,
@@ -25,7 +28,9 @@ public record ClearingAnswer(
         NOT_CLEARED,
         /** The PSP explicitly answered that it never saw this reference. */
         UNRECOGNISED,
-        /** Everything else: ask again. */
+        /** A 200 body we cannot read: an unknown word, or a clearing missing a reference. Counted as a break. */
+        UNREADABLE,
+        /** No answer at all: a transport failure, a 404, a 5xx, a truncated body. Ask again. */
         INDETERMINATE
     }
 
@@ -54,6 +59,10 @@ public record ClearingAnswer(
 
     public static ClearingAnswer unrecognised(byte[] evidence) {
         return new ClearingAnswer(Verdict.UNRECOGNISED, Optional.empty(), Optional.empty(), Optional.of(evidence));
+    }
+
+    public static ClearingAnswer unreadable(byte[] evidence) {
+        return new ClearingAnswer(Verdict.UNREADABLE, Optional.empty(), Optional.empty(), Optional.of(evidence));
     }
 
     public static ClearingAnswer indeterminate() {

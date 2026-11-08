@@ -87,6 +87,9 @@ public class InstantCallbackService {
     private final RefundStore<Connection> refunds;
     private final WithdrawalStore<Connection> withdrawals;
 
+    /** At most so many inquiries at once on this instance's request threads; a refused one is left to the sweep. */
+    private final CallbackInquiryBulkhead bulkhead;
+
     public InstantCallbackService(
             WebhookSignature instantWebhookSignature,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
@@ -101,7 +104,8 @@ public class InstantCallbackService {
             CallbackHintResolution callbackHintResolution,
             RailId railId,
             RefundStore<Connection> refundStore,
-            WithdrawalStore<Connection> withdrawalStore) {
+            WithdrawalStore<Connection> withdrawalStore,
+            CallbackInquiryBulkhead callbackInquiryBulkhead) {
         this.signature =
                 Objects.requireNonNull(
                         instantWebhookSignature, "instantWebhookSignature must not be null");
@@ -127,6 +131,9 @@ public class InstantCallbackService {
         this.refunds = Objects.requireNonNull(refundStore, "refundStore must not be null");
         this.withdrawals =
                 Objects.requireNonNull(withdrawalStore, "withdrawalStore must not be null");
+        this.bulkhead =
+                Objects.requireNonNull(
+                        callbackInquiryBulkhead, "callbackInquiryBulkhead must not be null");
     }
 
     /**
@@ -235,11 +242,12 @@ public class InstantCallbackService {
                                                 if (planned instanceof Planned.Durable durable) {
                                                     hint[0] =
                                                             hints.insert(
-                                                                    uow,
-                                                                    durable.kind(),
-                                                                    durable.attempt(),
-                                                                    durable.askedAbout(),
-                                                                    hintResolution.firstAsk());
+                                                                            uow,
+                                                                            durable.kind(),
+                                                                            durable.attempt(),
+                                                                            durable.askedAbout(),
+                                                                            hintResolution.firstAsk())
+                                                                    .orElse(null);
                                                 }
                                             });
                             retain(
@@ -341,12 +349,20 @@ public class InstantCallbackService {
      */
     @SuppressWarnings("try") // The Scope is used for its close side effect.
     private HintedOutcome effect(Planned planned, Optional<CallbackHint> hint) {
+        if (planned instanceof Planned.Nothing) {
+            return HintedOutcome.UNDECIDED;
+        }
+        if (!bulkhead.tryEnter()) {
+            log.info("Too many hinted inquiries are running on this instance; this one is left to the sweep");
+            return HintedOutcome.UNDECIDED;
+        }
         try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
             return switch (planned) {
                 case Planned.PayIn named -> inquiry.payIn(named.attempt(), named.reference());
                 case Planned.ReturnPayment named -> inquiry.returnPayment(named.refund());
                 case Planned.WithdrawalOutcome named -> inquiry.withdrawal(named.withdrawal());
-                case Planned.Durable durable -> hintResolution.resolve(hint.orElseThrow());
+                // No hint means the same question already stands open: its next ask answers this delivery too.
+                case Planned.Durable durable -> hint.map(hintResolution::resolve).orElse(HintedOutcome.UNDECIDED);
                 case Planned.Nothing nothing -> HintedOutcome.UNDECIDED;
             };
         } catch (RuntimeException failure) {
@@ -355,6 +371,8 @@ public class InstantCallbackService {
                     "The inquiry an instant confirmation triggered failed: {}; the sweep decides",
                     failure.getClass().getSimpleName());
             return HintedOutcome.UNDECIDED;
+        } finally {
+            bulkhead.exit();
         }
     }
 

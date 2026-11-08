@@ -97,6 +97,8 @@ class PaymentWebhookTransitionDatabaseTest {
         registry.add("finapp.payments.sweeper.unknown-age", () -> "PT0.001S");
         registry.add("finapp.payments.callback-hint.first-ask", () -> "PT0.001S");
         registry.add("finapp.payments.callback-hint.retry-after", () -> "PT0.001S");
+        // Past its refutation bound at once, so a denial is final in the case that asserts it.
+        registry.add("finapp.payments.callback-hint.refute-after.clearing", () -> "PT0.001S");
     }
 
     @BeforeEach
@@ -239,6 +241,77 @@ class PaymentWebhookTransitionDatabaseTest {
                 .isEqualTo(arn + "|" + nti);
         assertThat(oneString("SELECT conclusion FROM payments.callback_hint WHERE attempt_id = ?", delayed.attemptId()))
                 .isEqualTo("ADOPTED");
+    }
+
+    @Test
+    @DisplayName("a stuck hint's permit doubles each time it is renewed, up to its cap, on the database's clock; a second"
+            + " notice while the first stands open adds no row and no inquiry")
+    void aStuckHintBacksOffAndAnOpenQuestionCollapses() throws Exception {
+        Flow stuck = capturedFlow();
+        String inquiry = SimulatedCardPspAdapter.OPERATIONS_PATH + stuck.captureReference()
+                + SimulatedCardPspAdapter.CLEARING_SUFFIX;
+        provider.isUnavailable(inquiry);
+
+        deliverRaw(clearingBody(someEvent(), stuck.captureReference(), "arn-a-" + suffix(), "nti-a-" + suffix()));
+        deliverRaw(clearingBody(someEvent(), stuck.captureReference(), "arn-b-" + suffix(), "nti-b-" + suffix()));
+
+        assertThat(count("SELECT count(*) FROM payments.callback_hint WHERE attempt_id = ?", stuck.attemptId()))
+                .as("one open question, however many event ids restate it")
+                .isEqualTo(1);
+        assertThat(provider.requestCount(inquiry)).as("the second notice asks nothing").isEqualTo(1);
+
+        java.util.List<Long> waits = new java.util.ArrayList<>();
+        for (int renewal = 0; renewal < 3; renewal++) {
+            try (Connection app = DatabaseRoles.application()) {
+                com.finapp.payments.CallbackHint hint =
+                        callbackHints.findDue(app, 500).stream()
+                                .filter(due -> due.attempt().map(a -> a.value().equals(stuck.attemptId())).orElse(false))
+                                .findFirst()
+                                .orElseGet(() -> stuckHint(app, stuck.attemptId()));
+                assertThat(callbackHints.renewPermit(
+                                app, hint, Duration.ofMinutes(1), Duration.ofMinutes(3)))
+                        .isTrue();
+                waits.add(secondsUntilNextInquiry(app, stuck.attemptId()));
+            }
+        }
+        assertThat(waits.get(0)).as("one minute").isBetween(50L, 61L);
+        assertThat(waits.get(1)).as("doubled").isBetween(110L, 121L);
+        assertThat(waits.get(2)).as("capped").isBetween(170L, 181L);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.finapp.payments.CallbackHintStore<Connection> callbackHints;
+
+    /** A hint the test has already pushed past "due" is read directly. */
+    private static com.finapp.payments.CallbackHint stuckHint(Connection app, UUID attempt) {
+        try (PreparedStatement read = app.prepareStatement(
+                "SELECT id, asked_about, next_inquiry_at FROM payments.callback_hint WHERE attempt_id = ?"
+                        + " AND concluded_at IS NULL")) {
+            read.setObject(1, attempt);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return new com.finapp.payments.CallbackHint(
+                        row.getObject(1, UUID.class),
+                        com.finapp.payments.CallbackHint.Kind.CARD_CLEARING,
+                        java.util.Optional.of(com.finapp.payments.PaymentAttemptId.of(attempt)),
+                        row.getString(2),
+                        row.getTimestamp(3).toInstant());
+            }
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    private static long secondsUntilNextInquiry(Connection app, UUID attempt) throws SQLException {
+        try (PreparedStatement read = app.prepareStatement(
+                "SELECT extract(epoch FROM next_inquiry_at - statement_timestamp())::bigint FROM payments.callback_hint"
+                        + " WHERE attempt_id = ? AND concluded_at IS NULL")) {
+            read.setObject(1, attempt);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getLong(1);
+            }
+        }
     }
 
     private int deliverUntilAcknowledged(String delivery) throws Exception {

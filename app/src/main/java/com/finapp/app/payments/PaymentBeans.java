@@ -1344,7 +1344,8 @@ public class PaymentBeans {
             TransactionRunner paymentTransactionRunner,
             com.finapp.payments.CardCallbackInquiry cardCallbackInquiry,
             com.finapp.payments.CallbackHintStore<Connection> callbackHintStore,
-            com.finapp.payments.CallbackHintResolution callbackHintResolution) {
+            com.finapp.payments.CallbackHintResolution callbackHintResolution,
+            CallbackInquiryBulkhead callbackInquiryBulkhead) {
         return new PaymentWebhookService(
                 webhookSignature,
                 providerEvidenceStore,
@@ -1359,12 +1360,23 @@ public class PaymentBeans {
                 callbackHintStore,
                 callbackHintResolution,
                 // The rail this door serves - bound HERE (INV-RAIL-01).
-                SimulatedCardPspAdapter.RAIL.id());
+                SimulatedCardPspAdapter.RAIL.id(),
+                callbackInquiryBulkhead);
     }
 
     // ------------------------------------------------------------------
     // Callbacks as hints (P15-TSK-036, ADR-0083 decision 4).
     // ------------------------------------------------------------------
+
+    /**
+     * At most this many hinted inquiries at once per instance, across both doors, so a slow provider cannot take the HTTP
+     * pool's threads (Spring Boot's default is 200). A refused inquiry is skipped and the sweep asks.
+     */
+    @Bean
+    CallbackInquiryBulkhead callbackInquiryBulkhead(
+            @Value("${finapp.payments.callback-hint.inquiry-permits:16}") int permits) {
+        return new CallbackInquiryBulkhead(permits);
+    }
 
     @Bean
     com.finapp.payments.CallbackHintStore<Connection> callbackHintStore(IdGenerator idGenerator) {
@@ -1453,9 +1465,14 @@ public class PaymentBeans {
     }
 
     /**
-     * The door's immediate inquiry and the leaderless sweep over the durable hints, one path. The first ask outlasts
-     * the door's own inquiry, the provider's timeout included, so the sweep does not routinely race it; giving up
-     * outlasts any provider outage the platform would ride out rather than page on.
+     * The door's immediate inquiry and the leaderless sweep over the durable hints, one path. The first ask outlasts the
+     * door's own inquiry, the provider's timeout included, so the sweep does not routinely race it. The wait doubles from
+     * {@code retry-after} up to {@code retry-cap}, so a hint stuck for its seven days costs about thirty-six inquiries.
+     *
+     * <p>{@code refute-after} is how long a provider's "no such thing" is treated as possibly a lagging read. A dispute's is
+     * longest because nothing else can ever create its row, while the respond-by deadline runs in days. A clearing moves no
+     * money and settlement reconciliation catches it. The instant rail declares a final answer within ninety seconds, so its
+     * bound is ten times that.
      */
     @Bean
     com.finapp.payments.CallbackHintResolution callbackHintResolution(
@@ -1463,16 +1480,33 @@ public class PaymentBeans {
             org.springframework.beans.factory.ObjectProvider<com.finapp.payments.HintedInquiry> hintedInquiries,
             @Value("${finapp.payments.callback-hint.first-ask:PT1M}") java.time.Duration firstAsk,
             @Value("${finapp.payments.callback-hint.retry-after:PT1M}") java.time.Duration retryAfter,
+            @Value("${finapp.payments.callback-hint.retry-cap:PT6H}") java.time.Duration retryCap,
             @Value("${finapp.payments.callback-hint.give-up-after:P7D}") java.time.Duration giveUpAfter,
+            @Value("${finapp.payments.callback-hint.refute-after.dispute:PT2H}") java.time.Duration refuteDispute,
+            @Value("${finapp.payments.callback-hint.refute-after.clearing:PT30M}") java.time.Duration refuteClearing,
+            @Value("${finapp.payments.callback-hint.refute-after.execution:PT15M}") java.time.Duration refuteExecution,
             @Value("${finapp.payments.callback-hint.batch:50}") int batchSize,
             IdGenerator idGenerator,
-            TransactionRunner paymentTransactionRunner) {
+            TransactionRunner paymentTransactionRunner,
+            com.finapp.app.telemetry.PaymentMeters paymentMeters) {
         return new com.finapp.payments.CallbackHintResolution(
                 callbackHintStore,
                 hintedInquiries.orderedStream().toList(),
-                new com.finapp.payments.CallbackHintResolution.Config(firstAsk, retryAfter, giveUpAfter, batchSize),
+                new com.finapp.payments.CallbackHintResolution.Config(
+                        firstAsk,
+                        retryAfter,
+                        retryCap,
+                        giveUpAfter,
+                        java.util.Map.of(
+                                com.finapp.payments.CallbackHint.Kind.CARD_DISPUTE, refuteDispute,
+                                com.finapp.payments.CallbackHint.Kind.CARD_CLEARING, refuteClearing,
+                                com.finapp.payments.CallbackHint.Kind.INSTANT_CONCLUDED_EXECUTION, refuteExecution,
+                                com.finapp.payments.CallbackHint.Kind.INSTANT_UNATTRIBUTED_EXECUTION, refuteExecution),
+                        batchSize),
                 idGenerator,
-                paymentTransactionRunner);
+                paymentTransactionRunner,
+                // What the sweep finds is counted where the door counts: the series an operator is told to watch.
+                outcome -> paymentMeters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.UNMAPPABLE));
     }
 
     /**
@@ -1526,7 +1560,8 @@ public class PaymentBeans {
             com.finapp.payments.CallbackHintStore<Connection> callbackHintStore,
             com.finapp.payments.CallbackHintResolution callbackHintResolution,
             com.finapp.payments.RefundStore<Connection> refundStore,
-            com.finapp.payments.WithdrawalStore<Connection> withdrawalStore) {
+            com.finapp.payments.WithdrawalStore<Connection> withdrawalStore,
+            CallbackInquiryBulkhead callbackInquiryBulkhead) {
         return new InstantCallbackService(
                 instantWebhookSignature,
                 providerEvidenceStore,
@@ -1545,7 +1580,8 @@ public class PaymentBeans {
                 // Every reference we mint on the rail is recognised (P7-TSK-010; the Phase 7 -> 8
                 // transition): a return's or a withdrawal's is asked about through that row's inquiry.
                 refundStore,
-                withdrawalStore);
+                withdrawalStore,
+                callbackInquiryBulkhead);
     }
 
     /**

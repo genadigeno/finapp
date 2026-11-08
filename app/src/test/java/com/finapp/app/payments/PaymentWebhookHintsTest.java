@@ -110,7 +110,8 @@ class PaymentWebhookHintsTest {
     }
 
     @Test
-    @DisplayName("a forged clearing notice records nothing when the PSP says the capture has not cleared, and is counted")
+    @DisplayName("a forged clearing notice records nothing while the PSP says the capture has not cleared; once past its"
+            + " bound the denial is final, and only then counted")
     void aForgedClearingMovesNothing() {
         PaymentAttempt attempt = world.captured("psp-cap");
         String operation = attempt.captureReference().value();
@@ -119,12 +120,20 @@ class PaymentWebhookHintsTest {
         world.deliverCard(clearingBody(operation));
 
         assertMovedNothingAndKeptTheEvidence();
+        assertThat(world.concluded).as("inside the bound the denial may be a lagging read").isEmpty();
+        assertThat(world.webhookCount("unmappable")).isZero();
+
+        world.refutationBoundPassed = true;
+        world.hintResolution.sweep();
+
+        assertThat(world.applied).isEmpty();
         assertThat(world.concluded.values()).as("the hint is concluded refuted").containsExactly(HintedOutcome.REFUTED);
-        assertThat(world.webhookCount("unmappable")).as("a refutation is counted as a break").isEqualTo(1);
+        assertThat(world.webhookCount("unmappable")).as("a final refutation is counted as a break").isEqualTo(1);
     }
 
     @Test
-    @DisplayName("a forged dispute posts no chargeback when the PSP says there is no such dispute, and is counted")
+    @DisplayName("a forged dispute posts no chargeback while the PSP says there is no such dispute; past its bound it is"
+            + " final and counted")
     void aForgedDisputeMovesNothing() {
         PaymentAttempt attempt = world.captured("psp-cap");
         world.disputes.put("dsp_forged", DisputeAnswer.unrecognised(ANSWER));
@@ -133,8 +142,105 @@ class PaymentWebhookHintsTest {
 
         assertMovedNothingAndKeptTheEvidence();
         assertThat(world.asked).containsExactly("dispute dsp_forged");
+
+        world.refutationBoundPassed = true;
+        world.hintResolution.sweep();
+
+        assertThat(world.applied).isEmpty();
         assertThat(world.concluded.values()).containsExactly(HintedOutcome.REFUTED);
         assertThat(world.webhookCount("unmappable")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a denial inside the bound stays open, and the PSP's later agreeing answer applies: one lagging read does"
+            + " not lose a genuine dispute")
+    void aRefutationInsideTheBoundStaysOpenAndALaterAgreeingInquiryApplies() {
+        PaymentAttempt attempt = world.captured("psp-cap");
+        ProviderReference dispute = new ProviderReference("dsp_lagging");
+        world.disputes.put(dispute.value(), DisputeAnswer.unrecognised(ANSWER));
+
+        world.deliverCard(disputeBody(attempt.captureReference().value(), dispute.value()));
+
+        assertThat(world.applied).isEmpty();
+        assertThat(world.concluded).as("still open").isEmpty();
+        assertThat(world.webhookCount("processed")).isEqualTo(1);
+        assertThat(world.webhookCount("unmappable")).as("not a break while it may be a lagging read").isZero();
+
+        world.disputes.put(dispute.value(), DisputeAnswer.found(attempt.captureReference(), chargeback(dispute), ANSWER));
+        world.hintResolution.sweep();
+
+        assertThat(world.applied).containsExactly("dispute dsp_lagging CHARGED_BACK " + AMOUNT.minorUnits());
+        assertThat(world.concluded.values()).containsExactly(HintedOutcome.ADOPTED);
+        assertThat(world.webhookCount("unmappable")).isZero();
+    }
+
+    @Test
+    @DisplayName("a statement the PSP answered and we cannot read is a break at the door and at the sweep, and stays open")
+    void anUnreadableStatementIsABreakAtBothAndStaysOpen() {
+        PaymentAttempt attempt = world.captured("psp-cap");
+        ProviderReference dispute = new ProviderReference("dsp_new_word");
+        world.disputes.put(dispute.value(), DisputeAnswer.unreadable(ANSWER));
+
+        world.deliverCard(disputeBody(attempt.captureReference().value(), dispute.value()));
+
+        assertThat(world.applied).isEmpty();
+        assertThat(world.webhookCount("unmappable")).as("the door counts it").isEqualTo(1);
+        assertThat(world.webhookCount("processed")).isZero();
+        assertThat(world.concluded).as("an unreadable answer concludes nothing").isEmpty();
+
+        world.hintResolution.sweep();
+
+        assertThat(world.webhookCount("unmappable")).as("and so does the sweep").isEqualTo(2);
+        assertThat(world.concluded).isEmpty();
+
+        world.disputes.put(dispute.value(), DisputeAnswer.found(attempt.captureReference(), chargeback(dispute), ANSWER));
+        world.hintResolution.sweep();
+
+        assertThat(world.applied).as("readable again, it applies").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("no answer at all is not a break: silence is the sweep's, and counts processed")
+    void noAnswerIsNotABreak() {
+        PaymentAttempt attempt = world.captured("psp-cap");
+
+        world.deliverCard(disputeBody(attempt.captureReference().value(), "dsp_silent"));
+
+        assertThat(world.webhookCount("unmappable")).isZero();
+        assertThat(world.webhookCount("processed")).isEqualTo(1);
+        assertThat(world.concluded).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a fresh event id restating an open question adds no hint and asks nothing, though its bytes are retained")
+    void aFreshEventIdOnAnOpenQuestionAsksNothing() {
+        PaymentAttempt attempt = world.captured("psp-cap");
+        String operation = attempt.captureReference().value();
+
+        world.deliverCard(clearingBody(operation));
+        world.deliverCard(clearingBody(operation));
+
+        assertThat(world.hintRows).hasSize(1);
+        assertThat(world.asked).hasSize(1);
+        assertThat(world.retained(EvidenceKind.WEBHOOK)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a full bulkhead skips the inquiry and still acknowledges: the sweep asks instead")
+    void aFullBulkheadSkipsTheInquiry() {
+        PaymentAttempt attempt = world.captureDispatched();
+        assertThat(world.bulkhead.tryEnter()).isTrue();
+
+        try {
+            world.deliverCard(cardBody(attempt.captureReference().value(), "approved", "x"));
+        } finally {
+            world.bulkhead.exit();
+        }
+
+        assertThat(world.asked).isEmpty();
+        assertThat(world.applied).isEmpty();
+        assertThat(world.retained(EvidenceKind.WEBHOOK)).isEqualTo(1);
+        assertThat(world.webhookCount("processed")).isEqualTo(1);
     }
 
     @Test

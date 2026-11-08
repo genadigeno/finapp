@@ -35,7 +35,15 @@ class CallbackHintResolutionTest {
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final CallbackHintResolution.Config CONFIG =
             new CallbackHintResolution.Config(
-                    Duration.ofMinutes(1), Duration.ofMinutes(1), Duration.ofDays(7), 50);
+                    Duration.ofMinutes(1), Duration.ofMinutes(1), Duration.ofHours(6), Duration.ofDays(7), bounds(), 50);
+
+    private static Map<CallbackHint.Kind, Duration> bounds() {
+        Map<CallbackHint.Kind, Duration> bounds = new HashMap<>();
+        for (CallbackHint.Kind kind : CallbackHint.Kind.values()) {
+            bounds.put(kind, Duration.ofMinutes(30));
+        }
+        return bounds;
+    }
 
     private final Connection connection =
             (Connection) Proxy.newProxyInstance(
@@ -48,12 +56,16 @@ class CallbackHintResolutionTest {
     private final List<CallbackHint> rows = new ArrayList<>();
     private final Map<UUID, HintedOutcome> concluded = new HashMap<>();
     private final List<String> permits = new ArrayList<>();
+    private final List<HintedOutcome> broke = new ArrayList<>();
+    private final List<Duration> refutationBoundsAsked = new ArrayList<>();
+    private final List<Duration> capsUsed = new ArrayList<>();
     private boolean permitWon = true;
+    private boolean refutationBoundPassed;
     private int expired;
 
     private final CallbackHintStore<Connection> store = new CallbackHintStore<>() {
         @Override
-        public CallbackHint insert(
+        public Optional<CallbackHint> insert(
                 Connection uow, CallbackHint.Kind kind, Optional<PaymentAttemptId> attempt, String askedAbout,
                 Duration firstAsk) {
             throw new AssertionError("the sweep inserts nothing");
@@ -65,9 +77,16 @@ class CallbackHintResolutionTest {
         }
 
         @Override
-        public boolean renewPermit(Connection uow, CallbackHint hint, Duration retryAfter) {
+        public boolean renewPermit(Connection uow, CallbackHint hint, Duration retryAfter, Duration retryCap) {
             permits.add(hint.askedAbout());
+            capsUsed.add(retryCap);
             return permitWon;
+        }
+
+        @Override
+        public boolean concludeRefuted(Connection uow, UUID hint, Duration refuteAfter) {
+            refutationBoundsAsked.add(refuteAfter);
+            return refutationBoundPassed && concluded.putIfAbsent(hint, HintedOutcome.REFUTED) == null;
         }
 
         @Override
@@ -109,7 +128,7 @@ class CallbackHintResolutionTest {
     };
 
     private final CallbackHintResolution resolution =
-            new CallbackHintResolution(store, List.of(card), CONFIG, IDS, runner);
+            new CallbackHintResolution(store, List.of(card), CONFIG, IDS, runner, broke::add);
 
     private CallbackHint hint(CallbackHint.Kind kind, String askedAbout) {
         CallbackHint hint = new CallbackHint(IDS.next(), kind, Optional.empty(), askedAbout, Instant.now(CLOCK));
@@ -133,14 +152,57 @@ class CallbackHintResolutionTest {
     }
 
     @Test
-    @DisplayName("a refuted or contradicted hint concludes: an answer that says no is still an answer")
-    void aRefutedHintConcludes() {
+    @DisplayName("a denial inside its bound stays open, counted nowhere; asked again past the bound it concludes, and is counted")
+    void aRefutationConcludesOnlyPastItsBound() {
         CallbackHint refuted = hint(CallbackHint.Kind.CARD_CLEARING, "refuted");
         answers.put("refuted", HintedOutcome.REFUTED);
 
         resolution.sweep();
 
+        assertThat(concluded).doesNotContainKey(refuted.id());
+        assertThat(broke).isEmpty();
+        assertThat(refutationBoundsAsked).containsExactly(Duration.ofMinutes(30));
+
+        refutationBoundPassed = true;
+        resolution.sweep();
+
         assertThat(concluded).containsEntry(refuted.id(), HintedOutcome.REFUTED);
+        assertThat(broke).containsExactly(HintedOutcome.REFUTED);
+    }
+
+    @Test
+    @DisplayName("an unreadable answer stays open and is counted each time it is seen")
+    void anUnreadableAnswerStaysOpenAndIsCounted() {
+        CallbackHint odd = hint(CallbackHint.Kind.CARD_CLEARING, "odd");
+        answers.put("odd", HintedOutcome.UNREADABLE);
+
+        resolution.sweep();
+        resolution.sweep();
+
+        assertThat(concluded).doesNotContainKey(odd.id());
+        assertThat(broke).containsExactly(HintedOutcome.UNREADABLE, HintedOutcome.UNREADABLE);
+    }
+
+    @Test
+    @DisplayName("a contradiction concludes at once and is counted")
+    void aContradictionConcludesAtOnce() {
+        CallbackHint contradicted = hint(CallbackHint.Kind.CARD_CLEARING, "contradicted");
+        answers.put("contradicted", HintedOutcome.CONTRADICTED);
+
+        resolution.sweep();
+
+        assertThat(concluded).containsEntry(contradicted.id(), HintedOutcome.CONTRADICTED);
+        assertThat(broke).containsExactly(HintedOutcome.CONTRADICTED);
+    }
+
+    @Test
+    @DisplayName("each permit is stamped with the configured cap, so the store's backoff has a ceiling")
+    void thePermitCarriesItsCap() {
+        hint(CallbackHint.Kind.CARD_CLEARING, "capped");
+
+        resolution.sweep();
+
+        assertThat(capsUsed).containsExactly(Duration.ofHours(6));
     }
 
     @Test
@@ -184,14 +246,19 @@ class CallbackHintResolutionTest {
         expired = 3;
 
         assertThat(resolution.sweep().expired()).isEqualTo(3);
+        assertThat(broke).containsExactly(HintedOutcome.EXPIRED, HintedOutcome.EXPIRED, HintedOutcome.EXPIRED);
     }
 
     @Test
     @DisplayName("a zero or negative bound is refused at construction")
     void aZeroBoundIsRefused() {
-        assertThatThrownBy(() -> new CallbackHintResolution.Config(Duration.ZERO, Duration.ofMinutes(1), Duration.ofDays(1), 1))
+        Duration minute = Duration.ofMinutes(1);
+        assertThatThrownBy(() -> new CallbackHintResolution.Config(Duration.ZERO, minute, minute, Duration.ofDays(1), bounds(), 1))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new CallbackHintResolution.Config(Duration.ofMinutes(1), Duration.ofMinutes(1), Duration.ofDays(1), 0))
+        assertThatThrownBy(() -> new CallbackHintResolution.Config(minute, minute, minute, Duration.ofDays(1), bounds(), 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new CallbackHintResolution.Config(minute, minute, minute, Duration.ofDays(1), Map.of(), 1))
+                .as("a kind with no refutation bound would refute at once")
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

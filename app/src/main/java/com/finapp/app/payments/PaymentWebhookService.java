@@ -98,6 +98,9 @@ public class PaymentWebhookService {
     /** The rail this door serves: the composition root's binding, never a name held here ({@code INV-RAIL-01}). */
     private final RailId railId;
 
+    /** At most so many inquiries at once on this instance's request threads; a refused one is left to the sweep. */
+    private final CallbackInquiryBulkhead bulkhead;
+
     public PaymentWebhookService(
             WebhookSignature webhookSignature,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
@@ -111,7 +114,8 @@ public class PaymentWebhookService {
             CardCallbackInquiry cardCallbackInquiry,
             CallbackHintStore<Connection> callbackHintStore,
             CallbackHintResolution callbackHintResolution,
-            RailId railId) {
+            RailId railId,
+            CallbackInquiryBulkhead callbackInquiryBulkhead) {
         this.signature =
                 Objects.requireNonNull(webhookSignature, "webhookSignature must not be null");
         this.evidence =
@@ -134,6 +138,9 @@ public class PaymentWebhookService {
                 Objects.requireNonNull(
                         callbackHintResolution, "callbackHintResolution must not be null");
         this.railId = Objects.requireNonNull(railId, "railId must not be null");
+        this.bulkhead =
+                Objects.requireNonNull(
+                        callbackInquiryBulkhead, "callbackInquiryBulkhead must not be null");
     }
 
     /**
@@ -264,11 +271,12 @@ public class PaymentWebhookService {
                                                 if (planned instanceof Planned.Durable durable) {
                                                     hint[0] =
                                                             hints.insert(
-                                                                    uow,
-                                                                    durable.kind(),
-                                                                    Optional.of(durable.attempt()),
-                                                                    durable.askedAbout(),
-                                                                    hintResolution.firstAsk());
+                                                                            uow,
+                                                                            durable.kind(),
+                                                                            Optional.of(durable.attempt()),
+                                                                            durable.askedAbout(),
+                                                                            hintResolution.firstAsk())
+                                                                    .orElse(null);
                                                 }
                                             });
                             retain(unitOfWork,
@@ -370,11 +378,19 @@ public class PaymentWebhookService {
      */
     @SuppressWarnings("try") // The Scope is used for its close side effect.
     private HintedOutcome effect(Planned planned, Optional<CallbackHint> hint) {
+        if (planned instanceof Planned.Nothing) {
+            return HintedOutcome.UNDECIDED;
+        }
+        if (!bulkhead.tryEnter()) {
+            log.info("Too many hinted inquiries are running on this instance; this one is left to the sweep");
+            return HintedOutcome.UNDECIDED;
+        }
         try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
             return switch (planned) {
                 case Planned.Operation named -> inquiry.operation(named.attempt(), named.reference());
                 case Planned.RefundOutcome named -> inquiry.refund(named.refund());
-                case Planned.Durable durable -> hintResolution.resolve(hint.orElseThrow());
+                // No hint means the same question already stands open: its next ask answers this delivery too.
+                case Planned.Durable durable -> hint.map(hintResolution::resolve).orElse(HintedOutcome.UNDECIDED);
                 case Planned.Nothing nothing -> HintedOutcome.UNDECIDED;
             };
         } catch (RuntimeException failure) {
@@ -383,6 +399,8 @@ public class PaymentWebhookService {
                     "The inquiry a payment webhook triggered failed: {}; the sweep decides",
                     failure.getClass().getSimpleName());
             return HintedOutcome.UNDECIDED;
+        } finally {
+            bulkhead.exit();
         }
     }
 

@@ -16,18 +16,24 @@ public enum HintedOutcome {
      * counted, because a signed callback the credentialed inquiry denies is what a stolen webhook key looks like.
      */
     REFUTED,
-    /** No usable answer: nothing adopted, the sweep decides ({@code INV-LIFE-03}). */
+    /**
+     * The provider answered and we cannot read it: a new word, a changed format. Nothing moves and the question stays open,
+     * but unlike silence this is counted as a break, because during a wire change every statement would otherwise look
+     * healthy.
+     */
+    UNREADABLE,
+    /** No answer at all: nothing adopted, the sweep decides ({@code INV-LIFE-03}). */
     UNDECIDED,
     /** A durable hint no inquiry ever answered, past its bound. Stored only; no inquiry returns it. */
     EXPIRED;
 
     /** Whether this ends a durable hint. */
     public boolean concludes() {
-        return this != UNDECIDED;
+        return this != UNDECIDED && this != UNREADABLE;
     }
 
     /** Whether the door counts this delivery as a break rather than as processed. */
     public boolean isBreak() {
-        return this == CONTRADICTED || this == REFUTED;
+        return this == CONTRADICTED || this == REFUTED || this == UNREADABLE;
     }
 }

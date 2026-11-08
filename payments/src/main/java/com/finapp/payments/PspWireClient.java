@@ -170,7 +170,7 @@ final class PspWireClient {
 
     /**
      * GETs whether the capture our reference names has cleared (`P15-TSK-036`); {@link #query}'s totality. A
-     * {@code cleared} answer missing either network reference is unactionable, so {@code INDETERMINATE}.
+     * 200 we cannot read, a {@code cleared} answer missing either network reference included, is {@code UNREADABLE}.
      */
     ClearingAnswer queryClearing(String path) {
         Fetched fetched = fetch(path);
@@ -188,17 +188,17 @@ final class PspWireClient {
                 Optional<ProviderReference> network = field(text, NETWORK_FIELD).flatMap(PspWireClient::storable);
                 yield acquirer.isPresent() && network.isPresent()
                         ? ClearingAnswer.cleared(acquirer.get(), network.get(), received)
-                        : ClearingAnswer.indeterminate(received);
+                        : ClearingAnswer.unreadable(received);
             }
             case "not_cleared" -> ClearingAnswer.notCleared(received);
             case "unrecognised" -> ClearingAnswer.unrecognised(received);
-            default -> ClearingAnswer.indeterminate(received);
+            default -> ClearingAnswer.unreadable(received);
         };
     }
 
     /**
      * GETs the PSP's own statement of a dispute (`P15-TSK-036`); {@link #query}'s totality. Any field the statement needs
-     * and this cannot read makes the whole answer {@code INDETERMINATE}, never half a statement.
+     * and this cannot read makes the whole answer {@code UNREADABLE}, never half a statement.
      */
     DisputeAnswer queryDispute(String path, String providerName, ProviderReference asked) {
         Fetched fetched = fetch(path);
@@ -213,7 +213,7 @@ final class PspWireClient {
         return switch (statusOf(text)) {
             case "disputed" -> CardDisputeStatement.answerOf(text, providerName, asked, received);
             case "unrecognised" -> DisputeAnswer.unrecognised(received);
-            default -> DisputeAnswer.indeterminate(received);
+            default -> DisputeAnswer.unreadable(received);
         };
     }
 

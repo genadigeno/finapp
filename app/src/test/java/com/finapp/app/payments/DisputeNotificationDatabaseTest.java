@@ -636,10 +636,7 @@ class DisputeNotificationDatabaseTest {
         assertThat(disputeCount(scaleless)).isZero();
         assertThat(disputeCount(wrongScale)).isZero();
         assertThat(disputeCount(decimal)).isZero();
-        // Only the reference we could not ask about is the door's to count (P15-TSK-036). The other
-        // statements are the inquiry's to read: unreadable there moves nothing and stays undecided,
-        // the hint open for the sweep.
-        assertThat(webhooks("unmappable")).isEqualTo(unmappable + 1);
+        assertThat(webhooks("unmappable")).isEqualTo(unmappable + 5);
 
         String uncategorised = someDisputeReference();
         deliver(notice(someEvent(), payment.operation(), uncategorised, "needs_response",
@@ -667,8 +664,7 @@ class DisputeNotificationDatabaseTest {
                 "1500"));
         assertThat(disputeCount(unreadableFee)).isZero();
         assertThat(disputeCount(inquiryFee)).isZero();
-        // The inquiry's answer could not be read: nothing moves, nothing is counted a break (P15-TSK-036).
-        assertThat(webhooks("unmappable")).isEqualTo(beforeFees);
+        assertThat(webhooks("unmappable")).isEqualTo(beforeFees + 2);
     }
 
     /** The statement with the PSP's dispute fee field added, verbatim. */

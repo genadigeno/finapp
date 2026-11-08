@@ -24,7 +24,9 @@ public record ExecutionAnswer(
         EXECUTED,
         /** The scheme explicitly does not know this reference. */
         UNRECOGNISED,
-        /** Everything else: ask again. */
+        /** A 200 body we cannot read: an unknown word, or an execution missing its reference or amount. Counted as a break. */
+        UNREADABLE,
+        /** No answer at all: a transport failure, a 404, a 5xx, a truncated body. Ask again. */
         INDETERMINATE
     }
 
@@ -57,6 +59,12 @@ public record ExecutionAnswer(
     public static ExecutionAnswer unrecognised(byte[] evidence) {
         return new ExecutionAnswer(
                 Verdict.UNRECOGNISED, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.of(evidence));
+    }
+
+    public static ExecutionAnswer unreadable(byte[] evidence) {
+        return new ExecutionAnswer(
+                Verdict.UNREADABLE, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                 Optional.of(evidence));
     }
 

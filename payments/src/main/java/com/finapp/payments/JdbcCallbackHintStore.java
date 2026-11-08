@@ -25,7 +25,7 @@ public final class JdbcCallbackHintStore implements CallbackHintStore<Connection
     @NonNull private final IdGenerator ids;
 
     @Override
-    public CallbackHint insert(
+    public Optional<CallbackHint> insert(
             Connection unitOfWork, CallbackHint.Kind kind, Optional<PaymentAttemptId> attempt, String askedAbout,
             Duration firstAsk) {
         Objects.requireNonNull(kind, "kind must not be null");
@@ -36,6 +36,10 @@ public final class JdbcCallbackHintStore implements CallbackHintStore<Connection
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.callback_hint (id, kind, attempt_id, asked_about, next_inquiry_at)"
                                 + " VALUES (?, ?, ?, ?, statement_timestamp() + make_interval(secs => ?))"
+                                // V036's arbiter: the same open question adds nothing.
+                                + " ON CONFLICT (kind, asked_about,"
+                                + " COALESCE(attempt_id, '00000000-0000-0000-0000-000000000000'::uuid))"
+                                + " WHERE concluded_at IS NULL DO NOTHING"
                                 + " RETURNING next_inquiry_at")) {
             insert.setObject(1, id);
             insert.setString(2, kind.name());
@@ -43,8 +47,9 @@ public final class JdbcCallbackHintStore implements CallbackHintStore<Connection
             insert.setString(4, askedAbout);
             insert.setLong(5, firstAsk.toSeconds());
             try (ResultSet row = insert.executeQuery()) {
-                row.next();
-                return new CallbackHint(id, kind, attempt, askedAbout, row.getTimestamp(1).toInstant());
+                return row.next()
+                        ? Optional.of(new CallbackHint(id, kind, attempt, askedAbout, row.getTimestamp(1).toInstant()))
+                        : Optional.empty();
             }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(DatabaseFailure.describe("recording a callback hint", failure));
@@ -78,15 +83,19 @@ public final class JdbcCallbackHintStore implements CallbackHintStore<Connection
     }
 
     @Override
-    public boolean renewPermit(Connection unitOfWork, CallbackHint hint, Duration retryAfter) {
+    public boolean renewPermit(Connection unitOfWork, CallbackHint hint, Duration retryAfter, Duration retryCap) {
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
-                        "UPDATE payments.callback_hint"
-                                + " SET next_inquiry_at = statement_timestamp() + make_interval(secs => ?)"
+                        "UPDATE payments.callback_hint SET asked_count = asked_count + 1, next_inquiry_at ="
+                                // Doubling from the base, capped; the exponent is bounded so the power cannot overflow.
+                                + " statement_timestamp() + LEAST("
+                                + "make_interval(secs => CAST(? AS double precision) * power(2, LEAST(asked_count, 20))),"
+                                + " make_interval(secs => ?))"
                                 + " WHERE id = ? AND concluded_at IS NULL AND next_inquiry_at = ?")) {
             update.setLong(1, retryAfter.toSeconds());
-            update.setObject(2, hint.id());
-            update.setTimestamp(3, Timestamp.from(hint.nextInquiryAt()));
+            update.setLong(2, retryCap.toSeconds());
+            update.setObject(3, hint.id());
+            update.setTimestamp(4, Timestamp.from(hint.nextInquiryAt()));
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new PaymentsStorageException(DatabaseFailure.describe("renewing a callback hint's permit", failure));
@@ -108,6 +117,23 @@ public final class JdbcCallbackHintStore implements CallbackHintStore<Connection
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new PaymentsStorageException(DatabaseFailure.describe("concluding a callback hint", failure));
+        }
+    }
+
+    @Override
+    public boolean concludeRefuted(Connection unitOfWork, UUID hint, Duration refuteAfter) {
+        Objects.requireNonNull(hint, "hint must not be null");
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.callback_hint SET concluded_at = statement_timestamp(), conclusion = ?"
+                                + " WHERE id = ? AND concluded_at IS NULL"
+                                + " AND received_at <= statement_timestamp() - make_interval(secs => ?)")) {
+            update.setString(1, HintedOutcome.REFUTED.name());
+            update.setObject(2, hint);
+            update.setLong(3, refuteAfter.toSeconds());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(DatabaseFailure.describe("refuting a callback hint", failure));
         }
     }
 

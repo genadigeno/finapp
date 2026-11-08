@@ -1371,8 +1371,8 @@ class PayByBankDatabaseTest {
     }
 
     @Test
-    @DisplayName("a forged-but-signed execution naming nothing of ours parks nothing, its hint concluded REFUTED"
-            + " (P15-TSK-036)")
+    @DisplayName("a forged-but-signed execution naming nothing of ours parks nothing, its hint open inside the refutation"
+            + " bound (P15-TSK-036)")
     void aForgedSignedOrphanParksNothing() throws Exception {
         String scheme = "sch-forged-orphan-" + suffix();
         provider.succeedsWith(
@@ -1389,8 +1389,10 @@ class PayByBankDatabaseTest {
         assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
                         + " = 'ledger.post:unmatched-confirmation:instant:" + scheme + "'"))
                 .isZero();
-        assertThat(oneString("SELECT conclusion FROM payments.callback_hint WHERE asked_about = ?", scheme))
-                .isEqualTo("REFUTED");
+        assertThat(count("SELECT count(*) FROM payments.callback_hint WHERE asked_about = '" + scheme + "'"
+                        + " AND concluded_at IS NULL"))
+                .as("a denial may be a lagging read until its bound has passed")
+                .isEqualTo(1);
     }
 
     @Test

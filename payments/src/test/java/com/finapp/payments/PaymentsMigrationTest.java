@@ -1074,11 +1074,14 @@ class PaymentsMigrationTest {
         }
         assertThat(v036).contains("char_length(asked_about) BETWEEN 1 AND " + ProviderReference.MAX_LENGTH);
         assertThat(v036).contains("GRANT SELECT, INSERT ON payments.callback_hint TO finapp_app;");
-        assertThat(v036).contains("GRANT UPDATE (next_inquiry_at, concluded_at, conclusion) ON payments.callback_hint TO finapp_app;");
+        assertThat(v036).contains("GRANT UPDATE (next_inquiry_at, asked_count, concluded_at, conclusion) ON payments.callback_hint TO finapp_app;");
+        assertThat(v036).as("one open question per kind, reference and attempt")
+                .contains("CREATE UNIQUE INDEX callback_hint_one_open_question")
+                .contains("WHERE concluded_at IS NULL;");
         assertThat(v036).doesNotContainPattern("(?i)\\bDROP\\b|\\bALTER TABLE\\b");
         java.util.List<String> names = new java.util.ArrayList<>();
         java.util.regex.Matcher declared =
-                java.util.regex.Pattern.compile("(?:CONSTRAINT|CREATE INDEX)\\s+([a-z0-9_]+)").matcher(v036);
+                java.util.regex.Pattern.compile("(?:CONSTRAINT|CREATE (?:UNIQUE )?INDEX)\\s+([a-z0-9_]+)").matcher(v036);
         while (declared.find()) {
             names.add(declared.group(1));
         }

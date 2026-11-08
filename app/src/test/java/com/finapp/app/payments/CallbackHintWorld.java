@@ -143,6 +143,9 @@ final class CallbackHintWorld implements AutoCloseable {
     /** Whether the rail can park; only a chart missing the currency says no. */
     boolean parkable = true;
 
+    /** The database clock's half of {@code concludeRefuted}: whether a hint has outlived its refutation bound. */
+    boolean refutationBoundPassed;
+
     private int openTransactions;
     final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     final PaymentMeters meters = new PaymentMeters(registry, SimulatedCardPspAdapter.NAME);
@@ -176,6 +179,7 @@ final class CallbackHintWorld implements AutoCloseable {
     final ProviderEvidenceStore<Connection> evidenceStore = stores(ProviderEvidenceStore.class, new EvidenceWrites());
     final CallbackHintStore<Connection> hintStore = new Hints();
     final InboxConsumer<Connection> inbox = new InboxConsumer<>(new InboxRecords(), CLOCK, Duration.ofDays(1));
+    final CallbackInquiryBulkhead bulkhead = new CallbackInquiryBulkhead(1);
     final CallbackAppliers appliers = new RecordingAppliers();
     final PaymentProvider psp = new ScriptedPsp();
     final PushRail scheme = new ScriptedScheme();
@@ -191,19 +195,24 @@ final class CallbackHintWorld implements AutoCloseable {
                     hintStore,
                     List.<HintedInquiry>of(cardInquiry, instantInquiry),
                     new CallbackHintResolution.Config(
-                            Duration.ofMinutes(1), Duration.ofMinutes(1), Duration.ofDays(7), 50),
+                            Duration.ofMinutes(1), Duration.ofMinutes(1), Duration.ofHours(6), Duration.ofDays(7),
+                            java.util.Arrays.stream(CallbackHint.Kind.values())
+                                    .collect(java.util.stream.Collectors.toMap(kind -> kind, kind -> Duration.ofMinutes(30))),
+                            50),
                     IDS,
-                    runner);
+                    runner,
+                    // The composition root's binding: what the sweep finds lands on the door's break series.
+                    outcome -> meters.webhook(PaymentMeters.WebhookOutcome.UNMAPPABLE));
 
     private final WebhookSignature signature = new WebhookSignature(KEY, Duration.ofMinutes(5), CLOCK);
     final PaymentWebhookService cardDoor =
             new PaymentWebhookService(
                     signature, evidenceStore, attemptStore, refundStore, meters, inbox, new ObjectMapper(), CLOCK, runner,
-                    cardInquiry, hintStore, hintResolution, CARD);
+                    cardInquiry, hintStore, hintResolution, CARD, bulkhead);
     final InstantCallbackService instantDoor =
             new InstantCallbackService(
                     signature, evidenceStore, attemptStore, meters, inbox, new ObjectMapper(), CLOCK, runner, instantInquiry,
-                    hintStore, hintResolution, INSTANT, refundStore, withdrawalStore);
+                    hintStore, hintResolution, INSTANT, refundStore, withdrawalStore, bulkhead);
 
     @Override
     public void close() {
@@ -464,12 +473,17 @@ final class CallbackHintWorld implements AutoCloseable {
 
     private final class Hints implements CallbackHintStore<Connection> {
         @Override
-        public CallbackHint insert(
+        public Optional<CallbackHint> insert(
                 Connection uow, CallbackHint.Kind kind, Optional<PaymentAttemptId> attempt, String askedAbout,
                 Duration firstAsk) {
+            boolean open = hintRows.stream().anyMatch(row -> row.kind() == kind && row.askedAbout().equals(askedAbout)
+                    && row.attempt().equals(attempt) && !concluded.containsKey(row.id()));
+            if (open) {
+                return Optional.empty();
+            }
             CallbackHint hint = new CallbackHint(IDS.next(), kind, attempt, askedAbout, Instant.now(CLOCK).plus(firstAsk));
             hintRows.add(hint);
-            return hint;
+            return Optional.of(hint);
         }
 
         @Override
@@ -478,8 +492,13 @@ final class CallbackHintWorld implements AutoCloseable {
         }
 
         @Override
-        public boolean renewPermit(Connection uow, CallbackHint hint, Duration retryAfter) {
+        public boolean renewPermit(Connection uow, CallbackHint hint, Duration retryAfter, Duration retryCap) {
             return !concluded.containsKey(hint.id());
+        }
+
+        @Override
+        public boolean concludeRefuted(Connection uow, UUID hint, Duration refuteAfter) {
+            return refutationBoundPassed && concluded.putIfAbsent(hint, HintedOutcome.REFUTED) == null;
         }
 
         @Override

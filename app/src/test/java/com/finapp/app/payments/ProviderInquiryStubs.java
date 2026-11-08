@@ -48,6 +48,8 @@ public final class ProviderInquiryStubs {
             }
             case "cleared" -> {
                 if (operation != null) {
+                    // The inquiry's contract is the operation's LATEST presentment (ClearingAnswer), so this notice's
+                    // references are what an honest PSP answers now, a second presentment's included.
                     psp.succeedsWith(
                             SimulatedCardPspAdapter.OPERATIONS_PATH + operation + SimulatedCardPspAdapter.CLEARING_SUFFIX,
                             200,

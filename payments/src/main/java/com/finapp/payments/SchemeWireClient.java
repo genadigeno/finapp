@@ -209,8 +209,8 @@ final class SchemeWireClient {
 
     /**
      * GETs the scheme's record of one execution by ITS reference (`P15-TSK-036`), the same totality: {@code accepted}
-     * carries the scheme reference and the executed amount (one missing either is {@code INDETERMINATE}), and
-     * {@code unrecognised} is the explicit word.
+     * carries the scheme reference and the executed amount, {@code unrecognised} is the explicit word, and a 200 we cannot
+     * read, an {@code accepted} missing either included, is {@code UNREADABLE}.
      */
     ExecutionAnswer inquireExecution(String path) {
         Fetched fetched = fetch(path);
@@ -232,10 +232,10 @@ final class SchemeWireClient {
                                 fieldOf(text, CYCLE_FIELD).filter(SchemeWireClient::cycleFits),
                                 amount.get(),
                                 received)
-                        : ExecutionAnswer.indeterminate(received);
+                        : ExecutionAnswer.unreadable(received);
             }
             case "unrecognised" -> ExecutionAnswer.unrecognised(received);
-            default -> ExecutionAnswer.indeterminate(received);
+            default -> ExecutionAnswer.unreadable(received);
         };
     }
 

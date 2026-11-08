@@ -82,12 +82,18 @@ final class CallbackDoors {
                         hints,
                         List.of(inquiry),
                         new CallbackHintResolution.Config(
-                                Duration.ofMinutes(1), Duration.ofMinutes(1), Duration.ofDays(7), 50),
+                                Duration.ofMinutes(1), Duration.ofMinutes(1), Duration.ofHours(6), Duration.ofDays(7),
+                                java.util.Arrays.stream(com.finapp.payments.CallbackHint.Kind.values())
+                                        .collect(java.util.stream.Collectors.toMap(
+                                                kind -> kind, kind -> Duration.ofMinutes(30))),
+                                50),
                         ids,
-                        runner);
+                        runner,
+                        com.finapp.payments.CallbackHintObserver.NONE);
         return new PaymentWebhookService(
                 signature, evidence, attempts, refunds, meters, inbox, json, clock, runner, inquiry, hints, resolution,
-                SimulatedCardPspAdapter.RAIL.id());
+                SimulatedCardPspAdapter.RAIL.id(),
+                new CallbackInquiryBulkhead(32));
     }
 
     private record TemplateRunner(TransactionTemplate template, DataSource dataSource) implements TransactionRunner {

@@ -69,10 +69,25 @@ class InstantCallbackHintsTest {
     void aForgedRejectionMovesNothing() {
         PaymentAttempt attempt = world.awaitingPayer();
         String reference = attempt.endToEndReference().value();
+        world.initiations.put(reference, PushInquiryAnswer.unrecognised(ANSWER));
 
         world.deliverInstant(instantBody(reference, "rejected", "scheme_forged"));
 
         assertMovedNothingAndKeptTheEvidence();
+        assertThat(world.asked).containsExactly("initiation " + reference);
+    }
+
+    @Test
+    @DisplayName("the callback says rejected, the scheme says executed: the applier hears the scheme")
+    void theInquiryOverridesARejection() {
+        PaymentAttempt attempt = world.awaitingPayer();
+        String reference = attempt.endToEndReference().value();
+        world.initiations.put(reference, executed());
+
+        world.deliverInstant(instantBody(reference, "rejected", "scheme_forged"));
+
+        assertThat(world.applied)
+                .containsExactly("execution ACCEPTED scheme_real " + AMOUNT.minorUnits() + " from AWAITING_PAYER");
     }
 
     @Test
@@ -89,7 +104,26 @@ class InstantCallbackHintsTest {
     }
 
     @Test
-    @DisplayName("a forged execution naming nothing of ours parks nothing, and is counted")
+    @DisplayName("a forged execution on a concluded pay-in the scheme has never heard of is refuted, once past its bound")
+    void aDeniedExecutionOnAConcludedAttemptIsRefutedPastItsBound() {
+        PaymentAttempt attempt = world.pushFailed();
+        String reference = attempt.endToEndReference().value();
+        world.initiations.put(reference, PushInquiryAnswer.unrecognised(ANSWER));
+
+        world.deliverInstant(instantBody(reference, "executed", "scheme_forged"));
+
+        assertThat(world.concluded).as("inside the bound").isEmpty();
+
+        world.refutationBoundPassed = true;
+        world.hintResolution.sweep();
+
+        assertThat(world.applied).isEmpty();
+        assertThat(world.concluded.values()).containsExactly(HintedOutcome.REFUTED);
+        assertThat(world.webhookCount("unmappable")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a forged execution naming nothing of ours parks nothing; past its bound it is final and counted")
     void aForgedUnattributedExecutionParksNothing() {
         world.executions.put("scheme_forged", ExecutionAnswer.unrecognised(ANSWER));
 
@@ -97,8 +131,26 @@ class InstantCallbackHintsTest {
 
         assertMovedNothingAndKeptTheEvidence();
         assertThat(world.asked).containsExactly("execution scheme_forged");
+        assertThat(world.concluded).as("inside the bound").isEmpty();
+        assertThat(world.webhookCount("unmappable")).isZero();
+
+        world.refutationBoundPassed = true;
+        world.hintResolution.sweep();
+
         assertThat(world.concluded.values()).containsExactly(HintedOutcome.REFUTED);
         assertThat(world.webhookCount("unmappable")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("an execution answer we cannot read parks nothing, is a break, and stays open")
+    void anUnreadableExecutionAnswerIsABreak() {
+        world.executions.put("scheme_odd", ExecutionAnswer.unreadable(ANSWER));
+
+        world.deliverInstant(instantBody("nothingofours5", "executed", "scheme_odd"));
+
+        assertThat(world.applied).isEmpty();
+        assertThat(world.webhookCount("unmappable")).isEqualTo(1);
+        assertThat(world.concluded).isEmpty();
     }
 
     @Test
@@ -186,6 +238,20 @@ class InstantCallbackHintsTest {
 
         assertThat(world.applied).as("value that went out must never park as value that came in").isEmpty();
         assertThat(world.concluded.values()).containsExactly(HintedOutcome.CONVERGED);
+    }
+
+    @Test
+    @DisplayName("an execution the scheme places on a FAILED pay-in of ours reaches the concluded branch, so the value is booked")
+    void anExecutionOnAFailedPayInOfOursReachesTheConcludedBranch() {
+        PaymentAttempt failed = world.pushFailed();
+        world.executions.put("scheme_on_failed", ExecutionAnswer.executed(
+                new ProviderReference("scheme_on_failed"), Optional.of(failed.endToEndReference()), Optional.empty(), AMOUNT,
+                ANSWER));
+
+        world.deliverInstant(instantBody("nothingofours6", "executed", "scheme_on_failed"));
+
+        assertThat(world.applied)
+                .containsExactly("execution ACCEPTED scheme_on_failed " + AMOUNT.minorUnits() + " from AWAITING_PAYER");
     }
 
     @Test

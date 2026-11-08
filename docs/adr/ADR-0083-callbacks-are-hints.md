@@ -237,6 +237,26 @@ Three things the decision did not say, which the building had to:
   genuine dispute on another payment moves nothing. An execution inquiry names what the execution carried, so a scheme
   reference of our own withdrawal can never park as inbound value.
 
+The review of that build added four more (2026-11-08):
+
+- **A denial is not believed at once.** A provider's "no such thing" may be its read model lagging, and for a dispute nothing
+  else can ever create the row. Inside a per-kind bound, on the database's clock from `received_at`, a denial leaves the hint
+  open and counts nothing; only past the bound is it final, loud and counted. Disputes 2 hours (no other creator, and
+  respond-by runs in days), clearing 30 minutes (no money moves, and settlement reconciliation catches it), executions 15
+  minutes (ten times the rail's declared 90-second outcome deadline). A forged callback therefore costs a handful of inquiries,
+  not one.
+- **Unreadable is not silent.** A 200 we cannot read (a new stage word, a changed format) is a distinct verdict from no answer.
+  It stays open and is counted as a break at the door and at the sweep. No answer at all is the sweep's and counts nothing.
+- **A stuck hint backs off.** The permit doubles from `retry-after` to `retry-cap` (1 minute to 6 hours), so seven unanswered
+  days cost about thirty-six inquiries.
+- **One open question.** A fresh event id restating an open hint (same kind, reference and attempt) adds no row and no inquiry.
+  The attempt is in the key so a forged notice naming a genuine dispute on the wrong attempt cannot absorb the genuine notice.
+
+Two limits, stated. `queryClearing`'s contract is the operation's latest presentment: a PSP answering only the first would hide
+a second presentment from this inquiry, and the settlement file is then what shows it. And an unreadable answer on the
+sweepable kinds (`query`, `inquireInitiation`, `inquireReturn`, `inquire`) is still `INDETERMINATE`: those rows have their own
+sweeps and age gauges.
+
 The corridor door's Phase 9 note above ("retains none") is superseded: an authenticated corridor callback naming no credit
 now rests as evidence with no subject, which `V005` always admitted. The two-doctrine state in Consequences has ended, and
 the `X-TSK-015` lines in the Follow-up and in decision 4 are history (moved to `P15-TSK-036`, `CANCELLED`, by C15).
