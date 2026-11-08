@@ -80,8 +80,8 @@ class LocalDatabaseRolesAreUnprivilegedTest {
             }
         }
         assertThat(roles.keySet())
-                .as("the scripts' roles were read: the migrator and the application")
-                .containsExactlyInAnyOrder("finapp_migrator", "finapp_app");
+                .as("the scripts' roles were read: the migrator, the application and report generation's (P15-TSK-021)")
+                .containsExactlyInAnyOrder("finapp_migrator", "finapp_app", "finapp_reporting");
         roles.forEach((name, attributes) -> assertThat(tokens(attributes))
                 .as(name + "'s attributes")
                 .containsAll(REQUIRED));

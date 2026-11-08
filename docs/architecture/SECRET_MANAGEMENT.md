@@ -76,13 +76,17 @@ The variables, and the four files that read them:
 | `FINAPP_DB_USER`, `FINAPP_DB_PASSWORD` | `compose.yaml`, `platform/build.gradle.kts` (bootstrap superuser) |
 | `FINAPP_DB_MIGRATOR_USER`, `FINAPP_DB_MIGRATOR_PASSWORD` | `platform/build.gradle.kts` (Flyway) |
 | `FINAPP_DB_APP_USER`, `FINAPP_DB_APP_PASSWORD` | `application.yaml`, `platform/build.gradle.kts` |
+| `FINAPP_DB_REPORTING_USER`, `FINAPP_DB_REPORTING_PASSWORD` | `application.yaml` (report generation's pool, `P15-TSK-021`) |
 
 Each is read wherever its role is used, so an override of the database's name, address or
-superuser moves the container and every tool together. **The two ordinary roles are the
-exception**: `infra/postgres/initdb/00-roles.sql` creates `finapp_migrator` and `finapp_app` with
-the marked local default, because an init script cannot read the environment. Overriding
-`FINAPP_DB_MIGRATOR_PASSWORD` or `FINAPP_DB_APP_PASSWORD` against the local container therefore
-also means altering that role's password to match, or the tool refuses to connect. *(This said
+superuser moves the container and every tool together. **The ordinary roles are the
+exception**: `infra/postgres/initdb/00-roles.sql` creates `finapp_migrator`, `finapp_app` and
+*(since `P15-TSK-021`)* `finapp_reporting` with the marked local default, because an init script
+cannot read the environment. Overriding `FINAPP_DB_MIGRATOR_PASSWORD`, `FINAPP_DB_APP_PASSWORD` or
+`FINAPP_DB_REPORTING_PASSWORD` against the local container therefore also means altering that
+role's password to match, or the tool refuses to connect. `DatabaseCredentialGuard` confines the
+reporting role's marked default to loopback exactly as it does the application's, and its refusal
+names `FINAPP_DB_REPORTING_PASSWORD`. *(This said
 an override moved everything together until the Phase 6 → 7 transition.)*
 
 **The broker's credential** (`P15-TSK-026`): `FINAPP_KAFKA_SASL_USERNAME` and

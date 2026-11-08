@@ -114,7 +114,10 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.credit.evidence.key=DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0=",
                                                 // P8-TSK-002: the settlement file key, its own concern.
                                                 "--finapp.settlement.file.key=CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo=",
-                                                "--spring.datasource.password=supplied-by-the-deployment"))
+                                                "--spring.datasource.password=supplied-by-the-deployment",
+                                                // P15-TSK-021: the reporting role's credential is guarded the same
+                                                // way, so it is supplied too - or its refusal would be the one seen.
+                                                "--finapp.database.reporting.password=supplied-by-the-deployment"))
                 .rootCause()
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("connects unencrypted");
@@ -157,6 +160,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 // P8-TSK-002: the settlement file key, its own concern.
                                                 "--finapp.settlement.file.key=CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo=",
                                 "--spring.datasource.password=supplied-by-the-deployment",
+                                // P15-TSK-021: the reporting role's credential, guarded the same way.
+                                "--finapp.database.reporting.password=supplied-by-the-deployment",
                                 "--spring.datasource.hikari.data-source-properties.sslmode=verify-full")) {
             assertThat(context.getBean(TransportSecurityGuard.class)).isNotNull();
         }

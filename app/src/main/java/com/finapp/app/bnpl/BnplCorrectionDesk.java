@@ -36,7 +36,7 @@ import lombok.RequiredArgsConstructor;
  * The boundary half of the BNPL servicing corrections (`P12-TSK-024`; {@code PHASE_12_PLAN.md} sections 9 and 11,
  * {@code BNPL_LIFECYCLES.md} section 4.11; lending's {@code LoanServicingDesk} and {@code LoanWaiverDesk}): the repayment
  * reversal's and the fee waiver's proposal, approval and rejection - each keyed per principal
- * ({@code bnpl.servicing:<actor type>:<id>} - {@code CUSTOMER}-typed for an operator session today, as every operator door
+ * ({@code bnpl.servicing:<keyed type>:<id>} - {@code CUSTOMER} for any person, {@code Actor.keyedType}, as every operator door
  * of the platform), run in one transaction under the {@link IdempotentExecutor} claim, so a retried key replays the recorded
  * receipt and a refusal, which writes nothing, rolls the claim back with it. The four-eyes rule, the machines, the lock
  * order and the arbiters are the domain's and {@code bnpl V016}'s; nothing here decides them.
@@ -207,7 +207,7 @@ public final class BnplCorrectionDesk {
     private BnplReversalView reversalKeyed(Actor actor, CorrelationId correlation, String idempotencyKey,
             BnplCorrectionMetrics.ReversalOutcome success, String fingerprinted,
             Function<Connection, ActedReversal> act) {
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         AtomicReference<ActedReversal> acted = new AtomicReference<>();
         IdempotentExecutor.ExecutionOutcome outcome;
@@ -266,7 +266,7 @@ public final class BnplCorrectionDesk {
     /** One keyed waiver act in one transaction - the reversal's plumbing, with the waiver's refusals. */
     private BnplWaiverView waiverKeyed(Actor actor, CorrelationId correlation, String idempotencyKey,
             BnplCorrectionMetrics.WaiverOutcome success, String fingerprinted, Function<Connection, ActedWaiver> act) {
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         AtomicReference<ActedWaiver> acted = new AtomicReference<>();
         IdempotentExecutor.ExecutionOutcome outcome;

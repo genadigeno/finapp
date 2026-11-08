@@ -134,7 +134,7 @@ public final class MerchantApiKeys {
         IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
-                        (IDEMPOTENCY_SCOPE + "|" + actor.type().name() + "|" + actor.id() + "|"
+                        (IDEMPOTENCY_SCOPE + "|" + actor.keyedType().name() + "|" + actor.id() + "|"
                                         + merchantId.value() + scopesFingerprint(scopes))
                                 .getBytes(StandardCharsets.UTF_8));
 

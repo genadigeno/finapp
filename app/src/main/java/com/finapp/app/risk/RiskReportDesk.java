@@ -163,7 +163,7 @@ public final class RiskReportDesk {
      */
     private String keyed(Actor actor, BiConsumer<Connection, RiskAssessments.SelfDealingRefused> recordDealing,
             String idempotencyKey, String fingerprinted, Function<Connection, String> act) {
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         // The fingerprint is a digest: the narrative it covers is never stored in the idempotency record.
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> refusalsRecorded(actor, recordDealing,

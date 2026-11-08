@@ -172,7 +172,7 @@ public final class LoanWaiverDesk {
             LoanWaiverMetrics.Outcome success,
             String fingerprinted,
             Function<Connection, Acted> act) {
-        IdempotencyKey key = new IdempotencyKey(LoanServicingDesk.SCOPE + actor.type().name() + ":" + actor.id(),
+        IdempotencyKey key = new IdempotencyKey(LoanServicingDesk.SCOPE + actor.keyedType().name() + ":" + actor.id(),
                 idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         AtomicReference<Acted> acted = new AtomicReference<>();

@@ -905,6 +905,26 @@ capacity on its own initiative, silently, when the right answer is often to rais
 or run fewer instances — decisions this code has no business taking. It reports the largest pool
 that would fit and refuses.
 
+**Two pools per instance** (`P15-TSK-021`, C13). Report generation reads through a pool of its own, as
+`finapp_reporting` (`ReportingPool`), so every instance holds two pools on the same server and the guard counts both:
+
+```
+instances × (maximum-pool-size + finapp.database.reporting.pool-size)  ≤  server max_connections − reserved
+```
+
+The shipped numbers give the reporting pool one connection out of the writer's eight (writer 7, reporting 1), so the
+fleet's demand stays 10 × 8 = 80 of 88 and every deployment rule built on it (§6.1 of `PHASE_15_PLAN.md`, `-009`'s
+manifest policy, `-012`'s measured peak) is unchanged. Both pools connect with `application_name = finapp`, so a count
+of the fleet's backends counts both, and the reporting pool connects with the writer's URL and driver settings
+(`sslmode` among them), so the transport guard that judges one judges both (`ReportingPoolTransportTest`). The
+reporting pool is fixed-size too and lazy (nothing connects until the first
+report), it is not a `DataSource` bean and so not on the readiness path, and it never falls back to the writer's: a
+reporting role that cannot connect fails report generation alone, the run staying `GENERATING` until its lease runs out
+and the orphan leg retries it (`ConnectionPoolSizingGuardTest#theReportingPoolIsCounted`,
+`ReportGenerationReadsAsTheReportingRoleTest`). Generations on one instance share its one reporting connection; a
+second waiting longer than the pool's five-second timeout fails the same way and is retried by the orphan leg, so a
+deployment that generates concurrently raises `FINAPP_DB_REPORTING_POOL_SIZE` and the guard holds it to the budget.
+
 ## 5. Standing rules for future work
 
 **Scheduled jobs.** Every instance runs the scheduler. A job is either idempotent under

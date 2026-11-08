@@ -99,7 +99,7 @@ public final class LoanApplicationDesk {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         LoanApplications.Submission submission = parse(body);
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         IdempotentExecutor.ExecutionOutcome outcome;
         try {
             outcome = transactions.inTransaction(unitOfWork -> {
@@ -161,7 +161,7 @@ public final class LoanApplicationDesk {
         LoanApplicationId id = applicationId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(WITHDRAWAL_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(WITHDRAWAL_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(("lending.application-withdrawal|" + id.value()).getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome;

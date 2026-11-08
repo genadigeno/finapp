@@ -118,7 +118,7 @@ public final class CrossBorderPaymentDesk {
         } catch (IllegalArgumentException malformed) {
             throw refused(new Refusal("XB", CrossborderErrorCode.OFFER_NOT_FOUND.name()));
         }
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         String dispatchKey = key.scope() + "|" + key.key();
         // The step-up before the claim (P13-TSK-011): its own transaction, nothing written.
         CrossBorderDoorStepUp.Answer advised = transactions.inTransaction(unitOfWork ->
@@ -217,7 +217,7 @@ public final class CrossBorderPaymentDesk {
         } catch (IllegalArgumentException malformed) {
             throw notFound();
         }
-        IdempotencyKey key = new IdempotencyKey(CANCEL_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(CANCEL_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         record Begun(IdempotentExecutor.BeginOutcome outcome, Refusal refusal) {}
         Begun begun = transactions.inTransaction(unitOfWork -> {
             UUID party = partyOf(unitOfWork, current);

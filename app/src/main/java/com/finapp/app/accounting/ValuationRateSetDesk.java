@@ -288,7 +288,7 @@ public final class ValuationRateSetDesk {
             String idempotencyKey,
             String fingerprinted,
             Function<Connection, ValuationRateSetReceipt> act) {
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> selfApprovalRecorded(actor,
                 () -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint,

@@ -129,7 +129,7 @@ public final class RiskActionDesk {
      */
     private String keyed(Actor actor, String caseTarget, String idempotencyKey, String fingerprinted,
             Function<Connection, String> act) {
-        IdempotencyKey key = new IdempotencyKey(RiskCaseDesk.SCOPE + actor.type().name() + ":" + actor.id(),
+        IdempotencyKey key = new IdempotencyKey(RiskCaseDesk.SCOPE + actor.keyedType().name() + ":" + actor.id(),
                 idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> refusalsRecorded(actor, caseTarget,

@@ -175,7 +175,7 @@ public class BreakResolutionDesk {
         Correlation correlation = resolvedCorrelation();
         IdempotencyKey key =
                 new IdempotencyKey(
-                        PROPOSE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+                        PROPOSE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
                         String.join("|", "repudiation", batchId.toString(), code.name(), text)
@@ -234,7 +234,7 @@ public class BreakResolutionDesk {
         Correlation correlation = resolvedCorrelation();
         IdempotencyKey key =
                 new IdempotencyKey(
-                        PROPOSE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+                        PROPOSE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
                         String.join(

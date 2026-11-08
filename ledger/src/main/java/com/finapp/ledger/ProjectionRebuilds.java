@@ -341,8 +341,9 @@ public final class ProjectionRebuilds {
         return actor;
     }
 
+    /** The person as an idempotency fingerprint names it - keyed, so an operator's retry across the deploy matches (`P15-TSK-021`). */
     private static String principal(Actor actor) {
-        return actor.type().name() + ":" + actor.id();
+        return actor.keyedType().name() + ":" + actor.id();
     }
 
     private static CorrelationId correlation() {

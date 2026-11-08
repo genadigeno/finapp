@@ -98,7 +98,7 @@ public class SettlementOperations {
         byte[] content = decode(request.content());
         IdempotencyKey key =
                 new IdempotencyKey(
-                        UPLOAD_SCOPE_PREFIX + actor.type().name() + ":" + actor.id(),
+                        UPLOAD_SCOPE_PREFIX + actor.keyedType().name() + ":" + actor.id(),
                         idempotencyKey);
         // The whole material request: a reused key with any other source, date or content is
         // a materially different command and must conflict, never replay (INV-IDEM-03).
@@ -338,7 +338,7 @@ public class SettlementOperations {
         Correlation correlation = resolvedCorrelation();
         IdempotencyKey key =
                 new IdempotencyKey(
-                        READMISSION_SCOPE_PREFIX + actor.type().name() + ":" + actor.id(),
+                        READMISSION_SCOPE_PREFIX + actor.keyedType().name() + ":" + actor.id(),
                         idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
