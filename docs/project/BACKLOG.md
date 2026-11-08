@@ -27125,7 +27125,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T30's built row holds `ci.yml`'s token scope through `CiWorkflowIsLockedDownTest`. Keyless signing needs `id-token: write` on the signing job: grant it at that job only, rewrite T30's row (and the test's read-only assertion, to name that one exception) in this task's gate.
 
-**P15-TSK-008 — The runtime contract: management port, graceful shutdown, drained schedules** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-008 — The runtime contract: management port, graceful shutdown, drained schedules** — `IN_PROGRESS` (2026-11-08; branch `P15-TSK-008` from master `c1d07726`; designed, implementing) *(read "`READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)" until its start)*
 - **Objective**: an instance can be stopped at any moment without failing an accepted request or leaving work stranded,
   and its operational endpoints are on a port no ingress serves.
 - **Affected components**: `app` (`application.yaml`, every `*Schedule`, `InboxConsumers`, `AccountingGaugeRefresher`),
