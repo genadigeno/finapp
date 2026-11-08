@@ -109,3 +109,7 @@ how a posting, an adjustment or a break resolution is defended months later.
   actions should look before adding columns.)*
 - Phase 15: completeness verification against the registry; retention and archival that
   preserves auditability.
+
+## Read-note: the carried items' ruling (2026-11-08)
+
+C15 (`PHASE_15_PLAN.md` §25), applied by `P15-TSK-002`, places this record's Phase 15 follow-ups. Completeness verification against the registry belongs to Phase 15's audit-completeness criterion, owned by `P15-TSK-021` and `P15-TSK-028`. The retention policy and the archival design to write-once storage belong to `P15-TSK-029`, and the archive bucket's write-once lock to `P15-TSK-015`. **Building** the archival is re-dated to Phase 16's partitioning and archival of high-volume tables, so read "archival is a Phase 15 deliverable" as its design only. No audit record is ever deleted (`CURRENT_STATE.md` §Known Architectural Debt, "Audit retention and archival"). The rows carry the disposition, marked **C15** (`P15-TSK-002`, 2026-11-08); this record's decision and status are unchanged.

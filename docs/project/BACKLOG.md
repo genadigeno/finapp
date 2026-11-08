@@ -26781,6 +26781,9 @@ BNPL**
   insertion sequence, not a stamp a backward step can reorder.
 - Bounded context: accounting. Dependencies: none. Multi-instance: removes the last instance-clock judgement in the period
   machine. Testing: `ClockStep` cases; a probe. DoD: `DOD-FIN`, `DOD-TEST`.
+- *Named by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged, not scheduled:* this entry's horizon stands, "Phase 15
+  at the latest", outside every Phase 15 milestone, and it is not `P15-TSK-033`'s. Its scheduling is the owner's;
+  recommended before `P15-TST-002`, so that its `ClockStep` database cases run in that pass (owner item 1 of the ruling).
 
 **P14-REM-010 — The exit review's accepted owner items, built (G-10)** — `PLANNED` — **before production use**
 - Objective, each as `PHASE_14_REVIEW.md` §Decisions for the owner recommends and the owner accepted: **A1-D2** a shared-tier
@@ -26809,7 +26812,8 @@ Status: `READY` (2026-11-07 — entry gate passed by the Phase 14 → 15 transit
 gate, `P14-GATE`), initialised as documents only by the same transition and elaborated to task granularity:
 thirty-seven items (`P15-TSK-001`…`-034`, `P15-TST-001`, `P15-TST-002`, `P15-DOC-001`) across eleven milestones, with
 `P15-TSK-001` marked `READY` *(thirty-eight since 2026-11-08, when the owner added `P15-TSK-035`, the source-join
-census, by accepting `THREAT_MODEL.md` section 6 item 2)*. The engineering plan is [`PHASE_15_PLAN.md`](PHASE_15_PLAN.md); decisions are
+census, by accepting `THREAT_MODEL.md` section 6 item 2; **thirty-nine** since `P15-TSK-002` added `P15-TSK-036`, callbacks
+as hints for the payment and instant providers, the same day, applying C15: `X-TSK-015` moved into the phase)*. The engineering plan is [`PHASE_15_PLAN.md`](PHASE_15_PLAN.md); decisions are
 ADR-0120…ADR-0125 (`Proposed`). The roadmap's title is kept ("Production Hardening"); the owner's brief calls the phase
 "Production Architecture and Hardening", and its twelve areas are the plan's scope. **No new invariant**: the phase
 protects the catalogue's existing ones — `INV-LED-*`, `INV-ACC-01`, `INV-HIST-01`, `INV-IDEM-*`, `INV-EVT-*`,
@@ -26841,12 +26845,13 @@ Docker and are not the storm.
 
 **Milestones** (acceptance in `PHASE_15_PLAN.md` §17): M15.1 Foundations (`-001`, `-002`) · M15.2 Images and supply chain
 (`-003`…`-007`) · M15.3 Kubernetes and the edge (`-008`…`-012`) · M15.4 Infrastructure as code (`-013`…`-016`) · M15.5
-Delivery (`-017`) · M15.6 Secrets and keys (`-018`…`-020`) · M15.7 Application security (`-021`, `-022`) · M15.8
-Observability (`-023`…`-025`) · M15.9 Database and messaging operations (`-026`…`-030`) · M15.10 Configuration (`-031`) ·
+Delivery (`-017`) · M15.6 Secrets and keys (`-018`…`-020`) · M15.7 Application security (`-021`, `-022`, `-036` *(added by `-002`, 2026-11-08)*) · M15.8
+Observability (`-023`…`-025`, `-035` *(added by the owner, 2026-11-08)*) · M15.9 Database and messaging operations (`-026`…`-030`) · M15.10 Configuration (`-031`) ·
 M15.11 Operations and exit (`-032`, `-033`, `P15-TST-002`, `-034`, `P15-TST-001` `POSTPONED`, `P15-DOC-001`).
 
 **Parallel waves** (`PHASE_15_PLAN.md` §19): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`,
-`-033`; **C** `-004`, `-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`; **D** `-005`, `-010`, `-011`, `-015`, `-018`;
+`-033`; **C** `-004`, `-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`, `-036` *(after `-001` and `-002`, added by `-002`,
+2026-11-08)*; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035` *(after `-025`, added by the owner, 2026-11-08)*;
 **E** `-012`, `-016`, `-019`, `-022`, `-031`; **F** `-007`, `-020`, `-023`, `-030`; **G** `-017`; **H** `-032`; **I**
 `P15-TST-002`; **J** `-034`; **K** `P15-DOC-001` (`P15-TST-001` `POSTPONED`, PI-004). **Critical path**: `-001` → `-003` →
 `-004` → `-005` → `-012` → `-007` → `-017` → `-032` → `TST-002` → `-034` → `DOC-001`. *(The transition's review, its M-5,
@@ -26966,7 +26971,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   inputs take every `Dockerfile` and module build script; rule 9 reads every task id in the model, the
   register's own excepted. Counts unchanged (47 threats, 216 rows, 14 rules).
 
-**P15-TSK-002 — The carried items ruled (C15)** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-001`'s merge, master `060c6b2a`; every dependency `COMPLETE`)
+**P15-TSK-002 — The carried items ruled (C15)** — `COMPLETE` (2026-11-08; built and gated on branch `P15-TSK-002` from master `c1d07726`; marked `READY` by the coordinator at `P15-TSK-001`'s merge, master `060c6b2a`; every dependency `COMPLETE`)
 - **Objective**: no debt row, deferral or cross-cutting item names Phase 15 as owner without a ratified disposition.
 - **Affected components**: `CURRENT_STATE.md` §Known Architectural Debt, `DECISIONS.md` §Deliberately Deferred,
   `BACKLOG.md` (cross-cutting items `X-TSK-008`, `-014`, `-015`), `PHASE_15_PLAN.md` §25.
@@ -26994,6 +26999,55 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: the rows themselves.
 - **Acceptance criteria**: every Phase-15-owned row carries a dated disposition; new items, if any, in this section.
 - **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: S.
+- **As built** (2026-11-08; documents only; no migration, no production code, no ADR; the design in the engineer's
+  scratch, the ruling on the rows themselves). **The class rule** read from this entry and `PHASE_15_PLAN.md` §25:
+  - *Security-class* rows are scheduled into the Phase 15 task that fits them, or left to the owner; none is re-dated
+    without the owner's reason.
+  - *Correctness-class* rows, this entry's instants decided off the database's clock, stay in the phase (`-033`;
+    A4-F1 stays `P14-REM-009`'s, as §25 rules).
+  - The others are re-dated with a reason: purges and real providers as §25 says; a functional gap whose fix would be
+    a financial treatment §22 forbids to its own trigger; scale, latency, contention and resilience to Phase 16.
+
+  **Recounted**: 58 live rows of §Known Architectural Debt name Phase 15, nine paid rows also do and need nothing; 14
+  rows of §Deliberately Deferred; three cross-cutting entries, `X-TSK-008`, `-014` and `-015`. Each carries
+  **C15** (`P15-TSK-002`, 2026-11-08) and its disposition in place. **Scheduled**, each receiving entry widened with
+  scope, testing, acceptance and probe: `-004`, `-021` (running), `-023`, `-025`, `-027`, `-029`, `-032` and `-033`
+  (running); notes on `-019` and `-026`; already in scope: `-008`, `-010`, `-022`, `-024`, `-028`. **New**:
+  `P15-TSK-036` (M15.7, wave C), with `X-TSK-015` `CANCELLED`, moved, not dropped. **#61 ruled not settled**: `-029`
+  sweeps no idempotency record. **Owner items** (`CURRENT_STATE.md` §Next Task):
+  1. `P14-REM-009`'s scheduling.
+  2. `X-TSK-008`'s remainder.
+  3. `V015`'s foreign closure.
+  4. The transfer pre-empting an instant execution.
+  5. Six ADR promises with no register row.
+
+  **Recounts that differ from the records**: the conditional step-up is in 17 production classes, where the debt row
+  says five; reconciliation has 33 tables, where `P8-TST-002`'s scan says 31; `X-TSK-008`'s stores are five statements,
+  since `findEffectiveVersion` is already on the database's clock. **Deviations**:
+  - `X-TSK-008`'s remainder is the clock class and goes to the owner instead of `-033`, which is running and cannot take
+    a schema-wide review.
+  - Instance-clock judgements that decide no financial instant (a pacing timer, a freshness window in front of a hint)
+    are not counted in the correctness class.
+  - The threat model never cited this task, so no row of its own was rewritten.
+
+  **The check**, run from the repository root with a POSIX shell; it must print nothing:
+  ```sh
+  M='**C15** (`P15-TSK-002`, 2026-11-08)'
+  sed -n '/^## Known Architectural Debt/,/^### /p' docs/project/CURRENT_STATE.md | grep '^|' | grep -v '^| ~~' \
+    | awk -F'|' '$0 ~ /Phase 15/ || $(NF-1) ~ /(^|[^0-9-])15([^0-9]|$)|[Nn]ext phase/' | grep -vF "$M"
+  sed -n '/^## Deliberately Deferred/,$p' docs/project/DECISIONS.md | grep '^|' | grep -v '^| ~~' \
+    | grep -E 'Phase 15|14/15' | grep -vF "$M"
+  sed -n '/^# Cross-cutting work/,/^# Phases 11/p' docs/project/BACKLOG.md | awk -v M="$M" '
+    function flush() { if (id != "" && status ~ /^(PLANNED|READY|IN_PROGRESS)$/ && body ~ /Phase 15/ && index(body, M) == 0) print id }
+    /^\*\*X-TSK-[0-9]+ — / { flush(); id = substr($1, 3); s = $0; p = index(s, "** — `");
+      s = substr(s, p + length("** — `")); status = substr(s, 1, index(s, "`") - 1); body = "" }
+    { if (id != "") body = body "\n" $0 }
+    END { flush() }'
+  ```
+  It prints nothing on this tree. Its probe (one ruled row's marker removed, so the check names that row) and the
+  `ThreatModelIsCompleteTest` probes this task performed, the new `-036` citation probe and the 21 earlier rows on
+  the files it changed, are recorded in `MUTATION_TESTING.md` §2 (the guard probes) and in this task's change-log row
+  (the check's probe and the fresh test counts).
 
 **P15-TSK-003 — The application image** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: one minimal, non-root, reproducible image of `app`, built from digest-pinned bases.
@@ -27049,6 +27103,20 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §deploy (migration step), §migration failure (`-032`).
 - **Acceptance criteria**: identical schema to the build's; idempotent; serialised; bounded by `lock_timeout`.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged:* two security-class debt rows on what the migrator
+  and the deployed roles can reach (`THREAT_MODEL.md` T33, T13). **(a) "The reconciliation tables' owner can
+  TRUNCATE"**: every reconciliation table - 33 today (`P8-TST-002`'s scan found 31; `match_reach` and
+  `capital_recognition` came later), recounted from the migrations - refuses `TRUNCATE` for every role, the migrator and
+  the owner included, by a statement-level `BEFORE TRUNCATE` trigger in one forward migration, as accounting, bnpl,
+  credit, ledger, lending, merchant and risk already do; settlement's 13 tables carry no `TRUNCATE` refusal in their
+  migrations either. **(b) "Lending triggers resolve `statement_timestamp()` through `search_path`"**: every lending
+  trigger function's clock call schema-qualified (`pg_catalog.`) or the function's `search_path` fixed, one forward
+  migration replacing each body verbatim but for that. **Testing**: a hermetic guard over every module's migrations - a
+  table refusing `DELETE` by trigger also refuses `TRUNCATE`, and no trigger function calls a clock function unqualified
+  with a mutable `search_path` - each table or function it finds fixed here or named with an owner; database cases (a
+  `TRUNCATE` as the migrator refused; a shadowing schema first in a role's path changing no lending judgement) owed to
+  `P15-TST-002` (C14). **Probe**: drop one table's `TRUNCATE` refusal → the guard red. **Acceptance**: both debt rows
+  closed; `THREAT_MODEL.md` T33's and T13's planned rows for them rewritten to evidence.
 
 **P15-TSK-005 — Schema compatibility across a rolling deploy: the expand-only lint and the schema-version guard** —
 `PLANNED`
@@ -27472,6 +27540,9 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested in every cipher's module.
 - **Definition of done**: `DOD-SEC`, `DOD-KERNEL`. **Risk**: High (touches evidence encryption). **Cx**: L.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* what the ring replaces, read from the code: each of the nine instances decrypts with its one key whatever version a row carries; only `CounterpartySubjectCipher` refuses a mismatched stamped version, the other seven fail at the tag; `SettlementFileCipher` stamps its version on the file row. The five callback keys (`finapp.kyc.callback.key`, `.payments.webhook.key`, `.payments.instant.webhook.key`, `.fx.webhook.key`, `.corridor.webhook.key`) are each static. `THREAT_MODEL.md` T7, T8 and T34 cite this task.
+- *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged:* the debt row "Phase 10 residues the transition ruled
+  MINOR" names credit's evidence key ring holding one version; credit's cipher is one of this task's eight, so its ring
+  closes that item, with nothing added to the scope.
 
 **P15-TSK-020 — Credential and certificate rotation, rehearsed** — `PLANNED`
 - **Objective**: every rotation in `PHASE_15_PLAN.md` §10 performed on `kind` under a workload with no failed request
@@ -27524,6 +27595,29 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; two debt rows closed.
 - **Definition of done**: `DOD-SEC`, `DOD-ARCH`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `RequiresAssurance`'s note, recounted: **21** handlers declare it, all `MULTI_FACTOR`, all on the method (the plan's "25" is a text count that also matches four mentions in comments and the interceptor's message). `THREAT_MODEL.md` T3, T7, T10, T18, T38 and T44 cite this task; if the reporting role is cut, this task's gate rewrites T7's and T44's rows as gaps with an owner. *(The fix round, 2026-11-08:)* `THREAT_MODEL.md` T31: the privileged access review asserts that every route under `/v1/operator` is permission-guarded (today no build rule does). If the reporting role is cut, T7's and T44's planned rows become `GAP` rows naming the owner item or postponed issue that holds them (the grammar of the model's §1.4).
+- *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged - for the coordinator to forward; taken if this task's
+  gate can still take it at merge:* **(a) as `PHASE_15_PLAN.md` §25 rules**, the debt row "Refused and failed Phase 7
+  acts leave no audit outcome" (#63, #64, widened by SEC-05): every refused and failed Phase 7 and Phase 8 act - the
+  refused four-eyes attempts (a self-approval, a stale echo, a refused kind) among them - audited with its outcome, and
+  a merchant's dispute act naming its API key; with it the void dispatch's missing dispatch audit (Phase 7 residue #35).
+  **(b) The same class, ruled one by one:** a failed operator lookup (a `404` on a Phase 9 trace or provenance), a
+  not-found Phase 10 operator read, the credit policy-at-an-instant read and the review queue's served cases recorded,
+  and an evidence read's reason screened for a minimum. **(c) The privileged access review rules** whether a role that
+  can redirect a merchant's money may be held without an enrolled factor (the payout-destination step-up row) and
+  whether Phase 9's privileged acts require a multi-factor session, and builds what it rules or records the residual as a
+  `GAP` with an owner item. **(d) The copies of the conditional step-up** (`MULTI_FACTOR` exactly when a factor is
+  active): the debt row counted five at the Phase 7 review (`BeneficiaryService`, `PaymentMethodService`,
+  `PayoutDestinationOperations`, `WithdrawalService`, `CheckoutService`'s wallet door); **recounted from the code, 17
+  production classes carry it today** (`hasFactor && !…atLeast(MULTI_FACTOR)`: those five, five BNPL desks, four lending
+  desks, two cross-border desks and the credit request desk), so the row's "sixth caller" trigger has long fired. Auditing
+  their refusal is a change to the rule's outcome, so the change extracts one component and moves every caller, each
+  surface's step-up test the equivalence proof - unless this task records the refusal without touching any copy, which
+  its gate then says, and the extraction returns to the owner with (a)-(c)'s fallback below. **Testing**: per refused, failed or not-found act class an
+  audit record with its outcome asserted (database cases owed, C14); `AuditCompletenessTest` green. **Probe**: drop the
+  refused act's audit write → its test red. **Acceptance**: these debt rows closed, or each remainder a `GAP` row in
+  `THREAT_MODEL.md` with an owner item; T38's planned row for (a) and (b) rewritten to evidence. **If this task's gate
+  cannot take (a)-(d)**, it says so and they return to the owner as one item (recommended: a follow-on M15.7 item after
+  this task).
 
 **P15-TSK-022 — Abuse limits: registration and per-source throttling, cluster-safe** — `PLANNED`
 - **Objective**: no single source can create unbounded parties or drive unbounded load, across N replicas.
@@ -27573,6 +27667,14 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §telemetry; `OBSERVABILITY` notes in `SYSTEM_ARCHITECTURE.md`.
 - **Acceptance criteria**: every leg found in one trace; no needle.
 - **Definition of done**: `DOD-OBS`, `DOD-SEC`. **Risk**: Medium. **Cx**: L.
+- *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged:* the debt row "Lending privacy residues" (A5-05,
+  A5-07, A5-08), security-class (privacy). **Scope**: `LendingFlowScope` links a step's span into a correlation only
+  after ownership is judged; `LoanApplicationSubmitted`'s `partyId` decided - kept with its reason, or dropped as a new
+  event version through `-027`'s catalogue; the records that print money unredacted (`Money.toString`,
+  `LoanAmendments.Accepted` and `Plan`, `DueItem`, `JdbcRepaymentStore.Head`) redacted at their source by ADR-0019's
+  default-deny, or each shown never to reach a log or span. **Testing**: the needle sweep plants an amount and a party id
+  through a lending flow and finds neither in an exported span or log. **Probe**: restore one record's unredacted
+  `toString` and log it → the needle sweep red. **Acceptance**: the debt row closed.
 
 **P15-TSK-024 — Every gauge off the scrape thread, a rule on `up`, the refresher restartable** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: a slow database never loses a whole scrape, and a stopped instance is noticed.
@@ -27621,6 +27723,19 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; the trial balance pages on its first non-zero sample.
 - **Definition of done**: `DOD-OBS`. **Risk**: Medium. **Cx**: L.
 - *The owner's decision (2026-11-08), status unchanged:* `P15-TSK-035` (the source-join census) follows this task and pages through its correctness routing.
+- *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged:* three debt rows whose signal is missing or blind.
+  **(a) "The assessment census dates a payment intent by its creation"**: the risk proofs' assessment census dates a
+  payment intent by its confirmation, so a late-confirmed intent's missing seal reaches the gauge on its confirmation's
+  day and pages as a correctness signal; payments' confirmation becomes readable by day through an expand-only index
+  (or a `confirmed_at` column) owned by payments. **(b) "No alert names a missing `ACTIVE` scorecard"**: a series and an
+  alert for credit requests admitted while no `RETAIL_SCORECARD` is `ACTIVE`, firing before the seven-day validity.
+  **(c) "The BNPL schedules log a claim-level sweep failure but never meter it"**: a failed claim (the page read) of
+  `BnplOriginationSchedule`, `BnplServicingSchedule` and `BnplDisputeSchedule` counted and alerted, beside their
+  step-failure meters. **Testing**: `promtool test` per new rule (fires on its planted series, silent when healthy);
+  hermetic meter tests; the census's database case - an intent created on day D, confirmed on D + 3 without its seal,
+  counted on D + 3 - owed to `P15-TST-002` (C14). **Probe**: date the census by creation again → its case red; drop the
+  claim-failure counter → its rule's `promtool` case red. **Acceptance**: the three debt rows closed; each new meter in
+  `PHASE_15_PLAN.md` §11.2 and the runbook.
 
 **P15-TSK-026 — Kafka for production: authenticated TLS, topics as code, rebalance-safe consumers** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: the clients connect over authenticated TLS, every topic is declared, and a rolling update moves
@@ -27647,6 +27762,9 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `KafkaTransportGuard` refuses only `PLAINTEXT` off loopback today, so **`SASL_PLAINTEXT` (authenticated, unencrypted) is admitted**; the widening refuses every protocol without TLS off loopback, with a case for it. `THREAT_MODEL.md` T9, T17 and T25 cite this task.
+- *Noted by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged, nothing added to the scope:* this task's gate closes
+  the debt row "Redis is plaintext with no enforcement; Kafka is now guarded". Its Kafka half is this task's TLS and SASL
+  posture; its Redis half is closed by C3 (Redis is not deployed).
 
 **P15-TSK-027 — Event contracts: the schema catalogue and compatibility** — `PLANNED`
 - **Objective**: no release changes an event in a way the previous release's consumers cannot read, and no record is
@@ -27680,6 +27798,15 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   step.
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-EVENT`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged:* `X-TSK-014` **is ratified into this task** (C15),
+  as its `X-TSK-014` half, the phase's second cut candidate, and closes with this task's gate (the debt row "Pre-Phase-9
+  amount events carry no explicit scale"). With that half, as the same additive step: `CrossBorderPaymentReturned`
+  carries its returned amount (the Phase 9 residue; the payments outcome port gains it). Beside the catalogue: each
+  payments event type versioned on its own rather than one version shared by every payments event (Phase 7 residue
+  #49). **Testing**: the catalogue's compatibility test accepts each as an additive version; a planted event sharing
+  another type's version refused. **Probe**: let two payments types share one version → red. **Acceptance**: as
+  tested; the residues named closed; if the `X-TSK-014` half is cut, the returned amount goes with it and the cutting
+  decision records both deferrals with their owner.
 
 **P15-TSK-028 — Dead letters and replay** — `PLANNED`
 - **Objective**: an abandoned outbox event and a poison inbox record each have an audited door, and a replay can never
@@ -27706,7 +27833,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; two debt rows closed.
 - **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: L.
 
-**P15-TSK-029 — Retention sweeps and the retention policy (C12)** — `PLANNED`
+**P15-TSK-029 — Retention sweeps and the retention policy (C12)** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-002`'s merge, master `53d442b1`; every dependency `COMPLETE`)
 - **Objective**: operational tables stop growing without bound, and every data class has a written retention.
 - **Affected components**: `platform` (outbox and inbox sweeps), `app` (their schedules), `DATA_MIGRATIONS.md` §8–9, a
   retention policy document.
@@ -27728,6 +27855,18 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §retention; the policy.
 - **Acceptance criteria**: as tested; two debt rows closed; the rest re-dated with reasons.
 - **Definition of done**: `DOD-KERNEL`, `DOD-DOC`. **Risk**: Medium. **Cx**: M.
+- *Ruled by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged:* **debt row #61 is not settled, so this task sweeps no
+  idempotency record.** `journal_entry.idempotency_scope` is not `UNIQUE`, and no Phase 15 task builds that uniqueness,
+  so the idempotency record stays posting once-ness's second rank; the sweep of idempotency records stays excluded here,
+  and any later sweep of them lands the uniqueness on the posting scope first (both re-dated to Phase 16's archival of
+  high-volume tables). This task's sweeps are the outbox's published rows and the inbox's expired records, never the
+  idempotency table. **Testing**: a hermetic guard that no schedule or statement this task adds deletes from
+  `platform.idempotency_record`. **Probe**: plant a delete of idempotency records in the sweep → the guard red. The
+  retention policy names, beside the operational classes: audit (never deleted; the archival design to write-once
+  storage here, the archive bucket's lock `-015`'s, its build Phase 16's), regulatory reports, credit evidence (its
+  scope question open: the normalised attributes, each snapshot's canonical text) and the lending and BNPL agreement and
+  acceptance evidence - each period open until a real jurisdiction is chosen (C12), the purges re-dated there.
+  `THREAT_MODEL.md` T16's planned row says the same.
 
 **P15-TSK-030 — Backup and restore with post-restore financial verification** — `PLANNED`
 - **Objective**: a restored database is proven financially whole before it would serve money.
@@ -27809,6 +27948,16 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   records are to count there (break-glass, compromise), its gate widens the grammar deliberately: it names the
   records' directory and form, adds the rule to `ThreatModelIsCompleteTest` with a probe, and rewrites the rows it
   satisfies. Until then a rehearsal record counts in `PRODUCTION_READINESS.md` only.
+- *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged:* **the poisoned-row procedures** - three debt rows
+  whose code change is re-dated to Phase 16 and whose operating procedure is this task's: a sweep stalled by one
+  unrehydratable (non-UUIDv7) id, which today fails every tick on every instance; a row that fails every tick at the
+  head of a sweep's batch; a rematch residual faulting every tick with only warnings to show. Each procedure says how the
+  operator finds the row (the meter or the repeated log line), why it is an incident (a raw writer's corruption, or a
+  defect), and how the value it holds is protected while it waits. **Beside the parked-value procedures**: a book
+  refund to a payer wallet closed since is refused with no remedy (Phase 7 residue #40); its value's procedure is the
+  closed customer's, its remedy a later payments phase's. **Testing**: each procedure rehearsed against its planted
+  condition and counted in its section. **Probe**: none applicable, as this entry's (procedures; the planted condition
+  is the rehearsal's). **Acceptance**: the three debt rows' procedure halves closed.
 
 **P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: fix, at their causes, the production defects the owner postponed to this phase's database pass.
@@ -27834,6 +27983,22 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: `POSTPONED_ISSUES.md`; `DISTRIBUTED_EXECUTION.md` §3's clock-step paragraph.
 - **Acceptance criteria**: both reproductions green in the pass.
 - **Definition of done**: `DOD-FIN`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged - taken only if this ruling is on master at this
+  task's integration step; otherwise the five stores stay `X-TSK-008`'s and return to the owner:* **`X-TSK-008`'s five
+  stores** (`PHASE_15_PLAN.md` §25), five statements that judge a stored bound against an instance's instant:
+  `JdbcRecoveryRequestStore.consume` (`expires_at > ?`), `JdbcContactChannelStore.verify` (`verification_expires_at > ?`),
+  `JdbcCheckoutSessionStore`'s expiry sweep (`expires_at <= ?`), `JdbcFeeScheduleStore.findEffectiveVersionFor`
+  (`v.effective_from <= ?`, the card side of the fee version in force - `POSTPONED_ISSUES.md` PI-002, whose fix it is:
+  resolved on the database's clock after the session's locks, as the Phase 12 → 13 gate's R2 did for BNPL, with a
+  trigger rank on the pin's instant like merchant `V012`'s) and `JdbcPayoutDestinationStore.findDue`
+  (`cooling_off_until <= ?`). **Scope**: each judged, and its bound stamped, on the database's clock (`X-TSK-007`'s
+  treatment), a requested instant floored at `now()`; business time left alone. **Testing**: a build rule in the shape of
+  `SessionTimeIsTheDatabasesTest` naming every bound comparison in those five stores and refusing a caller's instant
+  (hermetic); per store a skewed-instance case whose precondition asserts the skew (database cases owed to
+  `P15-TST-002`, C14). **Probe**: bind one store's comparison to the caller's instant again → the build rule red.
+  **Acceptance**: the five on the database's clock, the rule green, PI-002 marked `FIXED` when the pass proves it, and
+  `THREAT_MODEL.md` T13's planned row for the five stores rewritten to evidence. Not this task's: `X-TSK-008`'s ordering
+  `CHECK`s and session leftovers.
 
 **P15-TSK-035 — The source-join census: every journal entry tied to the domain record that caused it** — `PLANNED`
 - **Objective**: a journal entry with no domain record behind it, or whose domain record's amounts differ from its lines,
@@ -27875,10 +28040,63 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - *Added by the owner (2026-11-08), accepting `THREAT_MODEL.md` section 6 item 2's recommendation (a) after
   `P15-TSK-001`'s merge; milestone M15.8, wave D.*
 
+**P15-TSK-036 — Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-002`'s merge, master `53d442b1`; every dependency `COMPLETE`)
+- **Objective**: a forged-but-signed callback moves no money on any rail. The PSP and instant-rail doors adopt an outcome
+  only from an authenticated inquiry, as ADR-0083 made the Phase 9 doors do, so one doctrine holds platform-wide and a
+  stolen webhook key can hasten what the platform learns and nothing else (`THREAT_MODEL.md` T8).
+- **Affected components**: `app` (`PaymentWebhookService` behind `PaymentWebhookController`, `InstantCallbackService`
+  behind `InstantCallbackController`, `CorridorCallbackService` for one residue), `payments` (the outcome appliers they
+  call; `PaymentProvider.query`, `PushRail.inquire`, `inquireInitiation` and `inquireReturn`), the provider contract
+  batteries, ADR-0083 (decision 4's as-built), `SECURITY_ARCHITECTURE.md` §Signed provider callbacks,
+  `OPERATIONS_RUNBOOK.md` (a callback's outcome now waits on one inquiry), `THREAT_MODEL.md` T8.
+- **Dependencies**: `-001`; `-002` (this entry is its ruling).
+- **Scope**: every callback kind the two doors adopt today, enumerated from the code (the PSP door's authorisation,
+  capture, refund, void, clearing and dispute notices; the instant door's credit, initiation and return outcomes), each
+  either made a hint - authenticate, retain the evidence, dedupe through the inbox, then adopt only what an authenticated
+  inquiry over the provider credential answers, through the conditional transitions the resolution sweeps already use -
+  or named with the reason no inquiry exists for it and that reason's own ADR (ADR-0083's follow-up: a kind with no
+  inquiry needs one); a failed inquiry logged and left to the sweep, never an adopted outcome; the planted
+  forged-but-signed callback test per provider and per adopted kind. With the doors it re-plumbs, three debt-row
+  residues: the card door's applier locks, re-reads and flags a contradiction between a late statement and the row
+  (the debt row on its unlocked attribution read; the instant door's repair the template); the card door's refund
+  attribution scoped to its rail (Phase 7 residues #34, #75); the corridor door retains as evidence an authenticated
+  callback naming no credit (a subject-less append, the Phase 9 residue).
+- **Exclusions**: the KYC provider's callbacks (no money rail; T8's KYC rows stand); the FX and corridor doors' outcome
+  path (hints since Phase 9); a callback door's freshness window on the database's clock (re-dated by `-002`: in front
+  of a hint and an inbox dedupe it decides no financial instant); a real provider's inquiry contract.
+- **Architecture changes**: ADR-0047's last step, for the PSP and instant doors, becomes ADR-0083's (inquire, then
+  apply), recorded on ADR-0083 as decision 4 built; a new ADR only if a kind has no inquiry.
+- **Infrastructure changes**: none expected; any migration expand-only.
+- **Security implications**: T8 - the webhook keys stop being money-moving credentials on every rail, and the provider
+  credentials become the sole outcome authority. The cost is one inquiry per callback, bounded by the dedupe.
+- **Multi-instance implications**: a callback-hinted inquiry and the resolution sweep's inquiry racing on one attempt on
+  two replicas meet the same row locks and conditional transitions, so one applies and the other converges; a callback
+  delivered to two replicas dedupes through the inbox before any inquiry. `PASS` on a counted database case owed to
+  `P15-TST-002` (C14): ten contexts delivering one signed callback while a sweep inquires the same attempt → one outcome
+  applied, one posting.
+- **Failure and rollback**: the provider's inquiry unavailable → the callback is acknowledged with its evidence and
+  dedupe, and the outcome waits for the sweep, never adopted from the callback. Rollback is the previous release; no
+  schema is rolled back.
+- **Testing and validation**: per provider and adopted kind, a forged-but-signed callback whose inquiry disagrees moves
+  nothing (hermetic where the applier allows, the database case owed); a genuine callback concludes through its inquiry;
+  an inquiry failure leaves the outcome to the sweep; the card door's contradiction flagged; a refund attribution across
+  rails refused; the corridor's unattributed callback retained.
+- **Probe**: let the PSP door adopt the callback's own capture outcome again → the forged-capture test red.
+- **Operational documentation**: `SECURITY_ARCHITECTURE.md` §Signed provider callbacks; the runbook's provider-callback
+  notes; `THREAT_MODEL.md` T8's planned row rewritten to evidence.
+- **Acceptance criteria**: every callback kind of the two doors a hint, or named with its reason and its ADR; a
+  forged-but-signed callback moves nothing on any rail (a planted test per provider), `X-TSK-015`'s acceptance; the
+  three residues closed.
+- **Definition of done**: `DOD-SEC`, `DOD-FIN`. **Risk**: Medium (live money paths). **Cx**: M.
+- *Added by `P15-TSK-002` (**C15**, 2026-11-08), applying `PHASE_15_PLAN.md` §25 as the owner ratified it ("scheduled
+  into this phase on ratification, as its own item after `-001` (security, T8)"); `X-TSK-015` moved here whole and is
+  `CANCELLED`, moved, not dropped. Milestone M15.7, wave C.*
+
 **P15-TST-002 — The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015)** — `PLANNED`
 - **Objective**: the owed database suites of every Phase 15 task and of PI-012…PI-015 run once, fresh, on the final tree.
 - **Affected components**: every module's `databaseTest`, own-container and `kafkaTest` tiers; `MUTATION_TESTING.md`.
-- **Dependencies**: every item from `-002` to `-033`, and `-035` *(added 2026-11-08 with that item)*.
+- **Dependencies**: every item from `-002` to `-033`, and `-035` *(added 2026-11-08 with that item)* and `-036` *(added
+  2026-11-08 by `P15-TSK-002`, C15, with that item)*.
 - **Scope**: every tier run fresh once on the tree as it then stands, including `kafkaTest` (PI-012); PI-013's and
   PI-014's regression cases; PI-014's unclassified suites classified; PI-015's struck rows performed again on present
   bytes or struck for good with a reason; counts read from the JUnit XML with their timestamps.
@@ -28413,6 +28631,17 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   are decided and, where changed, tested.
 - **Risk**: Medium. The `CHECK` family touches money-moving tables. **Cx**: L. Split it when it is
   scheduled. **DoD**: `DOD-SEC`, `DOD-FIN` for the money-moving sites, `DOD-DOMAIN`.
+- *Split by **C15** (`P15-TSK-002`, 2026-11-08), status unchanged:* the first family's five stores - five statements
+  binding an instance's instant, recounted from the code: `JdbcRecoveryRequestStore.consume`,
+  `JdbcContactChannelStore.verify`, `JdbcCheckoutSessionStore`'s expiry sweep, `JdbcFeeScheduleStore.findEffectiveVersionFor`
+  (the card side, PI-002; its sibling `findEffectiveVersion` is already bound to the database's `clock_timestamp()` by
+  BNPL's caller, the Phase 12 → 13 gate's R2) and `JdbcPayoutDestinationStore.findDue`'s cooling-off - are Phase 15's,
+  routed to `P15-TSK-033` as `PHASE_15_PLAN.md` §25 rules (beside PI-013, the same class), and that task's entry carries
+  their acceptance and probe. What stays here: the ordering `CHECK`s and
+  the two session leftovers - the clock class, which no Phase 15 task can take whole. Their horizon is the owner's
+  (owner item 2 of the ruling; recommended: before production use, counted by `P15-TSK-034` as a named gap, the `touch`
+  leftover into `P15-TSK-031`'s rollout-safety question). If `-033` closes before this split reaches it, the five stores
+  return here and to the owner.
 
 **X-TSK-009 — Provider receipt after a timeout, proved deterministically** — `IN_PROGRESS`
 *(implemented and demonstrated 2026-09-27; awaiting the completion gate)*
@@ -28574,13 +28803,15 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   on an event, `INV-EVT-04`), and the minor units are pinned by a test and a startup guard (D27), so
   the implicit scale is exact. Adding a field to every event is an additive schema-version step best
   done once, platform-wide.
-- **Owner**: Phase 15 (production hardening: event schema evolution). **Trigger**: the first
+- **Owner**: Phase 15 (production hardening: event schema evolution) - `P15-TSK-027` *(**C15** (`P15-TSK-002`, 2026-11-08): ratified into `-027` as its `X-TSK-014` half, the phase's second cut candidate)*. **Trigger**: the first
   consumer that reads an amount, or the first currency whose minor units the JDK could change.
 - **Deps**: none.
 - **Accept**: every amount-bearing event carries its scale; the schema versions bumped and the
   compatibility tests green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-EVENT`
+- *Scheduled by **C15** (`P15-TSK-002`, 2026-11-08), status unchanged:* this entry is built by `P15-TSK-027` and closes
+  with that task's gate. If `-027`'s half is cut, the cutting decision records the deferral and this entry's owner.
 
-**X-TSK-015 — Callbacks as hints for the Phase 5 and Phase 7 providers** — `PLANNED`
+**X-TSK-015 — Callbacks as hints for the Phase 5 and Phase 7 providers** — `CANCELLED` (2026-11-08: **moved, not dropped** - by **C15** (`P15-TSK-002`), as `PHASE_15_PLAN.md` §25 rules, this work is the Phase 15 item **`P15-TSK-036`**, whose entry carries this one's description, acceptance and trigger; the id is kept, never reused, as this backlog's scheme says. *Read "`PLANNED`, owner Phase 15" until then.*)
 - **Context**: the PSP and instant-rail webhook pipelines (ADR-0047). Recorded by the Phase 8 → 9
   transition (ADR-0083, D25).
 - **Description**: ADR-0083 makes a verified callback a hint, whose outcome is adopted only from an
@@ -28589,7 +28820,7 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
 - **Why not in Phase 9**: it changes live Phase 5/7 money paths (one inquiry per callback), with its
   own negative tests and provider contract changes. Phase 9's flows are built on the new doctrine
   from birth.
-- **Owner**: Phase 15 (production hardening: security). **Trigger**: earlier if a webhook key
+- **Owner**: Phase 15 (production hardening: security) - `P15-TSK-036` *(**C15** (`P15-TSK-002`, 2026-11-08): moved there whole)*. **Trigger**: earlier if a webhook key
   compromise is suspected, or a provider offers no inquiry.
 - **Deps**: none.
 - **Accept**: every provider callback is a hint; a forged-but-signed callback moves nothing on any

@@ -83,3 +83,7 @@ so a refused delivery keeps metadata only (`INV-PAY-02`, `INV-RAIL-03` taking pr
 `INV-HIST-02` for it). It is chunked, each chunk binding its file, source, checksum and position as
 associated data, and every content access is audited (`INV-REC-10`). The associated data this
 ADR's cipher does not bind is `X-TSK-010`'s.)*
+
+## Read-note: the carried items' ruling (2026-11-08)
+
+C15 (`PHASE_15_PLAN.md` §25, C12), applied by `P15-TSK-002`: Phase 15's share of retention is the policy by data class (`P15-TSK-029`), which states evidence's period as open. The regulatory deletion question, and any purge of evidence, is re-dated to the choice of a real jurisdiction, whose retention period decides it. The rows carry the disposition, marked **C15** (`P15-TSK-002`, 2026-11-08); this record's decision and status are unchanged.

@@ -287,3 +287,7 @@ ADR-0001, ADR-0006, ADR-0084.
 - **Acceptance.** **As built** (`P11-DOC-001`, 2026-10-15): `Proposed` at the Phase 10 → 11 transition
   (2026-10-10); the Phase 11 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.
+
+## Read-note: the carried items' ruling (2026-11-08)
+
+C15 (`PHASE_15_PLAN.md` §25), applied by `P15-TSK-002`, re-dates two items. The agreement and evidence purge goes to the choice of a real jurisdiction, and the retention policy by class is `P15-TSK-029`'s. Production origination on a real bureau goes to the choice of real providers, a programme non-goal; read "Phase 15 at the latest" as re-dated. The rows carry the disposition, marked **C15** (`P15-TSK-002`, 2026-11-08); this record's decision and status are unchanged.
