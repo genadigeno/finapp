@@ -90,8 +90,17 @@ public class DatabaseCredentialGuard {
      */
     static final String REQUIRED_ENVIRONMENT_VARIABLE = "FINAPP_DB_APP_PASSWORD";
 
+    /**
+     * The reporting role's credential (`P15-TSK-021`): report generation's own pool connects to the same database as
+     * {@code finapp_reporting}, and its marked local default is the same published value, so it is confined to loopback
+     * by the same rule.
+     */
+    static final String REPORTING_ENVIRONMENT_VARIABLE = "FINAPP_DB_REPORTING_PASSWORD";
+
     DatabaseCredentialGuard(Environment environment) {
         verify(DatabaseEndpoint.url(environment), DatabaseEndpoint.password(environment));
+        verify(DatabaseEndpoint.url(environment),
+                environment.getProperty(com.finapp.app.database.ReportingPool.LOGIN_PROPERTY), REPORTING_ENVIRONMENT_VARIABLE);
     }
 
     // The effective-URL and effective-password lookups, and the host parsing below, moved to
@@ -105,6 +114,11 @@ public class DatabaseCredentialGuard {
      * @throws IllegalStateException if the marked local default is aimed off this machine
      */
     public static void verify(String jdbcUrl, String password) {
+        verify(jdbcUrl, password, REQUIRED_ENVIRONMENT_VARIABLE);
+    }
+
+    /** {@link #verify(String, String)} for a credential set by {@code variable}, which the refusal names. */
+    public static void verify(String jdbcUrl, String password, String variable) {
         if (!MARKED_LOCAL_DEFAULT.equals(password)) {
             // Somebody supplied a credential. Whether it is a good one is not this guard's
             // question, and pretending to judge that would be theatre.
@@ -117,7 +131,7 @@ public class DatabaseCredentialGuard {
                     "Refusing to start: the marked local-development database credential is in use,"
                             + " and no host could be read from spring.datasource.url, so this"
                             + " cannot be shown to be a local database. Set "
-                            + REQUIRED_ENVIRONMENT_VARIABLE
+                            + variable
                             + ". See docs/architecture/SECRET_MANAGEMENT.md.");
         }
 
@@ -129,7 +143,7 @@ public class DatabaseCredentialGuard {
                             + remote
                             + ". That credential is published in this repository and is not a"
                             + " secret. Set "
-                            + REQUIRED_ENVIRONMENT_VARIABLE
+                            + variable
                             + ". See docs/architecture/SECRET_MANAGEMENT.md.");
         }
     }

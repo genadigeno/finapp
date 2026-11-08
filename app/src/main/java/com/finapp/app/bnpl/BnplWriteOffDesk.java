@@ -241,7 +241,7 @@ public final class BnplWriteOffDesk {
      */
     private BnplWriteOffReceipt keyed(Actor actor, CorrelationId correlation, String idempotencyKey, BnplWriteOffMetrics.Outcome success,
             String fingerprinted, Function<Connection, Acted> act) {
-        IdempotencyKey key = new IdempotencyKey(BnplCorrectionDesk.SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(BnplCorrectionDesk.SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         AtomicReference<Acted> acted = new AtomicReference<>();
         IdempotentExecutor.ExecutionOutcome outcome;

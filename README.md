@@ -295,19 +295,20 @@ docker compose ps
 
 ### Database roles
 
-PostgreSQL is provisioned with three roles, not one:
+PostgreSQL is provisioned with four roles, not one:
 
 | Role | Used by | Holds |
 |---|---|---|
 | `finapp` | The container's own bootstrap | Cluster superuser. Nothing in this project connects as it except one test fixture |
 | `finapp_migrator` | Flyway | Owns the `platform` schema. DDL only, **not** a superuser |
 | `finapp_app` | The application | Per-table DML, granted by the migration that creates each table. No DDL |
+| `finapp_reporting` | Report generation's own pool (`P15-TSK-021`) | `SELECT` on the tables a report run reads, granted by the migrations of the modules that own them. Nothing else |
 
 The split is not cosmetic. `INV-LED-03`, `INV-HIST-01` and `INV-HIST-03` are enforced by the
 application role **lacking** a privilege, and a superuser ignores every permission check — so
 running as one would make those invariants untestable rather than merely unenforced.
 
-`finapp_migrator` and `finapp_app` are created by
+`finapp_migrator`, `finapp_app` and `finapp_reporting` are created by
 `infra/postgres/initdb/00-roles.sql`, which the container runs on **first initialisation only**.
 Roles are cluster objects and so cannot live in a Flyway migration; see the script's header.
 
@@ -326,6 +327,11 @@ MSYS_NO_PATHCONV=1 docker compose exec -T postgres psql -U finapp -d finapp -f /
 
 Without the roles, `./gradlew :platform:flywayMigrate` fails with
 `FATAL: password authentication failed for user "finapp_migrator"`.
+
+**If your volume predates `finapp_reporting`** (added 2026-11-08, `P15-TSK-021`), apply the same script
+once more - it is idempotent and creates only what is missing - before migrating: the accounting,
+ledger, reconciliation and lending migrations grant to that role, and fail with
+`role "finapp_reporting" does not exist` without it.
 
 ---
 
@@ -427,12 +433,17 @@ if a stated value stops matching the code, or if a section is added without a la
 
 ## 5b. Health, readiness and build info
 
-Three endpoints, deliberately unversioned (ADR-0016):
+Three endpoints, deliberately unversioned (ADR-0016), served on the **management port, 8081**,
+bound to loopback (`P15-TSK-008`). The API port, 8080, answers `404` for every `/actuator` path:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}
-' http://localhost:8080/actuator/health/readiness
+' http://127.0.0.1:8081/actuator/health/readiness
 ```
+
+`FINAPP_MANAGEMENT_ADDRESS` moves the management port off loopback; only the Kubernetes overlays set
+it, to the pod's address. Do not set it to `0.0.0.0` on a developer's machine: the endpoints are
+unauthenticated.
 
 | Endpoint | Answers | Depends on |
 |---|---|---|
@@ -453,13 +464,16 @@ is a security decision, not an oversight; see `docs/architecture/SECURITY_ARCHIT
 
 Database settings come from `FINAPP_DB_URL` and the application role's own
 `FINAPP_DB_APP_USER` and `FINAPP_DB_APP_PASSWORD` - the application connects as `finapp_app`,
-never as the superuser `compose.yaml`'s `FINAPP_DB_USER` names.
+never as the superuser `compose.yaml`'s `FINAPP_DB_USER` names. Report generation reads through
+its own one-connection pool as `finapp_reporting` (`FINAPP_DB_REPORTING_USER`,
+`FINAPP_DB_REPORTING_PASSWORD`, `FINAPP_DB_REPORTING_POOL_SIZE`), counted in the connection budget
+and never on the readiness path.
 
 ---
 
 ## 5d. Metrics and the dashboard
 
-The application publishes Prometheus metrics at `/actuator/prometheus`. Names follow
+The application publishes Prometheus metrics at `/actuator/prometheus` on the management port, 8081. Names follow
 `finapp.<module>.<noun>` and the build fails if one does not (ADR-0018).
 
 To see the dashboard:
@@ -473,7 +487,10 @@ provisioned from `infra/grafana/` - the datasource and the dashboard are files i
 in a volume, so `allowUiUpdates` is off: edit the JSON, not the UI.
 
 Prometheus scrapes the application on the **host**, not in a container, because that is where a
-developer runs it.
+developer runs it: `host.docker.internal:8081`, which Docker Desktop forwards to the host's loopback.
+On a Linux Docker engine `host.docker.internal` is the bridge's address and a loopback listener does
+not answer it: start the application with `FINAPP_MANAGEMENT_ADDRESS` set to that bridge address
+(`infra/prometheus/prometheus.yml` says how to find it). That case is not measured here.
 
 **A metric never carries a correlation identifier, an account, or anything else a request can
 influence.** That is both a cardinality rule and a security rule - a tag value from a request
@@ -549,8 +566,8 @@ docker compose up -d postgres kafka --wait
 The container shares the host's network (`--network host`), so the application's loopback-only defaults hold exactly
 as they do on your machine: the local database credential and plaintext Kafka are refused anywhere but loopback. It
 runs with a read-only root filesystem, `/tmp` in memory and every capability dropped, and the script waits for
-`/actuator/health/readiness` to answer `UP` on port 8080, then checks the running process is UID 65532. The actuator's
-port follows `P15-TSK-008`, which moves it to a management port (8081). The script never starts or stops compose, so it
+`/actuator/health/readiness` to answer `UP` on the management port, 8081 (`P15-TSK-008`; loopback, which the host network
+shares), then checks the running process is UID 65532. The script never starts or stops compose, so it
 cannot tear down your own stack; if your PostgreSQL is published on another loopback port, export `FINAPP_DB_URL` and it
 is passed through.
 

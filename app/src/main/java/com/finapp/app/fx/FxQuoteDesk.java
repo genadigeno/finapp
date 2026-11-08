@@ -123,7 +123,7 @@ public final class FxQuoteDesk {
         CorrelationId correlation = correlation();
         Parsed parsed = parse(body);
         String pair = parsed.source().code() + "-" + parsed.destination().code();
-        IdempotencyKey key = new IdempotencyKey(QUOTE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(QUOTE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
 
         record Begun(IdempotentExecutor.BeginOutcome outcome, QuoteIssuance.Claimed claimed, QuoteRefusal refusal) {}
         Begun begun = transactions.inTransaction(unitOfWork -> {
@@ -192,7 +192,7 @@ public final class FxQuoteDesk {
         FxQuoteId id = quoteId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(CANCEL_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(CANCEL_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(("fx.quote-cancel|" + id.value()).getBytes(StandardCharsets.UTF_8));
         AtomicReference<String> pairOfCancelled = new AtomicReference<>();

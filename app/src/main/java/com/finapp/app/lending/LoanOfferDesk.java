@@ -116,7 +116,7 @@ public final class LoanOfferDesk {
         LoanOfferId id = offerId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(DECLINE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(DECLINE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(("lending.offer-decline|" + id.value()).getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome;

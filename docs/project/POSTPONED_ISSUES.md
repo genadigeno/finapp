@@ -414,6 +414,10 @@ commit and the date; do not delete the entry.
   probed only in part - the adjustment door's screen, record and outcome (hermetic, caught) and ledger `V032` on its text pin;
   **not probed**: `V032` against PostgreSQL (`PostingCutoffDatabaseTest#aLineAppendedToALockedMonthsEntryIsRefused`), the
   unlock's and reopen's ends converging on the request named, `valuationRateSetReferenceGaps`, and the GL entry's `namespace`.
+  *(Added by `P15-TSK-021`, 2026-11-08:)* its one-token scope change (`Actor.keyedType`) across 62 desk files, its error
+  contract's step-up record and its role script reached 54 rows: it performed again on its bytes every hermetic one (45,
+  each caught) and struck the nine database ones as evidence of today - rows 1084, 1396, 1436, 1437, 1438, 1827, 1829,
+  1830 and 1865's probe (4) - owed here.
 - **Consequence:** those rows say what was true when they were performed; that each still fails when its property is broken,
   on today's bytes, is not shown. Every `INV-ACC-*` keeps a row standing today; `INV-LED-01` and `INV-LED-05` stand on Phase 3's
   older-form rows only (section 3's Phase 14 block).

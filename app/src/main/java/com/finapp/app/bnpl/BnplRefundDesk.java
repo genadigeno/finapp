@@ -40,7 +40,7 @@ import org.springframework.transaction.TransactionSystemException;
  * {@code POST /v1/merchant/bnpl-purchases/{id}/refunds} over the merchant's API key carrying the {@code BNPL_REFUND}
  * scope, keyed per merchant ({@code bnpl.refund:MERCHANT:<merchant>}), and the operator's door beside it,
  * {@code POST /v1/operator/bnpl-purchases/{id}/refunds} under {@code PAYMENT_REFUND}, keyed per operator
- * ({@code bnpl.refund:<actor type>:<id>} - {@code CUSTOMER}-typed for an operator session today). Each runs T-ref in
+ * ({@code bnpl.refund:<keyed type>:<id>} - {@code CUSTOMER} for any person, {@code Actor.keyedType}). Each runs T-ref in
  * one transaction under the {@link IdempotentExecutor} claim: a
  * retried key replays the recorded receipt ({@code INV-IDEM-01}: the database committed and the response was lost - the
  * retry answers the same refund), and a refusal, which writes nothing, rolls the claim back with it.
@@ -200,7 +200,7 @@ public final class BnplRefundDesk {
     private Keyed keyed(Actor actor, String idempotencyKey, BnplPurchaseId purchase, Money amount,
             BnplRefundController.BnplRefundBody body, Function<Connection, BnplRefunds.Refunded> act,
             Function<BnplRefunds.Refunded, StoredResponse> receipt) {
-        IdempotencyKey key = new IdempotencyKey(REFUND_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(REFUND_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "bnpl.refund",
                         purchase.value().toString(), Long.toString(amount.minorUnits()), Integer.toString(amount.scale()),
                         amount.currency().code(), body.reason() == null ? "" : body.reason())

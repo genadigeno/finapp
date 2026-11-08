@@ -125,6 +125,22 @@ class DenyByDefaultDatabaseTest {
         String contradictory() {
             return "reached";
         }
+
+        /** An operator act behind a declared step-up (`P15-TSK-021`): the interceptor's refusal. */
+        @com.finapp.app.session.RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+        @com.finapp.app.session.RequiresPermission(PermissionName.ROLE_ASSIGN)
+        @GetMapping("/probe/stepped-up")
+        String steppedUp() {
+            return "reached";
+        }
+
+        /** A customer's act whose operation refuses the step-up itself (`P15-TSK-021`): the error contract's. */
+        @com.finapp.app.session.RequiresSession
+        @GetMapping("/probe/conditional-step-up")
+        String conditionalStepUp() {
+            throw new com.finapp.platform.api.ApiException(com.finapp.identity.IdentityErrorCode.ASSURANCE_REQUIRED,
+                    "this operation requires a MULTI_FACTOR session");
+        }
     }
 
     private static final Clock CLOCK = Clock.system(ZoneOffset.UTC);
@@ -317,6 +333,91 @@ class DenyByDefaultDatabaseTest {
         assertThat(denialsFor(identity) - before)
                 .as("a refused privileged attempt must leave a durable trace")
                 .isEqualTo(1);
+    }
+
+    // -----------------------------------------------------------------
+    // Who is acting (P15-TSK-021)
+
+    @Test
+    @DisplayName("P15-TSK-021: an operator act's audit row is EMPLOYEE; a customer refused at an operator route is"
+            + " CUSTOMER; staff refused beyond their role EMPLOYEE - in platform.audit_record")
+    void theOperatorActorIsTyped() throws Exception {
+        IdentityId administrator = givenAnIdentity();
+        String session = givenASessionFor(administrator);
+        givenTheRole(administrator, RoleName.ADMINISTRATOR);
+        IdentityId subject = givenAnIdentity();
+        HttpResponse<String> granted = post("/identities/" + subject.value() + "/roles",
+                "{\"role\":\"KYC_REVIEWER\",\"reason\":\"joins the review desk\"}", session);
+        assertThat(granted.statusCode()).as(granted.body()).isEqualTo(204);
+        assertThat(actorTypesOf("identity.RoleAssigned", subject, administrator)).containsExactly("EMPLOYEE");
+
+        IdentityId customer = givenAnIdentity();
+        assertThat(get("/probe/privileged", givenASessionFor(customer)).statusCode()).isEqualTo(403);
+        assertThat(actorTypesOf("identity.AuthorizationDenied", customer, customer)).containsExactly("CUSTOMER");
+
+        IdentityId reviewer = givenAnIdentity();
+        givenTheRole(reviewer, RoleName.KYC_REVIEWER);
+        assertThat(get("/probe/privileged", givenASessionFor(reviewer)).statusCode()).isEqualTo(403);
+        assertThat(actorTypesOf("identity.AuthorizationDenied", reviewer, reviewer)).containsExactly("EMPLOYEE");
+    }
+
+    @Test
+    @DisplayName("P15-TSK-021: a refused step-up writes one identity.StepUpRefused row, committed although the request"
+            + " was refused - the interceptor's EMPLOYEE at an operator act, the error contract's CUSTOMER at an"
+            + " operation's own - naming the route pattern and no session detail")
+    void aRefusedStepUpIsRecorded() throws Exception {
+        IdentityId administrator = givenAnIdentity();
+        String session = givenASessionFor(administrator);
+        givenTheRole(administrator, RoleName.ADMINISTRATOR);
+        HttpResponse<String> refused = get("/probe/stepped-up", session);
+        assertThat(refused.statusCode()).isEqualTo(403);
+        assertThat(refused.body()).contains("identity.AssuranceRequired");
+        assertThat(actorTypesOf("identity.StepUpRefused", administrator, administrator)).containsExactly("EMPLOYEE");
+        assertThat(summariesOf("identity.StepUpRefused", administrator)).singleElement().satisfies(summary -> {
+            assertThat(summary).contains("operation=GET ").contains("/probe/stepped-up");
+            assertThat(summary).doesNotContain(session, "PASSWORD", "MULTI_FACTOR");
+        });
+        assertThat(actorTypesOf("identity.AuthorizationDenied", administrator, administrator))
+                .as("the step-up is judged before the permission").isEmpty();
+
+        IdentityId customer = givenAnIdentity();
+        assertThat(get("/probe/conditional-step-up", givenASessionFor(customer)).statusCode()).isEqualTo(403);
+        assertThat(actorTypesOf("identity.StepUpRefused", customer, customer)).containsExactly("CUSTOMER");
+    }
+
+    private static java.util.List<String> actorTypesOf(String operation, IdentityId target, IdentityId actor)
+            throws SQLException {
+        return column("SELECT actor_type FROM platform.audit_record WHERE operation = ? AND target_id = ?"
+                + " AND actor_id = ? ORDER BY occurred_at", operation, target.value().toString(), actor.value().toString());
+    }
+
+    private static java.util.List<String> summariesOf(String operation, IdentityId target) throws SQLException {
+        return column("SELECT change_summary FROM platform.audit_record WHERE operation = ? AND target_id = ?",
+                operation, target.value().toString());
+    }
+
+    private static java.util.List<String> column(String sql, String... arguments) throws SQLException {
+        java.util.List<String> values = new java.util.ArrayList<>();
+        try (Connection app = DatabaseRoles.application(); PreparedStatement query = app.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                query.setString(i + 1, arguments[i]);
+            }
+            try (var rows = query.executeQuery()) {
+                while (rows.next()) {
+                    values.add(rows.getString(1));
+                }
+            }
+        }
+        return values;
+    }
+
+    private HttpResponse<String> post(String path, String body, String token) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1" + path))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     // -----------------------------------------------------------------

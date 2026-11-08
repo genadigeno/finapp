@@ -124,6 +124,12 @@ one of those paths perform a full Argon2id verification, so they are indistingui
 as well. A suspended account answering instantly would tell an attacker both that it exists and
 that it is suspended, which is the invariant lost through the channel that is harder to notice.
 
+**A `403 identity.AssuranceRequired` has its record** (`P15-TSK-021`; the review's fix round, 2026-11-08): every one is
+answered only after `identity.StepUpRefused` has committed in a transaction of its own - by the session interceptor
+at a declared step-up, by this renderer at an operation's own. Where the record cannot be written the request is
+answered `500 api.InternalError` instead, on both paths, as a permission denial is: refused either way, and the
+answer never claims a refusal the audit trail lacks.
+
 **Not `api.Unauthenticated`, deliberately.** That code means *authentication is required* — a
 protected route reached with no credentials at all. Here credentials **were** presented and were not
 accepted. They are different facts, a client handles them differently, and giving one string two
@@ -1480,7 +1486,7 @@ identifier.
 
 The terms doors (`P12-TSK-004`, ADR-0102 decision 4; `POST /v1/operator/bnpl/terms` (+ `/{versionId}/approval`,
 `/rejection`), `GET /v1/operator/bnpl/terms?product=&at=` and `GET /v1/operator/bnpl/terms/{versionId}`, every route
-`BNPL_ADMINISTER`; the acts keyed `bnpl.terms:<type>:<id>` - `CUSTOMER`-typed for an operator session today,
+`BNPL_ADMINISTER`; the acts keyed `bnpl.terms:<type>:<id>` - `CUSTOMER` for an operator (the keyed type since `P15-TSK-021`),
 `LENDING_LIFECYCLES.md` §4.1's A5-04 note): `TermsInvalid` refuses a proposal whole - an unknown product, convention,
 frequency or engine, an unregistered template, a non-zero pay-in-4 rate, another product's plan part, a plan the product
 does not list or credit cannot decide, an incomplete allocation order, a value outside the bounds bnpl declares;

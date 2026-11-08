@@ -27104,6 +27104,12 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §deploy (migration step), §migration failure (`-032`).
 - **Acceptance criteria**: identical schema to the build's; idempotent; serialised; bounded by `lock_timeout`.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-021` (2026-11-08), status unchanged:* `finapp_reporting` exists and the migrations grant to it
+  (accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V034`), so **the one-time bootstrap step creates it
+  before the first migrator run that includes them** - `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, `CONNECT`
+  on the database, its password from the secret store - exactly as `infra/postgres/initdb/00-roles.sql` does locally;
+  a migrator run against a database without it fails those migrations (`role "finapp_reporting" does not exist`),
+  never silently. The image's schema-history comparison covers the four grant migrations like any other.
 - *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged:* two security-class debt rows on what the migrator
   and the deployed roles can reach (`THREAT_MODEL.md` T33, T13). **(a) "The reconciliation tables' owner can
   TRUNCATE"**: every reconciliation table - 33 today (`P8-TST-002`'s scan found 31; `match_reach` and
@@ -27200,7 +27206,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T30's built row holds `ci.yml`'s token scope through `CiWorkflowIsLockedDownTest`. Keyless signing needs `id-token: write` on the signing job: grant it at that job only, rewrite T30's row (and the test's read-only assertion, to name that one exception) in this task's gate.
 
-**P15-TSK-008 — The runtime contract: management port, graceful shutdown, drained schedules** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-008 — The runtime contract: management port, graceful shutdown, drained schedules** — `COMPLETE` (2026-11-08, at its completion gate; branch `P15-TSK-008` from master `c1d07726`; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`) *(read "`IN_PROGRESS`" from its design until its gate, and "`READY`" until its start)*
 - **Objective**: an instance can be stopped at any moment without failing an accepted request or leaving work stranded,
   and its operational endpoints are on a port no ingress serves.
 - **Affected components**: `app` (`application.yaml`, every `*Schedule`, `InboxConsumers`, `AccountingGaugeRefresher`),
@@ -27230,8 +27236,50 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; probes served only on 8081.
 - **Definition of done**: `DOD-KERNEL`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* ADR-0023's decision 5 carries the same lapsed "no Kafka client" claim as `TransportSecurityGuard`'s note; `-001` added a read-note there pointing here and corrected `DECISIONS.md` §Transport and at-rest encryption. `THREAT_MODEL.md` T2 cites this task (the management port).
+- **As built** (2026-11-08; branch `P15-TSK-008` from master `c1d07726`; no migration, no ADR - dated notes on ADR-0120,
+  ADR-0023 and ADR-0016). **The management port**: `management.server.port: 8081`, `management.server.address:
+  ${FINAPP_MANAGEMENT_ADDRESS:127.0.0.1}` - loopback for every run outside Kubernetes, the pod's address only where an
+  overlay sets it (`-009`, routed); the API port answers `404` for every `/actuator` path (`ManagementPortTest`, on
+  production's own file: Spring Boot's test support replaces a management port only when it differs from the server's,
+  so the class fails if production's file puts the actuator back on the API port; the management connector is bound to
+  loopback and refused on this host's other address while the API port accepts there). Every test context uses `0`: the
+  overlay states `management.server.port=0`; the production-file suites take Boot's own replacement or `--...=0`.
+  Management-port requests are neither traced nor correlated (the API's filters are the main context's), so
+  `TracingTest` and `TraceAcrossDatabaseTest` drive API-port probe routes instead of the actuator. The local scrape
+  targets `host.docker.internal:8081`: measured, Docker Desktop forwards it to the host's loopback (a container with
+  compose's `host-gateway` reached a `127.0.0.1` listener); a Linux engine needs `FINAPP_MANAGEMENT_ADDRESS` set to the
+  bridge's address (recorded in `prometheus.yml` and the README, unmeasured). **Graceful shutdown**: `server.shutdown:
+  graceful` and `spring.lifecycle.timeout-per-shutdown-phase: 30s` stated and pinned; the order is `ShutdownOrder`'s
+  phases, held on a real context with all 34 lifecycle components running (`ShutdownOrderTest`): readiness
+  `REFUSING_TRAFFIC` before any phase, while the API port still accepts; the held request answered `200` after the port
+  closed, with readiness `503 OUT_OF_SERVICE` and liveness `200` on 8081 and all 32 schedules still running; every
+  schedule drained after the HTTP drain ended and before the consumers stopped; the management port answering until the
+  consumers had stopped and closed before the gauge reader stops; the pool open at every stop and closed after. **The
+  schedules** (32): each holds a `ScheduleDrain` (composition) and delegates its lifecycle to it - no shared supertype, which
+  `NoCustomerSurfaceReadsAccountingTest` would follow from one schedule to all of them; `stop()` stops claiming
+  at once - no tick starts after it - and awaits the tick in flight 10 s, then interrupts it (as before) and awaits 2 s;
+  Spring's `stop(Runnable)` waits on a thread of its own, so the phase drains in parallel (one bound, not 32). A tick's
+  own loop is not cut mid-tick: its batch is its unit of work, bounded per tick. `AccountingCloseSchedule`'s heartbeat
+  stops with its executor. **The consumers**: woken at once (no new batch), a batch in hand finished and acknowledged -
+  `KafkaEventReceiver` retries the commit a stop's wakeup interrupted - then closed (leaving the group), all loops
+  against one 10 s bound and a 2 s interrupt grace (the replaced join was sequential, 10 s per loop). **The gauge
+  reader**: queued reads dropped, the read in flight awaited 3 s. **The bound**: every component's `stopBound()` below the
+  phase timeout, asserted on the real context; the lifecycle's worst case 30 + 12 + 12 + 3 = 57 s before the producer's
+  close (10 s) and the pool's, routed to `-009` for the grace. **The counted case**: hermetic `ScheduleDrainTest` (two
+  instances over a leased claim table: drained - the owner finishes its batch, the second takes none of it; interrupted -
+  the leases lapse to the second; one effect per key either way), against PostgreSQL `ScheduleDrainDatabaseTest` (two
+  `OutboxRelaySchedule`s, own container; written, owed to `P15-TST-002`, walked by hand). `TransportSecurityGuard`'s note
+  corrected. `THREAT_MODEL.md` T2's management-port row now `EXISTS`; the two debt rows say moved, not closed, and close
+  with `-010`. Build: `kafka-clients` on `app`'s test compile classpath for `MockConsumer` (lock state widened, no new
+  artefact); `ScheduleDrainDatabaseTest` in `app`'s own-container list. `TracingTest` and `TraceAcrossDatabaseTest` flush
+  Spring Boot's batch span processor before each reset: a startup read's span landed in a later test otherwise.
+  **Deviations**: an in-flight tick is not cut mid-tick (a claimed batch is the unit of work); `FxCoverNudge`'s executor and
+  the risk gauges' virtual-thread readers are not drained (a hint and a reading); the counted database case uses the relay's
+  advisory-lock claim, the timed lease's reclaim staying `CloseRunDatabaseTest`'s; "two contexts" are two schedule instances
+  over one database, each with its own executor and connections.
 
-**P15-TSK-009 — Kubernetes base manifests for the application** — `PLANNED`
+**P15-TSK-009 — Kubernetes base manifests for the application** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-008`'s merge, master `278af2b8`; every dependency `COMPLETE`)
+- *Routed by the coordinator at `P15-TSK-008`'s merge (2026-11-08), from that branch's independent review (MERGE, three MINOR), status unchanged:* (1) the management server inherits `server.shutdown: graceful`, so a scrape in flight can hold the child context's close for its own 30 s phase timeout - `-008`'s 57 s worst case is low by up to 30 s; set the management factory to `Shutdown.IMMEDIATE` (a CHILD-context customizer) or add the 30 s, and size `terminationGracePeriodSeconds` from the corrected sum; (2) an empty, not unset, `FINAPP_MANAGEMENT_ADDRESS` resolves to no address and binds the management port to every interface (`application.yaml`'s default applies only when the variable is unset) - add a fail-closed startup guard refusing a null or any-local management address, with a test and a probe, before the overlays set the pod address; (3) "stops claiming at once" (`ScheduleDrain`'s javadoc, the DISTRIBUTED_EXECUTION row, runbook §11.1 step 3) overstates the drain: a tick with a claim loop (`AccountingCloseSchedule`, `RiskMonitoringSchedule`, `FxQuoteExpirySchedule`, `BnplDisputeSchedule`) keeps claiming for up to 10 s after `stop()` - safe, the claims are leased - so either check `drain.stopping()` in those loops or reword to "no new tick starts".
 - **Objective**: the application's desired state as reviewed, validated YAML.
 - **Affected components**: new `deploy/` (Kustomize base and overlays `kind`, `staging`, `production`); policy checks in
   `infra/scripts/`; `ci.yml` (a `manifests` job).
@@ -27258,6 +27306,14 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: rendered, validated, every policy proven by its plant.
 - **Definition of done**: `DOD-BUILD`, `DOD-ARCH`. **Risk**: Low. **Cx**: M.
 - *Routed by `P15-TSK-003` (2026-11-08), status unchanged:* what the image gives the pod profile. It runs as `65532:65532`, numeric, so `runAsNonRoot: true` with `runAsUser: 65532` verifies without reading the image. It reached readiness under `infra/scripts/image-readiness.sh` with a read-only root, `/tmp` a tmpfs, every capability dropped and `no-new-privileges`, so `readOnlyRootFilesystem` needs one writable `emptyDir` at `/tmp` (Tomcat's work directory) and nothing else. The heap is `-XX:MaxRAMPercentage=75.0` in the image's `ENTRYPOINT`, beside `-XX:+ExitOnOutOfMemoryError`: the memory request = limit sizing reads that percentage, and a calibrated value is a reviewed change to the `Dockerfile` (further flags go in `JDK_JAVA_OPTIONS`). The image has no `HEALTHCHECK` and declares no port. Observed in the negative readiness run: with the database unreachable, readiness answered (`503`) within the poll's two seconds on 2 of 48 attempts and otherwise not at all - consistent with the database indicator waiting on the pool's five-second `connection-timeout` - so a readiness probe whose `timeoutSeconds` is under that mostly reads a timeout rather than a `503`: still not ready, but the probe's timeout is a number to choose knowingly.
+- *Routed by `P15-TSK-008` (2026-11-08), status unchanged:* the management port is 8081 and binds loopback unless
+  `FINAPP_MANAGEMENT_ADDRESS` is set - the overlays set it to the pod's address (the downward API's `status.podIP`),
+  never `0.0.0.0`; the probes are `/actuator/health/liveness` and `/actuator/health/readiness` on 8081, and the API
+  port answers `404` for them. **The grace's arithmetic** (`ShutdownOrder`, `OPERATIONS_RUNBOOK.md` §11.1): after
+  the `preStop` pause the lifecycle takes at most 30 s (HTTP, the phase timeout) + 12 s (schedules) + 12 s (consumers)
+  + 3 s (the gauge reader) = 57 s, then the producer's close (`finapp.kafka.ack-timeout`, 10 s) and the pool's; so
+  `terminationGracePeriodSeconds` ≥ preStop + 67 s with a margin, and §6.1's `minReadySeconds ≥
+  terminationGracePeriodSeconds` makes it the rollout's step time as well.
 
 **P15-TSK-010 — Namespace security: RBAC, NetworkPolicy, Pod Security, quotas** — `PLANNED`
 - **Objective**: a compromised pod reaches only what it must, and no human holds standing write access.
@@ -27279,6 +27335,10 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §break-glass.
 - **Acceptance criteria**: the three `kind` tests green.
 - **Definition of done**: `DOD-SEC`, `DOD-BUILD`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-008` (2026-11-08), status unchanged:* the endpoints are moved, not restricted - 8081, loopback
+  outside Kubernetes, the API port `404` for `/actuator` (`ManagementPortTest`). The two debt rows now say they close
+  with this task's policy, and `THREAT_MODEL.md` T2's NetworkPolicy row is this task's; each is closed by this task's
+  gate, not before.
 
 **P15-TSK-011 — The edge: public and operator ingresses, TLS, the route allow-list** — `PLANNED`
 - **Objective**: the internet reaches customer, merchant and provider routes only; operators reach theirs only from the
@@ -27318,7 +27378,9 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   digest; the financial census after each step. **The connection budget measured** (I-1): run with
   `finapp.database.instances` set to `PHASE_15_PLAN.md` §6.1's formula exactly and `max_connections = instances × pool +
   reserved`, record the peak `pg_stat_activity` count for `application_name = 'finapp'` during the rolling update and
-  the pod kill, assert it at most `instances × pool`, and assert an operator connection is admitted at the peak. **A
+  the pod kill, assert it at most `instances × pool`, and assert an operator connection is admitted at the peak
+  *(routed by `P15-TSK-021`, 2026-11-08: `pool` is both of an instance's pools - `maximum-pool-size` plus
+  `finapp.database.reporting.pool-size`, 7 + 1 shipped - and both connect as `application_name = finapp`)*. **A
   handler added in release N** (I-2): release N registers a handler for an event type the module already produces;
   that type is produced during the mixed window; the census finds the records an N − 1 replica committed unseen
   (`UNHANDLED`), and the audited replay of `-028` over the rollout window applies each exactly once (the inbox
@@ -27512,6 +27574,10 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Failure and rollback**: a missing secret fails startup (the existing guards), never readiness after traffic.
 - **Testing and validation**: the inventory test both ways (a new property without a row fails; a row without a property
   fails); the policy's planted Secret refused.
+- *Routed by `P15-TSK-021` (2026-11-08), status unchanged:* the reporting role's credential
+  (`finapp.database.reporting.password`, `FINAPP_DB_REPORTING_PASSWORD`, user `FINAPP_DB_REPORTING_USER`) joins the
+  inventory beside the datasource's, with its ExternalSecret; `DatabaseCredentialGuard` already confines its marked
+  default to loopback.
 - **Probe**: add a `finapp.x.secret` property without an inventory row → red.
 - **Operational documentation**: `SECRET_MANAGEMENT.md` §3 and §5 rewritten for deployed environments.
 - **Acceptance criteria**: as tested.
@@ -27559,7 +27625,9 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Dependencies**: `-012`, `-019`.
 - **Scope**: the application's database password by alternating users - **each alternating user holding exactly the
   per-table grants made to `finapp_app`** (by membership of a role carrying them; the grants stay in the migrations;
-  the users created by `-004`'s bootstrap step), a user missing one grant failing the rehearsal; a Kafka SCRAM
+  the users created by `-004`'s bootstrap step), a user missing one grant failing the rehearsal *(routed by
+  `P15-TSK-021`, 2026-11-08: the reporting role's password rotates the same way, its alternating users carrying exactly
+  `finapp_reporting`'s `SELECT` grants)*; a Kafka SCRAM
   credential; an HMAC callback secret
   through its window; a field-level key version; the ingress certificate renewed early; each followed by the census.
 - **Exclusions**: a cloud-managed rotation (deferred).
@@ -27573,7 +27641,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every rotation rehearsed green and recorded.
 - **Definition of done**: `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P15-TSK-021 — Privileged access: the operator actor, the refused step-up, the reporting role (C13)** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-021 — Privileged access: the operator actor, the refused step-up, the reporting role (C13)** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; built on branch `P15-TSK-021` from master `c1d07726`; read `READY` until its gate)
 - **Objective**: an operator's acts are recorded as an operator's, refused privileged attempts are recorded, and report
   generation holds no write privilege at the database.
 - **Affected components**: `app` (`SessionAuthenticationInterceptor`, the step-up path, `RequiresAssurance`'s note),
@@ -27603,6 +27671,18 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; two debt rows closed.
 - **Definition of done**: `DOD-SEC`, `DOD-ARCH`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `RequiresAssurance`'s note, recounted: **21** handlers declare it, all `MULTI_FACTOR`, all on the method (the plan's "25" is a text count that also matches four mentions in comments and the interceptor's message). `THREAT_MODEL.md` T3, T7, T10, T18, T38 and T44 cite this task; if the reporting role is cut, this task's gate rewrites T7's and T44's rows as gaps with an owner. *(The fix round, 2026-11-08:)* `THREAT_MODEL.md` T31: the privileged access review asserts that every route under `/v1/operator` is permission-guarded (today no build rule does). If the reporting role is cut, T7's and T44's planned rows become `GAP` rows naming the owner item or postponed issue that holds them (the grammar of the model's §1.4).
+- **As built (2026-11-08, its gate)** - the design corrected the entry in four places, each recorded:
+  - **The operator population is `EMPLOYEE`, the plan's "`OPERATOR`".** `ActorType` has no `OPERATOR`; `platform.audit_record`'s `CHECK` and the modules' person `CHECK`s list `'CUSTOMER', 'EMPLOYEE'` (65 times in 23 migrations of five modules, counted), and `EMPLOYEE`'s own definition is the operator population, so no migration and no domain check changed. **The role decides, per request**: `SessionAuthenticationInterceptor` reads the identity's live roles once, in the session's own transaction, on an operator act (a handler declaring `@RequiresPermission`); any live role types it `EMPLOYEE`, and the same read decides the permission (`Authorization.Standing`, identity). A customer route reads no roles and stays `CUSTOMER`, a role holder on their own account included - two `CHECK`s (`lending V004`, `bnpl V003`) require a customer to submit their own application, and the risk judgements read a customer's identity. A role granted or revoked mid-session is honoured on the next request.
+  - **Idempotency scopes key a person once.** 79 scopes (62 files), a merchant-key fingerprint and the dispute-response scope named `actor.type()`; typing operator acts `EMPLOYEE` would have split one person's retries across `CUSTOMER:<id>` and `EMPLOYEE:<id>` - a retry crossing the deploy or a role change acting twice. `Actor.keyedType()` (platform) names a person `CUSTOMER` in every scope; persisted scopes are byte-identical; `IdempotencyScopesKeyThePersonTest` refuses `type()` in a scope or fingerprint (all modules' sources, planted cases). Four-eyes compares ids everywhere (re-verified).
+  - **A refused step-up is recorded everywhere it happens.** `identity.StepUpRefused` (identity), committed in its own `REQUIRES_NEW` transaction before the `403`: by the interceptor at a declared `@RequiresAssurance` (21 handlers, recounted, all `MULTI_FACTOR`, all on the method), and by the error contract (`ApiErrorHandler` → `StepUpRefusals`) at the ~34 operations' own step-ups, once per request (the interceptor marks its own). Summary: the route pattern only.
+  - **The reporting role reads 23 tables, not "the journal and accounting tables only".** Recounted from the code across the 14 definitions: accounting 10, ledger 5, reconciliation 3, lending 5 (+ `lending.business_date`). Grants: accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V034` (USAGE + SELECT, no default privileges); `ReportingRoleIsSelectOnlyTest` pins the register. Only `ReportRunGenerator`'s snapshots (generation, regeneration) use `ReportingPool` (`app.database`, not a `DataSource` bean, lazy, fixed-size, `application_name = finapp`); every generation reads as the role, the close's trial-balance check's included (`FinalTrialBalanceReader` generates through the generator); what is not a generation - the operational door, the close checks' own judgements and verdict reads, the final statements - keeps the writer's read-only snapshots. **Not cut.**
+  - **Built**: `finapp_reporting` in `00-roles.sql` (CONNECT; `LocalDatabaseRolesAreUnprivilegedTest` holds three roles); the pool's credential guarded (`DatabaseCredentialGuard`, `FINAPP_DB_REPORTING_PASSWORD`); the budget `instances × (writer + reporting)`, the writer pool 8 → 7 with reporting 1 so the fleet demand stays 80 of 88; `DatabaseUnderTest` publishes the role; T31's rule in `RoutePermissionRegisterTest` with a planted route; `PRIVILEGED_ACCESS_REVIEW.md` (roles, the propose/approve partition of holdings, the review, break-glass) held by `PrivilegedAccessReviewTest`; ADR-0113 and ADR-0031 dated notes, no new ADR.
+  - **Owed (C14)**: `ReportingRoleDatabaseTest` (a planted write refused by the role outside `READ ONLY`, every register table readable, restricted tables refused, the catalogue exact); `DenyByDefaultDatabaseTest#theOperatorActorIsTyped` and `#aRefusedStepUpIsRecorded`; the definition suites (trial balance, statements, safeguarding, operational) now generate as `DatabaseRoles::reporting`; the three schema-ACL migration tests widened. Walked by hand, not run.
+  - **Owner items**: `THREAT_MODEL.md` §6 item 9 - refuse, at role assignment, one identity holding both roles of a propose/approve pair (recommended as a remediation before production use; the review finds it meanwhile); item 10 - `P15-TSK-002`'s routed parts (a)-(d), below, not taken at this gate (recommended: (c) as the review's §6 rules it, (a), (b) and (d) one follow-on M15.7 item).
+  - **Merged master `2a3d6f93`** (`P15-TSK-002`'s ruling) before the final run; its T38 planned row became a `GAP` held by owner item 10. **Then master `19db300f`** (`P15-TSK-003`, `P15-TSK-013`) after it: `-013`'s own owner item 7 (T11) had landed first, so this task's items, written as 7 and 8, became 8 and 9 (and 9 and 10 at master `24385913`, whose `-033` owns item 8); nothing routed to this task; the conflicts were records only, and the guards reading them were run again.
+  - **Found at the final run, fixed before it was run again**: `NoProcessLocalSessionStateTest` named the interceptor's per-request `Established` record (the session and the roles one request read) - the rule's third exemption of the kind it already argues, a return value discarded within the request; `DatabaseCredentialGuardStartupTest`'s two remote-database contexts lacked the reporting credential, so its guard refused first; and, found reading that failure, the reporting pool took the writer's URL and none of its driver settings, so an `sslmode` set as a driver property satisfied the transport guard for the writer while the reporting pool reached the same database under the driver's default - it now carries the writer's driver settings (`ReportingPoolTransportTest`, a probe caught).
+  - **The review's fix round (2026-11-08)**, FIX FIRST taken whole after merging master `24385913`: F1 (IMPORTANT) risk's persons compared by identity, not by audit type (`RiskCase.Person`; a proposer recorded `CUSTOMER` is refused acting `EMPLOYEE`, a re-take converges); F2 four helper-built fingerprints keyed and the scope rule reading helpers; F3 grant options and unreadable grants refused; F4 the error contract fails closed as the interceptor does; F5 a writing role refused as the reporting user; F6 ADR-0113's note precise. Lending's grant migration renamed `V034` (`-033` took `V033`); owner items renumbered 9 and 10 (`-033` took 8). As `CURRENT_STATE.md` §Just completed records.
+  - **Skipped under the owner's 2026-11-08 rule** ("if we dont change business logic in java, we dont need its unit tests"): `:accounting:test`, `:ledger:test`, `:reconciliation:test`, `:lending:test` - their changes on this branch are grant migrations, no production Java. Kept: `:app:test` over the guard set and the touched desks, `:app:architectureTest`, `:identity:test`, `:platform:test`, `:merchant:test`, `:payments:test` (production Java changed in each) - Fresh on the branch: `:app:test` over the guard set and the touched desks 742/0 (121 classes), `:app:architectureTest` 266/0 (46 classes), `:identity:test` 149/0, `:platform:test` 189/0, `:merchant:test` 190/0, `:payments:test` 306/0, after the fixes above.
 - *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged - for the coordinator to forward; taken if this task's
   gate can still take it at merge:* **(a) as `PHASE_15_PLAN.md` §25 rules**, the debt row "Refused and failed Phase 7
   acts leave no audit outcome" (#63, #64, widened by SEC-05): every refused and failed Phase 7 and Phase 8 act - the
@@ -27626,6 +27706,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   `THREAT_MODEL.md` with an owner item; T38's planned row for (a) and (b) rewritten to evidence. **If this task's gate
   cannot take (a)-(d)**, it says so and they return to the owner as one item (recommended: a follow-on M15.7 item after
   this task).
+  *(Not taken at `-021`'s gate, returned to the owner, 2026-11-08 - `THREAT_MODEL.md` §6 owner item 10, the T38 row a `GAP` held by it:)* (a) and (b) are new audit records across Phase 7-10 doors, each a door's change with its own database case; (c) is ruled in `PRIVILEGED_ACCESS_REVIEW.md` §6 as a recommendation and built by none of this task's changes; (d)'s reason is met without touching a copy - every refused step-up, the 17 copies' included, is recorded at the error contract (`StepUpRefusals`) - so only the extraction itself returns. Recommended: one follow-on M15.7 item.
 
 **P15-TSK-022 — Abuse limits: registration and per-source throttling, cluster-safe** — `PLANNED`
 - **Objective**: no single source can create unbounded parties or drive unbounded load, across N replicas.
@@ -27763,6 +27844,11 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   label). (M-4) `GaugeRefresherTest#aClockSteppedBackAsksAgain` asserts its outstanding ask's no-value. (M-5) The test
   overlay's comment corrected. Runbook §8.8, §10.14 and §11.8. No production Java changed, so no module unit or
   architecture suite re-ran (the owner's rule). Tests fresh after the last change: `GaugeRefresherTest` 11/0 (`:platform:test`); `:app:test` over the changed suites and every guard on a changed file - `PlatformAlertRulesTest`, `BnplAlertRulesTest`, `AccountingRunbookTest`, `RiskAlertRulesTest`, `SafeguardingReturnTest`, the three BNPL schedule suites, `TracingTest`, `NoGaugeReadsOnTheScrapeTest`, `AccountingGaugeWiringTest`, `ThreatModelIsCompleteTest`, `MutationDemonstrationTest` and `PlannedMetersExistTest`, the ArchUnit suites with them - 136/0 in 22 classes; `promtool test rules` `SUCCESS` over the three test files and `promtool check rules` `SUCCESS` over all eight rule files (141 rules). Probes: seven new rows in `MUTATION_TESTING.md` §2 - `GaugesStale` holding NaN again, on a coarse share and at no tolerance, an unreadable leg removed from each of the three rules, and a stale number kept under a stepped clock (which survived the test as it was) - each red, their `promtool` halves on copies `FAILED` (nine, the unmutated files `SUCCESS`); and 29 rows performed again on the present bytes, none re-hashed, because their files changed: the platform rule file's, the BNPL rule file's two, the overlay's, the runbook's 23 (its six `P14-TSK-020` rows and seventeen others the first round had left unperformed when it changed sections 10.14 and 11.8), and the fx and settlement rule files' two against the new hermetic guard, their database catcher owed to `P15-TST-002`.
+- **Merge of master `40b253ad`** (2026-11-08; `-008`, `-021`): `-008`'s bounded stop for the deleted
+  `AccountingGaugeRefresher` carried onto `GaugeRefresher` (3 s, `stopBound()`, phase 0 through its lifecycle, now
+  public) and its two cases into `GaugeRefresherTest`; `ShutdownOrderTest` holds the refresher in that class's place;
+  no rule file changed (the scrape target is the management port, the job still `finapp`); the records keep both sides.
+  Tests after the merge: named classes only, by the owner's rule of 2026-11-08 ("avoid long running tests"): `GaugeRefresherTest` 13/0 (`platform`); in `app`, `ShutdownOrderTest`, `ManagementPortTest`, `PrometheusEndpointTest`, `NoGaugeReadsOnTheScrapeTest`, `AccountingGaugeWiringTest`, `PlatformAlertRulesTest`, `ThreatModelIsCompleteTest`, `MutationDemonstrationTest`, `PlannedMetersExistTest`, `AdrRegistersAreReconciledTest`, `AccountingRunbookTest`, `SafeguardingReturnTest`, `BnplAlertRulesTest`, `TracingTest` and the three BNPL schedule suites, with the ArchUnit suites that ride along, 136/0 in 25 classes. Before the rule arrived, `:platform:test` ran whole and green and `:app:architectureTest` ran 284 tests in 48 classes with one failure, `ThreatModelIsCompleteTest#noPromiseOutlivesItsTask`, the finished-task citations above, since fixed. Owed to `P15-TST-002`: `RiskAlertRulesTest` (it reads the changed runbook; a scrape-based suite, skipped as slow), every other suite of the touched packages, and the database tiers; no rule file changed, so `promtool` did not re-run. Probes: 51 performed on the merged bytes, every one red, none re-hashed (`MUTATION_TESTING.md` section 2; the threat register's 18 a third time, on its final bytes, after `ThreatModelIsCompleteTest#noPromiseOutlivesItsTask` refused two citations of a finished task in section 5 - T14's residual, this merge's, and T2's coordinator note, red on master `40b253ad` itself - and both ids came out): every row whose last note of this task recorded a file the merge or its resolution changed - the threat register's 18, the runbook's 23, the platform refresher's 3 and its beans' 2, production's file and the test overlay; `-008`'s stop row carried onto `GaugeRefresherTest` and performed there (the await skipped); and two new `ShutdownOrderTest` rows, the refresher's lifecycle stopped first and its bound past the phase timeout.
 
 **P15-TSK-025 — SLOs, error budgets, correctness alerts and routing** — `PLANNED`
 - **Objective**: every critical flow has an objective and a burn-rate alert, every correctness signal pages, and every

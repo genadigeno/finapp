@@ -238,11 +238,17 @@ public class AccountingBeans {
         return new ReportRunMetrics(meterRegistry, reportDefinitions);
     }
 
-    /** T-report's legs, and the orphan leg `P14-TSK-011` schedules in AccountingCloseSchedule. */
+    /**
+     * T-report's legs, and the orphan leg `P14-TSK-011` schedules in AccountingCloseSchedule. Its snapshots - a run's
+     * generation and a FINAL run's regeneration - open connections from the reporting pool alone, as
+     * {@code finapp_reporting} (`P15-TSK-021`, C13): never the shared {@code reportSnapshots}, which is the writer's, and
+     * no fallback to it. The claim and the completion stay on {@code accountingTransactions}, the writer's, as T-report
+     * has them.
+     */
     @Bean
     ReportRunGenerator reportRunGenerator(
             com.finapp.accounting.ReportRuns reportRuns,
-            ReportSnapshots reportSnapshots,
+            com.finapp.app.database.ReportingConnections reportingConnections,
             AccountingTransactions accountingTransactions,
             ReportRunMetrics reportRunMetrics,
             com.finapp.accounting.ReportRuns.Leases reportRunLeases,
@@ -250,7 +256,13 @@ public class AccountingBeans {
         return new ReportRunGenerator(reportRuns, new com.finapp.accounting.reporting.ReportGeneration(
                 com.finapp.accounting.reporting.ReportGeneration.FROM_THE_SNAPSHOT, reportRunLeases.generationTimeout(),
                 clock),
-                reportSnapshots, accountingTransactions, reportRunMetrics);
+                generationSnapshots(reportingConnections, reportRunLeases), accountingTransactions, reportRunMetrics);
+    }
+
+    /** Report generation's snapshots: the reporting pool's connections, armed at the generation bound. */
+    static ReportSnapshots generationSnapshots(com.finapp.app.database.ReportingConnections reportingConnections,
+            com.finapp.accounting.ReportRuns.Leases reportRunLeases) {
+        return new JdbcReportSnapshots(reportingConnections::open, reportRunLeases.generationTimeout());
     }
 
     @Bean

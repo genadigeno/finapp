@@ -60,6 +60,17 @@ public final class DatabaseRoles {
                 required("finapp.db.app.password"));
     }
 
+    /**
+     * The role report generation reads as (`P15-TSK-021`): {@code SELECT} on the tables a report run reads and
+     * nothing else.
+     */
+    public static Connection reporting() throws SQLException {
+        return DriverManager.getConnection(
+                required("finapp.db.url"),
+                required("finapp.db.reporting.user"),
+                required("finapp.db.reporting.password"));
+    }
+
     /** The role that owns the schema. For fixtures that legitimately need DDL, and nothing else. */
     public static Connection migrator() throws SQLException {
         return DriverManager.getConnection(

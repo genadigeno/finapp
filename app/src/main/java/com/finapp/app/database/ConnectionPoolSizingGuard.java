@@ -50,6 +50,15 @@ import org.springframework.stereotype.Component;
  * {@code minimum-idle} equals {@code maximum-pool-size}. That is deliberate on both counts: a
  * fixed-size pool is what HikariCP recommends, and a pool that only sometimes reaches its maximum
  * would make this check meaningless — the worst case is what exhausts a server, not the average.
+ *
+ * <h2>Two pools per instance</h2>
+ *
+ * <p>Since `P15-TSK-021` each instance holds two pools: the writer's, as {@code finapp_app}, and
+ * report generation's, as {@code finapp_reporting}. Both are backend processes on the same server,
+ * so the relationship is {@code instances × (writer + reporting) ≤ max_connections − reserved}. The
+ * reporting pool is fixed-size too ({@link ReportingPool}), so the worst case is again what is
+ * counted. The shipped numbers give the reporting pool one connection out of the writer's eight,
+ * so the fleet's demand - and the deployment arithmetic built on it - did not move.
  */
 @Component
 public class ConnectionPoolSizingGuard {
@@ -66,11 +75,18 @@ public class ConnectionPoolSizingGuard {
     /** Hikari's own setting, read rather than restated so the two cannot drift. */
     static final String POOL_SIZE = "spring.datasource.hikari.maximum-pool-size";
 
+    /**
+     * The reporting pool's size (`P15-TSK-021`), read from the key {@link ReportingPool} is built
+     * from, so the pool counted is the pool opened.
+     */
+    static final String REPORTING_POOL_SIZE = ReportingPool.POOL_SIZE_PROPERTY;
+
     ConnectionPoolSizingGuard(Environment environment) {
         verify(
                 new ConnectionPoolSizing(
                         required(environment, INSTANCES),
                         required(environment, POOL_SIZE),
+                        required(environment, REPORTING_POOL_SIZE),
                         required(environment, SERVER_MAX),
                         required(environment, RESERVED)));
     }
@@ -85,9 +101,11 @@ public class ConnectionPoolSizingGuard {
         throw new IllegalStateException(
                 "Refusing to start: "
                         + sizing.instances()
-                        + " instances x "
+                        + " instances x ("
                         + sizing.maximumPoolSize()
-                        + " connections = "
+                        + " writer + "
+                        + sizing.reportingPoolSize()
+                        + " reporting) connections = "
                         + sizing.fleetDemand()
                         + ", which exceeds the "
                         + sizing.available()

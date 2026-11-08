@@ -62,7 +62,8 @@ The repository already fixes most of the shape, and leaves three holes:
   four-eyes is person-distinctness, not a second permission (`P2-TSK-004`, ADR-0056 §2).
 - **A known audit debt.** Every session actor is audited as `CUSTOMER`, operators included
   (`CURRENT_STATE.md` Known Architectural Debt, owned by Phase 15). Actor ids are right; the
-  population field is not.
+  population field is not. *(Dated note, 2026-11-08: closed by `P15-TSK-021` for every act from that day - an
+  operator act is typed `EMPLOYEE`; earlier rows stay `CUSTOMER`, frozen.)*
 
 The three designs weighed at the transition differed on exactly the undefined parts:
 

@@ -95,7 +95,7 @@ public final class CrossBorderBeneficiaryDesk {
         Objects.requireNonNull(current, "current must not be null");
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(REGISTER_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(REGISTER_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
 
         record Begun(IdempotentExecutor.BeginOutcome outcome, Beneficiaries.Begun begun, Beneficiaries.Registration request,
                 CrossborderErrorCode refusal) {}
@@ -192,7 +192,7 @@ public final class CrossBorderBeneficiaryDesk {
         BeneficiaryId id = beneficiaryId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(REVOKE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(REVOKE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(("crossborder.beneficiary-revocation|" + id.value()).getBytes(StandardCharsets.UTF_8));
         guarded(() -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {

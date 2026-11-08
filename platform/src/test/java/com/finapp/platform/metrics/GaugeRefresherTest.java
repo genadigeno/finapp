@@ -9,12 +9,14 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.DoubleSupplier;
@@ -279,6 +281,74 @@ class GaugeRefresherTest {
         } finally {
             release.countDown();
             off.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("a stop drops the queued reads and lets the read in flight, which no interrupt reaches, end before it returns (P15-TSK-008's bounded stop, carried over from AccountingGaugeRefresher)")
+    void aStopLetsTheReadInFlightEndAndDropsTheQueue() throws Exception {
+        CountDownLatch inside = new CountDownLatch(1);
+        AtomicBoolean letGo = new AtomicBoolean();
+        AtomicBoolean ended = new AtomicBoolean();
+        AtomicInteger queuedReads = new AtomicInteger();
+        GaugeRefresher off = new GaugeRefresher(false, clock, FLOOR, STALE_AFTER);
+        try {
+            RefreshedReading inFlight = off.track("a statement on the wire", () -> {
+                inside.countDown();
+                while (!letGo.get()) {
+                    Thread.onSpinWait(); // a statement on the wire: an interrupt does not reach it
+                }
+                ended.set(true);
+                return 1;
+            });
+            RefreshedReading queued = off.track("a queued reading", () -> queuedReads.incrementAndGet());
+            off.start();
+            inFlight.current();
+            assertThat(inside.await(WAIT.toSeconds(), TimeUnit.SECONDS)).as("the read is in, on the one thread").isTrue();
+            queued.current();
+
+            CompletableFuture<Boolean> stopping = CompletableFuture.supplyAsync(() -> {
+                off.stop();
+                return ended.get();
+            });
+            Thread.sleep(300);
+            assertThat(stopping).as("the stop waits for the read in flight").isNotDone();
+            letGo.set(true);
+
+            assertThat(stopping.get(WAIT.toSeconds(), TimeUnit.SECONDS)).as("the read had ended when the stop returned").isTrue();
+            assertThat(queuedReads).as("the queued read was dropped").hasValue(0);
+            assertThat(off.isRunning()).isFalse();
+        } finally {
+            letGo.set(true);
+            off.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("a read that outlives the bound is abandoned: the stop returns within its stop bound (P15-TSK-008's, carried over)")
+    void aReadPastTheBoundIsAbandoned() throws Exception {
+        CountDownLatch inside = new CountDownLatch(1);
+        AtomicBoolean letGo = new AtomicBoolean();
+        GaugeRefresher off = new GaugeRefresher(false, clock, FLOOR, STALE_AFTER);
+        try {
+            RefreshedReading held = off.track("a statement past the bound", () -> {
+                inside.countDown();
+                while (!letGo.get()) {
+                    Thread.onSpinWait();
+                }
+                return 1;
+            });
+            off.start();
+            held.current();
+            assertThat(inside.await(WAIT.toSeconds(), TimeUnit.SECONDS)).isTrue();
+            long started = System.nanoTime();
+            off.stop();
+            Duration took = Duration.ofNanos(System.nanoTime() - started);
+            assertThat(took).isGreaterThanOrEqualTo(GaugeRefresher.STOP_BOUND);
+            assertThat(took).isLessThan(off.stopBound().plusSeconds(1));
+            assertThat(off.isRunning()).isFalse();
+        } finally {
+            letGo.set(true);
         }
     }
 

@@ -65,7 +65,7 @@ class GaugeRefresherBeans {
      * every {@code finapp.} gauge, so NaN before its first read and once an ask has waited {@code finapp.gauges.stale-after}
      * - every {@code finapp.} gauge of the instance is NaN with it then. {@code GaugesStale} alerts on it, per instance.
      */
-    static final class GaugeRefresherLifecycle implements SmartLifecycle {
+    public static final class GaugeRefresherLifecycle implements SmartLifecycle {
 
         private final GaugeRefresher refresher;
 
@@ -94,7 +94,18 @@ class GaugeRefresherBeans {
             return refresher.isRunning();
         }
 
-        /** Before the web server's phase, so the first reads are asked for before anything can scrape; stopped after it. */
+        /**
+         * The longest its stop takes, below {@code spring.lifecycle.timeout-per-shutdown-phase}: public, as every
+         * lifecycle component's is, for {@code ShutdownOrderTest} (`P15-TSK-008`).
+         */
+        public Duration stopBound() {
+            return refresher.stopBound();
+        }
+
+        /**
+         * Before the web server's phase, so the first reads are asked for before anything can scrape; stopped after it
+         * and after the management server, before the pool closes ({@code ShutdownOrder}, `P15-TSK-008`).
+         */
         @Override
         public int getPhase() {
             return 0;

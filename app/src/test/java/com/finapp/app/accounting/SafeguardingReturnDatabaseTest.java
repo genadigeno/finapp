@@ -124,6 +124,9 @@ class SafeguardingReturnDatabaseTest {
     private static final JdbcReportRunStore RUNS = new JdbcReportRunStore();
     private static final ReportRuns REPORT_RUNS = new ReportRuns(RUNS, AccountingPeriodFixture.STORE, new JdbcGlMappingStore(), DEFINITIONS, ReportRuns.Leases.STANDARD, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
     private static final JdbcReportSnapshots SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::application, ReportRuns.Leases.STANDARD.generationTimeout());
+    /** Report generation's snapshots, as production opens them: the reporting role ({@code P15-TSK-021}). */
+    private static final JdbcReportSnapshots GENERATION_SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::reporting,
+            ReportRuns.Leases.STANDARD.generationTimeout());
     private static final GlSnapshots GL_SNAPSHOTS = new GlSnapshots(DatabaseRoles::application, Duration.ofSeconds(30));
     private static final RegulatoryAdapters ADAPTERS = new RegulatoryAdapters(List.of(new SimulatedRegulatoryReportingProvider(SimulatedRegulatoryReportingProvider.Behaviour.ACKNOWLEDGE)));
     private static final RegulatorySubmissions MACHINE = new RegulatorySubmissions(AccountingPeriodFixture.STORE, STORE, OBLIGATIONS, RUNS, ADAPTERS, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW, Duration.ofDays(1));
@@ -178,7 +181,7 @@ class SafeguardingReturnDatabaseTest {
     }
 
     private static ReportRunGenerator generator() {
-        return new ReportRunGenerator(REPORT_RUNS, new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT, ReportRuns.Leases.STANDARD.generationTimeout(), NOW), SNAPSHOTS, TRANSACTIONS,
+        return new ReportRunGenerator(REPORT_RUNS, new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT, ReportRuns.Leases.STANDARD.generationTimeout(), NOW), GENERATION_SNAPSHOTS, TRANSACTIONS,
                 new ReportRunMetrics(new SimpleMeterRegistry(), DEFINITIONS));
     }
 

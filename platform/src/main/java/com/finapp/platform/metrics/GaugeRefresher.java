@@ -51,8 +51,15 @@ public final class GaugeRefresher {
     /** The thread's name: what a thread dump shows inside a read. */
     public static final String THREAD = "gauge-refresher";
 
-    /** How long {@link #stop()} waits for the thread to end after interrupting it: a gauge read decides nothing, so it is never drained. */
-    static final Duration STOP_WAIT = Duration.ofSeconds(5);
+    /**
+     * How long {@link #stop()} waits for the read in flight: `P15-TSK-008`'s bounded stop, carried here unchanged when the
+     * merge of its branch retired {@code AccountingGaugeRefresher}. Above accounting's two-second statement timeout, so
+     * the pool, closed after every lifecycle stop, does not close under such a read; a wait for a connection is
+     * interrupted by the stop, and a statement with no timeout of its own is abandoned to the pool's close. Below
+     * {@code spring.lifecycle.timeout-per-shutdown-phase}, and the 3 s of the lifecycle's 57 s worst case
+     * ({@code ShutdownOrder}, {@code ShutdownOrderTest}).
+     */
+    public static final Duration STOP_BOUND = Duration.ofSeconds(3);
 
     private final boolean readAtStart;
     private final Clock clock;
@@ -121,9 +128,10 @@ public final class GaugeRefresher {
     }
 
     /**
-     * Shuts the thread: a read in flight is interrupted, every queued read is dropped and its reading's in-flight flag
-     * put down, and the thread is awaited for {@link #STOP_WAIT}. A read that ignores the interrupt outlives the wait
-     * on a daemon thread; its reading answers no value once its ask has waited {@code staleAfter}.
+     * Shuts the thread: every queued read is dropped and its reading's in-flight flag put down, a wait for a connection
+     * is interrupted, and the read in flight - a statement, which no interrupt reaches - is let end within
+     * {@link #STOP_BOUND}. A read still running past the bound is abandoned on its daemon thread and fails with the pool;
+     * its reading answers no value once its ask has waited {@code staleAfter}.
      */
     public void stop() {
         ExecutorService running = executor.getAndSet(null);
@@ -136,12 +144,18 @@ public final class GaugeRefresher {
             }
         }
         try {
-            if (!running.awaitTermination(STOP_WAIT.toMillis(), TimeUnit.MILLISECONDS)) {
-                log.warn("The gauge refresher's read did not end within {} of its stop; it ends on a daemon thread", STOP_WAIT);
+            if (!running.awaitTermination(STOP_BOUND.toMillis(), TimeUnit.MILLISECONDS)) {
+                log.warn("The gauge refresher's read did not end within {} of its stop; abandoned to the pool's close", STOP_BOUND);
             }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         }
+        log.debug("The gauge refresher stopped");
+    }
+
+    /** The longest {@link #stop()} takes: the context's lifecycle reads it ({@code ShutdownOrderTest}). */
+    public Duration stopBound() {
+        return STOP_BOUND;
     }
 
     public boolean isRunning() {

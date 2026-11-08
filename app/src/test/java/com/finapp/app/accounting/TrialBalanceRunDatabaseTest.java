@@ -109,6 +109,9 @@ class TrialBalanceRunDatabaseTest {
     private static final ReportDefinitions DEFINITIONS = ReportDefinitions.of(TRIAL_BALANCE);
     private static final JdbcReportSnapshots SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::application,
             ReportRuns.Leases.STANDARD.generationTimeout());
+    /** Report generation's snapshots, as production opens them: the reporting role ({@code P15-TSK-021}). */
+    private static final JdbcReportSnapshots GENERATION_SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::reporting,
+            ReportRuns.Leases.STANDARD.generationTimeout());
     private static final AccountingTransactions TRANSACTIONS = new AccountingTransactions() {
         @Override
         public <R> R inTransaction(Function<Connection, R> work) {
@@ -349,7 +352,7 @@ class TrialBalanceRunDatabaseTest {
 
     private static ReportRunGenerator generator() {
         return new ReportRunGenerator(runs(), new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT,
-                ReportRuns.Leases.STANDARD.generationTimeout(), NOW), SNAPSHOTS, TRANSACTIONS,
+                ReportRuns.Leases.STANDARD.generationTimeout(), NOW), GENERATION_SNAPSHOTS, TRANSACTIONS,
                 new ReportRunMetrics(new SimpleMeterRegistry(), DEFINITIONS));
     }
 

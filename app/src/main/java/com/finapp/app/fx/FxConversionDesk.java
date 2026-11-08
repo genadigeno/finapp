@@ -79,7 +79,7 @@ public final class FxConversionDesk {
         FxQuoteId quoteId = quoteId(body.quoteId());
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(CONVERT_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(CONVERT_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         AtomicReference<FxConversion.Outcome> acted = new AtomicReference<>();
         IdempotentExecutor.ExecutionOutcome outcome;
         try {

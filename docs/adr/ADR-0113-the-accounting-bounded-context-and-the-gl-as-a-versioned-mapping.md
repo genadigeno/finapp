@@ -120,3 +120,23 @@ reporting reads only. Financial impact: none on balances.
 
 Retire `gl_code` by a ledger migration if no use appears. A separate reporting role (Phase 15). The chart's codes and
 sections are reference values for qualified review before production.
+
+**Dated note (2026-11-08, `P15-TSK-021`; `PHASE_15_PLAN.md` C13, ratified 2026-11-07): the separate reporting role is
+built.** Report generation (`ReportRunGenerator`: a run's generation and a FINAL run's regeneration) reads through its
+own pool as `finapp_reporting`, which holds `SELECT` on the 23 tables a report run reads - recounted from the code: 10
+accounting, 5 ledger, 3 reconciliation, 5 lending; wider than the plan's "the journal and accounting tables", because
+the suspense definition, the statements' notes and the safeguarding return read reconciliation and lending - and
+nothing else, granted by accounting `V013`, ledger `V033`, reconciliation `V023` and lending `V034`, pinned by
+`ReportingRoleIsSelectOnlyTest`. So decision 5 (`INV-ACC-14`, reporting never writes) now holds at the privilege level
+too: a report path that lost its `READ ONLY` transaction still cannot write. The pool is counted in the connection
+budget (the writer's pool gave it one of its eight connections), is not on the readiness path, and never falls back to
+the application's role. Every run generated through `ReportRunGenerator` reads as the role, wherever the generation is
+asked for - the report-run door, the orphan leg, and the close's trial-balance check, which generates the month's FINAL
+trial balance when no run holds it (`FinalTrialBalanceReader`). What still reads through the application's role, in
+its `REPEATABLE READ READ ONLY` snapshots, is everything that is not a generation: the operational door, the close
+checks' own judgements and the verdict that check reads back from the stored run, and the final statements' reads.
+*(This sentence read "The operational door, the close checks and the final statements still read through the
+application's role" until the task's review fix round, 2026-11-08: imprecise for the trial-balance check's generation
+step.)* The role is a cluster object, created by the local
+role script and, in a deployed database, by the one-time bootstrap step (`P15-TSK-004`) before the migrations that
+grant to it. No new ADR: the decision is this ADR's follow-up, taken as C13 framed it.

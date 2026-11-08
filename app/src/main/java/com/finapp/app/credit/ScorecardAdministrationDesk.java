@@ -77,7 +77,7 @@ public final class ScorecardAdministrationDesk {
     /** One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing. */
     private ScorecardReceipt keyed(
             Actor actor, String idempotencyKey, String fingerprinted, Function<java.sql.Connection, ScorecardReceipt> act) {
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> transactions.inTransaction(
                 unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {

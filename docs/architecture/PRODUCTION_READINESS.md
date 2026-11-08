@@ -103,14 +103,14 @@ Each table carries **Today**, the survey's reading in `PHASE_15_PLAN.md` §15 (`
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Deployment | Missing: no image, manifest or pipeline stage *(2026-11-08, `P15-TSK-003`: the image is built by CI from the commit, twice and compared, and pushed nowhere; unsigned; no manifest or delivery)* | — | — | — |
-| Health checks | Partial: liveness `livenessState`, readiness `readinessState,db`, details never; no schema-version check, no startup probe; the actuator on the API port | — | — | — |
+| Health checks | Partial: liveness `livenessState`, readiness `readinessState,db`, details never; no schema-version check, no startup probe; the actuator on the management port 8081, loopback outside Kubernetes *(`P15-TSK-008`, 2026-11-08; read "the actuator on the API port" until then)*, no NetworkPolicy yet | — | — | — |
 | Logging | Partial: ECS JSON with correlation and trace ids, default-deny redaction; no shipping, retention or central search | — | — | — |
-| Metrics | Partial: the naming contract enforced; every gauge read off the scrape thread on one gauge thread per instance, restartable (`P15-TSK-024`, 2026-11-08; read "about sixty gauge classes read on the scrape thread" until then); scraped from the API port | — | — | — |
+| Metrics | Partial: the naming contract enforced; every gauge read off the scrape thread on one gauge thread per instance, restartable (`P15-TSK-024`, 2026-11-08; read "about sixty gauge classes read on the scrape thread" until then); scraped from the management port *(`P15-TSK-008`, 2026-11-08; read "from the API port" until then)*, its policy not yet built | — | — | — |
 | Tracing | Partial: spans recorded and dropped, no exporter | — | — | — |
-| Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run. Since 2026-11-08 (`P15-TSK-024`): 139 rules in eight files, `platform.yml` adding a rule on `up` per instance, the fleet absent and the gauges stale, its own `promtool test` cases run by hand | — | — | — |
-| Security | Partial: transport guards off loopback, secrets externalised and confined; no image, pod profile, NetworkPolicy, workload identity or secret store *(2026-11-08, `P15-TSK-003`: the image runs as UID 65532 with no shell or package manager, asserted on the built image; still no pod profile, NetworkPolicy, workload identity, secret store, scan or signature)* | — | — | — |
+| Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run. Since 2026-11-08 (`P15-TSK-024`): 141 rules in eight files, `platform.yml` adding a rule on `up` per instance, the fleet absent and the gauges stale, and its fix round `FxGaugesUnreadable` and `ReconciliationGaugesUnreadable`, every gauge an alert reads now seen unreadable; their own `promtool test` cases run by hand | — | — | — |
+| Security | Partial: transport guards off loopback, secrets externalised and confined; an operator's acts recorded as the operator population and every refused step-up recorded, report generation reading as a `SELECT`-only role (`P15-TSK-021`); no image, pod profile, NetworkPolicy, workload identity or secret store *(2026-11-08, `P15-TSK-003`: the image runs as UID 65532 with no shell or package manager, asserted on the built image; still no pod profile, NetworkPolicy, workload identity, secret store, scan or signature)* | — | — | — |
 | Resource limits | Missing (the connection budget is a startup guard, not a manifest) | — | — | — |
-| Failure handling | Partial: graceful shutdown unasserted; schedules' `stop()` does not wait; consumers join for 10 s | — | — | — |
+| Failure handling | Partial: graceful shutdown stated and held on a real context (`ShutdownOrderTest`): readiness refuses, HTTP drains, 32 schedules drain within 10 s + 2 s, consumers acknowledge and leave within 10 s + 2 s, the pool closes last *(`P15-TSK-008`, 2026-11-08; read "graceful shutdown unasserted; schedules' `stop()` does not wait; consumers join for 10 s" until then)*; no `preStop` or grace yet (`-009`); recovery after a kill not rehearsed (`-012`) | — | — | — |
 | Recovery | Missing | — | — | — |
 | Ownership | Partial: seven alert files cover eight modules (§4); no owner label on an alert, no person or rota | — | — | — |
 | Runbooks | Partial: `OPERATIONS_RUNBOOK.md` §1–§10 domain sections; §11 (platform) planned | — | — | — |
@@ -156,7 +156,7 @@ gaps of the module they touch (§4).
 | Metrics | Missing | — | — | — |
 | Tracing | — | — | — | — |
 | Alerting | Missing | — | — | — |
-| Security | Partial: two least-privilege roles, per-table grants in every migration, `verify-full` required off loopback; no encryption at rest beyond the application's field-level ciphers (`SECURITY_ARCHITECTURE.md` §Encryption at rest) | — | — | — |
+| Security | Partial: three least-privilege roles - the migrator, the application and report generation's `SELECT`-only `finapp_reporting` (`P15-TSK-021`) - per-table grants in every migration, `verify-full` required off loopback; no encryption at rest beyond the application's field-level ciphers (`SECURITY_ARCHITECTURE.md` §Encryption at rest) | — | — | — |
 | Resource limits | Partial: the connection budget guarded by `ConnectionPoolSizingGuard` against a declared instance count | — | — | — |
 | Failure handling | — | — | — | — |
 | Recovery | Missing: no backup, no restore, no rehearsal | — | — | — |

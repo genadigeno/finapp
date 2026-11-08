@@ -216,7 +216,7 @@ public final class MerchantOnboarding {
         return String.join(
                         "|",
                         IDEMPOTENCY_SCOPE,
-                        actor.type().name(),
+                        actor.keyedType().name(),
                         actor.id(),
                         command.partyId().toString(),
                         command.legalName(),

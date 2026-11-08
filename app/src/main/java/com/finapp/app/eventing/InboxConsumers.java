@@ -1,5 +1,6 @@
 package com.finapp.app.eventing;
 
+import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.kafka.KafkaEventReceiver;
 import com.finapp.platform.inbox.kafka.ReceiverPollResult;
@@ -11,6 +12,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 
@@ -43,9 +48,24 @@ import org.springframework.context.SmartLifecycle;
  * ({@code P1-TSK-029}'s rule: an alert on a rising duplicate or contention rate must have a
  * series on a freshly started instance). This pays the inbox-metrics debt row, whose recorded
  * trigger — <em>"the first live consumer"</em> — is this task.
+ *
+ * <h2>A stopping instance's consumers commit and leave (`P15-TSK-008`)</h2>
+ *
+ * <p>In {@link ShutdownOrder#CONSUMERS}, after the schedules: every loop is woken at once, so none takes a new batch; a
+ * loop inside a batch finishes it and acknowledges it ({@code KafkaEventReceiver} retries the commit the wakeup
+ * interrupted), then closes its receiver, which leaves the group, so the partitions move to another instance now rather
+ * than at the session timeout. Every loop is awaited against one bound, {@link #SETTLE_BOUND}; past it the loops are
+ * interrupted and awaited {@link #INTERRUPT_GRACE} more, and one still running is abandoned on its daemon thread - its
+ * unacknowledged records redeliver into the inbox's dedupe, so correctness never depends on the drain.
  */
 @Slf4j
 public final class InboxConsumers implements SmartLifecycle {
+
+    /** How long a stopping instance lets its loops finish the batch they hold, all of them together. */
+    public static final Duration SETTLE_BOUND = Duration.ofSeconds(10);
+
+    /** How long it then waits for the loops it interrupted. */
+    public static final Duration INTERRUPT_GRACE = Duration.ofSeconds(2);
 
     /** Builds the receiver for one module's group; the composition root supplies the strings. */
     @FunctionalInterface
@@ -114,18 +134,45 @@ public final class InboxConsumers implements SmartLifecycle {
     @Override
     public void stop() {
         running = false;
+        if (loops.isEmpty()) {
+            return;
+        }
+        log.info("Inbox consumers stopping: {} loops", loops.size());
+        // Out of a blocking poll at once: no loop takes a new batch. A loop inside one finishes and acknowledges it.
         for (Loop loop : loops) {
             loop.receiver.wakeup();
         }
-        for (Loop loop : loops) {
-            try {
-                loop.thread.join(Duration.ofSeconds(10).toMillis());
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                return;
+        CompletableFuture<Void> closed =
+                CompletableFuture.allOf(loops.stream().map(loop -> loop.closed).toArray(CompletableFuture<?>[]::new));
+        try {
+            if (!awaited(closed, SETTLE_BOUND)) {
+                log.warn("Inbox consumers did not settle within {}; their loops are interrupted", SETTLE_BOUND);
+                for (Loop loop : loops) {
+                    loop.thread.interrupt();
+                }
+                if (!awaited(closed, INTERRUPT_GRACE)) {
+                    log.warn("Inbox consumers still running {} after their interrupt; abandoned to the process's exit",
+                            INTERRUPT_GRACE);
+                }
             }
+            log.info("Inbox consumers stopped");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } finally {
+            loops.clear();
         }
-        loops.clear();
+    }
+
+    private static boolean awaited(CompletableFuture<Void> closed, Duration bound) throws InterruptedException {
+        try {
+            closed.get(bound.toMillis(), TimeUnit.MILLISECONDS);
+            return true;
+        } catch (TimeoutException stillRunning) {
+            return false;
+        } catch (ExecutionException unreachable) {
+            // A loop's future is only ever completed, never failed: it completes in a finally.
+            return true;
+        }
     }
 
     @Override
@@ -133,9 +180,22 @@ public final class InboxConsumers implements SmartLifecycle {
         return running;
     }
 
+    /** After the schedules, before the management server closes ({@link ShutdownOrder}). */
+    @Override
+    public int getPhase() {
+        return ShutdownOrder.CONSUMERS;
+    }
+
+    /** The longest {@link #stop()} takes, below {@code spring.lifecycle.timeout-per-shutdown-phase} ({@code ShutdownOrderTest}). */
+    public Duration stopBound() {
+        return SETTLE_BOUND.plus(INTERRUPT_GRACE);
+    }
+
     private final class Loop {
         private final KafkaEventReceiver receiver;
         private final Thread thread;
+        /** Completed once the receiver is closed: what a stopping instance waits for. */
+        private final CompletableFuture<Void> closed = new CompletableFuture<>();
 
         private Loop(String module, KafkaEventReceiver receiver) {
             this.receiver = receiver;
@@ -149,7 +209,11 @@ public final class InboxConsumers implements SmartLifecycle {
                     tick();
                 }
             } finally {
-                receiver.close();
+                try {
+                    receiver.close();
+                } finally {
+                    closed.complete(null);
+                }
             }
         }
 

@@ -9,27 +9,41 @@ package com.finapp.app.database;
  *
  * @param instances the maximum number of application instances that may run at once. ADR-0014:
  *     never 1
- * @param maximumPoolSize connections each instance may hold, from
+ * @param maximumPoolSize connections each instance's writer pool may hold, from
  *     {@code spring.datasource.hikari.maximum-pool-size}
+ * @param reportingPoolSize connections each instance's reporting pool may hold, from
+ *     {@code finapp.database.reporting.pool-size} (`P15-TSK-021`): report generation reads as
+ *     {@code finapp_reporting} through a pool of its own, and every one of its connections is a
+ *     backend process on the same server, so it is counted here like the writer's
  * @param serverMaxConnections what the PostgreSQL server is configured with
  * @param reservedConnections connections the fleet must not consume — see
  *     {@link #headroomFor(int, int)}
  */
 public record ConnectionPoolSizing(
-        int instances, int maximumPoolSize, int serverMaxConnections, int reservedConnections) {
+        int instances,
+        int maximumPoolSize,
+        int reportingPoolSize,
+        int serverMaxConnections,
+        int reservedConnections) {
 
     public ConnectionPoolSizing {
         requirePositive(instances, "instances");
         requirePositive(maximumPoolSize, "maximumPoolSize");
+        requirePositive(reportingPoolSize, "reportingPoolSize");
         requirePositive(serverMaxConnections, "serverMaxConnections");
         if (reservedConnections < 0) {
             throw new IllegalArgumentException("reservedConnections must not be negative");
         }
     }
 
+    /** What one instance holds in the worst case: both of its pools, full. */
+    public int perInstance() {
+        return Math.addExact(maximumPoolSize, reportingPoolSize);
+    }
+
     /** What the fleet consumes in the worst case, which is the only case that matters. */
     public int fleetDemand() {
-        return Math.multiplyExact(instances, maximumPoolSize);
+        return Math.multiplyExact(instances, perInstance());
     }
 
     /** What the fleet is allowed to consume. */
@@ -42,7 +56,7 @@ public record ConnectionPoolSizing(
     }
 
     /**
-     * The largest pool size that would fit, for the failure message.
+     * The largest writer pool that would fit beside the reporting pool, for the failure message.
      *
      * <p>Reported rather than applied. A guard that silently shrank the pool to make the numbers
      * work would be changing a deployment's capacity on its own initiative, at startup, with
@@ -51,7 +65,7 @@ public record ConnectionPoolSizing(
      * business taking.
      */
     public int largestPoolThatFits() {
-        return Math.max(0, available() / instances);
+        return Math.max(0, available() / instances - reportingPoolSize);
     }
 
     private static void requirePositive(int value, String name) {

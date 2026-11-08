@@ -3,6 +3,23 @@ spring:
     name: finapp
 
   # ---------------------------------------------------------------------------
+  # Shutdown (P15-TSK-008, ADR-0120 decision 4).
+  #
+  # Spring stops the context's lifecycle beans in phases and waits for each phase up to this
+  # timeout before moving on. The order is ShutdownOrder's: readiness refuses, the API port drains,
+  # the schedules drain, the consumers commit and leave their groups, the management server closes,
+  # and the connection pool closes after all of them. Every component's own stop is bounded below
+  # this (ShutdownOrderTest holds each one), so the timeout only ever cuts off the HTTP drain: a
+  # request still running 30 seconds after the port closed.
+  #
+  # The grace period a deployment gives a stopping pod must cover the sum: the preStop pause, then
+  # up to 30 s of HTTP, 12 s of schedules, 12 s of consumers, 3 s of the gauge reader, and the
+  # producer's close (finapp.kafka.ack-timeout) - P15-TSK-009's manifest states it.
+  # ---------------------------------------------------------------------------
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  # ---------------------------------------------------------------------------
   # Database.
   #
   # NO SECRET IS COMMITTED HERE, and that is enforced rather than promised:
@@ -49,16 +66,19 @@ spring:
       # queueing is invisible to the application and shows up as latency on every query
       # rather than as a timeout on one.
       #
-      # The fleet must also fit. 10 instances x 8 = 80, against 100 max_connections less 12
-      # reserved = 88. ConnectionPoolSizingGuard refuses to start if that stops holding, and
-      # the numbers below are what it reads - see finapp.database.
+      # The fleet must also fit. 10 instances x (7 + 1 reporting) = 80, against 100
+      # max_connections less 12 reserved = 88. ConnectionPoolSizingGuard refuses to start if
+      # that stops holding, and the numbers below are what it reads - see finapp.database.
+      # (P15-TSK-021: this pool was 8 until report generation got a pool of its own, as
+      # finapp_reporting; the reporting pool's one connection came out of these eight, so the
+      # fleet's demand did not move.)
       #
       # minimum-idle EQUALS maximum-pool-size, so the pool is fixed-size. That is what
       # HikariCP recommends, and it is what makes the arithmetic meaningful: a pool that only
       # sometimes reaches its maximum would make the check a statement about the average, and
       # a server is exhausted by the worst case.
-      maximum-pool-size: 8
-      minimum-idle: 8
+      maximum-pool-size: 7
+      minimum-idle: 7
       data-source-properties:
         # How long to wait for the TCP connect, in seconds. The driver's default is 10, which
         # is longer than a probe interval; a blackholed database would otherwise leave
@@ -68,6 +88,18 @@ spring:
         # choosing that number without any real queries to measure would be a guess that
         # aborts legitimate work later. It belongs with Phase 3, where the queries exist.
         ApplicationName: finapp
+
+# ---------------------------------------------------------------------------
+# The API port's shutdown (P15-TSK-008).
+#
+# GRACEFUL: when the instance stops, the port stops accepting and every request it accepted
+# finishes, within spring.lifecycle.timeout-per-shutdown-phase. It is Spring Boot's default and is
+# stated anyway, for the probes' reason below: a default nobody wrote down is one an upgrade can
+# change unnoticed, and an accepted payment request cut off mid-flight is what this prevents.
+# ShutdownOrderTest holds it on a real context.
+# ---------------------------------------------------------------------------
+server:
+  shutdown: graceful
 
 # ---------------------------------------------------------------------------
 # The connection-limit arithmetic (P1-TSK-004, ADR-0014).
@@ -98,6 +130,16 @@ finapp:
     # connection, the one thing nobody can do when the fleet is in trouble is connect to the
     # database to find out why.
     reserved-connections: ${FINAPP_DB_RESERVED_CONNECTIONS:12}
+    # Report generation's own pool, as finapp_reporting (P15-TSK-021, C13): SELECT on the tables
+    # a report run reads and nothing else, so a report path cannot write at the database
+    # whatever its transaction says. Same database and URL as the writer's pool, its own role
+    # and credential (DatabaseCredentialGuard confines the marked default to loopback, as it
+    # does the writer's); counted in the arithmetic above; never on the readiness path, and
+    # never a fallback to the writer's: an unreachable role fails report generation alone.
+    reporting:
+      username: ${FINAPP_DB_REPORTING_USER:finapp_reporting}
+      password: ${FINAPP_DB_REPORTING_PASSWORD:local-development-only-not-a-secret}
+      pool-size: ${FINAPP_DB_REPORTING_POOL_SIZE:1}
 
 # ---------------------------------------------------------------------------
 # Logging (P0-TSK-030).
@@ -129,6 +171,23 @@ logging:
 # what a developer's machine should do.
 # ---------------------------------------------------------------------------
 management:
+  # The management port (P15-TSK-008, ADR-0120 decision 3; THREAT_MODEL.md T2).
+  #
+  # The actuator - health, liveness, readiness, info and the scrape - answers on 8081 and on
+  # nothing else: the API port answers 404 for every /actuator path, so no ingress that routes the
+  # API can route these. The kubelet's probes and Prometheus reach the pod on 8081 directly.
+  #
+  # LOOPBACK BY DEFAULT, for every run outside Kubernetes: a developer's machine, a test, a
+  # container started by hand. Only the Kubernetes overlays set FINAPP_MANAGEMENT_ADDRESS, to the
+  # pod's own address (P15-TSK-009), where P15-TSK-010's NetworkPolicy admits the kubelet and
+  # Prometheus alone. Until that policy exists the endpoints stay unauthenticated, which is the two
+  # debt rows in CURRENT_STATE.md: moving them off the API port is this block, closing them is that
+  # policy. The local Prometheus reaches loopback through host.docker.internal on Docker Desktop;
+  # see infra/prometheus/prometheus.yml for a Linux engine.
+  server:
+    port: 8081
+    address: ${FINAPP_MANAGEMENT_ADDRESS:127.0.0.1}
+
   # Spring Boot 4 gates the OpenTelemetry SDK behind this, and it is off unless asked for. With
   # only the bridge on the classpath there is no SdkTracerProvider and no real Tracer, so spans
   # are recorded into a no-op and silently dropped - a tracing setup that looks configured and
