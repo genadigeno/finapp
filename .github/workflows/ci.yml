@@ -298,8 +298,8 @@ jobs:
   # ---------------------------------------------------------------------------
   # The application image (P15-TSK-003, owner decision C4).
   #
-  # Built twice from this commit - the boot jar the second time from source, every task re-run
-  # - and refused unless the two builds are the same bytes (the image id and every layer
+  # Built twice from this commit - the boot jar each time from source, every task re-run - and
+  # refused unless the two builds are the same bytes (the image id and every layer
   # digest), it runs as UID 65532, it holds nothing but the pinned distroless base and the boot
   # jar's entries (no shell, no package manager), and it is within its size budget. Then it is
   # run against compose's PostgreSQL and Kafka on loopback, the root filesystem read-only and

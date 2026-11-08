@@ -2,8 +2,8 @@
 # Builds the application image, finapp-app, twice from one commit, and refuses it unless:
 #
 #   1. both base images are pinned by digest (check-pinned-images.sh --offline, before anything is built);
-#   2. the two builds are the same bytes - the boot jar rebuilt FROM SOURCE has the same sha256, and the two images
-#      have the same image id and the same layer digests (diff ids), compared one by one;
+#   2. the two builds are the same bytes - the boot jar, built FROM SOURCE both times, has the same sha256, and the
+#      two images have the same image id and the same layer digests (diff ids), compared one by one;
 #   3. the image runs as UID 65532, declares no HEALTHCHECK and no environment of its own, carries its revision,
 #      source and version labels, and its entrypoint holds the two JVM flags;
 #   4. its filesystem is the pinned runtime base plus the boot jar's entries and nothing else: no shell and no package
@@ -14,11 +14,15 @@
 # signing and any push P15-TSK-007's.
 #
 # WHY TWICE, AND WHY FROM SOURCE. "Reproducible" is a claim about bytes, so it is measured on bytes that would
-# differ if it were false: the image id and the diff ids, not a size or a tag. The jar's second build re-runs every
-# task (--rerun-tasks), not only the archive: a re-archive hides the defect this script was written against - the
+# differ if it were false: the image id and the diff ids, not a size or a tag. Each jar build re-runs every task
+# (--rerun-tasks), not only the archive: a re-archive hides the defect this script was written against - the
 # CycloneDX SBOM Spring Boot copied into the jar carried a random serial and its own instant, so two builds of one
 # commit gave two jars while a re-zip of the first gave the first again (measured 2026-11-08; app/build.gradle.kts
-# now keeps the SBOM out of the jar).
+# now keeps the SBOM out of the jar). And BOTH builds are from source, not an incremental one and a full one: an
+# up-to-date task keeps whatever its last run left in build/ (Gradle does not see a change to a copy spec's eachFile
+# action, so a resource excluded since that run stays), and a comparison of a stale build with a clean one fails for
+# the wrong reason - or, two stale ones, passes for one (found by this task's own probes, 2026-11-08). --rerun-tasks
+# removes a task's previous outputs before it runs.
 #
 # WHY THE FLATTENED FILESYSTEM FOR THE SIZE. `docker image inspect`'s Size is the compressed content under the
 # containerd image store (Docker Desktop) and the unpacked size under the classic store (CI's runner): two
@@ -124,9 +128,9 @@ build_image() {
         --tag "$1" --load . || fail "the image build failed"
 }
 
-# 2a. The first build.
-echo "== the boot jar, first build"
-./gradlew --console=plain -q :app:bootJar || fail "the boot jar build failed"
+# 2a. The first build, from source.
+echo "== the boot jar, first build, every task re-run"
+./gradlew --console=plain -q --rerun-tasks :app:bootJar || fail "the boot jar build failed"
 JAR=$(boot_jar)
 VERSION=$(unzip -p "$JAR" META-INF/build-info.properties | tr -d '\r' | sed -n 's/^build\.version=//p')
 [ -n "$VERSION" ] || fail "$JAR carries no build.version in META-INF/build-info.properties"
@@ -148,7 +152,7 @@ if [ "$FIRST_JAR_SUM" != "$SECOND_JAR_SUM" ]; then
     diff "$WORK/first.crc" "$WORK/second.crc" >&2 || true
     fail "the boot jar is not reproducible: $FIRST_JAR_SUM, then $SECOND_JAR_SUM"
 fi
-echo "the boot jar, built twice from source: sha256 $FIRST_JAR_SUM, identical"
+echo "the boot jar, built twice, each from source: sha256 $FIRST_JAR_SUM, identical"
 SECOND="$REPOSITORY:build-2"
 echo "== the image, second build"
 build_image "$SECOND"

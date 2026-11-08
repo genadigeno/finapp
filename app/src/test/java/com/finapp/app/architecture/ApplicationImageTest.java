@@ -115,7 +115,8 @@ class ApplicationImageTest {
     }
 
     @Test
-    @DisplayName("the runtime is distroless's nonroot Java of the toolchain's version: no shell, no package manager")
+    @DisplayName("the runtime base is distroless's nonroot Java of the toolchain's version (its contents are read from"
+            + " the built image by image-build.sh)")
     void theRuntimeIsDistrolessNonrootOnTheToolchainsJava() {
         assertThat(stages).as("a builder stage and a runtime stage").hasSizeGreaterThanOrEqualTo(2);
         Matcher runtime = PINNED.matcher(runtime().reference());
@@ -242,6 +243,18 @@ class ApplicationImageTest {
         assertThat(build).as("the image job runs %s", BUILD_SCRIPT).isNotNegative();
         assertThat(readiness).as("the image job runs %s after the build", READINESS_SCRIPT).isGreaterThan(build);
         assertThat(Files.isRegularFile(root.resolve(READINESS_SCRIPT))).as(READINESS_SCRIPT).isTrue();
+        String script = EvidenceCitations.read(root.resolve(BUILD_SCRIPT));
+        assertThat(script.split(":app:bootJar", -1).length - 1)
+                .as("%s builds the jar twice, and only from source: a build trusting an earlier one's outputs can make"
+                        + " two builds agree or differ for the wrong reason", BUILD_SCRIPT)
+                .isEqualTo(2)
+                .isEqualTo(script.split("--rerun-tasks :app:bootJar", -1).length - 1);
+        assertThat(script)
+                .as("%s builds the jar from source (every task re-run) and the image with no cache, twice, and"
+                        + " compares the image ids and every layer digest", BUILD_SCRIPT)
+                .contains("buildx build --no-cache")
+                .contains("{{range .RootFS.Layers}}")
+                .contains("[ \"$FIRST_ID\" != \"$SECOND_ID\" ]");
         String dependabot = EvidenceCitations.read(root.resolve(DEPENDABOT));
         int docker = dependabot.indexOf("package-ecosystem: docker");
         assertThat(docker).as("%s proposes the FROM lines' updates", DEPENDABOT).isNotNegative();

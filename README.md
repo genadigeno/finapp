@@ -522,8 +522,9 @@ script, which is also what CI's `image` job runs:
 ./infra/scripts/image-build.sh
 ```
 
-It takes about four minutes, because it builds everything **twice**: the boot jar, the image, then the boot jar again
-from source with every task re-run, and the image again with no cache. It refuses the image unless:
+It takes several minutes, because it builds everything **twice**, from source each time: the boot jar with every
+task re-run and the image with no cache, then both again. Neither build trusts what an earlier one left in `build/`,
+so a stale output cannot make the two agree or differ. It refuses the image unless:
 
 | Assertion | Read from |
 |---|---|
