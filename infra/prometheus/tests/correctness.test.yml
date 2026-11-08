@@ -453,3 +453,40 @@ tests:
               summary: "No instance can verify the books"
               description: "No instance has published a number for a correctness gauge for 15 minutes, so the correctness pages are silent for the wrong reason. See OPERATIONS_RUNBOOK.md section 11.20."
 
+  # PaymentWebhookUnmappable: one unmappable delivery on instance b fires at the first sample after it, by the sum over the instances.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="a:8081", outcome="unmappable"}'
+        values: '0x8'
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="b:8081", outcome="unmappable"}'
+        values: '0 0 0 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: PaymentWebhookUnmappable
+        exp_alerts: []
+      - eval_time: 45s
+        alertname: PaymentWebhookUnmappable
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: page
+            exp_annotations:
+              summary: "A provider callback could not be believed"
+              description: "A signed provider callback named no operation this platform minted, was denied or contradicted by the provider's own inquiry, or its answer could not be read. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # PaymentWebhookUnmappable: processed, duplicate and forged deliveries are not it.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="a:8081", outcome="processed"}'
+        values: '0+5x8'
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="a:8081", outcome="duplicate"}'
+        values: '0+1x8'
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0+5x8'
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="b:8081", outcome="unmappable"}'
+        values: '0x8'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: PaymentWebhookUnmappable
+        exp_alerts: []
+

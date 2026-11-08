@@ -2092,13 +2092,13 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 2. Fix the issuer, then let cert-manager renew. Force a renewal only once the issuer is healthy.
 3. **The CA bundles for PostgreSQL and Kafka are not in this series**: they are the provider's, and an expired or rotated broker certificate shows as `InboxPollFailing` (§11.6) with the warn line naming `SslAuthenticationException`. Rotation is §11.7.
 
-### 11.20 Correctness pages - `LedgerTrialBalanceNonZero`, `LedgerProjectionDrift`, `GlNotEqualLedger`, `OutboxDeadLetter`, `InboxDeadLetterParked`, `CorrectnessGaugesUnreadable`, `CorrectnessUnverifiable`
+### 11.20 Correctness pages - `LedgerTrialBalanceNonZero`, `LedgerProjectionDrift`, `GlNotEqualLedger`, `OutboxDeadLetter`, `InboxDeadLetterParked`, `PaymentWebhookUnmappable`, `CorrectnessGaugesUnreadable`, `CorrectnessUnverifiable`
 
 *(Written by `P15-TSK-025`, 2026-11-08, from `infra/prometheus/rules/correctness.yml`. **Not yet rehearsed** (`P15-TSK-032`). The register of every correctness signal, the product proofs among them, is `docs/architecture/SLOS.md` section 3.)*
 
 **These have no budget and no waiting.** Each pages on its first breaching sample. **Never correct a figure to clear one**: financial history is immutable, and a correction is a reversal or a compensating entry through the existing doors, after the cause is understood.
 
-**`LedgerTrialBalanceNonZero` (`INV-ACC-01`).** Total debits differ from total credits in the currency the alert names. The gauge is a verdict and never an amount. This cannot be produced by the posting path, which refuses an unbalanced entry and the journal's own constraint with it, so suspect a raw write or a defect in that constraint. Stop deployments, and read the warn line, which names the currency. Compare the journal for that currency with `GET /v1/ledger`'s trial balance. Escalate as a financial incident: no money should move until it is understood.
+**`LedgerTrialBalanceNonZero` (`INV-ACC-01`).** Total debits differ from total credits in the currency the alert names. The gauge is a verdict and never an amount. This cannot be produced by the posting path, which refuses an unbalanced entry and the journal's own constraint with it, so suspect a raw write or a defect in that constraint. Stop deployments, and read the warn line, which names the currency. Then generate that period's `TRIAL_BALANCE` report (`POST /v1/operator/accounting/report-runs`) and read its lines (`GET /v1/operator/accounting/report-runs/{runId}/lines`); `GET /v1/operator/accounting/gl/balances` shows the same books where a mapping version is active. Escalate as a financial incident: no money should move until it is understood.
 
 **`LedgerProjectionDrift` (`INV-BAL-02`).** A balance projection disagrees with its recomputation from postings. The journal is the truth and the projection is a cache of it. The warn line names the drifting accounts, by identifier and without an amount. Section 10.17 is the procedure: rebuild from the journal under the four-eyes door, and never edit the projection.
 
@@ -2107,6 +2107,8 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 **`OutboxDeadLetter`.** An event used up its publication attempts and stands abandoned, blocking its aggregate's later events (`EVENT_ARCHITECTURE.md` §Handling an abandoned event). Nothing financial is lost: the row is durable and the journal is the truth. Resolve it by retry once its cause is fixed, and never by deleting a row. The page lasts as long as the row does.
 
 **`InboxDeadLetterParked`.** A poison inbox record was parked after its bounded retries; the group went on past it, and its effect has not happened (`finapp.deadletter.parked`, §11.6's dead-letter part).
+
+**`PaymentWebhookUnmappable`.** `finapp.payments.webhook{outcome="unmappable"}` counted a signed callback that names no operation this platform minted, that the provider's own inquiry denied past its bound or contradicted, or whose inquiry answer could not be read. Both the door and the hint sweep count on that series. Follow the warn lines through the table in "Provider callbacks are hints" below: a denial reads as a possible **webhook key compromise** until shown otherwise, and "we cannot read" is a change of the provider's wire format. Nothing is adopted from such a callback.
 
 **`CorrectnessGaugesUnreadable` (ticket).** A correctness gauge has been NaN on one instance for 15 minutes: its read is failing or its gauge refresher is behind (`GaugesStale`, §11.8). The other instances still answer, so a real breach still pages. **`CorrectnessUnverifiable` (ticket)** says no instance holds a number for one of them, so every rule on it is silent for the wrong reason; read the database first.
 
@@ -2124,7 +2126,7 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 
 **`PlatformGaugesUnreadable` (ticket), `PlatformSeriesAbsent` (ticket).** A platform gauge has been NaN on an instance for 15 minutes, or a series the SLO and platform rules read has gone from every instance, so those rules are blind. Read that instance's gauge refresher (`GaugesStale`, §11.8) and the scrape.
 
-### 11.22 The critical flows - `AuthenticationRefusalsSpike`, `AccountLockoutSpike`, `LedgerPostingsRefused`, `CustomerWalletNegative`, `PaymentUnknownAged`, `WithdrawalUnknownAged`, `PaymentWebhookRefusalsSpike`, `PaymentWebhookUnmappable`, `TransferFailureSpike`, `TransferKeyConflict`, `CheckoutExpiryRising`, `MerchantPayoutUnknownAged`, `KycReviewQueueBacklog`, `ConsentRoutesFailing`, `FlowGaugesUnreadable`, `FlowSeriesAbsent`
+### 11.22 The critical flows - `AuthenticationRefusalsSpike`, `AccountLockoutSpike`, `LedgerPostingsRefused`, `CustomerWalletNegative`, `PaymentUnknownAged`, `WithdrawalUnknownAged`, `PaymentWebhookRefusalsSpike`, `TransferFailureSpike`, `TransferKeyConflict`, `CheckoutExpiryRising`, `MerchantPayoutUnknownAged`, `KycReviewQueueBacklog`, `ConsentRoutesFailing`, `FlowGaugesUnreadable`, `FlowSeriesAbsent`
 
 *(Written by `P15-TSK-025`, 2026-11-08, from `infra/prometheus/rules/flows.yml`. **Not yet rehearsed** (`P15-TSK-032`). Thresholds are reference values.)*
 
@@ -2137,7 +2139,6 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 | `PaymentUnknownAged` (page) | An operation unknown for over 15 minutes | The provider has not answered. Its resolution sweep is the path; never decide by hand. If nothing is sweeping (`finapp.payments.sweeper.enabled` false on every instance), restore that first | payments |
 | `WithdrawalUnknownAged` (page) | A withdrawal unanswered for over 15 minutes | As above, by the withdrawal sweep. A person's claw-back is a recorded door, never an edit | payments |
 | `PaymentWebhookRefusalsSpike` (ticket) | Over 50 webhook deliveries refused in 15 minutes | Forged traffic, or a provider rotating its signing secret out of order. Spends no provider-callback budget (`docs/architecture/SLOS.md` section 2) | payments |
-| `PaymentWebhookUnmappable` (ticket) | An authentic delivery named no operation this platform minted, or could not be read | An integration break: nothing was applied and nothing was lost. Read the delivery in the audit trail (ADR-0047 section 5). A rise after a provider release is a change on their side | payments |
 | `TransferFailureSpike` (ticket) | A fifth of judged transfers failed | Each `failed` is a committed refusal and moved nothing. Read the failure reasons | transfers |
 | `TransferKeyConflict` (ticket) | A key reused with a different body (`INV-IDEM-03`) | A security signal: refused and recorded. Look for one client doing it repeatedly in the audit trail | transfers |
 | `CheckoutExpiryRising` (ticket) | Over half of the last hour's sessions expired | A provider slow to capture, or an offer window too short for the traffic. `finapp.checkout.conversion.age` separates them | checkout |

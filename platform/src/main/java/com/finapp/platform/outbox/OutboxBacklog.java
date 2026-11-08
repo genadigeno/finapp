@@ -48,13 +48,16 @@ public final class OutboxBacklog {
      * <p>Age is measured by the <strong>server's</strong> clock, on the same reasoning as
      * {@code V004} and {@code V006}: an age computed by subtracting a server timestamp from a
      * client's clock measures the difference between two machines as much as the age of a row.
+     * {@code occurred_at} itself is the writing instance's stamp, so a row from an instance ahead of
+     * the database can be younger than zero: floored here (`P15-TSK-025`'s fix round), or the
+     * reading's own guard refuses it and every gauge of the backlog answers NaN on every instance.
      */
     private static final String BACKLOG_SQL =
             """
             SELECT count(*) AS pending,
-                   coalesce(extract(epoch FROM now() - min(occurred_at))::bigint, 0) AS oldest_seconds,
+                   greatest(coalesce(extract(epoch FROM now() - min(occurred_at))::bigint, 0), 0) AS oldest_seconds,
                    count(dead_lettered_at) AS dead_lettered,
-                   coalesce(extract(epoch FROM now() - min(occurred_at) FILTER (WHERE dead_lettered_at IS NULL))::bigint, 0)
+                   greatest(coalesce(extract(epoch FROM now() - min(occurred_at) FILTER (WHERE dead_lettered_at IS NULL))::bigint, 0), 0)
                        AS oldest_publishable_seconds
               FROM platform.outbox_event
              WHERE published_at IS NULL

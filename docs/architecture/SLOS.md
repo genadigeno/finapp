@@ -74,6 +74,7 @@ Prometheus holds: a gauge answers its last off-scrape read (ADR-0124 decision 7)
 | `GlNotEqualLedger` | The close check `GL_EQUALS_LEDGER` failing, `INV-ACC-06` | accounting |
 | `OutboxDeadLetter` | An abandoned outbox event still standing | platform |
 | `InboxDeadLetterParked` | A parked inbox record (`finapp.deadletter.parked`) | platform |
+| `PaymentWebhookUnmappable` | A signed callback unmapped, or denied, contradicted or unreadable on the provider's own inquiry (ADR-0083) | payments |
 | `BnplThreeWayProofFailing` | The BNPL three-way proof | bnpl |
 | `BnplSubledgerProofFailing` | The BNPL subledger proof | bnpl |
 | `BnplReplayDiverged` | A BNPL schedule replay | bnpl |

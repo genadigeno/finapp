@@ -162,6 +162,17 @@ class OutboxMetricsDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("a row stamped by an instance ahead of the database reads age zero, never a refused reading (P15-TSK-025's fix round, owed C14)")
+    void aRowStampedAheadReadsAgeZero() throws SQLException {
+        insertPendingEvent(Duration.ofMinutes(-5));
+
+        OutboxBacklog.Reading reading = backlog.read();
+
+        assertThat(reading.oldest()).isGreaterThanOrEqualTo(Duration.ZERO);
+        assertThat(reading.oldestPublishable()).isGreaterThanOrEqualTo(Duration.ZERO);
+    }
+
     // -----------------------------------------------------------------
 
     private void insertPendingEvent(Duration age) throws SQLException {

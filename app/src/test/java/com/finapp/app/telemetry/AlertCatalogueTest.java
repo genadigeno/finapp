@@ -263,6 +263,19 @@ class AlertCatalogueTest {
     }
 
     @Test
+    @DisplayName("the check script is committed executable, because CI runs it directly (P15-TSK-025's fix round)")
+    void theCheckScriptIsCommittedExecutable() throws IOException, InterruptedException {
+        Process git = new ProcessBuilder("git", "ls-files", "-s", SCRIPT)
+                .directory(RepositoryPaths.locate("settings.gradle.kts").getParent().toFile())
+                .redirectErrorStream(true)
+                .start();
+        String index = new String(git.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(git.waitFor()).as("git answered: %s", index).isZero();
+        assertThat(index).as("the mode the index holds").startsWith("100755 ");
+    }
+
+    @Test
     @DisplayName("the SLO dashboard is provisioned read-only and reads only what the rules record, with a row for every objective")
     void theDashboardReadsWhatTheRulesRecord() throws IOException {
         JsonNode dashboard = JsonMapper.builder().build().readTree(RepositoryPaths.read(DASHBOARD));

@@ -67,14 +67,15 @@ final class ClockOffsetMetrics {
 
     private double read() {
         try (Connection connection = connections.open();
-                PreparedStatement select = connection.prepareStatement("SELECT statement_timestamp()");
-                ResultSet row = select.executeQuery()) {
+                PreparedStatement select = connection.prepareStatement("SELECT statement_timestamp()")) {
             Instant before = clock.instant();
-            row.next();
-            Instant database = row.getObject(1, OffsetDateTime.class).toInstant();
-            Instant after = clock.instant();
-            Instant midpoint = before.plus(Duration.between(before, after).dividedBy(2));
-            return Duration.between(database, midpoint).toMillis() / 1000.0;
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                Instant database = row.getObject(1, OffsetDateTime.class).toInstant();
+                Instant after = clock.instant();
+                Instant midpoint = before.plus(Duration.between(before, after).dividedBy(2));
+                return Duration.between(database, midpoint).toMillis() / 1000.0;
+            }
         } catch (SQLException | RuntimeException failure) {
             // The class only: a JDBC message can name the host, the database and the user (INV-AUD-02).
             log.warn("The instance's clock offset could not be read: {}", failure.getClass().getSimpleName());

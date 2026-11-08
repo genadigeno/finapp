@@ -407,8 +407,8 @@ class RiskProofsDatabaseTest {
                                 + " amount_minor, currency, scale, status, created_at, capture_mode)"
                                 + " VALUES (?, ?, ?, ?, ?, 1000, 'EUR', 2, 'PROCESSING', ?, 'AUTOMATIC')");
                 PreparedStatement event = application.prepareStatement(
-                        "INSERT INTO payments.payment_intent_event (intent_id, from_status, to_status, actor_id, occurred_at)"
-                                + " VALUES (?, 'REQUIRES_CONFIRMATION', 'PROCESSING', ?, ?)")) {
+                        "INSERT INTO payments.payment_intent_event (intent_id, from_status, to_status, actor_id, actor_type, occurred_at)"
+                                + " VALUES (?, 'REQUIRES_CONFIRMATION', 'PROCESSING', ?, 'CUSTOMER', ?)")) {
             insert.setObject(1, intent);
             insert.setObject(2, IDS.next());
             insert.setObject(3, IDS.next());
@@ -417,7 +417,7 @@ class RiskProofsDatabaseTest {
             insert.setTimestamp(6, java.sql.Timestamp.from(created));
             insert.executeUpdate();
             event.setObject(1, intent);
-            event.setObject(2, IDS.next());
+            event.setString(2, IDS.next().toString());
             event.setTimestamp(3, java.sql.Timestamp.from(confirmed));
             event.executeUpdate();
         }

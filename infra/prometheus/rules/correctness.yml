@@ -66,6 +66,18 @@ groups:
         annotations:
           summary: "An inbox record is parked"
           description: "{{ $value }} inbox records are parked and were never applied. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: PaymentWebhookUnmappable
+        # Aggregation: sum() - counters are per instance, and any instance counting one is the fact
+        # A signed provider callback that names no operation we minted, or that the provider's own inquiry denied past its bound, contradicted, or answered unreadably (ADR-0083): both what a stolen webhook key looks like and what a wire change looks like.
+        # The door and the hint sweep both count on this series (HintedOutcome.isBreak, CallbackHintObserver), so one rule reads them; a counter, so the first one fires at once.
+        expr: sum(increase(finapp_payments_webhook_total{outcome="unmappable"}[15m])) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: payments
+        annotations:
+          summary: "A provider callback could not be believed"
+          description: "A signed provider callback named no operation this platform minted, was denied or contradicted by the provider's own inquiry, or its answer could not be read. See OPERATIONS_RUNBOOK.md section 11.20."
       - alert: CorrectnessGaugesUnreadable
         # Aggregation: per instance by (job, instance) - x != x holds for NaN alone, and one instance unable to read is that instance's fault
         # While a correctness gauge is NaN it answers nothing: max() still reads the instances that can, but this names the one that cannot.

@@ -12,6 +12,8 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,17 @@ class OutboxGaugesTest {
     }
 
     @Test
+    @DisplayName("both ages are floored at zero in the statement, so a row stamped by an instance ahead of the database cannot trip the reading's guard and blank every gauge (P15-TSK-025's fix round)")
+    void anAgeIsNeverNegative() {
+        List<String> statements = new ArrayList<>();
+        new OutboxBacklog(() -> connection(Map.of("pending", 1L, "oldest_seconds", 0L, "dead_lettered", 0L, "oldest_publishable_seconds", 0L), statements)).read();
+
+        assertThat(statements).singleElement().satisfies(sql -> assertThat(sql)
+                .contains("greatest(coalesce(extract(epoch FROM now() - min(occurred_at))::bigint, 0), 0) AS oldest_seconds")
+                .contains("greatest(coalesce(extract(epoch FROM now() - min(occurred_at) FILTER (WHERE dead_lettered_at IS NULL))::bigint, 0), 0)"));
+    }
+
+    @Test
     @DisplayName("an unreadable backlog is NaN on the new gauges too, never a zero that says nothing is dead-lettered")
     void unreadableIsNaN() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
@@ -47,13 +60,23 @@ class OutboxGaugesTest {
     }
 
     private static Connection connection(Map<String, Long> columns) {
+        return connection(columns, new ArrayList<>());
+    }
+
+    private static Connection connection(Map<String, Long> columns, List<String> statements) {
         ResultSet rows = proxy(ResultSet.class, (name, args) -> switch (name) {
             case "next" -> true;
             case "getLong" -> columns.get(String.valueOf(args[0]));
             default -> null;
         });
         PreparedStatement statement = proxy(PreparedStatement.class, (name, args) -> name.equals("executeQuery") ? rows : null);
-        return proxy(Connection.class, (name, args) -> name.equals("prepareStatement") ? statement : null);
+        return proxy(Connection.class, (name, args) -> {
+            if (!name.equals("prepareStatement")) {
+                return null;
+            }
+            statements.add(String.valueOf(args[0]));
+            return statement;
+        });
     }
 
     @FunctionalInterface
