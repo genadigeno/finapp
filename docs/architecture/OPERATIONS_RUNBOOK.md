@@ -2074,8 +2074,10 @@ One gauge NaN while the canary is 1 is not this alert: that gauge's read is fail
 
 It runs `terraform fmt -check`, `tflint`, `trivy config` (HIGH and CRITICAL fail), and then, in every directory that
 holds a `.tf` file, `terraform init -backend=false -lockfile=readonly`, `terraform validate` and `terraform test`.
-Each test only plans; a root's tests plan against a mock AWS provider, and the conventions module uses no provider. It then plants six defects in copies of the tree and requires each check to
-refuse its plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
+Each test only plans; the roots' tests and the concern modules' tests plan against a mock AWS provider, and the
+conventions module uses no provider. It then plants thirteen defects in copies of the tree (six over the checks
+themselves, seven over the network and cluster modules' named properties) and requires each check to refuse its
+plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
 reason`, and the exit status is 0. A line starting `!!` names what failed:
 
 - **a check failed** on the tree: fix the code. For a formatting failure, `terraform fmt -recursive infra/terraform`
@@ -2095,10 +2097,10 @@ pinned one, and the providers are still verified against the committed lock file
 
 | Convention | Enforced by |
 |---|---|
-| Terraform and every provider pinned exactly; `required_version` equals the pinned image's version; the two roots on the same versions; the lock file holding exactly those | `TerraformIsPinnedAndCheckedTest`; `tflint` (`terraform_required_version`, `terraform_required_providers`); `init -lockfile=readonly` |
+| Terraform and every provider pinned exactly; `required_version` equals the pinned image's version; the two roots on the same versions; the lock file holding exactly those; a concern module requiring a provider commits a lock file at the same version the roots pin | `TerraformIsPinnedAndCheckedTest`; `tflint` (`terraform_required_version`, `terraform_required_providers`); `init -lockfile=readonly` |
 | One `s3` backend per root, its own key, `encrypt = true`, `use_lockfile = true`; no credential argument in a backend or provider block | `TerraformIsPinnedAndCheckedTest` |
 | snake_case identifiers; `main.tf`, `variables.tf`, `outputs.tf` per directory; every variable and output typed and described | `tflint` |
-| Names start `finapp-<environment>` and every resource carries `Project`, `Environment` and `ManagedBy`, from `modules/conventions` through the AWS provider's `default_tags` | `terraform test` (the conventions module and each root); `TerraformIsPinnedAndCheckedTest` (each root's provider takes the tags, each root calls the module as itself). That each new resource uses the prefix is a review point until `-014`…`-016` |
+| Names start `finapp-<environment>` and every resource carries `Project`, `Environment` and `ManagedBy`, from `modules/conventions` through the AWS provider's `default_tags` | `terraform test` (the conventions module and each root); `TerraformIsPinnedAndCheckedTest` (each root's provider takes the tags, each root calls the module as itself). Each concern module's tests assert the prefix on the resources they name; a new resource's use of it is a review point |
 | `prevent_destroy = true` on the database, its backups and every KMS key | `TerraformIsPinnedAndCheckedTest` |
 | No resource or data source that writes a secret value into state, and no database given its password (use `manage_master_user_password`) | `TerraformIsPinnedAndCheckedTest` |
 | Every test file mocks every provider its directory requires, and configures no real one | `TerraformIsPinnedAndCheckedTest` |
@@ -2106,8 +2108,14 @@ pinned one, and the providers are still verified against the committed lock file
 **Change a provider pin.** Use the same version in every root's `versions.tf`. Then regenerate each root's lock file
 with the pinned Terraform, for the platforms the checks run on:
 `terraform providers lock -platform=linux_amd64 -platform=linux_arm64`, run in each root after an
-`init -backend=false`. Review the lock file's diff and run the checks. A Dependabot pull request that moves one root
-and not the other fails `TerraformIsPinnedAndCheckedTest` until both roots agree.
+`init -backend=false`. Then copy a root's lock file over each concern module's `.terraform.lock.hcl`, setting its
+`constraints` line to the module's own constraint (`versions.tf`). Review the lock files' diff and run the checks. A
+Dependabot pull request that moves one root and not the other, or the roots and not the modules, fails
+`TerraformIsPinnedAndCheckedTest` until they agree.
+
+**The modules.** What each concern module holds, what asserts it and how to operate it is in its own README:
+[`network`](../../infra/terraform/modules/network/README.md) and
+[`kubernetes`](../../infra/terraform/modules/kubernetes/README.md).
 
 **Change the Terraform or `tflint` version.** Bump `VERSION` in `infra/scanner-pins.sh` and re-resolve `DIGEST` with
 `docker buildx imagetools inspect <repository>:<version>`, as for the scanners. For Terraform, set every root's
