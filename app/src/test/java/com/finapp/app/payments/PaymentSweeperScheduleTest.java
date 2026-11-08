@@ -339,6 +339,17 @@ class PaymentSweeperScheduleTest {
         }
 
         @Override
+        public com.finapp.payments.ClearingAnswer queryClearing(
+                com.finapp.payments.ProviderIdempotencyReference ourReference) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public com.finapp.payments.DisputeAnswer queryDispute(com.finapp.payments.ProviderReference reference) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public com.finapp.payments.QueryAnswer query(
                 com.finapp.payments.ProviderIdempotencyReference ourReference) {
             throw new UnsupportedOperationException();

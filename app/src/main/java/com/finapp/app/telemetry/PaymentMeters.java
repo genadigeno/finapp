@@ -123,7 +123,11 @@ public final class PaymentMeters {
         DUPLICATE,
         /** Unauthenticated, unfresh or outside the evidence bound: nothing written. */
         REFUSED,
-        /** Authentic but naming no operation we minted, or unreadable (ADR-0047 §5). */
+        /**
+         * Authentic but naming no operation we minted, or unreadable (ADR-0047 §5); or a statement
+         * the provider's own inquiry denied or contradicted (ADR-0083): the signal a stolen webhook
+         * key would raise.
+         */
         UNMAPPABLE
     }
 
@@ -282,12 +286,16 @@ public final class PaymentMeters {
                             .tag("outcome", lower(outcome.name()))
                             .description(
                                     "Provider webhook deliveries by what became of them:"
-                                        + " processed applied an effect, duplicate was"
+                                        + " processed was handled and its inquiry asked (only"
+                                        + " the provider's answer moves anything), duplicate was"
                                         + " absorbed by the inbox, refused failed"
                                         + " authentication or the evidence bound, unmappable"
-                                        + " was authentic but named no operation we minted. A"
+                                        + " was authentic but named no operation we minted,"
+                                        + " could not be read, or was denied or contradicted by"
+                                        + " the provider's own inquiry. A"
                                         + " rise in refused is somebody probing the door; a"
-                                        + " rise in unmappable is an integration break. Per"
+                                        + " rise in unmappable is an integration break, or a"
+                                        + " stolen webhook key. Per"
                                         + " instance; rate() and sum() aggregate")
                             .register(registry));
         }

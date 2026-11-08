@@ -1,52 +1,41 @@
 package com.finapp.app.payments;
 
-import com.finapp.payments.DisputeNotice;
-import com.finapp.payments.DisputeNotifications;
+import com.finapp.payments.CallbackHint;
+import com.finapp.payments.CallbackHintResolution;
+import com.finapp.payments.CallbackHintStore;
+import com.finapp.payments.CardCallbackInquiry;
 import com.finapp.payments.EvidenceKind;
-import com.finapp.payments.PaymentIntent;
-import com.finapp.payments.PaymentIntentStore;
-import com.finapp.payments.PaymentOutcomes;
-import com.finapp.payments.PaymentAttemptStatus;
-import com.finapp.payments.ProviderAnswer;
-import com.finapp.payments.ProviderReference;
-import com.finapp.payments.PaymentCreation;
-import com.finapp.platform.security.SecurityContext;
-import com.finapp.sharedkernel.correlation.Correlation;
+import com.finapp.payments.HintedOutcome;
 import com.finapp.payments.PaymentAttempt;
 import com.finapp.payments.PaymentAttemptId;
 import com.finapp.payments.PaymentAttemptStore;
-import com.finapp.payments.PaymentClearing;
 import com.finapp.payments.ProviderEvidenceStore;
 import com.finapp.payments.ProviderIdempotencyReference;
+import com.finapp.payments.ProviderReference;
+import com.finapp.payments.RailId;
 import com.finapp.payments.Refund;
 import com.finapp.payments.RefundId;
-import com.finapp.payments.RefundStatus;
 import com.finapp.payments.RefundStore;
 import com.finapp.payments.SimulatedCardPspAdapter;
+import com.finapp.payments.TransactionRunner;
 import com.finapp.payments.WebhookSignature;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.inbox.InboxConsumer;
 import com.finapp.platform.inbox.InboxKey;
-import com.finapp.sharedkernel.money.CurrencyCode;
-import com.finapp.sharedkernel.money.Money;
+import com.finapp.platform.security.SecurityContext;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Function;
 import java.util.regex.Pattern;
-import javax.sql.DataSource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.datasource.DataSourceUtils;
-import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * One payment webhook, delivered at-least-once, recorded exactly once (`P5-TSK-012`,
- * ADR-0047 §1–§3 and §5; the {@code ProviderCallbackService} template with the payments
- * additions).
+ * One payment webhook, delivered at-least-once, recorded exactly once, and <strong>adopted never</strong>
+ * (`P5-TSK-012`, ADR-0047 §1–§3 and §5; since `P15-TSK-036`, ADR-0083 decision 4: a callback is a hint).
  *
  * <h2>Authenticate before parsing, with a freshness window ({@code INV-PAY-01})</h2>
  *
@@ -64,14 +53,19 @@ import tools.jackson.databind.ObjectMapper;
  * is unparseable, carries no usable event id, or names no operation we minted is
  * <strong>acknowledged with its evidence retained</strong>: redelivery adds nothing when the
  * bytes are already held, and the evidence row IS the detection — deliberately the opposite
- * of the inbox's block-don't-skip rule for internal events. (The unmappable-rate meter is
- * plan §15's, arriving with `P5-TSK-017`.)
+ * of the inbox's block-don't-skip rule for internal events.
  *
- * <h2>This task transitions nothing</h2>
+ * <h2>The callback decides when; only the inquiry decides what</h2>
  *
- * <p>The inbox handler is the seam `P5-TSK-013` fills with the conditional machine
- * transitions (ADR-0047 §4); here it carries the dedupe record alone, which is exactly the
- * scope boundary the backlog draws — ingestion, not effect.
+ * <p>The webhook key proves who signed, not that the claim is true, and it sits on a third
+ * party's infrastructure. So nothing here reads an outcome out of the body: the body names the
+ * subject and the kind, the evidence and the dedupe commit, and then, holding no connection,
+ * {@link CardCallbackInquiry} asks the PSP over the provider credential and applies what the
+ * PSP answers through the sweep's own appliers. A stolen webhook key hastens what the platform
+ * learns and moves nothing. A duplicate never reaches the inquiry. An inquiry that fails or
+ * answers nothing usable adopts nothing: the delivery is still acknowledged, and the sweep
+ * decides (the row's own for an attempt or a refund, {@link CallbackHintResolution} for a
+ * clearing or a dispute, which have no row to sweep).
  */
 @Slf4j
 public class PaymentWebhookService {
@@ -91,35 +85,37 @@ public class PaymentWebhookService {
     private final WebhookSignature signature;
     private final ProviderEvidenceStore<Connection> evidence;
     private final PaymentAttemptStore<Connection> attempts;
-    private final PaymentIntentStore<Connection> intents;
     private final RefundStore<Connection> refunds;
     private final com.finapp.app.telemetry.PaymentMeters meters;
-    private final PaymentOutcomes outcomes;
-    private final PaymentClearing clearing;
     private final InboxConsumer<Connection> inbox;
     private final ObjectMapper json;
     private final Clock clock;
-    private final TransactionTemplate transactions;
-    private final DataSource dataSource;
+    private final TransactionRunner transactions;
+    private final CardCallbackInquiry inquiry;
+    private final CallbackHintStore<Connection> hints;
+    private final CallbackHintResolution hintResolution;
 
-    /** The dispute notifications' command (`P7-TSK-012`) — the door's fourth statement kind. */
-    private final DisputeNotifications disputes;
+    /** The rail this door serves: the composition root's binding, never a name held here ({@code INV-RAIL-01}). */
+    private final RailId railId;
+
+    /** At most so many inquiries at once on this instance's request threads; a refused one is left to the sweep. */
+    private final CallbackInquiryBulkhead bulkhead;
 
     public PaymentWebhookService(
             WebhookSignature webhookSignature,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
-            PaymentIntentStore<Connection> paymentIntentStore,
             RefundStore<Connection> refundStore,
             com.finapp.app.telemetry.PaymentMeters paymentMeters,
-            PaymentOutcomes paymentOutcomes,
-            PaymentClearing paymentClearing,
             InboxConsumer<Connection> inboxConsumer,
             ObjectMapper objectMapper,
             Clock clock,
-            TransactionTemplate paymentTransactions,
-            DataSource dataSource,
-            DisputeNotifications disputeNotifications) {
+            TransactionRunner paymentTransactionRunner,
+            CardCallbackInquiry cardCallbackInquiry,
+            CallbackHintStore<Connection> callbackHintStore,
+            CallbackHintResolution callbackHintResolution,
+            RailId railId,
+            CallbackInquiryBulkhead callbackInquiryBulkhead) {
         this.signature =
                 Objects.requireNonNull(webhookSignature, "webhookSignature must not be null");
         this.evidence =
@@ -127,58 +123,58 @@ public class PaymentWebhookService {
                         providerEvidenceStore, "providerEvidenceStore must not be null");
         this.attempts =
                 Objects.requireNonNull(paymentAttemptStore, "paymentAttemptStore must not be null");
-        this.intents =
-                Objects.requireNonNull(paymentIntentStore, "paymentIntentStore must not be null");
         this.refunds = Objects.requireNonNull(refundStore, "refundStore must not be null");
         this.meters = Objects.requireNonNull(paymentMeters, "paymentMeters must not be null");
-        this.outcomes = Objects.requireNonNull(paymentOutcomes, "paymentOutcomes must not be null");
-        this.clearing =
-                Objects.requireNonNull(paymentClearing, "paymentClearing must not be null");
         this.inbox = Objects.requireNonNull(inboxConsumer, "inboxConsumer must not be null");
         this.json = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.transactions =
-                Objects.requireNonNull(paymentTransactions, "paymentTransactions must not be null");
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-        this.disputes =
                 Objects.requireNonNull(
-                        disputeNotifications, "disputeNotifications must not be null");
+                        paymentTransactionRunner, "paymentTransactionRunner must not be null");
+        this.inquiry =
+                Objects.requireNonNull(cardCallbackInquiry, "cardCallbackInquiry must not be null");
+        this.hints = Objects.requireNonNull(callbackHintStore, "callbackHintStore must not be null");
+        this.hintResolution =
+                Objects.requireNonNull(
+                        callbackHintResolution, "callbackHintResolution must not be null");
+        this.railId = Objects.requireNonNull(railId, "railId must not be null");
+        this.bulkhead =
+                Objects.requireNonNull(
+                        callbackInquiryBulkhead, "callbackInquiryBulkhead must not be null");
     }
 
     /**
      * The provider's wire shape — ours end to end, like the outbound protocol it mirrors
-     * (`P5-TSK-003`): the provider's event id, <strong>our</strong> operation reference
-     * (reconciliation by our reference, ADR-0046 §4 applied inbound), and the provider's
-     * status word — untouched here; `P5-TSK-013`'s total mapping owns it ({@code INV-PAY-03}).
+     * (`P5-TSK-003`). This door reads the provider's event id (the inbox key), <strong>our</strong>
+     * operation reference and, for a dispute, the PSP's dispute reference (each the subject of an
+     * inquiry), and the status word (which inquiry to make). The rest of the body rests as evidence
+     * and is read by nobody here.
      */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     private record WebhookPayload(
             String eventId,
             String operation,
             String status,
             String reference,
-            // The clearing statement's own fields (P7-TSK-005): the acquirer reference and
-            // the network transaction identifier, present exactly when status is "cleared".
             String arn,
             String networkTransactionId,
-            // The dispute statement's own fields (P7-TSK-012), present when status is
-            // "disputed": the PSP's dispute reference, its stage word and reason code (both
-            // CardDisputeVocabulary's to map), and the disputed amount in the outbound
-            // wire's own shape - minor units as a JSON string, currency, scale.
-            String dispute,
-            String stage,
-            String reasonCode,
-            String amountMinor,
-            String currency,
-            Integer scale,
-            // The PSP's dispute fee (P7-TSK-013, ADR-0061 section 4), in the amount's own
-            // currency and scale: present only on a statement from the chargeback on.
-            String feeMinor,
-            // The network's representment deadline (P7-TSK-014, ADR-0061 section 7), an
-            // ISO-8601 instant - recorded from a statement from the chargeback on.
-            String respondBy) {}
+            String dispute) {}
 
-    /** Minor units as the wire carries them: digits only, and short enough for a long. */
-    private static final Pattern MINOR_UNITS = Pattern.compile("[0-9]{1,18}");
+    /** What this delivery asks about, decided in its transaction and acted on after the commit. */
+    private sealed interface Planned {
+
+        /** The authorization, capture or void the operation reference names on this attempt. */
+        record Operation(PaymentAttemptId attempt, ProviderIdempotencyReference reference) implements Planned {}
+
+        /** The refund the operation reference names. */
+        record RefundOutcome(Refund refund) implements Planned {}
+
+        /** A clearing or dispute notice: no row to sweep, so a durable hint carries it. */
+        record Durable(CallbackHint.Kind kind, PaymentAttemptId attempt, String askedAbout) implements Planned {}
+
+        /** Nothing to ask; {@code unreadable} when the statement named a row but could not be read. */
+        record Nothing(boolean unreadable) implements Planned {}
+    }
 
     /**
      * Accepts one delivery.
@@ -217,7 +213,7 @@ public class PaymentWebhookService {
             // Unparseable, or no event id we can key: no dedupe is POSSIBLE, so the evidence
             // row alone is the record - per delivery, which is bounded because we acknowledge
             // and a correct provider then never redelivers.
-            inOneTransaction(
+            transactions.inTransaction(
                     unitOfWork -> {
                         retain(unitOfWork, Optional.empty(), Optional.empty(), rawBody);
                         return null;
@@ -232,9 +228,8 @@ public class PaymentWebhookService {
 
         Optional<ProviderIdempotencyReference> operation =
                 parsed.flatMap(payload -> mintedShape(payload.operation()));
-        Judged judged = new Judged();
         Delivered delivered =
-                inOneTransaction(
+                transactions.inTransaction(
                         unitOfWork -> {
                             // The attribution read and the evidence row share the delivery's
                             // transaction: evidence for EVERY authenticated delivery - the
@@ -246,23 +241,20 @@ public class PaymentWebhookService {
                                                             unitOfWork, reference));
                             // The refund's statements attribute by the same INV-PAY-04 rule
                             // (P5-TSK-016): tried second because the vocabularies are
-                            // distinct - an attempt reference never names a refund.
+                            // distinct - an attempt reference never names a refund. And only a
+                            // refund of THIS door's rail (P15-TSK-036, Phase 7 residues #34 and
+                            // #75): a card callback naming an instant return's reference names
+                            // nothing this provider did.
                             Optional<Refund> refundSubject =
                                     subject.isPresent()
                                             ? Optional.empty()
                                             : operation.flatMap(
-                                                    reference ->
-                                                            refunds.findByOperationReference(
-                                                                    unitOfWork, reference));
-                            // THE EFFECT BEFORE THE EVIDENCE ROW, deliberately - a lock-order
-                            // rule, not a priority statement: the evidence INSERT takes FOR
-                            // KEY SHARE on the attempt row (the FK), and the outcome's UPDATE
-                            // rewrites a UNIQUE column, which needs the full FOR UPDATE that
-                            // KEY SHARE blocks - two deliveries retaining first then applying
-                            // deadlock each other (40P01, found by this suite's ten-way race).
-                            // "Evidence first" (ADR-0047 §2) is a COMMIT claim and stands:
-                            // evidence, dedupe and effect still commit together, and 2xx
-                            // still waits for that commit.
+                                                            reference ->
+                                                                    refunds.findByOperationReference(
+                                                                            unitOfWork, reference))
+                                                    .filter(refund -> onThisRail(unitOfWork, refund));
+                            Planned planned = plan(subject, refundSubject, operation, parsed.get());
+                            CallbackHint[] hint = new CallbackHint[1];
                             InboxConsumer.Outcome consumed =
                                     inbox.consume(
                                             unitOfWork,
@@ -272,24 +264,30 @@ public class PaymentWebhookService {
                                                             + ":"
                                                             + eventId.get()),
                                             MESSAGE_TYPE,
-                                            uow ->
-                                                    // The P5-TSK-013 effect: the conditional
-                                                    // machine transitions, with the dedupe
-                                                    // record, or not at all (ADR-0047 §3-§4).
-                                                    effect(
-                                                            uow,
-                                                            subject,
-                                                            refundSubject,
-                                                            operation,
-                                                            parsed.get(),
-                                                            judged));
+                                            // The dedupe record, and for a notice no row can stand for
+                                            // the hint that lets the sweep finish it: nothing else. The
+                                            // claim in the body is never an effect (ADR-0083 decision 2).
+                                            uow -> {
+                                                if (planned instanceof Planned.Durable durable) {
+                                                    hint[0] =
+                                                            hints.insert(
+                                                                            uow,
+                                                                            durable.kind(),
+                                                                            Optional.of(durable.attempt()),
+                                                                            durable.askedAbout(),
+                                                                            hintResolution.firstAsk())
+                                                                    .orElse(null);
+                                                }
+                                            });
                             retain(unitOfWork,
                                     subject.map(PaymentAttempt::id),
                                     refundSubject.map(Refund::id),
                                     rawBody);
                             return new Delivered(
                                     consumed,
-                                    subject.isPresent() || refundSubject.isPresent());
+                                    subject.isPresent() || refundSubject.isPresent(),
+                                    planned,
+                                    Optional.ofNullable(hint[0]));
                         });
 
         if (delivered.consumed() == InboxConsumer.Outcome.CONTENDED) {
@@ -297,245 +295,120 @@ public class PaymentWebhookService {
             // delivery must NOT be acknowledged. Its evidence row DID commit - the delivery
             // transaction returned normally with CONTENDED, and every authenticated delivery
             // is retained (INV-HIST-02) - so the redelivery adds a second row for the same
-            // bytes. (This said the rollback took the evidence with it until the Phase 7 -> 8
-            // transition's gate read it against the code.)
+            // bytes.
             throw new ApiException(
                     PlatformErrorCode.CONFLICT,
                     "A payment webhook is being processed by another instance; asking the"
                             + " provider to redeliver");
         }
-        // The judgement this delivery's own conditional made, if any, is counted where it was
-        // written - the applier's RailOutcomeObserver, after this delivery's commit
-        // (P7-TSK-015), never for a resolver that converged - not here.
-
-        // Counted after the delivery transaction committed (`P5-TSK-017`), in ADR-0047's
-        // own four states: a rolled-back delivery counts nothing, and the CONTENDED path
-        // above threw before reaching here - unacknowledged is not a delivery that happened.
         if (delivered.consumed() == InboxConsumer.Outcome.SKIPPED_DUPLICATE) {
+            // No inquiry: the cost of a callback is bounded by this dedupe (ADR-0083 decision 5).
             meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.DUPLICATE);
-        } else if (delivered.attributed() && !judged.isUnmappable()) {
-            // Understood and handled - including the late report a terminal state refuses,
-            // which is ordering, not breakage (INV-LIFE-04's evidence-only path).
-            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.PROCESSED);
-        } else {
-            // Named no operation we minted, OR carried a word the total mapping refuses:
-            // both are the integration break this series exists to make visible.
-            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.UNMAPPABLE);
-        }
-
-        if (!delivered.attributed()) {
-            // Authentic but unmappable: acknowledged with the evidence retained. The rate is
-            // plan §15's webhook meter (P5-TSK-017); until then this line is the alert's raw
-            // material. Identifiers only.
-            log.warn(
-                    "An authenticated payment webhook named no operation this platform minted;"
-                            + " retained unattributed and acknowledged (ADR-0047 §5)");
-        }
-        if (delivered.consumed() == InboxConsumer.Outcome.SKIPPED_DUPLICATE) {
             log.info(
                     "A duplicate payment webhook delivery was absorbed by the inbox; its bytes"
                             + " are retained as evidence (INV-IDEM-04, INV-HIST-02)");
+            return;
+        }
+
+        HintedOutcome outcome = effect(delivered.planned(), delivered.hint());
+        boolean unreadable = delivered.planned() instanceof Planned.Nothing nothing && nothing.unreadable();
+        // Counted after the commit (`P5-TSK-017`). An inquiry that gave no answer is still a delivery
+        // handled: the sweep decides. A contradiction or a refutation is the integration break this
+        // series exists to make visible, and a refutation is what a stolen webhook key looks like.
+        meters.webhook(
+                delivered.attributed() && !unreadable && !outcome.isBreak()
+                        ? com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.PROCESSED
+                        : com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.UNMAPPABLE);
+
+        if (!delivered.attributed()) {
+            // Authentic but unmappable: acknowledged with the evidence retained. Identifiers only.
+            log.warn(
+                    "An authenticated payment webhook named no operation this platform minted"
+                            + " on this rail; retained unattributed and acknowledged (ADR-0047 §5)");
         }
     }
 
     /**
-     * The webhook's state effect (`P5-TSK-013`, ADR-0047 §4): the statement mapped through
-     * the total vocabulary onto a conditional edge of the attempt machine, applied through
-     * the ONE shared outcome component — the same transaction the sync response and the
-     * sweeper use, from this attempt's own current source state.
+     * Which inquiry this statement calls for. Reads the status word only to choose the question: the
+     * answer alone moves anything. An unreadable word, or a notice missing what it would be asked
+     * about, asks nothing and is counted as the integration break it is.
+     */
+    private static Planned plan(
+            Optional<PaymentAttempt> attempt,
+            Optional<Refund> refund,
+            Optional<ProviderIdempotencyReference> operation,
+            WebhookPayload payload) {
+        if (refund.isPresent()) {
+            return outcomeWord(payload)
+                    ? new Planned.RefundOutcome(refund.get())
+                    : new Planned.Nothing(true);
+        }
+        if (attempt.isEmpty()) {
+            return new Planned.Nothing(false);
+        }
+        PaymentAttemptId id = attempt.get().id();
+        String status = payload.status() == null ? "" : payload.status();
+        if ("cleared".equals(status)) {
+            return networkReference(payload.arn()).isPresent()
+                            && networkReference(payload.networkTransactionId()).isPresent()
+                    ? new Planned.Durable(CallbackHint.Kind.CARD_CLEARING, id, operation.orElseThrow().value())
+                    : new Planned.Nothing(true);
+        }
+        if ("disputed".equals(status)) {
+            return networkReference(payload.dispute())
+                    .<Planned>map(
+                            dispute ->
+                                    new Planned.Durable(
+                                            CallbackHint.Kind.CARD_DISPUTE, id, dispute.value()))
+                    .orElseGet(() -> new Planned.Nothing(true));
+        }
+        return outcomeWord(payload)
+                ? new Planned.Operation(id, operation.orElseThrow())
+                : new Planned.Nothing(true);
+    }
+
+    /**
+     * The inquiry, after the commit and holding no connection, <strong>as the platform</strong> — the
+     * module's enumerated {@code enterSystem()} site: a provider's unsolicited statement has no session,
+     * and the same outcome applied by the sweeper has no person at all, so attribution must not depend
+     * on which resolver wins the harmless race.
      *
-     * <p><strong>As the platform</strong> — the module's second enumerated
-     * {@code enterSystem()} site: a provider's unsolicited statement has no session, and the
-     * same outcome applied by the sweeper has no person at all, so attribution must not
-     * depend on which resolver wins the harmless race (the `P5-TSK-009` reasoning, third
-     * occurrence).
-     *
-     * <p><strong>Refused edges are evidence, never errors</strong> ({@code INV-LIFE-04}): a
-     * late report on a terminal attempt, an out-of-order authorization report on a captured
-     * one, an unrecognised status word, an approval missing the reference the row must store
-     * — each changes nothing, logs identifiers, and the retained bytes (already committed in
-     * this same transaction) are the statement of record. Unlike the synchronous call —
-     * whose ENDING without knowledge is itself the fact {@code *_UNKNOWN} records — an
-     * unsolicited statement we cannot read resolves nothing (the recorded decision).
+     * <p>Never throws: a failed inquiry is logged and left to the sweep, because the evidence and the
+     * dedupe are committed and the provider is owed its acknowledgement.
      */
     @SuppressWarnings("try") // The Scope is used for its close side effect.
-    private void effect(
-            Connection uow,
-            Optional<PaymentAttempt> attemptSubject,
-            Optional<Refund> refundSubject,
-            Optional<ProviderIdempotencyReference> operation,
-            WebhookPayload payload,
-            Judged judged) {
-        if (attemptSubject.isEmpty() && refundSubject.isEmpty()) {
-            return;
+    private HintedOutcome effect(Planned planned, Optional<CallbackHint> hint) {
+        if (planned instanceof Planned.Nothing) {
+            return HintedOutcome.UNDECIDED;
         }
-        // As the platform - the module's enumerated enterSystem() site, held HERE so the
-        // attempt branch and the refund branch (P5-TSK-016) are one site, not two: a
-        // provider's unsolicited statement has no session whichever machine it names.
+        if (!bulkhead.tryEnter()) {
+            log.info("Too many hinted inquiries are running on this instance; this one is left to the sweep");
+            return HintedOutcome.UNDECIDED;
+        }
         try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
-            if (attemptSubject.isPresent()) {
-                attemptEffect(
-                        uow, attemptSubject.get(), operation.orElseThrow(), payload, judged);
-            } else {
-                refundEffect(uow, refundSubject.get(), payload, judged);
-            }
+            return switch (planned) {
+                case Planned.Operation named -> inquiry.operation(named.attempt(), named.reference());
+                case Planned.RefundOutcome named -> inquiry.refund(named.refund());
+                // No hint means the same question already stands open: its next ask answers this delivery too.
+                case Planned.Durable durable -> hint.map(hintResolution::resolve).orElse(HintedOutcome.UNDECIDED);
+                case Planned.Nothing nothing -> HintedOutcome.UNDECIDED;
+            };
+        } catch (RuntimeException failure) {
+            // The class only: a provider or JDBC message can name hosts and identifiers (INV-AUD-02).
+            log.warn(
+                    "The inquiry a payment webhook triggered failed: {}; the sweep decides",
+                    failure.getClass().getSimpleName());
+            return HintedOutcome.UNDECIDED;
+        } finally {
+            bulkhead.exit();
         }
     }
 
-    private void attemptEffect(
-            Connection uow,
-            PaymentAttempt attempt,
-            ProviderIdempotencyReference operation,
-            WebhookPayload payload,
-            Judged judged) {
-        if ("cleared".equals(payload.status())) {
-            // The clearing statement (P7-TSK-005, ADR-0059 section 4): evidence, never an
-            // edge - the machine is not consulted, because a notice racing our own capture
-            // outcome, or contradicting a void, is exactly what Phase 8's matching must
-            // see, and this door acknowledges, so a refused notice never returns.
-            clearingEffect(uow, attempt, payload, judged);
-            return;
-        }
-        if ("disputed".equals(payload.status())) {
-            // The dispute statement (P7-TSK-012, ADR-0061 section 6): the dispute's own
-            // machine, never the attempt's - a chargeback contests the payment, it does not
-            // move the operation that took it.
-            disputeEffect(uow, attempt, payload, judged);
-            return;
-        }
-        Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
-        if (verdict.isEmpty()) {
-            judged.unmappable();
-            log.warn(
-                    "An authenticated payment webhook for attempt {} carried a status the"
-                            + " total mapping refuses to act on; retained as evidence,"
-                            + " nothing transitions (INV-PAY-03)",
-                    attempt.id());
-            return;
-        }
-        boolean authOperation = operation.equals(attempt.authorizationReference());
-        Correlation correlation = PaymentCreation.resolvedCorrelation();
-        {
-            PaymentIntent intent =
-                    intents.findById(uow, attempt.intentId())
-                            .orElseThrow(
-                                    () ->
-                                            new IllegalStateException(
-                                                    "an attempt row's intent exists: V003's"
-                                                            + " foreign key holds it"));
-            if (authOperation && authResolvable(attempt.status())) {
-                outcomes.applyAuthorization(
-                        uow,
-                        intent.id(),
-                        attempt.id(),
-                        attempt.status(),
-                        verdict.get(),
-                        providerReference(payload),
-                        // The issuer approved the dispatched ask: the intent's amount, the
-                        // same promise the synchronous path carries from its Tx1.
-                        intent.amount(),
-                        correlation);
-            } else if (!authOperation && captureResolvable(attempt.status())) {
-                outcomes.applyCapture(
-                        uow,
-                        intent.id(),
-                        attempt.id(),
-                        attempt.status(),
-                        verdict.get(),
-                        providerReference(payload),
-                        intent.creditAccount(),
-                        // The capture is the authorized promise, in full (one attempt, no
-                        // partial capture until its producer exists - ADR-0045 §4).
-                        attempt.authorizedAmount(),
-                        correlation);
-            } else {
-                log.info(
-                        "A payment webhook reported on attempt {} in state {} which its"
-                                + " operation cannot move; the statement stands as evidence"
-                                + " and changes nothing (INV-LIFE-04)",
-                        attempt.id(),
-                        attempt.status());
-            }
-        }
-    }
-
-    /**
-     * The clearing statement recorded (`P7-TSK-005`): the network's references, once per
-     * attempt, in this delivery's transaction — {@code PaymentClearing} and `V015`'s two
-     * unique arbiters own the once; here the statement is shaped and the three outcomes are
-     * told apart. A notice missing either reference is unactionable — not knowledge (the
-     * {@code mappedVerdict} totality rule, applied to the clearing vocabulary) — and an
-     * acquirer reference already claimed by ANOTHER attempt is the integration break made
-     * loud: the first record stands, this delivery's bytes rest as evidence.
-     */
-    private void clearingEffect(
-            Connection uow, PaymentAttempt attempt, WebhookPayload payload, Judged judged) {
-        Optional<ProviderReference> acquirer = networkReference(payload.arn());
-        Optional<ProviderReference> network = networkReference(payload.networkTransactionId());
-        if (acquirer.isEmpty() || network.isEmpty()) {
-            judged.unmappable();
-            log.warn(
-                    "An authenticated clearing webhook for attempt {} carried no usable"
-                            + " network references; retained as evidence, nothing recorded"
-                            + " (INV-PAY-03's totality, P7-TSK-005)",
-                    attempt.id());
-            return;
-        }
-        PaymentClearing.Outcome recorded =
-                clearing.record(
-                        uow,
-                        attempt,
-                        acquirer.get(),
-                        network.get(),
-                        PaymentCreation.resolvedCorrelation());
-        switch (recorded) {
-            case RECORDED -> {
-                log.info(
-                        "A capture's clearing was recorded with its network references"
-                                + " (attempt {}, INV-SET-01: no posting, no transition)",
-                        attempt.id());
-                if (attempt.status() == com.finapp.payments.PaymentAttemptStatus.FAILED
-                        || attempt.status() == com.finapp.payments.PaymentAttemptStatus.VOIDED) {
-                    // The network cleared a payment our books hold concluded without a capture
-                    // (the Phase 7 -> 8 transition): recorded - reconciliation needs the
-                    // references - and loud, counted where a break is looked for, never a
-                    // normal clearing.
-                    judged.unmappable();
-                    log.warn(
-                            "A clearing was recorded for attempt {} which the platform holds {}"
-                                    + " - the network presented a payment our books did not"
-                                    + " capture; a break reconciliation must see",
-                            attempt.id(),
-                            attempt.status());
-                }
-            }
-            case ALREADY_RECORDED ->
-                    log.info(
-                            "A duplicate clearing notice for attempt {} was absorbed by the"
-                                    + " record that stands (INV-IDEM-04)",
-                            attempt.id());
-            case SECOND_PRESENTMENT -> {
-                // The network presented one capture twice (the Phase 7 -> 8 transition): never
-                // the rail repeating itself. Loud, counted unmappable, the first record standing
-                // and this statement's bytes retained against the attempt for reconciliation.
-                judged.unmappable();
-                log.warn(
-                        "A clearing notice for attempt {} named network references OTHER than"
-                                + " the clearing already recorded for it - a second presentment"
-                                + " of one capture; the first record stands and this statement"
-                                + " rests as evidence - a break reconciliation must see",
-                        attempt.id());
-            }
-            case REFERENCE_CLAIMED_ELSEWHERE -> {
-                judged.unmappable();
-                log.warn(
-                        "A clearing notice for attempt {} named an acquirer reference"
-                                + " already recorded for a DIFFERENT attempt; the first"
-                                + " record stands and this statement rests as evidence -"
-                                + " an integration break reconciliation must see",
-                        attempt.id());
-            }
-        }
+    /** Whether this refund is on the rail this door serves. */
+    private boolean onThisRail(Connection unitOfWork, Refund refund) {
+        return attempts.findById(unitOfWork, refund.attemptId())
+                .filter(attempt -> attempt.rail().equals(railId))
+                .isPresent();
     }
 
     private static Optional<ProviderReference> networkReference(String value) {
@@ -550,305 +423,16 @@ public class PaymentWebhookService {
     }
 
     /**
-     * The dispute statement applied (`P7-TSK-012`, ADR-0061 §6): the PSP's words translated
-     * through {@link CardDisputeVocabulary}'s total tables, then {@link DisputeNotifications}
-     * owns the once and the order inside this delivery's transaction. A statement missing its
-     * reference, carrying a stage word we cannot read or an amount we cannot parse is
-     * unactionable — not knowledge — and moves nothing; a statement the dispute's record
-     * contradicts moves nothing either, and both are counted as the integration break they
-     * are. A late or repeated stage is ordering, not breakage.
+     * The provider's own two words, and an approval with a reference the row could store: anything
+     * else is not a statement of an outcome and asks nothing. The inquiry's reference is the one
+     * adopted; this one only decides whether the statement was readable.
      */
-    private void disputeEffect(
-            Connection uow, PaymentAttempt attempt, WebhookPayload payload, Judged judged) {
-        Optional<DisputeNotice> notice = disputeNotice(payload);
-        if (notice.isEmpty()) {
-            judged.unmappable();
-            log.warn(
-                    "An authenticated dispute webhook for attempt {} carried no usable"
-                            + " reference, stage or amount; retained as evidence, nothing"
-                            + " recorded (INV-PAY-03's totality, P7-TSK-012)",
-                    attempt.id());
-            return;
-        }
-        DisputeNotifications.Outcome applied =
-                disputes.apply(uow, attempt, notice.get(), PaymentCreation.resolvedCorrelation());
-        switch (applied) {
-            case OPENED, ADVANCED ->
-                    log.info(
-                            "A dispute on attempt {} was {} at the network's word, each stage"
-                                    + " posted once (P7-TSK-012, P7-TSK-013)",
-                            attempt.id(),
-                            applied == DisputeNotifications.Outcome.OPENED ? "opened" : "advanced");
-            case FEE_RECORDED ->
-                    log.info(
-                            "A dispute statement for attempt {} reported the PSP's dispute fee"
-                                    + " late; recorded and posted once (P7-TSK-013)",
-                            attempt.id());
-            case DEADLINE_RECORDED ->
-                    log.info(
-                            "A dispute statement for attempt {} reported the network's respond-by"
-                                    + " deadline late; recorded once (P7-TSK-014)",
-                            attempt.id());
-            case UNCHANGED ->
-                    log.info(
-                            "A repeated dispute statement for attempt {} changed nothing"
-                                    + " (INV-IDEM-04)",
-                            attempt.id());
-            case LATE ->
-                    log.info(
-                            "A dispute statement for attempt {} names a stage the dispute has"
-                                    + " already passed; the statement stands as evidence and"
-                                    + " changes nothing (INV-LIFE-04's ordering)",
-                            attempt.id());
-            case STAGE_CONTRADICTED, FACTS_CONTRADICTED, NOT_DISPUTABLE -> {
-                judged.unmappable();
-                log.warn(
-                        "A dispute statement for attempt {} contradicts what the platform"
-                                + " holds ({}); the record stands and the statement rests as"
-                                + " evidence - an integration break reconciliation must see",
-                        attempt.id(),
-                        applied);
-            }
-        }
-    }
-
-    /**
-     * Total: an unusable statement is empty, never a throw — the anti-stall class. Since
-     * `P7-TSK-013` the statement may carry the PSP's dispute fee: a fee field we cannot read, or
-     * one on an inquiry (a fee is charged with the funds taken), makes the whole statement
-     * unusable rather than half-read.
-     */
-    private static Optional<DisputeNotice> disputeNotice(WebhookPayload payload) {
-        Optional<ProviderReference> reference = networkReference(payload.dispute());
-        Optional<com.finapp.payments.DisputeStage> stage =
-                CardDisputeVocabulary.stage(payload.stage());
-        Optional<Money> amount = disputedAmount(payload);
-        if (reference.isEmpty() || stage.isEmpty() || amount.isEmpty()) {
-            return Optional.empty();
-        }
-        Optional<Optional<Money>> fee = disputeFee(payload, amount.get());
-        if (fee.isEmpty()) {
-            return Optional.empty();
-        }
-        Optional<Optional<java.time.Instant>> respondBy = respondBy(payload, stage.get());
-        if (respondBy.isEmpty()) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(
-                    new DisputeNotice(
-                            SimulatedCardPspAdapter.NAME,
-                            reference.get(),
-                            stage.get(),
-                            CardDisputeVocabulary.reason(payload.reasonCode()),
-                            amount.get(),
-                            fee.get(),
-                            respondBy.get()));
-        } catch (IllegalArgumentException incoherent) {
-            // A fee on an inquiry: the statement contradicts itself, so it is not knowledge.
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * The dispute fee in the amount's own currency and scale (`P7-TSK-013`): absent or zero is
-     * no fee (the outer Optional present, the inner empty); digits that do not parse are an
-     * unusable statement (the outer Optional empty).
-     */
-    private static Optional<Optional<Money>> disputeFee(WebhookPayload payload, Money amount) {
-        if (payload.feeMinor() == null) {
-            return Optional.of(Optional.empty());
-        }
-        if (!MINOR_UNITS.matcher(payload.feeMinor()).matches()) {
-            return Optional.empty();
-        }
-        try {
-            Money fee = Money.ofMinorUnits(Long.parseLong(payload.feeMinor()), amount.currency());
-            return Optional.of(fee.isZero() ? Optional.empty() : Optional.of(fee));
-        } catch (RuntimeException unusable) {
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * The network's respond-by deadline (`P7-TSK-014`): absent is no deadline stated; on an
-     * inquiry it is the inquiry's own answer-by date, which the platform does not act on (an
-     * inquiry response is out of scope), so it is dropped - never a refusal; an instant that does
-     * not parse is an unusable statement (the outer Optional empty), the fee's rule.
-     */
-    private static Optional<Optional<java.time.Instant>> respondBy(
-            WebhookPayload payload, com.finapp.payments.DisputeStage stage) {
-        if (payload.respondBy() == null || !stage.isChargedBack()) {
-            return Optional.of(Optional.empty());
-        }
-        try {
-            return Optional.of(Optional.of(java.time.Instant.parse(payload.respondBy())));
-        } catch (java.time.format.DateTimeParseException unusable) {
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * The disputed amount in the outbound wire's own shape, total: digits only, a currency we
-     * know, and exactly that currency's scale — an amount created now from an external
-     * statement, so {@code ofMinorUnits}, never a persisted scale taken on trust.
-     */
-    private static Optional<Money> disputedAmount(WebhookPayload payload) {
-        if (payload.amountMinor() == null
-                || payload.currency() == null
-                || payload.scale() == null
-                || !MINOR_UNITS.matcher(payload.amountMinor()).matches()) {
-            return Optional.empty();
-        }
-        try {
-            CurrencyCode currency = CurrencyCode.of(payload.currency());
-            if (payload.scale() != currency.minorUnits()) {
-                return Optional.empty();
-            }
-            Money amount = Money.ofMinorUnits(Long.parseLong(payload.amountMinor()), currency);
-            return amount.isPositive() ? Optional.of(amount) : Optional.empty();
-        } catch (RuntimeException unusable) {
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * The refund's webhook effect (`P5-TSK-016`): the asynchronous completion a real PSP
-     * actually sends — the statement mapped through the same total vocabulary onto the
-     * refund machine's conditional edges, applied through the ONE shared outcome component,
-     * from this refund's own current source state ({@code DISPATCHED} or {@code UNKNOWN} —
-     * the order-blindness). Completion releases-and-posts atomically; a late report on a
-     * terminal refund is evidence beside an untouched row ({@code INV-LIFE-04}). Runs inside
-     * the caller's platform scope — one enumerated site, whichever machine the statement
-     * names.
-     */
-    private void refundEffect(
-            Connection uow, Refund attributed, WebhookPayload payload, Judged judged) {
-        Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
-        if (verdict.isEmpty()) {
-            judged.unmappable();
-            log.warn(
-                    "An authenticated payment webhook for refund {} carried a status the"
-                            + " total mapping refuses to act on; retained as evidence,"
-                            + " nothing transitions (INV-PAY-03)",
-                    attributed.id());
-            return;
-        }
-        // THE LOCKED ROW is the source state (the Phase 6 -> 7 transition). Judged from the
-        // unlocked attribution read, a delivery racing the synchronous call's move into UNKNOWN
-        // applied from DISPATCHED, lost its conditional, and was still counted processed - so the
-        // provider never redelivered the one answer that would have resolved the refund.
-        com.finapp.payments.RefundStore.LockedRefund locked =
-                refunds.lockForOutcome(uow, attributed.id())
-                        .orElseThrow(
-                                () ->
-                                        new IllegalStateException(
-                                                "an attributed refund row exists: the attribution"
-                                                        + " read found it"));
-        Refund refund = locked.refund();
-        if (!refundResolvable(refund.status())) {
-            log.info(
-                    "A payment webhook reported on refund {} in state {} which cannot move;"
-                            + " the statement stands as evidence and changes nothing"
-                            + " (INV-LIFE-04)",
-                    refund.id(),
-                    refund.status());
-            return;
-        }
-        PaymentAttempt attempt =
-                attempts.findById(uow, refund.attemptId())
-                        .orElseThrow(
-                                () ->
-                                        new IllegalStateException(
-                                                "a refund row's attempt exists: V004's"
-                                                        + " foreign key holds it"));
-        PaymentIntent intent =
-                intents.findById(uow, attempt.intentId())
-                        .orElseThrow(
-                                () ->
-                                        new IllegalStateException(
-                                                "an attempt row's intent exists: V003's"
-                                                        + " foreign key holds it"));
-        outcomes.applyRefund(
-                        uow,
-                        intent.id(),
-                        refund,
-                        refund.status(),
-                        verdict.get(),
-                        providerReference(payload),
-                        intent.creditAccount(),
-                        PaymentCreation.resolvedCorrelation());
-    }
-
-    /**
-     * What this delivery's effect found unreadable, carried out of the transaction so the door
-     * can count the delivery's fate <strong>after the commit</strong> (`P5-TSK-017`). The
-     * judgements themselves are no longer carried: since `P7-TSK-015` the applier reports each
-     * acting one to its {@code RailOutcomeObserver}, which counts it once the transaction commits.
-     */
-    private static final class Judged {
-
-        private boolean unreadable;
-
-        /**
-         * The statement was authentic and named one of our operations, but carried a status
-         * word the total mapping refuses ({@code INV-PAY-03}). That is an INTEGRATION BREAK
-         * — the provider saying something we do not understand about money we are holding —
-         * and counting it as {@code processed} would hide exactly the rise the plan's own
-         * §15 note says {@code unmappable} exists to show.
-         */
-        void unmappable() {
-            unreadable = true;
-        }
-
-        boolean isUnmappable() {
-            return unreadable;
-        }
-    }
-
-    private static boolean refundResolvable(RefundStatus status) {
-        return status == RefundStatus.DISPATCHED || status == RefundStatus.UNKNOWN;
-    }
-
-    /**
-     * The total mapping ({@code INV-PAY-03}): the provider's own two words act; everything
-     * else — unrecognised states, an approval without a usable reference — is empty, and the
-     * caller retains without transitioning. The vocabulary is the wire client's exactly:
-     * this is the same provider speaking.
-     */
-    private static Optional<ProviderAnswer.Verdict> mappedVerdict(WebhookPayload payload) {
+    private static boolean outcomeWord(WebhookPayload payload) {
         return switch (payload.status() == null ? "" : payload.status()) {
-            case "approved" ->
-                    providerReference(payload).isPresent()
-                            ? Optional.of(ProviderAnswer.Verdict.APPROVED)
-                            // An approval the row cannot store is unactionable - not
-                            // knowledge (the PspWireClient totality rule, inbound).
-                            : Optional.empty();
-            case "declined" -> Optional.of(ProviderAnswer.Verdict.DECLINED);
-            default -> Optional.empty();
+            case "approved" -> networkReference(payload.reference()).isPresent();
+            case "declined" -> true;
+            default -> false;
         };
-    }
-
-    /** Shape-total: a reference we cannot store is absent, never a throw. */
-    private static Optional<ProviderReference> providerReference(WebhookPayload payload) {
-        if (payload.reference() == null) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(new ProviderReference(payload.reference()));
-        } catch (IllegalArgumentException unusable) {
-            return Optional.empty();
-        }
-    }
-
-    private static boolean authResolvable(PaymentAttemptStatus status) {
-        return status == PaymentAttemptStatus.AUTH_DISPATCHED
-                || status == PaymentAttemptStatus.AUTH_UNKNOWN;
-    }
-
-    private static boolean captureResolvable(PaymentAttemptStatus status) {
-        return status == PaymentAttemptStatus.CAPTURE_DISPATCHED
-                || status == PaymentAttemptStatus.CAPTURE_UNKNOWN;
     }
 
     /** Evidence, attributed when the operation resolved ({@code V005}'s recorded rule). */
@@ -886,8 +470,12 @@ public class PaymentWebhookService {
         return Optional.of(eventId);
     }
 
-    /** The delivery transaction's yield: the dedupe outcome, and whether anything owned it. */
-    private record Delivered(InboxConsumer.Outcome consumed, boolean attributed) {}
+    /** The delivery transaction's yield: the dedupe outcome, whether anything owned it, and what to ask. */
+    private record Delivered(
+            InboxConsumer.Outcome consumed,
+            boolean attributed,
+            Planned planned,
+            Optional<CallbackHint> hint) {}
 
     /** Shape only, no read: a reference we never mint names nothing — the unattributable class. */
     private static Optional<ProviderIdempotencyReference> mintedShape(String operation) {
@@ -899,17 +487,5 @@ public class PaymentWebhookService {
         } catch (IllegalArgumentException notOurs) {
             return Optional.empty();
         }
-    }
-
-    private <R> R inOneTransaction(Function<Connection, R> work) {
-        return transactions.execute(
-                status -> {
-                    Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
-                    try {
-                        return work.apply(unitOfWork);
-                    } finally {
-                        DataSourceUtils.releaseConnection(unitOfWork, dataSource);
-                    }
-                });
     }
 }

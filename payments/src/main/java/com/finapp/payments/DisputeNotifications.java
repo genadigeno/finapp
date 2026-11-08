@@ -24,10 +24,10 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Applies one dispute notification (`P7-TSK-012`, ADR-0061 §1, §2, §6; the money since
- * `P7-TSK-013`, §3–§5) inside the delivering webhook's own transaction: the dispute row, every
- * stage it implies, their trail rows, their audit records, their events and their postings
- * commit with the delivery's evidence and dedupe record, or not at all — one delivery, one
- * transaction.
+ * `P7-TSK-013`, §3–§5) inside the hinted inquiry's own transaction (`P15-TSK-036`, ADR-0083: the
+ * statement is the PSP's answer, and the webhook's evidence and dedupe have already committed):
+ * the dispute row, every stage it implies, their trail rows, their audit records, their events and
+ * their postings commit together or not at all.
  *
  * <h2>The attempt first (`P7-TSK-013`, the lock order `P7-TSK-012` recorded)</h2>
  *

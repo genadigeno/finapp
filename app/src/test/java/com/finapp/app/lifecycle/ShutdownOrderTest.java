@@ -49,7 +49,7 @@ import org.springframework.core.Ordered;
 
 /**
  * The order a stopping instance lets go in, on a real context (`P15-TSK-008`, ADR-0120 decision 4): the production
- * configuration's own beans - all thirty-four of the platform's lifecycle components running - stopped by Spring's own
+ * configuration's own beans - all thirty-five of the platform's lifecycle components running - stopped by Spring's own
  * lifecycle processor, never a list of phase numbers.
  *
  * <p><strong>How the order is observed.</strong> Each step is caught at the moment it happens, on the thread doing it: the
@@ -72,9 +72,9 @@ class ShutdownOrderTest {
     private static final String PROBE_PATH = "/__drain-probe";
 
     /** The platform's lifecycle components: thirty-two schedules, the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`). */
-    private static final int COMPONENTS = 34;
+    private static final int COMPONENTS = 35;
 
-    private static final int SCHEDULES = 32;
+    private static final int SCHEDULES = 33;
 
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
 

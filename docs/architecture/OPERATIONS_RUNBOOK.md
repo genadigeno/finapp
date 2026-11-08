@@ -2110,3 +2110,18 @@ Dependabot pull request that moves one root and not the other, or the roots and 
 
 **What this does not cover.** An apply, a plan against an account, and a drift check. Each needs a real account, which
 Phase 15 does not have (`THREAT_MODEL.md` §6 item 7).
+
+## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
+
+A signed callback no longer concludes anything by itself on the payment, instant, FX or corridor doors. Its evidence and dedupe
+commit, then the door asks the provider, and the delivery is acknowledged after that one inquiry. KYC's callbacks are outside
+this rule. So a callback's outcome now waits on one inquiry, bounded by that provider's timeout.
+
+| You see | It means | Do |
+|---|---|---|
+| A payment stays `*_UNKNOWN` or `AWAITING_PAYER` after its callback arrived | The inquiry failed or had no answer; nothing was adopted | Nothing. The resolution sweep asks again. If it persists, check the provider's inquiry endpoint |
+| `finapp.payments.webhook{outcome="unmappable"}` rising, with WARN lines saying the provider "has denied a signed callback for longer than its bound" | A signed callback the provider's own inquiry still denies, past that kind's `refute-after` bound | Treat as a possible **webhook key compromise** until shown otherwise, then rotate the key under `SECRET_MANAGEMENT.md`. Nothing has moved, and no reversal is needed on this signal alone |
+| The same series rising, with WARN lines saying "we cannot read" | The provider answered and the adapter cannot read it: a wire change. Nothing moves and each question stays open | Fix the adapter. The hints then conclude on their own |
+| WARN "contradicts the row" | The provider's answer disagrees with a concluded payment | A break: the row stands, the answer rests as evidence, and reconciliation will type it from settlement. Investigate with the provider |
+| `payments.callback_hint` rows with `concluded_at IS NULL` growing | Clearing, dispute or parking inquiries are not being answered | Check the provider's inquiry endpoints. The sweep's wait doubles from `finapp.payments.callback-hint.retry-after` (1 min) to `.retry-cap` (6 h). A denial is believed only past `.refute-after` (disputes 2 h, clearing 30 min, executions 15 min) |
+| WARN "never answered within their bound and are abandoned" | A hint passed `finapp.payments.callback-hint.give-up-after` (7 days) | The callback's evidence stands and settlement reconciliation is the backstop; find the notice in `provider_evidence` and reconcile it |
