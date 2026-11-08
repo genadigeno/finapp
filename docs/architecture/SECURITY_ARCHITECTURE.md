@@ -25,6 +25,15 @@ Controls to consider:
 - privileged-access controls
 - rate limits / abuse controls
 
+## Threats and trust boundaries
+
+The threats these controls answer are registered in [`THREAT_MODEL.md`](THREAT_MODEL.md) (`P15-TSK-001`). It covers
+the ten trust boundaries of the deployed platform drawn for N replicas, STRIDE at each boundary, a rating per threat by
+a written rule, and each threat mapped to a control with evidence, to the Phase 15 task that builds one, or to an
+acceptance that only the owner can give. `ThreatModelIsCompleteTest` holds the register. This document describes how
+each control works. The model says which threat each one answers and what is still open. The bar a deployable unit must
+meet is [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
+
 ## Logging
 
 Logs are ECS JSON in every environment, including a developer's machine (`P0-TSK-030`, ADR-0019).
@@ -107,20 +116,57 @@ refusal. The driver reads `sslmode` from no environment variable, so there is no
 
 ## Encryption at rest
 
-**Nothing in this platform is encrypted at rest today, and nothing in it needs to be yet.** Phase 0
-holds no customer data, no money and no credentials; `DATA_CLASSIFICATION.md` records that no column
-currently carries data above `CONFIDENTIAL`, though several are classified at a higher ceiling for
-the data they will hold.
+*(Corrected by `P15-TSK-001`, 2026-11-08, from the code. This section read "**Nothing in this platform is encrypted at
+rest today, and nothing in it needs to be yet**", the Phase 0 position of `P0-TSK-034` and ADR-0023. It has been false
+since `P1-TSK-017` brought the first cipher. Its table placed column-level encryption in Phases 1 and 5 and object
+storage in Phase 8, and said key management was "meaningless without keys".)*
 
-| Concern | Position | Owning phase |
+**The application encrypts restricted content field by field, and nothing else is encrypted at rest yet.**
+
+**What is encrypted, and under which keys.** Eight cipher classes, built as **nine instances over eight keys**. Every
+one is AES-256-GCM: an exactly 32-byte key, refused otherwise; a fresh 96-bit nonce per encryption, stored beside the
+ciphertext; a 128-bit tag, so a tampered ciphertext or the wrong key fails, as one indistinguishable refusal, and never
+decrypts to something else. Each key is a configuration value read from the environment and confined by ADR-0020's
+loopback rule (`ConfinedCredential`), so the database never holds it.
+
+| Class (module) | What it encrypts | Key property | Associated data bound |
+|---|---|---|---|
+| `SecretCipher` (identity) | MFA shared secrets (`INV-IDN-08`) | `finapp.mfa.key` | none |
+| `DocumentCipher` (kyc) | KYC documents and verification-check evidence | `finapp.doc.key` | none |
+| `CounterpartySubjectCipher` (kyc) | Counterparty screening subjects and their screening evidence | `finapp.doc.key`, shared with `DocumentCipher` | the screening row |
+| `EvidenceCipher` (payments), instance 1 | Payment provider evidence | `finapp.payments.evidence.key` | none |
+| `EvidenceCipher` (payments), instance 2 | Dispute evidence (`INV-DSP-03`) | `finapp.payments.dispute.evidence.key` | none |
+| `PayoutEvidenceCipher` (merchant) | Merchant payout provider evidence | `finapp.merchant.payout.evidence.key` | none |
+| `CreditEvidenceCipher` (credit) | Credit data and bureau evidence | `finapp.credit.evidence.key` | the evidence row |
+| `FxEvidenceCipher` (fx) | FX provider evidence | `finapp.fx.evidence.key` | none |
+| `SettlementFileCipher` (settlement) | Settlement file chunks | `finapp.settlement.file.key` | file, source, content hash and position |
+
+**Key versioning.** Each key has a companion `…key-version` property (default `1`), and every row the cipher writes
+stamps the version beside its ciphertext. Settlement stamps it on the file. **Each instance holds exactly one key.**
+Decryption always uses that key, whatever version a row carries. `CounterpartySubjectCipher` refuses a row stamped with
+another version, and the other seven fail at the authentication tag. So **a key cannot be rotated today without making
+every earlier row unreadable**. Many of these tables are `INSERT`-only evidence that must never be re-encrypted.
+
+**Hashed, not encrypted.** Passwords (Argon2id, ADR-0032), session tokens, merchant API keys and checkout tokens are
+stored as derivations from which the original cannot be recovered (`INV-IDN-01`). Card data is tokenised at the
+boundary and never stored. Raw bank details are held at the provider (ADR-0056).
+
+**What is still missing, and who builds it:**
+
+| Concern | Position today | Owner |
 |---|---|---|
-| Database volume encryption | An infrastructure property, not an application one. Provisioned with the cluster | Phase 15 |
-| Backups | Encrypted, and the key held separately from the backup. A backup is a copy of the ledger | Phase 15 |
-| Object storage (settlement files, documents) | Server-side encryption, and evidence integrity by checksum (`INV-HIST-02`) | Phase 8 |
-| Column-level encryption or tokenisation | Per classification level, when a column actually carries restricted data. Card data is tokenised at the boundary and never stored (`DECISIONS.md`) | Phase 1 (PII), Phase 5 (cards) |
-| Key management and rotation | A KMS decision, meaningless without keys | Phase 15 |
+| Key rotation | No key ring. One active key per instance, so a rotation would strand every earlier row | `P15-TSK-019`: key rings, one active version, retained versions decrypting by the stamped version |
+| Key management | Keys are environment values. There is no KMS, no wrapping and no managed store | `P15-TSK-016` (KMS keys per purpose), `-018` (delivery from the secret store), `-020` (rotation rehearsed) |
+| Associated data | Three classes bind it. **Five bind none** (`SecretCipher`, `DocumentCipher`, `EvidenceCipher`, `PayoutEvidenceCipher`, `FxEvidenceCipher`), so a ciphertext moved to another row decrypts cleanly | `X-TSK-010`, which names the first four; the fifth is routed onto it |
+| Every other column | Plaintext in PostgreSQL. Restricted columns outside the table above rely on the database's at-rest protection, which does not yet exist | `P15-TSK-015`: managed volumes encrypted under KMS |
+| Backups | None exist. When they do, they are encrypted under a key separate from the volume's, because a backup is a copy of the ledger | `P15-TSK-015`, `-030` |
+| Object storage | The application uses none. Evidence lives in PostgreSQL, encrypted as above (ADR-0036). Settlement files moved there by ADR-0066: AES-256-GCM with bound associated data, verified on read, and a person's read of the raw content audited with its reason (`INV-REC-10`); the parse leg's own decryption is recorded by the file's history. That ADR's amendment of this section's old "server-side encryption" row was never applied until this correction. Object storage stays the target only if a trigger fires. Buckets serve infrastructure only | `P15-TSK-015` |
+| Crypto-shredding | Designed as the future purge mechanism (destroy a key version) and not exercised (C12) | A real jurisdiction's retention |
 
-**The local stack is deliberately unencrypted**, and that is recorded rather than left implicit:
+The threats these answer are `THREAT_MODEL.md` T7, T34 and T35.
+
+**The local stack's volumes are deliberately unencrypted** (the field-level ciphers above run locally too), and that
+is recorded rather than left implicit:
 volumes are plain Docker volumes on a developer's disk. The boundary is that nothing local is a
 pattern for a deployment — the same statement `compose.yaml` makes about its credentials.
 
@@ -298,6 +344,14 @@ The tag must prove *possession of a shared secret*, which is what HMAC is; the k
   (dispatch-commits-before-the-call, `P2-TSK-009`), which is the `SIGNED_CALLBACK` ownership class
   in `OwnershipIsScopedTest`.
 
+*(Read-note, `P15-TSK-001`, 2026-11-08. The first two limits were written for the KYC callback alone, in Phase 2. Since
+then **each callback door has its own key**: five doors, five keys (`finapp.kyc.callback.key`,
+`finapp.payments.webhook.key`, `finapp.payments.instant.webhook.key`, `finapp.fx.webhook.key`,
+`finapp.corridor.webhook.key`). The payment webhooks' signature also covers a timestamp, checked within a freshness
+window. **Each key is still static, with no rotation.** The window that accepts the current and the previous secret is
+`P15-TSK-019`'s, and its rehearsal `-020`'s. Callbacks as hints, for the providers that still adopt a callback's own
+outcome, are `X-TSK-015`'s (`THREAT_MODEL.md` T8).)*
+
 ## Secrets
 
 The approach is [`SECRET_MANAGEMENT.md`](SECRET_MANAGEMENT.md) and ADR-0020. In summary
@@ -318,9 +372,11 @@ The two mechanisms are blind in different directions, which is why both run.
 **A name is not a control.** The marked local default is published deliberately, and
 `DatabaseCredentialGuard` refuses to start the application when it is aimed at a database that is
 not on loopback - closing the one documented way around externalised configuration, which is
-forgetting to set the variable. The eight per-credential confinements (`ConfinedCredential`)
-refuse the same way and name the environment variable to set, and `ConfinedCredentialVariablesTest`
+forgetting to set the variable. The twenty-seven per-credential confinements (`ConfinedCredential`: one key class per
+credential property, each provider API key, callback key, report key and field-level encryption key) refuse the same
+way and name the environment variable to set, and `ConfinedCredentialVariablesTest`
 pins each named variable to the property its configuration actually reads — the Phase 6 review
-found five naming variables nothing bound (`P6-DOC-001`).
+found five naming variables nothing bound (`P6-DOC-001`). *(Read "eight per-credential confinements" until
+`P15-TSK-001` recounted them, 2026-11-08.)*
 
 Never put secrets, API credentials, private keys, or raw payment credentials in source code.

@@ -644,4 +644,34 @@ tasks.withType<Test>().configureEach {
     )
         .withPropertyName("adrRegisters")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The seventeenth and eighteenth, the first a SET. ThreatModelIsCompleteTest (P15-TSK-001) reads
+    // docs/architecture/THREAT_MODEL.md and resolves every evidence path the register cites, and the evidence is
+    // open-ended: a test, a migration, a CI workflow, a pin list, an ADR or another document. Compiled code is
+    // already an input through the classpath and siblingTestClasses, and *.yml, *.sh and *.sql through
+    // committedConfiguration. The documents and the dependency verification metadata are not, so they are
+    // declared here. Without them, deleting a cited document would leave the task UP-TO-DATE and the register
+    // green over evidence nobody opened. A tree, not the one file, so a document cited later is covered without
+    // anyone remembering. PRODUCTION_READINESS.md sits in the same tree for P15-TSK-034's guard.
+    inputs.files(rootProject.fileTree("docs") { include("**/*.md") })
+        .withPropertyName("documentsTree")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(rootProject.layout.projectDirectory.file("gradle/verification-metadata.xml"))
+        .withPropertyName("dependencyVerificationMetadata")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The nineteenth, P15-TSK-001's fix rounds: the trees later tasks' evidence lives in - infra/ (pins, scripts,
+    // Terraform, policies), deploy/ (manifests, -009 onward), .github/ (the workflow and, with -017, CODEOWNERS), every
+    // Dockerfile at any depth (-003 may write app/Dockerfile) and each module's build script (whose Flyway settings
+    // MigrationSettingsAreForwardOnlyTest reads) - whatever their extension, since a Dockerfile or a CODEOWNERS file
+    // has none. A deleted or edited file there re-runs the register's guard and the evidence tests that read it.
+    // Worktrees and git's own objects under the root are not evidence and are left out.
+    inputs.files(
+        rootProject.fileTree(rootProject.layout.projectDirectory) {
+            include("infra/**", "deploy/**", ".github/**", "**/Dockerfile*", "*/build.gradle.kts")
+            exclude("**/build/**", "**/.gradle/**", ".git/**", ".claude/**", "**/node_modules/**")
+        }
+    )
+        .withPropertyName("infrastructureEvidence")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }

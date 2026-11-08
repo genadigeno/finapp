@@ -170,6 +170,16 @@ Surveyed at master `7840c716` by reading the build, `compose.yaml`, `infra/`, `.
 endpoint declares it (25 do); `SYSTEM_ARCHITECTURE.md` §Baseline Stack lists Spring Security, Redis and S3, none of which
 the code uses.
 
+*Erratum (`P15-TSK-001`, 2026-11-08, recounted from the code; the rows above are kept as surveyed): **37** `finapp.*`
+credential properties is **27** distinct (each with its own `ConfinedCredential` key class; 35 with the eight `key-version`
+companions); `@RequiresAssurance` is declared on **21** handlers, all `MULTI_FACTOR` (25 is a text count that also matches four
+mentions in comments and the interceptor's message); the 397 "routes" are OpenAPI **paths** - 430 operations, 269 operator paths and 288 operator
+operations - and the code holds five provider callback doors, each present only where its provider is configured, three
+of them in the published contract; 33 schedules are **34** `SmartLifecycle` components (32 schedules, `AccountingGaugeRefresher`, `InboxConsumers`);
+the cipher counts (eight classes, nine instances, eight keys) hold, and **three** of the eight bind associated data, five
+none. The first two stale statements are corrected (`SECURITY_ARCHITECTURE.md` §Encryption at rest, `SECRET_MANAGEMENT.md`
+§7); the other three stay with `-008`, `-021` and `-031`, which carry them.*
+
 ---
 
 ## 4. The deployable units (the brief's "every microservice", answered for this platform)
@@ -341,6 +351,11 @@ repository settings, recorded in the runbook as the owner's to apply.
 
 ### 9.1 The threat model first
 
+*Written: [`THREAT_MODEL.md`](../architecture/THREAT_MODEL.md) (`P15-TSK-001`, 2026-11-08) - the ten boundaries below
+drawn for N replicas, STRIDE at each, 47 threats rated by a written rule (read 44 until its fix round), every CRITICAL and HIGH threat
+controlled;
+held by `ThreatModelIsCompleteTest`. Where this section and the model differ, the model is right.*
+
 `P15-TSK-001` writes `docs/architecture/THREAT_MODEL.md`: the trust boundaries (internet → edge; edge → application;
 operator network → operator ingress; application → PostgreSQL; application → Kafka; application → providers; providers
 → callback routes; CI → registry; GitOps → cluster; humans → cluster and cloud), STRIDE per boundary, each threat's
@@ -349,6 +364,9 @@ accepted risk with an owner. A guard test holds the register: every control row 
 threat has a disposition, and no CRITICAL or HIGH threat is left without a control or a recorded acceptance.
 
 ### 9.2 Controls mapped to threats
+
+*T1-T14 carried into [`THREAT_MODEL.md`](../architecture/THREAT_MODEL.md) §3 with their numbers, T15-T47 added there;
+each control's evidence, or the task that builds it, is the model's §4, not this table.*
 
 | Threat | Controls (existing → Phase 15) | Task |
 |---|---|---|
@@ -544,6 +562,10 @@ longer than the longest rolling update the overlay allows), so a rollout's expec
 ---
 
 ## 15. Production readiness (8.12)
+
+*Written as [`PRODUCTION_READINESS.md`](../architecture/PRODUCTION_READINESS.md) (`P15-TSK-001`, 2026-11-08): the twelve
+dimensions below as checkable clauses, a multi-instance row (`-034`'s entry), one table per unit and per module carrying
+this section's reading of today, the ruling and evidence columns left for `-034`.*
 
 **A unit is production-ready when every row below holds with evidence** — not when its container starts. `P15-TSK-001`
 writes the standard; `P15-TSK-034` fills it per unit and per module from the tasks' evidence.

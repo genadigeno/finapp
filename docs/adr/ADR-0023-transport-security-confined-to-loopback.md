@@ -68,6 +68,13 @@ money and no credentials. At-rest protection is a property of provisioned infras
 columns that actually carry restricted data — neither exists. The expectations and their owning
 phases are recorded so that the absence is a decision rather than an oversight.
 
+*(Read-note, `P15-TSK-001`, 2026-11-08: the decision stands as taken on 2026-09-02, and its premise has since lapsed.
+From `P1-TSK-017` on, columns that carry restricted data are encrypted field by field. Eight AES-256-GCM cipher classes,
+built as nine instances over eight keys, each stamp a key version on every row. `SECURITY_ARCHITECTURE.md` §Encryption at
+rest holds the current position, and `THREAT_MODEL.md` T7, T34 and T35 the threats. Decision 5's "no Kafka client" lapsed
+with `P2-TSK-001`, which added `KafkaTransportGuard`. The same stale claim in `TransportSecurityGuard`'s Javadoc is
+`P15-TSK-008`'s to correct.)*
+
 ## Alternatives rejected
 
 **Requiring TLS everywhere, including loopback.** Consistent, and it makes a clean clone unable to

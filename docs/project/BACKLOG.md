@@ -26876,8 +26876,8 @@ built, evidence purges re-dated to a real jurisdiction; **C13** operator session
 candidate), workforce OIDC deferred; **C14** the standing criterion-7 deviation, one database pass at the exit, the storm
 postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 
-**P15-TSK-001 — The threat model, the trust boundaries and the readiness standard** — `READY` (2026-11-07; marked by the
-Phase 14 → 15 transition)
+**P15-TSK-001 — The threat model, the trust boundaries and the readiness standard** — `COMPLETE` (2026-11-08; marked
+`READY` by the Phase 14 → 15 transition, 2026-11-07; read `READY` until its gate)
 - **Objective**: name every threat to the deployed platform and the control that answers it, with evidence, before any
   control is built; write the bar every deployable unit must meet to be called production-ready.
 - **Affected components**: documents (`docs/architecture/THREAT_MODEL.md` new, `PRODUCTION_READINESS.md` new,
@@ -26903,6 +26903,67 @@ Phase 14 → 15 transition)
 - **Acceptance criteria**: every boundary modelled; every threat dispositioned; the guard green with its probes caught;
   the stale statements corrected.
 - **Definition of done**: `DOD-SEC`, `DOD-ARCH`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
+- **As built** (2026-11-08; branch `P15-TSK-001` from master `9472753b`; documents and one guard, no production code,
+  no migration, no ADR): [`THREAT_MODEL.md`](../architecture/THREAT_MODEL.md) draws the ten boundaries of
+  `PHASE_15_PLAN.md` §9.1 for N replicas and answers STRIDE at each (60 cells: 57 with threats, 3 `N/A` with reasons).
+  It holds 44 threats, T1–T14 carried with their numbers and T15–T44 added, among them the raw writer (T15), the
+  duplicated command (T16) and event (T17), the operator alone (T18), the stepped clock (T13) and version skew (T12).
+  Each is rated by a written rule (inherent likelihood × impact): 16 CRITICAL, 15 HIGH, 12 MEDIUM, 1 LOW. 43 are
+  `CONTROL` and one, T42 (MEDIUM), is a `PROPOSED ACCEPTANCE` awaiting the owner. No risk is recorded as accepted.
+  197 control rows: 88 `EXISTS`, each citing a file or a `Class.java#method` opened and checked against the claim; 97
+  `PLANNED` (Phase 15 tasks); 12 `REMEDIATION` (`P14-REM-*`, `X-TSK-*`). Every CRITICAL and HIGH threat carries a
+  control. Six of them (T4, T21, T27, T28, T29, T32) rest today on planned rows alone, because nothing is deployed.
+  [`PRODUCTION_READINESS.md`](../architecture/PRODUCTION_READINESS.md) writes the bar: the twelve dimensions as checkable
+  clauses plus a multi-instance row (`-034`'s entry), six unit tables and 23 module tables carrying §15's reading, the
+  ruling and evidence columns left for `-034`, the open `P14-REM-*` entries named per unit and module.
+  `SECURITY_ARCHITECTURE.md` §Encryption at rest and `SECRET_MANAGEMENT.md` §7 are corrected from the code (eight
+  classes, nine instances, eight keys, one active key each, three binding associated data), with read-notes on ADR-0023,
+  ADR-0123 and `DECISIONS.md`, and two more stale counts in `SECURITY_ARCHITECTURE.md` corrected (§Secrets 8 → 27
+  confinements; §Signed provider callbacks, five keys). `ThreatModelIsCompleteTest` (`com.finapp.app.architecture`,
+  `architecture` tag) holds the register under 13 rules. **Choice: a row citing a task that is no longer live is red,
+  naming the task.** So each later Phase 15 gate (and each `P14-REM`/`X-TSK` gate the model cites) rewrites its
+  promise as `EXISTS` evidence in the same change that marks the task `COMPLETE`. Recounted from the code and routed:
+  37 → 27 credential properties (`-018`, ADR-0123), 25 → 21 `@RequiresAssurance` handlers (`-021`), 397 routes → 397
+  paths and 430 operations (plan §3 erratum), `SASL_PLAINTEXT` admitted by `KafkaTransportGuard` (`-026`), five ciphers
+  without associated data (`X-TSK-010`), the forwarded-header source address (`-011`, `-022`).
+- **Fix round** (2026-11-08; the independent review's FIX FIRST: one CRITICAL, three IMPORTANT, six MINOR, each verified
+  before acting; the counts above read as the first round's). **C1:** T15's residual claimed a detection that did not
+  exist. It is rewritten as two lists. Detected: the books a product proof covers, a registered-shape violation, a
+  stale projection. Undetected: a balanced, rule-shaped shift between customer wallets with both projection rows
+  co-updated (`finapp_app` holds `UPDATE` on `ledger.account_balance`, `V006`). The trial balance never detects a
+  balanced entry. The `-025` row is re-scoped to the proofs that apply, and owner item 2 is re-raised with options:
+  (a) a source-join or wallet proof as a new item (not `-025`'s scope), (b) a definer-rights posting function with
+  per-module roles. **I1:** T45 (injection through hand-written JDBC, CRITICAL, only `-006`'s planned rule; routed),
+  T46 (restricted data or secrets through telemetry and error bodies, CRITICAL, redaction, metric-label and
+  error-body tests, `-023`) and T47 (registration enumeration, MEDIUM, a proposed acceptance) added; T6 regains its
+  redaction rows and `-014`; T14 cites `-024`. **I2:** no CRITICAL or HIGH threat counts a bare file; three hermetic
+  evidence tests assert existing properties (`CiWorkflowIsLockedDownTest`, `MigrationSettingsAreForwardOnlyTest`,
+  `LocalDatabaseRolesAreUnprivilegedTest`). `gradle/verification-metadata.xml` carries content pins, ADR-0008's
+  row is dropped, local-only rows say so, with `-004` for the deployed equivalent; routed onto `-003`, `-006`,
+  `-007`. **I3:** a `GAP` state (a postponed issue or owner item, an owner and a date; six rows), structural floors
+  in place of exact minimums, extensionless paths, test inputs widened to `infra/`, `deploy/`, `.github/` and root
+  `Dockerfile`s. **Minor:** ratings re-read against §1.3's words (T10, T19, T22, T32, T33, T34 and T36 now CRITICAL;
+  T35, T38, T43 and T44 HIGH); T42 at B9; any proposed acceptance red at the exit; `#member` must be a test
+  (`@Test`, `@ParameterizedTest`, `@ArchTest` …); malformed and indented rows red; short ids checked; acceptance by
+  the owner only; rows reworded to what each test holds; a merge note; the readiness standard's boundary-to-unit map
+  and clause-level `N/A`. **Now:** 47 threats (25 CRITICAL, 13 HIGH, 8 MEDIUM, 1 LOW); 45 `CONTROL`, two proposed
+  acceptances (T42, T47); 216 rows (95 `EXISTS`, 103 `PLANNED`, 12 `REMEDIATION`, 6 `GAP`); the guard's 14 rules.
+- **Second fix round** (2026-11-08; the focused re-review's FIX FIRST: one IMPORTANT, six MINOR). **I-1:** T15's
+  "detected" list overclaimed. It now derives from `AccountPurpose`'s forty members: 28 read per account by a proof,
+  two only through the lines a row names (loan fee income, BNPL merchant fee income), ten by none - customer wallets,
+  merchant payables (their check is an identity of their own breakdown), fee revenue, loan and BNPL interest income,
+  BNPL late-fee income, loan and BNPL write-off expense, chargeback recoverable and dispute costs. "Detected" holds
+  only for a naive raw insert or a defect, since `finapp_app` can also insert the product rows each proof reads. What
+  is refused at insert is listed (`V004`, `V007`, `V009`, `V010`, `V028`, `V032`); `V015`'s binding judges the
+  adjustment path only. Owner item 2: only the source-join census covers every book, a wallet proof wallets only;
+  (b) confines a module, and does not stop a holder who writes the domain row first. **Minor:** the CI test reads
+  `secrets: inherit`, `toJSON(secrets)`, flow-style `uses:`, refuses local actions and asserts the scan's git mode;
+  the Flyway test requires every occurrence to agree; the roles test refuses `ALTER ROLE` and role-membership grants;
+  documents under `docs/` never count for CRITICAL or HIGH (routed onto `-032`); a whole test file must declare a
+  test; T18 cites the database test that holds the four-eyes `CHECK`; T8's wording narrowed to what is asserted per
+  rail (the corridor test does refuse a forged signed callback's effect; it does not assert its retention); the test
+  inputs take every `Dockerfile` and module build script; rule 9 reads every task id in the model, the
+  register's own excepted. Counts unchanged (47 threats, 216 rows, 14 rules).
 
 **P15-TSK-002 — The carried items ruled (C15)** — `PLANNED`
 - **Objective**: no debt row, deferral or cross-cutting item names Phase 15 as owner without a ratified disposition.
@@ -26955,6 +27016,7 @@ Phase 14 → 15 transition)
 - **Acceptance criteria**: the image builds in CI and locally, runs non-root, starts ready against local dependencies,
   within budget.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T30's built row holds `ci.yml`'s token scope (read-only, no secret, one workflow) through `CiWorkflowIsLockedDownTest`. A job this task adds that widens a `permissions` entry, references a secret or adds a workflow turns that test red: rewrite T30's row with the change, and the test with it, in this task's gate.
 
 **P15-TSK-004 — The migrator image and the migration Job contract** — `PLANNED`
 - **Objective**: run every module's migrations in a deployed environment exactly as the build does, as
@@ -27038,6 +27100,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: `SYSTEM_ARCHITECTURE.md` §Continuous Integration's table; runbook §a failing scan.
 - **Acceptance criteria**: every planted finding fails its job; the final tree green.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T45 (injection through hand-written JDBC, CRITICAL) has this task's static analysis as its only control: include a vendored rule refusing a statement whose SQL text is built from anything but constants (not only a concatenation pattern), with the planted case of this entry's testing. Findings accepted here are accepted in the threat model with an `until` date (the model's §1.4). T30's built row holds `ci.yml`'s token scope through `CiWorkflowIsLockedDownTest`: a job that widens it rewrites that row in this task's gate.
 
 **P15-TSK-007 — Signing, provenance and admission verification** — `PLANNED`
 - **Objective**: only images CI built from a reviewed commit can run.
@@ -27058,6 +27121,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: runbook §a refused image; ADR-0122's follow-up.
 - **Acceptance criteria**: the three admission cases as stated; attestations attached and verifiable.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T30's built row holds `ci.yml`'s token scope through `CiWorkflowIsLockedDownTest`. Keyless signing needs `id-token: write` on the signing job: grant it at that job only, rewrite T30's row (and the test's read-only assertion, to name that one exception) in this task's gate.
 
 **P15-TSK-008 — The runtime contract: management port, graceful shutdown, drained schedules** — `PLANNED`
 - **Objective**: an instance can be stopped at any moment without failing an accepted request or leaving work stranded,
@@ -27088,6 +27152,7 @@ Phase 14 → 15 transition)
   rows.
 - **Acceptance criteria**: as tested; probes served only on 8081.
 - **Definition of done**: `DOD-KERNEL`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* ADR-0023's decision 5 carries the same lapsed "no Kafka client" claim as `TransportSecurityGuard`'s note; `-001` added a read-note there pointing here and corrected `DECISIONS.md` §Transport and at-rest encryption. `THREAT_MODEL.md` T2 cites this task (the management port).
 
 **P15-TSK-009 — Kubernetes base manifests for the application** — `PLANNED`
 - **Objective**: the application's desired state as reviewed, validated YAML.
@@ -27157,6 +27222,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: runbook §edge; `API_CONVENTIONS.md` notes the two surfaces.
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T40 cites this task: the edge sets the client's address and drops any client-supplied forwarded header, so `-022`'s per-source limits and every record key on an address the client cannot choose. T1, T3, T8, T20, T21 and T31 cite it too. *(The fix round, 2026-11-08:)* `THREAT_MODEL.md` T31: the allow-list moves only the routes an operator permission guards, so a route under `/v1/operator` that declares only a session would stay on the public host. Keep `/v1/operator/**` off the public host by path as well as by permission.
 
 **P15-TSK-012 — The `kind` deployment: N replicas, the migration Job, smoke, rolling update and rollback rehearsed** —
 `PLANNED`
@@ -27317,6 +27383,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: `SECRET_MANAGEMENT.md` §3 and §5 rewritten for deployed environments.
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* the scope's "37 properties" is the plan's survey count. Recounted from the code: **27** distinct `finapp.*` credential properties, each confined by its own `ConfinedCredential` key class (35 with the eight `key-version` companions, which are not secrets; 39 names merely contain the words), besides the datasource, migrator and Kafka credentials. `SECRET_MANAGEMENT.md` §3's variable table lists only the database's variables: the inventory replaces it. `THREAT_MODEL.md` T6 and T15 cite this task.
 
 **P15-TSK-019 — Key rings: rotating field-level keys without losing history** — `PLANNED`
 - **Objective**: any of the eight ciphers' keys can be rotated with every earlier row still readable and no evidence
@@ -27347,6 +27414,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: runbook §key rotation, §key compromise.
 - **Acceptance criteria**: as tested in every cipher's module.
 - **Definition of done**: `DOD-SEC`, `DOD-KERNEL`. **Risk**: High (touches evidence encryption). **Cx**: L.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* what the ring replaces, read from the code: each of the nine instances decrypts with its one key whatever version a row carries; only `CounterpartySubjectCipher` refuses a mismatched stamped version, the other seven fail at the tag; `SettlementFileCipher` stamps its version on the file row. The five callback keys (`finapp.kyc.callback.key`, `.payments.webhook.key`, `.payments.instant.webhook.key`, `.fx.webhook.key`, `.corridor.webhook.key`) are each static. `THREAT_MODEL.md` T7, T8 and T34 cite this task.
 
 **P15-TSK-020 — Credential and certificate rotation, rehearsed** — `PLANNED`
 - **Objective**: every rotation in `PHASE_15_PLAN.md` §10 performed on `kind` under a workload with no failed request
@@ -27398,6 +27466,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: `SECURITY_ARCHITECTURE.md` §Who is acting; the review as a document.
 - **Acceptance criteria**: as tested; two debt rows closed.
 - **Definition of done**: `DOD-SEC`, `DOD-ARCH`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `RequiresAssurance`'s note, recounted: **21** handlers declare it, all `MULTI_FACTOR`, all on the method (the plan's "25" is a text count that also matches four mentions in comments and the interceptor's message). `THREAT_MODEL.md` T3, T7, T10, T18, T38 and T44 cite this task; if the reporting role is cut, this task's gate rewrites T7's and T44's rows as gaps with an owner. *(The fix round, 2026-11-08:)* `THREAT_MODEL.md` T31: the privileged access review asserts that every route under `/v1/operator` is permission-guarded (today no build rule does). If the reporting role is cut, T7's and T44's planned rows become `GAP` rows naming the owner item or postponed issue that holds them (the grammar of the model's §1.4).
 
 **P15-TSK-022 — Abuse limits: registration and per-source throttling, cluster-safe** — `PLANNED`
 - **Objective**: no single source can create unbounded parties or drive unbounded load, across N replicas.
@@ -27421,6 +27490,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: runbook §abuse.
 - **Acceptance criteria**: exactly the limit admitted across contexts.
 - **Definition of done**: `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T40: a per-source limit keyed on a client-supplied forwarded header is evaded by setting the header, so the source is the address the edge sets (`-011`), never one the client chooses; a test sending a forged forwarded header proves it.
 
 **P15-TSK-023 — The telemetry pipeline and the end-to-end trace** — `PLANNED`
 - **Objective**: traces and logs leave every replica through one scrubbing collector, and one payment is traceable from
@@ -27466,6 +27536,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: runbook §stale gauges, §instance down.
 - **Acceptance criteria**: as tested; two debt rows and PI-014 item 2 closed.
 - **Definition of done**: `DOD-OBS`. **Risk**: Medium. **Cx**: L.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T14 cites this task: an unauthenticated scrape today runs about sixty gauges' database reads on the scrape thread, so taking every gauge off it also removes a cheap way to load the pool.
 
 **P15-TSK-025 — SLOs, error budgets, correctness alerts and routing** — `PLANNED`
 - **Objective**: every critical flow has an objective and a burn-rate alert, every correctness signal pages, and every
@@ -27516,6 +27587,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: runbook §broker outage, §consumer lag.
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `KafkaTransportGuard` refuses only `PLAINTEXT` off loopback today, so **`SASL_PLAINTEXT` (authenticated, unencrypted) is admitted**; the widening refuses every protocol without TLS off loopback, with a case for it. `THREAT_MODEL.md` T9, T17 and T25 cite this task.
 
 **P15-TSK-027 — Event contracts: the schema catalogue and compatibility** — `PLANNED`
 - **Objective**: no release changes an event in a way the previous release's consumers cannot read, and no record is
@@ -27673,6 +27745,11 @@ Phase 14 → 15 transition)
 - **Operational documentation**: this task.
 - **Acceptance criteria**: criterion 4.
 - **Definition of done**: `DOD-DOC`, `DOD-OBS`. **Risk**: Low. **Cx**: L.
+- *Routed by `P15-TSK-001` (2026-11-08, its second fix round), status unchanged:* `THREAT_MODEL.md`'s guard refuses a
+  document under `docs/` as built evidence for a CRITICAL or HIGH threat, pinned or not. If this task's rehearsal
+  records are to count there (break-glass, compromise), its gate widens the grammar deliberately: it names the
+  records' directory and form, adds the rule to `ThreatModelIsCompleteTest` with a probe, and rewrites the rows it
+  satisfies. Until then a rehearsal record counts in `PRODUCTION_READINESS.md` only.
 
 **P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `PLANNED`
 - **Objective**: fix, at their causes, the production defects the owner postponed to this phase's database pass.
@@ -27737,6 +27814,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: this review.
 - **Acceptance criteria**: every cell evidenced or a gap with an owner; no "ready" on a started container alone.
 - **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* the standard is written: [`PRODUCTION_READINESS.md`](../architecture/PRODUCTION_READINESS.md), the twelve dimensions as checkable clauses, a multi-instance row per unit (this entry's), six unit tables and 23 module tables, the open `P14-REM-*` entries named per unit and module. Its evidence grammar is the threat model's, parsed and resolved by `EvidenceCitations` (`com.finapp.app.architecture`), which this task's guard reuses. *(The fix round, 2026-11-08:)* the evidence grammar gained content pins (`contains: …`, `lacks: …`) and a `GAP` state, and the standard gained a boundary-to-unit map for Security (i) and clause-level `N/A` for managed PostgreSQL and Kafka on Deployment (a)–(c); a file that is not a test counts only with a pin or a test asserting its property.
 
 **P15-TST-001 — The rolling-deploy storm** — `POSTPONED` (by the owner, `POSTPONED_ISSUES.md` PI-004: every later phase's
 storm runs after the project's phases)
@@ -28333,6 +28411,7 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   design), proven by a test over a row written before the change; the key confinement and needle
   tests unchanged and green. **Risk**: Medium — a mistake makes stored evidence unreadable.
   **Cx**: M. **DoD**: `DOD-SEC`, `DOD-TEST`
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* **`FxEvidenceCipher`** (Phase 9) binds no associated data either, so the item covers five classes: `SecretCipher`, `DocumentCipher`, `EvidenceCipher` (both instances), `PayoutEvidenceCipher` and `FxEvidenceCipher`. `CreditEvidenceCipher`, `CounterpartySubjectCipher` and `SettlementFileCipher` bind from birth. `THREAT_MODEL.md` T35 cites this item.
 
 **X-TSK-011 — Reconcile the posting-date doctrine with the Phase 5–7 practice** — `PLANNED`
 - **Context**: documentation — `DOMAIN_MODEL.md`:116-121 and `LEDGER_MODEL.md`:41-44. Recorded by

@@ -195,10 +195,20 @@ landed. Checking that a mutation actually applies is part of applying one.
 
 ## 7. What is deliberately not here
 
-| | Why | Owning phase |
+*(Corrected by `P15-TSK-001`, 2026-11-08, from the code. This table said key rotation "needs keys, of which there are
+none", the Phase 0 position. Since `P1-TSK-017` the platform has held field-level encryption keys: eight today. It also
+placed at-rest encryption with `P0-TSK-034`, which documented the transport hop and stated that nothing was encrypted
+at rest.)*
+
+| | Position today | Owner |
 |---|---|---|
-| A secrets manager | No deployment, no key management, and one local database password. Choosing a manager with no real requirement to shape it is how you get the wrong one | Phase 15 |
-| Key rotation, KMS, envelope encryption | Needs keys, of which there are none | Phase 15 |
-| TLS and at-rest encryption | Its own task | `P0-TSK-034` |
-| Per-service identity, mTLS | Needs services | Phase 16 |
-| Dependency artefact verification | A dependency is external input too, but a different supply chain | `P0-TSK-039` |
+| A secrets manager | **Not yet.** Every credential is an environment variable with the marked local default confined to loopback (§4): 27 `finapp.*` credential properties, each confined by its own `ConfinedCredential` key class, plus the database's credentials (§3). The decision is ADR-0123 (`Proposed`): a managed secret store and KMS per environment, delivered as the environment the application already reads | `P15-TSK-016` (the store's entries and KMS keys), `-018` (the inventory and delivery) |
+| Key rotation, KMS, envelope encryption | **Keys exist; rotation does not.** Eight AES-256-GCM field-level keys, used by eight cipher classes built as nine instances (`EvidenceCipher` twice: payment and dispute evidence; `DocumentCipher` and `CounterpartySubjectCipher` share `finapp.doc.key`). Each key is an environment value that decodes to exactly 32 bytes, with a `…key-version` companion stamped on every row it writes. **Each instance holds one key**, and decryption always uses it, so rotating a key today would make every earlier row unreadable. No KMS wraps any key, and no rotation procedure exists. `SECURITY_ARCHITECTURE.md` §Encryption at rest lists each key and what it encrypts | `P15-TSK-019` (key rings: an active version, retained versions decrypting by the stamped version, no re-encryption of `INSERT`-only evidence), `-016` (KMS), `-020` (rotation rehearsed) |
+| Callback (HMAC) secret rotation | Five callback doors, each with its own static key. Nothing verifies against a previous secret during a window | `P15-TSK-019`, `-020` |
+| Transport encryption | Implemented for the hops that exist (`SECURITY_ARCHITECTURE.md` §Transport encryption) | `P0-TSK-034`; Kafka's TLS and SASL `P15-TSK-026`; inbound TLS at the edge `P15-TSK-011` |
+| At-rest encryption | The field-level ciphers above. No volume or backup encryption, because nothing is deployed | `P15-TSK-015` |
+| Per-service identity, mTLS | Needs services: there is one deployable, so there is no service-to-service hop (`PHASE_15_PLAN.md` §9.3). Workload identities exist for the cloud APIs only | `P15-TSK-016`; mTLS Phase 16, if a service is extracted |
+| Dependency artefact verification | A dependency is external input too, but a different supply chain | `P0-TSK-039` (implemented: ADR-0025) |
+
+The threats these rows answer are registered in [`THREAT_MODEL.md`](THREAT_MODEL.md): T6 (secret disclosure), T7 and
+T34 (the field-level keys), and T8 (the callback secrets).
