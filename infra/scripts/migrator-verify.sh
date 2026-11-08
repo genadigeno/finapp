@@ -9,12 +9,13 @@
 #   equal           (rank, version, description, type, script, checksum, installed_by, success) and pg_dump --schema-only
 #                   identical. The image never sees the build's database.
 #   idempotent      a second run applies nothing and rewrites no history.
-#   serialised      N runs at once on an empty database (MIGRATOR_VERIFY_RACERS, default 2): every run exits 0, the applied
+#   serialised      N runs at once on an empty database (MIGRATOR_VERIFY_RACERS, default 10): every run exits 0, the applied
 #                   counts sum to the number of migrations - each applied exactly once, whichever run took it - and the
 #                   history is identical to the build's.
 #   bounded         a table held by another session: the run fails with exit 11 inside its bound rather than queueing, and
 #                   leaves no history behind. A statement that fails: exit 10, once, and no failed row, because a
-#                   transactional migration rolls back (Flyway writes a failed row only for a non-transactional one).
+#                   transactional migration rolls back (Flyway writes a failed row only for a non-transactional one), and
+#                   the server's error detail, which is row data, stays out of the log.
 #   refused         the superuser's credential: exit 12, nothing changed.
 #   the debt rows   a TRUNCATE as the migrator refused on every reconciliation and settlement table; a shadowing schema
 #                   first in a role's path changes what an unqualified clock reads and not what lending's does.
@@ -30,7 +31,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$ROOT"
 
-RACERS=${MIGRATOR_VERIFY_RACERS:-2}
+RACERS=${MIGRATOR_VERIFY_RACERS:-10}
 # The Job contract's memory limit (DATA_MIGRATIONS.md section 2.1): every run below is under it, so the figure is measured.
 MIGRATOR_MEMORY=512m
 # 5 attempts x (3 s lock_timeout) + 4 x 5 s apart, plus a JVM's start and the catalogue reads, with room for a loaded runner.
@@ -326,12 +327,18 @@ echo "exit 11 after five attempts, $elapsed s, no row and no column left behind"
 
 echo "== a statement that fails"
 code=0
-migrator_with V9002__fails.sql "SELECT 1/0;" || code=$?
+# Computed, so that the value appears only in what the server says about it and not in the statement Flyway quotes.
+migrator_with V9002__fails.sql "CREATE TABLE ledger.verify_probe_row (value int PRIMARY KEY);
+INSERT INTO ledger.verify_probe_row SELECT 2121 * 2 FROM generate_series(1, 2);" || code=$?
 expect_exit 10 "$code" "a failing migration" "$WORK/V9002__fails.sql.log"
+if grep -q 'Detail:\|(4242)' "$WORK/V9002__fails.sql.log"; then
+    fail "a failed migration wrote row data to the Job's log: $(grep 'Detail:\|(4242)' "$WORK/V9002__fails.sql.log" | head -3)"
+fi
+grep -q 'duplicate key value' "$WORK/V9002__fails.sql.log" || fail "the failing migration did not fail for its own reason"
 grep -q 'schema=ledger attempts=1 failure=DEFINITE' "$WORK/V9002__fails.sql.log" || fail "a definite failure was retried"
 [ "$(sql finapp_image "SELECT count(*) FROM ledger.flyway_schema_history WHERE NOT success")" = 0 ] \
     || fail "a transactional migration's failure left a failed row: the runbook says it does not"
-echo "exit 10 on the first attempt; rolled back, no failed row"
+echo "exit 10 on the first attempt; rolled back, no failed row, no row data in the log"
 
 echo "== the wrong identity"
 code=0

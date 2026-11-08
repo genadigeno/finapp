@@ -32,7 +32,7 @@ class ConnectedRoleTest {
                 read[0] = true;
                 yield first;
             }
-            case "getString", "getBoolean" -> columns[(int) args[0] - 1];
+            case "getString", "getBoolean", "getLong" -> columns[(int) args[0] - 1];
             case "close" -> null;
             default -> throw new UnsupportedOperationException(method.getName());
         });
@@ -40,9 +40,13 @@ class ConnectedRoleTest {
 
     /** A session whose role holds the five rights given, in the order the query asks, with this {@code lock_timeout}. */
     private static Connection session(boolean[] rights, String lockTimeout) {
+        return session(rights, 0L, lockTimeout);
+    }
+
+    private static Connection session(boolean[] rights, long memberships, String lockTimeout) {
         Statement statement = fake(Statement.class, (proxy, method, args) -> switch (method.getName()) {
             case "executeQuery" -> ((String) args[0]).contains("pg_roles")
-                    ? oneRow("whoever", rights[0], rights[1], rights[2], rights[3], rights[4])
+                    ? oneRow("whoever", rights[0], rights[1], rights[2], rights[3], rights[4], memberships)
                     : oneRow(lockTimeout);
             case "close" -> null;
             default -> throw new UnsupportedOperationException(method.getName());
@@ -68,6 +72,15 @@ class ConnectedRoleTest {
         rights[right] = true;
         assertThatThrownBy(() -> ConnectedRole.verify(session(rights, "3000"), BOUND))
                 .isInstanceOf(RefusedConfiguration.class)
+                .hasMessageContaining("not the migrator's credential");
+    }
+
+    @Test
+    @DisplayName("a role with no attribute of its own but a membership is refused: rds_superuser and pg_write_all_data are memberships")
+    void aMembershipIsARight() {
+        assertThatThrownBy(() -> ConnectedRole.verify(session(new boolean[5], 1L, "3000"), BOUND))
+                .isInstanceOf(RefusedConfiguration.class)
+                .hasMessageContaining("1 role membership(s)")
                 .hasMessageContaining("not the migrator's credential");
     }
 

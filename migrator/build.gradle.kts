@@ -52,22 +52,22 @@ val imageTar by tasks.registering(Tar::class) {
     }
 }
 
-// These tests read the build's own files: settings, every module's Flyway block and migrations, the Dockerfile, CI and the
-// image's scripts. Declared, or an edit to any of them would leave the task UP-TO-DATE over a claim nobody re-checked.
+// These tests read the build's own files: settings, every module's Flyway block and main source set, the Dockerfile, CI, the
+// image's scripts and the contract written from them. Declared, or an edit to any of them would leave the task UP-TO-DATE over a claim nobody re-checked.
 tasks.withType<Test>().configureEach {
     inputs.files(
         rootProject.fileTree(rootProject.layout.projectDirectory) {
             include(
                 "settings.gradle.kts",
                 "*/build.gradle.kts",
-                "*/src/main/resources/db/migration/**",
+                "*/src/main/**",
+                "docs/architecture/DATA_MIGRATIONS.md",
                 "Dockerfile*",
                 ".dockerignore",
                 "migrator/.dockerignore",
                 ".github/workflows/ci.yml",
                 "infra/scripts/**",
                 "infra/postgres/initdb/**",
-                "app/src/main/resources/application.yaml",
             )
             exclude("**/build/**")
         }

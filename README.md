@@ -604,7 +604,7 @@ base 184.7 MiB, the libraries and scripts the rest).
 
 The verification leaves your compose stack alone and generates its own throwaway credentials. It runs the one-time bootstrap;
 applies `./gradlew flywayMigrate` to one empty database and the image to another, and refuses any difference in the schema history
-or the `pg_dump --schema-only`; runs the image again (no change); runs copies at once (`MIGRATOR_VERIFY_RACERS`, default 2),
+or the `pg_dump --schema-only`; runs the image again (no change); runs copies at once (`MIGRATOR_VERIFY_RACERS`, default 10),
 each migration applied once; holds a table and watches the run give up in its bound; and checks the refusals. Exit `0`, `1` or
 `2`, as `image-build.sh`.
 

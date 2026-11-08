@@ -6,9 +6,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -19,8 +21,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * The one-time bootstrap step gives a deployed database the local script's roles and is never the migration Job
@@ -129,6 +134,39 @@ class RoleBootstrapTest {
         environment.put("FINAPP_DB_MASTER_PASSWORD", "x");
         assertThat(bootstrapExit(environment)).as("the migrator cannot bootstrap itself").isEqualTo(ExitCode.REFUSED);
         assertThat(RoleBootstrapMain.run(new String[] {"--anything"}, environment, quiet())).isEqualTo(ExitCode.REFUSED);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"42710", "23505"})
+    @DisplayName("a collision with another database's bootstrap runs the step once more, in either form the server reports it")
+    void aCollisionIsRunAgain(String sqlState) {
+        int[] attempts = {0};
+        assertThatThrownBy(() -> RoleBootstrapMain.applyTwice(failing(attempts, sqlState, "XX000"), Map.of(), quiet()))
+                .isInstanceOf(SQLException.class)
+                .extracting(failure -> ((SQLException) failure).getSQLState())
+                .as("the second attempt's own failure, so it did run")
+                .isEqualTo("XX000");
+        assertThat(attempts[0]).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("any other failure is not run again")
+    void anotherFailureIsNotRunAgain() {
+        int[] attempts = {0};
+        assertThatThrownBy(() -> RoleBootstrapMain.applyTwice(failing(attempts, "42501", "XX000"), Map.of(), quiet()))
+                .isInstanceOf(SQLException.class)
+                .extracting(failure -> ((SQLException) failure).getSQLState())
+                .isEqualTo("42501");
+        assertThat(attempts[0]).isEqualTo(1);
+    }
+
+    private static DataSource failing(int[] attempts, String first, String then) {
+        return (DataSource) Proxy.newProxyInstance(DataSource.class.getClassLoader(), new Class<?>[] {DataSource.class}, (proxy, method, args) -> {
+            if (!method.getName().equals("getConnection")) {
+                throw new UnsupportedOperationException(method.getName());
+            }
+            throw new SQLException("refused", attempts[0]++ == 0 ? first : then);
+        });
     }
 
     @Test

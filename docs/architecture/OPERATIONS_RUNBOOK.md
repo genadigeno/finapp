@@ -1914,7 +1914,7 @@ with no `command` of its own. One line per schema and a result line:
 | `result=APPLIED schemas=21 applied=<n>` | The rollout may start. `applied=0` is normal: no schema changed, or another run got there first |
 | `result=TRANSIENT` (exit `11`) | A table was locked past the bound, or the database was away. The Job retries it (`backoffLimit`). If it fails again, find the long transaction: `SELECT pid, state, now() - xact_start, query FROM pg_stat_activity WHERE xact_start IS NOT NULL ORDER BY xact_start` |
 | `result=FAILED` (exit `10`) | Not retried. §11.4 |
-| `result=REFUSED` (exit `12`) | The configuration or identity is wrong; nothing ran. The line says which |
+| `result=REFUSED` (exit `12`) | The configuration or identity is wrong; nothing ran. The line says which. "The TLS connection could not be verified" is the CA bundle, its path or the host, never a lock |
 
 **The rollout does not start until the Job has succeeded.** A Job that is still running is not a green light.
 

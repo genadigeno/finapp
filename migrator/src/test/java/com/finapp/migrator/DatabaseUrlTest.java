@@ -57,6 +57,7 @@ class DatabaseUrlTest {
         "jdbc:postgresql://localhost/finapp?options=-c%20lock_timeout=0",
         "jdbc:postgresql://localhost/finapp?user=postgres",
         "jdbc:postgresql://localhost/finapp?password=hunter2",
+        "jdbc:postgresql://localhost/finapp?logServerErrorDetail=true",
         "jdbc:postgresql://db.internal/finapp?SSLMODE=verify-full"
     })
     @DisplayName("a parameter that moves the host, undoes the verification, resets the bound or carries a credential is refused by name")

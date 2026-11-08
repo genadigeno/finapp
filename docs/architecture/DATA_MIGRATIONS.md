@@ -97,8 +97,11 @@ success) or in `pg_dump --schema-only`. CI's `migrator-image` job runs it.
 
 **It refuses to run as anything but the migrator.** Before the first migration it reads the catalogue, and a role holding
 `SUPERUSER`, `CREATEROLE`, `CREATEDB`, `BYPASSRLS` or `REPLICATION` is refused: that is how the master user's credential, handed
-to the Job by mistake, stops it (a managed database's master user is no superuser, but it holds `CREATEROLE`). It takes no
-arguments, so nothing can ask it to clean. Flyway's `FLYWAY_*` variables and configuration files are not read.
+to the Job by mistake, stops it (a managed database's master user is no superuser, but it holds `CREATEROLE`), and so is one
+holding any role membership (`rds_superuser` and `pg_write_all_data` are memberships). It takes no arguments, so nothing can ask
+it to clean. Flyway's `FLYWAY_*` variables and configuration files are not read. The server's error detail stays out of its
+exceptions (`logServerErrorDetail=false`): `Key (...)=(...)` and `Failing row contains (...)` are row data, and a failed migration's
+exception goes to the Job's log.
 
 **A migration never queues in front of the writers.** PostgreSQL grants locks in arrival order, so a DDL statement waiting for
 `ACCESS EXCLUSIVE` behind one long transaction makes every later reader and writer of that table wait behind *it*, each holding
@@ -118,7 +121,7 @@ the applied counts of the concurrent runs sum to the number of migrations, and t
 | `0` | Every schema is at the latest migration: applied now, or nothing to apply | Succeeds; the rollout may start |
 | `10` | A migration or a validation failed. It would fail the same way again | `FailJob`: no retry; §11.4 of the runbook |
 | `11` | A lock was not granted within the bound, or the database was unavailable | Retried, up to `backoffLimit` |
-| `12` | The configuration or identity was refused; a credential the server refused; a database that is not there. Nothing ran | `FailJob` |
+| `12` | The configuration or identity was refused; a credential the server refused; a database that is not there; a TLS connection that cannot be verified (the CA bundle, its path, the host). Nothing ran | `FailJob` |
 | others | The JVM's own (`1` uncaught, `3` out of memory) or a killed container's (`137`, `143`) | Retried, up to `backoffLimit` |
 
 **The Job contract** (`P15-TSK-009` writes it, `-012` rehearses it, `-017` orders it before the rollout):

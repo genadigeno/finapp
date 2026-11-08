@@ -17,12 +17,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * A role's {@code search_path} changes no lending judgement ({@code P15-TSK-004}, lending {@code V035}; the C15 debt row;
+ * A role's {@code search_path} moves no lending clock ({@code P15-TSK-004}, lending {@code V035}; the C15 debt row;
  * {@code THREAT_MODEL.md} T13). Owed to {@code P15-TST-002} (C14); the same check on the image's database is walked in
  * {@code infra/scripts/migrator-verify.sh}.
  */
 @Tag("database")
-@DisplayName("a shadowing schema first in a role's path changes no lending judgement (P15-TSK-004)")
+@DisplayName("a shadowing schema first in a role's path moves no lending clock (P15-TSK-004)")
 class LendingClockIgnoresTheSearchPathDatabaseTest {
 
     private static final String SHADOW = "shadowclock";

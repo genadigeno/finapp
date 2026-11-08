@@ -18,8 +18,12 @@ import javax.sql.DataSource;
  */
 public final class RoleBootstrapMain {
 
-    /** {@code 42710}: another database's bootstrap created the role between this run's check and its {@code CREATE}. */
-    private static final String DUPLICATE_OBJECT = "42710";
+    /**
+     * Another database's bootstrap created the role between this run's check and its {@code CREATE}: {@code 42710}, or
+     * {@code 23505} on {@code pg_authid_rolname_index} when the two met inside the catalogue insert. Advisory locks are per
+     * database, roles per cluster, so nothing here can prevent it; running again finds the role present.
+     */
+    private static final Set<String> ROLE_COLLISIONS = Set.of("42710", "23505");
 
     private static final Set<String> MASTER_NAMES = Set.of("finapp_migrator", "finapp_app", "finapp_reporting");
 
@@ -45,8 +49,7 @@ public final class RoleBootstrapMain {
                 throw new RefusedConfiguration("the master user cannot be one of the roles it creates");
             }
             Map<RoleBootstrap.Role, String> passwords = RoleBootstrap.passwords(environment);
-            DataSource dataSource = MigratorEnvironment.dataSource(url, master, masterPassword, "finapp-bootstrap");
-            return applyTwice(dataSource, passwords, out);
+            return applyTwice(dataSource(url, master, masterPassword), passwords, out);
         } catch (RefusedConfiguration refused) {
             out.println("finapp-bootstrap result=" + ExitCode.REFUSED + " reason=" + refused.getMessage());
             return ExitCode.REFUSED;
@@ -57,19 +60,25 @@ public final class RoleBootstrapMain {
         }
     }
 
+    /** The same connection settings as the migrator's: the step's errors never carry the server's detail either. */
+    static DataSource dataSource(String url, String master, String masterPassword) {
+        return MigratorEnvironment.dataSource(url, master, masterPassword, "finapp-bootstrap");
+    }
+
     private static ExitCode failed(Exception failure, PrintStream out) {
-        ExitCode exit = FailureClass.of(failure).exitCode();
+        ExitCode exit = FailureClass.beforeAnythingRan(failure);
         out.println("finapp-bootstrap result=" + exit + " " + failure.getClass().getSimpleName()
-                + " " + (failure instanceof SQLException sql ? sql.getSQLState() : ""));
+                + " " + (failure instanceof SQLException sql ? sql.getSQLState() : "")
+                + (FailureClass.isTlsRefusal(failure) ? " the TLS connection could not be verified: check the CA bundle, its path and the host" : ""));
         return exit;
     }
 
-    private static ExitCode applyTwice(DataSource dataSource, Map<RoleBootstrap.Role, String> passwords, PrintStream out)
+    static ExitCode applyTwice(DataSource dataSource, Map<RoleBootstrap.Role, String> passwords, PrintStream out)
             throws SQLException {
         try {
             return applyOnce(dataSource, passwords, out);
         } catch (SQLException collision) {
-            if (!DUPLICATE_OBJECT.equals(collision.getSQLState())) {
+            if (!ROLE_COLLISIONS.contains(collision.getSQLState())) {
                 throw collision;
             }
             return applyOnce(dataSource, passwords, out);

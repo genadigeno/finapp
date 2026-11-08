@@ -18,7 +18,8 @@ import java.util.List;
 final class ConnectedRole {
 
     private static final String RIGHTS = "SELECT current_user, r.rolsuper, r.rolcreaterole, r.rolcreatedb, r.rolbypassrls,"
-            + " r.rolreplication FROM pg_catalog.pg_roles r WHERE r.rolname = current_user";
+            + " r.rolreplication, (SELECT count(*) FROM pg_catalog.pg_auth_members m WHERE m.member = r.oid)"
+            + " FROM pg_catalog.pg_roles r WHERE r.rolname = current_user";
 
     private static final String LOCK_TIMEOUT =
             "SELECT setting FROM pg_catalog.pg_settings WHERE name = 'lock_timeout'";
@@ -40,6 +41,9 @@ final class ConnectedRole {
                 addIf(rights, row.getBoolean(4), "CREATEDB");
                 addIf(rights, row.getBoolean(5), "BYPASSRLS");
                 addIf(rights, row.getBoolean(6), "REPLICATION");
+                // A role carrying none of those can still be handed them by membership: rds_superuser, pg_write_all_data.
+                long memberships = row.getLong(7);
+                addIf(rights, memberships != 0, memberships + " role membership(s)");
             }
             if (!rights.isEmpty()) {
                 throw new RefusedConfiguration("the role " + role + " holds " + rights

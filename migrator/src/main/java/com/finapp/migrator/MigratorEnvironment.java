@@ -35,7 +35,12 @@ record MigratorEnvironment(String url, String user, String password) {
         return new MigratorEnvironment(url, user == null || user.isBlank() ? DEFAULT_USER : user, password);
     }
 
-    /** Every connection this opens is named, and carries the lock bound from its first byte. */
+    /**
+     * Every connection this opens is named, carries the lock bound from its first byte, and keeps the server's error detail
+     * out of its exceptions: {@code Detail: Key (...)=(...)} and {@code Failing row contains (...)} are row data, a failed
+     * migration prints its exception to the Job's log, and that log is kept and collected. The driver's default is to
+     * include them. {@link DatabaseUrl} refuses the parameter that would turn them back on.
+     */
     DataSource dataSource() {
         return dataSource(url, user, password, MigrationPlan.APPLICATION_NAME);
     }
@@ -47,6 +52,7 @@ record MigratorEnvironment(String url, String user, String password) {
         dataSource.setPassword(password);
         dataSource.setApplicationName(applicationName);
         dataSource.setOptions(MigrationPlan.SESSION_OPTIONS);
+        dataSource.setLogServerErrorDetail(false);
         return dataSource;
     }
 

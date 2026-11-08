@@ -4045,7 +4045,7 @@ rows were run again with it.
 
 ---
 
-**The migrator module's own probes are recorded here, not in section 2** (`P15-TSK-004`, 2026-11-08). `MutationDemonstrationTest` reads test classes from the modules on `app`'s classpath, and `migrator` is deliberately not one of them (ADR-0011), so a section 2 row could not name these tests. Each was performed on the module's final bytes with `:migrator:test --tests '*<Class>'`, read from a fresh run, and restored from saved bytes:
+**The migrator module's first probes are recorded here, not in section 2** (`P15-TSK-004`, 2026-11-08). `MutationDemonstrationTest` read test classes from the modules on `app`'s classpath, and `migrator` is deliberately not one of them (ADR-0011), so a section 2 row could not name these tests. *(The fix round taught the guard that module, and its probes are section 2 rows; these stayed here.)* Each was performed on the module's final bytes with `:migrator:test --tests '*<Class>'`, read from a fresh run, and restored from saved bytes:
 
 - **`.cleanDisabled(false)` in the runner** (clean): `MigratorMatchesTheBuildTest` - Caught (4 tests, 1 failed: the settings rule, naming every schema). Restored from saved bytes, byte-identical (sha256 `bf0c3016…69546dd2`, verified).
 - **`lock_timeout` raised past the pool's 5 s, to 6 s** (the bound): `MigratorMatchesTheBuildTest` - Caught (4 tests, 1 failed: the bound rule, reading `application.yaml`). Restored from saved bytes, byte-identical (sha256 `bf0c3016…69546dd2`, verified).

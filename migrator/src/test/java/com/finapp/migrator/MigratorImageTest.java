@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -150,18 +151,33 @@ class MigratorImageTest {
     }
 
     @Test
-    @DisplayName("the application reads none of the migrator's credential, and the image's only readers of it are the two mains")
+    @DisplayName("in every module's main source set, the migrator's environment and the bootstrap's role list alone name its credential")
     void onlyTheMigratorHoldsItsCredential() throws IOException {
-        List<Path> application;
-        try (Stream<Path> files = Files.walk(RepositoryFiles.root().resolve("app/src/main"))) {
-            application = files.filter(file -> file.toString().matches(".*\\.(java|yaml|yml|properties|xml|json)")).toList();
+        List<Path> mainSourceSets;
+        try (Stream<Path> children = Files.list(RepositoryFiles.root())) {
+            mainSourceSets = children.map(child -> child.resolve("src/main")).filter(Files::isDirectory).toList();
         }
-        assertThat(application).as("the application's sources and resources were read").hasSizeGreaterThan(100);
-        for (Path file : application) {
-            assertThat(RepositoryFiles.read(file))
-                    .as("%s: the application connects as finapp_app and has no use for the role that owns the schema", file.getFileName())
-                    .doesNotContain("FINAPP_DB_MIGRATOR");
+        assertThat(mainSourceSets).as("every module's main source set was found").hasSizeGreaterThanOrEqualTo(24);
+        Set<String> naming = new TreeSet<>();
+        int read = 0;
+        for (Path sourceSet : mainSourceSets) {
+            List<Path> files;
+            try (Stream<Path> walk = Files.walk(sourceSet)) {
+                files = walk.filter(file -> file.toString().matches(".*\\.(java|yaml|yml|properties|xml|json|sql|txt)")).toList();
+            }
+            read += files.size();
+            for (Path file : files) {
+                if (RepositoryFiles.read(file).contains("FINAPP_DB_MIGRATOR")) {
+                    naming.add(RepositoryFiles.root().relativize(file).toString().replace('\\', '/'));
+                }
+            }
         }
+        assertThat(read).as("the sources and resources were read").isGreaterThan(1000);
+        assertThat(naming)
+                .as("the application connects as finapp_app and has no use for the role that owns the schema; no other module does")
+                .containsExactlyInAnyOrder(
+                        "migrator/src/main/java/com/finapp/migrator/MigratorEnvironment.java",
+                        "migrator/src/main/java/com/finapp/migrator/RoleBootstrap.java");
         assertThat(RepositoryFiles.read("Dockerfile"))
                 .as("the image holds no credential: every value comes from the Job's environment")
                 .doesNotContain("FINAPP_DB_")
@@ -179,6 +195,8 @@ class MigratorImageTest {
                 .contains("pg_dump")
                 .contains("the second run applied something")
                 .contains("a migration was applied twice, or not at all")
+                .contains("MIGRATOR_VERIFY_RACERS:-10")
+                .contains("a failed migration wrote row data to the Job's log")
                 .contains("a migration behind a held lock")
                 .contains("the superuser")
                 .contains("was not refused by its own trigger");

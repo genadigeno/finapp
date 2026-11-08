@@ -60,12 +60,10 @@ public final class MigratorMain {
      */
     private static ExitCode before(Exception failure, PrintStream out) {
         String sqlState = failure instanceof SQLException sql ? sql.getSQLState() : null;
-        // Class 28 is a credential the server refused; 3D000 a database that is not there. Neither gets better by retrying.
-        ExitCode exit = sqlState != null && (sqlState.startsWith("28") || sqlState.equals("3D000"))
-                ? ExitCode.REFUSED
-                : FailureClass.of(failure).exitCode();
+        ExitCode exit = FailureClass.beforeAnythingRan(failure);
         out.println("finapp-migrator result=" + exit + " before the first schema: " + failure.getClass().getSimpleName()
-                + " " + (sqlState == null ? "" : sqlState));
+                + " " + (sqlState == null ? "" : sqlState)
+                + (FailureClass.isTlsRefusal(failure) ? " the TLS connection could not be verified: check the CA bundle, its path and the host" : ""));
         return exit;
     }
 
