@@ -213,3 +213,7 @@ a change to `V004`'s trigger.)* *(Corrected by `P14-DOC-001`, the Phase 14 exit 
 `finapp.accounting.close.check.stalled` and its alert `AccountingCloseCheckStalled` for a present run's attempts nobody claims (`CloseCheckStallMetrics`,
 `infra/prometheus/rules/accounting.yml`), beside `-017`'s own `finapp.accounting.close.run.stalled` and `AccountingCloseRunStalled` for a lock with no run;
 the operational run's half stands.)*
+
+## Read-note: the carried items' ruling (2026-11-08)
+
+C15 (`PHASE_15_PLAN.md` §25, C12), applied by `P15-TSK-002`: the retention of runs is part of `P15-TSK-029`'s policy by data class, with the financial and regulatory periods open until a real jurisdiction is chosen. Nothing deletes a report run in Phase 15. The rows carry the disposition, marked **C15** (`P15-TSK-002`, 2026-11-08); this record's decision and status are unchanged.
