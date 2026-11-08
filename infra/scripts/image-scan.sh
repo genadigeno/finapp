@@ -8,7 +8,9 @@
 #
 # EVERY IMAGE BUILT. The default is every local image tagged finapp-*:<this commit>, what image-build.sh and its
 # siblings leave, so an image added later is scanned without anyone listing it; the application image is required, so a
-# build that produced nothing cannot pass as nothing to scan. Arguments name images instead.
+# build that produced nothing cannot pass as nothing to scan. CI's migrator-image job builds on a runner of its own, where
+# that default could find nothing of the migrator's, so it names its image: --only finapp-migrator scans exactly that
+# repository at this commit and requires it, and no job scans a list it merely hopes is complete.
 #
 # THEN THE PLANTS. A scan that is wired but cannot fail reads as assurance it does not give. Every run builds five
 # images a scan must refuse, and requires it to fail AND to name the planted finding in its output. A plant accepted, or
@@ -33,6 +35,7 @@
 # machine whose TLS is intercepted (OPERATIONS_RUNBOOK.md section 11.9), exactly as in dependency-scan.sh. CI never sets it.
 #
 # Usage:   infra/scripts/image-scan.sh [image ...]   what CI runs
+#          infra/scripts/image-scan.sh --only <repository>  exactly <repository>:<this commit>, required (the migrator job)
 #          infra/scripts/image-scan.sh --plants-only  the plants alone, for someone changing the scan (CI never passes it)
 # Leaves:  build/image-sboms/<name>.cdx.json, one per image scanned.
 # Exit:    0 every image clean and every plant refused for its reason; 1 a finding, a failed assertion or a plant not
@@ -123,6 +126,11 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 if [ "${1:-}" = "--plants-only" ]; then
     IMAGES=""
+elif [ "${1:-}" = "--only" ]; then
+    [ -n "${2:-}" ] || cannot "--only names a repository: --only finapp-migrator"
+    IMAGES="$2:$REVISION"
+    # Required, as the application image is by default: no such image means this job built nothing to scan.
+    dock image inspect "$IMAGES" >/dev/null 2>&1 || cannot "no $IMAGES to scan: build it first"
 elif [ "$#" -gt 0 ]; then
     IMAGES=$*
 else
@@ -175,7 +183,7 @@ sbom_of() {
     # coordinates and are in no vulnerability database, so Trivy does not list them and the SBOM cannot name them;
     # they are the platform's own code, not supply chain.
     version=$(dock image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")
-    jars=$(grep -E '^(app|flyway)/.*\.jar$' "$WORK/fs.entries" | grep -v -- "-${version:-no-version-label}\.jar\$" || true)
+    jars=$(grep -E '^(app|migrator|flyway)/.*\.jar$' "$WORK/fs.entries" | grep -v -- "-${version:-no-version-label}\.jar\$" || true)
     count=0
     missing=""
     for jar in $jars; do

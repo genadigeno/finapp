@@ -36,10 +36,10 @@ on:
     # `build` and `migrations` run too, and that is cheap insurance rather than a decision: a
     # scheduled run that is green tells you the last merge is still green against today's world.
     #
-    # `image` is the third gate of that kind (P15-TSK-006): it is the weekly re-scan of the last
-    # built image. No registry holds that image yet, so it is rebuilt from the last commit, and it
-    # is the same bytes (the job refuses two builds of one commit that differ, and every input is
-    # pinned), scanned against this run's own vulnerability database, never a cached one.
+    # `image` and `migrator-image` are the third gate of that kind (P15-TSK-006): each is the weekly
+    # re-scan of its last built image. No registry holds either yet, so each is rebuilt from the last
+    # commit, and it is the same bytes (each job refuses two builds of one commit that differ, and
+    # every input is pinned), scanned against this run's own vulnerability database, never a cached one.
     - cron: '0 6 * * 1'
 
 # Least privilege. No job here needs to write to the repository; anything that later does
@@ -429,11 +429,15 @@ jobs:
   #
   # It pushes nothing, so it needs no permission beyond the workflow's read-only token and no
   # secret (THREAT_MODEL.md T30); the throwaway credentials are generated in the script.
+  #
+  # Scanned here as well, since this image is built on this job's own runner (P15-TSK-006): the
+  # same script and bar as the application image, its plants, and its own CycloneDX SBOM. The
+  # image is named to the script, because on this runner there is only this image to find.
   # ---------------------------------------------------------------------------
   migrator-image:
     name: Migrator image
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -459,6 +463,18 @@ jobs:
 
       - name: Build the image twice, compare the builds, assert the image
         run: ./infra/scripts/migrator-image-build.sh
+
+      - name: Scan the image, write its SBOM, refuse every plant
+        run: ./infra/scripts/image-scan.sh --only finapp-migrator
+
+      - name: Keep the image's SBOM
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: migrator-image-sbom
+          path: build/image-sboms/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Run the image against a throwaway database
         run: ./infra/scripts/migrator-verify.sh

@@ -128,19 +128,14 @@ class SecurityScansAreWiredTest {
     }
 
     @Test
-    @DisplayName("the image job scans what it built, and its SBOMs are kept; the weekly schedule runs the job")
-    void ciScansTheImageAndKeepsItsSbom() {
-        List<String> image = job("image");
-        int built = indexOf(image, "./infra/scripts/image-build.sh");
-        int scanned = indexOf(image, "./infra/scripts/image-scan.sh");
-        assertThat(scanned).as("the image job scans the images, after building them").isGreaterThan(built);
-        assertThat(built).as("the image job builds the images").isNotNegative();
-        assertThat(image).as("the plants-only mode skips the real images and is never what CI runs")
-                .noneMatch(line -> line.contains("--plants-only"));
-        assertThat(image).as("the per-image SBOMs are kept with the run")
-                .anySatisfy(line -> assertThat(line).contains("path: build/image-sboms/"));
-        assertThat(image).as("an image job restricted to an event would drop the weekly re-scan")
-                .noneMatch(line -> line.matches("^    if:.*"));
+    @DisplayName("each image job scans the image it built and keeps its SBOM: the application image by discovery, with"
+            + " the application image required; the migrator by name; the weekly schedule runs both jobs")
+    void ciScansBothImagesAndKeepsTheirSboms() {
+        // Exact lines. "--only" on the image job would drop its requirement of the application image; the migrator job
+        // without it would look for an application image its runner never built.
+        assertJobScansWhatItBuilt("image", "./infra/scripts/image-build.sh", "run: ./infra/scripts/image-scan.sh");
+        assertJobScansWhatItBuilt("migrator-image", "./infra/scripts/migrator-image-build.sh",
+                "run: ./infra/scripts/image-scan.sh --only finapp-migrator");
         assertThat(EvidenceCitations.read(root.resolve(WORKFLOW))).contains("cron:");
         assertThat(imageScan).as("the databases are this run's own, never kept between runs, or a weekly re-scan reads"
                         + " last week's").contains("--download-db-only").contains("--download-java-db-only")
@@ -304,6 +299,8 @@ class SecurityScansAreWiredTest {
         require(problems, code, "--input", "the image is not read from a saved tar");
         require(problems, code, "reference=finapp-*:$REVISION", "not every image built is taken");
         require(problems, code, "finapp-app:$REVISION", "the application image is not required");
+        require(problems, code, "IMAGES=\"$2:$REVISION\"", "--only does not scan exactly that repository at this commit");
+        require(problems, code, "dock image inspect \"$IMAGES\"", "--only does not require the image it names");
         for (String flag : NARROWING_TRIVY_FLAGS) {
             if (code.contains(flag)) {
                 problems.add("a flag that narrows the scan: " + flag);
@@ -491,6 +488,25 @@ class SecurityScansAreWiredTest {
             throw new UncheckedIOException(e);
         }
         return count;
+    }
+
+    private static void assertJobScansWhatItBuilt(String name, String build, String scan) {
+        List<String> lines = job(name);
+        int built = indexOf(lines, build);
+        assertThat(built).as("the %s job builds its image", name).isNotNegative();
+        int scanned = -1;
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).strip().equals(scan)) {
+                scanned = i;
+            }
+        }
+        assertThat(scanned).as("the %s job's step is exactly '%s', after the build", name, scan).isGreaterThan(built);
+        assertThat(lines).as("the plants-only mode skips the real images and is never what CI runs")
+                .noneMatch(line -> line.contains("--plants-only"));
+        assertThat(lines).as("the %s job keeps its image's SBOM with the run", name)
+                .anySatisfy(line -> assertThat(line).contains("path: build/image-sboms/"));
+        assertThat(lines).as("a %s job restricted to an event would drop the weekly re-scan", name)
+                .noneMatch(line -> line.matches("^    if:.*"));
     }
 
     private static int indexOf(List<String> lines, String text) {
