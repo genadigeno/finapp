@@ -27744,7 +27744,12 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   stall metrics 2, the overlay, the production file, the threat register 18 after merging master). One look-in-line
   probe first passed the guard's main case, because a planted case's scrape had filled every cache: the main case is now
   ordered first on cold caches and asserts it, and the probe is red. A runbook probe on a route written across a line break
-  survived: a reach of `AccountingRunbookTest` recorded, not changed.
+  survived: a reach of `AccountingRunbookTest` recorded, not changed. **Tests, fresh on the merged tree (master
+  `19db300f`)**: `:platform:test` 198/0; `:app:test` with the whole `com.finapp.app.telemetry` and `com.finapp.app.accounting`
+  packages and the brief's guard filters, 1138/0 in 173 classes (`ThreatModelIsCompleteTest` 14/0 among them);
+  `:app:architectureTest` 278/0; `promtool test rules` `SUCCESS` and `promtool check rules` `SUCCESS` over all eight files
+  (139 rules). The owner's rule of 2026-11-08 (no unit tests where no business Java changes) skips nothing here: this
+  branch changes production Java in `platform` and `app`.
 
 **P15-TSK-025 — SLOs, error budgets, correctness alerts and routing** — `PLANNED`
 - **Objective**: every critical flow has an objective and a burn-rate alert, every correctness signal pages, and every
