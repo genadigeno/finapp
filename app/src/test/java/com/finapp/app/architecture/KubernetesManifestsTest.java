@@ -236,6 +236,23 @@ class KubernetesManifestsTest {
         assertThat(value(document("deploy/base/poddisruptionbudget.yaml"), "spec", "maxUnavailable")).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("the migrator Job is the contract's: bounded, retried only for what a retry can help, its entrypoint its own")
+    void theMigratorJobIsTheContracts() {
+        Map<String, Object> job = document("deploy/base/migrator-job.yaml");
+        Map<String, Object> spec = map(job, "spec");
+        assertThat(number(spec, "backoffLimit")).isEqualTo(2);
+        assertThat(number(spec, "activeDeadlineSeconds")).isEqualTo(900);
+        assertThat(number(spec, "ttlSecondsAfterFinished")).isEqualTo(86400);
+        assertThat(value(spec, "podFailurePolicy", "rules", 0, "action")).isEqualTo("FailJob");
+        assertThat(String.valueOf(value(spec, "podFailurePolicy", "rules", 0, "onExitCodes", "values"))).isEqualTo("[10, 12]");
+        Map<String, Object> migrator = only(map(spec, "template", "spec"), "containers");
+        assertThat(migrator).doesNotContainKeys("command", "args");
+        assertThat(value(migrator, "resources", "requests", "memory")).isEqualTo("512Mi");
+        assertThat(value(migrator, "resources", "limits", "memory")).isEqualTo("512Mi");
+        assertThat(value(migrator, "envFrom", 0, "secretRef", "name")).as("a secret only this Job reads").isEqualTo("finapp-migrator-secrets");
+    }
+
     // ---------------------------------------------------------------------------------------------- nothing real
 
     @Test

@@ -116,10 +116,14 @@ class BnplDisputeScheduleTest {
     private static <T> T absent(Class<T> type) {
         if (type.isInterface()) {
             return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, (proxy, method, args) -> {
-                if (method.getReturnType() == boolean.class) {
+                Class<?> answer = method.getReturnType();
+                if (answer == boolean.class) {
                     return false;
                 }
-                return method.getReturnType() == Connection.class ? absent(Connection.class) : null;
+                if (answer == int.class) {
+                    return 0;
+                }
+                return answer == Connection.class ? absent(Connection.class) : null;
             });
         }
         return new SpringObjenesis().newInstance(type);

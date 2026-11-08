@@ -183,20 +183,28 @@ class ShutdownOrderTest {
     @DisplayName("a scrape still running on the management port does not hold the close: the management server closes at once")
     void aScrapeInFlightDoesNotHoldTheClose() throws Exception {
         HeldRequest scrape = new HeldRequest();
-        ConfigurableApplicationContext context = start(new HeldRequest(), Collections.synchronizedList(new ArrayList<>()), scrape);
+        List<Moment> moments = Collections.synchronizedList(new ArrayList<>());
+        ConfigurableApplicationContext context = start(new HeldRequest(), moments, scrape);
         try {
             Snapshotter snapshot = new Snapshotter(context);
+            Recorder recorder = new Recorder(snapshot, moments);
             HTTP.sendAsync(
                     HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + snapshot.managementPort + "/actuator/health")).GET().build(),
                     HttpResponse.BodyHandlers.ofString());
             assertThat(scrape.entered.await(30, TimeUnit.SECONDS)).as("a scrape running inside the management server").isTrue();
 
-            long started = System.nanoTime();
+            recorder.attach();
             context.close();
-            Duration closed = Duration.ofNanos(System.nanoTime() - started);
+            recorder.detach();
 
-            assertThat(closed).as("the scrape, held for a minute, cost none of the phase timeout a graceful server would wait out")
-                    .isLessThan(snapshot.timeout);
+            // The management server closes between these two. Its child context's lifecycle processor is not the parent's:
+            // spring.lifecycle.timeout-per-shutdown-phase does not reach it, so a graceful server would wait out Spring's own
+            // default of ten seconds on the held scrape. Closing at once costs Tomcat's two-second unload.
+            List<Moment> order = List.copyOf(moments);
+            Duration managementClose = Duration.ofNanos(
+                    only(order, "The gauge refresher stopped").nanos - only(order, "Inbox consumers stopped").nanos);
+            assertThat(managementClose).as("the scrape, held for a minute, cost none of the child context's ten seconds")
+                    .isLessThan(Duration.ofSeconds(8));
         } finally {
             scrape.release.countDown();
             context.close();
@@ -269,7 +277,7 @@ class ShutdownOrderTest {
                         // and a child's events reach the parent's listeners.
                         if (event instanceof AvailabilityChangeEvent<?> change && change.getSource() == generic
                                 && change.getState() == ReadinessState.REFUSING_TRAFFIC) {
-                            moments.add(new Moment("readiness REFUSING_TRAFFIC", Snapshotter.current().state()));
+                            moments.add(new Moment("readiness REFUSING_TRAFFIC", Snapshotter.current().state(), System.nanoTime()));
                         }
                     });
                 })
@@ -325,7 +333,7 @@ class ShutdownOrderTest {
     }
 
     /** One step, and the state of everything else at the moment it happened. */
-    private record Moment(String what, State state) {}
+    private record Moment(String what, State state, long nanos) {}
 
     private record State(boolean refusing, int schedulesRunning, boolean consumersRunning, boolean readerRunning,
             boolean apiAccepts, boolean managementAnswers, boolean poolClosed) {}
@@ -449,7 +457,7 @@ class ShutdownOrderTest {
         @Override
         protected void append(ILoggingEvent event) {
             if (LOGGERS.contains(event.getLoggerName())) {
-                moments.add(new Moment(event.getFormattedMessage(), snapshot.state()));
+                moments.add(new Moment(event.getFormattedMessage(), snapshot.state(), System.nanoTime()));
             }
         }
     }

@@ -659,6 +659,32 @@ job_is_bounded(doc) if {
 	doc.spec.template.spec.restartPolicy == "Never"
 }
 
+# The migrator's exit codes 10 and 12 are failures a retry cannot help (DATA_MIGRATIONS.md section 2.1).
+deny contains msg if {
+	some doc in of_kind("Job")
+	doc.metadata.name == "finapp-migrator"
+	not fails_at_once_on_a_lasting_failure(doc)
+	msg := "[job-failure-policy] finapp-migrator must FailJob on exit codes 10 and 12"
+}
+
+fails_at_once_on_a_lasting_failure(doc) if {
+	some rule in doc.spec.podFailurePolicy.rules
+	rule.action == "FailJob"
+	rule.onExitCodes.operator == "In"
+	10 in rule.onExitCodes.values
+	12 in rule.onExitCodes.values
+}
+
+# The entrypoint is the migrator and takes no arguments: a manifest setting either is doing something else.
+deny contains msg if {
+	some doc in of_kind("Job")
+	doc.metadata.name == "finapp-migrator"
+	some container in doc.spec.template.spec.containers
+	some field in {"command", "args"}
+	has_key(container, field)
+	msg := sprintf("[job-entrypoint] finapp-migrator sets %s: the image's entrypoint is the migrator, and takes no arguments", [field])
+}
+
 deny contains msg if {
 	app
 	not migrator_exists

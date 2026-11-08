@@ -226,8 +226,10 @@ YAML
     plant_on service-load-balancer base/service.yaml 's/type: ClusterIP/type: LoadBalancer/'
     plant_on config-no-hash base/kustomization.yaml 's/^configMapGenerator:$/generatorOptions:\n  disableNameSuffixHash: true\nconfigMapGenerator:/'
     plant_on config-not-read "$DEPLOYMENT" '/configMapRef:/,/name: finapp-app-config/d;/- secretRef:/d'
-    plant_on job-unbounded base/migrator-job.yaml '/activeDeadlineSeconds: 1800/d'
-    plant_on job-retries base/migrator-job.yaml 's/backoffLimit: 1/backoffLimit: 10/'
+    plant_on job-unbounded base/migrator-job.yaml '/activeDeadlineSeconds: 900/d'
+    plant_on job-retries base/migrator-job.yaml 's/backoffLimit: 2/backoffLimit: 10/'
+    plant_on job-failure-policy base/migrator-job.yaml '/^  podFailurePolicy:$/,/^            - 12$/d'
+    plant_on job-entrypoint base/migrator-job.yaml 's/^          image: finapp-migrator$/          image: finapp-migrator\n          args: ["clean"]/'
     plant_on job-restarts base/migrator-job.yaml 's/restartPolicy: Never/restartPolicy: OnFailure/'
     plant no-migrator
     mutate no-migrator base/kustomization.yaml '/migrator-job.yaml/d'
@@ -475,6 +477,8 @@ refused config-no-hash config-hash
 refused config-not-read config-hash
 refused job-unbounded job-bounds
 refused job-retries job-bounds
+refused job-failure-policy job-failure-policy
+refused job-entrypoint job-entrypoint
 refused job-restarts job-bounds
 refused no-migrator job-bounds
 

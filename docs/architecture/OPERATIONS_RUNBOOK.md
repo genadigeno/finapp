@@ -1892,7 +1892,7 @@ the `preStop` pause, the application does this, in this order:
 **Reading it.** A WARN in step 3 or 4 is not an incident: the interrupted work's claim lapses to another instance and
 its records redeliver into the dedupe. It is a signal that a tick or a batch ran longer than 10 s, which the schedule's
 own latency metrics explain. Steps 1-6 together take at most 61 s (read "57 s" until `P15-TSK-009` counted Tomcat's two
-stops, and removed the 30 s a scrape in flight could hold step 5 for). `terminationGracePeriodSeconds` is 105: the 10 s
+stops, and removed the 10 s a scrape in flight could hold step 5 for, the child context's own phase timeout). `terminationGracePeriodSeconds` is 105: the 10 s
 `preStop` pause, those 61 s, step 7's 30 s and 4 s for the JVM's exit (§11.14). A pod still running when the grace ends
 is killed - the same as any kill, and as correct.
 
