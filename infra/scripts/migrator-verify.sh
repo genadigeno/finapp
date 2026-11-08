@@ -69,12 +69,16 @@ secret() {
     od -An -N24 -tx1 /dev/urandom | tr -d ' \n'
 }
 
-POSTGRES_PASSWORD=$(secret)
-FINAPP_DB_MASTER_PASSWORD=$POSTGRES_PASSWORD
+generated_for_master=$(secret)
+generated_for_migrator=$(secret)
+generated_for_app=$(secret)
+generated_for_reporting=$(secret)
+POSTGRES_PASSWORD=${generated_for_master}
+FINAPP_DB_MASTER_PASSWORD=${generated_for_master}
 FINAPP_DB_MASTER_USER=postgres
-FINAPP_DB_MIGRATOR_PASSWORD=$(secret)
-FINAPP_DB_APP_PASSWORD=$(secret)
-FINAPP_DB_REPORTING_PASSWORD=$(secret)
+FINAPP_DB_MIGRATOR_PASSWORD=${generated_for_migrator}
+FINAPP_DB_APP_PASSWORD=${generated_for_app}
+FINAPP_DB_REPORTING_PASSWORD=${generated_for_reporting}
 export POSTGRES_PASSWORD FINAPP_DB_MASTER_PASSWORD FINAPP_DB_MASTER_USER FINAPP_DB_MIGRATOR_PASSWORD FINAPP_DB_APP_PASSWORD \
     FINAPP_DB_REPORTING_PASSWORD
 
@@ -100,7 +104,7 @@ sql() {
     db=$1
     shift
     # Through a variable, not a pipe: a pipeline's status is its last command's, and this one's failures must be seen.
-    answer=$(dock exec --env PGPASSWORD="$POSTGRES_PASSWORD" "$PG" \
+    answer=$(dock exec --env PGPASSWORD="${POSTGRES_PASSWORD}" "$PG" \
         psql -h 127.0.0.1 -U postgres -d "$db" -v ON_ERROR_STOP=1 -AtX -c "$*") || return $?
     [ -z "$answer" ] || printf '%s\n' "$answer" | tr -d '\r'
 }
@@ -214,7 +218,7 @@ history_of() {
 
 schema_of() {
     # \restrict lines are random per dump (PostgreSQL 18), and name nothing about the schema.
-    dump=$(dock exec --env PGPASSWORD="$POSTGRES_PASSWORD" "$PG" pg_dump -h 127.0.0.1 -U postgres -d "$1" --schema-only) || return $?
+    dump=$(dock exec --env PGPASSWORD="${POSTGRES_PASSWORD}" "$PG" pg_dump -h 127.0.0.1 -U postgres -d "$1" --schema-only) || return $?
     printf '%s\n' "$dump" | tr -d '\r' | grep -Ev '^\\(un)?restrict '
 }
 
@@ -299,7 +303,7 @@ migrator_with() {
 }
 
 echo "== a table held by another session"
-dock exec --detach --env PGPASSWORD="$POSTGRES_PASSWORD" "$PG" psql -h 127.0.0.1 -U postgres -d finapp_image \
+dock exec --detach --env PGPASSWORD="${POSTGRES_PASSWORD}" "$PG" psql -h 127.0.0.1 -U postgres -d finapp_image \
     -c "BEGIN; LOCK TABLE ledger.journal_entry IN ACCESS SHARE MODE; SELECT pg_sleep(300);" >/dev/null
 waited=0
 until [ "$(sql finapp_image "SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation WHERE c.relname = 'journal_entry' AND l.mode = 'AccessShareLock' AND l.granted")" != 0 ]; do
@@ -332,7 +336,7 @@ echo "exit 10 on the first attempt; rolled back, no failed row"
 echo "== the wrong identity"
 code=0
 dock run --rm --network "container:$PG" --env FINAPP_DB_URL="$(url finapp_image)" \
-    --env FINAPP_DB_MIGRATOR_USER=postgres --env FINAPP_DB_MIGRATOR_PASSWORD="$POSTGRES_PASSWORD" "$IMAGE" > "$WORK/identity.log" 2>&1 || code=$?
+    --env FINAPP_DB_MIGRATOR_USER=postgres --env FINAPP_DB_MIGRATOR_PASSWORD="${POSTGRES_PASSWORD}" "$IMAGE" > "$WORK/identity.log" 2>&1 || code=$?
 expect_exit 12 "$code" "the migrator run as the superuser" "$WORK/identity.log"
 echo "exit 12: the superuser's credential is refused"
 
@@ -342,7 +346,7 @@ for schema in reconciliation settlement; do
         WHERE n.nspname = '$schema' AND c.relkind IN ('r','p') AND c.relname <> 'flyway_schema_history' ORDER BY 1")
     count=0
     for table in $tables; do
-        out=$(dock exec --env PGPASSWORD="$FINAPP_DB_MIGRATOR_PASSWORD" "$PG" psql -h 127.0.0.1 -U finapp_migrator -d finapp_image \
+        out=$(dock exec --env PGPASSWORD="${FINAPP_DB_MIGRATOR_PASSWORD}" "$PG" psql -h 127.0.0.1 -U finapp_migrator -d finapp_image \
             -v ON_ERROR_STOP=1 -AtX -c "TRUNCATE $schema.$table CASCADE" 2>&1 || true)
         case "$out" in
             *"$schema.$table is never truncated"*) count=$((count + 1)) ;;
@@ -357,7 +361,7 @@ done
 sql finapp_image "CREATE SCHEMA verifyclock; GRANT USAGE ON SCHEMA verifyclock TO PUBLIC;
     CREATE FUNCTION verifyclock.statement_timestamp() RETURNS timestamptz LANGUAGE sql STABLE AS \$\$ SELECT timestamptz '2000-01-01' \$\$;
     CREATE FUNCTION verifyclock.transaction_timestamp() RETURNS timestamptz LANGUAGE sql STABLE AS \$\$ SELECT timestamptz '2000-01-01' \$\$;" >/dev/null
-shadow=$(dock exec --env PGPASSWORD="$FINAPP_DB_APP_PASSWORD" "$PG" psql -h 127.0.0.1 -U finapp_app -d finapp_image -AtX \
+shadow=$(dock exec --env PGPASSWORD="${FINAPP_DB_APP_PASSWORD}" "$PG" psql -h 127.0.0.1 -U finapp_app -d finapp_image -AtX \
     -c "SET search_path = verifyclock, pg_catalog, \"\$user\", public" \
     -c "SELECT statement_timestamp() < timestamptz '2001-01-01', lending.business_date_latest('UTC') > date '2001-01-01',
         lending.business_date_earliest('UTC') > date '2001-01-01'" | tail -1 | tr -d '\r')
