@@ -28,7 +28,7 @@ class DeadLetterWiringTest {
     void theWindowIsTheInboxesOwn() throws IOException {
         String beans = Files.readString(RepositoryPaths.locate(BEANS), StandardCharsets.UTF_8);
 
-        assertThat(beans.split("finapp\\.inbox\\.retention", -1)).as("one read of the property, the inbox consumer's").hasSize(2);
+        assertThat(beans.split("\\$\\{finapp\\.inbox\\.retention", -1)).as("one read of the property, the inbox consumer's").hasSize(2);
         assertThat(beans).contains("inboxConsumer.retention()");
     }
 

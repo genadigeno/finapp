@@ -99,13 +99,15 @@ class DeadLetterDatabaseTest {
         UUID event = seedPublished(Duration.ofDays(1));
         Instant from = Instant.now().minus(Duration.ofDays(2));
         Instant to = Instant.now();
+        java.util.concurrent.atomic.AtomicInteger requeued = new java.util.concurrent.atomic.AtomicInteger();
 
         List<Boolean> outcomes = raceTenInstances(connection ->
-                assertThat(operations.replay(connection, TYPE, from, to, FIRST, "replay it", FLOW).requeued()).isLessThanOrEqualTo(1));
+                requeued.addAndGet(operations.replay(connection, TYPE, from, to, FIRST, "replay it", FLOW).requeued()));
 
         assertThat(outcomes).doesNotContain(false);
+        assertThat(requeued).as("the second replay selects nothing: the row is already queued").hasValue(1);
         assertThat(pending(event)).isTrue();
-        assertThat(auditCount("outbox.EventReplayOrdered")).isEqualTo(10);
+        assertThat(auditCount("outbox.EventReplayOrdered")).as("each order is recorded, the empty ones included").isEqualTo(10);
     }
 
     @Test
@@ -183,19 +185,12 @@ class DeadLetterDatabaseTest {
     }
 
     @Test
-    @DisplayName("the relay records one abandonment, in the transaction that abandons, and goes on past a discarded row")
-    void theRelayRecordsAndSkips() throws Exception {
-        UUID aggregate = UUID.randomUUID();
-        UUID event = IDS.next();
-        try (Statement statement = admin.createStatement()) {
-            statement.executeUpdate("INSERT INTO platform.outbox_event (event_id, event_type, event_version, schema_version, aggregate_id, aggregate_type, occurred_at, producer,"
-                    + " correlation_id, causation_id, payload, payload_media_type) VALUES ('" + event + "', '" + TYPE + "', 1, 1, '" + aggregate
-                    + "', 'Probe', now(), 'probe', 'flow', 'cause', '\\x00'::bytea, 'application/octet-stream')");
-        }
-        com.finapp.platform.outbox.OutboxRelay relay = new com.finapp.platform.outbox.OutboxRelay(DatabaseRoles::application, published -> {
+    @DisplayName("the relay records one abandonment, in the transaction that abandons")
+    void theRelayRecordsAnAbandonment() throws Exception {
+        UUID event = seedPending(UUID.randomUUID());
+        com.finapp.platform.outbox.OutboxRelay relay = relay(published -> {
             throw new IllegalStateException("broker down");
-        }, new com.finapp.platform.outbox.RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 2), 8, 100,
-                new com.finapp.platform.outbox.AuditedAbandonments(new JdbcAuditWriter(), IDS, CLOCK));
+        });
         Instant deadline = Instant.now().plusSeconds(10);
         while (!abandoned(event) && Instant.now().isBefore(deadline)) {
             relay.pollOnce();
@@ -204,6 +199,24 @@ class DeadLetterDatabaseTest {
 
         assertThat(abandoned(event)).isTrue();
         assertThat(auditCount("outbox.EventAbandoned")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a discarded row no longer blocks its aggregate: the relay goes on past it, and the row stays")
+    void aDiscardedRowStopsBlocking() throws Exception {
+        UUID aggregate = UUID.randomUUID();
+        UUID first = seedPending(aggregate);
+        UUID second = seedPending(aggregate);
+        try (Statement statement = admin.createStatement()) {
+            statement.executeUpdate("UPDATE platform.outbox_event SET attempts = 3, dead_lettered_at = now(), discarded_at = now() WHERE event_id = '" + first + "'");
+        }
+        List<UUID> published = new ArrayList<>();
+        com.finapp.platform.outbox.OutboxRelay relay = relay(event -> published.add(event.eventId().value()));
+
+        relay.pollOnce();
+
+        assertThat(published).containsExactly(second);
+        assertThat(exists("SELECT 1 FROM platform.outbox_event WHERE discarded_at IS NOT NULL AND event_id = '" + first + "'")).as("the row stays").isTrue();
     }
 
     @Test
@@ -277,6 +290,22 @@ class DeadLetterDatabaseTest {
 
     private static Connection application() throws SQLException {
         return DatabaseRoles.application();
+    }
+
+    private static com.finapp.platform.outbox.OutboxRelay relay(com.finapp.platform.outbox.EventPublisher publisher) {
+        return new com.finapp.platform.outbox.OutboxRelay(DatabaseRoles::application, publisher,
+                new com.finapp.platform.outbox.RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 2), 8, 100,
+                new com.finapp.platform.outbox.AuditedAbandonments(new JdbcAuditWriter(), IDS, CLOCK));
+    }
+
+    private static UUID seedPending(UUID aggregate) throws SQLException {
+        UUID id = IDS.next();
+        try (Statement statement = admin.createStatement()) {
+            statement.executeUpdate("INSERT INTO platform.outbox_event (event_id, event_type, event_version, schema_version, aggregate_id, aggregate_type, occurred_at, producer,"
+                    + " correlation_id, causation_id, payload, payload_media_type) VALUES ('" + id + "', '" + TYPE + "', 1, 1, '" + aggregate
+                    + "', 'Probe', now(), 'probe', 'flow', 'cause', '\\x00'::bytea, 'application/octet-stream')");
+        }
+        return id;
     }
 
     private static InboxParking.Failure failure(String consumer, String key) {

@@ -1488,13 +1488,15 @@ The proofs write nothing and decide nothing: each reading takes one read-only sn
 
 Risk's signals arrive through the inbox (`risk.signals`' consumer group): a delivery the handler cannot record is thrown,
 rolled back with its dedupe record, and retried - the partition **stalls loudly** behind it, never skips it (`INV-EVT-04`).
+*(Since `P15-TSK-028` the stall is bounded: a record failing for a reason of its own parks after five failures and two minutes,
+kept, counted and alerted, and the partition goes on. A version this build cannot read never parks. §11.6 has the door.)*
 
 - **`RiskCollectionsUnplaced`** (`finapp.risk.collections.unplaced` rising - `P13-TSK-025`): a `LoanDefaulted` or
   `BnplDefaulted` delivery names an agreement whose party cannot be placed (lending's and bnpl's published views), so it is
-  refused before any alert is born and its partition retries it - delivering nothing behind it (every later signal of the
-  partition waits). The fix is upstream: the agreement's party missing from the view (a status filter, a migration) - the
-  owning module restores it, and the retry then records the default, opens its `COLLECTIONS` case and the partition
-  drains. Never acknowledge the delivery by hand: the default would never reach the collections desk.
+  refused before any alert is born and its partition retries it, then parks it (§11.6). The fix is upstream: the agreement's
+  party missing from the view (a status filter, a migration) - the owning module restores it. If the record has parked, release
+  it (§11.6) and the retry records the default and opens its `COLLECTIONS` case. Never acknowledge the delivery by hand: the
+  default would never reach the collections desk.
 - **`InboxConsumptionFailing`** (`finapp.inbox.consumption{outcome="failed"}` in each quarter hour - platform-wide, the
   series carries no module tag, registered eagerly whatever the consumer's flag): some consumer's partition is stalled -
   an event version this build cannot read (deploy the build that knows it), a payload out of bounds, a handler failing.

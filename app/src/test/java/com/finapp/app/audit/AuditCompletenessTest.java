@@ -114,10 +114,10 @@ class AuditCompletenessTest {
         // An entry for an action that has been renamed or removed is a claim nobody can evaluate,
         // and it silently stops applying - the P1-TSK-015 rule for exemption lists, applied to a
         // list of deliberate absences.
-        assertThat(registered)
+        assertThat(registered.containsAll(NOT_YET_EMITTED.keySet()))
                 .as("a NOT_YET_EMITTED entry naming an action that no longer exists is dead weight"
                         + " that reads as a live decision")
-                .containsAll(NOT_YET_EMITTED.keySet());
+                .isTrue();
     }
 
     @Test
@@ -170,9 +170,10 @@ class AuditCompletenessTest {
         // endpoint that emits it. A negative control that has to be edited whenever the codebase
         // grows is the stale-list defect this repository closes by derivation everywhere else, and
         // it fails in the direction that looks like a real defect.
-        assertThat(emitted)
+        // Filtered rather than doesNotContainAnyElementsOf: AssertJ refuses an empty iterable, and the map is empty.
+        assertThat(emitted.stream().filter(NOT_YET_EMITTED::containsKey).toList())
                 .as("and must not claim the ones nothing references")
-                .doesNotContainAnyElementsOf(NOT_YET_EMITTED.keySet());
+                .isEmpty();
     }
 
     // -----------------------------------------------------------------
