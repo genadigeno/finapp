@@ -27390,7 +27390,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   pushed. This laptop's antivirus intercepts TLS, so the local runs used the pinned Terraform image plus that machine's
   root certificate, through the script's `TERRAFORM_IMAGE` override, which CI never sets.
 
-**P15-TSK-014 — Network and cluster modules** — `PLANNED`
+**P15-TSK-014 — Network and cluster modules** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-013`'s merge, master `fcae1309`; every dependency `COMPLETE`)
 - **Objective**: a private network and a hardened managed cluster as tested code.
 - **Affected components**: `infra/terraform/modules/network`, `modules/kubernetes`, the environment roots.
 - **Dependencies**: `-013`.
