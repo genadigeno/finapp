@@ -26,7 +26,7 @@ import java.util.List;
  * <p>It runs <strong>inside the dispute's own transaction</strong>, on the caller's
  * connection, after the stage's conditional transition has been won — so it runs once per stage
  * however many deliveries raced. It must <strong>not</strong> swallow a failure: an
- * attribution it cannot compose throws, failing the delivery's transaction loudly rather than
+ * attribution it cannot compose throws, failing the inquiry's transaction loudly rather than
  * charging a guessed account. The merchant's processing fee is NOT returned by a chargeback
  * (ADR-0061 §4: the merchant loses the sale and keeps the fee it was charged for processing
  * it), so no composer adds fee lines here.

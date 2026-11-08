@@ -703,8 +703,8 @@ public class PaymentBeans {
     }
 
     /**
-     * The dispute notifications' command (`P7-TSK-012`, ADR-0061 §6): applied inside the card
-     * door's delivery transaction, its stages the network's word alone. Unconditional - it
+     * The dispute notifications' command (`P7-TSK-012`, ADR-0061 §6): applied in the transaction
+     * of a card callback's hinted inquiry (`P15-TSK-036`), its stages the PSP's answer alone. Unconditional - it
      * holds no credential and calls nothing; the door that feeds it is the conditional half.
      */
     @Bean
