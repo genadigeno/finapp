@@ -89,6 +89,14 @@ reporting role's marked default to loopback exactly as it does the application's
 names `FINAPP_DB_REPORTING_PASSWORD`. *(This said
 an override moved everything together until the Phase 6 → 7 transition.)*
 
+**The broker's credential** (`P15-TSK-026`): `FINAPP_KAFKA_SASL_USERNAME` and
+`FINAPP_KAFKA_SASL_PASSWORD`, read by `EventingBeans` as `finapp.kafka.sasl.username` and
+`finapp.kafka.sasl.password` - the SCRAM-SHA-512 user every replica authenticates to Kafka as. The
+password's local fallback is the marked default, in the `@Value` like every other `finapp.*`
+credential, and no committed file holds a value for either; the local broker's `PLAINTEXT` never
+uses it. Beside them, `finapp.kafka.ssl.truststore-location` names a PEM file of CA certificates,
+which is not a secret and needs no password.
+
 The marked local default appears in six files across YAML, Kotlin and SQL, none of which can import
 a Java constant. It is single-sourced by enforcement: the build rejects any *other* local default,
 so the six cannot drift apart.
@@ -111,6 +119,16 @@ repository and is not a secret. Set FINAPP_DB_APP_PASSWORD.
 
 It **fails closed** — a URL whose host cannot be read is refused rather than assumed harmless —
 and it checks **every** host in a failover list. A private address is not a local one.
+
+The broker's credential is confined the same way (`P15-TSK-026`): `KafkaTransportGuard` refuses to
+start when the SCRAM password is the marked local default and any bootstrap server is off this
+machine, naming `FINAPP_KAFKA_SASL_PASSWORD`; off this machine it also requires `SASL_SSL` with a
+credential at all (`SECURITY_ARCHITECTURE.md` §Transport encryption).
+
+Since the same task `CommittedConfigurationHoldsNoSecretTest` also reads a credential **inside** a
+value: Kafka's SASL login is one property whose value carries the password
+(`... ScramLoginModule required username="u" password="p";`), and a reading that stops at the first
+assignment on a line sees only the innocent key in front of it.
 
 ## 5. Adding a secret
 
@@ -206,10 +224,10 @@ at rest.)*
 
 | | Position today | Owner |
 |---|---|---|
-| A secrets manager | **Not yet.** Every credential is an environment variable with the marked local default confined to loopback (§4): 27 `finapp.*` credential properties, each confined by its own `ConfinedCredential` key class, plus the database's credentials (§3). The decision is ADR-0123 (`Proposed`): a managed secret store and KMS per environment, delivered as the environment the application already reads | `P15-TSK-016` (the store's entries and KMS keys), `-018` (the inventory and delivery) |
+| A secrets manager | **Not yet.** Every credential is an environment variable with the marked local default confined to loopback (§4): 27 `finapp.*` credential properties, each confined by its own `ConfinedCredential` key class, plus the database's credentials (§3) and, since `P15-TSK-026`, the Kafka SCRAM password, confined by `KafkaTransportGuard` (§3, §4). The decision is ADR-0123 (`Proposed`): a managed secret store and KMS per environment, delivered as the environment the application already reads | `P15-TSK-016` (the store's entries and KMS keys), `-018` (the inventory and delivery) |
 | Key rotation, KMS, envelope encryption | **Keys exist; rotation does not.** Eight AES-256-GCM field-level keys, used by eight cipher classes built as nine instances (`EvidenceCipher` twice: payment and dispute evidence; `DocumentCipher` and `CounterpartySubjectCipher` share `finapp.doc.key`). Each key is an environment value that decodes to exactly 32 bytes, with a `…key-version` companion stamped on every row it writes. **Each instance holds one key**, and decryption always uses it, so rotating a key today would make every earlier row unreadable. No KMS wraps any key, and no rotation procedure exists. `SECURITY_ARCHITECTURE.md` §Encryption at rest lists each key and what it encrypts | `P15-TSK-019` (key rings: an active version, retained versions decrypting by the stamped version, no re-encryption of `INSERT`-only evidence), `-016` (KMS), `-020` (rotation rehearsed) |
 | Callback (HMAC) secret rotation | Five callback doors, each with its own static key. Nothing verifies against a previous secret during a window | `P15-TSK-019`, `-020` |
-| Transport encryption | Implemented for the hops that exist (`SECURITY_ARCHITECTURE.md` §Transport encryption) | `P0-TSK-034`; Kafka's TLS and SASL `P15-TSK-026`; inbound TLS at the edge `P15-TSK-011` |
+| Transport encryption | Implemented for the hops that exist (`SECURITY_ARCHITECTURE.md` §Transport encryption) | `P0-TSK-034`; Kafka's TLS and SASL `P15-TSK-026` (built: `SASL_SSL` with SCRAM-SHA-512 required off loopback; the managed broker's side `P15-TSK-015`); inbound TLS at the edge `P15-TSK-011` |
 | At-rest encryption | The field-level ciphers above. No volume or backup encryption, because nothing is deployed | `P15-TSK-015` |
 | Per-service identity, mTLS | Needs services: there is one deployable, so there is no service-to-service hop (`PHASE_15_PLAN.md` §9.3). Workload identities exist for the cloud APIs only | `P15-TSK-016`; mTLS Phase 16, if a service is extracted |
 | Dependency artefact verification | A dependency is external input too, but a different supply chain | `P0-TSK-039` (implemented: ADR-0025) |

@@ -631,6 +631,24 @@ cannot be atomic, and every failure between them resolves as a redelivery into t
 which is the safe direction. The reverse ordering — acknowledge, then effect — is the one that
 loses records, and `KafkaEventReceiverTest` asserts the order rather than describing it.
 
+*(Added by `P15-TSK-026`, 2026-11-08.)* **Rebalances under a rolling update.** Every replica runs
+every module's loop, so each rolling step, scale event or pod kill rebalances every group. The
+consumers use the cooperative assignor (`group.protocol=classic` pinned): a member joining or
+leaving moves only the partitions that change hands and the other members keep consuming, where the
+eager default stopped every member of every group. The session timeout is 30 seconds (a killed
+pod's partitions move within half a minute; a graceful leave is immediate), and each poll hands over
+at most 10 records within a 120-second poll budget — a budget, not a bound: a record's bounded waits are a pool wait
+(5 s) and the inbox claim's (0.5 s), its handler's own statements are not bounded, and the offset commit can wait 60 s
+(`InboxPollBudgetTest`, from the committed configuration; reworded in the review fix round). No static
+membership: pod names change on every rollout. **The assignor is availability, not correctness**: a
+rebalance still redelivers whatever was settled and not yet committed, and the inbox primary key
+absorbs it, exactly as above. Each topic's retention plus one segment stays below the dedupe window
+(`TopicCatalogueTest`), so a replay from `earliest` after offsets expire lands inside it too. A
+replica whose consumer the broker refuses (credential or permission) reports itself not ready until the broker is seen
+to admit it, and a failed TLS handshake - a broker-side fault every replica meets at once - fails no readiness (the review
+fix round); that state is per instance, read from its own loops, and shared with nothing (`EVENT_ARCHITECTURE.md`
+§Topics, transport security and consumer groups).
+
 ### `IdGenerator` — why a per-instance counter is acceptable
 
 The 12-bit field is a counter rather than randomness, and that counter is process-local. It is

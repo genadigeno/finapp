@@ -384,6 +384,13 @@ must exceed:
 - any manual replay a support process might perform;
 - the maximum time a consumer may be down while messages accumulate.
 
+*(Added by `P15-TSK-026`, 2026-11-08.)* For Kafka the first bound is now asserted rather than
+estimated: the broker can hand a consumer a record as old as its topic's `retention.ms` **plus one
+`segment.ms`** (a segment is deleted only once its newest record is past retention) plus the
+broker's retention check interval, and `TopicCatalogueTest` fails unless that sum stays below
+`finapp.inbox.retention` for every catalogued topic - 7 days + 1 day + 5 minutes against 14 days
+(`EVENT_ARCHITECTURE.md` §Topics, transport security and consumer groups).
+
 When those are unknown the safe direction is the same: **too long merely costs storage; too short
 costs money.** A provider that retries a webhook for three days against a 24-hour inbox will
 produce a duplicate effect on day two, and nothing in the system will report it.

@@ -1,10 +1,13 @@
 package com.finapp.app.security;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 /**
- * Refuses to start when the Kafka bootstrap points off this machine over plaintext
- * (`P2-TSK-001`).
+ * Refuses to start when the Kafka clients would leave this machine without TLS and an
+ * authenticated identity (`P2-TSK-001`, widened by `P15-TSK-026`).
  *
  * <p>ADR-0023 guarded the database and recorded, for Kafka: <em>"there is no client for the
  * first two, and a guard for a connection that does not exist would be guarding nothing … the
@@ -16,33 +19,129 @@ import java.util.Objects;
  *
  * <p>Loopback is exempt for the database guard's exact reason: a connection that never leaves
  * the host would otherwise cost every developer broker certificates for a container, and
- * {@code DOD-BUILD} requires a clean clone to run with no machine-specific setup.
+ * {@code DOD-BUILD} requires a clean clone to run with no machine-specific setup. The compose
+ * stack and the test tiers stay on loopback {@code PLAINTEXT}.
  *
- * <p><strong>The bar is "not PLAINTEXT", not "verify-full".</strong> Kafka's secured protocols
- * ({@code SSL}, {@code SASL_SSL}) verify the broker certificate by default — hostname
- * verification is on unless deliberately disabled — so unlike the JDBC driver there is no
- * widely-used mode that encrypts while verifying nothing. What this guard cannot see is a
- * configuration that disabled that verification elsewhere; recorded as the limit, with Phase 15
- * owning the full TLS/SASL deployment posture.
+ * <h2>The bar off loopback is {@code SASL_SSL}, and nothing else (`P15-TSK-026`)</h2>
+ *
+ * <p>Until `P15-TSK-026` the bar was "not {@code PLAINTEXT}", which admitted {@code SASL_PLAINTEXT}
+ * (an authenticated session whose every record crosses the network in the clear) and any string
+ * at all that was not {@code PLAINTEXT}. Owner decision C11 is {@code SASL_SSL} with SCRAM-SHA-512:
+ * TLS for confidentiality and the broker's identity, SCRAM for the client's. So off loopback:
+ *
+ * <ol>
+ *   <li>the protocol must be {@code SASL_SSL} - {@code PLAINTEXT} and {@code SASL_PLAINTEXT} have
+ *       no TLS, and {@code SSL} alone has no client identity C11 chose (a client certificate was
+ *       its option C, decided against);
+ *   <li>a SASL protocol needs a username and a password;
+ *   <li>the password must not be the marked local default, which is published in this repository
+ *       - {@link DatabaseCredentialGuard}'s confinement, applied to the broker's credential.
+ * </ol>
+ *
+ * <p>An unknown protocol is refused anywhere, loopback included: a guard that cannot read the
+ * protocol cannot say what it admits, so it fails closed. Hostname verification is no longer this
+ * guard's stated limit: the clients take no property but the ones {@code BrokerConnection}
+ * renders, and it fixes verification on.
+ *
+ * <p>No refusal echoes the password.
+ *
+ * <h2>What "on this machine" means here, and its limit</h2>
+ *
+ * <p>Every bootstrap entry must be strictly {@code host:port} or {@code [IPv6]:port}, on loopback
+ * too, or startup is refused (`P15-TSK-026`'s review fix round): kafka-clients reads
+ * {@code localhost://kafka.internal:9092} as {@code kafka.internal}, and the first reading of this
+ * guard took the text before the first colon, {@code localhost}, so a remote broker passed as a
+ * local one over {@code PLAINTEXT}. The guard checks the <em>bootstrap</em> list only. After the
+ * first contact the clients connect to the listeners the brokers advertise, which this guard never
+ * sees: a broker on loopback advertising a remote listener would take the clients there under the
+ * protocol admitted for loopback. Off loopback that protocol is {@code SASL_SSL} with hostname
+ * verification, which holds for every listener the clients reach; on loopback it is whatever the
+ * local development broker is configured with.
  */
 public class KafkaTransportGuard {
 
+    private static final Set<String> PROTOCOLS =
+            Set.of("PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL");
+
+    /**
+     * The variable the refusal names, so the fix needs no documentation. Named for what it is - the
+     * name of a variable - and not for the credential it carries, which {@code secretsAreWrapped}
+     * would rightly read as a secret held in a String ({@link DatabaseCredentialGuard}'s recorded
+     * lesson, met again here).
+     */
+    static final String REQUIRED_ENVIRONMENT_VARIABLE = "FINAPP_KAFKA_SASL_PASSWORD";
+
+    /** A guard over a client with no credential configured. */
     public KafkaTransportGuard(String bootstrapServers, String securityProtocol) {
+        this(bootstrapServers, securityProtocol, "", "");
+    }
+
+    /**
+     * @throws IllegalStateException if the clients would leave this machine without
+     *     {@code SASL_SSL}, without a credential, or with the published one; or if the protocol is
+     *     not one Kafka defines
+     */
+    public KafkaTransportGuard(
+            String bootstrapServers,
+            String securityProtocol,
+            String saslUsername,
+            String saslPassword) {
         Objects.requireNonNull(bootstrapServers, "bootstrapServers must not be null");
         Objects.requireNonNull(securityProtocol, "securityProtocol must not be null");
-        if (!"PLAINTEXT".equalsIgnoreCase(securityProtocol.trim())) {
-            return;
+        Objects.requireNonNull(saslUsername, "saslUsername must not be null");
+        Objects.requireNonNull(saslPassword, "saslPassword must not be null");
+        String protocol = securityProtocol.trim().toUpperCase(Locale.ROOT);
+        if (!PROTOCOLS.contains(protocol)) {
+            throw new IllegalStateException(
+                    "Refusing to start: finapp.kafka.security-protocol is '"
+                            + securityProtocol
+                            + "', which is not one of "
+                            + PROTOCOLS
+                            + ". A protocol this guard cannot read is not one it can admit.");
         }
-        if (DatabaseEndpoint.allLoopbackHostPorts(bootstrapServers)) {
-            return;
+        List<String> hosts = DatabaseEndpoint.bootstrapHosts(bootstrapServers);
+        if (hosts.isEmpty()) {
+            // Not echoed: a list this guard cannot read may be one that carries a credential.
+            throw new IllegalStateException(
+                    "Refusing to start: finapp.kafka.bootstrap-servers is not a comma-separated list"
+                            + " of host:port or [IPv6]:port entries. The client reads some other"
+                            + " shapes differently from this guard (a scheme:// prefix is skipped and"
+                            + " the host after it connected to), so a list it cannot read is not one"
+                            + " it can show to be local.");
         }
-        throw new IllegalStateException(
-                "Refusing to start: finapp.kafka.bootstrap-servers points at '"
-                        + bootstrapServers
-                        + "', which is not (entirely) on this machine, while the security protocol"
-                        + " is PLAINTEXT. Every published event would cross the network in the"
-                        + " clear. Set finapp.kafka.security-protocol to SSL or SASL_SSL with the"
-                        + " matching client configuration, or point the bootstrap at loopback."
-                        + " (ADR-0023; the deployment posture is Phase 15's.)");
+        boolean local = hosts.stream().allMatch(DatabaseEndpoint::isLoopback);
+        if (!local && !"SASL_SSL".equals(protocol)) {
+            throw new IllegalStateException(
+                    "Refusing to start: finapp.kafka.bootstrap-servers points at '"
+                            + bootstrapServers
+                            + "', which is not (entirely) on this machine, while the security protocol"
+                            + " is "
+                            + protocol
+                            + ". Off this machine the clients need TLS and an authenticated identity:"
+                            + " set finapp.kafka.security-protocol to SASL_SSL with the SCRAM"
+                            + " credential, or point the bootstrap at loopback."
+                            + " (ADR-0023; owner decision C11.)");
+        }
+        if (protocol.startsWith("SASL_")) {
+            if (saslUsername.isBlank() || saslPassword.isBlank()) {
+                throw new IllegalStateException(
+                        "Refusing to start: finapp.kafka.security-protocol is "
+                                + protocol
+                                + " and the SASL username or password is not set. Set"
+                                + " FINAPP_KAFKA_SASL_USERNAME and "
+                                + REQUIRED_ENVIRONMENT_VARIABLE
+                                + ".");
+            }
+            if (!local && ConfinedCredential.isMarkedLocalDefault(saslPassword)) {
+                throw new IllegalStateException(
+                        "Refusing to start: the Kafka SCRAM password is still the published local"
+                                + " default, and finapp.kafka.bootstrap-servers points at '"
+                                + bootstrapServers
+                                + "', which is not on this machine. Set "
+                                + REQUIRED_ENVIRONMENT_VARIABLE
+                                + ". The published default is not a secret: every reader of this"
+                                + " repository has it. See docs/architecture/SECRET_MANAGEMENT.md.");
+            }
+        }
     }
 }

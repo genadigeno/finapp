@@ -6,6 +6,7 @@ import com.finapp.platform.inbox.InboxConsumer;
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.JdbcInboxRecordStore;
 import com.finapp.platform.inbox.ReceivedEvent;
+import com.finapp.platform.outbox.BrokerConnection;
 import com.finapp.platform.outbox.EventPublisher;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.outbox.KafkaEventPublisher;
@@ -300,8 +301,7 @@ class KafkaInboxDeliveryKafkaTest {
     private KafkaEventReceiver realReceiver(String group, InboxEventHandler... handlers)
             throws SQLException {
         return KafkaEventReceiver.connect(
-                bootstrap(),
-                "PLAINTEXT",
+                BrokerConnection.plaintext(bootstrap()),
                 group,
                 DatabaseRoles::bootstrap,
                 inbox(),
@@ -431,7 +431,7 @@ class KafkaInboxDeliveryKafkaTest {
     }
 
     private static KafkaEventPublisher realPublisher() {
-        return KafkaEventPublisher.connect(bootstrap(), "PLAINTEXT", Duration.ofSeconds(10));
+        return KafkaEventPublisher.connect(BrokerConnection.plaintext(bootstrap()), Duration.ofSeconds(10));
     }
 
     private static String bootstrap() {

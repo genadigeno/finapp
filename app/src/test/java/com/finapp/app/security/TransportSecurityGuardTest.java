@@ -165,6 +165,24 @@ class TransportSecurityGuardTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
+    @ParameterizedTest
+    @DisplayName("a URL the driver reads as another host is not loopback, so it needs verify-full (P15-TSK-026)")
+    @ValueSource(
+            strings = {
+                // The driver (42.7.13) connects each of these to a host other than localhost.
+                "jdbc:postgresql://localhost:5432/finapp?host=db.internal",
+                "jdbc:postgresql://localhost:5432/finapp?PGHOST=db.internal",
+                "jdbc:postgresql://localhost:5432,::ffff:10.0.0.5:5432/finapp"
+            })
+    void aHostTheDriverReadsElsewhereNeedsTls(String url) {
+        assertThatThrownBy(() -> TransportSecurityGuard.verify(url, NOTHING_CONFIGURED))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(TransportSecurityGuard.REQUIRED_MODE);
+        assertThatCode(() -> TransportSecurityGuard.verify(url, Optional.of("verify-full")))
+                .as("verified TLS satisfies it wherever the driver goes")
+                .doesNotThrowAnyException();
+    }
+
     @Test
     @DisplayName("sslmode in the URL query string is read, not only the Hikari property")
     void theModeIsReadFromTheUrl() {

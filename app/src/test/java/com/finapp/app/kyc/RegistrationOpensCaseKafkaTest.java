@@ -7,6 +7,7 @@ import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseKind;
 import com.finapp.kyc.KycCaseStore;
 import com.finapp.platform.api.IdempotencyKeyHeader;
+import com.finapp.platform.outbox.BrokerConnection;
 import com.finapp.platform.outbox.KafkaEventPublisher;
 import com.finapp.platform.outbox.PendingEvent;
 import com.finapp.platform.testing.database.DatabaseRoles;
@@ -351,7 +352,8 @@ class RegistrationOpensCaseKafkaTest {
 
     private static KafkaEventPublisher directPublisher() {
         return KafkaEventPublisher.connect(
-                System.getProperty("finapp.kafka.bootstrap"), "PLAINTEXT", Duration.ofSeconds(10));
+                BrokerConnection.plaintext(System.getProperty("finapp.kafka.bootstrap")),
+                Duration.ofSeconds(10));
     }
 
     /** The registration's own {@code party.CustomerOpened} row, re-read so the bytes are real. */

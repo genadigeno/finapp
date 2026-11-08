@@ -1067,6 +1067,13 @@ record one commit — and that guarantee lasts exactly as long as nobody takes t
   moment it is first needed. Method references count: an `invokedynamic` is not a call, and a
   rule one syntax away from being bypassed is not enforcement.
   *(ArchUnit: `nothingPublishesToABrokerDirectly`)*
+- A broker connection is made in one production class, `app`'s `EventingBeans`, whose connection
+  bean is built after `KafkaTransportGuard` has read the same configuration (`P15-TSK-026`'s review
+  fix round, 2026-11-08). No other production class constructs a `BrokerConnection`, calls
+  `BrokerConnection.plaintext`, or calls either adapter's `connect` - by call or by method
+  reference - because each is public, and a connection made beside the root reaches a broker no
+  guard has read. `BrokerConnection` itself may call its own constructor from `plaintext`.
+  *(ArchUnit: `brokerConnectionsAreMadeBehindTheGuard`)*
 
 The exemptions are the two broker **adapter packages** — `platform.outbox`
 (`KafkaEventPublisher`, `P2-TSK-001`) and `platform.inbox.kafka` (`KafkaEventReceiver`,

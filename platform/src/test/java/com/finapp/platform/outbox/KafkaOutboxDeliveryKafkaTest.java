@@ -162,7 +162,7 @@ class KafkaOutboxDeliveryKafkaTest {
 
         Instant before = Instant.now();
         try (KafkaEventPublisher unreachable =
-                KafkaEventPublisher.connect("localhost:1", "PLAINTEXT", Duration.ofSeconds(2))) {
+                KafkaEventPublisher.connect(BrokerConnection.plaintext("localhost:1"), Duration.ofSeconds(2))) {
             assertThat(relay(unreachable).pollOnce().failed()).isEqualTo(1);
         }
         assertThat(Duration.between(before, Instant.now()))
@@ -211,7 +211,7 @@ class KafkaOutboxDeliveryKafkaTest {
     }
 
     private static KafkaEventPublisher realPublisher() {
-        return KafkaEventPublisher.connect(bootstrap(), "PLAINTEXT", Duration.ofSeconds(10));
+        return KafkaEventPublisher.connect(BrokerConnection.plaintext(bootstrap()), Duration.ofSeconds(10));
     }
 
     private static String bootstrap() {

@@ -2,6 +2,7 @@ package com.finapp.app.eventing;
 
 import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.platform.inbox.InboxEventHandler;
+import com.finapp.platform.inbox.kafka.BrokerAccessRefusedException;
 import com.finapp.platform.inbox.kafka.KafkaEventReceiver;
 import com.finapp.platform.inbox.kafka.ReceiverPollResult;
 import io.micrometer.core.instrument.Counter;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -49,6 +51,20 @@ import org.springframework.context.SmartLifecycle;
  * series on a freshly started instance). This pays the inbox-metrics debt row, whose recorded
  * trigger — <em>"the first live consumer"</em> — is this task.
  *
+ * <h2>A refused loop fails readiness; nothing here touches liveness (`P15-TSK-026`)</h2>
+ *
+ * <p>A loop whose poll the broker refuses - a credential that does not authenticate, a principal
+ * without its topic or group permission - is recorded until the broker is seen to admit it (a
+ * delivered record, or {@link #CLEAN_POLLS_TO_ADMIT} clean polls in a row), and
+ * {@link KafkaConsumersHealthIndicator} reports the instance not ready while any is. That is the
+ * fault a release with a wrong secret carries, and readiness is what stops a rollout from
+ * replacing healthy replicas with it. A broker that is down is not a refusal: its polls return
+ * empty, and the instance keeps serving, because Kafka is not truth and the outbox holds every
+ * event until the broker returns. Nor is a failed TLS handshake (the review fix round): a broker's
+ * expired certificate meets every replica at once, and failing readiness on it would take the
+ * fleet out of service for a fault no rollout carried. It is counted with every other thrown poll
+ * in {@code finapp.inbox.poll.failures{outcome}}, which an alert can read.
+ *
  * <h2>A stopping instance's consumers commit and leave (`P15-TSK-008`)</h2>
  *
  * <p>In {@link ShutdownOrder#CONSUMERS}, after the schedules: every loop is woken at once, so none takes a new batch; a
@@ -80,9 +96,37 @@ public final class InboxConsumers implements SmartLifecycle {
     private final Counter duplicates;
     private final Counter contended;
     private final Counter failed;
+    private final Counter pollsRefused;
+    private final Counter pollsFailed;
 
     private final List<Loop> loops = new ArrayList<>();
     private volatile boolean running;
+
+    /**
+     * The modules the broker refused and has not yet been seen to admit (`P15-TSK-026`), each
+     * with the clean polls counted since: a credential that failed to authenticate, or a principal
+     * without its topic or group permission. Read by {@link KafkaConsumersHealthIndicator} for
+     * readiness. Per-instance, like everything else here: each replica reports its own loops, and
+     * nothing is shared.
+     */
+    private final Map<String, Integer> refusedModules = new ConcurrentHashMap<>();
+
+    /**
+     * How many polls in a row must return without a refusal before a refused loop counts as
+     * admitted, when none of them delivered a record (the review fix round). One was the first
+     * version, and a refused client does return clean polls: between its reconnection attempts the
+     * poll simply times out empty, so readiness flapped back up. A refused client re-raises the
+     * refusal on every poll inside the client's reconnection backoff (at most a second by default)
+     * and each empty poll waits the full poll timeout, so three clean polls in a row are not a
+     * refusal hiding. A poll that delivered a record is admission at once: the broker served it.
+     */
+    static final int CLEAN_POLLS_TO_ADMIT = 3;
+
+    /** One poll, as a loop makes it: the seam the refusal tests drive without a broker. */
+    @FunctionalInterface
+    interface PollAttempt {
+        ReceiverPollResult poll();
+    }
 
     public InboxConsumers(
             List<InboxEventHandler> handlers,
@@ -99,6 +143,8 @@ public final class InboxConsumers implements SmartLifecycle {
         this.duplicates = outcome(registry, "duplicate");
         this.contended = outcome(registry, "contended");
         this.failed = outcome(registry, "failed");
+        this.pollsRefused = pollFailure(registry, "refused");
+        this.pollsFailed = pollFailure(registry, "failed");
     }
 
     /** The group key: everything before the first dot, or the whole name if it has none. */
@@ -113,10 +159,42 @@ public final class InboxConsumers implements SmartLifecycle {
         return byModule;
     }
 
+    /**
+     * The consumer group of a consuming module: {@code finapp.<module>}. Public so that the topic
+     * catalogue's test checks its group permission against this method rather than a copy of the
+     * scheme (`P15-TSK-026`).
+     */
+    public static String groupIdOf(String module) {
+        return "finapp." + Objects.requireNonNull(module, "module must not be null");
+    }
+
+    /**
+     * Whether the broker refused any of this instance's consumer loops and has not since been seen
+     * to admit it (`P15-TSK-026`): false with no loops, and false again once a refused loop is
+     * delivered a record or polls cleanly {@link #CLEAN_POLLS_TO_ADMIT} times in a row.
+     */
+    public boolean brokerAccessRefused() {
+        return !refusedModules.isEmpty();
+    }
+
     static Counter outcome(MeterRegistry registry, String outcome) {
         return Counter.builder("finapp.inbox.consumption")
                 .tag("outcome", outcome)
                 .description("Inbox deliveries by outcome, summed over consumer polls")
+                .register(registry);
+    }
+
+    /**
+     * Consumer polls that threw (`P15-TSK-026`'s review fix round): {@code refused} by the broker,
+     * or {@code failed} otherwise - a TLS handshake that failed, an offset commit refused after an
+     * eviction, a client fault. A thrown poll delivers nothing, so the consumption series above
+     * cannot see it; without this one a consumer stopped on every replica at once by a broker's
+     * expired certificate showed only in logs.
+     */
+    static Counter pollFailure(MeterRegistry registry, String outcome) {
+        return Counter.builder("finapp.inbox.poll.failures")
+                .tag("outcome", outcome)
+                .description("Inbox consumer polls that threw, by outcome")
                 .register(registry);
     }
 
@@ -125,7 +203,7 @@ public final class InboxConsumers implements SmartLifecycle {
         running = true;
         handlersByModule.forEach(
                 (module, moduleHandlers) -> {
-                    Loop loop = new Loop(module, receivers.connect("finapp." + module, moduleHandlers));
+                    Loop loop = new Loop(module, receivers.connect(groupIdOf(module), moduleHandlers));
                     loops.add(loop);
                     loop.thread.start();
                 });
@@ -180,6 +258,59 @@ public final class InboxConsumers implements SmartLifecycle {
         return running;
     }
 
+    /**
+     * Makes one poll of {@code module}'s loop and records whether the broker refused it
+     * (`P15-TSK-026`): the poll's result, or {@code null} when it threw - logged by class, counted
+     * ({@code finapp.inbox.poll.failures}) and backed off. A refusal is told apart from every other
+     * failure because it is a configuration fault - a wrong secret, a missing permission - and
+     * fails readiness, where a broker that is merely down returns an empty poll and fails nothing,
+     * and a failed TLS handshake, which the broker's side causes as often as this one, is an
+     * ordinary failure. A refusal clears on evidence of admission, not on the next quiet poll (the
+     * review fix round): a poll that delivered a record, or {@link #CLEAN_POLLS_TO_ADMIT} clean
+     * polls in a row, a failure in between starting the count again. Counting the result stays
+     * the loop's ({@code Loop#tick}).
+     */
+    ReceiverPollResult settle(String module, PollAttempt attempt) {
+        try {
+            ReceiverPollResult result = attempt.poll();
+            boolean delivered =
+                    result.processed() + result.duplicates() + result.contended() + result.failed() > 0;
+            refusedModules.computeIfPresent(
+                    module,
+                    (ignored, clean) -> delivered || clean + 1 >= CLEAN_POLLS_TO_ADMIT ? null : clean + 1);
+            return result;
+        } catch (BrokerAccessRefusedException refused) {
+            refusedModules.put(module, 0);
+            pollsRefused.increment();
+            // The message is the refusing class's name and nothing else (the receiver's rule).
+            log.warn(
+                    "Inbox consumer {} refused by the broker: {} - readiness fails until a poll"
+                            + " is admitted",
+                    groupIdOf(module),
+                    refused.getMessage());
+            pause();
+            return null;
+        } catch (RuntimeException failure) {
+            refusedModules.computeIfPresent(module, (ignored, clean) -> 0);
+            pollsFailed.increment();
+            // The class only: a client or JDBC message can name hosts and identifiers. The class
+            // is the reason - SslAuthenticationException is a TLS handshake that failed.
+            log.warn(
+                    "Inbox poll failed on {}: {}",
+                    groupIdOf(module),
+                    failure.getClass().getSimpleName());
+            pause();
+            return null;
+        }
+    }
+    private void pause() {
+        try {
+            Thread.sleep(failureBackoff.toMillis());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     /** After the schedules, before the management server closes ({@link ShutdownOrder}). */
     @Override
     public int getPhase() {
@@ -192,12 +323,14 @@ public final class InboxConsumers implements SmartLifecycle {
     }
 
     private final class Loop {
+        private final String module;
         private final KafkaEventReceiver receiver;
         private final Thread thread;
         /** Completed once the receiver is closed: what a stopping instance waits for. */
         private final CompletableFuture<Void> closed = new CompletableFuture<>();
 
         private Loop(String module, KafkaEventReceiver receiver) {
+            this.module = module;
             this.receiver = receiver;
             this.thread = new Thread(this::run, "inbox-consumer-" + module);
             this.thread.setDaemon(true);
@@ -218,34 +351,20 @@ public final class InboxConsumers implements SmartLifecycle {
         }
 
         private void tick() {
-            try {
-                ReceiverPollResult result = receiver.pollOnce();
-                processed.increment(result.processed());
-                duplicates.increment(result.duplicates());
-                contended.increment(result.contended());
-                failed.increment(result.failed());
-                if (result.failed() > 0 || result.contended() > 0) {
-                    // The stalled partition will be re-polled immediately; without a pause a
-                    // poison record turns the loop hot. Bounded, so a transient failure
-                    // retries soon and a persistent one costs a bounded rate, loudly logged
-                    // by the receiver each time.
-                    pause();
-                }
-            } catch (RuntimeException failure) {
-                // The class only: a client or JDBC message can name hosts and identifiers.
-                log.warn(
-                        "Inbox poll failed on {}: {}",
-                        Thread.currentThread().getName(),
-                        failure.getClass().getSimpleName());
-                pause();
+            ReceiverPollResult result = settle(module, receiver::pollOnce);
+            if (result == null) {
+                return; // logged and backed off by settle
             }
-        }
-
-        private void pause() {
-            try {
-                Thread.sleep(failureBackoff.toMillis());
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
+            processed.increment(result.processed());
+            duplicates.increment(result.duplicates());
+            contended.increment(result.contended());
+            failed.increment(result.failed());
+            if (result.failed() > 0 || result.contended() > 0) {
+                // The stalled partition will be re-polled immediately; without a pause a
+                // poison record turns the loop hot. Bounded, so a transient failure
+                // retries soon and a persistent one costs a bounded rate, loudly logged
+                // by the receiver each time.
+                pause();
             }
         }
     }

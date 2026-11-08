@@ -1,17 +1,21 @@
 package com.finapp.app.eventing;
 
+import com.finapp.app.security.ConfinedCredential;
 import com.finapp.app.security.KafkaTransportGuard;
 import com.finapp.platform.inbox.InboxConsumer;
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.JdbcInboxRecordStore;
 import com.finapp.platform.inbox.kafka.KafkaEventReceiver;
+import com.finapp.platform.outbox.BrokerConnection;
 import com.finapp.platform.outbox.EventPublisher;
 import com.finapp.platform.outbox.KafkaEventPublisher;
 import com.finapp.platform.outbox.OutboxRelay;
+import com.finapp.sharedkernel.security.Sensitive;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Locale;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,7 +34,8 @@ import org.springframework.context.annotation.Configuration;
  * clone runs with no configuration ({@code DOD-BUILD}); a deployment overrides through the
  * environment, and {@link KafkaTransportGuard} refuses a non-loopback bootstrap over plaintext
  * before the first byte leaves the machine (ADR-0023's promise, kept by the task that added the
- * client).
+ * client). Since `P15-TSK-026` it refuses anything but {@code SASL_SSL} off loopback, and the
+ * marked local SCRAM password there; both clients connect through one {@link BrokerConnection}.
  *
  * <p>The application starts with the broker down (ADR-0016's reasoning): the producer dials
  * lazily, publish failures are the relay's ordinary backoff, and the events wait durably where
@@ -42,19 +47,48 @@ public class EventingBeans {
     @Bean
     KafkaTransportGuard kafkaTransportGuard(
             @Value("${finapp.kafka.bootstrap-servers:localhost:29092}") String bootstrapServers,
-            @Value("${finapp.kafka.security-protocol:PLAINTEXT}") String securityProtocol) {
-        return new KafkaTransportGuard(bootstrapServers, securityProtocol);
+            @Value("${finapp.kafka.security-protocol:PLAINTEXT}") String securityProtocol,
+            @Value("${finapp.kafka.sasl.username:}") String saslUsername,
+            @Value("${finapp.kafka.sasl.password:" + ConfinedCredential.MARKED_LOCAL_DEFAULT + "}")
+                    String saslPassword) {
+        return new KafkaTransportGuard(bootstrapServers, securityProtocol, saslUsername, saslPassword);
+    }
+
+    /**
+     * Where the broker is and how both clients prove themselves to it (`P15-TSK-026`): one value,
+     * built only after the guard has ruled on it, so the producer and every consumer connect the
+     * same way. The SCRAM credential comes from the environment (`FINAPP_KAFKA_SASL_USERNAME`,
+     * `FINAPP_KAFKA_SASL_PASSWORD`), its local default the marked one, which the guard refuses off
+     * loopback; the truststore is a PEM file of CA certificates, or the JVM's own when unset.
+     */
+    @Bean
+    BrokerConnection brokerConnection(
+            @Value("${finapp.kafka.bootstrap-servers:localhost:29092}") String bootstrapServers,
+            @Value("${finapp.kafka.security-protocol:PLAINTEXT}") String securityProtocol,
+            @Value("${finapp.kafka.sasl.username:}") String saslUsername,
+            @Value("${finapp.kafka.sasl.password:" + ConfinedCredential.MARKED_LOCAL_DEFAULT + "}")
+                    String saslPassword,
+            @Value("${finapp.kafka.ssl.truststore-location:}") String truststoreLocation,
+            // The guard as a parameter, not @DependsOn by name: the dependency is real, so it is
+            // expressed where the compiler and the context both see it.
+            KafkaTransportGuard guard) {
+        String protocol = securityProtocol.trim().toUpperCase(Locale.ROOT);
+        boolean sasl = protocol.startsWith("SASL_");
+        // A protocol without SASL carries no credential, so the marked local default - present
+        // whenever nothing is configured - is not handed to a client that would never use it.
+        return new BrokerConnection(
+                bootstrapServers,
+                protocol,
+                sasl ? saslUsername : "",
+                Sensitive.of(sasl ? saslPassword : ""),
+                truststoreLocation);
     }
 
     @Bean(destroyMethod = "close")
     KafkaEventPublisher eventPublisher(
-            @Value("${finapp.kafka.bootstrap-servers:localhost:29092}") String bootstrapServers,
-            @Value("${finapp.kafka.security-protocol:PLAINTEXT}") String securityProtocol,
-            @Value("${finapp.kafka.ack-timeout:PT10S}") Duration ackTimeout,
-            // The guard as a parameter, not @DependsOn by name: the dependency is real, so it is
-            // expressed where the compiler and the context both see it.
-            KafkaTransportGuard guard) {
-        return KafkaEventPublisher.connect(bootstrapServers, securityProtocol, ackTimeout);
+            BrokerConnection brokerConnection,
+            @Value("${finapp.kafka.ack-timeout:PT10S}") Duration ackTimeout) {
+        return KafkaEventPublisher.connect(brokerConnection, ackTimeout);
     }
 
     @Bean
@@ -89,6 +123,12 @@ public class EventingBeans {
      * bounded by topic retention (7 days by default), so the default here is twice that
      * ({@code DATA_MIGRATIONS.md} §9: too long costs storage, too short admits the duplicate
      * effect the inbox exists to prevent).
+     *
+     * <p>Since `P15-TSK-026` the bound is asserted, not assumed: {@code TopicCatalogueTest} reads
+     * this default and {@code application.yaml}, and fails unless every catalogued topic's
+     * {@code retention.ms}, plus its {@code segment.ms} (the broker deletes whole segments, so a
+     * record outlives retention by up to one segment) and the broker's retention check interval,
+     * stays below it ({@code infra/kafka/topics.yaml}: 7 days + 1 day + 5 minutes).
      */
     @Bean
     InboxConsumer<Connection> inboxConsumer(
@@ -119,19 +159,16 @@ public class EventingBeans {
             DataSource dataSource,
             InboxConsumer<Connection> inboxConsumer,
             MeterRegistry registry,
-            @Value("${finapp.kafka.bootstrap-servers:localhost:29092}") String bootstrapServers,
-            @Value("${finapp.kafka.security-protocol:PLAINTEXT}") String securityProtocol,
+            // Built after the transport guard ruled on it (see brokerConnection): the consumer
+            // dials the same bootstrap, so it must not exist before the guard has ruled.
+            BrokerConnection brokerConnection,
             @Value("${finapp.inbox.poll-timeout:PT1S}") Duration pollTimeout,
-            @Value("${finapp.inbox.failure-backoff:PT1S}") Duration failureBackoff,
-            // The transport guard as a parameter for the producer's reason: the consumer dials
-            // the same bootstrap, so it must not exist before the guard has ruled on it.
-            KafkaTransportGuard guard) {
+            @Value("${finapp.inbox.failure-backoff:PT1S}") Duration failureBackoff) {
         return new InboxConsumers(
                 handlers.orderedStream().toList(),
                 (groupId, groupHandlers) ->
                         KafkaEventReceiver.connect(
-                                bootstrapServers,
-                                securityProtocol,
+                                brokerConnection,
                                 groupId,
                                 dataSource::getConnection,
                                 inboxConsumer,
@@ -139,5 +176,19 @@ public class EventingBeans {
                                 pollTimeout),
                 failureBackoff,
                 registry);
+    }
+
+    /**
+     * The consumers' readiness contributor (`P15-TSK-026`), present whether or not the consumers
+     * run: the readiness group names it, and a group naming a contributor that does not exist
+     * refuses to start. With the consumers off there is nothing to refuse, and it reports UP.
+     */
+    @Bean
+    KafkaConsumersHealthIndicator kafkaConsumersHealthIndicator(ObjectProvider<InboxConsumers> consumers) {
+        return new KafkaConsumersHealthIndicator(
+                () -> {
+                    InboxConsumers running = consumers.getIfAvailable();
+                    return running != null && running.brokerAccessRefused();
+                });
     }
 }

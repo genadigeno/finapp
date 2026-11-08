@@ -45,9 +45,16 @@ public final class JdbcInboxRecordStore implements InboxRecordStore<Connection> 
      */
     private final Duration claimWait;
 
-    /** Uses the default bounded wait. */
+    /**
+     * The bounded wait the no-argument constructor uses, which is the one the application runs
+     * with. Public so the consumers' poll budget is computed from it rather than from a copy
+     * (`P15-TSK-026`'s review fix round).
+     */
+    public static final Duration DEFAULT_CLAIM_WAIT = Duration.ofMillis(500);
+
+    /** Uses the default bounded wait, {@link #DEFAULT_CLAIM_WAIT}. */
     public JdbcInboxRecordStore() {
-        this(Duration.ofMillis(500));
+        this(DEFAULT_CLAIM_WAIT);
     }
 
     public JdbcInboxRecordStore(Duration claimWait) {

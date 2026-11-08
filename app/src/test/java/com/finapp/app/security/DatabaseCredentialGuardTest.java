@@ -120,13 +120,40 @@ class DatabaseCredentialGuardTest {
     void hostsAreReadFromTheUrl() {
         // Without this, every "allowed" case above could be passing because the parser returned
         // the wrong host that happened to look local, or the right one by luck.
-        assertThat(
-                        DatabaseEndpoint.hostsOf(
-                                "jdbc:postgresql://user:pw@a.example:5432,b.example:5433/db?x=1"))
+        assertThat(DatabaseEndpoint.hostsOf("jdbc:postgresql://a.example:5432,b.example:5433/db?x=1"))
                 .containsExactly("a.example", "b.example");
         assertThat(DatabaseEndpoint.hostsOf("jdbc:postgresql://[::1]:5432/db"))
                 .containsExactly("::1");
+        assertThat(DatabaseEndpoint.hostsOf("jdbc:postgresql://localhost/db")).containsExactly("localhost");
         assertThat(DatabaseEndpoint.hostsOf("jdbc:postgresql:finapp")).isEmpty();
+        // The driver has no credential form: it resolves "user:pw@a.example" as one name, so the
+        // entry is unread rather than guessed at (P15-TSK-026's review fix round).
+        assertThat(DatabaseEndpoint.hostsOf("jdbc:postgresql://user:pw@a.example:5432/db")).isEmpty();
+    }
+
+    @ParameterizedTest
+    @DisplayName("a URL the driver reads as another host is refused, not read as its first entry (P15-TSK-026)")
+    @ValueSource(
+            strings = {
+                // Measured against the pinned driver (42.7.13): the query's host wins over the
+                // authority's, so each of these connects to db.internal.
+                "jdbc:postgresql://localhost:5432/finapp?host=db.internal",
+                "jdbc:postgresql://localhost:5432/finapp?PGHOST=db.internal",
+                "jdbc:postgresql://localhost:5432/finapp?ApplicationName=finapp&Host=db.internal",
+                "jdbc:postgresql://localhost:5432/finapp?service=finapp",
+                // The driver takes an entry's host from before its last colon, so this reaches
+                // 10.0.0.5; a first-colon reading saw an empty host and dropped the entry.
+                "jdbc:postgresql://localhost:5432,::ffff:10.0.0.5:5432/finapp",
+                "jdbc:postgresql://localhost://db.internal:5432/finapp",
+                "jdbc:postgresql://db.internal@localhost:5432/finapp",
+                "jdbc:postgresql://127.999.0.1:5432/finapp",
+                "jdbc:postgresql://localhost:5432,/finapp"
+            })
+    void aHostTheDriverReadsElsewhereIsRefused(String url) {
+        assertThat(DatabaseEndpoint.hostsOf(url)).isEmpty();
+        assertThatThrownBy(() -> DatabaseCredentialGuard.verify(url, MARKED_LOCAL_DEFAULT))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no host could be read");
     }
 
     @Test

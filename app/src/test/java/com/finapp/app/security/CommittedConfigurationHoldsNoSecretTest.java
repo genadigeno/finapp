@@ -134,6 +134,23 @@ class CommittedConfigurationHoldsNoSecretTest {
     private static final Pattern KEY_QUOTED =
             Pattern.compile("([A-Za-z][A-Za-z0-9_.\\-]*)\\s+('[^']*'|\"[^\"]*\")");
 
+    /**
+     * A quoted assignment INSIDE a value: {@code password="literal"} in a JAAS line
+     * (`P15-TSK-026`). Kafka's SASL login is configured as one property whose value holds the
+     * credential - {@code sasl.jaas.config=...ScramLoginModule required username="u"
+     * password="p";} - and {@link #KEY_VALUE} reads a line's first assignment to its end, so it
+     * saw the key {@code sasl.jaas.config}, found no credential word, and passed the password
+     * inside. Found by planting one, not by review. The value keeps its quotes, so a build
+     * script's literal is read as a literal too.
+     *
+     * <p>Unquoted too (`P15-TSK-026`'s review fix round): JAAS reads a bare word as a value, so
+     * {@code password=hunter2;} is as much a credential as the quoted form, and the first version
+     * of this pattern, quoted values only, passed it. A bare value runs to whitespace, a quote or
+     * the JAAS terminator. In a build script a bare token stays an identifier ({@link #literalsIn}).
+     */
+    private static final Pattern KEY_EMBEDDED =
+            Pattern.compile("([A-Za-z][A-Za-z0-9_.\\-]*)\\s*=\\s*(\"[^\"]*\"|[^\\s\";]+)");
+
     /** {@code ${VAR:default}} (Spring) and {@code ${VAR:-default}} (shell and Compose). */
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^:}]+)(?::-?([^}]*))?}");
 
@@ -249,7 +266,16 @@ class CommittedConfigurationHoldsNoSecretTest {
                 // The variable name is what identifies it, exactly as a YAML key does - so this
                 // uses the name platform/build.gradle.kts actually uses. A build script credential
                 // under an innocent variable name is the documented limit, not a separate hole.
-                "p.kts | val migratorPassword = env(\"X\").orElse(\"hunter2\").get()"
+                "p.kts | val migratorPassword = env(\"X\").orElse(\"hunter2\").get()",
+                // P15-TSK-026: a SCRAM credential inside Kafka's JAAS line, the one shape a broker
+                // or client configuration file carries it in. The key is innocent; the credential
+                // is an assignment inside its value.
+                "p.properties | listener.name.sasl_ssl.scram-sha-512.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"admin\" password=\"hunter2\";",
+                "p.yaml | sasl.jaas.config: ScramLoginModule required username=\"finapp\" password=\"hunter2\";",
+                "p.env | KAFKA_OPTS=-Djava.security.auth.login.config=x password=\"hunter2\"",
+                // The review fix round: JAAS reads an unquoted word as a value too.
+                "p.properties | sasl.jaas.config=ScramLoginModule required username=finapp password=hunter2;",
+                "p.yaml | sasl.jaas.config: ScramLoginModule required username=finapp password=hunter2;"
             })
     void credentialShapesAreRejected(String fileName, String content) {
         assertThat(offencesIn(content, fileName.endsWith(".kts")))
@@ -275,7 +301,12 @@ class CommittedConfigurationHoldsNoSecretTest {
                 // whose PCI scope rests on tokenisation.
                 "p.yaml | passwordless: true",
                 "p.yaml | tokenizer: standard",
-                "p.yaml | idempotencyKey: abc123"
+                "p.yaml | idempotencyKey: abc123",
+                // P15-TSK-026: the JAAS line with its credential externalised, and the username,
+                // which is not a credential.
+                "p.properties | sasl.jaas.config=ScramLoginModule required username=\"finapp\" password=\"${FINAPP_KAFKA_SASL_PASSWORD}\";",
+                "p.properties | sasl.jaas.config=ScramLoginModule required username=\"finapp\";",
+                "p.properties | sasl.jaas.config=ScramLoginModule required username=finapp password=${FINAPP_KAFKA_SASL_PASSWORD};"
             })
     void innocentShapesAreAccepted(String fileName, String content) {
         assertThat(offencesIn(content, fileName.endsWith(".kts")))
@@ -338,7 +369,7 @@ class CommittedConfigurationHoldsNoSecretTest {
 
         for (String line : logicalLines(content, buildScript)) {
             String stripped = withoutComment(line, buildScript).trim();
-            for (Pattern form : List.of(KEY_VALUE, KEY_QUOTED)) {
+            for (Pattern form : List.of(KEY_VALUE, KEY_QUOTED, KEY_EMBEDDED)) {
                 Matcher assignment = form.matcher(stripped);
                 // while, not if: a line's first token is usually not the interesting one.
                 while (assignment.find()) {

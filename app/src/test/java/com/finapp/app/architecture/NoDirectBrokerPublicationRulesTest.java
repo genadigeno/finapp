@@ -117,6 +117,25 @@ class NoDirectBrokerPublicationRulesTest {
                                 + "publishing directly either announces a rolled-back fact or "
                                 + "loses a committed one, and both failures are silent");
 
+    /**
+     * The one production class that may make a broker connection (`P15-TSK-026`'s review fix
+     * round): the composition root whose {@code BrokerConnection} bean is built after
+     * {@code KafkaTransportGuard}'s. Its nested classes count as itself.
+     */
+    private static final String GUARDED_ROOT = "com.finapp.app.eventing.EventingBeans";
+
+    /** The connection's own factory calls its constructor, and is itself a confined entry. */
+    private static final String CONNECTION = "com.finapp.platform.outbox.BrokerConnection";
+
+    @ArchTest
+    static final ArchRule brokerConnectionsAreMadeBehindTheGuard =
+            everyProductionClassShould(connectToNoBrokerOutsideTheGuardedRoot())
+                    .because(
+                            "KafkaTransportGuard reads only the configuration EventingBeans builds its"
+                                + " connection from; a connection made anywhere else - a"
+                                + " BrokerConnection constructed or plaintext() called, either"
+                                + " adapter's connect - reaches a broker no guard has read");
+
     // ---------------------------------------------------------------------
     // Teeth
     // ---------------------------------------------------------------------
@@ -177,6 +196,37 @@ class NoDirectBrokerPublicationRulesTest {
         assertRejects(com.finapp.platform.inbox.ConsumesBesideTheInbox.class);
     }
 
+    @Test
+    @DisplayName("a broker connection made outside the guarded root is rejected, however it is written (P15-TSK-026)")
+    void aConnectionOutsideTheGuardedRootIsRejected() {
+        for (Class<?> violation :
+                List.of(
+                        MakesAPlaintextConnection.class,
+                        ConstructsAConnection.class,
+                        ConnectsAPublisher.class,
+                        ConnectsAReceiver.class,
+                        ReferencesPlaintextAsAMethodReference.class)) {
+            JavaClasses violating = new ClassFileImporter().importClasses(violation);
+            assertThatThrownBy(() -> brokerConnectionsAreMadeBehindTheGuard.check(violating))
+                    .as("a connection made in %s must fail the build", violation.getSimpleName())
+                    .isInstanceOf(AssertionError.class)
+                    .hasMessageContaining(violation.getSimpleName());
+        }
+    }
+
+    @Test
+    @DisplayName("the guarded root and the connection's own factory pass, so the rule does not forbid the right answer")
+    void theGuardedRootPasses() {
+        assertThatCode(
+                        () ->
+                                brokerConnectionsAreMadeBehindTheGuard.check(
+                                        new ClassFileImporter()
+                                                .importClasses(
+                                                        com.finapp.app.eventing.EventingBeans.class,
+                                                        com.finapp.platform.outbox.BrokerConnection.class)))
+                .doesNotThrowAnyException();
+    }
+
     private static void assertRejects(Class<?> violation) {
         JavaClasses violating = new ClassFileImporter().importClasses(violation);
 
@@ -222,6 +272,53 @@ class NoDirectBrokerPublicationRulesTest {
         };
     }
 
+    private static ArchCondition<JavaClass> connectToNoBrokerOutsideTheGuardedRoot() {
+        return new ArchCondition<>("make no broker connection outside " + GUARDED_ROOT) {
+            @Override
+            public void check(JavaClass javaClass, ConditionEvents events) {
+                String name = javaClass.getFullName();
+                if (name.equals(GUARDED_ROOT) || name.startsWith(GUARDED_ROOT + "$")
+                        || name.equals(CONNECTION)) {
+                    return;
+                }
+                for (JavaMethodCall call : javaClass.getMethodCallsFromSelf()) {
+                    reportConnection(events, javaClass, call.getTargetOwner().getFullName(), call.getName(),
+                            call.getDescription());
+                }
+                // A method reference is an invokedynamic, not a call - the publication rule's lesson.
+                for (JavaMethodReference reference : javaClass.getMethodReferencesFromSelf()) {
+                    reportConnection(events, javaClass, reference.getTargetOwner().getFullName(),
+                            reference.getName(), reference.getDescription());
+                }
+                for (JavaConstructorCall call : javaClass.getConstructorCallsFromSelf()) {
+                    reportConnection(events, javaClass, call.getTargetOwner().getFullName(), "<init>",
+                            call.getDescription());
+                }
+                for (com.tngtech.archunit.core.domain.JavaConstructorReference reference :
+                        javaClass.getConstructorReferencesFromSelf()) {
+                    reportConnection(events, javaClass, reference.getTargetOwner().getFullName(), "<init>",
+                            reference.getDescription());
+                }
+            }
+        };
+    }
+
+    private static void reportConnection(
+            ConditionEvents events, JavaClass origin, String owner, String member, String description) {
+        boolean connects =
+                (owner.equals(CONNECTION) && (member.equals("<init>") || member.equals("plaintext")))
+                        || (owner.equals("com.finapp.platform.outbox.KafkaEventPublisher") && member.equals("connect"))
+                        || (owner.equals("com.finapp.platform.inbox.kafka.KafkaEventReceiver")
+                                && member.equals("connect"));
+        if (connects) {
+            events.add(
+                    SimpleConditionEvent.violated(
+                            origin,
+                            description + " — make broker connections in " + GUARDED_ROOT
+                                    + ", behind KafkaTransportGuard"));
+        }
+    }
+
     private static void report(
             ConditionEvents events, JavaClass origin, String targetType, String description) {
         if (BROKER_PACKAGES.stream().anyMatch(targetType::startsWith)) {
@@ -262,6 +359,48 @@ class NoDirectBrokerPublicationRulesTest {
         java.util.function.BiConsumer<String, byte[]> publisher(
                 org.apache.kafka.clients.producer.Probe producer) {
             return producer::send;
+        }
+    }
+
+    // The connection rule's fixtures (P15-TSK-026): never run, only read as bytecode.
+
+    @SuppressWarnings("unused")
+    static final class MakesAPlaintextConnection {
+        Object connect() {
+            return com.finapp.platform.outbox.BrokerConnection.plaintext("kafka.internal:9092");
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static final class ConstructsAConnection {
+        Object connect() {
+            return new com.finapp.platform.outbox.BrokerConnection(
+                    "kafka.internal:9092", "PLAINTEXT", "", com.finapp.sharedkernel.security.Sensitive.of(""), "");
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static final class ConnectsAPublisher {
+        Object connect(com.finapp.platform.outbox.BrokerConnection connection) {
+            return com.finapp.platform.outbox.KafkaEventPublisher.connect(connection, java.time.Duration.ofSeconds(5));
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static final class ConnectsAReceiver {
+        Object connect(
+                com.finapp.platform.outbox.BrokerConnection connection,
+                com.finapp.platform.inbox.InboxConnectionSource connections,
+                com.finapp.platform.inbox.InboxConsumer<java.sql.Connection> inbox) {
+            return com.finapp.platform.inbox.kafka.KafkaEventReceiver.connect(
+                    connection, "finapp.probe", connections, inbox, List.of(), java.time.Duration.ofSeconds(1));
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static final class ReferencesPlaintextAsAMethodReference {
+        java.util.function.Function<String, com.finapp.platform.outbox.BrokerConnection> connector() {
+            return com.finapp.platform.outbox.BrokerConnection::plaintext;
         }
     }
 

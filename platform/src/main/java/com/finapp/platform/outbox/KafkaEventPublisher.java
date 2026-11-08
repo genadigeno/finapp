@@ -6,7 +6,6 @@ import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -35,7 +34,10 @@ import org.apache.kafka.clients.producer.ProducerRecord;
  *       consumer's dedupe key ({@code INV-IDEM-04}).
  *   <li><strong>Topic</strong> — {@code finapp.<producer>}: one topic per producing module, a
  *       small stable set; {@code finapp.eventType} in the headers is what a consumer filters on.
- *       Revisit trigger, recorded: a topic whose consumers' interests diverge materially.
+ *       Revisit trigger, recorded: a topic whose consumers' interests diverge materially. Every
+ *       such topic is declared in {@code infra/kafka/topics.yaml}, and {@code TopicCatalogueTest}
+ *       derives the producers from the code and fails on one whose topic is undeclared
+ *       (`P15-TSK-026`): a deployed broker creates no topic on first use.
  * </ul>
  *
  * <h2>Bounded, because the relay is holding a lock</h2>
@@ -76,16 +78,24 @@ public final class KafkaEventPublisher implements EventPublisher, AutoCloseable 
      *   <li>{@code max.block.ms} and {@code delivery.timeout.ms} bounded near the ack timeout:
      *       the relay is holding a transaction and an advisory lock across every send, and an
      *       unbounded producer would stall that aggregate for as long as the broker is unwell.
+     *   <li>The connection and its security - the bootstrap, the protocol, SCRAM and TLS - from
+     *       {@link BrokerConnection}, the receiver's source too (`P15-TSK-026`).
      * </ul>
      */
-    public static KafkaEventPublisher connect(
-            String bootstrapServers, String securityProtocol, Duration ackTimeout) {
-        Objects.requireNonNull(bootstrapServers, "bootstrapServers must not be null");
-        Objects.requireNonNull(securityProtocol, "securityProtocol must not be null");
+    public static KafkaEventPublisher connect(BrokerConnection connection, Duration ackTimeout) {
+        return new KafkaEventPublisher(
+                new KafkaProducer<>(producerProperties(connection, ackTimeout)), ackTimeout);
+    }
+
+    /**
+     * The producer's whole client configuration, as {@link #connect} builds it: public so that a
+     * test reads what the application would run, not a copy of it (`P15-TSK-026`).
+     */
+    public static java.util.Properties producerProperties(
+            BrokerConnection connection, Duration ackTimeout) {
+        Objects.requireNonNull(connection, "connection must not be null");
         Objects.requireNonNull(ackTimeout, "ackTimeout must not be null");
-        java.util.Properties config = new java.util.Properties();
-        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        config.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, securityProtocol);
+        java.util.Properties config = connection.clientProperties();
         config.put(ProducerConfig.ACKS_CONFIG, "all");
         config.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
         config.put(
@@ -106,7 +116,16 @@ public final class KafkaEventPublisher implements EventPublisher, AutoCloseable 
         config.put(
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
                 "org.apache.kafka.common.serialization.ByteArraySerializer");
-        return new KafkaEventPublisher(new KafkaProducer<>(config), ackTimeout);
+        return config;
+    }
+
+    /**
+     * The topic an event of {@code producer} is published to: {@code finapp.<producer>}. Public so
+     * that the topic catalogue's test maps a produced event to its topic through this method rather
+     * than through a second copy of the scheme (`P15-TSK-026`).
+     */
+    public static String topicFor(String producer) {
+        return TOPIC_PREFIX + Objects.requireNonNull(producer, "producer must not be null");
     }
 
     public KafkaEventPublisher(Producer<String, byte[]> producer, Duration ackTimeout) {
@@ -122,7 +141,7 @@ public final class KafkaEventPublisher implements EventPublisher, AutoCloseable 
         Objects.requireNonNull(event, "event must not be null");
         ProducerRecord<String, byte[]> record =
                 new ProducerRecord<>(
-                        TOPIC_PREFIX + event.producer(),
+                        topicFor(event.producer()),
                         event.partitionKey().toString(),
                         event.payload());
         header(record, "eventId", event.eventId().value().toString());
