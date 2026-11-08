@@ -148,7 +148,7 @@ public final class InboxConsumers implements SmartLifecycle {
     }
 
     /** The group key: everything before the first dot, or the whole name if it has none. */
-    static Map<String, List<InboxEventHandler>> byModule(List<InboxEventHandler> handlers) {
+    public static Map<String, List<InboxEventHandler>> byModule(List<InboxEventHandler> handlers) {
         Map<String, List<InboxEventHandler>> byModule = new LinkedHashMap<>();
         for (InboxEventHandler handler : handlers) {
             String name = handler.consumerName();

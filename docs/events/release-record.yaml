@@ -1,0 +1,15 @@
+# What the coming release records about its event contracts (ADR-0122 decision 6;
+# EVENT_ARCHITECTURE.md, Adding a handler). HandlerSetCatalogueTest reads it, and refuses a recorded
+# step for a handler that did not change. Emptied when the catalogues are rolled at a release.
+#
+# handlers: one entry per handler this release adds or removes.
+#   - {group: ..., topic: ..., eventType: ..., consumerName: ...,
+#      change: added | removed,
+#      replay: {eventType: ..., windows: [rollout, rollback]},          # a group the last release had
+#      newGroup: {startingOffsets: earliest | latest | <instant>,       # a group it did not have
+#                 naturallyIdempotent: true}}                           # required for earliest
+#
+# versions: one entry per new eventVersion of a type a handler of the last release consumes.
+#   - {eventType: ..., version: ..., consumersLearnedItIn: <the release that shipped the consumer>}
+handlers: []
+versions: []

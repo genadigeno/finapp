@@ -213,7 +213,7 @@ public final class DisputeResponseOutcomes {
                 new EventEnvelope(
                         EventId.next(ids),
                         SUBMITTED_EVENT_TYPE,
-                        PaymentCreation.EVENT_VERSION,
+                        PaymentEventVersions.of(SUBMITTED_EVENT_TYPE),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         response.id(),
                         RESPONSE_TARGET_TYPE,
