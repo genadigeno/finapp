@@ -21,8 +21,8 @@
 #   secret-in-env     a generated key in the image's environment     Trivy's aws-access-key-id rule
 #   root-user         an image that runs as root                     Trivy's DS-0002 check
 #
-# A SCAN THAT READ NOTHING MUST NOT PASS. Each image's SBOM must list its operating-system packages, every jar in the
-# image by its path, and no test-scope library: an unreadable image, a path filter or a broken analyzer shows up here
+# A SCAN THAT READ NOTHING MUST NOT PASS. Each image's SBOM must list its operating-system packages, every third-party
+# jar by its path, and no test-scope library: an unreadable image, a path filter or a broken analyzer shows up here
 # rather than as a clean report. An image whose filesystem Trivy cannot open never produces an SBOM.
 #
 # HOW THE IMAGE REACHES THE SCANNER. `docker save` to a tar, read with --input: the scanner is never given the Docker
@@ -32,7 +32,8 @@
 # weekly scheduled run is worth having only because it reads a new database. TRIVY_IMAGE overrides the image for a
 # machine whose TLS is intercepted (OPERATIONS_RUNBOOK.md section 11.9), exactly as in dependency-scan.sh. CI never sets it.
 #
-# Usage:   infra/scripts/image-scan.sh [image ...]
+# Usage:   infra/scripts/image-scan.sh [image ...]   what CI runs
+#          infra/scripts/image-scan.sh --plants-only  the plants alone, for someone changing the scan (CI never passes it)
 # Leaves:  build/image-sboms/<name>.cdx.json, one per image scanned.
 # Exit:    0 every image clean and every plant refused for its reason; 1 a finding, a failed assertion or a plant not
 #          refused; 2 a step could not run. A scan that cannot run never looks like a scan that passed.
@@ -53,6 +54,10 @@ VULNERABLE_BASE=alpine:3.10.0@sha256:ca1c944a4f8486a153024d9965aafbe24f5723c1d5c
 
 # The exit code Trivy gives for findings, so a finding (1 here) is told from a scan that could not run (2 here).
 FOUND=42
+
+# Trivy's default five minutes is a real limit on a loaded machine (measured 2026-11-08), and hitting it ends the
+# scan with an error: this script says "could not run", never a pass, but a limit that reports nothing helps nobody.
+TIMEOUT=30m
 
 ACCEPTED=infra/trivy/accepted-findings.yaml
 SBOMS=build/image-sboms
@@ -105,6 +110,7 @@ trivy() {
 # included, so a plant cannot pass or fail for a reason the real scan does not share.
 scan() {
     trivy image --cache-dir /cache --skip-db-update --skip-java-db-update --skip-check-update --no-progress \
+        --timeout "$TIMEOUT" \
         --scanners vuln,secret,misconfig --image-config-scanners misconfig,secret \
         --severity "$SEVERITY" --exit-code "$FOUND" \
         --ignorefile /accepted/accepted-findings.yaml \
@@ -116,7 +122,9 @@ REVISION=$(git rev-parse HEAD)
 if [ -n "$(git status --porcelain)" ]; then
     REVISION="$REVISION-dirty"
 fi
-if [ "$#" -gt 0 ]; then
+if [ "${1:-}" = "--plants-only" ]; then
+    IMAGES=""
+elif [ "$#" -gt 0 ]; then
     IMAGES=$*
 else
     IMAGES=$(dock image ls --format '{{.Repository}}:{{.Tag}}' --filter "reference=finapp-*:$REVISION" | sort -u | tr '\n' ' ')
@@ -128,8 +136,20 @@ fi
 echo "== the images: $IMAGES"
 
 echo "== the vulnerability databases, this run's own"
-trivy image --cache-dir /cache --download-db-only --no-progress || cannot "the vulnerability database could not be downloaded"
-trivy image --cache-dir /cache --download-java-db-only --no-progress || cannot "the Java database could not be downloaded"
+# A database download can drop mid-transfer (measured 2026-11-08: "unexpected EOF"), so it is tried three times. A
+# scan still cannot run without one: after the third failure this script exits 2 and the job is red, never green.
+download() {
+    for attempt in 1 2 3; do
+        if trivy image --cache-dir /cache "$1" --no-progress; then
+            return 0
+        fi
+        echo "-- the database download failed, attempt $attempt of 3" >&2
+        sleep 20
+    done
+    return 1
+}
+download --download-db-only || cannot "the vulnerability database could not be downloaded"
+download --download-java-db-only || cannot "the Java database could not be downloaded"
 
 status=0
 
@@ -138,7 +158,7 @@ sbom_of() {
     image=$1 tar=$2
     name=$(printf '%s' "${image%:*}" | tr '/' '_')
     out="$SBOMS/$name.cdx.json"
-    trivy image --cache-dir /cache --skip-db-update --skip-java-db-update --no-progress \
+    trivy image --cache-dir /cache --skip-db-update --skip-java-db-update --no-progress --timeout "$TIMEOUT" \
         --format cyclonedx --output "/sboms/$name.cdx.json" --input "/work/$tar" \
         || cannot "the SBOM of $image could not be written"
     [ -s "$out" ] || fail "the SBOM of $image is empty: $out"
@@ -149,20 +169,25 @@ sbom_of() {
     tar -tf "$WORK/fs.tar" | sort > "$WORK/fs.entries"
     rm -f "$WORK/fs.tar"
 
-    grep -q '"purl": *"pkg:deb/' "$out" || grep -q '"pkg:deb/' "$out" \
+    grep -q '"pkg:deb/' "$out" \
         || fail "the SBOM of $image lists no operating-system package: the scanner did not read the image's base"
 
-    jars=$(grep -E '^(app|flyway)/.*\.jar$' "$WORK/fs.entries" || true)
+    # Every third-party jar by path. The application's own module jars (named for the image's version) carry no Maven
+    # coordinates and are in no vulnerability database, so Trivy does not list them and the SBOM cannot name them;
+    # they are the platform's own code, not supply chain.
+    version=$(dock image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$image")
+    jars=$(grep -E '^(app|flyway)/.*\.jar$' "$WORK/fs.entries" | grep -v -- "-${version:-no-version-label}\.jar\$" || true)
     count=0
     missing=""
     for jar in $jars; do
         count=$((count + 1))
         grep -qF "$jar" "$out" || missing="$missing $jar"
     done
-    [ -z "$missing" ] || fail "the SBOM of $image omits jars the image holds:$missing"
+    [ "$count" -gt 0 ] || fail "the image $image holds no third-party jar the scanner could be asked about, which cannot be right"
+    [ -z "$missing" ] || fail "the SBOM of $image omits third-party jars the image holds:$missing"
     grep -Eq '"pkg:maven/(org\.junit|org\.mockito|org\.assertj|org\.testcontainers|com\.tngtech\.archunit)' "$out" \
         && fail "the SBOM of $image lists a test-scope library, so it overstates what ships"
-    echo "ok   the SBOM of $image: $out, $count jars by path, operating-system packages listed, no test-scope library"
+    echo "ok   the SBOM of $image: $out, $count third-party jars by path, operating-system packages listed, no test-scope library"
 }
 
 # The real images.
@@ -172,7 +197,7 @@ for image in $IMAGES; do
     tar="image-$index.tar"
     dock image inspect "$image" >/dev/null 2>&1 || cannot "no such local image: $image"
     echo "== $image"
-    dock save -o "$WORK/$tar" "$image" || cannot "could not save $image"
+    dock save "$image" > "$WORK/$tar" || cannot "could not save $image"
     sbom_of "$image" "$tar"
     code=0
     scan "$tar" || code=$?
@@ -192,7 +217,7 @@ done
 refuses() {
     label=$1 reason=$2 image=$3
     tar="plant-$label.tar"
-    dock save -o "$WORK/$tar" "$image" >/dev/null || cannot "could not save the plant $label"
+    dock save "$image" > "$WORK/$tar" || cannot "could not save the plant $label"
     code=0
     output=$(scan "$tar" 2>&1) || code=$?
     rm -f "$WORK/$tar"

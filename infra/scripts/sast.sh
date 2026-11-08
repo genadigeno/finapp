@@ -29,7 +29,8 @@
 #
 # SEMGREP_IMAGE overrides the image, as the other scripts allow; CI never sets it.
 #
-# Usage:   infra/scripts/sast.sh
+# Usage:   infra/scripts/sast.sh                the three stages, what CI runs
+#          infra/scripts/sast.sh --plants-only  stages 1 and 3 only, for someone changing a rule (CI never passes it)
 # Exit:    0 every stage held; 1 a finding, a stale or expired row, a rule test failing or a plant not refused;
 #          2 a step could not run. A scan that cannot run never looks like a scan that passed.
 set -eu
@@ -78,15 +79,14 @@ in_container() {
             ;;
         plants)
             rm -rf /scratch/plants
-            for name in sql-concatenation sql-helper sql-builder-name unbounded-body weak-digest cors-wildcard secret-in-source; do
+            mkdir -p /scratch/plants/secret-in-source
+            # One small file per planted shape, so each plant's name means what it says: a rule that fired only on
+            # another plant's shape would not pass this one.
+            for plant in /repo/infra/semgrep/plants/*/; do
+                name=$(basename "$plant")
                 mkdir -p "/scratch/plants/$name"
+                cp "$plant"Plant.java "/scratch/plants/$name/Plant.java"
             done
-            cp "$RULES/sql.java" /scratch/plants/sql-concatenation/Plant.java
-            cp "$RULES/sql.java" /scratch/plants/sql-helper/Plant.java
-            cp "$RULES/sql.java" /scratch/plants/sql-builder-name/Plant.java
-            cp "$RULES/provider-body.java" /scratch/plants/unbounded-body/Plant.java
-            cp "$RULES/java-security.java" /scratch/plants/weak-digest/Plant.java
-            cp "$RULES/spring.java" /scratch/plants/cors-wildcard/Plant.java
             # Written here, in pieces, so that no key header is ever committed (P0-TSK-031's rule).
             printf 'package plant;\nclass Plant { String pem = "-----%s RSA %s-----"; }\n' "BEGIN" "PRIVATE KEY" \
                 > /scratch/plants/secret-in-source/Plant.java
@@ -150,7 +150,9 @@ check() {
 }
 
 check "the rules' own tests" in_semgrep rule-tests
-check "the tree: every module's src/main, every finding accepted with a reason" in_semgrep tree
+if [ "${1:-}" != "--plants-only" ]; then
+    check "the tree: every module's src/main, every finding accepted with a reason" in_semgrep tree
+fi
 
 # The plants go through one scan, then each must have been reported by name, for its own file.
 echo "==   the plants: each must be refused, by name"

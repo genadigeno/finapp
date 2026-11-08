@@ -584,6 +584,18 @@ Kubernetes probes the actuator, and the image has no shell to run one. The only 
 tag and digest weekly; `check-pinned-images.sh` reports a moved tag or a newer release (§7b). Re-resolve a digest with
 `docker buildx imagetools inspect <image>:<tag>`.
 
+**Scanning it**, as CI's `image` job does, once the image is built:
+
+```bash
+./infra/scripts/image-scan.sh
+```
+
+It scans every image tagged `finapp-*:<commit>` for vulnerabilities, secrets and misconfiguration, HIGH and CRITICAL
+failing; writes one CycloneDX SBOM per image to `build/image-sboms/`, and refuses one that does not list the image's
+packages and every third-party jar in it; then it builds five planted images and requires each to be refused by name.
+`OPERATIONS_RUNBOOK.md` §11.9 says what to do with a red run. The static analysis is the same shape:
+`./infra/scripts/sast.sh` runs Semgrep with no network over the rules vendored in `infra/semgrep/rules`.
+
 ## 6. What CI checks
 
 Independent jobs, so a failure names its own gate
@@ -598,7 +610,8 @@ Independent jobs, so a failure names its own gate
 | | *and in `build`:* no credential literal in any committed configuration file |
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved dependency set |
 | `iac` | The Terraform passes `fmt`, `tflint`, `trivy config`, `validate` and `terraform test` with mock providers, and each check refuses a planted defect; no credential, no backend. Run it yourself: `./infra/scripts/terraform-check.sh` (`OPERATIONS_RUNBOOK.md` §11.13) |
-| `image` | The application image built twice and identical, non-root, the base plus the jar and nothing else, within budget, and ready against compose's PostgreSQL and Kafka (§5f) |
+| `image` | The application image built twice and identical, non-root, the base plus the jar and nothing else, within budget, scanned (no HIGH or CRITICAL finding beyond those carried with a reason and an expiry), one SBOM per image, and ready against compose's PostgreSQL and Kafka (§5f) |
+| `sast` | Semgrep over every module's production source: a statement built from anything but constants, a provider's answer read with no bound, Java security, Spring, secrets; every finding either fixed or in the baseline with a reason (§5f) |
 
 The `migrations` job starts PostgreSQL from this same `compose.yaml`, so CI and your machine
 run the identical pinned image.
@@ -710,7 +723,7 @@ of them reaches all of it (ADR-0026):
 |---|---|---|
 | Four GitHub Actions (commit SHA) | `.github/workflows/ci.yml` | Dependabot, weekly - a pull request |
 | Library versions | `gradle/libs.versions.toml` | Dependabot, weekly - the PR **will fail its build** until you run §7a's regeneration |
-| Scanner and tool images (digest): gitleaks, Trivy, and since `P15-TSK-013` Terraform and tflint | `infra/scanner-pins.sh` | `infra/scripts/check-pinned-images.sh`, weekly in CI |
+| Scanner and tool images (digest): gitleaks, Trivy, since `P15-TSK-013` Terraform and tflint, and since `P15-TSK-006` Semgrep | `infra/scanner-pins.sh` | `infra/scripts/check-pinned-images.sh`, weekly in CI |
 | Two base images of the application image (tag and digest) | the `Dockerfile`'s `FROM` lines | Dependabot, weekly - a pull request; and `check-pinned-images.sh`, weekly in CI, which also refuses an unpinned base on every build of the image (§5f) |
 | Terraform provider versions and their lock files | `infra/terraform/environments/*/versions.tf`, `.terraform.lock.hcl` | Dependabot (`terraform`), weekly - a PR moving one root and not the other fails `TerraformIsPinnedAndCheckedTest` until both agree; `OPERATIONS_RUNBOOK.md` §11.13 |
 | Infrastructure images | `compose.yaml` + the catalog | `verifyInfrastructureVersions` fails the build on drift |

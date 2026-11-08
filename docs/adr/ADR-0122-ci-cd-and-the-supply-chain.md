@@ -25,6 +25,11 @@ compatibility check between releases.
    in the repository, so no rules are fetched at runtime. Dependabot is extended to base images. Each new tool is pinned
    by digest beside `infra/scanner-pins.sh`. Each check is a script under `infra/scripts/` that also runs on a
    developer's machine.
+
+   *Note (2026-11-08, `P15-TSK-006`):* "vendored" was built as rules written for this repository under
+   `infra/semgrep/rules` rather than files copied from Semgrep's registry. The registry's rules carry their own licence,
+   and no registry rule can say what "constant" means for this codebase's idiom. Semgrep runs with no network at all. The
+   Trivy pin moved from 0.74.0 to 0.76.2. Nothing else in this decision changed.
 3. **Signing and admission.** Images are signed with Cosign. The SLSA provenance and the SBOM are attached as
    attestations. The cluster's admission controller refuses an image that is unsigned or comes from an unexpected
    identity. Keyless signing from CI's OIDC identity is the reference. Until a registry and an identity exist, CI proves

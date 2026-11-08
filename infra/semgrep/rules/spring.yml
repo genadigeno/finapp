@@ -61,17 +61,4 @@ rules:
     languages: [yaml]
     severity: ERROR
     message: The actuator is an allow-list (health, info, prometheus). A wildcard serves the environment and heap dumps.
-    pattern-either:
-      - pattern-inside: |
-          management:
-            ...
-            endpoints:
-              ...
-              web:
-                ...
-                exposure:
-                  ...
-                  include: $VALUE
-    metavariable-regex:
-      metavariable: $VALUE
-      regex: ^["']?\*
+    pattern-regex: (?m)^\s*include:\s*["']?\*

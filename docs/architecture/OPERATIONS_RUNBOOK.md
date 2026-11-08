@@ -1853,7 +1853,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.6 Broker outage, consumer lag, a poison record, dead letters and replay | `-026`, `-028` | `-028`, `-032` |
 | 11.7 Rotation and revocation per secret class; a key compromise | `-018`…`-020` | `-020` |
 | 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `P15-TSK-024` (instance down, stale gauges: written below, 2026-11-08), `-025` | `-032` |
-| 11.9 A refused image; a failing scan | `-006`, `-007` | `-007` |
+| 11.9 A failing scan *(written 2026-11-08, below)*; a refused image | `P15-TSK-006` (the failing scan), `-007` (the refused image) | `-007` |
 | 11.10 Edge, abuse and break-glass | `-010`, `-011`, `-022` | `-032` |
 | 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
 | 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |
@@ -2000,6 +2000,71 @@ safe, because the inbox deduplicates everything the topic still holds.
 One gauge NaN while the canary is 1 is not this alert: that gauge's read is failing (a statement past its bound, a grant gone), and its module's unreadable rule answers it. **Every gauge an alert reads has one**, and `PlatformAlertRulesTest#everyGaugeAnAlertReadsCanBeSeenUnreadable` holds that over every rule file: accounting's, BNPL's, credit's, lending's and risk's `…GaugesUnreadable` and their stall and attention rules, `MustBeZeroGaugeUnreadable`, `ReferenceRateNeverFetched`, `SettlementSourceNeverAccepted`, and, since `P15-TSK-024`'s fix round (2026-11-08), **`FxGaugesUnreadable`** (`infra/prometheus/rules/fx.yml`: the cover ages, the FX books proof and plan verdict, the outbound credits' ages, the in-transit age, the counterparty review age, the missing rule sets) and **`ReconciliationGaugesUnreadable`** (`settlement-reconciliation.yml`: the run, file, suspense and break ages and the overdue expectations), with `BnplGaugesUnreadable` now reading the negative merchant payables too. Each of those two names the series in its `gauge` label and the instance; for either, check that instance's database connectivity and its log, where the gauge's class names its failed read, and if `GaugesStale` fires on the same instance start there. Only the sweeps' switches (`…sweeper.enabled`) have no unreadable rule: they are configuration constants, read from no database, so their only NaN is the canary's, which this alert counts. *(Until the fix round this paragraph claimed the domain rules covered every gauge; fifteen gauges had none, six of them read by seven paging rules.)*
 
 **What these cannot see.** `up` says a scrape completed, not that the instance serves its customers: readiness and `P15-TSK-025`'s SLO rules answer that. A healthy canary says the thread answers, not that every read succeeded: that is each module's unreadable rule. The rules are unit-tested by `promtool test rules` over two instances, only the down, stuck or behind one firing (`infra/prometheus/tests/platform.test.yml`; the two unreadable rules above in `fx.test.yml` and `settlement-reconciliation.test.yml` beside it), run by hand through the pinned Prometheus image until `P15-TSK-025` puts `promtool` in CI.
+
+### 11.9 A failing scan
+
+**When.** CI's `image` job or `sast` job is red, or `./infra/scripts/image-scan.sh` or `./infra/scripts/sast.sh` exits
+non-zero on a developer's machine. They are the same scripts. A red **scheduled** run with no new commit means a new
+advisory against an unchanged image: the weekly run re-scans the last built image with a fresh database.
+
+**Read the first line starting `!!` or `??`.**
+
+`??` (exit 2): the scan **could not run**: a database could not be downloaded, Docker is not available, a file could
+not be read. It is neither a finding nor a pass, and nothing deploys. Re-run; if a registry rate limit or a network
+problem persists, fix that. Do not make the job pass by other means.
+
+`!!` (exit 1), from `image-scan.sh`:
+
+- **`<image> carries a finding at HIGH,CRITICAL`**: Trivy's table above it names the CVE, the package and the fixed
+  version. In order of preference:
+  1. A library with a fixed version: move it (`README.md` §7a), and let the library's tests run.
+  2. An operating-system package in the base: `check-pinned-images.sh` reports when a newer base digest exists. Move
+     the `FROM` pin (`README.md` §5f) and re-run.
+  3. No fix exists, or the fix cannot land now: the finding is **carried**, and the owner decides that, not the
+     engineer. Add the CVE to `infra/trivy/accepted-findings.yaml` with a `statement` (the reason) and an `expired_at`,
+     list it with the same date in `THREAT_MODEL.md` section 6's owner item for the carried findings, and name it in the
+     change's review. Past `expired_at` Trivy stops honouring the entry and the job fails again.
+
+  **Never lower the bar**: `SEVERITY`, `--ignore-unfixed`, `--skip-dirs`, `--skip-files` and a removed scanner are all
+  refused by `SecurityScansAreWiredTest`, and a run with a lowered bar goes red anyway at the `high-only` plant.
+- **`the SBOM of <image> ...`**: the scanner did not read what the image holds (a path filter, an analyzer failure), or
+  a test-scope library reached the image. Fix what changed: an SBOM that omits what ships is a report of nothing.
+- **`plant <name> was NOT refused`**, or **refused, but not for its reason**: the check has stopped working. Do not merge
+  and do not delete the plant: find what changed the scanner's behaviour (usually a Trivy pin bump renaming a check).
+
+From `sast.sh`:
+
+- **`!! <rule> <path>:<line>`**: a finding with no accepted row. Fix the code. The SQL rules' messages say how: bind
+  the value with a `?` parameter, or choose a column or a lock clause from constants. If the finding is genuinely safe
+  and cannot be expressed as constant, add the row the report prints to `infra/semgrep/baseline.tsv` with a reason that
+  says why this statement is safe and an `until`; the owner item for the carried findings in `THREAT_MODEL.md` section 6
+  records how many rows there are.
+- **`baseline: line N matches no finding`**: the statement changed, or the code was fixed. Remove the row. A stale row
+  is refused, not kept.
+- **`baseline: line N expired`**: re-judge the finding; extend the date only with a reason that still holds.
+- **`the rules' own tests` FAILED**: a rule change broke its annotated test beside it in `infra/semgrep/rules/`.
+- **`plant <name> was NOT refused`**: a rule has stopped firing. Do not merge.
+
+**Run them locally** (Docker required, no credential):
+
+```bash
+./infra/scripts/image-build.sh && ./infra/scripts/image-scan.sh
+./infra/scripts/sast.sh
+```
+
+On a machine whose TLS is intercepted (a corporate proxy, or an antivirus's HTTPS scanning), the Trivy container cannot
+download its databases. Build a local image `FROM` the pinned digest with that machine's root certificate added and
+set `TRIVY_IMAGE` to it for the run. The scanner binary stays the pinned one; CI never sets the variable. `sast.sh` needs
+no network at all and has no such step.
+
+**Change a scanner pin.** Bump `VERSION` in `infra/scanner-pins.sh` and re-resolve `DIGEST` with `docker buildx imagetools
+inspect <repository>:<version>`. A Trivy bump also moves the checks `trivy config` runs over the Terraform, so re-run
+`./infra/scripts/terraform-check.sh` with it. Run both scan scripts: a plant that stopped being refused by name is
+what a new scanner version breaking a check looks like.
+
+**What this does not cover.** Signing and admission (`-007`, the refused image, above). A vulnerability nobody has
+published yet. A statement built from a constant that another file declares and only its name vouches for
+(`THREAT_MODEL.md` T45's residual).
 
 ### 11.13 Infrastructure code: running the Terraform checks, and changing a pin
 
