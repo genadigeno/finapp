@@ -131,6 +131,23 @@ a session below the level as `identity.StepUpRefused` - each committed in a tran
 answered, naming the actor, the identity and the operation's route pattern, never the session, the code or the factor
 (`OperatorActorTypingTest`, `StepUpRefusalsTest`; `DenyByDefaultDatabaseTest#aRefusedStepUpIsRecorded`, owed).
 
+**Two questions this review rules** (routed by the carried items' ruling, C15, 2026-11-08). Each is a recommendation;
+neither is built, and both are `THREAT_MODEL.md` §6 owner item 8, held by a `GAP` row (T38):
+
+1. **May a role that can redirect a merchant's money be held without an enrolled factor?** *No.* Proposing a payout
+   destination (`MERCHANT_ADMINISTER`), approving one (`PAYOUT_DESTINATION_APPROVE`) and paying out
+   (`MERCHANT_PAYOUT`) move or redirect money that is not the operator's; today the destination's step-up is
+   conditional, so an operator with no factor acts on a password alone (`CURRENT_STATE.md`'s payout destination row).
+   The rule recommended: a factor enrolled before any of those roles is granted, and the destination's acts declared
+   `MULTI_FACTOR` unconditionally.
+2. **Do Phase 9's privileged acts require a multi-factor session?** *Yes*: the pricing and corridor policies' approvals,
+   a kill switch's restart and an FX trade's reversal and its approval change what customers are charged or reverse a
+   posted trade, the class every Phase 13 and 14 approval already steps up for.
+
+The wider audit class routed with them - refused and failed Phase 7 and 8 acts, failed or not-found Phase 9 and 10
+operator reads - and the extraction of the conditional step-up's 17 copies return to the owner with them (owner item 8):
+every refused step-up is already recorded, the copies' included, without touching a copy.
+
 ## 7. Break-glass
 
 There is no standing emergency identity in the application, and none is created. Break-glass is two procedures:
@@ -156,6 +173,6 @@ initialisation script creates it, and in a deployed database the one-time bootst
 
 ## 9. What this review does not claim
 
-It does not claim that the holding rule of §4 is enforced (owner item 7), that the review of §5 has been performed (a
+It does not claim that the holding rule of §4 is enforced (owner item 7), that §6's two rulings are built (owner item 8), that the review of §5 has been performed (a
 human procedure, first performed by `P15-TSK-032`), that operator routes are off the public edge (`P15-TSK-011`), or
 any conformity with a standard.

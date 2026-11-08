@@ -183,3 +183,7 @@ Financial impact: none on amounts. The rail decides the clearing position (ADR-0
   must write the same recorded fact. *(This read "Phase 15 or 16" until the review - two
   owners are none; Phase 15 owns operational hardening, and `DECISIONS.md` §Deliberately
   Deferred records it.)*
+
+## Read-note: the carried items' ruling (2026-11-08)
+
+C15 (`PHASE_15_PLAN.md` §25), applied by `P15-TSK-002`, re-dates automatic availability from observed failure rates to **Phase 16**, which measures failure rates. The rule that automation writes the same recorded fact stands (`DECISIONS.md` §Deliberately Deferred). The rows carry the disposition, marked **C15** (`P15-TSK-002`, 2026-11-08); this record's decision and status are unchanged.

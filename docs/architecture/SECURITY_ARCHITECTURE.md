@@ -370,7 +370,8 @@ then **each callback door has its own key**: five doors, five keys (`finapp.kyc.
 `finapp.corridor.webhook.key`). The payment webhooks' signature also covers a timestamp, checked within a freshness
 window. **Each key is still static, with no rotation.** The window that accepts the current and the previous secret is
 `P15-TSK-019`'s, and its rehearsal `-020`'s. Callbacks as hints, for the providers that still adopt a callback's own
-outcome, are `X-TSK-015`'s (`THREAT_MODEL.md` T8).)*
+outcome, are `P15-TSK-036`'s (`THREAT_MODEL.md` T8; `X-TSK-015`'s until the carried items' ruling moved it into Phase
+15, 2026-11-08).)*
 
 ## Secrets
 

@@ -440,7 +440,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T8 | The instant-rail door: a wrong signature, a missing header and a stale timestamp are one uniform `401`, with nothing written | EXISTS | `app/src/test/java/com/finapp/app/payments/PayByBankDatabaseTest.java#anUnsignedCallbackDiesAtTheDoor` |
 | T8 | A delivery repeated three times lands one dedupe record, and every copy is retained as evidence | EXISTS | `app/src/test/java/com/finapp/app/payments/PaymentWebhookDatabaseTest.java#aTripleDeliveryLandsOneDedupeRecordAndThreeEvidenceRows` |
 | T8 | FX and corridor callbacks are hints: a signed but forged callback is acknowledged and moves nothing the inquiry does not confirm (both rails), and is retained as evidence (asserted for FX); an unsigned or stale one is `401` and moves nothing (both rails) | EXISTS | `app/src/test/java/com/finapp/app/fx/FxCallbackDuplicateDatabaseTest.java#aForgedSignedCallbackMovesNothing`; `app/src/test/java/com/finapp/app/fx/FxCallbackDuplicateDatabaseTest.java#unsignedOrStaleMovesNothing`; `app/src/test/java/com/finapp/app/fx/OutboundCreditResolutionDatabaseTest.java#callbacksAreHints` |
-| T8 | Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers, which still adopt a callback's own outcome | REMEDIATION | `X-TSK-015` |
+| T8 | Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers, which still adopt a callback's own outcome: each adopted kind applied only from an authenticated inquiry, a forged-but-signed callback moving nothing on either rail | PLANNED | `P15-TSK-036` |
 | T8 | Provider callback routes served only by name on the public allow-list | PLANNED | `P15-TSK-011` |
 | T8 | Callback secrets verified against the current and the previous secret during a rotation window | PLANNED | `P15-TSK-019` |
 | T8 | A callback secret's rotation rehearsed | PLANNED | `P15-TSK-020` |
@@ -471,7 +471,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T13 | No production class reads ambient time (the build rule) | EXISTS | `app/src/test/java/com/finapp/app/architecture/NoAmbientTimeRulesTest.java#noAmbientTimeIsRead` |
 | T13 | PI-013's and PI-014's clock-step defects fixed at their causes, each with a clock-step regression case | PLANNED | `P15-TSK-033` |
 | T13 | The lock's grace and the submissions' orderings judged on the database's clock | REMEDIATION | `P14-REM-009` |
-| T13 | Five stores still comparing a stored bound with a caller's instant | REMEDIATION | `X-TSK-008` |
+| T13 | Five stores still comparing a stored bound with a caller's instant (recovery tokens, contact-channel verification, checkout expiry, the card fee version in force, payout-destination cooling-off), each judged and stamped on the database's clock | PLANNED | `P15-TSK-033` |
+| T13 | Lending's trigger functions read the database's clock whatever a role's `search_path` holds | PLANNED | `P15-TSK-004` |
 | T14 | The connection budget is a startup guard against the **declared** instance count (`finapp.database.instances`): a fleet whose pools exceed the database's available connections refuses to start, naming the fix; a declared fleet scaled out past the limit no longer fits; reserved connections count; the guard is wired. A replica count that outgrows its declaration (an HPA) is not caught here | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#scalingOutIsCaught`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#reservedConnectionsAreLoadBearing`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired` |
 | T14 | Requests and limits, and an HPA bounded by the declared budget counting terminating pods | PLANNED | `P15-TSK-009` |
 | T14 | `ResourceQuota` and `LimitRange` | PLANNED | `P15-TSK-010` |
@@ -494,7 +495,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T16 | A key reused with a different request is refused as a distinct conflict, never replayed (`INV-IDEM-03`) | EXISTS | `platform/src/test/java/com/finapp/platform/idempotency/IdempotentExecutorTest.java#differingFingerprintIsRejected` |
 | T16 | A merchant's payout key is that merchant's own: two merchants, one key value, two payouts | EXISTS | `app/src/test/java/com/finapp/app/merchant/MerchantPayoutEndpointDatabaseTest.java#aClientKeyIsEachMerchantsOwn` |
 | T16 | Every idempotency claim scoped to its principal, each money-moving scope moved behind a tested transition path | REMEDIATION | `X-TSK-003` |
-| T16 | No idempotency record swept until posting once-ness's second rank (debt row #61) is ruled | PLANNED | `P15-TSK-029` |
+| T16 | No idempotency record swept: posting once-ness's second rank (debt row #61) ruled not settled on 2026-11-08, so the retention sweeps leave the idempotency record alone until a uniqueness on the posting scope exists | PLANNED | `P15-TSK-029` |
 | T17 | A redelivered message produces no second effect, and its dedupe record commits with its effect (`INV-IDEM-04`) | EXISTS | `platform/src/test/java/com/finapp/platform/inbox/InboxConsumerTest.java#redeliveryProducesNoSecondEffect`; `platform/src/test/java/com/finapp/platform/inbox/InboxConsumerTest.java#theRecordAndTheEffectCommitTogether` |
 | T17 | Reordering and duplication together leave the right answer under an ordering key (`INV-EVT-04`) | EXISTS | `platform/src/test/java/com/finapp/platform/inbox/InboxDeliveryOrderTest.java#reorderingAndDuplicationTogether` |
 | T17 | Every topic's retention below the inbox's dedupe window, and cooperative rebalancing | PLANNED | `P15-TSK-026` |
@@ -565,6 +566,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T33 | Only the migrator image holds the migrator's credentials, under the Job contract; the deployed roles created by the one-time bootstrap step | PLANNED | `P15-TSK-004` |
 | T33 | The migrator's egress reaches PostgreSQL alone | PLANNED | `P15-TSK-010` |
 | T33 | The migrator's identity reads only its own secret | PLANNED | `P15-TSK-016` |
+| T33 | Every reconciliation table refuses `TRUNCATE` to every role, the migrator and the owner included, as its row triggers refuse `DELETE` | PLANNED | `P15-TSK-004` |
 | T34 | The payment-evidence and KYC-document ciphers' tests show the stamped key version on a ciphertext; the other six ciphers stamp it by construction, untested here | EXISTS | `payments/src/test/java/com/finapp/payments/EvidenceCipherTest.java#roundTrips`; `kyc/src/test/java/com/finapp/kyc/DocumentCipherTest.java#roundTrips` |
 | T34 | Another key never decrypts an MFA secret, a KYC document or payment evidence | EXISTS | `identity/src/test/java/com/finapp/identity/SecretCipherTest.java#anotherKeyCannotDecrypt`; `kyc/src/test/java/com/finapp/kyc/DocumentCipherTest.java#wrongKeyIsRefused`; `payments/src/test/java/com/finapp/payments/EvidenceCipherTest.java#tamperingAndWrongKeyRefuse` |
 | T34 | Data keys wrapped by KMS keys with deletion waiting periods | PLANNED | `P15-TSK-016` |
@@ -579,6 +581,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T38 | A permission denial is audited | EXISTS | `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#aDenialIsAudited` |
 | T38 | An operator act is recorded `EMPLOYEE`, decided per request from the server's record of roles and never from the client; a customer refused at an operator route `CUSTOMER` | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#anOperatorActIsTypedEmployee`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusalIsTypedByWhoTried`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRoleHolderOnACustomerRouteIsACustomer` |
 | T38 | A refused step-up is recorded once per refused request, committed on its own, naming the route pattern and no session, code or factor | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusedStepUpIsRecorded`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#anOperationsRefusalIsRecordedOnce` |
+| T38 | Refused and failed Phase 7 and Phase 8 acts (the refused four-eyes attempts among them) and failed or not-found Phase 9 and 10 operator reads recorded with their outcome, and a merchant's dispute act naming its API key (returned to the owner, 2026-11-08) | GAP | `owner item 8`; owner: the owner, since 2026-11-08 |
 | T39 | An audited operator door to retry or discard an abandoned event (discard four-eyes), emitting the three platform actions | PLANNED | `P15-TSK-028` |
 | T40 | The edge sets the client address, and only the edge's is trusted | PLANNED | `P15-TSK-011` |
 | T40 | Per-source limits keyed on the address the edge sets | PLANNED | `P15-TSK-022` |
@@ -704,6 +707,11 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   domain's `*_by_type` columns are frozen by trigger, so a report separating staff from customers reads the population
   from the record's date onward, and before it reconstructs it from `identity.role_assignment` and `identity.RoleAssigned`.
   The database cases (an operator act's row, a refused step-up's row) are written and wait for the exit database pass.
+  *(Added 2026-11-08 by the carried items' ruling, C15, and returned to the owner the same day:)* refused
+  and failed Phase 7 and 8 acts and failed or not-found Phase 9 and 10 operator reads leave no audit outcome;
+  the privileged-access task records every refused step-up and every denial, and returned this wider class to
+  the owner with the access review's two step-up questions and the conditional step-up's extraction
+  (owner item 8), held by a `GAP` row.
 - **T43.** No general bound on the size of a provider's answer exists across the adapters. The regulatory adapter is
   the one evidenced. The adapters call simulated providers in this programme. **Owner item 5, decided 2026-11-08**:
   `-006`'s static analysis flags an unbounded read of a provider's answer in an adapter.
@@ -730,8 +738,8 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 
 Only the owner can accept a risk or choose between the options below. **The owner decided items 1 to 6 on 2026-11-08,
 accepting each recommendation** ("accept recommendations", after `P15-TSK-001`'s merge); each item's decision follows
-its options. Item 7 was added on 2026-11-08 by the privileged access review (`PRIVILEGED_ACCESS_REVIEW.md`) and is
-open. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
+its options. Items 7 and 8 were added on 2026-11-08 by the privileged access review (`PRIVILEGED_ACCESS_REVIEW.md`)
+and are open. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
 work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)*
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
@@ -790,6 +798,24 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
    /v1/identities/{id}/roles`, its answer in the contract, and a check of the holdings that already exist); (b) leave it
    to the review of `PRIVILEGED_ACCESS_REVIEW.md` §5, which finds it. *Recommendation*: (a), as a remediation entry before
    production use, so the rule does not rest on a human review alone; meanwhile (b). Held by a `GAP` row in §4.
+8. **T38's wider class, and two step-up questions, returned to the owner** *(added 2026-11-08 by the privileged access
+   review's task at its gate, the carried items' ruling (C15) having routed them to it while it ran; open)*. Four parts,
+   one item: (a) every refused and failed Phase 7 and Phase 8 act - the refused four-eyes attempts (a self-approval, a
+   stale echo, a refused kind) among them - audited with its outcome, a merchant's dispute act naming its API key, and the
+   void dispatch's missing dispatch record; (b) a failed Phase 9 operator lookup (a `404` on a trace or a provenance), a
+   not-found Phase 10 operator read, the credit policy-at-an-instant read and the review queue's served cases recorded,
+   and an evidence read's reason screened for a minimum; (c) whether a role that can redirect a merchant's money may be
+   held without an enrolled factor, and whether Phase 9's privileged acts (the pricing and corridor policies, the kill
+   switches, a trade's reversal) require a multi-factor session; (d) the conditional step-up's 17 production copies
+   extracted into one component. **What already holds**: every refused step-up, the 17 copies' included, is recorded at
+   the error contract without touching a copy (`identity.StepUpRefused`), and every permission denial is recorded, so
+   (d)'s reason is met and only its extraction remains. **Why not taken there**: (a) and (b) are a new audit record at
+   each of dozens of doors, each with its own database case, and (c) changes who may act at money-redirecting and Phase 9
+   doors, whose suites run against PostgreSQL; none fits the task's gate under C14. *Recommendation*: (c) as
+   `PRIVILEGED_ACCESS_REVIEW.md` §6 rules it - a factor required of every holder of `MERCHANT_ADMINISTRATOR`,
+   `MERCHANT_PAYOUT`'s and `PAYOUT_DESTINATION_APPROVE`'s roles before the role is granted, and `MULTI_FACTOR` declared on
+   Phase 9's approvals, restarts and reversals - and (a), (b) and (d) as **one follow-on M15.7 item** after the privileged
+   access task, before the phase's database pass. Held by a `GAP` row in §4 (T38).
 
 ---
 

@@ -457,3 +457,7 @@ requests, one effect), `INV-AUD-01`…`04`, ADR-0004, ADR-0005, ADR-0039, ADR-00
   payload at all - the aggregate id alone, a decision resolved to its request through credit's read - so version 1's
   joined `reasonCodes` and version 2's per-field codes are equally unread; a version beyond 2 is acknowledged and
   refused (`LoanOfferDatabaseTest#bothVersionsAreHintsAndAnUnknownOneIsRefused`).
+
+## Read-note: the carried items' ruling (2026-11-08)
+
+The purge this record's consequences name is re-dated by C15 (`P15-TSK-002`) to the choice of a real jurisdiction (`ADR-0085`'s read-note), so no Phase 15 change alters a past decision's replay. The rows carry the disposition, marked **C15** (`P15-TSK-002`, 2026-11-08); this record's decision and status are unchanged.
