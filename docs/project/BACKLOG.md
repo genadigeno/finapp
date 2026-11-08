@@ -27675,7 +27675,15 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   lending-proof rows annotated; `DECISIONS.md` §Deferred's two rows settled (routing stays `-025`'s); PI-014 item 2 fixed
   and owed its database case. **Owed to `P15-TST-002`** (C14): `AlertRulesResolveTest#theAccountingRulesResolve` on a
   restarted context and every database suite that now settles before a value. Routed onto `-025`'s entry: the rule file,
-  the `promtool` cases for its CI step, the job name and the severities.
+  the `promtool` cases for its CI step, the job name and the severities. **Probes** (`MUTATION_TESTING.md` §2, every one
+  performed, none re-hashed): five new rows - a gauge read on the scrape thread, a reading serving 0 before its first
+  read, the executor made in the constructor again, a dropped read's flag left up, the rule on `up` removed (its
+  `promtool` half on copies of the file) - each red; six accounting rows moved with the refresher to the tests that now
+  hold them; and every row whose file this task changed performed again (the accounting rule file 9, the runbook 6, the
+  stall metrics 2, the overlay, the production file, the threat register 18 after merging master). One look-in-line
+  probe first passed the guard's main case, because a planted case's scrape had filled every cache: the main case is now
+  ordered first on cold caches and asserts it, and the probe is red. A runbook probe on a route written across a line break
+  survived: a reach of `AccountingRunbookTest` recorded, not changed.
 
 **P15-TSK-025 — SLOs, error budgets, correctness alerts and routing** — `PLANNED`
 - **Objective**: every critical flow has an objective and a burn-rate alert, every correctness signal pages, and every
