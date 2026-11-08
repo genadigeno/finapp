@@ -111,7 +111,7 @@ public final class CorridorReturnResolutions implements ResolvedCorridorReturns 
             // The credit's row lock serialises every recorder: a lost insert is a writer outside this order.
             return Judgement.ALREADY_RETURNED;
         }
-        progress.returned(unitOfWork, credit.subject(), "RESOLVED", Instant.now(clock), correlation);
+        progress.returned(unitOfWork, credit.subject(), "RESOLVED", parked.amount(), Instant.now(clock), correlation);
         audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), approver, Instant.now(clock),
                 PaymentsAuditAction.OUTBOUND_CREDIT_RETURN_APPLIED, OutboundCreditOutcomes.TARGET_TYPE,
                 credit.id().value().toString(), Optional.empty(), AuditOutcome.SUCCEEDED, correlation,

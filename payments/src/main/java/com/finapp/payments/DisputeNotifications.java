@@ -483,7 +483,7 @@ public final class DisputeNotifications {
                 new EventEnvelope(
                         EventId.next(ids),
                         eventType,
-                        PaymentCreation.EVENT_VERSION,
+                        PaymentEventVersions.of(eventType),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         dispute.id(),
                         TARGET_TYPE,

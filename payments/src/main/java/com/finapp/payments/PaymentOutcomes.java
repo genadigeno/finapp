@@ -1443,7 +1443,7 @@ public final class PaymentOutcomes {
                 new EventEnvelope(
                         EventId.next(ids),
                         eventType,
-                        PaymentCreation.EVENT_VERSION,
+                        PaymentEventVersions.of(eventType),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         refund.id(),
                         "refund",
@@ -1486,7 +1486,7 @@ public final class PaymentOutcomes {
                 new EventEnvelope(
                         EventId.next(ids),
                         eventType,
-                        PaymentCreation.EVENT_VERSION,
+                        PaymentEventVersions.of(eventType),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         intentId,
                         PaymentCreation.TARGET_TYPE,

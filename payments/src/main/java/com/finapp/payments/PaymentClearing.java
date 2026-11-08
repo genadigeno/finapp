@@ -129,7 +129,7 @@ public final class PaymentClearing {
                 new EventEnvelope(
                         EventId.next(ids),
                         CLEARED_EVENT_TYPE,
-                        PaymentCreation.EVENT_VERSION,
+                        PaymentEventVersions.of(CLEARED_EVENT_TYPE),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         attempt.intentId(),
                         PaymentCreation.TARGET_TYPE,

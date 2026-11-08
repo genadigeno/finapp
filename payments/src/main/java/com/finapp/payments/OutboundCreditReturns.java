@@ -125,7 +125,7 @@ public final class OutboundCreditReturns {
             // The credit's row lock serialises every applier: a lost insert is another writer outside this order.
             throw new PaymentsStorageException("a locked credit's return was recorded by another writer");
         }
-        composition.returned(unitOfWork, locked.subject(), "APPLIED", Instant.now(clock));
+        composition.returned(unitOfWork, locked.subject(), "APPLIED", evidence.amount(), Instant.now(clock));
         expectations.open(unitOfWork, new SettlementExpectations.Opening(
                 SettlementExpectations.Kind.CROSSBORDER_RETURN,
                 locked.id().value().toString(),

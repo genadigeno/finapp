@@ -191,6 +191,9 @@ class CrossBorderReturnDatabaseTest {
         assertThat(scalar("SELECT status FROM crossborder.payment WHERE id = ?", paid.payment())).isEqualTo("RETURNED");
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'crossborder.CrossBorderPaymentReturned'"
                 + " AND aggregate_id = ? AND convert_from(payload, 'UTF8') LIKE '%APPLIED%'", paid.payment())).isEqualTo(1);
+        assertThat(scalar("SELECT convert_from(payload, 'UTF8') FROM platform.outbox_event"
+                + " WHERE event_type = 'crossborder.CrossBorderPaymentReturned' AND aggregate_id = ?", paid.payment()))
+                .contains("\"returnedMinor\":\"107960\"", "\"returnedCurrency\":\"USD\"", "\"returnedScale\":\"2\"");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'payments.OutboundCreditReturnApplied'"
                 + " AND target_id = ?", paid.credit().toString())).isEqualTo(1);
         assertThat(scalar("SELECT status || ' ' || direction || ' ' || amount_minor FROM reconciliation.expectation"
@@ -518,6 +521,10 @@ class CrossBorderReturnDatabaseTest {
         assertThat(scalar("SELECT status FROM crossborder.payment WHERE id = ?", paid.payment())).isEqualTo("RETURNED");
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'crossborder.CrossBorderPaymentReturned'"
                 + " AND aggregate_id = ? AND convert_from(payload, 'UTF8') LIKE '%RESOLVED%'", paid.payment())).isEqualTo(1);
+        // A partial return: the credit was 1079.60, and what came back was 1000.00.
+        assertThat(scalar("SELECT convert_from(payload, 'UTF8') FROM platform.outbox_event"
+                + " WHERE event_type = 'crossborder.CrossBorderPaymentReturned' AND aggregate_id = ?", paid.payment()))
+                .contains("\"returnedMinor\":\"100000\"", "\"returnedCurrency\":\"USD\"", "\"returnedScale\":\"2\"");
         assertThat(counted("resolved") - resolved).isEqualTo(1);
         // The park already moved the value off CORRIDOR_CLEARING: the fee refund opens nothing.
         ClearingLineCopies.assertOpensNothing("crossborder-return-fee:" + paid.credit());
