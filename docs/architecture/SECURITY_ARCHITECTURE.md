@@ -281,7 +281,8 @@ part. Records written before stay `CUSTOMER`. **An idempotency scope keys a pers
 `IdempotencyScopesKeyThePersonTest`): eighty scopes named the actor's type, and a retry crossing a role change or the
 release that introduced the typing would otherwise have found no record and acted twice. **A refused step-up is
 recorded** (`identity.StepUpRefused`), by the interceptor at a declared `@RequiresAssurance` and by the error contract
-at an operation's own step-up, once per refused request, committed before the refusal is answered. The privileged
+at an operation's own step-up, once per refused request, committed before the refusal is answered; on either path a
+record that cannot be written answers `500`, never a `403` without its record. The privileged
 access review - who may hold which role, the propose/approve partition, break-glass - is
 [`PRIVILEGED_ACCESS_REVIEW.md`](PRIVILEGED_ACCESS_REVIEW.md).
 

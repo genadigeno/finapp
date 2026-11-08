@@ -129,7 +129,8 @@ a break's resolution and the mapping activation are `P14-REM-001`'s and `P14-REM
 attempt is recorded**: a missing permission as `identity.AuthorizationDenied`,
 a session below the level as `identity.StepUpRefused` - each committed in a transaction of its own before the refusal is
 answered, naming the actor, the identity and the operation's route pattern, never the session, the code or the factor
-(`OperatorActorTypingTest`, `StepUpRefusalsTest`; `DenyByDefaultDatabaseTest#aRefusedStepUpIsRecorded`, owed).
+(`OperatorActorTypingTest`, `StepUpRefusalsTest`; `DenyByDefaultDatabaseTest#aRefusedStepUpIsRecorded`, owed). A
+refusal whose record cannot be written is answered `500`, never without its record.
 
 **Two questions this review rules** (routed by the carried items' ruling, C15, 2026-11-08). Each is a recommendation;
 neither is built, and both are `THREAT_MODEL.md` §6 owner item 10, held by a `GAP` row (T38):
@@ -170,7 +171,9 @@ and nothing else - no write, no DDL, no restricted table (`ReportingRoleIsSelect
 `ReportingRoleDatabaseTest`, owed). It connects through its own pool, counted in the connection budget, and never falls
 back to the application's role (`ReportGenerationReadsAsTheReportingRoleTest`). It reaches the database the way the
 application's pool does - the same URL and the same driver settings, `sslmode` among them - so the transport guard's
-judgement covers it (`ReportingPoolTransportTest`). A role is a cluster object: the local
+judgement covers it (`ReportingPoolTransportTest`). Startup refuses a reporting user naming the application's own
+role, the migrator or the superuser, which would make the grants irrelevant (`ReportingPoolRoleTest`). A role is a
+cluster object: the local
 initialisation script creates it, and in a deployed database the one-time bootstrap step does (`P15-TSK-004`).
 
 ## 9. What this review does not claim

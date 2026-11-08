@@ -92,8 +92,8 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         // Warn, not error: a client error is the API working. The message may name whatever makes
         // it diagnosable, because it goes to the log and not to the wire.
         log.warn("API error {}: {}", exception.errorCode().code(), exception.getMessage(), exception);
-        if (exception.errorCode() == IdentityErrorCode.ASSURANCE_REQUIRED) {
-            recordStepUpRefusal(request);
+        if (exception.errorCode() == IdentityErrorCode.ASSURANCE_REQUIRED && !stepUpRefusalRecorded(request)) {
+            return render(ProblemDetail.of(PlatformErrorCode.INTERNAL_ERROR, request.getRequestURI()));
         }
         return render(
                 ProblemDetail.of(
@@ -103,28 +103,40 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * Records a refused step-up an operation answered itself (`P15-TSK-021`), once per request: the interceptor's own
+     * refusals are recorded and marked before they reach here.
+     *
+     * <p><strong>Fail closed, as the interceptor does</strong> (the review's fix round, 2026-11-08): a {@code 403
+     * identity.AssuranceRequired} is answered only once its record has committed. A record that cannot be written - the
+     * database unreachable - is logged and the request answered {@code 500 api.InternalError}, exactly what the
+     * interceptor's own refusal and a permission denial answer when their records cannot be written. The request is
+     * refused either way and nothing it asked for happened; what the answer promises is that every {@code 403} of this
+     * kind has its record. A context without the recorder (a slice that renders the contract alone) has nothing to
+     * write; the application's context always holds it.
+     *
+     * @return false when the record was due and could not be written
+     */
+    private boolean stepUpRefusalRecorded(HttpServletRequest request) {
+        StepUpRefusals recorder = stepUpRefusals.getIfAvailable();
+        if (recorder == null) {
+            return true;
+        }
+        try {
+            recorder.record(request);
+            return true;
+        } catch (RuntimeException unrecorded) {
+            log.error("A refused step-up on {} could not be recorded; answered as a failure, not a 403",
+                    routeOf(request), unrecorded);
+            return false;
+        }
+    }
+
+    /**
      * Anything with no more specific handler — a genuine accident.
      *
      * <p>Logged at error, because nobody expected it; rendered with a body that says nothing,
      * because its message is the least trustworthy string in the system to be publishing.
      */
-    /**
-     * Records a refused step-up an operation answered itself (`P15-TSK-021`), once per request: the interceptor's own
-     * refusals are recorded and marked before they reach here. The request was refused either way, so a record that
-     * cannot be written is logged and the refusal still answered - never a {@code 500} in place of a {@code 403}.
-     */
-    private void recordStepUpRefusal(HttpServletRequest request) {
-        StepUpRefusals recorder = stepUpRefusals.getIfAvailable();
-        if (recorder == null) {
-            return;
-        }
-        try {
-            recorder.record(request);
-        } catch (RuntimeException unrecorded) {
-            log.error("A refused step-up on {} could not be recorded", routeOf(request), unrecorded);
-        }
-    }
-
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetailBody> handleUnexpected(Exception exception, HttpServletRequest request) {
         log.error("Unhandled error on {}", routeOf(request), exception);

@@ -7,7 +7,10 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -459,5 +462,53 @@ class CasesTest {
                 .riskCase();
         assertThat(disposed.status()).isEqualTo(CaseStatus.DISPOSED);
         assertThat(disposed.disposition().orElseThrow().needsSecondPerson()).isTrue();
+    }
+
+    @Test
+    @DisplayName("INV-RSK-07 across the audit type (P15-TSK-021): a proposal recorded CUSTOMER - by the earlier release,"
+            + " or standing across the deploy - is refused to its proposer acting EMPLOYEE, and their re-take converges")
+    void thePersonIsTheIdentityWhateverItsAuditType() {
+        RiskCase opened = world.openFraudCase();
+        Actor alice = world.analyst();
+        // The same person as the release before P15-TSK-021 typed every session: CUSTOMER.
+        Actor aliceBefore = new Actor(alice.id(), ActorType.CUSTOMER);
+        RiskCase taken = world.taken(opened, aliceBefore);
+
+        Cases.Acted retaken = world.cases.take(CaseWorld.UOW, taken.id(), taken.revision(), alice,
+                CaseWorld.correlation());
+        assertThat(retaken.converged()).as("a re-take of one's own case is not a takeover").isTrue();
+        assertThat(world.audited("risk.CaseTaken")).hasSize(1);
+
+        Cases.Decided proposed = world.cases.proposeDisposition(CaseWorld.UOW, taken.id(), taken.revision(),
+                "CONFIRMED_FRAUD", false, "it is fraud", aliceBefore, CaseWorld.correlation());
+        RiskCase standing = proposed.riskCase();
+        Cases.SelfApprovalRefused refused = catchThrowableOfType(Cases.SelfApprovalRefused.class,
+                () -> world.cases.approveDisposition(CaseWorld.UOW, standing.id(), proposed.dispositionId(),
+                        standing.revision(), "I agree with myself", alice, CaseWorld.correlation()));
+        assertThat(refused).as("refused by the domain, audited - never left to the database's guard as a 500")
+                .isNotNull();
+        assertThat(world.cases.current(CaseWorld.UOW, standing.id()).orElseThrow().revision())
+                .isEqualTo(standing.revision());
+    }
+
+    @Test
+    @DisplayName("a disposition slot is one person's or two by identity, not by audit type (P15-TSK-021)")
+    void theSlotComparesPersonsByIdentity() {
+        RiskCase.Person proposer = new RiskCase.Person("analyst-a", ActorType.CUSTOMER);
+        RiskCase.Person sameAsEmployee = new RiskCase.Person("analyst-a", ActorType.EMPLOYEE);
+        RiskCase.Person another = new RiskCase.Person("analyst-b", ActorType.EMPLOYEE);
+        assertThat(proposer.isSamePersonAs(sameAsEmployee)).isTrue();
+        assertThat(proposer.is(new Actor("analyst-a", ActorType.EMPLOYEE))).isTrue();
+        assertThat(proposer.isSamePersonAs(another)).isFalse();
+        assertThat(new RiskCase.Person("system", ActorType.SYSTEM).is(new Actor("system", ActorType.CUSTOMER)))
+                .as("only a person's two types are one key").isFalse();
+
+        assertThatExceptionOfType(IllegalArgumentException.class).isThrownBy(() -> new RiskCase.DispositionSlot(
+                UUID.randomUUID(), Disposition.CONFIRMED_FRAUD, false, proposer, Optional.empty(),
+                Optional.of(sameAsEmployee), Optional.of(Instant.EPOCH)));
+        RiskCase.DispositionSlot alone = new RiskCase.DispositionSlot(UUID.randomUUID(),
+                Disposition.CLOSED_NO_ACTION, false, proposer, Optional.empty(), Optional.of(sameAsEmployee),
+                Optional.of(Instant.EPOCH));
+        assertThat(alone.needsSecondPerson()).as("decided by its proposer: one person's act").isFalse();
     }
 }

@@ -400,7 +400,7 @@ public final class MerchantPayouts {
         return String.join(
                         "|",
                         IDEMPOTENCY_SCOPE_PREFIX + command.merchant().value(),
-                        actor.type().name(),
+                        actor.keyedType().name(),
                         actor.id(),
                         Long.toString(command.amount().minorUnits()),
                         command.amount().currency().code(),

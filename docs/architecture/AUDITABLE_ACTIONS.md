@@ -148,7 +148,9 @@ still logged in. The rotation record names both identifiers so the chain is foll
 operation requires - the trace a stolen password leaves at a four-eyes door. One record per refused request, committed
 in a transaction of its own before the `403 identity.AssuranceRequired` is answered: by the session interceptor at a
 declared `@RequiresAssurance`, by the error contract (`StepUpRefusals`) at an operation's own conditional step-up, never
-both. A retry is a second attempt and a second record, as a denial is. Its summary is the operation's route pattern -
+both. **Both paths fail closed** (the review's fix round, 2026-11-08): a record that cannot be written - the database
+unreachable - answers `500 api.InternalError`, never a `403` without its record, as a denial whose record cannot be
+written does; the request is refused either way. A retry is a second attempt and a second record, as a denial is. Its summary is the operation's route pattern -
 never the path's values, the presented code, the factor or the session. **Its actor carries the population**: since
 `P15-TSK-021` the interceptor types an operator act `EMPLOYEE` and every other session request `CUSTOMER`, so this
 record, the denial and every operator act's own record say which population acted; records written before it read

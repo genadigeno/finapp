@@ -124,6 +124,12 @@ one of those paths perform a full Argon2id verification, so they are indistingui
 as well. A suspended account answering instantly would tell an attacker both that it exists and
 that it is suspended, which is the invariant lost through the channel that is harder to notice.
 
+**A `403 identity.AssuranceRequired` has its record** (`P15-TSK-021`; the review's fix round, 2026-11-08): every one is
+answered only after `identity.StepUpRefused` has committed in a transaction of its own - by the session interceptor
+at a declared step-up, by this renderer at an operation's own. Where the record cannot be written the request is
+answered `500 api.InternalError` instead, on both paths, as a permission denial is: refused either way, and the
+answer never claims a refusal the audit trail lacks.
+
 **Not `api.Unauthenticated`, deliberately.** That code means *authentication is required* — a
 protected route reached with no credentials at all. Here credentials **were** presented and were not
 accepted. They are different facts, a client handles them differently, and giving one string two

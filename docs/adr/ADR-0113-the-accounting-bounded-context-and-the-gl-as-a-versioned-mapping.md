@@ -130,7 +130,13 @@ nothing else, granted by accounting `V013`, ledger `V033`, reconciliation `V023`
 `ReportingRoleIsSelectOnlyTest`. So decision 5 (`INV-ACC-14`, reporting never writes) now holds at the privilege level
 too: a report path that lost its `READ ONLY` transaction still cannot write. The pool is counted in the connection
 budget (the writer's pool gave it one of its eight connections), is not on the readiness path, and never falls back to
-the application's role. The operational door, the close checks and the final statements still read through the
-application's role in their `REPEATABLE READ READ ONLY` snapshots. The role is a cluster object, created by the local
+the application's role. Every run generated through `ReportRunGenerator` reads as the role, wherever the generation is
+asked for - the report-run door, the orphan leg, and the close's trial-balance check, which generates the month's FINAL
+trial balance when no run holds it (`FinalTrialBalanceReader`). What still reads through the application's role, in
+its `REPEATABLE READ READ ONLY` snapshots, is everything that is not a generation: the operational door, the close
+checks' own judgements and the verdict that check reads back from the stored run, and the final statements' reads.
+*(This sentence read "The operational door, the close checks and the final statements still read through the
+application's role" until the task's review fix round, 2026-11-08: imprecise for the trial-balance check's generation
+step.)* The role is a cluster object, created by the local
 role script and, in a deployed database, by the one-time bootstrap step (`P15-TSK-004`) before the migrations that
 grant to it. No new ADR: the decision is this ADR's follow-up, taken as C13 framed it.

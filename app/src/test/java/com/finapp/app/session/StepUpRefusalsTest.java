@@ -107,18 +107,18 @@ class StepUpRefusalsTest {
     }
 
     @Test
-    @DisplayName("a record that cannot be written leaves the refusal a 403, never a 500; a context without the recorder"
-            + " renders the contract alone")
-    void theRefusalIsAnsweredWhateverTheRecord() {
+    @DisplayName("fail closed, as the interceptor does: a record that cannot be written answers 500, never a 403"
+            + " without its record; a context without the recorder renders the contract alone")
+    void aRefusalWhoseRecordFailsIsAnsweredAsAFailure() {
         ApiErrorHandler failing = new ApiErrorHandler(provider(InterceptorHarness.failingStepUpRefusals(IDS, CLOCK)));
         ApiErrorHandler without = new ApiErrorHandler(new StaticListableBeanFactory().getBeanProvider(StepUpRefusals.class));
         Actor person = new Actor(IdentityId.next(IDS).value().toString(), ActorType.CUSTOMER);
-        for (ApiErrorHandler each : List.of(failing, without)) {
-            try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)));
-                    SecurityContext.Scope acting = SecurityContext.enter(person)) {
-                assertThat(each.handleApiException(new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED, "refused"),
-                        request()).getStatusCode().value()).isEqualTo(IdentityErrorCode.ASSURANCE_REQUIRED.status());
-            }
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope acting = SecurityContext.enter(person)) {
+            assertThat(failing.handleApiException(new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED, "refused"),
+                    request()).getStatusCode().value()).isEqualTo(PlatformErrorCode.INTERNAL_ERROR.status());
+            assertThat(without.handleApiException(new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED, "refused"),
+                    request()).getStatusCode().value()).isEqualTo(IdentityErrorCode.ASSURANCE_REQUIRED.status());
         }
     }
 
