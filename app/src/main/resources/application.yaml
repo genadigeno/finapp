@@ -138,9 +138,9 @@ finapp:
     registration:
       limit: ${FINAPP_ABUSE_REGISTRATION_LIMIT:10}
       window: ${FINAPP_ABUSE_REGISTRATION_WINDOW:PT1H}
-    authentication:
-      limit: ${FINAPP_ABUSE_AUTHENTICATION_LIMIT:100}
-      window: ${FINAPP_ABUSE_AUTHENTICATION_WINDOW:PT15M}
+    sign-in:
+      limit: ${FINAPP_ABUSE_SIGN_IN_LIMIT:100}
+      window: ${FINAPP_ABUSE_SIGN_IN_WINDOW:PT15M}
     recovery:
       limit: ${FINAPP_ABUSE_RECOVERY_LIMIT:10}
       window: ${FINAPP_ABUSE_RECOVERY_WINDOW:PT1H}

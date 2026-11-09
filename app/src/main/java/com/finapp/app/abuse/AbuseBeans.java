@@ -29,8 +29,8 @@ class AbuseBeans {
     SourceLimits sourceLimits(
             @Value("${finapp.abuse.registration.limit}") int registration,
             @Value("${finapp.abuse.registration.window}") Duration registrationWindow,
-            @Value("${finapp.abuse.authentication.limit}") int authentication,
-            @Value("${finapp.abuse.authentication.window}") Duration authenticationWindow,
+            @Value("${finapp.abuse.sign-in.limit}") int signIn,
+            @Value("${finapp.abuse.sign-in.window}") Duration signInWindow,
             @Value("${finapp.abuse.recovery.limit}") int recovery,
             @Value("${finapp.abuse.recovery.window}") Duration recoveryWindow,
             @Value("${finapp.abuse.recovery-completion.limit}") int recoveryCompletion,
@@ -39,7 +39,7 @@ class AbuseBeans {
             @Value("${finapp.abuse.channel-verification.window}") Duration channelVerificationWindow) {
         return new SourceLimits(Map.of(
                 Door.REGISTRATION, new WindowLimit(registration, registrationWindow),
-                Door.AUTHENTICATION, new WindowLimit(authentication, authenticationWindow),
+                Door.AUTHENTICATION, new WindowLimit(signIn, signInWindow),
                 Door.RECOVERY, new WindowLimit(recovery, recoveryWindow),
                 Door.RECOVERY_COMPLETION, new WindowLimit(recoveryCompletion, recoveryCompletionWindow),
                 Door.CHANNEL_VERIFICATION, new WindowLimit(channelVerification, channelVerificationWindow)));

@@ -50,7 +50,7 @@ class SourceLimitBudgetTest {
     @DisplayName("one instance's sweep deletes faster than every door together can create rows, at the worst the key space allows")
     void oneInstancesSweepOutrunsEveryDoor() {
         double worstRowsPerSecond = 0;
-        for (String door : new String[] {"registration", "authentication", "recovery", "recovery-completion", "channel-verification"}) {
+        for (String door : new String[] {"registration", "sign-in", "recovery", "recovery-completion", "channel-verification"}) {
             worstRowsPerSecond += (double) (SourceBucket.BUCKETS + 1) / duration("finapp.abuse." + door + ".window").toSeconds();
         }
         double sweptPerSecond = (double) (number("finapp.abuse.sweep.batch-size") * com.finapp.app.eventing.RetentionSweepSchedule.MAX_BATCHES)
@@ -74,7 +74,7 @@ class SourceLimitBudgetTest {
     @Test
     @DisplayName("no shipped window is below the floor the budget is sized on")
     void noWindowIsBelowTheFloor() {
-        for (String door : new String[] {"registration", "authentication", "recovery", "recovery-completion", "channel-verification"}) {
+        for (String door : new String[] {"registration", "sign-in", "recovery", "recovery-completion", "channel-verification"}) {
             assertThat(duration("finapp.abuse." + door + ".window")).as(door).isGreaterThanOrEqualTo(SourceLimits.MINIMUM_WINDOW);
         }
     }

@@ -158,8 +158,8 @@ a 422 returned after the handler ran and did half the work looks identical from 
 **The per-source limits** (`P15-TSK-022`) are on the five doors that need no session and no signature: `POST /v1/registrations`, `POST
 /v1/authentications`, `POST /v1/recoveries`, its completion, and `POST /v1/me/channels/verification`. One count per source and fixed
 window, across every replica, held in PostgreSQL. A source is the connection's address, an IPv4 address whole or an IPv6 address by its
-/64; a forwarded header never chooses it (`SourceLimitInterceptorTest`). A window's end is the database's, so a retry after `Retry-After` is
-served whichever replica takes it. Two sources behind one carrier's NAT are one source. A provider's signed callback is not counted:
+/64; a forwarded header never chooses it (`SourceLimitInterceptorTest`). A window's end is the database's, so a retry after `Retry-After` falls in
+a new window whichever replica takes it. Two sources behind one carrier's NAT are one source. A provider's signed callback is not counted:
 its signature is checked first, and nothing is written for a forged one.
 
 ## 6. Idempotency — **Implemented** (`P0-TSK-017`; first *used* by `P1-TSK-006`)

@@ -8,7 +8,7 @@ package com.finapp.app.abuse;
  */
 public enum Door {
     REGISTRATION("registration"),
-    AUTHENTICATION("authentication"),
+    AUTHENTICATION("sign-in"),
     RECOVERY("recovery"),
     RECOVERY_COMPLETION("recovery-completion"),
     CHANNEL_VERIFICATION("channel-verification");
