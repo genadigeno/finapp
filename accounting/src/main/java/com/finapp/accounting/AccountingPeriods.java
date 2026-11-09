@@ -60,8 +60,8 @@ import lombok.RequiredArgsConstructor;
  * the request read by when it was proposed - an unlock request has no id, and its row's instant, stamped by the database holding the row, is its identity ({@link #pendingUnlock} serves it). Another
  * pending is {@link RequestStale}, judged holding the row and recorded {@code FAILED}: nobody decides a request they never read.
  *
- * <p><strong>Today is the database's</strong> (`P14-REM-009`; the Phase 14 exit review's A4-F1): the grace and the month the schedule opens are judged on {@link AccountingPeriodStore#today}, the clock the ledger's own
- * "never over today" (ledger {@code V028}) reads. The lock reads it <strong>holding the period's row</strong>: the date is {@code clock_timestamp()}, a statement's and not the transaction's, so however long the act waited for the row,
+ * <p><strong>Today is the database's</strong> (`P14-REM-009`; the Phase 14 exit review's A4-F1): the grace and the month the schedule opens are judged on {@link AccountingPeriodStore#today}, the database's clock, as the ledger's own
+ * "never over today" (ledger {@code V028}) is, though that reads {@code now()}, its transaction's start. The lock reads it <strong>holding the period's row</strong>: the date is {@code clock_timestamp()}, a statement's and not the transaction's, so however long the act waited for the row,
  * the date is that of the moment it got it. This instance's {@code Clock} stamps audit records and events and decides nothing here.
  *
  * <p>The close, its rejection and the reopen are {@link PeriodCloses}' (`P14-TSK-012`). How a back-dating poster reacts to a locked period is

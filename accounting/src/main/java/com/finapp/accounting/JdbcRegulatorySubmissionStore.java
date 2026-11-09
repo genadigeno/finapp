@@ -138,9 +138,9 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     static final String STANDING_SQL = ROW + " WHERE " + STANDS + " ORDER BY s.recorded_order, s.id LIMIT ?";
 
     /**
-     * The next page: a keyset on what is frozen from birth, by the id the last page ended on, so the cursor is a row's id and means the same on either side of {@code V014}, whose backfill numbered every earlier row in the order this statement served them.
+     * The next page: a keyset on what is frozen from birth - by grant: {@code GENERATED ALWAYS} still admits {@code SET recorded_order = DEFAULT}, and {@code finapp_app} holds no {@code UPDATE} of the column - by the id the last page ended on, so the cursor is a row's id and means the same on either side of {@code V014}, whose backfill numbered every earlier row in the order this statement served them.
      * <strong>A number is drawn at the insert and is not commit order</strong>: a birth still uncommitted when a later number is served is missed by that walk. That is accepted, as the old stamp's order had it too: {@link #standing} is a person's worklist, the next walk from
-     * the first page serves the row in its place, {@link #attention} counts the table whole, and every act judges again under its own locks.
+     * the first page serves the row in its place, and every act judges again under its own locks.
      */
     static final String STANDING_AFTER_SQL = ROW + " WHERE " + STANDS + " AND (s.recorded_order, s.id) > (SELECT l.recorded_order, l.id FROM accounting.regulatory_submission l WHERE l.id = ?) ORDER BY s.recorded_order, s.id LIMIT ?";
 

@@ -16,6 +16,7 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.lang.reflect.InvocationTargetException;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
@@ -195,8 +196,18 @@ class AccountingPeriodsTest {
         AccountingPeriodId september = open(SEPTEMBER);
         store.databaseToday(LocalDate.of(2026, 10, 1));
         store.whileWaitingForARowLock(() -> store.databaseToday(LocalDate.of(2026, 10, 2)));
+        List<String> order = new ArrayList<>();
+        AccountingPeriodStore recording = (AccountingPeriodStore) Proxy.newProxyInstance(AccountingPeriodStore.class.getClassLoader(), new Class<?>[] {AccountingPeriodStore.class}, (proxy, method, arguments) -> {
+            order.add(method.getName());
+            try {
+                return method.invoke(store, arguments);
+            } catch (InvocationTargetException failure) {
+                throw failure.getCause();
+            }
+        });
 
-        assertThat(onInstanceClock("2026-10-01").lock(UOW, september, accountant, null, correlation()).status()).as("a date read before the row was the day before the grace").isEqualTo(PeriodStatus.LOCKED);
+        assertThat(over(recording, "2026-10-01").lock(UOW, september, accountant, null, correlation()).status()).as("a date read before any row was the day before the grace").isEqualTo(PeriodStatus.LOCKED);
+        assertThat(order).as("the previous period's share, the period's own row, and only then the date: the hook above fires on the share too, so the order is what holds it to the period's row").containsSubsequence("lockShared", "lock", "today");
         assertThat(JdbcAccountingPeriodStore.TODAY_SQL).as("clock_timestamp(): now() would be the moment the transaction began, before any wait").contains("clock_timestamp()").doesNotContain("now()");
     }
 
@@ -599,8 +610,12 @@ class AccountingPeriodsTest {
 
     /** The machine with only this instance's clock on {@code day}: the database's date stands where the case put it. */
     private AccountingPeriods onInstanceClock(String day) {
+        return over(store, day);
+    }
+
+    private AccountingPeriods over(AccountingPeriodStore periodStore, String day) {
         Clock clock = Clock.fixed(Instant.parse(day + "T09:00:00Z"), ZoneOffset.UTC);
-        return new AccountingPeriods(store, mappings, cutoff, LockGrace.standard(),
+        return new AccountingPeriods(periodStore, mappings, cutoff, LockGrace.standard(),
                 (unitOfWork, record) -> audit.add(record),
                 (unitOfWork, envelope, payload, mediaType) -> {
                     events.add(envelope);

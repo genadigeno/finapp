@@ -992,6 +992,16 @@ class RegulatorySubmissionDatabaseTest {
         assertThat(newest).extracting(RegulatorySubmissionStore.AnswerRow::id).containsExactly(later);
     }
 
+    @Test
+    @DisplayName("recorded_order is frozen by grant: GENERATED ALWAYS still admits SET recorded_order = DEFAULT, which would draw a new number and move an old return to the end of the walk, and the application role is refused it on both tables (P14-REM-009; ConsentHistoryDatabaseTest's trap)")
+    void theRecordedOrderIsFrozenByGrant() {
+        Case born = drafted();
+        assertThatThrownBy(() -> asApplication("UPDATE accounting.regulatory_submission SET recorded_order = DEFAULT WHERE id = ?", born.id().value()))
+                .isInstanceOfSatisfying(SQLException.class, refused -> assertThat(refused.getSQLState()).isEqualTo(INSUFFICIENT_PRIVILEGE));
+        assertThatThrownBy(() -> asApplication("UPDATE accounting.regulatory_provider_answer SET recorded_order = DEFAULT WHERE submission_id = ?", born.id().value()))
+                .isInstanceOfSatisfying(SQLException.class, refused -> assertThat(refused.getSQLState()).isEqualTo(INSUFFICIENT_PRIVILEGE));
+    }
+
     private static List<RegulatorySubmissionId> walkFromTheStart() {
         List<RegulatorySubmissionStore.Row> rows = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 1000));
         return rows.stream().map(RegulatorySubmissionStore.Row::id).toList();

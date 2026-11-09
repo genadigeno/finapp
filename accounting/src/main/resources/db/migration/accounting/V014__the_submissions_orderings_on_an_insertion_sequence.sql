@@ -6,9 +6,14 @@
 -- ADR-0063, PI-013) stamps a later row before an earlier one. A keyset on that order then skips or repeats a row, and "the
 -- newest" names the wrong answers. A number taken at the insert cannot be reordered by any clock (lending V025, bnpl V017).
 --
--- WHAT IS ADDED. recorded_order on both tables, GENERATED ALWAYS AS IDENTITY: no writer names it, and it asks no grant of the
--- application role, for whom a missing USAGE on a sequence would be a failed insert. prepared_at and received_at stay as
--- they are, stamped and served: they remain what a person is told, and release N - 1 still orders by them.
+-- WHAT IS ADDED. recorded_order on both tables, GENERATED ALWAYS AS IDENTITY: no application statement names it and a plain
+-- named value is refused, and it asks no grant of the application role, for whom a missing USAGE on a sequence would be a
+-- failed insert. prepared_at and received_at stay as they are, stamped and served: they remain what a person is told, and
+-- release N - 1 still orders by them.
+--
+-- FROZEN BY GRANT. GENERATED ALWAYS still admits SET recorded_order = DEFAULT, the one update identity allows, which draws a
+-- new number and would move an old return to the end of the walk. finapp_app is refused it because no UPDATE grant names
+-- this column: V010's list on the submission, none at all on the answer. The grants hold it, not the identity.
 --
 -- EXPAND ONLY. Nothing here can refuse a write release N - 1 makes. Its inserts do not name the column, and the identity
 -- answers them. There is no SET NOT NULL (identity is NOT NULL by being identity), no CHECK, no UNIQUE and no new trigger.
@@ -29,7 +34,7 @@
 -- row FOR UPDATE before inserting, so for one submission the numbers are in commit order. Submissions: births of different
 -- forms and months do not serialise, so a birth still uncommitted when a later number is served is missed by that walk, as
 -- it was on the stamp. That is accepted: what stands is a person's worklist, a walk starts at its first page and the next
--- one serves the row in its place, the attention gauge counts the whole table, and every act judges again under its locks.
+-- one serves the row in its place, and every act judges again under its locks.
 --
 -- recorded_order is INTERNAL: a position, no money and no one's data.
 
@@ -53,7 +58,7 @@ UPDATE accounting.regulatory_provider_answer a
  WHERE numbered.id = a.id;
 ALTER TABLE accounting.regulatory_provider_answer ENABLE TRIGGER regulatory_provider_answer_is_append_only;
 
--- From here no writer names a number: a named value is refused, and only DEFAULT can be assigned.
+-- From here a plain named value is refused; SET ... = DEFAULT is the one update identity admits, and no UPDATE grant names the column.
 ALTER TABLE accounting.regulatory_submission ALTER COLUMN recorded_order SET GENERATED ALWAYS;
 ALTER TABLE accounting.regulatory_provider_answer ALTER COLUMN recorded_order SET GENERATED ALWAYS;
 
