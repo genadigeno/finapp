@@ -294,6 +294,7 @@ public final class Rehearsal {
         expect("mfa confirmation of " + who, post(publicBase, "/v1/me/mfa/confirmation", "{\"code\":\"" + totp(secret, step - 1) + "\"}", session, null), 204);
         Answer elevated = expect("elevation of " + who, post(publicBase, "/v1/authentications/mfa", "{\"code\":\"" + totp(secret, step) + "\"}", session, null), 200);
         state.setProperty(who + ".totp", secret);
+        state.setProperty(who + ".step", Long.toString(step));
         return field(elevated.body(), "sessionToken");
     }
 
@@ -579,11 +580,20 @@ public final class Rehearsal {
         return fresh("operator");
     }
 
+    /** A code is consumed once per step (P1-TSK-018): a new elevation waits for a step the last one did not use. */
     private String fresh(String who) throws Exception {
         String session = authenticate(state.getProperty(who + ".login"));
         String secret = state.getProperty(who + ".totp");
+        long last = Long.parseLong(state.getProperty(who + ".step", "0"));
+        long step = currentStep();
+        while (step <= last) {
+            pause(1000);
+            step = currentStep();
+        }
         Answer elevated = expect("elevation", post(publicBase, "/v1/authentications/mfa",
-                "{\"code\":\"" + totp(secret, currentStep()) + "\"}", session, null), 200);
+                "{\"code\":\"" + totp(secret, step) + "\"}", session, null), 200);
+        state.setProperty(who + ".step", Long.toString(step));
+        save();
         return field(elevated.body(), "sessionToken");
     }
 

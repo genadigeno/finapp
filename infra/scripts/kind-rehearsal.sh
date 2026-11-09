@@ -75,9 +75,11 @@ log() {
     printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$ART/rehearsal.log"
 }
 
+# A step that could not run is not a green step and not a red assertion, but it still tears down what it built: generated keys live in $WORK.
 cannot() {
     log "?? $*"
-    exit 2
+    FAILED=2
+    finish
 }
 
 FAILED=0
@@ -129,6 +131,10 @@ finish() {
         "$KIND_BIN" delete cluster --name "$CLUSTER" >/dev/null 2>&1
     fi
     rm -rf "$WORK"
+    if [ "$FAILED" -eq 2 ]; then
+        log "RESULT: COULD NOT RUN"
+        exit 2
+    fi
     if [ "$FAILED" -ne 0 ]; then
         log "RESULT: RED"
         exit 1
