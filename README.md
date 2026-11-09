@@ -180,7 +180,7 @@ transition runs the battery fleet-wide.
 | You need | Why | Check with |
 |---|---|---|
 | **Git** | Clone the repository | `git --version` |
-| **Docker** with Compose v2 | PostgreSQL, Kafka and Redis run in containers | `docker compose version` |
+| **Docker** with Compose v2 | PostgreSQL and Kafka run in containers, and a Redis no code uses yet | `docker compose version` |
 | A **JDK**, any recent version | Only to start Gradle | `java -version` |
 
 **You do not need to install Java 21, Gradle, PostgreSQL, Kafka or Redis.**
@@ -267,7 +267,7 @@ next command can fail against a database that is still initialising.
 |---|---|---|
 | PostgreSQL 18.6 | `localhost:5432` | Transactional source of truth — the ledger lives here |
 | Kafka 4.3.1 (KRaft) | `localhost:29092` | Event transport. **Never** the accounting source of truth |
-| Redis 8.10.1 | `localhost:6379` | Cache, coordination, ephemeral state. **Never** financial truth |
+| Redis 8.10.1 | `localhost:6379` | Local only: no code uses it and none is deployed. **Never** financial truth |
 
 **Tests no longer need this stack.** Since `P0-TSK-035`, `./gradlew databaseTest` starts its own
 PostgreSQL container, applies `infra/postgres/initdb/00-roles.sql` and the real migrations, and

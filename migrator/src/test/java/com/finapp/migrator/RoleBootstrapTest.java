@@ -107,6 +107,15 @@ class RoleBootstrapTest {
     }
 
     @Test
+    @DisplayName("finapp_app is given the server's own spelling of its idle-in-transaction timeout, and no other role is")
+    void theApplicationRoleCarriesTheIdleTimeout() {
+        assertThat(RoleBootstrap.APP_IDLE_IN_TRANSACTION_TIMEOUT).matches("\\d+min");
+        assertThat(RepositoryFiles.read("infra/postgres/initdb/00-roles.sql"))
+                .as("the local script sets the same value")
+                .contains("ALTER ROLE finapp_app SET idle_in_transaction_session_timeout = '" + RoleBootstrap.APP_IDLE_IN_TRANSACTION_TIMEOUT + "'");
+    }
+
+    @Test
     @DisplayName("a blank, repeated or marked-local password is refused before anything connects")
     void passwordsAreRefused() {
         assertThat(RoleBootstrap.passwords(passwords())).hasSize(3);
