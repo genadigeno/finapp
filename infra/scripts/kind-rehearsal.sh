@@ -329,13 +329,23 @@ apply_files() {
 }
 
 wait_job() {
-    # wait_job <namespace> <name> <seconds> <artefact name>: complete, or the step fails with the Job's log kept.
-    if ! kube -n "$1" wait --for=condition=complete "job/$2" --timeout="${3}s" >> "$ART/apply.log" 2>&1; then
-        kube -n "$1" logs "job/$2" --all-containers > "$ART/$4.log" 2>&1 || true
-        kube -n "$1" describe "job/$2" >> "$ART/$4.log" 2>&1 || true
-        fail "the Job $2 did not complete: see $4.log"
-    fi
+    # wait_job <namespace> <name> <seconds> <artefact name>: complete, or the step fails with the Job's log kept. A Job that has failed fails the step at once.
+    deadline=$(( $(date +%s) + $3 ))
+    state=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        state=$(kube -n "$1" get "job/$2" -o jsonpath='{.status.conditions[?(@.status=="True")].type}' 2>/dev/null || true)
+        case $state in
+            *Complete*) break ;;
+            *Failed*) break ;;
+        esac
+        sleep 2
+    done
     kube -n "$1" logs "job/$2" --all-containers > "$ART/$4.log" 2>&1 || true
+    case $state in
+        *Complete*) return 0 ;;
+    esac
+    kube -n "$1" describe "job/$2" >> "$ART/$4.log" 2>&1 || true
+    fail "the Job $2 did not complete: see $4.log"
 }
 
 # ---------------------------------------------------------------------------------------------------
