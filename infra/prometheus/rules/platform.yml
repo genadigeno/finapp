@@ -165,7 +165,7 @@ groups:
         # Aggregation: count - how many different financial configurations the fleet runs, per environment: a count of hashes and never of instances, so a replaced pod is no new disagreement
         # A label is read here and a value never is, so a replica whose refresher is stale (the value NaN) keeps its place in the count.
         # present_over_time keeps a series five minutes past its last sample: one missed scrape of the odd replica out would otherwise end the disagreement for one evaluation, and a for this long would restart at every flicker and never fire.
-        # The for outlasts any rollout an overlay allows: maxReplicas steps of at most progressDeadlineSeconds each, the last pod's grace, and this window (7 x 600 + 115 + 300 = 4615 s). ConfigFingerprintAlertTest reads those numbers from the manifests. A rollout's expected disagreement never pages, and one that has outlived a rollout does.
+        # The for outlasts any rollout an overlay allows: maxReplicas steps of at most progressDeadlineSeconds each, the last pod's grace, and this window. ConfigFingerprintAlertTest reads those numbers from the manifests. A rollout's expected disagreement never pages, and one that has outlived a rollout does.
         expr: count(count by (env, fingerprint) (present_over_time(finapp_config_fingerprint[5m]))) by (env) > 1
         for: 80m
         labels:

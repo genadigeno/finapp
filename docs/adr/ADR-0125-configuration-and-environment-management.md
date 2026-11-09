@@ -73,3 +73,11 @@ runs one configuration.
 ## Follow-up
 
 `P15-TSK-031` builds this ADR. It corrects `SYSTEM_ARCHITECTURE.md` §Baseline Stack to the stack in use.
+
+*Note (2026-11-09, `P15-TSK-031`, as built):* the register is [`CONFIGURATION_REGISTER.md`](../architecture/CONFIGURATION_REGISTER.md), one row per property,
+`ConfigurationRegisterIsCompleteTest` holding it both ways. **The class `SECRET` is not copied into it**: it is `SECRET_MANAGEMENT.md` section 3.2, and a row
+may not carry that class or name one of its properties. `finapp.config.fingerprint` is the SHA-256 of the effective `FINANCIAL` values, as the plan's tag;
+the build embeds the register so the running code reads the one list. The alert's `for` is the longest rollout an overlay allows taken at its
+`progressDeadlineSeconds`, not at the fast path of `startupProbe` and `minReadySeconds`, plus the last pod's grace and the rule's presence window: 80 minutes
+today. No property was moved into versioned data: each `FINANCIAL` row answers the mixed-fleet question for itself. No Spring profile exists, and a
+guard holds that. Decision 5's guards stand as they were.

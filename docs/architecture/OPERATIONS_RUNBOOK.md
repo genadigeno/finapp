@@ -1874,6 +1874,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` |
 | 11.26 The edge: two controllers, the generated route lists, a renewed certificate *(written 2026-11-09, below)* | `-011` | `-012`, `-020` |
 | 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` |
+| 11.31 Changing configuration: which class, which way, and `ConfigFingerprintDisagrees` *(written 2026-11-09, below)* | `P15-TSK-031` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -1892,6 +1893,8 @@ row.)*
 
 *(Added 2026-11-09 by `P15-TSK-005`: §11.1c below is written, the schema-compatibility steps of rows 11.1 and 11.3, and §11.4's compatibility half; not yet rehearsed.)*
 *(Added 2026-11-09 by `P15-TSK-035`: §11.27 below is written, from the census's code and its rules in `infra/prometheus/rules/correctness.yml`; not yet rehearsed.)*
+
+*(Added 2026-11-09 by `P15-TSK-031`: §11.31 below is written, from the register, the overlays and `infra/prometheus/rules/platform.yml`; not yet rehearsed.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
@@ -2454,6 +2457,36 @@ SELECT position, entries_judged, last_success_at, last_failure_at, last_failure_
 **A logical restore.** Transaction ids are not portable: a dump restored into a new cluster restarts the counter below the restored rows' `txid`. A census whose head is ahead of the database's counter refuses to walk (a stamped failure, the head unmoved) rather than skip silently, and it needs a reviewed migration to reset the head at the floor: the head's own trigger refuses a move backward from any other path. A physical restore carries the counter with it and needs nothing.
 
 **`GaugesStaleAcrossTheFleet` (page, 5 minutes).** Every instance that is up has a stale gauge canary (`finapp_gauges_refreshed` NaN): each instance's own `GaugesStale` is a ticket, but while the whole fleet's refreshers are stale, every fleet-wide `max()` rule on a gauge reads NaN and every correctness page on a gauge is blind. One stale instance never pages this way. Check the database first (the gauge reads block on the pool and database timeouts), then the refresher on one instance (section 11.8). Do not restart the fleet at once; the page is about reading, not about money.
+
+### 11.31 Changing configuration - `ConfigFingerprintDisagrees`, `ConfigFingerprintAbsent` (`P15-TSK-031`)
+
+*(Written by `P15-TSK-031`, 2026-11-09, from [`CONFIGURATION_REGISTER.md`](CONFIGURATION_REGISTER.md), the overlays and `infra/prometheus/rules/platform.yml`. **Not yet rehearsed**, and no real environment exists to change.)*
+
+**Find the property first.** The register names its class and where each environment gets it.
+
+| Class | How it changes |
+|---|---|
+| `OPERATIONAL` in an overlay | A pull request against the ConfigMap literals of `deploy/overlays/<environment>/kustomization.yaml`. The ConfigMap's name carries a hash of its contents, so the change rolls the Deployment under the usual strategy (§11.14) |
+| `OPERATIONAL` not set in an overlay | Add it to the overlay's literals, and set that environment's cell in the register from `default` to `overlay`: `ConfigurationRegisterIsCompleteTest` fails until both agree |
+| `FINANCIAL` | As `OPERATIONAL`, with two people on the production overlay (ADR-0122). Read the row's "A mixed fleet" sentence before changing it: it says which direction is safe and which a reviewer must refuse without a measurement |
+| `SECRET` | Never here: `SECRET_MANAGEMENT.md` section 5 |
+
+A property the code gains is one new row in the register, or the build fails. A value that decides money and turns out not to be safe while replicas hold two values goes into versioned database data instead (register section 4), and that is a change to its module.
+
+**During a rollout, a disagreement is expected and is not an incident.** `finapp_config_fingerprint` carries the digest of each replica's effective `FINANCIAL` configuration in its `fingerprint` label, so the fleet's disagreement is visible at once and nothing pages for its length.
+
+**`ConfigFingerprintDisagrees` (page): the fleet has disagreed for longer than any rollout takes.**
+
+1. `count by (fingerprint) (finapp_config_fingerprint)` shows the groups, and `finapp_config_fingerprint` the replicas in each. The digest says only that they differ: compare the two replicas' ConfigMaps and the Deployment's revisions to see what.
+2. A rollout that has stopped: `kubectl rollout status deployment/finapp-app` and `kubectl get replicasets`. A replica on the old revision with the new one failing readiness is the usual cause, and §11.1 is the way forward. Rolling back is §11.3.
+3. A replica no revision explains: someone changed a pod or a ConfigMap by hand. Treat it as a security event, restore the desired state from the overlay and record who did it.
+4. Do **not** restart replicas to make the alert stop: it clears the signal and not the cause, and a restart that picks up a mis-set ConfigMap makes the wrong value universal.
+
+Each `FINANCIAL` row is safe mixed for about a rollout's length. Past that, nothing promises that the fleet's two values were meant.
+
+**`ConfigFingerprintAbsent` (ticket).** No replica publishes the digest, so the alert above is blind: usually a release without the meter or a scrape that lost the job. `FinappTargetsAbsent` pages if the whole fleet is gone.
+
+**The role's idle-in-transaction timeout** (register section 5) is set by the bootstrap step (§11.1b) and reaches each session at its next connection. If it fires, the application logs a broken connection and the caller's retry succeeds; a repeating one is a transaction held open by something it should not be, and the session's last statement in `pg_stat_activity` is where to start.
 
 ### 11.9 A failing scan
 

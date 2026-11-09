@@ -339,6 +339,9 @@ class ConfigurationRegisterIsCompleteTest {
             if (!financial && !statement.equals(NOT_APPLICABLE)) {
                 wrong.add(row.property() + " is OPERATIONAL and states a mixed-fleet answer: class it FINANCIAL or remove it");
             }
+            if (financial && row.defaultCell().equals(ConfigurationRegister.LOOPBACK)) {
+                wrong.add(row.property() + " is FINANCIAL with a loopback token for a default, and the fingerprint hashes the default");
+            }
             if (statement.toLowerCase(java.util.Locale.ROOT).contains("only a config")) {
                 wrong.add(row.property() + " gives the answer the register exists to refuse");
             }
@@ -561,6 +564,8 @@ class ConfigurationRegisterIsCompleteTest {
         Set<String> names = new TreeSet<>();
         for (Map<String, Object> document : SecretInventoryIsCompleteTest.loadAll(kustomization)) {
             for (Object generator : (List<Object>) document.getOrDefault("configMapGenerator", List.of())) {
+                // A generator's envs or files would be a source this reads nothing of: refused, so a new one has to be read here first.
+                assertThat(((Map<String, Object>) generator).keySet()).as("a ConfigMap generator is literals alone").isSubsetOf("name", "behavior", "literals");
                 for (Object literal : (List<Object>) ((Map<String, Object>) generator).getOrDefault("literals", List.of())) {
                     String text = String.valueOf(literal);
                     int equals = text.indexOf('=');
@@ -581,6 +586,9 @@ class ConfigurationRegisterIsCompleteTest {
                 for (Object env : (List<Object>) ((Map<String, Object>) container).getOrDefault("env", List.of())) {
                     names.add(String.valueOf(((Map<String, Object>) env).get("name")));
                 }
+                assertThat((List<Object>) ((Map<String, Object>) container).getOrDefault("envFrom", List.of()))
+                        .as("a source beyond the ConfigMap and the store's Secret is one this test cannot see")
+                        .hasSize(2);
             }
         }
         return names;
