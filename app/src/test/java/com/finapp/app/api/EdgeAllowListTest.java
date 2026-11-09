@@ -1,6 +1,7 @@
 package com.finapp.app.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.api.EdgeRoutes.EdgeRoute;
 import com.finapp.app.api.EdgeRoutes.Surface;
@@ -76,6 +77,7 @@ class EdgeAllowListTest {
     private static final String PUBLIC_EDGE = "deploy/edge/base/public-edge.yaml";
     private static final String OPERATOR_EDGE = "deploy/edge/base/operator-edge.yaml";
     private static final String STATIC_CONFIG = "deploy/edge/base/traefik.yaml";
+    private static final String CONTROLLERS = "deploy/edge/base/controllers.yaml";
 
     /** The two callback routes the published contract's own test context does not carry: see the class comment. */
     private static final Set<String> CONDITIONAL_CALLBACKS =
@@ -259,10 +261,13 @@ class EdgeAllowListTest {
     // ------------------------------------------------------------------------------------------------- two matchers, one answer
 
     @Test
-    @DisplayName("the proxy's rule and Spring's matcher agree on every concrete path of every route")
+    @DisplayName("the proxy's rule and Spring's matcher agree on every route's concrete paths: a plain identifier and a dotted code in each variable")
     void theMatchersAgree() {
         PathPatternParser parser = new PathPatternParser();
-        List<String> corpus = routes.stream().map(route -> instance(route.template())).distinct().toList();
+        List<String> corpus = routes.stream()
+                .flatMap(route -> java.util.stream.Stream.of(instance(route.template()), route.template().replaceAll("\\{[^}]+}", "sim.psp.card-clearing")))
+                .distinct()
+                .toList();
         assertThat(corpus).hasSizeGreaterThan(300);
         for (EdgeRoute route : routes) {
             var spring = parser.parse(route.template());
@@ -317,6 +322,15 @@ class EdgeAllowListTest {
         }
     }
 
+    @Test
+    @DisplayName("a template the rule language cannot state is refused: a literal that is not plain, a segment that is only partly a variable")
+    void aSegmentTheRuleCannotStateIsRefused() {
+        assertThat(EdgeRoutes.regex("/v1/things/{id}/state")).isEqualTo("^/v1/things/" + EdgeRoutes.VARIABLE + "/state$");
+        for (String template : List.of("/v1/things/{id}-x", "/v1/things/x{id}", "/v1/things.json/{id}", "/v1/Things/{id}", "/v1/things/{id}{other}")) {
+            assertThatThrownBy(() -> EdgeRoutes.regex(template)).as(template).isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
     // ------------------------------------------------------------------------------------------------- the derivation itself
 
     @Test
@@ -348,22 +362,75 @@ class EdgeAllowListTest {
     // ----------------------------------------------------------------------------------------------------------- the limits
 
     @Test
-    @DisplayName("every public route carries a coarse per-source limit and every one of those tiers is defined on the connection's address")
+    @DisplayName("every public route carries a tier's rate and in-flight limits, each keyed on the connection and never on a header or the Host")
     @SuppressWarnings("unchecked")
     void everyPublicRouteCarriesACoarseSourceLimit() {
         Map<String, Object> middlewares = (Map<String, Object>) ((Map<String, Object>) yaml(PUBLIC_EDGE).get("http")).get("middlewares");
-        Set<String> tiers = new TreeSet<>();
         for (Tier tier : Tier.values()) {
-            tiers.add(tier.middleware);
-            Map<String, Object> limit = (Map<String, Object>) ((Map<String, Object>) middlewares.get(tier.middleware)).get("rateLimit");
-            assertThat(limit).as("%s is a limit", tier.middleware).containsKeys("average", "burst", "period");
-            assertThat(limit).as("the connection's address, never a header a client can set").doesNotContainKey("sourceCriterion");
+            Map<String, Object> rate = (Map<String, Object>) ((Map<String, Object>) middlewares.get(tier.rate)).get("rateLimit");
+            assertThat(rate).as("%s is a limit", tier.rate).containsKeys("average", "burst", "period");
+            assertKeyedOnTheConnection(tier.rate, rate);
+            Map<String, Object> hold = (Map<String, Object>) ((Map<String, Object>) middlewares.get(tier.hold)).get("inFlightReq");
+            assertThat(((Number) hold.get("amount")).intValue()).as("%s bounds what one source holds", tier.hold).isPositive();
+            assertKeyedOnTheConnection(tier.hold, hold);
         }
+        Set<String> rates = java.util.Arrays.stream(Tier.values()).map(tier -> tier.rate).collect(Collectors.toSet());
+        Set<String> holds = java.util.Arrays.stream(Tier.values()).map(tier -> tier.hold).collect(Collectors.toSet());
         for (Map.Entry<String, Map<String, Object>> router : routers(PUBLIC_FILE).entrySet()) {
-            assertThat((List<String>) router.getValue().get("middlewares"))
-                    .as("%s", router.getKey())
-                    .anySatisfy(name -> assertThat(tiers).contains(name));
+            List<String> named = (List<String>) router.getValue().get("middlewares");
+            assertThat(named).as("%s", router.getKey()).anyMatch(rates::contains).anyMatch(holds::contains);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void assertKeyedOnTheConnection(String name, Map<String, Object> limit) {
+        Map<String, Object> criterion = (Map<String, Object>) limit.get("sourceCriterion");
+        assertThat(criterion).as("%s states its source: the in-flight default is the Host header, which the client chooses", name).containsOnlyKeys("ipStrategy");
+        assertThat((Map<String, Object>) criterion.get("ipStrategy")).as("%s: the connection, grouped by /64 on IPv6", name).containsOnlyKeys("ipv6Subnet");
+    }
+
+    @Test
+    @DisplayName("a tier is one router, so its limit is one bucket per source and not one per route")
+    void aTierIsOneRouter() {
+        assertThat(routers(PUBLIC_FILE).keySet()).containsExactlyInAnyOrder("public-door", "public-session", "public-machine", "public-callback");
+        assertThat(routers(OPERATOR_FILE).keySet()).containsExactlyInAnyOrder("operator-default", "operator-settlement-upload");
+        assertThat(rules(PUBLIC_FILE)).as("every clause still names one route").hasSize((int) routes.stream().filter(route -> route.surface() == Surface.PUBLIC).count());
+    }
+
+    @Test
+    @DisplayName("what one source can hold at the body cap, in flight across every tier, fits the spool, and the spool fits the memory limit")
+    @SuppressWarnings("unchecked")
+    void oneSourceCannotFillTheSpool() {
+        Map<String, Object> middlewares = (Map<String, Object>) ((Map<String, Object>) yaml(PUBLIC_EDGE).get("http")).get("middlewares");
+        long held = 0;
+        for (Tier tier : Tier.values()) {
+            held += ((Number) ((Map<String, Object>) ((Map<String, Object>) middlewares.get(tier.hold)).get("inFlightReq")).get("amount")).longValue();
+        }
+        long heldBytes = held * cap(PUBLIC_EDGE, "body-cap");
+        for (Map<String, Object> document : deployments()) {
+            Map<String, Object> pod = (Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>) document.get("spec")).get("template")).get("spec");
+            Map<String, Object> tmp = ((List<Map<String, Object>>) pod.get("volumes")).stream().filter(volume -> "tmp".equals(volume.get("name"))).findFirst().orElseThrow();
+            Map<String, Object> emptyDir = (Map<String, Object>) tmp.get("emptyDir");
+            assertThat(emptyDir).as("a disk-backed emptyDir gets the pod evicted at its sizeLimit; tmpfs answers ENOSPC").containsEntry("medium", "Memory");
+            long spool = org.springframework.util.unit.DataSize.parse(((String) emptyDir.get("sizeLimit")).replace("Mi", "MB")).toBytes();
+            assertThat(heldBytes).as("%s in flight from one source at the cap", held).isLessThan(spool);
+            Map<String, Object> container = ((List<Map<String, Object>>) pod.get("containers")).get(0);
+            String limit = (String) ((Map<String, Object>) ((Map<String, Object>) container.get("resources")).get("limits")).get("memory");
+            assertThat(org.springframework.util.unit.DataSize.parse(limit.replace("Mi", "MB")).toBytes())
+                    .as("the spool counts against the container's memory limit").isGreaterThan(spool);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> deployments() {
+        List<Map<String, Object>> deployments = new ArrayList<>();
+        for (Object document : new Yaml(new SafeConstructor(new LoaderOptions())).loadAll(RepositoryPaths.read(CONTROLLERS))) {
+            if ("Deployment".equals(((Map<String, Object>) document).get("kind"))) {
+                deployments.add((Map<String, Object>) document);
+            }
+        }
+        assertThat(deployments).as("both controllers were read").hasSize(2);
+        return deployments;
     }
 
     @Test
@@ -384,11 +451,21 @@ class EdgeAllowListTest {
                 .as("the larger cap on the upload alone")
                 .filteredOn(entry -> ((List<String>) entry.getValue().get("middlewares")).contains("body-cap-settlement"))
                 .singleElement()
-                .satisfies(entry -> assertThat(entry.getKey()).isEqualTo("post-v1-operator-settlement-files"));
+                .satisfies(entry -> assertThat(entry.getKey()).isEqualTo("operator-settlement-upload"));
+        assertThat(rules(OPERATOR_FILE)).as("the settlement upload has a router of its own").anyMatch(rule -> rule.admits("POST", RequestSizeLimitFilter.SETTLEMENT_UPLOAD_PATH));
+        assertThat(responseCap(PUBLIC_EDGE, "body-cap")).as("a response cap is stated: unset, a large response spools without bound").isPositive();
+        assertThat(responseCap(OPERATOR_EDGE, "body-cap")).as("above a settlement file's content read").isGreaterThanOrEqualTo(settlementUploadBytes);
         assertThat(((Map<String, Map<String, Object>>) yaml(STATIC_CONFIG).get("entryPoints")).get("websecure"))
                 .extracting(entry -> ((Map<String, Object>) entry.get("http")).get("maxHeaderBytes"))
                 .satisfies(value -> assertThat(((Number) value).longValue()).as("Tomcat's own header limit")
                         .isGreaterThanOrEqualTo(server.getMaxHttpRequestHeaderSize().toBytes()));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static long responseCap(String file, String name) {
+        Map<String, Object> http = (Map<String, Object>) yaml(file).get("http");
+        Map<String, Object> middleware = (Map<String, Object>) ((Map<String, Object>) http.get("middlewares")).get(name);
+        return ((Number) ((Map<String, Object>) middleware.get("buffering")).get("maxResponseBodyBytes")).longValue();
     }
 
     @SuppressWarnings("unchecked")
@@ -408,10 +485,11 @@ class EdgeAllowListTest {
     private static List<Rule> rules(String file) {
         List<Rule> rules = new ArrayList<>();
         for (Map.Entry<String, Map<String, Object>> router : routers(file).entrySet()) {
-            String rule = (String) router.getValue().get("rule");
-            Matcher parsed = EdgeRoutes.RULE.matcher(rule);
-            assertThat(parsed.matches()).as("%s: a rule outside the generated grammar is refused, not guessed at: %s", router.getKey(), rule).isTrue();
-            rules.add(new Rule(parsed.group(1), parsed.group(2), parsed.group(3)));
+            for (String clause : ((String) router.getValue().get("rule")).split(Pattern.quote(EdgeRoutes.CLAUSE_SEPARATOR))) {
+                Matcher parsed = EdgeRoutes.CLAUSE.matcher(clause);
+                assertThat(parsed.matches()).as("%s: a clause outside the generated grammar is refused, not guessed at: %s", router.getKey(), clause).isTrue();
+                rules.add(new Rule(parsed.group(1), parsed.group(2), parsed.group(3)));
+            }
         }
         return rules;
     }

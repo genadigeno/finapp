@@ -88,6 +88,7 @@ plant_all() {
     edge_plant_on edge-no-role-label "$CONTROLLERS" '1,/finapp\/role: ingress-controller/s/finapp\/role: ingress-controller/finapp\/role: other/'
 
     edge_plant_on edge-forwarded-insecure "$STATIC" 's/insecure: false/insecure: true/'
+    edge_plant_on edge-operator-forwarded edge/base/traefik-operator.yaml 's/insecure: false/insecure: true/'
     edge_plant_on edge-forwarded-trusted "$STATIC" 's/insecure: false/insecure: false\n      trustedIPs: ["10.0.0.0\/8"]/'
     edge_plant_on edge-alias-keep "$STATIC" 's/aliasHeadersStrategy: delete/aliasHeadersStrategy: keep/'
     edge_plant_on edge-encoded-slash "$STATIC" 's/allowEncodedSlash: false/allowEncodedSlash: true/'
@@ -98,7 +99,14 @@ plant_all() {
     edge_plant_on edge-kubernetes-provider "$STATIC" 's/^  file:$/  kubernetesCRD: {}\n  file:/'
 
     edge_plant_on edge-public-operator "$PUBLIC_ROUTES" 's/^  routers:$/  routers:\n    planted:\n      entryPoints: [websecure]\n      rule: "Method(`GET`) \&\& Path(`\/v1\/operator\/planted`)"\n      service: finapp-app\n      middlewares: [edge-headers, source-session, body-cap]\n      tls: {}/'
-    edge_plant_on edge-public-no-limit "$PUBLIC_ROUTES" '1,/source-session, body-cap/s/source-session, //'
+    edge_plant_on edge-public-no-limit "$PUBLIC_ROUTES" '1,/source-session, hold-session, body-cap/s/source-session, //'
+    edge_plant_on edge-public-no-hold "$PUBLIC_ROUTES" '1,/hold-session, body-cap/s/hold-session, //'
+    edge_plant_on edge-hold-on-host "$PUBLIC_EDGE" '/amount: 5$/{n;s/sourceCriterion: .*/sourceCriterion: {requestHost: true}/}'
+    edge_plant_on edge-spool-on-disk "$CONTROLLERS" '1,/medium: Memory/{/medium: Memory/d}'
+    edge_plant_on edge-spool-over-limit "$CONTROLLERS" 's/sizeLimit: 256Mi/sizeLimit: 400Mi/'
+    edge_plant_on edge-no-backend-timeout "$PUBLIC_EDGE" '/responseHeaderTimeout: 60s/d'
+    edge_plant_on edge-no-write-timeout "$STATIC" '/writeTimeout: 120s/d'
+    edge_plant_on edge-upgrade-forwarded "$PUBLIC_EDGE" '/^          Upgrade: ""$/d'
     edge_plant_on edge-operator-no-allowlist "$OPERATOR_ROUTES" '1,/internal-only, body-cap/s/internal-only, //'
 
     edge_plant_on edge-sticky "$PUBLIC_EDGE" 's/^        passHostHeader: false$/        passHostHeader: false\n        sticky:\n          cookie: {}/'
@@ -106,7 +114,9 @@ plant_all() {
 
     edge_plant_on edge-management-port "$CONTROLLERS" '1,/targetPort: https/s/targetPort: https/targetPort: management/'
     edge_plant_on edge-operator-public "$PRODUCTION_EDGE" 's/aws-load-balancer-scheme: internal$/aws-load-balancer-scheme: internet-facing/'
-    edge_plant_on edge-no-source-address "$PRODUCTION_EDGE" '/name: finapp-edge-public/,/value: Local/{/op: add/{N;N;/externalTrafficPolicy/d}}'
+    edge_plant_on edge-no-source-address edge/overlays/kind/kustomization.yaml '/name: finapp-edge-public/,/value: Local/{/op: add/{N;N;/externalTrafficPolicy/d}}' kind
+    edge_plant_on edge-no-preserve "$PRODUCTION_EDGE" '1,/target-group-attributes/{/target-group-attributes/d}'
+    edge_plant_on edge-nlb-instance "$PRODUCTION_EDGE" '1,/nlb-target-type: ip/s/nlb-target-type: ip/nlb-target-type: instance/'
 
     edge_plant edge-ingress
     cat > "$PLANTS/edge-ingress/deploy/edge/overlays/production/plain.yaml" <<'YAML'
@@ -199,7 +209,7 @@ CERTS=$(mktemp -d)
 status=0
 
 cleanup() {
-    docker rm -f "$RUN-public" "$RUN-operator" "$RUN-backend" "$RUN-client" >/dev/null 2>&1 || true
+    docker rm -f "$RUN-public" "$RUN-operator" "$RUN-spool" "$RUN-backend" "$RUN-client" >/dev/null 2>&1 || true
     docker network rm "$NETWORK" >/dev/null 2>&1 || true
     docker volume rm -f "$VOLUME" "$VOLUME-public" "$VOLUME-operator" >/dev/null 2>&1 || true
     rm -rf "$CERTS"
@@ -274,6 +284,7 @@ edge_refused edge-one-replica edge-controllers
 edge_refused edge-no-routes edge-controllers
 edge_refused edge-no-role-label edge-controllers
 edge_refused edge-forwarded-insecure edge-forwarded
+edge_refused edge-operator-forwarded edge-forwarded
 edge_refused edge-forwarded-trusted edge-forwarded
 edge_refused edge-alias-keep edge-forwarded
 edge_refused edge-encoded-slash edge-encoded
@@ -284,12 +295,21 @@ edge_refused edge-tls-dropped edge-listener
 edge_refused edge-kubernetes-provider edge-provider
 edge_refused edge-public-operator edge-routes-public
 edge_refused edge-public-no-limit edge-routes-public
+edge_refused edge-public-no-hold edge-hold
+edge_refused edge-hold-on-host edge-hold
+edge_refused edge-spool-on-disk edge-spool
+edge_refused edge-spool-over-limit edge-spool
+edge_refused edge-no-backend-timeout edge-timeouts
+edge_refused edge-no-write-timeout edge-timeouts
+edge_refused edge-upgrade-forwarded edge-upgrade
 edge_refused edge-operator-no-allowlist edge-routes-operator
 edge_refused edge-sticky edge-no-affinity
 edge_refused edge-reuse edge-no-affinity
 edge_refused edge-management-port edge-service-port
 edge_refused edge-operator-public edge-operator-internal
 edge_refused edge-no-source-address edge-source-address
+edge_refused edge-no-preserve edge-source-address
+edge_refused edge-nlb-instance edge-source-address
 edge_refused edge-ingress edge-no-ingress
 edge_refused edge-no-default-deny edge-network
 edge_refused edge-operator-internet edge-network
@@ -339,10 +359,11 @@ swap_volume() {
 }
 
 start_controller() {
-    # The pod's own posture: its numeric user, a read-only root, every capability dropped, /tmp writable and nothing else.
+    # start_controller <surface> <static file>. The pod's own posture: its numeric user, a read-only root, every capability dropped, and
+    # /tmp the memory-backed volume its manifest states.
     docker run -d --name "$RUN-$1" --network "$NETWORK" --network-alias "$1.finapp.test" \
-        --user 65532:65532 --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
-        -v "$ROOT/deploy/edge/base/traefik.yaml:/etc/traefik/traefik.yaml:ro" \
+        --user 65532:65532 --read-only --tmpfs /tmp:rw,size=256m,mode=1777 --cap-drop ALL --security-opt no-new-privileges \
+        -v "$ROOT/deploy/edge/base/$2:/etc/traefik/traefik.yaml:ro" \
         -v "$VOLUME-$1:/etc/finapp-edge/dynamic:ro" "$TRAEFIK_IMAGE" >/dev/null
 }
 
@@ -368,6 +389,32 @@ expect_code() {
     fi
 }
 
+# edge_answers_with_headers <label> <wanted status> <curl args...>: a response the edge itself produces still carries HSTS and its siblings.
+# Tried a few times: a status that depends on a bucket being empty can miss once.
+edge_answers_with_headers() {
+    label=$1 wanted=$2
+    shift 2
+    i=0
+    while [ "$i" -lt 25 ]; do
+        answer=$(client curl -sk --path-as-is --max-time 15 -D - -o /dev/null "$@" | tr -d '\r')
+        if printf '%s\n' "$answer" | head -1 | grep -q " $wanted"; then
+            if printf '%s\n' "$answer" | grep -qi '^strict-transport-security: max-age=31536000' \
+                && printf '%s\n' "$answer" | grep -qi '^x-content-type-options: nosniff'; then
+                echo "ok   $label: $wanted, with the headers"
+            else
+                printf '%s\n' "$answer" | head -12
+                echo "!!   $label: $wanted without HSTS or nosniff"
+                status=1
+            fi
+            return 0
+        fi
+        i=$((i + 1))
+    done
+    printf '%s\n' "$answer" | head -12
+    echo "!!   $label: never answered $wanted"
+    status=1
+}
+
 docker network create "$NETWORK" >/dev/null
 docker volume create "$VOLUME-public" >/dev/null
 docker volume create "$VOLUME-operator" >/dev/null
@@ -379,8 +426,8 @@ layout "$VOLUME-operator" operator-routes.yaml operator-edge.yaml operator
 
 docker run -d --name "$RUN-backend" --network "$NETWORK" --network-alias finapp-app.finapp.svc.cluster.local \
     "$WHOAMI_IMAGE" --port 8080 --verbose >/dev/null
-start_controller public
-start_controller operator
+start_controller public traefik.yaml
+start_controller operator traefik-operator.yaml
 docker run -d --name "$RUN-client" --network "$NETWORK" --entrypoint sleep "$CURL_IMAGE" 600 >/dev/null
 
 PUBLIC=https://public.finapp.test:8443
@@ -461,6 +508,29 @@ for line in 'strict-transport-security' 'x-frame-options'; do
     fi
 done
 
+echo "==   an encoded spelling of a public path is routed as that path, and the backend receives what was sent"
+for spelling in '/v1/p%61yments/abc-123' '/v1/payments/a%2eb'; do
+    answer=$(client curl -sk --path-as-is --max-time 15 "$PUBLIC$spelling" | tr -d '\r')
+    if printf '%s\n' "$answer" | grep -qxF "GET $spelling HTTP/1.1"; then
+        echo "ok   served, and received as sent: $spelling"
+    else
+        printf '%s\n' "$answer" | head -12
+        echo "!!   $spelling was not received as sent"
+        status=1
+    fi
+done
+
+echo "==   an h2c upgrade stops here"
+answer=$(client curl --http1.1 -sk --max-time 15 -H 'Connection: Upgrade, HTTP2-Settings' -H 'Upgrade: h2c' \
+    -H 'HTTP2-Settings: AAMAAABkAAQAoAAAAAIAAAAA' "$PUBLIC/v1/me" | tr -d '\r')
+if printf '%s\n' "$answer" | grep -qx 'GET /v1/me HTTP/1.1' && ! printf '%s\n' "$answer" | grep -qi '^Upgrade:\|^Http2-Settings:'; then
+    echo "ok   the backend received no Upgrade header"
+else
+    printf '%s\n' "$answer" | head -14
+    echo "!!   an h2c upgrade reached the backend"
+    status=1
+fi
+
 echo "==   TLS is the only way in"
 if client curl -sk --max-time 5 -o /dev/null --tlsv1.1 --tls-max 1.1 "$PUBLIC/v1/me" >/dev/null 2>&1; then
     echo "!!   TLS 1.1 was accepted"
@@ -502,8 +572,30 @@ for smuggled in '203.0.113' 'X-Forwarded-Prefix' 'X_Forwarded_For' 'Forwarded: f
     fi
 done
 
+client sh -c 'head -c 1048576 /dev/zero > /tmp/one-mib; head -c 3145728 /dev/zero > /tmp/three-mib; head -c 1900000 /dev/zero > /tmp/almost-two'
+
+echo "==   what one source can hold: five in flight on the door tier, whatever Host it names"
+i=0
+while [ "$i" -lt 5 ]; do
+    docker exec -d "$RUN-client" curl -sk --max-time 10 --limit-rate 30k -X POST --data-binary @/tmp/one-mib -H "Host: holder-$i.invalid" -o /dev/null "$PUBLIC/v1/authentications"
+    i=$((i + 1))
+done
+sleep 2
+expect_code "a sixth from the same source, naming another Host" 429 -X POST --data-binary @/tmp/one-mib -H 'Host: another.invalid' "$PUBLIC/v1/authentications"
+sleep 9
+
+echo "==   a body held open past the read timeout is cut"
+held=$(client curl -sk --max-time 40 --limit-rate 10k -X POST --data-binary @/tmp/one-mib -H 'Content-Type: application/json' -o /dev/null -w '%{http_code} %{time_total}' "$PUBLIC/v1/providers/payments/webhooks" || true)
+held_code=${held%% *}
+held_seconds=${held##* }
+if [ "$held_code" != 200 ] && [ "${held_seconds%%.*}" -lt 30 ]; then
+    echo "ok   cut after ${held_seconds}s, $held_code"
+else
+    echo "!!   a held body answered $held"
+    status=1
+fi
+
 echo "==   the size limits and the per-source limit"
-client sh -c 'head -c 1048576 /dev/zero > /tmp/one-mib; head -c 3145728 /dev/zero > /tmp/three-mib'
 got=$(client curl -sk --max-time 30 -X POST --data-binary @/tmp/one-mib -H 'Content-Type: application/json' "$PUBLIC/v1/providers/payments/webhooks" -w '\n%{http_code}' | tr -d '\r')
 if printf '%s\n' "$got" | tail -1 | grep -qx 200 && printf '%s\n' "$got" | grep -qx 'Content-Length: 1048576'; then
     echo "ok   a provider callback at the application's limit arrives whole"
@@ -534,6 +626,33 @@ if [ "$served" -gt 0 ] && [ "$limited" -gt 0 ]; then
 else
     printf '%s\n' "$codes" | sort | uniq -c
     echo "!!   a burst from one source was not limited: $served served, $limited limited"
+    status=1
+fi
+
+edge_answers_with_headers "the per-source limit's own answer" 429 -X POST "$PUBLIC/v1/authentications"
+edge_answers_with_headers "the body cap's own answer" 413 -X POST --data-binary @/tmp/three-mib -H 'Content-Type: application/json' "$PUBLIC/v1/providers/payments/webhooks"
+
+echo "==   a tier's limit is one bucket across all its routes"
+sleep 3
+# door_burst <url>: thirty POSTs at once, half again the tier's burst of twenty; prints how many were served.
+door_burst() {
+    burst=""
+    i=0
+    while [ "$i" -lt 30 ]; do
+        [ "$i" -eq 0 ] || burst="$burst --next"
+        burst="$burst -sk --max-time 30 -X POST -o /dev/null -w %{http_code}\\n $1"
+        i=$((i + 1))
+    done
+    # shellcheck disable=SC2086
+    client curl -Z --parallel-max 30 $burst | grep -c '^200$' || true
+}
+first=$(door_burst "$PUBLIC/v1/authentications")
+second=$(door_burst "$PUBLIC/v1/registrations")
+# Two buckets would have served at least the second route's own twenty.
+if [ "$first" -gt 0 ] && [ "$second" -lt 20 ]; then
+    echo "ok   one bucket across two routes: the first served $first of 30, the second $second of 30 straight after"
+else
+    echo "!!   the door tier is not one bucket: the first route served $first of 30, the second $second of 30"
     status=1
 fi
 
@@ -580,6 +699,37 @@ until [ "$(code "$OPERATOR/v1/operator/merchants/$SAMPLE")" = 403 ]; do
     sleep 1
 done
 [ "$i" -gt 30 ] || echo "ok   a source outside the internal ranges is refused: 403"
+edge_answers_with_headers "the address allow-list's own answer" 403 "$OPERATOR/v1/operator/merchants/$SAMPLE"
+
+echo "==   a full spool refuses the large body and still serves the small ones"
+docker run -d --name "$RUN-spool" --network "$NETWORK" \
+    --user 65532:65532 --read-only --tmpfs /tmp:rw,size=4m,mode=1777 --cap-drop ALL --security-opt no-new-privileges \
+    -v "$ROOT/deploy/edge/base/traefik.yaml:/etc/traefik/traefik.yaml:ro" \
+    -v "$VOLUME-public:/etc/finapp-edge/dynamic:ro" "$TRAEFIK_IMAGE" >/dev/null
+SPOOL_ADDRESS=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$RUN-spool")
+RESOLVE="public.finapp.test:8443:$SPOOL_ADDRESS"
+i=0
+until [ "$(code --resolve "$RESOLVE" "$PUBLIC/v1/me")" = 200 ]; do
+    i=$((i + 1))
+    if [ "$i" -gt 30 ]; then
+        echo "!!   the small-spool controller never served"
+        status=1
+        break
+    fi
+    sleep 1
+done
+# Three uploads abandoned part way: each leaves its spool behind until the proxy's next garbage collection.
+for abandoned in 1 2 3; do
+    client curl -sk --max-time 2 --limit-rate 800k --resolve "$RESOLVE" -X POST --data-binary @/tmp/almost-two -H 'Content-Type: application/json' -o /dev/null "$PUBLIC/v1/providers/payments/webhooks" || true
+done
+expect_code "a large body on a full spool" 500 --resolve "$RESOLVE" -X POST --data-binary @/tmp/almost-two -H 'Content-Type: application/json' "$PUBLIC/v1/providers/payments/webhooks"
+expect_code "a small request beside a full spool" 200 --resolve "$RESOLVE" "$PUBLIC/v1/me"
+if [ "$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$RUN-spool")" = "true 0" ]; then
+    echo "ok   the controller is still running, never restarted"
+else
+    echo "!!   the controller did not survive a full spool"
+    status=1
+fi
 
 if [ "$status" -eq 0 ]; then
     echo "ok   every check green, every plant refused for its reason, the proxy holds on every spelling"

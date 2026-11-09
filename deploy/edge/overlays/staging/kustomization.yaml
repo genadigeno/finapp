@@ -14,9 +14,6 @@ patches:
         path: /spec/type
         value: LoadBalancer
       - op: add
-        path: /spec/externalTrafficPolicy
-        value: Local
-      - op: add
         path: /metadata/annotations
         value:
           service.beta.kubernetes.io/aws-load-balancer-type: external
@@ -30,9 +27,6 @@ patches:
       - op: replace
         path: /spec/type
         value: LoadBalancer
-      - op: add
-        path: /spec/externalTrafficPolicy
-        value: Local
       - op: add
         path: /metadata/annotations
         value:

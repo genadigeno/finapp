@@ -1,6 +1,6 @@
-# The edge's static configuration (P15-TSK-011, ADR-0120 decision 6). Both controllers read this file; the routes differ, the
-# transport does not. infra/scripts/edge-check.sh runs these bytes in the pinned image against a stand-in backend, and the
-# defaults stated here are stated because several of them are the unsafe ones.
+# The public edge's static configuration (P15-TSK-011, ADR-0120 decision 6). traefik-operator.yaml is this file with longer read and
+# write timeouts, and EdgeManifestsTest holds that as the only difference. infra/scripts/edge-check.sh runs these bytes in the pinned
+# image against a stand-in backend, and the defaults stated here are stated because several of them are the unsafe ones.
 global:
   checkNewVersion: false
   sendAnonymousUsage: false
@@ -34,7 +34,10 @@ entryPoints:
         allowEncodedHash: false
     transport:
       respondingTimeouts:
-        readTimeout: 60s
+        # The whole request, body included: what one source can hold a body open for. A legitimate 1 MiB body needs 50 KiB/s.
+        readTimeout: 20s
+        # Above the read, the replica's answer (responseHeaderTimeout, 60 s) and the time to send it. Go starts this at the request's headers.
+        writeTimeout: 120s
         idleTimeout: 180s
       lifeCycle:
         # Keep accepting while the load balancer drops this pod, then drain. Below the pod's grace (45 s).

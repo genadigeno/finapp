@@ -84,10 +84,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: "1"
-              memory: 256Mi
+              memory: 512Mi
           volumeMounts:
             - name: static
               mountPath: /etc/traefik
@@ -110,10 +110,15 @@ spec:
                   name: finapp-edge-public-routes
               - secret:
                   name: finapp-edge-public-tls
-        # Buffering spills to disk past 64 KiB. Bounded, so a body flood fills this volume rather than the node.
+        # A body or a response past 64 KiB spools here, before anything has authenticated. Memory-backed and sized, so a full spool answers a
+        # write with ENOSPC: that request gets a 500 and everything smaller is still served. A disk-backed emptyDir would instead get the pod
+        # evicted at its sizeLimit. It counts against the container's memory limit, hence 512Mi for this volume and the process. An aborted
+        # upload's spool is held until the proxy's next garbage collection (measured on the pinned image: under two minutes). KYC documents
+        # and settlement files past 64 KiB sit here in plaintext for the length of the request: in RAM, never on the node's disk.
         - name: tmp
           emptyDir:
-            sizeLimit: 512Mi
+            medium: Memory
+            sizeLimit: 256Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -160,7 +165,7 @@ spec:
           image: docker.io/library/traefik@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
           imagePullPolicy: IfNotPresent
           args:
-            - --configFile=/etc/traefik/traefik.yaml
+            - --configFile=/etc/traefik/traefik-operator.yaml
           ports:
             - name: https
               containerPort: 8443
@@ -192,10 +197,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: "1"
-              memory: 256Mi
+              memory: 512Mi
           volumeMounts:
             - name: static
               mountPath: /etc/traefik
@@ -219,7 +224,8 @@ spec:
                   name: finapp-edge-operator-tls
         - name: tmp
           emptyDir:
-            sizeLimit: 512Mi
+            medium: Memory
+            sizeLimit: 256Mi
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

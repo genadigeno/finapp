@@ -59,42 +59,83 @@ routes_render(prefix) if {
 }
 
 deny contains msg if {
-	some prefix in {"finapp-edge-public-routes-", "finapp-edge-operator-routes-"}
+	some prefix in route_config_prefixes
 	not routes_render(prefix)
 	msg := sprintf("[edge-controllers] the %s ConfigMap renders no routers", [prefix])
 }
 
-# ------------------------------------------------------------------------------------------- the static configuration
+# ------------------------------------------------------------------------------------------- the spool
 
-static_config := yaml.unmarshal(config_map_with_prefix("finapp-edge-static-").data["traefik.yaml"])
+tmp_volume(name) := volume if {
+	some doc in main.of_kind("Deployment")
+	doc.metadata.name == name
+	some volume in doc.spec.template.spec.volumes
+	volume.name == "tmp"
+}
+
+memory_limit(name) := units.parse_bytes(container.resources.limits.memory) if {
+	some doc in main.of_kind("Deployment")
+	doc.metadata.name == name
+	some container in doc.spec.template.spec.containers
+}
+
+# Memory-backed, because a disk-backed emptyDir gets the pod evicted at its sizeLimit where tmpfs answers the write with ENOSPC. Sized, and inside
+# the container's memory limit with room for the process, because a tmpfs counts against it.
+spool_is_bounded(name) if {
+	empty_dir := tmp_volume(name).emptyDir
+	empty_dir.medium == "Memory"
+	memory_limit(name) >= units.parse_bytes(empty_dir.sizeLimit) + (200 * 1024 * 1024)
+}
+
+deny contains msg if {
+	some name in controller_names
+	not spool_is_bounded(name)
+	msg := sprintf("[edge-spool] %s's /tmp must be memory-backed, sized, and inside its memory limit with 200Mi to spare", [name])
+}
+
+# ------------------------------------------------------------------------------------------- the static configuration, per surface
+
+static_keys := {"traefik.yaml", "traefik-operator.yaml"}
 
 config_map_with_prefix(prefix) := doc if {
 	some doc in main.of_kind("ConfigMap")
 	startswith(doc.metadata.name, prefix)
 }
 
-websecure := main.section(main.section(static_config, "entryPoints"), "websecure")
+static_config(key) := yaml.unmarshal(config_map_with_prefix("finapp-edge-static-").data[key])
 
-websecure_http := main.section(websecure, "http")
+websecure(key) := main.section(main.section(static_config(key), "entryPoints"), "websecure")
 
-deny contains "[edge-forwarded] the edge may believe a client's forwarded headers: forwardedHeaders.insecure must be false" if {
-	not forwarded_is_not_insecure
+websecure_http(key) := main.section(websecure(key), "http")
+
+forwarded_is_not_insecure(key) if {
+	main.section(websecure(key), "forwardedHeaders").insecure == false
 }
 
-forwarded_is_not_insecure if {
-	main.section(websecure, "forwardedHeaders").insecure == false
+deny contains msg if {
+	some key in static_keys
+	not forwarded_is_not_insecure(key)
+	msg := sprintf("[edge-forwarded] %s may believe a client's forwarded headers: forwardedHeaders.insecure must be false", [key])
 }
 
-deny contains "[edge-forwarded] the edge names trusted forwarders: no address is trusted to set a forwarded header" if {
-	main.stated(main.section(websecure, "forwardedHeaders"), "trustedIPs")
+names_trusted_forwarders(key) if {
+	main.stated(main.section(websecure(key), "forwardedHeaders"), "trustedIPs")
 }
 
-deny contains "[edge-forwarded] aliasHeadersStrategy must be delete or reject, so that X_Forwarded_For never reaches a replica" if {
-	not aliases_are_dropped
+deny contains msg if {
+	some key in static_keys
+	names_trusted_forwarders(key)
+	msg := sprintf("[edge-forwarded] %s names trusted forwarders: no address is trusted to set a forwarded header", [key])
 }
 
-aliases_are_dropped if {
-	websecure_http.aliasHeadersStrategy in {"delete", "reject"}
+aliases_are_dropped(key) if {
+	websecure_http(key).aliasHeadersStrategy in {"delete", "reject"}
+}
+
+deny contains msg if {
+	some key in static_keys
+	not aliases_are_dropped(key)
+	msg := sprintf("[edge-forwarded] %s: aliasHeadersStrategy must be delete or reject, so that X_Forwarded_For never reaches a replica", [key])
 }
 
 encoded_options := {
@@ -107,45 +148,76 @@ encoded_options := {
 	"allowEncodedHash",
 }
 
-encoded_is_refused(option) if {
-	main.section(websecure_http, "encodedCharacters")[option] == false
+encoded_is_refused(key, option) if {
+	main.section(websecure_http(key), "encodedCharacters")[option] == false
 }
 
 deny contains msg if {
+	some key in static_keys
 	some option in encoded_options
-	not encoded_is_refused(option)
-	msg := sprintf("[edge-encoded] %s must be false: every one defaults to allowed", [option])
+	not encoded_is_refused(key, option)
+	msg := sprintf("[edge-encoded] %s: %s must be false: every one defaults to allowed", [key, option])
 }
 
-deny contains "[edge-encoded] sanitizePath must be true" if {
-	not path_is_sanitized
-}
-
-path_is_sanitized if {
-	websecure_http.sanitizePath == true
+path_is_sanitized(key) if {
+	websecure_http(key).sanitizePath == true
 }
 
 deny contains msg if {
-	some name, _ in main.section(static_config, "entryPoints")
+	some key in static_keys
+	not path_is_sanitized(key)
+	msg := sprintf("[edge-encoded] %s: sanitizePath must be true", [key])
+}
+
+deny contains msg if {
+	some key in static_keys
+	some name, _ in main.section(static_config(key), "entryPoints")
 	not name in {"websecure", "management"}
-	msg := sprintf("[edge-listener] entry point %s: only websecure and management exist, and no plain listener", [name])
+	msg := sprintf("[edge-listener] %s entry point %s: only websecure and management exist, and no plain listener", [key, name])
 }
 
-deny contains "[edge-listener] websecure must serve TLS on every router" if {
-	not main.stated(websecure_http, "tls")
+serves_tls(key) if {
+	main.stated(websecure_http(key), "tls")
 }
 
 deny contains msg if {
-	some name, _ in main.section(static_config, "providers")
-	name != "file"
-	msg := sprintf("[edge-provider] provider %s: the edge reads the file provider alone, so no controller holds a Kubernetes credential", [name])
+	some key in static_keys
+	not serves_tls(key)
+	msg := sprintf("[edge-listener] %s: websecure must serve TLS on every router", [key])
 }
 
-deny contains "[edge-provider] the file provider is not configured" if {
-	not main.stated(main.section(static_config, "providers"), "file")
+deny contains msg if {
+	some key in static_keys
+	some name, _ in main.section(static_config(key), "providers")
+	name != "file"
+	msg := sprintf("[edge-provider] %s provider %s: the edge reads the file provider alone, so no controller holds a Kubernetes credential", [key, name])
+}
+
+reads_the_file_provider(key) if {
+	main.stated(main.section(static_config(key), "providers"), "file")
+}
+
+deny contains msg if {
+	some key in static_keys
+	not reads_the_file_provider(key)
+	msg := sprintf("[edge-provider] %s: the file provider is not configured", [key])
+}
+
+responding_timeouts_are_stated(key) if {
+	timeouts := main.section(main.section(websecure(key), "transport"), "respondingTimeouts")
+	main.stated(timeouts, "readTimeout")
+	main.stated(timeouts, "writeTimeout")
+}
+
+deny contains msg if {
+	some key in static_keys
+	not responding_timeouts_are_stated(key)
+	msg := sprintf("[edge-timeouts] %s must state readTimeout and writeTimeout: an unset writeTimeout never ends", [key])
 }
 
 # ------------------------------------------------------------------------------------------- the routes as rendered
+
+route_config_prefixes := {"finapp-edge-public-routes-", "finapp-edge-operator-routes-"}
 
 public_routes := config_map_with_prefix("finapp-edge-public-routes-").data["routes.yaml"]
 
@@ -176,11 +248,33 @@ deny contains msg if {
 	msg := sprintf("[edge-routes-operator] %s is not limited to the internal ranges", [name])
 }
 
-# ------------------------------------------------------------------------------------------- no affinity
-
-route_config_prefixes := {"finapp-edge-public-routes-", "finapp-edge-operator-routes-"}
+# ------------------------------------------------------------------------------------------- what one source can hold
 
 edge_file(prefix) := yaml.unmarshal(config_map_with_prefix(prefix).data["edge.yaml"])
+
+public_middlewares := main.section(main.section(edge_file("finapp-edge-public-routes-"), "http"), "middlewares")
+
+hold_is_keyed_on_the_connection(name) if {
+	limit := public_middlewares[name].inFlightReq
+	limit.amount > 0
+	main.stated(main.section(limit, "sourceCriterion"), "ipStrategy")
+	not main.stated(main.section(limit, "sourceCriterion"), "requestHost")
+	not main.stated(main.section(limit, "sourceCriterion"), "requestHeaderName")
+}
+
+public_router_holds(router) if {
+	some middleware in main.list_of(router, "middlewares")
+	startswith(middleware, "hold-")
+	hold_is_keyed_on_the_connection(middleware)
+}
+
+deny contains msg if {
+	some name, router in main.section(yaml.unmarshal(public_routes), "http").routers
+	not public_router_holds(router)
+	msg := sprintf("[edge-hold] %s has no in-flight limit keyed on the connection: the default key is the Host header, which the client chooses", [name])
+}
+
+# ------------------------------------------------------------------------------------------- no affinity, no tunnel, no hung replica
 
 deny contains msg if {
 	some prefix in route_config_prefixes
@@ -197,6 +291,26 @@ deny contains msg if {
 	some prefix in route_config_prefixes
 	not reuse_is_off(prefix)
 	msg := sprintf("[edge-no-affinity] %s keeps backend connections, or states no transport: a request must pick a ready replica each time", [prefix])
+}
+
+answers_within_a_bound(prefix) if {
+	main.stated(edge_file(prefix).http.serversTransports["no-reuse"].forwardingTimeouts, "responseHeaderTimeout")
+}
+
+deny contains msg if {
+	some prefix in route_config_prefixes
+	not answers_within_a_bound(prefix)
+	msg := sprintf("[edge-timeouts] %s states no responseHeaderTimeout: a hung replica would hold the request and its spool", [prefix])
+}
+
+upgrade_is_stripped(prefix) if {
+	edge_file(prefix).http.middlewares["edge-headers"].headers.customRequestHeaders.Upgrade == ""
+}
+
+deny contains msg if {
+	some prefix in route_config_prefixes
+	not upgrade_is_stripped(prefix)
+	msg := sprintf("[edge-upgrade] %s forwards a client's Upgrade header: an h2c upgrade would be a tunnel past the allow-list", [prefix])
 }
 
 # ------------------------------------------------------------------------------------------- the Services
@@ -224,16 +338,25 @@ deny contains msg if {
 	msg := sprintf("[edge-operator-internal] %s is not an internal load balancer", [main.label(doc)])
 }
 
+# A real environment's load balancer sends to pod addresses, where externalTrafficPolicy does nothing: the target group's attribute keeps the client's
+# address, and AWS leaves it off for TCP. Without it every client is the load balancer, one rate-limit bucket and one recorded address.
 keeps_source_address(doc) if {
+	data.overlay != "kind"
+	doc.metadata.annotations["service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"] == "ip"
+	contains(doc.metadata.annotations["service.beta.kubernetes.io/aws-load-balancer-target-group-attributes"], "preserve_client_ip.enabled=true")
+}
+
+# kind's NodePort goes through kube-proxy, where this field is the one that keeps it.
+keeps_source_address(doc) if {
+	data.overlay == "kind"
 	doc.spec.externalTrafficPolicy == "Local"
 }
 
 deny contains msg if {
-	data.overlay != "kind"
 	some doc in main.of_kind("Service")
 	doc.metadata.name in controller_names
 	not keeps_source_address(doc)
-	msg := sprintf("[edge-source-address] %s would lose the client's address: externalTrafficPolicy must be Local", [main.label(doc)])
+	msg := sprintf("[edge-source-address] %s would lose the client's address, and every client would share one bucket and one recorded address", [main.label(doc)])
 }
 
 # Nothing else routes traffic into the cluster: no Ingress or route object bypasses the generated allow-list.

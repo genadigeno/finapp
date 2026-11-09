@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.convert.DurationStyle;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -34,6 +36,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 class EdgeManifestsTest {
 
     private static final String STATIC = "deploy/edge/base/traefik.yaml";
+    private static final String OPERATOR_STATIC = "deploy/edge/base/traefik-operator.yaml";
     private static final String CONTROLLERS = "deploy/edge/base/controllers.yaml";
     private static final String PUBLIC_EDGE = "deploy/edge/base/public-edge.yaml";
     private static final String OPERATOR_EDGE = "deploy/edge/base/operator-edge.yaml";
@@ -72,7 +75,7 @@ class EdgeManifestsTest {
         assertThat(encoded.values()).as("every one refused").containsOnly(false);
         for (String file : List.of(PUBLIC_EDGE, OPERATOR_EDGE)) {
             Map<String, Object> custom = map(map(map(map(yaml(read(file)), "http"), "middlewares"), "edge-headers"), "headers");
-            assertThat(map(custom, "customRequestHeaders")).containsEntry("Forwarded", "").containsEntry("X-Forwarded-Prefix", "");
+            assertThat(map(custom, "customRequestHeaders")).containsEntry("Forwarded", "").containsEntry("X-Forwarded-Prefix", "").containsEntry("Upgrade", "");
         }
     }
 
@@ -102,6 +105,41 @@ class EdgeManifestsTest {
     }
 
     @Test
+    @DisplayName("the two static files differ in their read and write timeouts alone, and a write always outlasts a read and the replica's answer")
+    void aHungReplicaCannotHoldARequest() {
+        assertThat(comparable(read(OPERATOR_STATIC))).as("everything but the two timeouts and the comments").isEqualTo(comparable(read(STATIC)));
+        Duration drain = DurationStyle.detectAndParse(string(map(map(application(), "spring"), "lifecycle"), "timeout-per-shutdown-phase"));
+        Map<String, String> edges = Map.of(STATIC, PUBLIC_EDGE, OPERATOR_STATIC, OPERATOR_EDGE);
+        edges.forEach((staticFile, edgeFile) -> {
+            Map<String, Object> responding = map(map(map(map(yaml(read(staticFile)), "entryPoints"), "websecure"), "transport"), "respondingTimeouts");
+            Duration readTimeout = DurationStyle.detectAndParse(string(responding, "readTimeout"));
+            Duration writeTimeout = DurationStyle.detectAndParse(string(responding, "writeTimeout"));
+            Map<String, Object> forwarding = map(map(map(map(yaml(read(edgeFile)), "http"), "serversTransports"), "no-reuse"), "forwardingTimeouts");
+            Duration answer = DurationStyle.detectAndParse(string(forwarding, "responseHeaderTimeout"));
+            assertThat(answer).as("%s: above the longest a request is expected to run, the drain", edgeFile).isGreaterThan(drain);
+            assertThat(writeTimeout).as("%s: Go starts this at the request's headers", staticFile).isGreaterThan(readTimeout.plus(answer));
+        });
+        assertThat(DurationStyle.detectAndParse(string(map(map(map(map(yaml(read(STATIC)), "entryPoints"), "websecure"), "transport"), "respondingTimeouts"), "readTimeout")))
+                .as("what one source can hold a body open for, on the public host").isLessThanOrEqualTo(Duration.ofSeconds(30));
+        assertThat(map(application(), "server")).as("no HTTP/2 in the clear behind the edge").doesNotContainKey("http2");
+    }
+
+    private static String comparable(String config) {
+        return config.lines().filter(line -> !line.trim().startsWith("#"))
+                .filter(line -> !line.trim().startsWith("readTimeout:") && !line.trim().startsWith("writeTimeout:"))
+                .collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    private static Map<String, Object> application() {
+        return yaml(read("app/src/main/resources/application.yaml"));
+    }
+
+    private static String string(Map<String, Object> parent, String key) {
+        assertThat(parent).as("key %s", key).containsKey(key);
+        return String.valueOf(parent.get(key));
+    }
+
+    @Test
     @DisplayName("no production class sets HSTS or a security header: the edge's is the only one, and is never answered twice")
     void noProductionCodeSetsAnEdgeHeader() throws IOException {
         List<String> names = List.of("Strict-Transport-Security", "X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "Content-Security-Policy");
@@ -118,6 +156,7 @@ class EdgeManifestsTest {
     @DisplayName("no controller holds a Kubernetes credential: the file provider alone, tokenless, and no role, binding or routing object rendered")
     void theControllersHoldNoCredential() {
         assertThat(map(staticConfig, "providers").keySet()).containsExactly("file");
+        assertThat(map(yaml(read(OPERATOR_STATIC)), "providers").keySet()).containsExactly("file");
         assertThat(staticConfig).as("no dashboard or API on any listener").doesNotContainKey("api");
         List<String> kinds = new ArrayList<>();
         for (Map<String, Object> document : controllers) {
@@ -140,8 +179,15 @@ class EdgeManifestsTest {
             int operator = file.indexOf("name: finapp-edge-operator");
             assertThat(file.substring(operator)).contains("aws-load-balancer-scheme: internal");
             assertThat(file.substring(0, operator)).contains("aws-load-balancer-scheme: internet-facing").doesNotContain("scheme: internal");
-            assertThat(file).contains("externalTrafficPolicy").contains("Local");
+            for (String half : List.of(file.substring(0, operator), file.substring(operator))) {
+                assertThat(half).as("%s: on an ip target the attribute keeps the client's address; AWS leaves it off for TCP", overlay)
+                        .contains("aws-load-balancer-nlb-target-type: ip")
+                        .contains("aws-load-balancer-target-group-attributes: preserve_client_ip.enabled=true");
+            }
+            assertThat(file).as("%s: externalTrafficPolicy does nothing for an ip target, so it is not claimed", overlay).doesNotContain("externalTrafficPolicy");
         }
+        assertThat(read("deploy/edge/overlays/kind/kustomization.yaml")).as("kind's NodePort goes through kube-proxy, where the field is what keeps it")
+                .contains("externalTrafficPolicy").contains("Local");
         Map<String, Object> middlewares = map(map(yaml(read(OPERATOR_EDGE)), "http"), "middlewares");
         Map<String, Object> allowList = map(map(middlewares, "internal-only"), "ipAllowList");
         assertThat(stringList(allowList.get("sourceRange"))).containsExactly("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16");

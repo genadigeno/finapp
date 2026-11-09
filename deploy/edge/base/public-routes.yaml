@@ -3,765 +3,154 @@
 # A changed route is accepted by copying that file here, and the change is then a reviewed line in this diff.
 http:
   routers:
-    post-v1-authentications:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/authentications`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-door, body-cap]
-      tls: {}
-    post-v1-authentications-mfa:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/authentications/mfa`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-beneficiaries:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/beneficiaries`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-beneficiaries:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/beneficiaries`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    delete-v1-beneficiaries-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`DELETE`) && PathRegexp(`^/v1/beneficiaries/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-checkout-sessions:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/checkout/sessions`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    post-v1-checkout-sessions-bnpl-options:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/checkout/sessions/bnpl-options`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-checkout-sessions-confirmation:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/checkout/sessions/confirmation`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-checkout-sessions-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/checkout/sessions/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    post-v1-checkout-sessions-by-id-abandonment:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/checkout/sessions/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/abandonment$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    get-v1-me:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    patch-v1-me:
-      entryPoints: [websecure]
-      rule: 'Method(`PATCH`) && Path(`/v1/me`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-accounts:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/accounts`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-accounts:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/accounts`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    delete-v1-me-accounts-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`DELETE`) && PathRegexp(`^/v1/me/accounts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-accounts-by-id-balance:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/accounts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/balance$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-accounts-by-id-balances:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/accounts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/balances$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-accounts-by-id-currencies:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/accounts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/currencies$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-accounts-by-id-statement:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/accounts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/statement$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-bnpl-agreements:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/bnpl-agreements`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-bnpl-agreements-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-bnpl-agreements-by-id-disputes:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/disputes$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-bnpl-agreements-by-id-payoff:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payoff$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-bnpl-agreements-by-id-payoff-quotes:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payoff-quotes$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-bnpl-agreements-by-id-repayments:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/repayments$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-bnpl-agreements-by-id-repayments:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/repayments$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-bnpl-agreements-by-id-schedule:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/schedule$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-bnpl-applications:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/bnpl-applications`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-bnpl-applications-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/bnpl-applications/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-bnpl-applications-by-id-withdrawal:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/bnpl-applications/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/withdrawal$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-bnpl-disputes-by-id-withdrawal:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/bnpl-disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/withdrawal$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-bnpl-offers-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/bnpl-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-bnpl-offers-by-id-acceptance:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/bnpl-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/acceptance$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-bnpl-offers-by-id-decline:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/bnpl-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/decline$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-channels:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/channels`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-channels-verification:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/channels/verification`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-door, body-cap]
-      tls: {}
-    get-v1-me-consents:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/consents`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-consents:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/consents`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    delete-v1-me-consents-by-purpose:
-      entryPoints: [websecure]
-      rule: 'Method(`DELETE`) && PathRegexp(`^/v1/me/consents/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-credential:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/credential`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-credit-decision-requests:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/credit/decision-requests`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-credit-decision-requests-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/credit/decision-requests/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-credit-decision-requests-by-id-cancellation:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/credit/decision-requests/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/cancellation$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-credit-profile:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/credit/profile`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-cross-border-beneficiaries:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/cross-border/beneficiaries`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-cross-border-beneficiaries:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/cross-border/beneficiaries`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-cross-border-beneficiaries-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/cross-border/beneficiaries/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-cross-border-beneficiaries-by-id-revocation:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/cross-border/beneficiaries/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/revocation$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-cross-border-corridors:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/cross-border/corridors`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-cross-border-payments:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/cross-border/payments`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-cross-border-payments-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/cross-border/payments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-cross-border-payments-by-id-cancellation:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/cross-border/payments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/cancellation$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-cross-border-quotes:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/cross-border/quotes`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-cross-border-quotes-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/cross-border/quotes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-fx-conversions:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/fx/conversions`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-fx-conversions-by-tradeId:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/fx/conversions/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-fx-pairs:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/fx/pairs`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-fx-quotes:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/fx/quotes`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-fx-quotes-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/fx/quotes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-fx-quotes-by-id-cancellation:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/fx/quotes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/cancellation$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-kyb:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/kyb`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-kyb-owners:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/kyb/owners`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-kyc:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/kyc`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-kyc:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/kyc`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-kyc-documents:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/kyc/documents`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loan-applications:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/loan-applications`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-loan-applications-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/loan-applications/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loan-applications-by-id-withdrawal:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/loan-applications/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/withdrawal$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-loan-offers-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/loan-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loan-offers-by-id-acceptance:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/loan-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/acceptance$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loan-offers-by-id-decline:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/loan-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/decline$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-loans:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/loans`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-loans-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-loans-by-id-amendments-by-amendmentId:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/amendments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loans-by-id-amendments-by-amendmentId-acceptance:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/amendments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/acceptance$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loans-by-id-closure:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/closure$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loans-by-id-draws:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/draws$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loans-by-id-payoff:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payoff$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loans-by-id-payoff-quotes:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payoff-quotes$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loans-by-id-prepayments:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/prepayments$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-loans-by-id-repayments:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/repayments$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-loans-by-id-repayments:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/repayments$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-loans-by-id-schedule:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/schedule$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-loans-by-id-statements:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/statements$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-mfa:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/mfa`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-mfa-confirmation:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/mfa/confirmation`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-organisations:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/organisations`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-payment-methods:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/me/payment-methods`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-payment-methods:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/payment-methods`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-payment-methods-bank-accounts:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/payment-methods/bank-accounts`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    delete-v1-me-payment-methods-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`DELETE`) && PathRegexp(`^/v1/me/payment-methods/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-me-withdrawals:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/me/withdrawals`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-me-withdrawals-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/me/withdrawals/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-merchant-bnpl-disputes:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/merchant/bnpl-disputes`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    post-v1-merchant-bnpl-disputes-by-id-response:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/merchant/bnpl-disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/response$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    get-v1-merchant-bnpl-purchases-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/merchant/bnpl-purchases/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    post-v1-merchant-bnpl-purchases-by-id-refunds:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/merchant/bnpl-purchases/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/refunds$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    get-v1-merchant-disputes:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/merchant/disputes`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    get-v1-merchant-disputes-by-disputeId:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/merchant/disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    post-v1-merchant-disputes-by-disputeId-acceptance:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/merchant/disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/acceptance$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    post-v1-merchant-disputes-by-disputeId-evidence:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/merchant/disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/evidence$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    get-v1-merchant-disputes-by-disputeId-evidence-by-evidenceId:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/merchant/disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/evidence/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    post-v1-merchant-disputes-by-disputeId-representment:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/merchant/disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/representment$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    get-v1-merchant-me:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/merchant/me`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    get-v1-merchant-payable:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/merchant/payable`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    post-v1-merchant-payouts:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/merchant/payouts`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    get-v1-merchant-payouts-by-payoutId:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/merchant/payouts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    get-v1-merchant-transactions:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/merchant/transactions`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-machine, body-cap]
-      tls: {}
-    get-v1-payments:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/payments`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-payments:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/payments`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    delete-v1-payments-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`DELETE`) && PathRegexp(`^/v1/payments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-payments-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/payments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-payments-by-id-confirmation:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/payments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/confirmation$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-providers-fx-webhooks:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/providers/fx/webhooks`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-callback, body-cap]
-      tls: {}
-    post-v1-providers-kyc-callbacks:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/providers/kyc/callbacks`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-callback, body-cap]
-      tls: {}
-    post-v1-providers-payments-corridor-webhooks:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/providers/payments/corridor/webhooks`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-callback, body-cap]
-      tls: {}
-    post-v1-providers-payments-instant-webhooks:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/providers/payments/instant/webhooks`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-callback, body-cap]
-      tls: {}
-    post-v1-providers-payments-webhooks:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/providers/payments/webhooks`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-callback, body-cap]
-      tls: {}
-    post-v1-recoveries:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/recoveries`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-door, body-cap]
-      tls: {}
-    post-v1-recoveries-by-id-completion:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && PathRegexp(`^/v1/recoveries/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/completion$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-door, body-cap]
-      tls: {}
-    post-v1-registrations:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/registrations`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-door, body-cap]
-      tls: {}
-    get-v1-sessions:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/sessions`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    delete-v1-sessions-current:
-      entryPoints: [websecure]
-      rule: 'Method(`DELETE`) && Path(`/v1/sessions/current`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    delete-v1-sessions-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`DELETE`) && PathRegexp(`^/v1/sessions/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-transfers:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && Path(`/v1/transfers`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    post-v1-transfers:
-      entryPoints: [websecure]
-      rule: 'Method(`POST`) && Path(`/v1/transfers`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
-      tls: {}
-    get-v1-transfers-by-id:
-      entryPoints: [websecure]
-      rule: 'Method(`GET`) && PathRegexp(`^/v1/transfers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`)'
-      service: finapp-app
-      middlewares: [edge-headers, source-session, body-cap]
+    public-callback:
+      entryPoints: [websecure]
+      rule: >-
+        (Method(`POST`) && Path(`/v1/providers/fx/webhooks`))
+        || (Method(`POST`) && Path(`/v1/providers/kyc/callbacks`))
+        || (Method(`POST`) && Path(`/v1/providers/payments/corridor/webhooks`))
+        || (Method(`POST`) && Path(`/v1/providers/payments/instant/webhooks`))
+        || (Method(`POST`) && Path(`/v1/providers/payments/webhooks`))
+      service: finapp-app
+      middlewares: [edge-headers, source-callback, hold-callback, body-cap]
+      tls: {}
+    public-door:
+      entryPoints: [websecure]
+      rule: >-
+        (Method(`POST`) && Path(`/v1/authentications`))
+        || (Method(`POST`) && Path(`/v1/me/channels/verification`))
+        || (Method(`POST`) && Path(`/v1/recoveries`))
+        || (Method(`POST`) && PathRegexp(`^/v1/recoveries/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/completion$`))
+        || (Method(`POST`) && Path(`/v1/registrations`))
+      service: finapp-app
+      middlewares: [edge-headers, source-door, hold-door, body-cap]
+      tls: {}
+    public-machine:
+      entryPoints: [websecure]
+      rule: >-
+        (Method(`POST`) && Path(`/v1/checkout/sessions`))
+        || (Method(`GET`) && PathRegexp(`^/v1/checkout/sessions/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/checkout/sessions/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/abandonment$`))
+        || (Method(`GET`) && Path(`/v1/merchant/bnpl-disputes`))
+        || (Method(`POST`) && PathRegexp(`^/v1/merchant/bnpl-disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/response$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/merchant/bnpl-purchases/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/merchant/bnpl-purchases/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/refunds$`))
+        || (Method(`GET`) && Path(`/v1/merchant/disputes`))
+        || (Method(`GET`) && PathRegexp(`^/v1/merchant/disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/merchant/disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/acceptance$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/merchant/disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/evidence$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/merchant/disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/evidence/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/merchant/disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/representment$`))
+        || (Method(`GET`) && Path(`/v1/merchant/me`))
+        || (Method(`GET`) && Path(`/v1/merchant/payable`))
+        || (Method(`POST`) && Path(`/v1/merchant/payouts`))
+        || (Method(`GET`) && PathRegexp(`^/v1/merchant/payouts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`GET`) && Path(`/v1/merchant/transactions`))
+      service: finapp-app
+      middlewares: [edge-headers, source-machine, hold-machine, body-cap]
+      tls: {}
+    public-session:
+      entryPoints: [websecure]
+      rule: >-
+        (Method(`POST`) && Path(`/v1/authentications/mfa`))
+        || (Method(`GET`) && Path(`/v1/beneficiaries`))
+        || (Method(`POST`) && Path(`/v1/beneficiaries`))
+        || (Method(`DELETE`) && PathRegexp(`^/v1/beneficiaries/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && Path(`/v1/checkout/sessions/bnpl-options`))
+        || (Method(`POST`) && Path(`/v1/checkout/sessions/confirmation`))
+        || (Method(`GET`) && Path(`/v1/me`))
+        || (Method(`PATCH`) && Path(`/v1/me`))
+        || (Method(`GET`) && Path(`/v1/me/accounts`))
+        || (Method(`POST`) && Path(`/v1/me/accounts`))
+        || (Method(`DELETE`) && PathRegexp(`^/v1/me/accounts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/accounts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/balance$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/accounts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/balances$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/accounts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/currencies$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/accounts/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/statement$`))
+        || (Method(`GET`) && Path(`/v1/me/bnpl-agreements`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/disputes$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payoff$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payoff-quotes$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/repayments$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/repayments$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/schedule$`))
+        || (Method(`POST`) && Path(`/v1/me/bnpl-applications`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/bnpl-applications/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/bnpl-applications/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/withdrawal$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/bnpl-disputes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/withdrawal$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/bnpl-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/bnpl-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/acceptance$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/bnpl-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/decline$`))
+        || (Method(`POST`) && Path(`/v1/me/channels`))
+        || (Method(`GET`) && Path(`/v1/me/consents`))
+        || (Method(`POST`) && Path(`/v1/me/consents`))
+        || (Method(`DELETE`) && PathRegexp(`^/v1/me/consents/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && Path(`/v1/me/credential`))
+        || (Method(`POST`) && Path(`/v1/me/credit/decision-requests`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/credit/decision-requests/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/credit/decision-requests/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/cancellation$`))
+        || (Method(`GET`) && Path(`/v1/me/credit/profile`))
+        || (Method(`GET`) && Path(`/v1/me/cross-border/beneficiaries`))
+        || (Method(`POST`) && Path(`/v1/me/cross-border/beneficiaries`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/cross-border/beneficiaries/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/cross-border/beneficiaries/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/revocation$`))
+        || (Method(`GET`) && Path(`/v1/me/cross-border/corridors`))
+        || (Method(`POST`) && Path(`/v1/me/cross-border/payments`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/cross-border/payments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/cross-border/payments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/cancellation$`))
+        || (Method(`POST`) && Path(`/v1/me/cross-border/quotes`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/cross-border/quotes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && Path(`/v1/me/fx/conversions`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/fx/conversions/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`GET`) && Path(`/v1/me/fx/pairs`))
+        || (Method(`POST`) && Path(`/v1/me/fx/quotes`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/fx/quotes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/fx/quotes/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/cancellation$`))
+        || (Method(`GET`) && Path(`/v1/me/kyb`))
+        || (Method(`POST`) && Path(`/v1/me/kyb/owners`))
+        || (Method(`GET`) && Path(`/v1/me/kyc`))
+        || (Method(`POST`) && Path(`/v1/me/kyc`))
+        || (Method(`POST`) && Path(`/v1/me/kyc/documents`))
+        || (Method(`POST`) && Path(`/v1/me/loan-applications`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/loan-applications/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/loan-applications/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/withdrawal$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/loan-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/loan-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/acceptance$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/loan-offers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/decline$`))
+        || (Method(`GET`) && Path(`/v1/me/loans`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/amendments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/amendments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/acceptance$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/closure$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/draws$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payoff$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payoff-quotes$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/prepayments$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/repayments$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/repayments$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/schedule$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/statements$`))
+        || (Method(`POST`) && Path(`/v1/me/mfa`))
+        || (Method(`POST`) && Path(`/v1/me/mfa/confirmation`))
+        || (Method(`POST`) && Path(`/v1/me/organisations`))
+        || (Method(`GET`) && Path(`/v1/me/payment-methods`))
+        || (Method(`POST`) && Path(`/v1/me/payment-methods`))
+        || (Method(`POST`) && Path(`/v1/me/payment-methods/bank-accounts`))
+        || (Method(`DELETE`) && PathRegexp(`^/v1/me/payment-methods/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && Path(`/v1/me/withdrawals`))
+        || (Method(`GET`) && PathRegexp(`^/v1/me/withdrawals/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`GET`) && Path(`/v1/payments`))
+        || (Method(`POST`) && Path(`/v1/payments`))
+        || (Method(`DELETE`) && PathRegexp(`^/v1/payments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/payments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`POST`) && PathRegexp(`^/v1/payments/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/confirmation$`))
+        || (Method(`GET`) && Path(`/v1/sessions`))
+        || (Method(`DELETE`) && Path(`/v1/sessions/current`))
+        || (Method(`DELETE`) && PathRegexp(`^/v1/sessions/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+        || (Method(`GET`) && Path(`/v1/transfers`))
+        || (Method(`POST`) && Path(`/v1/transfers`))
+        || (Method(`GET`) && PathRegexp(`^/v1/transfers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
+      service: finapp-app
+      middlewares: [edge-headers, source-session, hold-session, body-cap]
       tls: {}

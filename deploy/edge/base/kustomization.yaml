@@ -15,6 +15,7 @@ configMapGenerator:
   - name: finapp-edge-static
     files:
       - traefik.yaml
+      - traefik-operator.yaml
   - name: finapp-edge-public-routes
     files:
       - routes.yaml=public-routes.yaml

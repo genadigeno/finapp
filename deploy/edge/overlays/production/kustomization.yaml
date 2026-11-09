@@ -1,6 +1,8 @@
 # Production's edge. Nothing real here: no hostname anywhere (a rule matches the method and path alone), no certificate (the TLS
 # Secret is a real environment's, so until one exists no pod starts), and the load balancers are the module.network tiers
-# the subnet tags choose (P15-TSK-014): the public one in the public subnets, the operator's internal.
+# the subnet tags choose (P15-TSK-014): the public one in the public subnets, the operator's internal. preserve_client_ip is what keeps the
+# client's address on an ip target (AWS leaves it off for TCP); without it every client is the load balancer, one bucket and one recorded
+# address. The source-address policy requires it.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -16,9 +18,6 @@ patches:
         path: /spec/type
         value: LoadBalancer
       - op: add
-        path: /spec/externalTrafficPolicy
-        value: Local
-      - op: add
         path: /metadata/annotations
         value:
           service.beta.kubernetes.io/aws-load-balancer-type: external
@@ -32,9 +31,6 @@ patches:
       - op: replace
         path: /spec/type
         value: LoadBalancer
-      - op: add
-        path: /spec/externalTrafficPolicy
-        value: Local
       - op: add
         path: /metadata/annotations
         value:
