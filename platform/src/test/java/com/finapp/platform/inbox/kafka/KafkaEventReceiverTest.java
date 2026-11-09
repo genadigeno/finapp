@@ -274,6 +274,50 @@ class KafkaEventReceiverTest {
     }
 
     @Test
+    @DisplayName("a commit a rebalance refused is an ordinary event, and is sent after the next poll with no record to carry it (P15-TSK-012)")
+    void aCommitARebalanceRefusedIsSentAfterTheNextPoll() {
+        RefusingOnceConsumer rebalancing = new RefusingOnceConsumer();
+        rebalancing.assign(List.of(PARTITION));
+        rebalancing.updateBeginningOffsets(Map.of(PARTITION, 0L));
+        consumer = rebalancing;
+        AtomicInteger effects = new AtomicInteger();
+        KafkaEventReceiver receiver = receiver(counting("probe.consumer", effects));
+        consumer.addRecord(record(0, EventId.next(IDS), "probe.SomethingHappened", "x"));
+
+        assertThat(receiver.pollOnce()).as("a rebalance is not a failed poll").isEqualTo(new ReceiverPollResult(1, 0, 0, 0));
+        assertThat(rebalancing.attempts).as("the one refused").isEqualTo(1);
+
+        assertThat(receiver.pollOnce()).as("nothing further on the partition").isEqualTo(new ReceiverPollResult(0, 0, 0, 0));
+
+        assertThat(rebalancing.attempts).as("the same offset, sent again by an empty poll").isEqualTo(2);
+        assertThat(committedOffset()).as("the group no longer reads one behind").isEqualTo(1L);
+        assertThat(effects).as("applied once").hasValue(1);
+
+        receiver.pollOnce();
+
+        assertThat(rebalancing.attempts).as("sent once: nothing is owed now").isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("an offset a rebalance refused is dropped when the partition moved away: its next owner's offset is not overwritten (P15-TSK-012)")
+    void aRefusedOffsetIsNotSentForAPartitionThatMoved() {
+        RefusingOnceConsumer rebalancing = new RefusingOnceConsumer();
+        rebalancing.assign(List.of(PARTITION));
+        rebalancing.updateBeginningOffsets(Map.of(PARTITION, 0L));
+        consumer = rebalancing;
+        KafkaEventReceiver receiver = receiver(counting("probe.consumer", new AtomicInteger()));
+        consumer.addRecord(record(0, EventId.next(IDS), "probe.SomethingHappened", "x"));
+        receiver.pollOnce();
+        TopicPartition kept = new TopicPartition(PARTITION.topic(), PARTITION.partition() + 1);
+        rebalancing.assign(List.of(kept));
+        rebalancing.updateBeginningOffsets(Map.of(kept, 0L));
+
+        receiver.pollOnce();
+
+        assertThat(rebalancing.attempts).as("only the attempt the rebalance refused").isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("the lag is unknown before a poll, then the client's own figure for the partitions held (P15-TSK-025)")
     void theLagIsTheClientsFigureForThePartitionsHeld() {
         KafkaEventReceiver receiver = receiver(counting("probe.consumer", new AtomicInteger()));
@@ -406,6 +450,24 @@ class KafkaEventReceiverTest {
         @Override
         public void commitSync(Map<TopicPartition, OffsetAndMetadata> offsets) {
             throw new org.apache.kafka.clients.consumer.CommitFailedException();
+        }
+    }
+
+    /** The commit a group refuses while it rebalances, once: the member stays in the group (`P15-TSK-012`). */
+    private static final class RefusingOnceConsumer extends MockConsumer<String, byte[]> {
+        private int attempts;
+
+        private RefusingOnceConsumer() {
+            super("earliest");
+        }
+
+        @Override
+        public void commitSync(Map<TopicPartition, OffsetAndMetadata> offsets) {
+            attempts++;
+            if (attempts == 1) {
+                throw new org.apache.kafka.common.errors.RebalanceInProgressException();
+            }
+            super.commitSync(offsets);
         }
     }
 

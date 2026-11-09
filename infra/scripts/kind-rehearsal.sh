@@ -777,9 +777,15 @@ $5
 YAML
 }
 
-# reach <namespace> <pod> <container> <address> <port>: 0 when a TCP connection opened within the timeout.
+# reach <namespace> <pod> <container> <address> <port>: 0 when a TCP connection opened within the timeout, 1 when it did not. An answer from neither branch
+# is the test not having run at all, which must not read as "refused": a denial is only a denial if the probe ran.
 reach() {
-    kube -n "$1" exec "$2" -c "$3" -- nc -z -w 4 "$4" "$5" >/dev/null 2>&1
+    answer=$(kube -n "$1" exec "$2" -c "$3" -- /bin/sh -c "if nc -z -w 4 '$4' '$5'; then echo REACHED; else echo REFUSED; fi" 2>&1)
+    case $answer in
+        *REACHED*) return 0 ;;
+        *REFUSED*) return 1 ;;
+    esac
+    cannot "the connection test did not run in $2/$3: $answer"
 }
 
 must_reach() {
@@ -1242,11 +1248,15 @@ if [ -n "$NM1_REF" ] && [ "$(migrations_between "$NM1_REF")" -gt 0 ]; then
     else
         pass "hold: the surge pod joined no consumer group (no member at $surge_ip; the ready fleet's are listed)"
     fi
-    kube -n finapp exec "$surge" -- true >/dev/null 2>&1 || true
-    kube -n finapp-observability exec np-scraper -c probe -- curl -s --max-time 10 "http://$surge_ip:8081/actuator/prometheus" > "$ART/hold-metrics.txt" 2>&1 \
+    # While it waits the ready fleet keeps working: a smoke through it writes outbox rows, and the fleet publishes them. The surge pod's own relay, the first of the
+    # schedules it must not tick, publishes nothing; its scrape is read for the counter, and a pod with nothing to report has no counter at all.
+    smoke during-hold
+    kube -n finapp-observability exec np-scraper -c probe -- curl -s --max-time 15 "http://$surge_ip:8081/actuator/prometheus" > "$ART/hold-metrics.txt" 2>&1 \
         || fail "hold: the held pod's metrics could not be read"
-    ticks=$(awk '/^finapp_schedule_ticks_total/ {s += $NF} END {print s+0}' "$ART/hold-metrics.txt")
-    log "hold: the held pod's scrape: $(wc -l < "$ART/hold-metrics.txt") lines"
+    grep -q '^finapp_' "$ART/hold-metrics.txt" || fail "hold: the held pod's scrape holds no finapp meter: see hold-metrics.txt"
+    published=$(awk '/^finapp_outbox_publication_total[{]outcome="published"[}]/ {print $2 + 0; exit}' "$ART/hold-metrics.txt")
+    [ "${published:-0}" = 0 ] || fail "hold: the surge pod's relay published $published events while it was held"
+    pass "hold: the surge pod's relay published nothing while it waited, and the fleet kept working"
     parked=$(psql_query -c "SELECT count(*) FROM platform.inbox_parked_record" | tr -d '[:space:]')
     [ "$parked" = 0 ] || fail "hold: $parked records parked while the surge pod waited"
     pass "hold: nothing parked while a pod waited ahead of its Job"
