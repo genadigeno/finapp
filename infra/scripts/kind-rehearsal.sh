@@ -1545,6 +1545,8 @@ KILLED_CLAIM=$(psql_query -c "SELECT idempotency_key FROM platform.idempotency_r
 [ -n "$KILLED_CLAIM" ] || cannot "the payout held at the provider has no IN_PROGRESS claim to orphan"
 log "killing $VICTIM mid-workload, force and no grace: a payout it sent is held at the provider, its claim IN_PROGRESS"
 kube -n finapp delete pod "$VICTIM" --grace-period=0 --force >> "$ART/apply.log" 2>&1 || fail "could not kill $VICTIM"
+# The API forgets a force-deleted pod at once and the kubelet kills its container a moment later, so an answer released now would reach a process still alive, and nothing would have died in flight.
+sleep 10
 kube -n finapp-rehearsal exec deploy/finapp-simulator -- rm -f /tmp/hold-payouts >> "$ART/apply.log" 2>&1 || true
 sleep 20
 ready_three 400 || fail "the fleet did not return to three after the kill"
