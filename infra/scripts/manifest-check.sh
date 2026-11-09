@@ -84,6 +84,8 @@ DEPLOYMENT=base/deployment.yaml
 HPA=base/horizontalpodautoscaler.yaml
 PRODUCTION=overlays/production/kustomization.yaml
 KIND=overlays/kind/kustomization.yaml
+# The operator's own field, named once here for the reason SWITCH is.
+ENTRY=secretKey
 APP_DELIVERY=components/secret-delivery/externalsecret-app.yaml
 MIGRATOR_DELIVERY=components/secret-delivery/externalsecret-migrator.yaml
 PRODUCTION_STORE=overlays/production/secret-store.yaml
@@ -229,8 +231,11 @@ YAML
     mutate delivery-absent "$PRODUCTION" '/^components:$/,/secret-delivery$/d'
     plant_on delivery-on-kind "$KIND" 's/^resources:$/components:\n  - ..\/..\/components\/secret-delivery\n\nresources:/' kind
     plant_on delivery-unknown "$APP_DELIVERY" 's/^    name: finapp-app-secrets$/    name: another-secret/'
+    plant_on delivery-optional-app "$DEPLOYMENT" 's/^                name: finapp-app-secrets$/                name: finapp-app-secrets\n                optional: true/'
+    plant_on delivery-optional-migrator base/migrator-job.yaml 's/^                name: finapp-migrator-secrets$/                name: finapp-migrator-secrets\n                optional: true/'
     plant_on delivery-undelivered base/migrator-job.yaml 's/name: finapp-migrator-secrets/name: nothing-delivers-this/'
     plant_on separation-reader base/migrator-job.yaml 's/name: finapp-migrator-secrets/name: finapp-app-secrets/'
+    plant_on separation-second-ref base/migrator-job.yaml 's/^                name: finapp-migrator-secrets$/                name: finapp-migrator-secrets\n            - secretRef:\n                name: finapp-app-secrets/'
     plant_on separation-app-holds "$APP_DELIVERY" 's/^  data:$/  data:\n    - secretKey: FINAPP_DB_MIGRATOR_PASSWORD\n      remoteRef:\n        key: FINAPP_DB_MIGRATOR_PASSWORD/'
     plant_on separation-migrator-holds "$MIGRATOR_DELIVERY" 's/^  data:$/  data:\n    - secretKey: FINAPP_MFA_KEY\n      remoteRef:\n        key: FINAPP_MFA_KEY/'
     plant_on separation-migrator-short "$MIGRATOR_DELIVERY" '/FINAPP_DB_URL$/,/FINAPP_DB_URL$/d'
@@ -239,9 +244,48 @@ YAML
     plant_on sync-orphan "$APP_DELIVERY" 's/creationPolicy: Owner/creationPolicy: Orphan/'
     plant_on sync-delete "$MIGRATOR_DELIVERY" 's/deletionPolicy: Retain/deletionPolicy: Delete/'
     plant_on sync-null "$APP_DELIVERY" 's/^    deletionPolicy: Retain$/    deletionPolicy: null/'
+    plant_on sync-template "$APP_DELIVERY" 's/^    creationPolicy: Owner$/    creationPolicy: Owner\n    template:\n      type: Opaque/'
     plant_on entries-find "$APP_DELIVERY" 's/^  data:$/  dataFrom:\n    - find:\n        name:\n          regexp: .*\n  data:/'
     plant_on entries-other-key "$APP_DELIVERY" '1,/        key: FINAPP_CORRIDOR_PROVIDER_B_KEY/s/        key: FINAPP_CORRIDOR_PROVIDER_B_KEY/        key: FINAPP_MFA_KEY/'
     plant_on entries-property "$APP_DELIVERY" '1,/        key: FINAPP_CORRIDOR_PROVIDER_B_KEY/s/        key: FINAPP_CORRIDOR_PROVIDER_B_KEY/        key: FINAPP_CORRIDOR_PROVIDER_B_KEY\n        property: inner/'
+    plant_on entries-plain-source "$APP_DELIVERY" '1,/^        key: FINAPP_CORRIDOR_PROVIDER_B_KEY$/s/^      remoteRef:$/      sourceRef:\n        storeRef:\n          kind: SecretStore\n          name: finapp-app-kafka-store\n      remoteRef:/'
+    plant_on entries-name-shape "$APP_DELIVERY" "s/^    - $ENTRY: FINAPP_CORRIDOR_PROVIDER_B_KEY\$/    - $ENTRY: finapp_corridor_provider_b_key/;s/^        key: FINAPP_CORRIDOR_PROVIDER_B_KEY\$/        key: finapp_corridor_provider_b_key/"
+    plant entries-empty
+    mutate entries-empty "$MIGRATOR_DELIVERY" '/^  data:$/,$d'
+    printf '  data: []\n' >> "$PLANTS/entries-empty/deploy/$MIGRATOR_DELIVERY"
+    plant_on entries-brokers-plain "$APP_DELIVERY" "/^    - $ENTRY: FINAPP_KAFKA_SASL_PASSWORD\$/{n;N;N;N;N;N;N;s/.*/      remoteRef:\n        key: FINAPP_KAFKA_SASL_PASSWORD/}"
+    plant_on entries-brokers-swapped "$APP_DELIVERY" 's/^        property: password$/        property: username/'
+    plant_on entries-brokers-other-store "$APP_DELIVERY" 's/^          name: finapp-app-kafka-store$/          name: finapp-app-store/'
+    plant_on store-brokers-other-path "$PRODUCTION_STORE" 's/prefix: AmazonMSK_finapp-production-/prefix: AmazonMSK_finapp-staging-/'
+    plant no-brokers-store
+    mutate no-brokers-store "$PRODUCTION_STORE" '/^# The application.s SCRAM entry/,$d'
+    plant_on store-role "$PRODUCTION_STORE" '1,/^      service: SecretsManager$/s/^      service: SecretsManager$/      service: SecretsManager\n      role: arn:aws:iam::000000000000:role\/placeholder-assumed/'
+    plant_on store-more-roles "$PRODUCTION_STORE" '1,/^      service: SecretsManager$/s/^      service: SecretsManager$/      service: SecretsManager\n      additionalRoles:\n        - arn:aws:iam::000000000000:role\/placeholder-assumed/'
+    plant placeholder-no-reader
+    mutate placeholder-no-reader "$PRODUCTION_STORE" '/^  name: finapp-migrator-secret-reader$/,/^---$/{/^  annotations:$/d;/eks.amazonaws.com/d}'
+    plant_on identity-workload-reader "$DEPLOYMENT" 's/serviceAccountName: finapp-app$/serviceAccountName: finapp-app-secret-reader/'
+    plant_on identity-role-on-workload base/serviceaccount.yaml '1,/^  name: finapp-app$/s/^  name: finapp-app$/  name: finapp-app\n  annotations:\n    eks.amazonaws.com\/role-arn: arn:aws:iam::000000000000:role\/placeholder-workload/'
+    plant kind-cluster-external
+    add_resource kind-cluster-external forbidden.yaml <<'YAML'
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: planted
+YAML
+    plant kind-push
+    add_resource kind-push forbidden.yaml <<'YAML'
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  name: planted
+YAML
+    plant kind-cluster-push
+    add_resource kind-cluster-push forbidden.yaml <<'YAML'
+apiVersion: external-secrets.io/v1alpha1
+kind: ClusterPushSecret
+metadata:
+  name: planted
+YAML
     plant_on store-cluster "$PRODUCTION_STORE" '1,/^kind: SecretStore$/s/^kind: SecretStore$/kind: ClusterSecretStore/'
     plant_on store-other-path "$PRODUCTION_STORE" 's/prefix: finapp\/production\/app\//prefix: finapp\/staging\/app\//'
     plant_on store-shared "$APP_DELIVERY" 's/name: finapp-app-store/name: finapp-migrator-store/'
@@ -397,6 +441,22 @@ check_kind_secrets() {
     fi
     grep -q 'is not a secret, so it is not generated' /scratch/kind-secrets-refused/err || fail "refused for another reason"
 
+    # An entry this parser cannot read, written in another order, is refused rather than dropped from the Secret.
+    mkdir -p /scratch/kind-secrets-reordered/copy/infra/scripts /scratch/kind-secrets-reordered/out
+    cp -R /repo/deploy /scratch/kind-secrets-reordered/copy/deploy
+    cp /repo/infra/scripts/kind-secrets.sh /scratch/kind-secrets-reordered/copy/infra/scripts/kind-secrets.sh
+    sed -i "s/^    - $ENTRY: FINAPP_DB_URL\$/    - remoteRef:\n        key: FINAPP_DB_URL\n      $ENTRY: FINAPP_DB_URL/;/^      remoteRef:\$/{N;/key: FINAPP_DB_URL\$/d}" \
+        /scratch/kind-secrets-reordered/copy/deploy/components/secret-delivery/externalsecret-migrator.yaml
+    if FINAPP_DB_URL=not-a-host FINAPP_DB_APP_USER=not-a-user FINAPP_DB_REPORTING_USER=not-a-user \
+        FINAPP_DB_MIGRATOR_USER=not-a-user FINAPP_DB_MASTER_USER=not-a-user \
+        FINAPP_KAFKA_BOOTSTRAPSERVERS=not-a-host FINAPP_KAFKA_SASL_USERNAME=not-a-user \
+        /bin/sh /scratch/kind-secrets-reordered/copy/infra/scripts/kind-secrets.sh render /scratch/kind-secrets-reordered/out \
+        2> /scratch/kind-secrets-reordered/err; then
+        fail "ran over an entry it could not read"
+    fi
+    grep -q 'could be read' /scratch/kind-secrets-reordered/err || fail "an unreadable entry was refused for another reason"
+    rm -rf /scratch/kind-secrets-reordered
+
     first=/scratch/kind-secrets-first
     second=/scratch/kind-secrets-second
     generate "$first"
@@ -537,6 +597,12 @@ refused() {
     refuses "$1" "[$2]" conftest_on "/scratch/plants/$1/rendered.yaml" "/scratch/plants/$1/overlay.yaml"
 }
 
+# refused_saying <plant> "<message>": the same, by the message, where a sibling deny carries the same id and the id alone
+# would accept the wrong refusal. KubernetesManifestsTest reads the id from the start of the message.
+refused_saying() {
+    refuses "$1" "$2" conftest_on "/scratch/plants/$1/rendered.yaml" "/scratch/plants/$1/overlay.yaml"
+}
+
 # render_refused <plant> <reason>: the plant fails to render at all.
 render_refused() {
     refuses "$1" "$2" in_kustomize_read "$1"
@@ -626,27 +692,47 @@ refused no-secret-in-list no-secret-manifest
 refused delivery-absent secret-delivery
 refused delivery-on-kind secret-delivery
 refused delivery-unknown secret-delivery
-refused delivery-undelivered secret-delivery
-refused separation-reader secret-separation
+refused_saying delivery-undelivered "[secret-delivery] Job/finapp-migrator reads Secret nothing-delivers-this through envFrom, which nothing delivers"
+refused_saying delivery-optional-app "[secret-delivery] Deployment/finapp-app must read finapp-app-secrets through envFrom, and not optionally"
+refused_saying delivery-optional-migrator "[secret-delivery] Job/finapp-migrator must read finapp-migrator-secrets through envFrom, and not optionally"
+refused_saying separation-reader "[secret-separation] Job/finapp-migrator reads finapp-app-secrets, which only finapp-app may read"
+refused_saying separation-second-ref "[secret-separation] Job/finapp-migrator reads finapp-app-secrets, which only finapp-app may read"
 refused separation-app-holds secret-separation
 refused separation-migrator-holds secret-separation
 refused separation-migrator-short secret-separation
 refused sync-periodic secret-sync
 refused sync-interval secret-sync
 refused sync-orphan secret-sync
+refused sync-template secret-sync
 refused sync-delete secret-sync
 refused sync-null secret-sync
 refused entries-find secret-entries
+refused_saying entries-empty "[secret-entries] ExternalSecret/finapp-migrator-secrets has no entries"
+refused entries-plain-source secret-entries
+refused entries-name-shape secret-entries
+refused entries-brokers-plain secret-entries
+refused entries-brokers-swapped secret-entries
+refused entries-brokers-other-store secret-entries
 refused entries-other-key secret-entries
 refused entries-property secret-entries
-refused store-cluster secret-store
+refused_saying store-cluster "[secret-store] ClusterSecretStore/"
+refused_saying kind-cluster-external "[secret-store] ClusterExternalSecret/"
+refused_saying kind-push "[secret-store] PushSecret/"
+refused_saying kind-cluster-push "[secret-store] ClusterPushSecret/"
+refused_saying store-role "[secret-store] SecretStore/finapp-app-store must be the store"
+refused_saying store-more-roles "[secret-store] SecretStore/finapp-app-store must be the store"
+refused_saying store-brokers-other-path "[secret-store] SecretStore/finapp-app-kafka-store must be the store"
+refused_saying no-brokers-store "[secret-store] SecretStore finapp-app-kafka-store is not rendered"
 refused store-other-path secret-store
 refused store-shared secret-store
 refused store-reader secret-store
 refused store-static secret-store
-refused placeholder-account secret-placeholder
+refused_saying placeholder-account "[secret-placeholder] ServiceAccount finapp-app-secret-reader must exist and carry the placeholder role"
+refused_saying placeholder-no-reader "[secret-placeholder] ServiceAccount finapp-migrator-secret-reader must exist"
+refused_saying identity-workload-reader "[secret-identity] Deployment/finapp-app runs as a store reader"
+refused_saying identity-role-on-workload "[secret-identity] ServiceAccount/finapp-app carries a cloud role"
 refused placeholder-region secret-placeholder
-refused placeholder-any-field secret-placeholder
+refused_saying placeholder-any-field "[secret-placeholder] Deployment/finapp-app names an account"
 refused generation-absent secret-generation
 refused generation-ahead secret-generation
 refused generation-delivery-absent secret-generation

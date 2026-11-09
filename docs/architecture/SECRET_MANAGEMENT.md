@@ -98,8 +98,10 @@ derived from what the code confines: every class declaring a `KeySpec`, every `@
 whose fallback is the marked local default (the mark that is, by ADR-0020, how the code says "this is a credential"), and every
 password the migrator reads. Two nets over that, each held both ways by the same test: **a new credential without a row is red,
 and a row nothing reads is red**. The name pattern is the second net, for what no confinement has claimed yet (`pepper`, `hmac`,
-`credential`, an API key by another spelling); §3.4 lists what it matches and is not a secret, and an entry there that no
-longer matches anything is red too.
+`credential`, `jaas`, `sasl`, `auth`, an API key by another spelling), over every key of `application.yaml`, the code's read forms
+(`${…}`, `getProperty`, `getRequiredProperty`, `containsProperty`, `bind`, `@ConditionalOnProperty`, a `…_PROPERTY` constant) and
+any `FINAPP_…` literal or `getenv` name in any module. §3.4 lists what it matches and is not a secret, and an entry there that
+no longer matches anything is red too. What it cannot see is a name built at run time, or passed as a constant none of those forms names.
 
 The columns. *Class* decides the rotation (§5.1). *Owner* is the package of the application that owns the credential: for a key
 class, the package that declares it. *Consumer* is the workload, with the code that reads the value. *Delivered through* is
@@ -144,8 +146,11 @@ The test asks Spring, not a string transform, whether each variable reaches its 
 
 **The bootstrap step and the master credential.** `FINAPP_DB_MASTER_PASSWORD` is delivered through no Secret, on purpose: it is
 needed once per database (`DATA_MIGRATIONS.md` §2.2), and a value kept in a cluster Secret between two uses of it is standing
-exposure for nothing. It is read from the store into that step's own environment for that run, and it is the only value that
-step reads which no workload holds. The manifest policy refuses it in either Secret.
+exposure for nothing. **It is the managed database's own**: `modules/postgres` sets `manage_master_user_password`, so RDS generates
+it and keeps it in Secrets Manager under a name of RDS's choosing and the environment's `secrets` key, and nothing in this
+repository reads it. The person running that step reads it, through the audited break-glass access, into the step's own
+environment for that run; no workload role may read it. It is the only value that step reads which no workload holds. The
+manifest policy refuses it in either Secret.
 
 ### 3.3 Delivered beside the secrets, and not secrets
 
@@ -158,7 +163,7 @@ generator asks its caller for them rather than generating them.
 | `FINAPP_KAFKA_BOOTSTRAPSERVERS` | `finapp.kafka.bootstrap-servers` | The same, for the broker list | `finapp-app-secrets` |
 | `FINAPP_DB_APP_USER` | `spring.datasource.username` | Rotation by alternating users changes the user and the password together, so they have to arrive together | `finapp-app-secrets` |
 | `FINAPP_DB_REPORTING_USER` | `finapp.database.reporting.username` | The same | `finapp-app-secrets` |
-| `FINAPP_KAFKA_SASL_USERNAME` | `finapp.kafka.sasl.username` | The SCRAM user, added and removed with its password | `finapp-app-secrets` |
+| `FINAPP_KAFKA_SASL_USERNAME` | `finapp.kafka.sasl.username` | The SCRAM user, read with its password from the one entry the managed brokers read (§3.5) | `finapp-app-secrets` |
 | `FINAPP_DB_MIGRATOR_USER` | none | The user beside the migrator's password | `finapp-migrator-secrets` |
 | `FINAPP_DB_MASTER_USER` | none | The user beside the master credential, read by the bootstrap step alone | none |
 
@@ -198,20 +203,23 @@ pinned in `infra/scanner-pins.sh`, which `infra/scripts/check-pinned-images.sh` 
 |---|---|---|
 | One `ExternalSecret` per workload, one entry per secret | `finapp-app-secrets` and `finapp-migrator-secrets`, the two Secrets the workloads read through `envFrom` | The operator writes a target in one operation, so no pod can read part of a generation. One `ExternalSecret` per secret would need `Merge` into a single target: thirty-odd independent writers of one object, and a Secret nothing owns |
 | Each entry is named | `data`, never `dataFrom` | A `find` over the store would hand a pod whatever else lands under its path. A new entry is a reviewed change |
-| When the store is read | `refreshPolicy: OnChange`, `refreshInterval: 0s` | Polling would rewrite the Secret on the operator's clock, and a crashed pod restarting afterwards would take the new value while the fleet held the old. A rotation has to be something somebody started (§5.2) |
+| When the store is read | `refreshPolicy: OnChange`, `refreshInterval: 0s`: the operator does not poll | Polling would rewrite the Secret on the operator's clock, and a crashed pod restarting afterwards would take the new value while the fleet held the old. **It still reads the store when the object's spec, labels or annotations change, a GitOps controller's tracking metadata included, and when its Secret is missing or altered** (read in its source: the reconcile skips only when nothing changed and the Secret is valid). Each of those can bring a value forward, so each rotation method keeps both valid (§5.1) |
 | Deleting an `ExternalSecret` | `creationPolicy: Owner`: its Secret is garbage-collected | Running pods keep their environment; a new pod fails with `CreateContainerConfigError` until the object is restored. `Orphan` was refused because it leaves a credential in etcd that nothing owns |
 | A store entry removed, or the store unreachable | `deletionPolicy: Retain` | The Secret keeps its last value and the `ExternalSecret` reports `Ready=False`. This is also what makes a sync all or nothing: under `Delete` or `Merge` the operator skips a missing entry and writes the rest, read from its source at the pinned version. A first sync that fails creates no Secret, so the pod does not start |
-| Whose identity reads the store | A `SecretStore` per workload, namespaced, each through its own `…-secret-reader` ServiceAccount that runs no pod | The application's role cannot read the migrator's entries. The workloads' own ServiceAccounts stay unannotated, so no pod is given a cloud identity. `ClusterSecretStore` is refused |
-| The store's address | A placeholder by convention: account `000000000000` and region `placeholder-region-0`, which no cloud serves, as sixty-four zeros are for a digest | No real account or endpoint is committed. The manifest policy refuses any other account number in any field of anything rendered. The entries and roles are the security modules' to build; the real values are the environment's |
+| Whose identity reads the store | A `SecretStore` per workload, namespaced, each through its own `…-secret-reader` ServiceAccount that runs no pod; and `finapp-app-kafka-store`, reached through the application's reader, for the one entry the managed brokers name | The application's role cannot read the migrator's entries. No workload may run as a reader and only the readers may carry a role, both refused by the policy, so no pod is given a cloud identity. `ClusterSecretStore` is refused |
+| The broker's credential | The two `FINAPP_KAFKA_SASL_…` entries read the properties `username` and `password` of `AmazonMSK_finapp-<environment>-application`, the entry `modules/kafka` creates | The brokers dictate that name and that JSON, so the application reads the same entry. There is no second copy to keep equal |
+| The store's address | A placeholder by convention: account `000000000000` and region `placeholder-region-0`, which no cloud serves, as sixty-four zeros are for a digest | No real account or endpoint is committed. The manifest policy refuses any other account number in an ARN, in any field of anything rendered. The entries and roles are the security modules' to build; the real values are the environment's |
 | The operator's RBAC | `scopedRBAC` in namespace `finapp`, webhook and certificate controller off, no aggregation into the cluster's view, edit or admin roles | **It is the one non-human principal that writes a Secret**, and it does so in one namespace. `P15-TSK-010` denies humans `get secrets`, and no person is bound to this Role. What was read, once and by hand: this chart at the pinned version, rendered with these values, gives the controller's `Role` and `RoleBinding` in `finapp`, two unbound `view` and `edit` Roles beside them that name no Secret, a leader-election pair in its own namespace, one Deployment, and no `ClusterRole` or `ClusterRoleBinding`. Nothing has been run against an API server |
 
 **A Secret edited or deleted by hand is rewritten from the store's current value at the next reconcile**, which is one more reason
 it is not done by hand.
 
-**What failure looks like.** The Secret absent: the pod does not start (`envFrom`). A key missing from it, which only a person can
-arrange, because the operator writes every entry or none: the marked local default applies and the guards refuse at startup off
-loopback, for every credential whose bean is built at startup. A provider's key is decoded only when that provider's URL is
-configured, so with no provider connected a missing provider key is not an error. Never readiness after traffic.
+**What failure looks like.** The Secret absent: the pod does not start (`envFrom`, required by the policy; an `optional` reference
+would start it with no URL and every marked default). A key missing from it, which only a person can arrange, because the operator
+writes every entry or none: the marked local default applies and the guards refuse at startup off loopback, for every credential
+whose bean is built at startup. A provider's key is decoded only when that provider's URL is configured, so the application does not
+need one with no provider connected, **but the sync does: under `Retain` a store entry that is missing or holds no value fails the
+whole sync**, so the `provider-api` and `report-pull` entries need a generated value even for a provider that does not exist yet.
 
 **Ten replicas.** Each reads the Secret once, at its own start. No replica decides anything about it. Two operator replicas elect a
 leader, and the API server's optimistic concurrency is what actually arbitrates the one write.
@@ -260,9 +268,11 @@ assignment on a line sees only the innocent key in front of it.
 6. **Add its entry to the `ExternalSecret` of the workload that reads it**, under
    `deploy/components/secret-delivery`, with the store's entry of the same name. The same test fails until the two agree. Only
    the workload that reads it gets it: the migrator's Secret holds exactly the URL, its user and its password.
-7. **Create the store's entry in each environment**, `finapp/<environment>/<app|migrator>/<VARIABLE>`, by the security modules.
-   The first sync of a Secret reads every entry, so a new entry missing from the store fails the sync and leaves the last good
-   Secret in place.
+7. **Create the store's entry in each environment**, `finapp/<environment>/<app|migrator>/<VARIABLE>`, by the security modules,
+   **and give it a value**, a generated one if no provider exists yet: a sync reads every entry, so one missing or empty fails the
+   sync and leaves the last good Secret in place. Two exceptions. The Kafka pair has no entry of its own: both read
+   `AmazonMSK_finapp-<environment>-application`, which `modules/kafka` creates, and it must not be created again. The master
+   credential is RDS's (§3.2) and is under no path of ours.
 8. Run the build, and `infra/scripts/manifest-check.sh`. The configuration rule and the inventory run in `./gradlew build`; the
    manifest policy needs Docker.
 
@@ -280,7 +290,7 @@ until the last old replica has gone, and the class decides how.
 | `database-fleet-credential` | alternating-users | A second user holding exactly the first's grants; the store takes the user and the password together; sync, roll; the old user is retired once no replica uses it | Rehearsed by `P15-TSK-020` |
 | `database-job-credential` | between-releases | The migrator runs as a Job per release and reads its Secret at its start. Change the role's password and the store between two releases, then sync; nothing needs rolling | Ready. The next Job takes it |
 | `database-master` | managed-by-the-database-service | The managed database's own mechanism, recovered through the cloud account. The bootstrap step reads it for its run | The environment's |
-| `kafka-credential` | add-roll-remove | Add the new SCRAM credential, sync, roll, remove the old | Rehearsed by `P15-TSK-020` |
+| `kafka-credential` | add-roll-remove | The brokers' ACLs name a SCRAM user, so the new credential is a second user with its grants (one more of `modules/kafka`'s `scram_users` and its own `AmazonMSK_…` entry). Point the two entries at it, sync, roll, then remove the old user | Rehearsed by `P15-TSK-020` |
 
 ### 5.2 What carries a rotation to the fleet — *Implemented as manifests; rehearsed by `P15-TSK-020`*
 
@@ -289,13 +299,14 @@ the store changes nothing in the cluster; a new value in the Secret changes noth
 each is an act somebody performs:
 
 1. **Write the new version to the store.** Nothing else moves, by design: the operator is not polling.
-2. **Sync.** A commit changes `finapp/rotation-generation` on the `ExternalSecret`. Changing the object makes the operator read the
-   store and rewrite the Secret once. From here, a replica that starts for any reason reads the new value, so the class's method
+2. **Sync.** A commit changes `finapp/rotation-generation` on that environment's `ExternalSecret`, by a patch in **its overlay**. The
+   annotation's default is in the shared component, and editing it there would rotate every environment at once. Changing the object
+   makes the operator read the store and rewrite the Secret once. From here, a replica that starts for any reason reads the new value, so the class's method
    (§5.1) must already accept both.
 3. **Read that it worked, then roll.** `kubectl get externalsecret -n finapp` must show `Ready=True` with a refresh time after the
    commit in step 2. The kubelet's copy of a Secret can lag its write, which is the other reason this is two commits and not one.
-   Then a second commit changes `finapp/rotation-generation` on the pod template in `deploy/base/deployment.yaml` (an overlay's
-   patch). That changes the pod template, and that, and nothing else, starts the rolling update, one surge at a time under the
+   Then a second commit changes `finapp/rotation-generation` on the pod template, again by a patch in that overlay and not in
+   `deploy/base/deployment.yaml`. That changes the pod template, and that, and nothing else, starts the rolling update, one surge at a time under the
    strategy `P15-TSK-009` set.
 
 The manifest policy refuses a pod template whose generation is ahead of its `ExternalSecret`'s: a rollout before the sync would

@@ -9,6 +9,8 @@
 # into the cluster's view, edit and admin roles is off too: it would hand a person who holds edit the right to rewrite an
 # ExternalSecret, which is to say to point a pod at another value. This chart rendered with these values was read once,
 # by hand, against the version pinned (SECRET_MANAGEMENT.md section 3.5 says what was seen); nothing has run on a cluster.
+fullnameOverride: external-secrets
+
 image:
   repository: ghcr.io/external-secrets/external-secrets
   tag: v2.14.0@sha256:10608eb53e636e744903d5f3657a4d9c44e28d9d9c181b73e07bc7dd2e6884dc

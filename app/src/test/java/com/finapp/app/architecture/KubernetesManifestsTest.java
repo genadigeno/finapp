@@ -311,6 +311,11 @@ class KubernetesManifestsTest {
             refusedPlants.add(refused.group(1));
             refusedIds.add(refused.group(2));
         }
+        Matcher saying = Pattern.compile("(?m)^refused_saying (\\S+) \"\\[([a-z][a-z-]*)\\] ").matcher(script);
+        while (saying.find()) {
+            refusedPlants.add(saying.group(1));
+            refusedIds.add(saying.group(2));
+        }
         Matcher other = Pattern.compile("(?m)^(?:schema_refused|render_refused) (\\S+) ").matcher(script);
         while (other.find()) {
             refusedPlants.add(other.group(1));

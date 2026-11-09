@@ -47,9 +47,13 @@ if [ "$MODE" = render ]; then
 fi
 
 # The keys one ExternalSecret writes. Its file is the list, and an empty answer is refused: a parser that finds nothing has failed.
+# So is one that finds fewer than the file holds: an entry written in another order, or quoted, is valid YAML this sed cannot read.
 keys_of() {
     found=$(sed -n 's/^ *- secretKey: *\(FINAPP_[A-Z0-9_]*\) *$/\1/p' "$DELIVERY/$1")
     [ -n "$found" ] || { echo "no secretKey could be read from $1" >&2; exit 1; }
+    held=$(grep -v '^ *#' "$DELIVERY/$1" | grep -c 'secretKey' || true)
+    read_here=$(printf '%s\n' "$found" | wc -l)
+    [ "$held" -eq "$read_here" ] || { echo "$1 has $held entries and only $read_here could be read: write each as '- secretKey: NAME'" >&2; exit 1; }
     printf '%s\n' "$found"
 }
 
@@ -95,10 +99,13 @@ named() {
     printf '%s' "$entries" | write "$object"
 }
 
-# shellcheck disable=SC2046
-named finapp-app-secrets $(keys_of externalsecret-app.yaml)
-# shellcheck disable=SC2046
-named finapp-migrator-secrets $(keys_of externalsecret-migrator.yaml)
+# Assigned first: a failure inside a command substitution given as an argument is ignored even under set -e.
+app_keys=$(keys_of externalsecret-app.yaml)
+migrator_keys=$(keys_of externalsecret-migrator.yaml)
+# shellcheck disable=SC2086
+named finapp-app-secrets $app_keys
+# shellcheck disable=SC2086
+named finapp-migrator-secrets $migrator_keys
 named finapp-kind-bootstrap FINAPP_DB_URL FINAPP_DB_MASTER_USER FINAPP_DB_MASTER_PASSWORD \
     FINAPP_DB_MIGRATOR_PASSWORD FINAPP_DB_APP_PASSWORD FINAPP_DB_REPORTING_PASSWORD
 

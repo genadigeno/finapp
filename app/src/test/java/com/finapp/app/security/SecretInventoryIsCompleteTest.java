@@ -27,6 +27,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
@@ -43,7 +45,8 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  * So the set is <strong>derived from what the code actually confines</strong>, the way the code itself knows a credential: a class
  * declaring a {@link KeySpec}, an {@code @Value} or a placeholder whose fallback is the marked local default, a password the
  * migrator reads. The name pattern is the second net, for what no confinement has claimed, with an explicit list of what is not a
- * secret that is held both ways too.
+ * secret that is held both ways too. The net reads every key of {@code application.yaml}, the code's read forms and any variable
+ * named in any module; a name built at run time, or passed as a constant the patterns here do not name, is what it cannot see.
  *
  * <p>What this reads is what the code reads: the {@code @Value} expressions by reflection, so a default built by concatenation is
  * seen as the constant the compiler folded; every module's production source for the names; {@code application.yaml} as YAML. A
@@ -79,19 +82,31 @@ class SecretInventoryIsCompleteTest {
 
     /** The second net: anything read whose name says it might be a secret, whether or not any guard confines it. */
     private static final Pattern SECRET_SHAPED_NAME = Pattern.compile(
-            "(?i)(secret|passw|passphrase|pepper|credential|token|hmac|api[-_.]?key|private|signing|salt|jwt|bearer"
-                    + "|(?:^|[.-])key(?:$|[.-]))");
+            "(?i)(secret|passw|passphrase|pepper|credential|token|hmac|api[-_.]?key|private|signing|salt|jwt|bearer|jaas|sasl|auth"
+                    + "|(?:^|[._-])key(?:$|[._-]))");
 
     /** A property some code reads, in each of the forms this codebase reads one. */
     private static final Pattern READ_PROPERTY = Pattern.compile(
             "\\$\\{(finapp\\.[a-zA-Z0-9._-]+)"
-                    + "|getProperty\\(\\s*\"(finapp\\.[a-zA-Z0-9._-]+)\""
+                    + "|(?:getProperty|getRequiredProperty|containsProperty)\\(\\s*\"(finapp\\.[a-zA-Z0-9._-]+)\""
+                    + "|\\.bind(?:OrCreate)?\\(\\s*\"(finapp\\.[a-zA-Z0-9._-]+)\""
                     + "|ConditionalOnProperty\\(\\s*(?:name\\s*=\\s*)?\"(finapp\\.[a-zA-Z0-9._-]+)\""
                     + "|_PROPERTY\\s*=\\s*\"(finapp\\.[a-zA-Z0-9._-]+)\"");
 
     private static final Pattern PLACEHOLDER_VARIABLE = Pattern.compile("\\$\\{([A-Z][A-Z0-9_]*)[:}]");
 
     private static final Pattern MIGRATOR_VARIABLE = Pattern.compile("\"(FINAPP_[A-Z0-9_]+)\"");
+
+    /** A variable named in code, whatever reads it: a {@code FINAPP_} literal in any module, or any name given to {@code getenv}. */
+    private static final Pattern NAMED_VARIABLE = Pattern.compile("\"(FINAPP_[A-Z0-9_]+)\"|getenv\\(\\s*\"([A-Z][A-Z0-9_]*)\"");
+
+    /** The two entries read from the one the managed brokers read, by the property of its JSON. */
+    private static final Map<String, String> BROKERS_ENTRIES = Map.of("FINAPP_KAFKA_SASL_USERNAME", "username", "FINAPP_KAFKA_SASL_PASSWORD", "password");
+
+    private static final Set<String> OPERATOR_VALUES_KEYS = Set.of(
+            "fullnameOverride", "image", "replicaCount", "leaderElect", "scopedNamespace", "scopedRBAC",
+            "processClusterExternalSecret", "processClusterPushSecret", "processClusterStore", "processClusterGenerator", "processPushSecret",
+            "genericTargets", "installCRDs", "crds", "webhook", "certController", "rbac", "resources");
 
     private static Path root;
     private static List<Row> inventory;
@@ -184,13 +199,59 @@ class SecretInventoryIsCompleteTest {
         inventory.forEach(row -> inventoried.add(row.property()));
         beside.forEach(row -> inventoried.add(row.property()));
 
+        Set<String> names = new TreeSet<>(readProperties);
+        names.addAll(flatten(application).keySet());
         Set<String> unaccounted = new TreeSet<>();
-        for (String property : readProperties) {
-            if (SECRET_SHAPED_NAME.matcher(property).find() && !inventoried.contains(property) && !notSecrets.containsKey(property)) {
-                unaccounted.add(property);
+        for (String name : names) {
+            if (SECRET_SHAPED_NAME.matcher(name).find() && !inventoried.contains(name) && !notSecrets.containsKey(name)) {
+                unaccounted.add(name);
+            }
+        }
+
+        Set<String> variables = new TreeSet<>(placeholders());
+        sources.values().forEach(source -> variables.addAll(variablesIn(source)));
+        Set<String> rows = new TreeSet<>(inventoryVariables());
+        beside.forEach(row -> rows.add(row.variable()));
+        for (String variable : variables) {
+            if (SECRET_SHAPED_NAME.matcher(variable).find() && !rows.contains(variable)) {
+                unaccounted.add(variable);
             }
         }
         assertThat(unaccounted).as("give it a row in %s section 3.2, or a line in section 3.4 saying why it is not a secret", DOCUMENT).isEmpty();
+    }
+
+    @ParameterizedTest
+    @DisplayName("the second net reads a property by each form the code can read one")
+    @ValueSource(strings = {
+        "@Value(\"${finapp.x.secret:}\")",
+        "environment.getProperty(\"finapp.x.secret\")",
+        "environment.getRequiredProperty(\"finapp.x.secret\")",
+        "environment.containsProperty(\"finapp.x.secret\")",
+        "Binder.get(environment).bind(\"finapp.x.secret\", String.class)",
+        "binder.bindOrCreate(\"finapp.x.secret\", String.class)",
+        "@ConditionalOnProperty(name = \"finapp.x.secret\")",
+        "static final String X_PROPERTY = \"finapp.x.secret\";"
+    })
+    void theNetReadsEachFormOfAProperty(String source) {
+        assertThat(propertiesIn(source)).containsExactly("finapp.x.secret");
+    }
+
+    @ParameterizedTest
+    @DisplayName("the second net reads a variable named in any module, by a FINAPP_ literal or by any name given to getenv")
+    @ValueSource(strings = {"System.getenv(\"FINAPP_X_SECRET\")", "environment.get(\"FINAPP_X_SECRET\")", "System.getenv(\"OIDC_X_SECRET\")"})
+    void theNetReadsAVariableInAnyForm(String source) {
+        assertThat(variablesIn(source)).hasSize(1).allMatch(variable -> SECRET_SHAPED_NAME.matcher(variable).find());
+    }
+
+    @ParameterizedTest
+    @DisplayName("the shape reaches what a word list would miss, and any application.yaml key, not only finapp's")
+    @ValueSource(strings = {
+        "spring.security.oauth2.client.registration.a.client-secret", "server.ssl.key-store-password", "finapp.x.pepper", "finapp.x.hmac",
+        "finapp.x.credential", "finapp.x.api-key", "finapp.x.apikey", "finapp.kafka.sasl.jaas-config", "finapp.x.sasl.mechanism",
+        "finapp.x.auth-header", "FINAPP_X_KEY"
+    })
+    void theShapeReachesTheseNames(String name) {
+        assertThat(SECRET_SHAPED_NAME.matcher(name).find()).as(name).isTrue();
     }
 
     @Test
@@ -398,9 +459,12 @@ class SecretInventoryIsCompleteTest {
             assertThat(kustomization).contains("../../components/secret-delivery").contains("secret-store.yaml");
             assertThat(read("deploy/overlays/" + overlay + "/secret-store.yaml"))
                     .contains("prefix: finapp/" + overlay + "/app/").contains("prefix: finapp/" + overlay + "/migrator/")
+                    .contains("prefix: AmazonMSK_finapp-" + overlay + "-")
                     .contains("region: placeholder-region-0").contains("arn:aws:iam::000000000000:role/");
         }
         assertThat(read("deploy/overlays/kind/kustomization.yaml")).as("kind has no store").doesNotContain("secret-delivery");
+        assertThat(read(DEPLOYMENT)).as("an optional Secret would start the pod without it").doesNotContain("optional:");
+        assertThat(read("deploy/base/migrator-job.yaml")).as("an optional Secret would start the Job without it").doesNotContain("optional:");
     }
 
     @Test
@@ -414,6 +478,10 @@ class SecretInventoryIsCompleteTest {
         assertThat(pin(pins, "ESO_CRD_SCHEMAS_COMMIT")).matches("[0-9a-f]{40}");
 
         Map<String, Object> values = loadAll(read(OPERATOR_VALUES)).get(0);
+        assertThat(values.keySet()).as("a key not on this list, extraObjects for one, could reach what the named fields below do not")
+                .containsExactlyInAnyOrderElementsOf(OPERATOR_VALUES_KEYS);
+        assertThat(values).as("the Role's and the Deployment's names are fixed, so a route to them can be written").containsEntry("fullnameOverride", "external-secrets");
+        assertThat(asMap(values.get("genericTargets"))).containsEntry("enabled", false);
         Map<String, Object> image = asMap(values.get("image"));
         assertThat(image).containsEntry("repository", repository).containsEntry("tag", version + "@" + digest);
         assertThat(values).containsEntry("scopedRBAC", true).containsEntry("scopedNamespace", "finapp").containsEntry("leaderElect", true)
@@ -498,7 +566,16 @@ class SecretInventoryIsCompleteTest {
         Set<String> names = new TreeSet<>();
         for (Object entry : (List<?>) asMap(delivery.get("spec")).get("data")) {
             Map<String, Object> map = asMap(entry);
-            assertThat(asMap(map.get("remoteRef")).get("key")).as("%s reads the store entry of its own name", map.get("secretKey")).isEqualTo(map.get("secretKey"));
+            String property = BROKERS_ENTRIES.get(String.valueOf(map.get("secretKey")));
+            if (property != null) {
+                assertThat(asMap(map.get("remoteRef"))).as("%s reads the entry the managed brokers read", map.get("secretKey"))
+                        .containsOnly(Map.entry("key", "application"), Map.entry("property", property));
+                assertThat(asMap(asMap(map.get("sourceRef")).get("storeRef"))).containsOnly(Map.entry("kind", "SecretStore"), Map.entry("name", "finapp-app-kafka-store"));
+            } else {
+                assertThat(map).as("%s is a plain entry", map.get("secretKey")).containsOnlyKeys("secretKey", "remoteRef");
+                assertThat(asMap(map.get("remoteRef"))).as("%s reads the store entry of its own name", map.get("secretKey"))
+                        .containsOnly(Map.entry("key", map.get("secretKey")));
+            }
             assertThat(names.add(String.valueOf(map.get("secretKey")))).as("%s is written twice", map.get("secretKey")).isTrue();
         }
         return names;
@@ -581,19 +658,32 @@ class SecretInventoryIsCompleteTest {
         return passwords;
     }
 
-    /** Every property a class reads, in any module, and every key of application.yaml's {@code finapp} tree. */
-    private static Set<String> readProperties() {
+    private static Set<String> propertiesIn(String source) {
         Set<String> properties = new TreeSet<>();
-        for (String source : sources.values()) {
-            Matcher found = READ_PROPERTY.matcher(source);
-            while (found.find()) {
-                for (int group = 1; group <= found.groupCount(); group++) {
-                    if (found.group(group) != null) {
-                        properties.add(found.group(group));
-                    }
+        Matcher found = READ_PROPERTY.matcher(source);
+        while (found.find()) {
+            for (int group = 1; group <= found.groupCount(); group++) {
+                if (found.group(group) != null) {
+                    properties.add(found.group(group));
                 }
             }
         }
+        return properties;
+    }
+
+    private static Set<String> variablesIn(String source) {
+        Set<String> variables = new TreeSet<>();
+        Matcher found = NAMED_VARIABLE.matcher(source);
+        while (found.find()) {
+            variables.add(found.group(1) != null ? found.group(1) : found.group(2));
+        }
+        return variables;
+    }
+
+    /** Every property a class reads, in any module, and every key of application.yaml's {@code finapp} tree. */
+    private static Set<String> readProperties() {
+        Set<String> properties = new TreeSet<>();
+        sources.values().forEach(source -> properties.addAll(propertiesIn(source)));
         flatten(application).keySet().stream().filter(key -> key.startsWith("finapp.")).forEach(properties::add);
         return properties;
     }

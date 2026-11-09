@@ -821,14 +821,22 @@ deny contains msg if {
 	msg := sprintf("[secret-separation] %s reads %s, which only %s may read", [label(doc), target, reader])
 }
 
+# Through envFrom and not optional: an optional Secret that is absent starts the pod with no URL and every marked default.
 deny contains msg if {
 	some target, reader in secret_readers
 	some doc in documents
 	doc.kind in pod_template_kinds
 	name_of(doc) == reader
 	spec := doc.spec.template.spec
-	not references(spec, target)
-	msg := sprintf("[secret-separation] %s does not read %s", [label(doc), target])
+	not requires_its_secret(spec, target)
+	msg := sprintf("[secret-delivery] %s must read %s through envFrom, and not optionally", [label(doc), target])
+}
+
+requires_its_secret(spec, target) if {
+	some container in list_of(spec, "containers")
+	some source in list_of(container, "envFrom")
+	source.secretRef.name == target
+	object.get(source.secretRef, "optional", false) == false
 }
 
 entry_keys(doc) := {entry.secretKey | some entry in list_of(section(doc, "spec"), "data")}
@@ -890,10 +898,31 @@ deny contains msg if {
 	some doc in of_kind("ExternalSecret")
 	some entry in list_of(section(doc, "spec"), "data")
 	not entry_is_plain(entry)
+	not entry_reads_the_brokers_credential(entry)
 	msg := sprintf("[secret-entries] ExternalSecret/%v entry %v must name one environment variable and read the store entry of the same name", [name_of(doc), entry])
 }
 
+# The one exception to a same-named entry: the managed brokers dictate this entry's name and shape, JSON with both fields.
+brokers_entries := {"FINAPP_KAFKA_SASL_USERNAME": "username", "FINAPP_KAFKA_SASL_PASSWORD": "password"}
+
+brokers_store := "finapp-app-kafka-store"
+
+is_a_brokers_entry(entry) if {
+	object.get(brokers_entries, entry.secretKey, "") != ""
+}
+
+entry_reads_the_brokers_credential(entry) if {
+	entry.remoteRef.key == "application"
+	entry.remoteRef.property == brokers_entries[entry.secretKey]
+	count(object.keys(entry.remoteRef)) == 2
+	entry.sourceRef.storeRef.name == brokers_store
+	entry.sourceRef.storeRef.kind == "SecretStore"
+	count(object.keys(entry.sourceRef)) == 1
+	count(object.keys(entry)) == 3
+}
+
 entry_is_plain(entry) if {
+	not is_a_brokers_entry(entry)
 	regex.match(`^FINAPP_[A-Z0-9_]+$`, entry.secretKey)
 	entry.remoteRef.key == entry.secretKey
 	count(object.keys(entry.remoteRef)) == 1
@@ -914,10 +943,12 @@ deny contains msg if {
 
 deny contains msg if {
 	data.overlay != "kind"
-	some store, _ in store_parts
+	some store in every_store
 	not store_rendered(store)
 	msg := sprintf("[secret-store] SecretStore %s is not rendered", [store])
 }
+
+every_store := object.keys(store_parts) | {brokers_store}
 
 store_rendered(store) if {
 	some doc in of_kind("SecretStore")
@@ -932,12 +963,21 @@ deny contains msg if {
 
 store_is_its_own(doc) if {
 	parts := store_parts[name_of(doc)]
+	reaches_the_store_as(doc, sprintf("finapp/%s/%s/", [data.overlay, parts[1]]), parts[2])
+}
+
+store_is_its_own(doc) if {
+	name_of(doc) == brokers_store
+	reaches_the_store_as(doc, sprintf("AmazonMSK_finapp-%s-", [data.overlay]), "finapp-app-secret-reader")
+}
+
+reaches_the_store_as(doc, prefix, reader) if {
 	count(object.keys(doc.spec.provider)) == 1
 	aws := doc.spec.provider.aws
 	aws.service == "SecretsManager"
-	aws.prefix == sprintf("finapp/%s/%s/", [data.overlay, parts[1]])
+	aws.prefix == prefix
 	count(object.keys(aws.auth)) == 1
-	aws.auth.jwt.serviceAccountRef.name == parts[2]
+	aws.auth.jwt.serviceAccountRef.name == reader
 	not stated(aws, "role")
 	not stated(aws, "additionalRoles")
 }
@@ -983,7 +1023,7 @@ reader_is_the_placeholder(name) if {
 	regex.match(placeholder_role, doc.metadata.annotations["eks.amazonaws.com/role-arn"])
 }
 
-# Any field of anything rendered: an account number is real unless it is the placeholder.
+# An ARN in any field of anything rendered: its account number is real unless it is the placeholder.
 deny contains msg if {
 	some doc in documents
 	walk(doc, [_, value])
@@ -991,6 +1031,22 @@ deny contains msg if {
 	some found in regex.find_all_string_submatch_n(`arn:aws[a-z-]*:[a-z0-9-]*:[a-z0-9-]*:([0-9]{12}):`, value, -1)
 	found[1] != "000000000000"
 	msg := sprintf("[secret-placeholder] %s/%v names an account: a real one is never committed", [object.get(doc, "kind", "?"), name_of(doc)])
+}
+
+# I3: a cloud identity belongs to the two readers, which run no pod, and to nothing else.
+reader_accounts := {parts[2] | some _, parts in store_parts}
+
+deny contains msg if {
+	some [doc, spec] in workloads
+	object.get(spec, "serviceAccountName", "default") in reader_accounts
+	msg := sprintf("[secret-identity] %s runs as a store reader, which would give its pods the cloud identity that reads the store", [label(doc)])
+}
+
+deny contains msg if {
+	some doc in of_kind("ServiceAccount")
+	not name_of(doc) in reader_accounts
+	object.get(section(section(doc, "metadata"), "annotations"), "eks.amazonaws.com/role-arn", "") != ""
+	msg := sprintf("[secret-identity] ServiceAccount/%v carries a cloud role, and only the store readers may", [name_of(doc)])
 }
 
 generation_annotation := "finapp/rotation-generation"
