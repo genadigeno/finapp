@@ -17,19 +17,15 @@ import com.finapp.identity.SessionStatus;
 import com.finapp.platform.api.ApiException;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.security.Sensitive;
-import java.lang.reflect.Proxy;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.objenesis.SpringObjenesis;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The role grant's refusal and the check of standing holdings, at their doors (`P15-TSK-039`). The grant's rule is
@@ -45,9 +41,7 @@ class RoleGrantDoorTest {
     private int served;
     private final List<Integer> limits = new ArrayList<>();
 
-    private final IdentityAdministrationService service = new IdentityAdministrationService(
-            new SpringObjenesis().newInstance(IdentityAdministration.class), new TransactionTemplate(),
-            (DataSource) Proxy.newProxyInstance(DataSource.class.getClassLoader(), new Class<?>[] {DataSource.class}, (proxy, method, args) -> null)) {
+    private final IdentityAdministrationService service = new StubAdministrationService() {
 
         @Override
         public IdentityAdministration.RoleGrant assignRole(IdentityId subject, RoleName role, IdentityId actor, String reason) {
