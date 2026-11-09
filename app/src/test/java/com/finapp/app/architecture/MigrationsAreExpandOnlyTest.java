@@ -98,8 +98,20 @@ class MigrationsAreExpandOnlyTest {
                 .filteredOn(refusal -> refusal.module().equals("platform") && refusal.file().startsWith("V012"))
                 .extracting(Refusal::rule)
                 .contains(Refused.REVOKE);
-        // Replacements of released bodies, which only an earlier migration in the module can make one.
-        assertThat(outcome.refusals()).extracting(Refusal::rule).contains(Refused.REPLACED_BODY, Refused.DROP, Refused.TRIGGER, Refused.CHECK);
+        assertThat(outcome.refusals()).extracting(Refusal::rule).contains(Refused.DROP, Refused.TRIGGER, Refused.CHECK);
+    }
+
+    @Test
+    @DisplayName("a real migration replacing bodies a release holds is refused once the floor stands just below it: lending V035")
+    void aRealReplacementIsRefusedAboveItsFloor() throws IOException {
+        // With no floor nothing is released, so nothing can be a replacement: this needs a floor, as a real release has.
+        SortedMap<String, SchemaVersion> floors = new TreeMap<>(head);
+        floors.put("lending", SchemaVersion.parse("34"));
+
+        assertThat(MigrationLint.check(root, new Floor(MigrationLint.NO_RELEASE, floors)).refusals())
+                .filteredOn(refusal -> refusal.module().equals("lending") && refusal.file().startsWith("V035"))
+                .extracting(Refusal::rule)
+                .contains(Refused.REPLACED_BODY);
     }
 
     @Test
