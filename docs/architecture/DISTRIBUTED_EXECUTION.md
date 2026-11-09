@@ -320,7 +320,7 @@ once; beneath every writer, `lending V024` refuses a schedule superseding an ins
 
 *(`P15-TSK-008`, 2026-11-08: shutdown and drain is built and its row rewritten from the code; the other five remain
 planned. `P15-TSK-004`, 2026-11-08: the migration Job's image and contract are built and its row rewritten; its manifest is
-`P15-TSK-009`'s.)* The six rows above marked *planned* - the deployed fleet, the migration Job, shutdown and drain, the abuse counter,
+`P15-TSK-009`'s. `P15-TSK-022`, 2026-11-09: the abuse counter is built and its row rewritten.)* The six rows above marked *planned* - the deployed fleet, the migration Job, shutdown and drain, the abuse counter,
 key-ring activation and the retention sweeps - were written by the Phase 14 → 15 transition (2026-11-07) before any
 Phase 15 code, for the precedents' reason: the design decided them (`PHASE_15_PLAN.md` §13; ADR-0120…0125, `Proposed`)
 and the register-decay class this document records is cheapest to prevent before a component exists. Each is the
