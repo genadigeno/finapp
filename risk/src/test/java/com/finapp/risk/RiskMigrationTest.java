@@ -177,6 +177,8 @@ class RiskMigrationTest {
                 // V007 (P13-TSK-004): the override born PROPOSED over a refusal - its body replaced by name by V009
                 // (P13-TSK-012) with the machine, and again by V013 (P13-TSK-017) for the fold, the same function.
                 "decision_override_permits_only_machine_edges",
+                // V021 (P15-TSK-040): the refusal of TRUNCATE on the append-only tables.
+                "history_is_never_truncated",
                 // V002 (P13-TSK-002): the reason screen's twin and the policy machine's triggers.
                 "holds_account_identifier_shape",
                 "holds_card_number_shape",
