@@ -1126,6 +1126,18 @@ rbac_bindings := of_kind("RoleBinding") | of_kind("ClusterRoleBinding")
 binds(binding, role) if {
 	section(binding, "roleRef").kind == role.kind
 	section(binding, "roleRef").name == role.metadata.name
+	binding_reaches(binding, role)
+}
+
+# A RoleBinding names a Role of its own namespace: a same-named Role elsewhere is another role, and must not borrow this
+# one's standing as a controller's.
+binding_reaches(_, role) if {
+	role.kind == "ClusterRole"
+}
+
+binding_reaches(binding, role) if {
+	role.kind == "Role"
+	namespace_of(binding) == namespace_of(role)
 }
 
 is_service_account(subject) if {
@@ -1370,7 +1382,10 @@ pod_total(spec, bound, resource) := max(array.concat([sum(main)], init)) if {
 	init := [quantity(section(section(container, "resources"), bound)[resource]) | some container in list_of(spec, "initContainers")]
 }
 
-compute_required(bound, resource) := sum([workload_peak(doc) * pod_total(spec, bound, resource) | some [doc, spec] in finapp_workloads])
+compute_required(bound, resource) := sum([share |
+	some [doc, spec] in finapp_workloads
+	share := workload_peak(doc) * pod_total(spec, bound, resource)
+])
 
 deny contains msg if {
 	some bound in {"requests", "limits"}
