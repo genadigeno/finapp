@@ -1318,12 +1318,12 @@ TOTAL=${counts##*|}
 log "handler window: $UNSEEN of $TOTAL $HANDLER_EVENT records were committed unseen by N - 1"
 [ "${UNSEEN:-0}" -gt 0 ] || fail "handler window: no record reached an N - 1 replica, so this rehearsal cannot show the case"
 if [ "$PROBE" = skip-replay ]; then
-    log "PROBE skip-replay: the replay is skipped"
-    sleep 60
-    fail "handler window: $(window_counts "$FROM_N" "$TO_N" | cut -d'|' -f1) records of the window stayed unseen because the replay was skipped"
+    log "PROBE skip-replay: the replay is skipped, and the same assertion is made over the same window"
+else
+    replay_window "$FROM_N" "$TO_N" "the rehearsal: handler added in release N, over the rollout window"
 fi
-replay_window "$FROM_N" "$TO_N" "the rehearsal: handler added in release N, over the rollout window"
 assert_handler_window rollout "$FROM_N" "$TO_N" "$UNSEEN"
+[ "$PROBE" != skip-replay ] || fail "PROBE skip-replay: the window was clean with no replay, so the assertion cannot fail"
 census handler-window-n
 
 step kill
