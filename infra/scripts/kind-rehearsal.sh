@@ -1288,6 +1288,10 @@ apply_probe() {
 step rollout-to-n
 apply_probe
 if [ "$PROBE" = min-ready ]; then
+    # The entry's probe, as measured: at three replicas this rollout tops out at six pods, the formula's own maximum, and the peak stays inside the budget (42 of 48, seven
+    # connections a pod). What is left to show is that the assertion fails when a declaration falls short of what a rollout really reaches: the formula without its + 1.
+    BUDGET=$(( (FLEET_INSTANCES - 1) * (WRITER_POOL + REPORTING_POOL) ))
+    log "PROBE min-ready: the budget as the formula would read without its eviction term: $BUDGET"
     rollout rollout-to-n "$IMAGE_APP_N" "$IMAGE_APP_NM1" yes
     fail "PROBE min-ready: the peak stayed within the budget, so the assertion cannot fail"
 fi
