@@ -210,7 +210,7 @@ class StampOrderedReadsAreJudgedTest {
         read("platform.OutboxBacklog|MIN_MAX|min(coalesce(replay_ordered_at, occurred_at))", 2, Judgement.DISPLAYS,
                 GAUGE);
         read("reconciliation.JdbcBreakCaseStore|SINGLE_ROW|id", 1, Judgement.NAMED,
-                "the break's held suspense item: the partial uniques on suspense_item admit one live holding of an item, and a break holds one; the id only makes the rare multi-item parking deterministic, never by a clock");
+                "the break's parked item for the resolution template (a proposal and its approval derive one amount from it): the partial uniques on suspense_item admit one live holding of an item, and a break holds one; the id only makes a rare multi-item parking the same answer for both reads, never by a clock");
         read("reconciliation.JdbcBreakReadings|MIN_MAX|min(raised_at)", 1, Judgement.DISPLAYS,
                 GAUGE);
         read("reconciliation.JdbcReportReadings|DISTINCT_ON|d.external_item_id, d.decided_at desc, d.id desc", 1, Judgement.DISPLAYS,
