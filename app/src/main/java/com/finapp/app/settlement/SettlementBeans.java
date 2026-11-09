@@ -280,20 +280,21 @@ public class SettlementBeans {
     }
 
     @Bean
-    SettlementFileStore<Connection> settlementFileStore(
+    com.finapp.platform.security.KeyRing settlementFileKeyRing(
             @Value("${finapp.settlement.file.key:"
                             + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT
                             + "}")
                     String configuredKey,
             @Value("${finapp.settlement.file.key-version:1}") int keyVersion,
-            SecureRandom settlementRandomness,
             Environment environment) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new JdbcSettlementFileStore(
-                new SettlementFileCipher(
-                        SettlementFileKey.decode(configuredKey, loopback),
-                        keyVersion,
-                        settlementRandomness));
+        return SettlementFileKey.ring(configuredKey, keyVersion, environment, loopback);
+    }
+
+    @Bean
+    SettlementFileStore<Connection> settlementFileStore(
+            com.finapp.platform.security.KeyRing settlementFileKeyRing, SecureRandom settlementRandomness) {
+        return new JdbcSettlementFileStore(new SettlementFileCipher(settlementFileKeyRing, settlementRandomness));
     }
 
     @Bean

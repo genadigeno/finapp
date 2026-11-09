@@ -2,6 +2,10 @@ package com.finapp.app.kyc;
 
 import com.finapp.app.security.ConfinedCredential.KeyLength;
 import com.finapp.app.security.ConfinedCredential.KeySpec;
+import com.finapp.app.security.ConfinedKeyRing;
+import com.finapp.platform.security.KeyRing;
+import java.util.Map;
+import org.springframework.core.env.Environment;
 
 /**
  * Where the document encryption key comes from (`P2-TSK-008`, ADR-0036, {@code INV-KYC-06}).
@@ -45,5 +49,29 @@ public final class DocumentKey {
      */
     public static byte[] decode(String configured, boolean localDefaultPermitted) {
         return SPEC.decode(configured, localDefaultPermitted);
+    }
+
+    /**
+     * This key's further versions and its ring's non-secret state (`P15-TSK-019`): each named here so the secret inventory's
+     * net reads it, and read by {@link ConfinedKeyRing}.
+     */
+    private static final String V2_KEY_PROPERTY = "finapp.doc.v2.key";
+
+    private static final String V3_KEY_PROPERTY = "finapp.doc.v3.key";
+
+    private static final ConfinedKeyRing.RingProperties RING =
+            new ConfinedKeyRing.RingProperties(
+                    "finapp.doc.ring.versions",
+                    "finapp.doc.ring.active-version",
+                    "finapp.doc.ring.retired-versions",
+                    Map.of(2, V2_KEY_PROPERTY, 3, V3_KEY_PROPERTY));
+
+    /**
+     * This key's ring: the base key at {@code baseVersion}, the further versions the environment lists, the active one
+     * where the environment points. Absent ring configuration, one version: the base key alone, exactly as it always was.
+     */
+    public static KeyRing ring(
+            String configuredBase, int baseVersion, Environment environment, boolean localDefaultPermitted) {
+        return ConfinedKeyRing.read(SPEC, RING, configuredBase, baseVersion, environment, localDefaultPermitted);
     }
 }

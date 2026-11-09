@@ -126,14 +126,18 @@ public class KycBeans {
      * per-credential confinement.
      */
     @Bean
-    DocumentCipher documentCipher(
+    com.finapp.platform.security.KeyRing documentKeyRing(
             @Value("${finapp.doc.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}") String configuredKey,
             @Value("${finapp.doc.key-version:1}") int keyVersion,
-            Environment environment,
-            SecureRandom kycRandomness) {
+            Environment environment) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new DocumentCipher(
-                DocumentKey.decode(configuredKey, loopback), keyVersion, kycRandomness);
+        return DocumentKey.ring(configuredKey, keyVersion, environment, loopback);
+    }
+
+    /** {@code CounterpartyScreeningBeans} reads this one ring too: one key, one ring, both classes rotating together. */
+    @Bean
+    DocumentCipher documentCipher(com.finapp.platform.security.KeyRing documentKeyRing, SecureRandom kycRandomness) {
+        return new DocumentCipher(documentKeyRing, kycRandomness);
     }
 
     @Bean
@@ -356,9 +360,13 @@ public class KycBeans {
     com.finapp.kyc.CallbackSignature callbackSignature(
             @Value("${finapp.kyc.callback.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
-            Environment environment) {
+            Environment environment,
+            java.time.Clock clock) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new com.finapp.kyc.CallbackSignature(CallbackKey.decode(configuredKey, loopback));
+        return new com.finapp.kyc.CallbackSignature(
+                CallbackKey.decode(configuredKey, loopback),
+                CallbackKey.previousWindow(environment, loopback, clock.instant()),
+                clock);
     }
 
     @Bean

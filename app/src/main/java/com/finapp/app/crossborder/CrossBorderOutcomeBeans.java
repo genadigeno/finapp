@@ -250,7 +250,11 @@ public class CrossBorderOutcomeBeans {
             Clock clock) {
         boolean loopback = com.finapp.app.security.DatabaseEndpoint.isEntirelyLoopback(
                 com.finapp.app.security.DatabaseEndpoint.url(environment));
-        return new WebhookSignature(CorridorWebhookKey.decode(configuredKey, loopback), tolerance, clock);
+        return new WebhookSignature(
+                CorridorWebhookKey.decode(configuredKey, loopback),
+                CorridorWebhookKey.previousWindow(environment, loopback, clock.instant()),
+                tolerance,
+                clock);
     }
 
     /** The corridor callback door: evidence first, the inbox, then the inquiry the hint triggers. */

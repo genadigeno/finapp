@@ -86,11 +86,6 @@ public final class JdbcFxProviderEvidenceStore implements FxProviderEvidenceStor
             read.setString(2, clientReference);
             try (ResultSet row = read.executeQuery()) {
                 while (row.next()) {
-                    if (row.getInt("key_version") != cipher.version()) {
-                        throw new IllegalStateException(
-                                "FX evidence written under another key version - rotation has"
-                                        + " no reader yet");
-                    }
                     byte[] plaintext =
                             cipher.decrypt(
                                     new FxEvidenceCipher.Encrypted(

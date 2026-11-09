@@ -1,5 +1,6 @@
 package com.finapp.identity;
 
+import com.finapp.platform.security.KeyRing;
 import com.finapp.sharedkernel.security.Sensitive;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -7,7 +8,6 @@ import java.security.SecureRandom;
 import java.util.Objects;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Encrypts a shared authentication secret at rest (`P1-TSK-017`, {@code INV-IDN-08}).
@@ -58,8 +58,7 @@ public final class SecretCipher {
 
     public static final int KEY_BYTES = 32;
 
-    private final SecretKeySpec key;
-    private final int version;
+    private final KeyRing ring;
     private final SecureRandom randomness;
 
     /**
@@ -69,22 +68,32 @@ public final class SecretCipher {
      *     wrote which row
      */
     public SecretCipher(byte[] key, int version, SecureRandom randomness) {
+        this(ringOfOne(key, version), randomness);
+    }
+
+    /**
+     * A cipher over a {@link KeyRing}: encrypts under the ring's active version, decrypts under each row's stamped version
+     * (`P15-TSK-019`, ADR-0123 point 4).
+     */
+    public SecretCipher(KeyRing ring, SecureRandom randomness) {
+        this.ring = Objects.requireNonNull(ring, "ring must not be null");
+        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+    }
+
+    private static KeyRing ringOfOne(byte[] key, int version) {
         Objects.requireNonNull(key, "key must not be null");
         if (key.length != KEY_BYTES) {
             // The message never states the length seen: it is a fact about the key material.
-            throw new IllegalArgumentException(
-                    "The MFA encryption key must be exactly " + KEY_BYTES + " bytes");
+            throw new IllegalArgumentException("The MFA encryption key must be exactly " + KEY_BYTES + " bytes");
         }
         if (version < 1) {
             throw new IllegalArgumentException("key version must be positive");
         }
-        this.key = new SecretKeySpec(key, "AES");
-        this.version = version;
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+        return KeyRing.single("MFA encryption key", key, version);
     }
 
     public int version() {
-        return version;
+        return ring.activeVersion();
     }
 
     /** Encrypts a secret, producing a fresh nonce that must be stored with the ciphertext. */
@@ -95,10 +104,10 @@ public final class SecretCipher {
         randomness.nextBytes(nonce);
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, nonce));
+            cipher.init(Cipher.ENCRYPT_MODE, ring.activeKey(), new GCMParameterSpec(TAG_BITS, nonce));
             byte[] ciphertext =
                     cipher.doFinal(plaintext.expose().getBytes(StandardCharsets.UTF_8));
-            return new Encrypted(ciphertext, nonce, version);
+            return new Encrypted(ciphertext, nonce, ring.activeVersion());
         } catch (GeneralSecurityException e) {
             // Never the cause: a provider exception can carry key material context, and this
             // message reaches a log line (INV-AUD-02). The P1-TSK-008 DatabaseFailure precedent.
@@ -115,6 +124,7 @@ public final class SecretCipher {
      */
     public Sensitive<String> decrypt(Encrypted encrypted) {
         Objects.requireNonNull(encrypted, "encrypted must not be null");
+        javax.crypto.SecretKey key = ring.keyFor(encrypted.keyVersion(), "Could not decrypt an MFA secret");
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(

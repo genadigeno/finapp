@@ -195,6 +195,49 @@ class FileReceptionDatabaseTest {
     // -----------------------------------------------------------------
 
     @Test
+    @DisplayName("a file written under version 1 is read after rotation to version 2 - a chunk has no version, its file does -"
+            + " version 2 is written once active, and a file under a version the ring does not hold is refused (P15-TSK-019)")
+    void aFileIsReadUnderItsStampedVersionAfterRotation() throws SQLException {
+        com.finapp.platform.security.KeyRing rotated =
+                com.finapp.platform.security.KeyRing.of(
+                        "settlement file key", Map.of(1, KEY, 2, filled(7)), 2, Set.of());
+        JdbcSettlementFileStore rotatedStore =
+                new JdbcSettlementFileStore(new SettlementFileCipher(rotated, new SecureRandom()));
+        FileReception<Connection> rotatedReception =
+                new FileReception<>(sources, rotatedStore, Map.of(), observer, auditWriter(), IDS, CLOCK);
+
+        byte[] underV1 = uniqueScreenCleanContent(64);
+        byte[] underV2 = uniqueScreenCleanContent(65);
+        UUID v1File = ((FileReception.Result.New) reception.receive(application, upload(underV1))).fileId();
+        UUID v2File = ((FileReception.Result.New) rotatedReception.receive(application, upload(underV2))).fileId();
+        application.commit();
+
+        assertThat(rotatedStore.readContent(application, v1File)).as("the v1 file's chunks read under its stamp").isEqualTo(underV1);
+        assertThat(rotatedStore.readContent(application, v2File)).isEqualTo(underV2);
+        assertThatThrownBy(() -> store.readContent(application, v2File))
+                .as("a replica that does not hold version 2 refuses the file, naming the version")
+                .isInstanceOf(SettlementStorageException.class)
+                .hasMessageContaining("key version 2");
+        application.rollback();
+    }
+
+    /** Letters only, unique per call, so a re-run or a shared database cannot see these as duplicates. */
+    private static byte[] uniqueScreenCleanContent(int size) {
+        byte[] content = screenCleanContent(size);
+        String hex = UUID.randomUUID().toString().replace("-", "");
+        for (int i = 0; i < Math.min(hex.length(), size); i++) {
+            content[i] = (byte) ('g' + Character.digit(hex.charAt(i), 16));
+        }
+        return content;
+    }
+
+    private static byte[] filled(int fill) {
+        byte[] key = new byte[32];
+        java.util.Arrays.fill(key, (byte) fill);
+        return key;
+    }
+
+    @Test
     @DisplayName("bytes round-trip at one byte, at the chunk boundary and at the 8 MiB bound,"
             + " checksum-verified")
     void bytesRoundTrip() throws SQLException {

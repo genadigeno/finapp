@@ -458,9 +458,10 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
             UUID sourceId;
             byte[] declaredSha;
             int declaredLength;
+            int keyVersion;
             try (PreparedStatement read =
                     unitOfWork.prepareStatement(
-                            "SELECT source_id, content_sha256, content_length"
+                            "SELECT source_id, content_sha256, content_length, key_version"
                                     + " FROM settlement.file WHERE id = ?")) {
                 read.setObject(1, fileId);
                 try (ResultSet row = read.executeQuery()) {
@@ -471,7 +472,15 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
                     sourceId = row.getObject("source_id", UUID.class);
                     declaredSha = row.getBytes("content_sha256");
                     declaredLength = row.getInt("content_length");
+                    keyVersion = row.getInt("key_version");
                 }
+            }
+            if (!cipher.holdsVersion(keyVersion)) {
+                // Named apart from tampering: nothing is decrypted to find this out, and "failed authenticated
+                // decryption" would misname a key this instance was never given.
+                throw new SettlementStorageException(
+                        "settlement file " + fileId + " is stamped with key version " + keyVersion
+                                + ", which this instance's ring does not hold: nothing is served");
             }
             ByteArrayOutputStream plaintext = new ByteArrayOutputStream(declaredLength);
             try (PreparedStatement read =
@@ -498,7 +507,8 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
                                                     rows.getBytes("ciphertext"),
                                                     rows.getBytes("nonce")),
                                             SettlementFileCipher.associatedData(
-                                                    fileId, sourceId, declaredSha, seq));
+                                                    fileId, sourceId, declaredSha, seq),
+                                            keyVersion);
                         } catch (IllegalStateException tampered) {
                             // Tampering, a transplanted chunk and the wrong key are one
                             // indistinguishable failure - and none serves a byte.
