@@ -260,6 +260,8 @@ questions about it.
 - **Never in the same migration as the DDL** that created the target.
 - **Verified by reconciliation**, not by inspection: sum the old, sum the new, assert equal.
 
+*(Accounting `V014`, 2026-11-09, departs from "never in the same migration" and says why in its header: two small tables, one transaction so that no unnumbered row ever exists, and its numbering verified row by row before it commits. A row's position is not financial data. The rule stands for financial columns and large tables.)*
+
 ### 4.4 Locking
 
 PostgreSQL supports transactional DDL, so Flyway runs each migration in a transaction and a

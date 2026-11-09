@@ -89,7 +89,7 @@ class ReportRunDeskTest {
     private static final YearMonth SEPTEMBER = YearMonth.of(2026, 9);
 
     private final MovableClock clock = new MovableClock(Instant.parse("2026-10-10T09:00:00Z"));
-    private final InMemoryAccountingPeriodStore periodStore = new InMemoryAccountingPeriodStore();
+    private final InMemoryAccountingPeriodStore periodStore = new InMemoryAccountingPeriodStore(clock);
     private final InMemoryGlMappingStore mappings = new InMemoryGlMappingStore();
     private final InMemoryReportRunStore store = new InMemoryReportRunStore(clock, periodStore);
     private final List<AuditRecord> audited = new ArrayList<>();
@@ -602,7 +602,7 @@ class ReportRunDeskTest {
     /** September opened and locked (its grace passed by the 10th of October), October open. */
     private String lockedSeptember() {
         Clock september = Clock.fixed(Instant.parse("2026-09-15T09:00:00Z"), ZoneOffset.UTC);
-        periods(september).openNext(UOW, Actor.SYSTEM, CorrelationId.generate(IDS));
+        periodStore.onDatabaseDate(LocalDate.of(2026, 9, 15), () -> periods(september).openNext(UOW, Actor.SYSTEM, CorrelationId.generate(IDS)));
         periods(clock).openNext(UOW, Actor.SYSTEM, CorrelationId.generate(IDS));
         AccountingPeriodId id = periodStore.month(SEPTEMBER).orElseThrow().id();
         periods(clock).lock(UOW, id, ACCOUNTANT, null, CorrelationId.generate(IDS));

@@ -175,6 +175,57 @@ class AccountingPeriodsTest {
     }
 
     @Test
+    @DisplayName("the grace is the database's date, whatever this instance's clock reads: a clock past the grace locks nothing the database says is inside it, and a clock short of it refuses nothing the database says is past it (P14-REM-009, A4-F1)")
+    void theGraceIsTheDatabases() {
+        AccountingPeriodId september = open(SEPTEMBER);
+        store.databaseToday(LocalDate.of(2026, 10, 1));
+
+        assertThatThrownBy(() -> onInstanceClock("2026-10-30").lock(UOW, september, accountant, null, correlation()))
+                .isInstanceOf(AccountingPeriods.PeriodNotLockable.class).hasMessageContaining("2026-10-02");
+        assertThat(store.month(SEPTEMBER)).map(AccountingPeriodStore.PeriodRow::status).contains(PeriodStatus.OPEN);
+        assertThat(closedThrough).as("nothing moved").isEmpty();
+
+        store.databaseToday(LocalDate.of(2026, 10, 2));
+        assertThat(onInstanceClock("2026-10-01").lock(UOW, september, accountant, null, correlation()).status()).isEqualTo(PeriodStatus.LOCKED);
+    }
+
+    @Test
+    @DisplayName("the date is read holding the period's row: a lock that waited for it across the grace's boundary is judged on the day it got the row, on the statement's clock and not the transaction's (P14-REM-009)")
+    void theDateIsReadHoldingTheRow() {
+        AccountingPeriodId september = open(SEPTEMBER);
+        store.databaseToday(LocalDate.of(2026, 10, 1));
+        store.whileWaitingForARowLock(() -> store.databaseToday(LocalDate.of(2026, 10, 2)));
+
+        assertThat(onInstanceClock("2026-10-01").lock(UOW, september, accountant, null, correlation()).status()).as("a date read before the row was the day before the grace").isEqualTo(PeriodStatus.LOCKED);
+        assertThat(JdbcAccountingPeriodStore.TODAY_SQL).as("clock_timestamp(): now() would be the moment the transaction began, before any wait").contains("clock_timestamp()").doesNotContain("now()");
+    }
+
+    @Test
+    @DisplayName("a second locker converges on the edge without judging the date again: a month locked stays locked across a backward step of the database's clock (P14-REM-009)")
+    void aLockedMonthConvergesWhateverTheDateSays() {
+        AccountingPeriodId september = open(SEPTEMBER);
+        assertThat(periods("2026-10-02").lock(UOW, september, accountant, null, correlation()).status()).isEqualTo(PeriodStatus.LOCKED);
+
+        store.databaseToday(LocalDate.of(2026, 10, 1));
+        AccountingPeriods.Acted second = onInstanceClock("2026-10-02").lock(UOW, september, controller, null, correlation());
+
+        assertThat(second.replayed()).isTrue();
+        assertThat(second.status()).isEqualTo(PeriodStatus.LOCKED);
+    }
+
+    @Test
+    @DisplayName("the open leg chooses its months on the database's date: an instance ahead opens nothing early, and one behind holds nothing back (P14-REM-009, A4-F1)")
+    void theOpenLegIsTheDatabases() {
+        store.databaseToday(LocalDate.of(2026, 10, 30));
+        assertThat(onInstanceClock("2026-12-05").openNext(UOW, Actor.SYSTEM, correlation())).as("an instance two months ahead").containsExactly(YearMonth.of(2026, 10));
+
+        store.databaseToday(LocalDate.of(2026, 11, 2));
+        assertThat(onInstanceClock("2026-10-01").openNext(UOW, Actor.SYSTEM, correlation())).as("an instance a month behind").containsExactly(YearMonth.of(2026, 11));
+
+        assertThat(onInstanceClock("2026-12-05").openNext(UOW, Actor.SYSTEM, correlation())).as("every month through the database's own already exists").isEmpty();
+    }
+
+    @Test
     @DisplayName("periods lock in order: not while the previous one is OPEN or LOCKED; once it is CLOSED, from its end")
     void locksInOrder() {
         AccountingPeriodId august = open(AUGUST);
@@ -533,14 +584,21 @@ class AccountingPeriodsTest {
         assertThat(periods("2026-10-01").overdueDays(UOW)).isZero();
         store.databaseToday(java.time.LocalDate.parse("2026-10-12"));
         assertThat(periods("2026-10-12").overdueDays(UOW)).isEqualTo(10);
-        assertThat(periods("2026-10-01").overdueDays(UOW)).as("the database's date, whatever this instance's clock reads (P14-TSK-020)").isEqualTo(10);
+        assertThat(onInstanceClock("2026-10-01").overdueDays(UOW)).as("the database's date, whatever this instance's clock reads (P14-TSK-020)").isEqualTo(10);
         store.closeForTest(SEPTEMBER);
         assertThat(periods("2026-10-12").overdueDays(UOW)).isZero();
     }
 
     // -----------------------------------------------------------------
 
+    /** The machine on {@code day}: this instance's clock and the database's agree. */
     private AccountingPeriods periods(String day) {
+        store.databaseToday(LocalDate.parse(day));
+        return onInstanceClock(day);
+    }
+
+    /** The machine with only this instance's clock on {@code day}: the database's date stands where the case put it. */
+    private AccountingPeriods onInstanceClock(String day) {
         Clock clock = Clock.fixed(Instant.parse(day + "T09:00:00Z"), ZoneOffset.UTC);
         return new AccountingPeriods(store, mappings, cutoff, LockGrace.standard(),
                 (unitOfWork, record) -> audit.add(record),

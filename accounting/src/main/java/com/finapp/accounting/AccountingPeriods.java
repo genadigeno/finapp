@@ -17,7 +17,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +59,10 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>Every act on a pending unlock names it</strong> (`P14-TSK-024`'s fix round): an end makes a pending request replaceable, so the approval, the rejection and the withdrawal each name
  * the request read by when it was proposed - an unlock request has no id, and its row's instant, stamped by the database holding the row, is its identity ({@link #pendingUnlock} serves it). Another
  * pending is {@link RequestStale}, judged holding the row and recorded {@code FAILED}: nobody decides a request they never read.
+ *
+ * <p><strong>Today is the database's</strong> (`P14-REM-009`; the Phase 14 exit review's A4-F1): the grace and the month the schedule opens are judged on {@link AccountingPeriodStore#today}, the clock the ledger's own
+ * "never over today" (ledger {@code V028}) reads. The lock reads it <strong>holding the period's row</strong>: the date is {@code clock_timestamp()}, a statement's and not the transaction's, so however long the act waited for the row,
+ * the date is that of the moment it got it. This instance's {@code Clock} stamps audit records and events and decides nothing here.
  *
  * <p>The close, its rejection and the reopen are {@link PeriodCloses}' (`P14-TSK-012`). How a back-dating poster reacts to a locked period is
  * `P14-TSK-006`'s (C3): here the ledger refuses, and nothing else is decided.
@@ -236,7 +239,9 @@ public final class AccountingPeriods {
 
     /**
      * Opens every month from the one after the latest period (today's month when none exists) through today's month -
-     * each insert-if-absent, so ten instances open each month once; each born period evented and audited.
+     * each insert-if-absent, so ten instances open each month once; each born period evented and audited. Today is the
+     * database's (`P14-REM-009`). No row exists to hold while reading it and none is needed: a reading gone stale across a
+     * month's end only opens fewer months, and the next tick opens the rest.
      *
      * @return the months this call opened, oldest first - empty when every month through today's already exists
      */
@@ -244,7 +249,7 @@ public final class AccountingPeriods {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
-        YearMonth through = YearMonth.from(today());
+        YearMonth through = YearMonth.from(store.today(unitOfWork));
         YearMonth next = store.latest(unitOfWork).map(latest -> latest.plusMonths(1)).orElse(through);
         List<YearMonth> born = new ArrayList<>();
         for (YearMonth month = next; !month.isAfter(through); month = month.plusMonths(1)) {
@@ -299,7 +304,8 @@ public final class AccountingPeriods {
                     + locked.previous().get().status().name() + ", not CLOSED");
         }
         LocalDate lockableFrom = grace.lockableFrom(row.month());
-        if (today().isBefore(lockableFrom)) {
+        // The database's date, read here and no earlier: holding the row, so a lock that waited across the boundary is judged on the day it got the row (P14-REM-009).
+        if (store.today(unitOfWork).isBefore(lockableFrom)) {
             throw new PeriodNotLockable("the period is lockable from " + lockableFrom + ", " + grace.businessDays()
                     + " business day(s) after its end");
         }
@@ -599,10 +605,6 @@ public final class AccountingPeriods {
             throw new IllegalArgumentException("a period's lock or unlock is a person's - never the platform's, a"
                     + " service's or a merchant's");
         }
-    }
-
-    private LocalDate today() {
-        return LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
     }
 
     private void publish(

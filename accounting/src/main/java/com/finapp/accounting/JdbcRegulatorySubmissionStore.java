@@ -70,10 +70,13 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     static final String LINES_SQL = "SELECT ordinal, line_code, label, currency, minor_units, scale, run_id, run_sha256, source_definition, figure_path FROM accounting.regulatory_submission_line"
             + " WHERE submission_id = ? ORDER BY ordinal";
 
-    /** The newest only, then in order: an untrusted provider chooses how many there are and how large, so a read's load is the statement's. */
+    /**
+     * The newest only, then in order: an untrusted provider chooses how many there are and how large, so a read's load is the statement's. "Newest" is the insertion sequence ({@code accounting V014}), never {@code received_at}, which a backward step of the database's clock
+     * can put before an earlier answer (`P14-REM-009`). Both writers take the submission's row {@code FOR UPDATE} before they insert, so for one submission the sequence is also the order its answers committed in.
+     */
     static final String ANSWERS_SQL = "SELECT id, attempt, call_kind, stated_outcome, read_outcome, provider_reference, rejection_code, anomaly, flag, raw, raw_sha256, received_bytes, truncated, received_at FROM ("
-            + "SELECT id, attempt, call_kind, stated_outcome, read_outcome, provider_reference, rejection_code, anomaly, flag, raw, raw_sha256, received_bytes, truncated, received_at"
-            + " FROM accounting.regulatory_provider_answer WHERE submission_id = ? ORDER BY received_at DESC, id DESC LIMIT ?) newest ORDER BY received_at, id";
+            + "SELECT id, attempt, call_kind, stated_outcome, read_outcome, provider_reference, rejection_code, anomaly, flag, raw, raw_sha256, received_bytes, truncated, received_at, recorded_order"
+            + " FROM accounting.regulatory_provider_answer WHERE submission_id = ? ORDER BY recorded_order DESC, id DESC LIMIT ?) newest ORDER BY recorded_order, id";
 
     static final String ANSWER_COUNT_SQL = "SELECT count(*) FROM accounting.regulatory_provider_answer WHERE submission_id = ?";
 
@@ -131,11 +134,15 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
             + " OR (" + OVERTAKEN + ")"
             + " OR EXISTS (SELECT 1 FROM accounting.regulatory_provider_answer f WHERE f.submission_id = s.id AND f.flag = 'CONTRARY'))";
 
-    /** Selected in the statement: the filter is the database's, before the {@code LIMIT}. */
-    static final String STANDING_SQL = ROW + " WHERE " + STANDS + " ORDER BY s.prepared_at, s.id LIMIT ?";
+    /** Selected in the statement: the filter is the database's, before the {@code LIMIT}. Oldest first by the insertion sequence ({@code accounting V014}), which no step of a clock can reorder (`P14-REM-009`). */
+    static final String STANDING_SQL = ROW + " WHERE " + STANDS + " ORDER BY s.recorded_order, s.id LIMIT ?";
 
-    /** The next page: a keyset on what is frozen from birth, by the id the last page ended on. */
-    static final String STANDING_AFTER_SQL = ROW + " WHERE " + STANDS + " AND (s.prepared_at, s.id) > (SELECT l.prepared_at, l.id FROM accounting.regulatory_submission l WHERE l.id = ?) ORDER BY s.prepared_at, s.id LIMIT ?";
+    /**
+     * The next page: a keyset on what is frozen from birth, by the id the last page ended on, so the cursor is a row's id and means the same on either side of {@code V014}, whose backfill numbered every earlier row in the order this statement served them.
+     * <strong>A number is drawn at the insert and is not commit order</strong>: a birth still uncommitted when a later number is served is missed by that walk. That is accepted, as the old stamp's order had it too: {@link #standing} is a person's worklist, the next walk from
+     * the first page serves the row in its place, {@link #attention} counts the table whole, and every act judges again under its own locks.
+     */
+    static final String STANDING_AFTER_SQL = ROW + " WHERE " + STANDS + " AND (s.recorded_order, s.id) > (SELECT l.recorded_order, l.id FROM accounting.regulatory_submission l WHERE l.id = ?) ORDER BY s.recorded_order, s.id LIMIT ?";
 
     /** Selected in the statement: the filter is the database's, before the {@code LIMIT} - what its reader cannot decide never counts toward it. */
     static final String AWAITING_SQL = ROW + " WHERE s.status = 'VALIDATED' AND s.prepared_by <> ? ORDER BY s.validated_at, s.id LIMIT ?";

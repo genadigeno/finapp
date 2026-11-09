@@ -40,8 +40,8 @@ both documents (`-034`'s entry: "the threat-model guard's mechanism reused"):
 owner); a document stating that a property holds without a test or record behind it; a `database`-tier test that has
 not run fresh at the phase's database pass (`P15-TST-002`), cited as if it had.
 
-**Named gaps that cannot be read as met.** Every open Phase 14 remediation entry (`P14-REM-001`…`-011`, each `PLANNED`
-with its horizon) is a named `GAP` of the unit and module it touches, so this review cannot pass over it (§3.1, §4).
+**Named gaps that cannot be read as met.** Every open Phase 14 remediation entry (of `P14-REM-001`…`-011`, those still
+`PLANNED` with their horizon) is a named `GAP` of the unit and module it touches, so this review cannot pass over it (§3.1, §4).
 Each threat in `THREAT_MODEL.md` whose planned control is not yet built is a gap of the dimension that control serves.
 
 **Which threats a unit answers for.** Security clause (i) reads the threats at the boundaries a unit stands on. A
@@ -121,8 +121,8 @@ met): `P14-REM-001` (a break's resolution under `MULTI_FACTOR`), `P14-REM-002` (
 `P14-REM-003` (reason classifications and screens), `P14-REM-004` (the Phase 14 schema closed to raw writers),
 `P14-REM-005` (regulatory submission hardening, before any real regulatory channel), `P14-REM-006` (write-offs and the
 BNPL fee pin, before production write-offs and BNPL), `P14-REM-007` (a settlement source's retirement),
-`P14-REM-008` (close-check robustness), `P14-REM-009` (the lock's grace on the database's clock, Phase 15 at the
-latest), `P14-REM-010` (the exit review's accepted owner items), `P14-REM-011` (read surfaces). `-034` re-reads each
+`P14-REM-008` (close-check robustness), `P14-REM-010` (the exit review's accepted owner items), `P14-REM-011` (read
+surfaces). `-034` re-reads each
 entry's status when it rules: an entry still open is a `GAP` of the dimension it touches.
 
 ### 3.2 `finapp-migrator`

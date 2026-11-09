@@ -77,7 +77,7 @@ class AccountingPeriodDeskTest {
     private static final Actor CONTROLLER = new Actor("controller-1", ActorType.CUSTOMER);
     private static final YearMonth SEPTEMBER = YearMonth.of(2026, 9);
 
-    private final InMemoryAccountingPeriodStore store = new InMemoryAccountingPeriodStore();
+    private final InMemoryAccountingPeriodStore store = new InMemoryAccountingPeriodStore(CLOCK);
     private final List<AuditRecord> audited = new ArrayList<>();
     private final List<String> events = new ArrayList<>();
     private final Map<IdempotencyKey, IdempotencyRecord> claims = new HashMap<>();
@@ -355,11 +355,11 @@ class AccountingPeriodDeskTest {
 
     /** September 2026, opened as the first period. */
     private String september() {
-        new AccountingPeriods(store, new InMemoryGlMappingStore(), cutoff, LockGrace.standard(), (uow, record) -> {},
+        store.onDatabaseDate(LocalDate.of(2026, 9, 15), () -> new AccountingPeriods(store, new InMemoryGlMappingStore(), cutoff, LockGrace.standard(), (uow, record) -> {},
                 (uow, envelope, payload, mediaType) -> events.add(envelope.eventType()), IDS,
                 Clock.fixed(Instant.parse("2026-09-15T09:00:00Z"), ZoneOffset.UTC),
                 (uow, period, actor, correlation) -> 0)
-                .openNext(UOW, Actor.SYSTEM, CorrelationId.generate(IDS));
+                .openNext(UOW, Actor.SYSTEM, CorrelationId.generate(IDS)));
         return store.month(SEPTEMBER).orElseThrow().id().value().toString();
     }
 

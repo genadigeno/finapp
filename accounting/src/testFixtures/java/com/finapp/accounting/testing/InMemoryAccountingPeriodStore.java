@@ -6,9 +6,11 @@ import com.finapp.accounting.PeriodRequestEnd;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.platform.security.Actor;
 import java.sql.Connection;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -36,11 +38,40 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
     private int rowLocks;
     /** Each lock's own stamp, as the database's clock_timestamp() would give it (`P14-TSK-008`: a lock instance). */
     private long lockInstances;
-    private LocalDate today = LocalDate.EPOCH;
+    /** The suite's stand-in for the database's clock (`P14-REM-009`), when it was given one. */
+    private final Optional<Clock> databaseClock;
+    private Optional<LocalDate> today = Optional.empty();
+    private Runnable whileWaiting = () -> { };
 
-    /** What the database's clock reads today; a suite that reads an age sets it (`P14-TSK-020`). */
+    /** A store whose database date is the epoch until a suite sets it: for a world that neither opens nor locks a month. */
+    public InMemoryAccountingPeriodStore() {
+        this.databaseClock = Optional.empty();
+    }
+
+    /** A store whose database date follows {@code databaseClock}, unless a suite sets it ({@link #databaseToday}). {@code AccountingPeriods} opens and locks on this date, never on its own clock (`P14-REM-009`). */
+    public InMemoryAccountingPeriodStore(Clock databaseClock) {
+        this.databaseClock = Optional.of(databaseClock);
+    }
+
+    /** What the database's clock reads today; a suite that reads an age, or holds an instance's clock apart from the database's, sets it (`P14-TSK-020`, `P14-REM-009`). */
     public void databaseToday(LocalDate day) {
-        this.today = day;
+        this.today = Optional.of(day);
+    }
+
+    /** {@code act} with the database's clock reading {@code day}: a world's way of opening a month before the one it stands in. */
+    public void onDatabaseDate(LocalDate day, Runnable act) {
+        Optional<LocalDate> held = today;
+        today = Optional.of(day);
+        try {
+            act.run();
+        } finally {
+            today = held;
+        }
+    }
+
+    /** Runs at every row lock, before the row is granted: a suite's stand-in for what the database's clock did while an act waited for it (`P14-REM-009`). */
+    public void whileWaitingForARowLock(Runnable waiting) {
+        this.whileWaiting = waiting;
     }
 
     /** The history, in order. */
@@ -104,12 +135,14 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
 
     @Override
     public Optional<PeriodRow> lock(Connection unitOfWork, AccountingPeriodId id) {
+        whileWaiting.run();
         rowLocks++;
         return find(unitOfWork, id);
     }
 
     @Override
     public Optional<PeriodRow> lockShared(Connection unitOfWork, YearMonth month) {
+        whileWaiting.run();
         rowLocks++;
         return Optional.ofNullable(rows.get(month));
     }
@@ -126,7 +159,7 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
 
     @Override
     public LocalDate today(Connection unitOfWork) {
-        return today;
+        return today.orElseGet(() -> databaseClock.map(clock -> LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC)).orElse(LocalDate.EPOCH));
     }
 
     @Override

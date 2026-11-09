@@ -865,7 +865,7 @@ class PriorPeriodAdjustmentDatabaseTest {
     }
 
     private PriorPeriodAdjustments machine(Clock clock) {
-        return new PriorPeriodAdjustments(AccountingPeriodFixture.STORE, store, postings(), new JdbcGlMappingStore(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, clock);
+        return new PriorPeriodAdjustments(AccountingPeriodFixture.datedBy(clock), store, postings(), new JdbcGlMappingStore(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, clock);
     }
 
     private LedgerPriorPeriodPostings postings() {
