@@ -113,7 +113,9 @@ class KindRehearsalContractTest {
         assertThat(census).contains("trial balance zero per currency").contains("one transfer per key").contains("one captured intent per key")
                 .contains("one payout per key").contains("the outbox drained").contains("no orphaned idempotency lease")
                 .contains("balances explain the journal");
-        assertThat(harness).as("GL = ledger is read on every census from the live judgement").contains("gl/balances");
+        assertThat(harness).as("GL = ledger is read at every census").contains("client gl-check");
+        assertThat(read("infra/scripts/kind-rehearsal/Rehearsal.java")).as("from the application's own judgement of the month")
+                .contains("/v1/operator/accounting/gl/balances").contains("the General Ledger does not agree with the journal");
     }
 
     @Test
@@ -140,6 +142,7 @@ class KindRehearsalContractTest {
 
     @Test
     @DisplayName("the GL mapping the rehearsal activates is the reference chart, every purpose of the ledger mapped")
+    @SuppressWarnings("unchecked")
     void theGlMappingIsTheReferenceChart() {
         Map<String, Object> proposal = new Yaml(new SafeConstructor(new LoaderOptions())).load(read("infra/scripts/kind-rehearsal/gl-mapping.json"));
         GlMappingVersion reference = ReferenceGlMapping.version();

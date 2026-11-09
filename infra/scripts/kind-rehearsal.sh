@@ -755,17 +755,23 @@ must_not_reach() {
     fi
 }
 
-# A TCP DNS question for a name, sent to the resolver over a raw connection: the name finapp-postgres.finapp.svc.cluster.local, type A, ID 0x1234.
+# A TCP DNS question for a name, sent over a raw connection from inside the pod being tested: finapp-postgres.finapp.svc.cluster.local, type A, id 0x1234.
+# A TCP answer is its two-byte length and then the response, which starts with the same id. Run from a script on stdin, so its quoting is the pod shell's alone.
 dns_over_tcp() {
-    # The question is printf-ed by the pod's shell; od reads whatever comes back. A TCP answer is its length, then the response with the same ID.
-    kube -n "$1" exec -i "$2" -c "$3" -- /bin/sh -c '
-      name=finapp-postgres.finapp.svc.cluster.local
-      question=""
-      for label in $(echo "$name" | tr . " "); do question="$question$(printf "\\%03o" ${#label})$label"; done
-      body=$(printf "\\022\\064\\001\\000\\000\\001\\000\\000\\000\\000\\000\\000$question\\000\\000\\001\\000\\001")
-      len=$(printf "%s" "$body" | wc -c)
-      { printf "\\000\\$(printf %03o "$len")"; printf "%s" "$body"; sleep 2; } | nc -w 3 "$4" 53 | od -An -tx1 | tr -d " \n"
-    ' sh "$4"
+    kube -n "$1" exec -i "$2" -c "$3" -- /bin/sh -s "$4" <<'SCRIPT'
+name=finapp-postgres.finapp.svc.cluster.local
+b() { printf "\\$(printf %03o "$1")"; }
+question() {
+    for label in $(printf '%s' "$name" | tr . ' '); do
+        b "${#label}"
+        printf '%s' "$label"
+    done
+    b 0; b 0; b 1; b 0; b 1
+}
+header() { b 18; b 52; b 1; b 0; b 0; b 1; b 0; b 0; b 0; b 0; b 0; b 0; }
+total=$(( 12 + $(question | wc -c) ))
+{ b 0; b "$total"; header; question; sleep 2; } | nc -w 3 "$1" 53 | od -An -tx1 | tr -d ' \n'
+SCRIPT
 }
 
 step network-policy

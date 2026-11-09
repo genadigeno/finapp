@@ -167,6 +167,15 @@ public final class Rehearsal {
         }
     }
 
+    /** A UUIDv7, the shape the platform's identifiers take: a party row with any other identifier is, to the application, no party at all. */
+    private static String uuid7() {
+        long millis = Instant.now().toEpochMilli();
+        java.util.concurrent.ThreadLocalRandom random = java.util.concurrent.ThreadLocalRandom.current();
+        long high = (millis << 16) | 0x7000L | (random.nextLong() & 0x0FFFL);
+        long low = (random.nextLong() & 0x3FFFFFFFFFFFFFFFL) | 0x8000000000000000L;
+        return new UUID(high, low).toString();
+    }
+
     private static String key() {
         return UUID.randomUUID().toString();
     }
@@ -211,7 +220,7 @@ public final class Rehearsal {
         String controller = someLogin("ctl");
         expect("register controller", register(controller), 201);
         state.setProperty("controller.login", controller);
-        String party = UUID.randomUUID().toString();
+        String party = uuid7();
         state.setProperty("merchant.party", party);
         save();
         String seed = "\\set ON_ERROR_STOP on\n"
@@ -219,16 +228,16 @@ public final class Rehearsal {
                 + " WHERE party_id IN (SELECT party_id FROM identity.identity WHERE login_identifier IN ("
                 + String.join(",", customers) + "));\n"
                 + "INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at)\n"
-                + " SELECT gen_random_uuid(), i.id, r, i.id, now()\n"
+                + " SELECT uuidv7(), i.id, r, i.id, now()\n"
                 + "   FROM identity.identity i, unnest(ARRAY['MERCHANT_ADMINISTRATOR','EVENT_OPERATOR','ACCOUNTANT']) r\n"
                 + "  WHERE i.login_identifier = '" + operator + "';\n"
                 + "INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at)\n"
-                + " SELECT gen_random_uuid(), i.id, 'FINANCIAL_CONTROLLER', i.id, now()\n"
+                + " SELECT uuidv7(), i.id, 'FINANCIAL_CONTROLLER', i.id, now()\n"
                 + "   FROM identity.identity i WHERE i.login_identifier = '" + controller + "';\n"
                 + "INSERT INTO party.party (id, kind, display_name, registered_at) VALUES\n"
                 + " ('" + party + "', 'ORGANISATION', 'Rehearsal Holdings', now());\n"
                 + "INSERT INTO party.customer (id, party_id, status, opened_at, status_changed_at) VALUES\n"
-                + " (gen_random_uuid(), '" + party + "', 'ACTIVE', now() - interval '1 hour', now());\n";
+                + " (uuidv7(), '" + party + "', 'ACTIVE', now() - interval '1 hour', now());\n";
         Files.writeString(work.resolve("seed-1.sql"), seed);
         System.out.println("prepared " + CUSTOMERS + " customers and one operator");
     }
@@ -272,7 +281,7 @@ public final class Rehearsal {
         Files.writeString(work.resolve("seed-2.sql"), "\\set ON_ERROR_STOP on\n"
                 + "INSERT INTO merchant.payout_destination (id, merchant_id, destination_reference, display_suffix, status, proposed_by,\n"
                 + "  proposed_at, proposal_reason, approved_by, approved_at, cooling_off_until, effective_at) VALUES\n"
-                + " (gen_random_uuid(), '" + merchantId + "', '" + reference + "', '3000', 'EFFECTIVE', 'rehearsal-a', now() - interval '4 days',\n"
+                + " (uuidv7(), '" + merchantId + "', '" + reference + "', '3000', 'EFFECTIVE', 'rehearsal-a', now() - interval '4 days',\n"
                 + "  'the rehearsal fixture', 'rehearsal-b', now() - interval '4 days', now() - interval '1 day', now() - interval '1 hour');\n");
         System.out.println("onboarded merchant, " + CUSTOMERS + " customers with wallets and cards");
     }
