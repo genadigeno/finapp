@@ -67,6 +67,7 @@ dpath() {
 
 mkdir -p "$ART"
 : > "$ART/rehearsal.log"
+: > "$ART/not-exercised.txt"
 : > "$ART/timings.tsv"
 : > "$ART/assertions.tsv"
 
@@ -529,15 +530,19 @@ for topic in $topics; do
     # shellcheck disable=SC2086
     kafka_admin kafka-topics.sh --create --if-not-exists --topic "$topic" --partitions "$partitions" --replication-factor 1 $topic_config >> "$ART/kafka.log" 2>&1 \
         || cannot "could not create topic $topic: see kafka.log"
-    kafka_admin kafka-acls.sh --add --allow-principal "User:$application_user" --operation Describe --operation Read --operation Write --topic "$topic" >> "$ART/kafka.log" 2>&1 \
-        || cannot "could not grant topic $topic"
 done
+set --
+for topic in $topics; do
+    set -- "$@" --topic "$topic"
+done
+kafka_admin kafka-acls.sh --add --allow-principal "User:$application_user" --operation Describe --operation Read --operation Write "$@" >> "$ART/kafka.log" 2>&1 \
+    || cannot "could not grant the topics"
 kafka_admin kafka-acls.sh --add --allow-principal "User:$application_user" --operation Describe --operation Read --group finapp. --resource-pattern-type prefixed >> "$ART/kafka.log" 2>&1 \
     || cannot "could not grant the consumer groups"
 log "$(printf '%s\n' "$topics" | wc -l) topics created with $partitions partitions and the application's ACLs"
 
 step bootstrap-roles
-sed "s#MIGRATOR_IMAGE#$IMAGE_MIGRATOR_NM1#" "$DIR/bootstrap-job.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the bootstrap Job"
+sed "s#MIGRATOR_IMAGE#$IMAGE_MIGRATOR_NM1#; s#PROBE_IMAGE#$CURL_IMAGE#" "$DIR/bootstrap-job.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the bootstrap Job"
 wait_job finapp finapp-role-bootstrap 300 role-bootstrap
 log "bootstrap said: $(grep -c . "$ART/role-bootstrap.log") lines; $(tr '\n' ';' < "$ART/role-bootstrap.log" | cut -c1-400)"
 
@@ -1190,10 +1195,14 @@ if [ -n "$NM1_REF" ] && [ "$(migrations_between "$NM1_REF")" -gt 0 ]; then
     fi
     surge_ip=$(kube -n finapp get pod "$surge" -o jsonpath='{.status.podIP}')
     kafka_admin kafka-consumer-groups.sh --describe --all-groups --members > "$ART/hold-members.txt" 2>&1 || true
+    # A listing that shows no member at all would pass the test below: the ready replicas of N - 1 must be in it for the absence to mean anything.
+    old_ip=$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.status.podIP}{" "}{.spec.containers[0].image}{"\n"}{end}' \
+        | awk -v n="$IMAGE_APP_N" '$2 != n {print $1; exit}')
+    grep -q "/$old_ip" "$ART/hold-members.txt" || fail "hold: the group listing shows no member of the ready fleet: see hold-members.txt"
     if grep -q "/$surge_ip" "$ART/hold-members.txt"; then
         fail "hold: the surge pod holds consumer-group membership"
     else
-        pass "hold: the surge pod joined no consumer group (no member at $surge_ip)"
+        pass "hold: the surge pod joined no consumer group (no member at $surge_ip; the ready fleet's are listed)"
     fi
     kube -n finapp exec "$surge" -- true >/dev/null 2>&1 || true
     kube -n finapp-observability exec np-scraper -c probe -- curl -s --max-time 10 "http://$surge_ip:8081/actuator/prometheus" > "$ART/hold-metrics.txt" 2>&1 \
@@ -1324,6 +1333,11 @@ log "handler window, rollback and re-roll: $UNSEEN of $TOTAL records unseen"
 replay_window "$ROLLBACK_REF_FROM" "$REROLL_TO" "the rehearsal: handler added in release N, over the rollback and re-roll windows"
 assert_handler_window rollback "$ROLLBACK_REF_FROM" "$REROLL_TO" "$UNSEEN"
 census final
+
+# A step that could not be shown is not a pass: a run in which N - 1 and N have the same schema proved nothing about the hold.
+if [ -s "$ART/not-exercised.txt" ] && [ -z "${REHEARSAL_ALLOW_NOT_EXERCISED:-}" ]; then
+    fail "not exercised: $(tr '\n' ';' < "$ART/not-exercised.txt")"
+fi
 
 step end
 finish

@@ -24,6 +24,27 @@ spec:
         runAsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      # A policy engine that programs a new pod's address asynchronously (kube-router, where it stands in for kindnetd) can leave the first
+      # seconds of a pod unreachable to its peers, and the role bootstrap has no retry loop of its own: nothing in this pod runs before PostgreSQL answers it.
+      initContainers:
+        - name: wait-for-postgres
+          image: PROBE_IMAGE
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "until nc -z -w 3 finapp-postgres.finapp.svc.cluster.local 5432; do sleep 1; done"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
       containers:
         - name: bootstrap
           image: MIGRATOR_IMAGE
