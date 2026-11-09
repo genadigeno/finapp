@@ -945,7 +945,7 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
 ("accept recommendations", at the end of wave B); each item's decision follows its options. *(This paragraph read
 "Item 7 ... awaits the owner" and "Items 9 and 10 ... are open" until then.)* **Items 11, 12, 17 and 18 were added on 2026-11-08, and the owner decided them on
 2026-11-09, accepting each recommendation** ("accept recommendations", at the end of wave C); each item's decision follows its
-options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)* **Items 21, 22, 23, 27 and 28 were added on 2026-11-09, and the owner decided them the same day, accepting each recommendation** ("accept recommendations", at the end of wave D); each item's decision follows its options. *(This paragraph read "Items 21, 27 and 28 ... await the owner" and "Item 22 ... awaits the owner" until then.)*
+options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)* **Items 21, 22, 23, 27 and 28 were added on 2026-11-09, and the owner decided them the same day, accepting each recommendation** ("accept recommendations", at the end of wave D); each item's decision follows its options. *(This paragraph read "Items 21, 27 and 28 ... await the owner" and "Item 22 ... awaits the owner" until then.)* **Items 31 to 34 were added on 2026-11-09 and await the owner.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
