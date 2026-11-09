@@ -2,7 +2,8 @@
 # the cluster, so pods are selected where every other overlay states addresses. Refused in any other overlay.
 #
 # The provider list is the same documentation range as the others': kind's providers are simulated, so nothing should
-# leave, and the "unlisted egress" test has a listed one to compare with.
+# leave, and the "unlisted egress" test has a listed one to compare with. The simulators are one test-only pod in the rehearsal's
+# own namespace (infra/scripts/kind-rehearsal/simulator.yaml), over TLS from the local CA, on its own port.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -36,6 +37,16 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-rehearsal
+          podSelector:
+            matchLabels:
+              finapp/role: provider-simulator
+      ports:
+        - protocol: TCP
+          port: 8443
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

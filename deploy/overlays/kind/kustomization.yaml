@@ -1,6 +1,10 @@
 # The kind rehearsal's values, test-only (PHASE_15_PLAN.md section 14). No endpoint or credential here either: the
 # rehearsal generates its Secrets per run (infra/scripts/kind-secrets.sh). Three replicas, with the budget set to section 6.1's formula exactly, so
 # the rehearsal measures the rule rather than a margin: 3 + 2 x 1 + 1 = 6, and 6 x (7 + 1) + 12 = 60.
+#
+# THE LOCAL CA, mounted by both workloads at /etc/finapp-local-ca from the Secret finapp-kind-local-ca the rehearsal generates per run:
+# ca.crt for PostgreSQL's sslrootcert and Kafka's truststore, and truststore.jks for the JVM's own, so the application's provider
+# clients verify the simulator's certificate as they would any provider's. Neither is secret, and the JKS file is read without a password.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -26,6 +30,9 @@ configMapGenerator:
       - FINAPP_DB_SERVER_MAX_CONNECTIONS=60
       - FINAPP_DB_RESERVED_CONNECTIONS=12
       - FINAPP_EDGE_PROXIES=10.244.0.0/16
+      - FINAPP_KAFKA_SECURITYPROTOCOL=SASL_SSL
+      - FINAPP_KAFKA_SSL_TRUSTSTORELOCATION=/etc/finapp-local-ca/ca.crt
+      - JDK_JAVA_OPTIONS=-Djavax.net.ssl.trustStore=/etc/finapp-local-ca/truststore.jks -Djavax.net.ssl.trustStoreType=JKS
 
 patches:
   - target:
@@ -50,6 +57,34 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: 1Gi
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: local-ca
+          secret:
+            secretName: finapp-kind-local-ca
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: local-ca
+          mountPath: /etc/finapp-local-ca
+          readOnly: true
+  - target:
+      kind: Job
+      name: finapp-migrator
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: local-ca
+          secret:
+            secretName: finapp-kind-local-ca
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: local-ca
+          mountPath: /etc/finapp-local-ca
+          readOnly: true
   # The largest pod here is 1 GiB, and the LimitRange's max is held equal to the largest pod.
   - target:
       kind: LimitRange

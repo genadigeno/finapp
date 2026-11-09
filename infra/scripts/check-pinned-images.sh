@@ -232,6 +232,10 @@ check semgrep   "$SEMGREP_REPOSITORY"   "$SEMGREP_VERSION"   "$SEMGREP_DIGEST"  
 check traefik "$TRAEFIK_REPOSITORY" "$TRAEFIK_VERSION" "$TRAEFIK_DIGEST" list_tags_dockerhub
 check whoami  "$WHOAMI_REPOSITORY"  "$WHOAMI_VERSION"  "$WHOAMI_DIGEST"  list_tags_dockerhub
 check curl    "$CURL_REPOSITORY"    "$CURL_VERSION"    "$CURL_DIGEST"    list_tags_dockerhub
+# The kind rehearsal (P15-TSK-012).
+check kind-node   "$KIND_NODE_REPOSITORY"   "$KIND_NODE_VERSION"   "$KIND_NODE_DIGEST"   list_tags_dockerhub
+check helm        "$HELM_REPOSITORY"        "$HELM_VERSION"        "$HELM_DIGEST"        list_tags_dockerhub
+check kube-router "$KUBE_ROUTER_REPOSITORY" "$KUBE_ROUTER_VERSION" "$KUBE_ROUTER_DIGEST" list_tags_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

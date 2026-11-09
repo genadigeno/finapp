@@ -994,6 +994,13 @@ egress_flow(rule, "providers") if {
 	ports_within(rule, {["TCP", 443]})
 }
 
+# kind's providers are simulated, by one test-only pod in the rehearsal's own namespace on its own port. Refused in every other overlay.
+egress_flow(rule, "providers") if {
+	data.overlay == "kind"
+	every_peer_selects(rule, "egress", "finapp-rehearsal", "finapp/role", "provider-simulator")
+	ports_within(rule, {["TCP", 8443]})
+}
+
 ingress_flow(rule, "edge") if {
 	every_peer_selects(rule, "ingress", "finapp-edge", "finapp/role", "ingress-controller")
 	ports_within(rule, {["TCP", 8080]})

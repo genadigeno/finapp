@@ -12,9 +12,9 @@
 # SecretInventoryIsCompleteTest holds that suffix rule against the inventory. infra/scripts/manifest-check.sh runs the render mode
 # on every change and checks what comes out.
 #
-# Two more objects the rehearsal needs, and which nothing delivers in a deployed environment: finapp-kind-bootstrap (what the
-# one-time role bootstrap reads, the same generated passwords) and finapp-kind-postgres (the test-only server's own password, the
-# bootstrap step's master credential).
+# Three more objects the rehearsal needs, and which nothing delivers in a deployed environment: finapp-kind-bootstrap (what the
+# one-time role bootstrap reads, the same generated passwords), finapp-kind-postgres (the test-only server's own password, the
+# bootstrap step's master credential) and finapp-kind-kafka-scram (the application's SCRAM user, for the test-only broker to create).
 #
 # WHERE THE VALUES GO. Into this process's variables and then to `kubectl create` on stdin: never onto a command line, into a file
 # in the repository, or to the output. Generated per run, so a second run against the same cluster fails on the first object that
@@ -102,12 +102,16 @@ named() {
 # Assigned first: a failure inside a command substitution given as an argument is ignored even under set -e.
 app_keys=$(keys_of externalsecret-app.yaml)
 migrator_keys=$(keys_of externalsecret-migrator.yaml)
+# The simulators' URLs (P15-TSK-012). No ExternalSecret delivers a provider URL and the policy refuses one in a ConfigMap, so the
+# rehearsal names them here; each follows the suffix rule above, a URL being a name the caller must supply. Unset, nothing is added.
 # shellcheck disable=SC2086
-named finapp-app-secrets $app_keys
+named finapp-app-secrets $app_keys ${KIND_SECRETS_EXTRA_APP_NAMES:-}
 # shellcheck disable=SC2086
 named finapp-migrator-secrets $migrator_keys
 named finapp-kind-bootstrap FINAPP_DB_URL FINAPP_DB_MASTER_USER FINAPP_DB_MASTER_PASSWORD \
     FINAPP_DB_MIGRATOR_PASSWORD FINAPP_DB_APP_PASSWORD FINAPP_DB_REPORTING_PASSWORD
+# What the test-only broker's SCRAM step reads (deploy/overlays/kind/kafka.yaml): the application's own user and password.
+named finapp-kind-kafka-scram FINAPP_KAFKA_SASL_USERNAME FINAPP_KAFKA_SASL_PASSWORD
 
 # deploy/overlays/kind/postgres.yaml reads one key of this object.
 field=password

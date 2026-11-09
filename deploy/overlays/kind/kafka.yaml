@@ -1,9 +1,35 @@
 # Test-only, single-node, ephemeral: the kind rehearsal's broker, in KRaft mode. Refused in any other overlay.
 #
-# The restricted pod profile holds here too: the image's start script writes its configuration under
-# /opt/kafka/config and /mnt/shared/config, so each is an emptyDir, and with those this image was run read-only, as
-# 1000:1000, with every capability dropped, until it served. PLAINTEXT here, on the cluster's own network: the
-# SASL_SSL listener, the SCRAM users and the keystore are the rehearsal's, generated per run and never committed.
+# SASL_SSL on 9092, as every deployed client needs: SCRAM-SHA-512 and a certificate from the rehearsal's local CA. The application
+# connects as itself, with the catalogued ACLs and nothing more, because KafkaTransportGuard refuses PLAINTEXT off loopback.
+#
+# TWO LOOPBACK-ONLY LISTENERS, the rest of the wiring. CONTROLLER on 9093 is KRaft's own. LOCAL on 9094 is the broker's own traffic
+# and the admin tools the rehearsal runs through `kubectl exec` (topics, ACLs): its principal, ANONYMOUS, is the only super user,
+# and it never leaves the pod, so no NetworkPolicy names it and no client can present it.
+#
+# Everything generated is the rehearsal's, never committed: the broker's keystore (finapp-kind-kafka-tls), its properties from
+# infra/kafka/broker.properties with replication overridden to one node (finapp-kind-kafka-config), and the SCRAM passwords in
+# finapp-kind-kafka-scram. The kafka-storage step that takes those passwords runs once, at the start of this pod.
+#
+# The restricted pod profile holds here too: the image was run with a read-only root, as 1000:1000, with every capability dropped,
+# until it served. The image's own start script writes its configuration under /opt/kafka/config and /mnt/shared/config and is not used.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finapp-kind-kafka-start
+  labels:
+    finapp/test-only: "true"
+data:
+  start.sh: |
+    #!/bin/sh
+    set -eu
+    cp /etc/finapp-kind-kafka-config/server.properties /tmp/server.properties
+    /opt/kafka/bin/kafka-storage.sh format --ignore-formatted --cluster-id 4L6g3nShT-eMCtK--X86sw \
+        --config /tmp/server.properties \
+        --add-scram "SCRAM-SHA-512=[name=$KAFKA_APP_USER,password=$KAFKA_APP_PASSWORD]"
+    unset KAFKA_APP_PASSWORD
+    exec /opt/kafka/bin/kafka-server-start.sh /tmp/server.properties
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -50,6 +76,9 @@ spec:
         - name: kafka
           # compose.yaml's version, by digest.
           image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+          command:
+            - /bin/sh
+            - /etc/finapp-kind-kafka-start/start.sh
           ports:
             - name: kafka
               containerPort: 9092
@@ -57,30 +86,16 @@ spec:
             # kafka-server-start's default heap is 1 GiB, the whole of this container's limit.
             - name: KAFKA_HEAP_OPTS
               value: -Xms512m -Xmx512m
-            - name: KAFKA_NODE_ID
-              value: "1"
-            - name: KAFKA_PROCESS_ROLES
-              value: broker,controller
-            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-              value: 1@localhost:9093
-            - name: KAFKA_CONTROLLER_LISTENER_NAMES
-              value: CONTROLLER
-            - name: KAFKA_LISTENERS
-              value: INTERNAL://:9092,CONTROLLER://:9093
-            - name: KAFKA_ADVERTISED_LISTENERS
-              value: INTERNAL://finapp-kafka:9092
-            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-              value: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT
-            - name: KAFKA_INTER_BROKER_LISTENER_NAME
-              value: INTERNAL
-            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
-              value: "1"
-            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
-              value: "1"
-            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
-              value: "1"
-            - name: CLUSTER_ID
-              value: 4L6g3nShT-eMCtK--X86sw
+            - name: KAFKA_APP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: finapp-kind-kafka-scram
+                  key: FINAPP_KAFKA_SASL_USERNAME
+            - name: KAFKA_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: finapp-kind-kafka-scram
+                  key: FINAPP_KAFKA_SASL_PASSWORD
           resources:
             requests:
               cpu: 250m
@@ -95,9 +110,11 @@ spec:
             capabilities:
               drop:
                 - ALL
+          # On the loopback listener, because the service one needs a SCRAM login and its own trust store. It can answer only
+          # once the broker has metadata, which is when the rehearsal may create the topics.
           startupProbe:
             exec:
-              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+              command: ["/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9094"]
             periodSeconds: 5
             timeoutSeconds: 20
             failureThreshold: 36
@@ -114,22 +131,33 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/kafka/data
-            - name: config
-              mountPath: /opt/kafka/config
-            - name: shared-config
-              mountPath: /mnt/shared/config
             - name: logs
               mountPath: /opt/kafka/logs
             - name: tmp
               mountPath: /tmp
+            - name: start
+              mountPath: /etc/finapp-kind-kafka-start
+              readOnly: true
+            - name: config
+              mountPath: /etc/finapp-kind-kafka-config
+              readOnly: true
+            - name: tls
+              mountPath: /etc/finapp-kind-kafka-tls
+              readOnly: true
       volumes:
         - name: data
-          emptyDir: {}
-        - name: config
-          emptyDir: {}
-        - name: shared-config
           emptyDir: {}
         - name: logs
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        - name: start
+          configMap:
+            name: finapp-kind-kafka-start
+        - name: config
+          configMap:
+            name: finapp-kind-kafka-config
+        - name: tls
+          secret:
+            secretName: finapp-kind-kafka-tls
+            defaultMode: 288
