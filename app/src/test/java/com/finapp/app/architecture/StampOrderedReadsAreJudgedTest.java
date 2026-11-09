@@ -49,7 +49,7 @@ import org.junit.jupiter.api.Test;
  *
  * <p>The shapes it does not see, each walked by hand on 2026-11-09 and listed in {@code DISTRIBUTED_EXECUTION.md} section 3: a
  * bound {@code LIMIT ?} (a page; a bind of one is invisible); Java that takes the first row of an unbounded ordering, or sorts in
- * memory; a stamp an alias renames.
+ * memory; a stamp an alias renames; a positional sort key ({@code ORDER BY 1}, the grouped reports' idiom, none a single-row read).
  *
  * <h2>The judgements</h2>
  *
@@ -68,7 +68,7 @@ import org.junit.jupiter.api.Test;
  * {@code P15-TST-002}.
  */
 @Tag("architecture")
-@DisplayName("every single-row read or value picked by a stamp is judged: deciding reads ranked by the rows, the rest recorded (P15-TSK-037)")
+@DisplayName("every single-row read or value picked by a stamp, in the shapes this guard reads from the code, is judged: deciding reads ranked by the rows, the rest recorded (P15-TSK-037)")
 class StampOrderedReadsAreJudgedTest {
 
     enum Judgement { RANKED, NAMED, FACT_TIME, DISPLAYS, SCHEDULES, ELSEWHERE }

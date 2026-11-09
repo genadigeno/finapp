@@ -57,7 +57,8 @@ public final class JdbcRiskCaseStore implements RiskCaseStore {
      * kind names (P15-TSK-037). It read {@code ORDER BY disposed_at DESC, id DESC} until then: {@code risk_case_one_open} makes
      * a subject's cases of a kind strictly sequential, so the tail is the row order's answer and no clock's; a stamp a stepped
      * database clock wrote could name an earlier case the latest. {@code c.id} (a UUIDv7) only breaks a tie among tails a past
-     * branch of the chain might have left, never the chain's order.
+     * branch of the chain might have left, never the chain's order. A disposal committing between this read and the insert still
+     * reads as no successor yet, as the stamp did: the link is shown to a person and decides nothing, so the lag stands.
      */
     static final String LATEST_DISPOSED = "SELECT c.id FROM risk.risk_case c"
             + " WHERE c.subject_ref = ? AND c.kind = ? AND c.status = 'DISPOSED'"

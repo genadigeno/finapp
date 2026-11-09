@@ -398,7 +398,7 @@ assessment, a successor starting exactly there by version number, an assessment 
 **What the guard cannot read**, each walked by hand on 2026-11-09 and found to decide nothing or to be a page: a bound
 `LIMIT ?`, Java that takes the first row of an unbounded ordering or sorts in memory (`ChecksAssessment.NEWEST` names only
 which of two same-typed checks a reviewer starts from; `KycScreeningClearances.clearanceOf` compares a type's one decided check
-with another type's), a stamp an alias renames. Clock-step regression cases: `RiskStampOrderDatabaseTest`,
+with another type's), a stamp an alias renames, a positional sort key (`ORDER BY 1`, used only by grouped reports). Clock-step regression cases: `RiskStampOrderDatabaseTest`,
 `StampRanksDatabaseTest` (written and owed to `P15-TST-002`; `JUDGED_PAYMENT` has no such case: no clock can change its answer,
 both its possible rows naming one party and merchant).)*
 
