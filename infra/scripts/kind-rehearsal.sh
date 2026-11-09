@@ -153,12 +153,13 @@ command -v "$KIND_BIN" >/dev/null 2>&1 || cannot "kind ($KIND_BIN) is not on the
 
 # The name containerd stores: a bare repository is under docker.io/library, an org/name under docker.io.
 normalized() {
+    case $1 in
+        */*) ;;
+        *) printf 'docker.io/library/%s' "$1"; return ;;
+    esac
     case ${1%%/*} in
-        *.*) printf '%s' "$1" ;;
-        *) case $1 in
-            */*) printf 'docker.io/%s' "$1" ;;
-            *) printf 'docker.io/library/%s' "$1" ;;
-        esac ;;
+        *.* | *:*) printf '%s' "$1" ;;
+        *) printf 'docker.io/%s' "$1" ;;
     esac
 }
 
