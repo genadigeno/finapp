@@ -228,6 +228,10 @@ check prometheus "$PROMETHEUS_REPOSITORY" "$PROMETHEUS_VERSION" "$PROMETHEUS_DIG
 check alertmanager "$ALERTMANAGER_REPOSITORY" "$ALERTMANAGER_VERSION" "$ALERTMANAGER_DIGEST" list_tags_dockerhub
 # Static analysis (P15-TSK-006).
 check semgrep   "$SEMGREP_REPOSITORY"   "$SEMGREP_VERSION"   "$SEMGREP_DIGEST"   list_tags_dockerhub
+# The edge (P15-TSK-011): the controllers' Traefik, and the check's stand-in backend and client.
+check traefik "$TRAEFIK_REPOSITORY" "$TRAEFIK_VERSION" "$TRAEFIK_DIGEST" list_tags_dockerhub
+check whoami  "$WHOAMI_REPOSITORY"  "$WHOAMI_VERSION"  "$WHOAMI_DIGEST"  list_tags_dockerhub
+check curl    "$CURL_REPOSITORY"    "$CURL_VERSION"    "$CURL_DIGEST"    list_tags_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

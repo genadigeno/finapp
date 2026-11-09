@@ -419,6 +419,7 @@ class CommittedConfigurationHoldsNoSecretTest {
                     for (String literal : literalsIn(assignment.group(2), buildScript)) {
                         if (!literal.equals(DatabaseCredentialGuard.MARKED_LOCAL_DEFAULT)
                                 && !isKubernetesTokenSwitch(key, literal)
+                                && !isKubernetesSecretReference(key, literal)
                                 && !isExternalSecretEntryName(key, literal)
                                 && !isOperatorChartSwitch(key, literal)) {
                             offences.add(
@@ -432,6 +433,24 @@ class CommittedConfigurationHoldsNoSecretTest {
             }
         }
         return offences;
+    }
+
+    @Test
+    @DisplayName("a certificate's reference to its Secret is an object name and not a credential; anything else under that key is still reported")
+    void aSecretReferenceIsAKubernetesName() {
+        assertThat(offencesIn("secretName: finapp-edge-public-tls", false)).isEmpty();
+        assertThat(offencesIn("secretName: finapp-edge-local-ca", false)).isEmpty();
+        assertThat(offencesIn("secretName: Hunter2!Password", false)).isNotEmpty();
+        assertThat(offencesIn("secretName: hunter2password", false)).isNotEmpty();
+    }
+
+    /**
+     * A certificate's {@code secretName} says which Secret holds it, by name, and no credential is ever written there
+     * (`P15-TSK-011`). Exactly this key, with a Kubernetes object name ending as this repository names them, {@code -tls} or
+     * {@code -ca}; anything else under it is still reported.
+     */
+    private static boolean isKubernetesSecretReference(String key, String literal) {
+        return key.equals("secretName") && literal.matches("[a-z0-9]([-a-z0-9]*[a-z0-9])?-(tls|ca)");
     }
 
     /**

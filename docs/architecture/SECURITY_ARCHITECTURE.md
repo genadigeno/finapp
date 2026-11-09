@@ -64,6 +64,8 @@ Kubernetes overlays say otherwise, with the pod's own address from the downward 
 until that policy exists they are reachable, unauthenticated, by anything that can reach the address they bind - the two
 debt rows in `CURRENT_STATE.md`. An address of none (the variable set but empty) or of every interface, and an actuator
 without a port of its own, refuse startup (`ManagementAddressGuard`).
+
+**The edge** (`P15-TSK-011`, ADR-0120 decision 6, `THREAT_MODEL.md` T1, T3, T20, T21, T31, T40): TLS ends at the edge, and two controllers, one internet-facing and one internal, serve route lists generated from the permission register, by method and whole path, so no operator route reaches the public host in any spelling. **The client's address** is set by the edge from the connection, and every client-supplied forwarded header is dropped there; the application believes `X-Forwarded-For` only from a connection inside `FINAPP_EDGE_PROXIES`, and with that blank from nobody, including on Kubernetes, where Spring Boot would otherwise turn the header on for every private address (`ForwardedAddressTest`). The controllers hold no Kubernetes credential: they read their routes from a generated file. The list keeps operator routes off the public host; it does not keep operators off it: the doors that issue a session are public, and nothing refuses a role-holding identity there (`THREAT_MODEL.md` section 6 item 22).
 Held by `ManagementPortTest` and `ManagementAddressGuardTest`.
 
 The actuator is an allow-list, not a default (`P0-TSK-027`, ADR-0016). Only `health`, `info` and `prometheus` are served

@@ -1,0 +1,72 @@
+# The local CA, for the kind rehearsal alone (P15-TSK-011): a self-signed root, an issuer that signs from it, and one certificate per
+# surface. A real environment's issuer is its own decision; the policies refuse this file's kinds in staging and production.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: finapp-edge-local-root
+  labels:
+    finapp/test-only: "true"
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: finapp-edge-local-ca
+  labels:
+    finapp/test-only: "true"
+spec:
+  isCA: true
+  commonName: finapp-edge-local-ca
+  secretName: finapp-edge-local-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: finapp-edge-local-root
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: finapp-edge-local
+  labels:
+    finapp/test-only: "true"
+spec:
+  ca:
+    secretName: finapp-edge-local-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: finapp-edge-public
+  labels:
+    finapp/test-only: "true"
+spec:
+  secretName: finapp-edge-public-tls
+  duration: 2160h
+  renewBefore: 720h
+  dnsNames:
+    - public.finapp.test
+  issuerRef:
+    name: finapp-edge-local
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: finapp-edge-operator
+  labels:
+    finapp/test-only: "true"
+spec:
+  secretName: finapp-edge-operator-tls
+  duration: 2160h
+  renewBefore: 720h
+  dnsNames:
+    - operator.finapp.test
+  issuerRef:
+    name: finapp-edge-local
+    kind: Issuer
+    group: cert-manager.io

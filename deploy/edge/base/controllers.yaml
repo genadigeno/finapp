@@ -1,0 +1,277 @@
+# The two edge controllers (P15-TSK-011, ADR-0120 decision 6). Traefik by digest, on the file provider: neither pod holds a Kubernetes
+# credential, and the public one holds no operator route at all, so its host header decides nothing and a compromise of
+# it reads no secret of the cluster's. Two replicas each; every replica is the same bytes and shares nothing with its neighbour.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finapp-edge
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-edge-public
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-edge-public
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-edge-public
+        app.kubernetes.io/component: edge-controller
+        finapp/role: ingress-controller
+        app.kubernetes.io/part-of: finapp
+    spec:
+      serviceAccountName: finapp-edge
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-edge-public
+      containers:
+        - name: edge
+          image: docker.io/library/traefik@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
+          imagePullPolicy: IfNotPresent
+          args:
+            - --configFile=/etc/traefik/traefik.yaml
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+            - name: management
+              containerPort: 8081
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet: {path: /ping, port: management}
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /ping, port: management}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /ping, port: management}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: static
+              mountPath: /etc/traefik
+              readOnly: true
+            - name: dynamic
+              mountPath: /etc/finapp-edge/dynamic
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: static
+          configMap:
+            name: finapp-edge-static
+        # One volume, so the kubelet swaps routes and certificate together and the file provider sees one reload.
+        - name: dynamic
+          projected:
+            defaultMode: 288
+            sources:
+              - configMap:
+                  name: finapp-edge-public-routes
+              - secret:
+                  name: finapp-edge-public-tls
+        # A body or a response past 64 KiB spools here, before anything has authenticated. Memory-backed and sized, so a full spool answers a
+        # write with ENOSPC: that request gets a 500 and everything smaller is still served. A disk-backed emptyDir would instead get the pod
+        # evicted at its sizeLimit. It counts against the container's memory limit, hence 512Mi for this volume and the process. An aborted
+        # upload's spool is held until the proxy's next garbage collection (measured on the pinned image: under two minutes). KYC documents
+        # and settlement files past 64 KiB sit here in plaintext for the length of the request: in RAM, never on the node's disk.
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-edge-operator
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-edge-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-edge-operator
+        app.kubernetes.io/component: edge-controller
+        finapp/role: ingress-controller
+        app.kubernetes.io/part-of: finapp
+    spec:
+      serviceAccountName: finapp-edge
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-edge-operator
+      containers:
+        - name: edge
+          image: docker.io/library/traefik@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
+          imagePullPolicy: IfNotPresent
+          args:
+            - --configFile=/etc/traefik/traefik-operator.yaml
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+            - name: management
+              containerPort: 8081
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet: {path: /ping, port: management}
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /ping, port: management}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /ping, port: management}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: static
+              mountPath: /etc/traefik
+              readOnly: true
+            - name: dynamic
+              mountPath: /etc/finapp-edge/dynamic
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: static
+          configMap:
+            name: finapp-edge-static
+        - name: dynamic
+          projected:
+            defaultMode: 288
+            sources:
+              - configMap:
+                  name: finapp-edge-operator-routes
+              - secret:
+                  name: finapp-edge-operator-tls
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: finapp-edge-public
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-edge-public
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: finapp-edge-operator
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-edge-operator
+---
+# Base type ClusterIP: an overlay chooses how traffic reaches the edge. 443 only; 8081 is on no Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-edge-public
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: finapp-edge-public
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-edge-operator
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: finapp-edge-operator
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP

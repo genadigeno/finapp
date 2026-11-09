@@ -1872,6 +1872,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads *(written 2026-11-08, below)* | `-009` | `-009` (the check runs on Docker, each plant refused) |
 | 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below)* | `-029` | `-032` |
 | 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` |
+| 11.26 The edge: two controllers, the generated route lists, a renewed certificate *(written 2026-11-09, below)* | `-011` | `-012`, `-020` |
 | 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
@@ -1887,8 +1888,9 @@ row.)*
 
 *(Added 2026-11-08 by `P15-TSK-027`: §11.1.1 below is written, the handler-set steps of rows 11.1 and 11.3; not yet rehearsed.)*
 
-*(Added 2026-11-09 by `P15-TSK-005`: §11.1c below is written, the schema-compatibility steps of rows 11.1 and 11.3, and §11.4's compatibility half; not yet rehearsed.)*
+*(Added 2026-11-09 by `P15-TSK-011`: §11.26 below is written, from the manifests and `infra/scripts/edge-check.sh`; `-012` rehearses it on `kind`, `-020` the certificate.)*
 
+*(Added 2026-11-09 by `P15-TSK-005`: §11.1c below is written, the schema-compatibility steps of rows 11.1 and 11.3, and §11.4's compatibility half; not yet rehearsed.)*
 *(Added 2026-11-09 by `P15-TSK-035`: §11.27 below is written, from the census's code and its rules in `infra/prometheus/rules/correctness.yml`; not yet rehearsed.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
@@ -2706,6 +2708,44 @@ is not deleted costs storage only, so pausing is always safe.
 
 **Never** delete from these tables by hand to relieve space: a dedupe record removed early makes the next redelivery of that
 message a second effect (`INV-IDEM-04`). The application role cannot, and an operator with the migrator's credential must not.
+
+### 11.26 The edge: two controllers, the generated route lists, a renewed certificate (`P15-TSK-011`)
+
+*(Written by `P15-TSK-011`, 2026-11-09, from the manifests and their checks. **Not yet rehearsed on a cluster** - `P15-TSK-012` runs the
+`kind` half. What is proven today is what `infra/scripts/edge-check.sh` proves: the pinned proxy, with the committed files, against a
+stand-in backend.)*
+
+**What is there.** Two Deployments in `finapp-edge`, `finapp-edge-public` and `finapp-edge-operator`, each Traefik by digest (`deploy/edge/base/controllers.yaml`,
+held equal to `infra/scanner-pins.sh`), on the file provider. Neither calls the Kubernetes API or holds a token. Routes reach a controller only through
+the hash-named ConfigMap generated from `public-routes.yaml` or `operator-routes.yaml` plus its `*-edge.yaml`; a route is never added any other way. The
+operator controller sits behind an internal load balancer, and the public one holds no operator route. Both forward to the Service `finapp-app` on 8080, a new
+connection per request, so any replica serves any request and no session is sticky.
+
+**Run the checks.** `infra/scripts/edge-check.sh`, Docker required, from any machine. It renders every overlay, validates them, runs the policies (with a plant per
+rule), then drives the real proxy. On a machine whose TLS is intercepted set `KUSTOMIZE_IMAGE`, `KUBECONFORM_IMAGE` and `CONFTEST_IMAGE` as in §11.14. It exits 0
+green, 1 on any failure, 2 with no Docker or no `openssl`.
+
+**A route was added or its guard changed, and `EdgeAllowListTest` is red.** That is the check working. Review `app/build/edge/public-routes.yaml` and
+`operator-routes.yaml` (the test writes them there), copy each over `deploy/edge/base/`, and commit. A route that newly appears in the public file is a decision to expose it:
+read it as one. Never edit the committed file by hand: the test fails on any difference.
+
+**A client gets a `404` from the edge.** Either the method and path are not on the surface's list, or the path uses a refused encoded character. A path variable value must be letters, digits,
+`_` and `-`, with a dot only between other characters. The controller's JSON access log has the request; there is no application record, because the application was not reached.
+
+**A provider's or a merchant's traffic gets a `429`.** The limits in `public-edge.yaml` are coarse, one bucket per source across each tier's routes per controller replica, in rate (`source-*`) and in requests held in flight (`hold-*`), and are reference numbers until Phase 16 calibrates
+them. Raising one is a change to that file: read the tier's comment first. Raising a `hold-*` amount also moves the sum `EdgeAllowListTest` holds under the spool.
+
+**Large bodies answer `500` and small ones are fine.** The controller's spool is full. A body or response past 64 KiB spools to `/tmp`, a memory-backed volume of 256 MiB, before anything has authenticated. One source cannot fill it at the limits above; several can, and an abandoned upload's spool is held until the proxy's next garbage collection, under two minutes as measured. No pod is evicted or restarted, and a rollout clears it at once. While a request lasts, a KYC document or a settlement file past 64 KiB sits on that volume in plaintext: in RAM, never on the node's disk.
+
+**The address in a record is the edge's own, or every client shares one.** The application believes `X-Forwarded-For` only from a connection inside `FINAPP_EDGE_PROXIES`, the pod network its
+overlay names (for staging and production the Terraform environment's `cidr_block`). Blank trusts nobody and the recorded address is the controller pod's. On a real load balancer the
+client's own address must survive to the controller, which the staging and production overlays' `preserve_client_ip.enabled=true` target-group attribute asks for on their `ip` targets (`kind`'s NodePort uses `externalTrafficPolicy: Local`, which does nothing for an `ip` target); without it, every client appears as the load balancer and shares one per-source limit and one recorded address.
+
+**A renewed certificate.** The Secret and the routes are one projected volume, and the file provider watches its directory. The kubelet's swap of the volume reloads the certificate without a restart; `edge-check.sh`
+proves that swap on the pinned image. A real cluster's is `P15-TSK-020`'s rehearsal. No `Certificate`, issuer, hostname or TLS Secret is committed for staging or production: until a real environment provides the Secret,
+the controller pods do not start.
+
+**Failure and rollback.** An edge outage is refused traffic and nothing more: the application stays ready, and its schedules and consumers do not notice. Revert by the previous manifest digest; every route and limit is in the ConfigMap's hash, so a revert restores them together.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

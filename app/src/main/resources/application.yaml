@@ -100,6 +100,17 @@ spring:
 # ---------------------------------------------------------------------------
 server:
   shutdown: graceful
+  # WHOSE WORD THE CLIENT'S ADDRESS IS (P15-TSK-011, THREAT_MODEL.md T40). Stated, because unset is not "off": on
+  # Kubernetes Spring Boot detects the platform and installs the remote-address valve by itself, trusting
+  # X-Forwarded-For from every private range. native + an empty list trusts nobody: blank is off the machine and on a
+  # laptop alike. Only a Kubernetes overlay names a network, and in staging and production that is the whole VPC, since
+  # pods take their addresses from it. So this list does not stop a pod naming its own address, in the record of an
+  # acceptance or in the key P15-TSK-022 will limit on: P15-TSK-010's NetworkPolicy, finapp-app-ingress, does, by admitting
+  # only the edge's controllers to this port. ForwardedAddressTest holds the valve's half on a real Tomcat.
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      internal-proxies: ${FINAPP_EDGE_PROXIES:}
 
 # ---------------------------------------------------------------------------
 # The connection-limit arithmetic (P1-TSK-004, ADR-0014).

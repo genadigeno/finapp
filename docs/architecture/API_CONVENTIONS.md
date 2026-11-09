@@ -273,6 +273,34 @@ building one now would be untested machinery.
 audit consequences are considered explicitly. Records referencing it remain, and operations that
 must still be explainable outlive the endpoint that created them.
 
+## 8a. The two surfaces — **Implemented** (`P15-TSK-011`)
+
+Two edge hosts serve the one API, and which route lives where is derived from what the route declares
+(`EdgeRoutes`, held by `EdgeAllowListTest`):
+
+| Surface | Reached from | Routes |
+|---|---|---|
+| Public | The internet | Every route no operator permission guards and not under `/v1/operator`: a customer's, a merchant's and a provider's |
+| Operator | The internal network | `/v1/operator/**`, every `@RequiresPermission` route outside that prefix, and the doors an operator needs for a session (`POST /v1/authentications` and `/v1/authentications/mfa`, the `/v1/sessions` routes, `/v1/me/mfa` and `POST /v1/me/credential`) |
+
+The generated lists, `deploy/edge/base/public-routes.yaml` and `operator-routes.yaml`, are never edited. A route added or
+moved shows up as a failing `EdgeAllowListTest` until the regenerated file is copied over, so the change is a reviewed line.
+
+**For a route's author.** A route is listed by method and whole path, so a new method on an existing path is a new line. A
+path variable's value is letters, digits, `_` and `-`, with a dot only between other characters: an identifier, a code, an enum
+name, a settlement source's dotted code. A value carrying `;`, `%` or `/`, or a segment of `.` or `..`, never reaches the
+application, because those are how a path allow-list is walked around.
+
+**What the edge answers itself.** These are the proxy's plain responses, not the error contract's problem documents, because the
+application was never reached: `404` for a method and path not on the list (or the other surface's route); `400` or `404` for a
+path with a refused encoded character; `413` for a body far over the application's own limit; `429` for a coarse per-source limit;
+`403` for the operator host from outside the internal ranges; `500` for a body past 64 KiB while the edge's spool is full, or a response over the edge's cap. Those the application could have answered carry HSTS and the security headers; a `404` or `400` no route matched does not, because no route's headers ran. The application's own `api.PayloadTooLarge` and validation
+answers are unchanged, and the edge's body cap sits above them, so a request at the application's limit still gets the application's
+answer. The per-source limits are coarse: one bucket for each source across each tier's routes (the sign-in and registration doors, a session's routes, a merchant's, a provider's), per controller replica. The limits that count are the application's.
+
+**The client's address** the application records is the one the edge set from the connection. A client-supplied forwarded header
+never becomes it (`ForwardedAddressTest`).
+
 ## 9. What is deliberately not decided here
 
 Recorded so their absence is not mistaken for an oversight.

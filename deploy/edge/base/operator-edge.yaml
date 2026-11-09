@@ -1,0 +1,65 @@
+# The operators' surface, everything but the routes themselves (P15-TSK-011, ADR-0120 decision 6). Internal only: the Service is an
+# internal load balancer, and the allow-list below is the second layer for the day that is misconfigured. It holds wherever the
+# source address survives to here, which is why the overlays' load balancers preserve it (the source-address policy).
+http:
+  services:
+    finapp-app:
+      loadBalancer:
+        serversTransport: no-reuse
+        passHostHeader: false
+        servers:
+          - url: "http://finapp-app.finapp.svc.cluster.local:8080"
+
+  serversTransports:
+    no-reuse:
+      maxIdleConnsPerHost: -1
+      forwardingTimeouts:
+        dialTimeout: 5s
+        responseHeaderTimeout: 60s
+
+  middlewares:
+    edge-headers:
+      headers:
+        stsSeconds: 31536000
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: no-referrer
+        contentSecurityPolicy: "default-src 'none'; frame-ancestors 'none'"
+        customRequestHeaders:
+          Forwarded: ""
+          X-Forwarded-Prefix: ""
+          Upgrade: ""
+
+    # The private ranges, and no others; a real environment narrows them to its own.
+    internal-only:
+      ipAllowList:
+        sourceRange:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+
+    body-cap:
+      buffering:
+        maxRequestBodyBytes: 2097152
+        memRequestBodyBytes: 65536
+        # Above a settlement file's content read, the largest response the application gives an operator.
+        maxResponseBodyBytes: 33554432
+        memResponseBodyBytes: 65536
+
+    # The settlement upload alone: the application's own envelope bound for it fits inside this.
+    body-cap-settlement:
+      buffering:
+        maxRequestBodyBytes: 26214400
+        memRequestBodyBytes: 65536
+        # Above a settlement file's content read, the largest response the application gives an operator.
+        maxResponseBodyBytes: 33554432
+        memResponseBodyBytes: 65536
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      sniStrict: true
+  certificates:
+    - certFile: /etc/finapp-edge/dynamic/tls.crt
+      keyFile: /etc/finapp-edge/dynamic/tls.key

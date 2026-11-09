@@ -1,0 +1,71 @@
+# The operator edge's static configuration (P15-TSK-011, ADR-0120 decision 6): traefik.yaml with longer read and write timeouts,
+# because a settlement upload is several MiB on an internal network. EdgeManifestsTest holds that as the only difference.
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+entryPoints:
+  # The one listener a client can reach. TLS on every router, and there is no port 80: a redirect would first carry the
+  # request in the clear, credentials and all.
+  websecure:
+    address: ":8443"
+    # Every X-Forwarded-* and X-Real-Ip from the client is dropped and rewritten from the connection, because no address
+    # is trusted (insecure false, no trustedIPs). A cloud load balancer in front is layer 4 and adds no header.
+    forwardedHeaders:
+      insecure: false
+    http:
+      tls: {}
+      # ".." "." and "//" are resolved before a router matches. Spring's matcher and Tomcat would otherwise see a different path.
+      sanitizePath: true
+      # Header-name aliases of a forwarded header (X_Forwarded_For) never reach a backend. Default: keep.
+      aliasHeadersStrategy: delete
+      # Twice Tomcat's own 8 KiB, so the application still answers an over-long header itself.
+      maxHeaderBytes: 16384
+      # Every one of these defaults to ALLOWED. An encoded slash, backslash, NUL, semicolon, percent, question mark or hash in
+      # a path has no legitimate use on this API, and each is how a path allow-list has been walked around.
+      encodedCharacters:
+        allowEncodedSlash: false
+        allowEncodedBackSlash: false
+        allowEncodedNullCharacter: false
+        allowEncodedSemicolon: false
+        allowEncodedPercent: false
+        allowEncodedQuestionMark: false
+        allowEncodedHash: false
+    transport:
+      respondingTimeouts:
+        # The whole request, body included. A settlement upload's envelope, at the application's bound, needs about 210 KiB/s.
+        readTimeout: 60s
+        # Above the read, the replica's answer (responseHeaderTimeout, 60 s) and the time to send it. Go starts this at the request's headers.
+        writeTimeout: 180s
+        idleTimeout: 180s
+      lifeCycle:
+        # Keep accepting while the load balancer drops this pod, then drain. Below the pod's grace (45 s).
+        requestAcceptGraceTimeout: 10s
+        graceTimeOut: 30s
+  # /ping and the scrape; never on a Service.
+  management:
+    address: ":8081"
+
+ping:
+  entryPoint: management
+
+metrics:
+  prometheus:
+    entryPoint: management
+
+providers:
+  # The file provider and nothing else, so no controller holds a Kubernetes credential and no one can add a route except by
+  # changing this repository. Watched, because a renewed certificate arrives by swapping the mounted volume.
+  file:
+    directory: /etc/finapp-edge/dynamic
+    watch: true
+
+# ERROR, because the kubelet's timestamped directory is read a second time under watch and every object warns once per load.
+log:
+  level: ERROR
+
+accessLog:
+  format: json
+  fields:
+    headers:
+      defaultMode: drop

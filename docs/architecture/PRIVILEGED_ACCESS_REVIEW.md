@@ -71,8 +71,8 @@ Every role is an operator role: a customer holds none. Each permission is held b
 
 Which route requires which permission is `RoutePermissionRegisterTest`'s register. **Every route under `/v1/operator`
 declares a permission** (`RoutePermissionRegisterTest#everyOperatorRouteIsPermissionGuarded`, T31): a route there
-declaring only a session would serve any customer's session, and would stay on the public ingress, because the edge's
-allow-list moves only the routes an operator permission guards (`P15-TSK-011`). Operator routes outside that prefix -
+declaring only a session would serve any customer's session. The edge's generated allow-list keeps that prefix off the
+public host by path as well as by permission (`P15-TSK-011`, `EdgeAllowListTest`), so the route would not be public either. Operator routes outside that prefix -
 `/v1/identities/...`, `/v1/ledger/adjustments`, `/v1/kyc/cases/...`, a payment's refund and void, a transfer's
 reversal - are permission-guarded and pinned by the register too.
 

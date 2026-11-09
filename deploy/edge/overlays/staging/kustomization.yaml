@@ -1,0 +1,36 @@
+# Staging's edge: production's shape, see that overlay on what is deliberately absent.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: Service
+      name: finapp-edge-public
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+      - op: add
+        path: /metadata/annotations
+        value:
+          service.beta.kubernetes.io/aws-load-balancer-type: external
+          service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+          service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+          service.beta.kubernetes.io/aws-load-balancer-target-group-attributes: preserve_client_ip.enabled=true
+  - target:
+      kind: Service
+      name: finapp-edge-operator
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+      - op: add
+        path: /metadata/annotations
+        value:
+          service.beta.kubernetes.io/aws-load-balancer-type: external
+          service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+          service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+          service.beta.kubernetes.io/aws-load-balancer-target-group-attributes: preserve_client_ip.enabled=true

@@ -89,3 +89,26 @@ ALERTMANAGER_DIGEST=sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8
 SEMGREP_REPOSITORY=semgrep/semgrep
 SEMGREP_VERSION=1.184.0
 SEMGREP_DIGEST=sha256:cc1b68266f267878b39739373ea9985b9a78e5d64497dd875c8de100b22695ed
+
+# The edge (P15-TSK-011, ADR-0120 decision 6): sourced by infra/scripts/edge-check.sh. Traefik is what the controllers run, its digest named again in
+# deploy/edge/base/controllers.yaml, and EdgeManifestsTest holds the two equal. ingress-nginx was retired upstream in March 2026, so it was not an
+# option. whoami and curl are the check's stand-in backend and client, and run nowhere else.
+TRAEFIK_REPOSITORY=library/traefik
+TRAEFIK_VERSION=v3.7.17
+TRAEFIK_DIGEST=sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
+
+WHOAMI_REPOSITORY=traefik/whoami
+WHOAMI_VERSION=v1.11.0
+WHOAMI_DIGEST=sha256:200689790a0a0ea48ca45992e0450bc26ccab5307375b41c84dfc4f2475937ab
+
+CURL_REPOSITORY=curlimages/curl
+CURL_VERSION=8.17.0
+CURL_DIGEST=sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40
+
+# The schemas kubeconform reads for cert-manager's kinds (the kind overlay's local CA), at one commit of datreeio/CRDs-catalog.
+CRD_SCHEMAS_COMMIT=49729e49e8f062933e3716a26540d41b0cd0856c
+
+# cert-manager, for the kind rehearsal alone: P15-TSK-012 installs this chart. A chart, so check-pinned-images.sh has no release list to compare it to.
+CERT_MANAGER_REPOSITORY=quay.io/jetstack/charts/cert-manager
+CERT_MANAGER_VERSION=v1.21.3
+CERT_MANAGER_DIGEST=sha256:e482675aec32862d323a9218293ff7de81192337998615e4378c56498473f240

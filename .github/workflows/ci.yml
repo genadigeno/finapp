@@ -344,6 +344,10 @@ jobs:
         # The same script a developer runs; the tool pins live in infra/scanner-pins.sh.
         run: ./infra/scripts/manifest-check.sh
 
+      - name: The edge - its manifests and policies, and every spelling of an operator path through the real proxy
+        # P15-TSK-011. The pinned Traefik with the committed route files, against a stand-in backend; no cluster, no credential.
+        run: ./infra/scripts/edge-check.sh
+
   # ---------------------------------------------------------------------------
   # The alert rules and routing (P15-TSK-025, ADR-0124): promtool checks every
   # rule and runs every infra/prometheus/tests/*.test.yml, amtool checks the

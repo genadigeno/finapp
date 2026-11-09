@@ -1,0 +1,26 @@
+# The edge, a release of its own (P15-TSK-011, ADR-0120 decision 6): rolled and reverted by manifest digest without touching
+# the application. Render an overlay, never this directory: staging and production add their load balancers, kind its local CA.
+# infra/scripts/edge-check.sh renders each overlay beside the application's and runs both through the policies.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: finapp-edge
+
+resources:
+  - controllers.yaml
+  - networkpolicy.yaml
+
+# Named with a content hash, so a changed route rolls the controllers and a revert is a manifest digest.
+configMapGenerator:
+  - name: finapp-edge-static
+    files:
+      - traefik.yaml
+      - traefik-operator.yaml
+  - name: finapp-edge-public-routes
+    files:
+      - routes.yaml=public-routes.yaml
+      - edge.yaml=public-edge.yaml
+  - name: finapp-edge-operator-routes
+    files:
+      - routes.yaml=operator-routes.yaml
+      - edge.yaml=operator-edge.yaml
