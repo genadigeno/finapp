@@ -25,18 +25,10 @@ import com.finapp.accounting.PeriodCloseStatus;
 import com.finapp.accounting.PeriodCloseStore;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PeriodStatus;
-import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
-import com.finapp.platform.security.SecurityContext;
-import com.finapp.platform.testing.database.DatabaseRoles;
-import com.finapp.sharedkernel.correlation.Correlation;
-import java.sql.Connection;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.time.Duration;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Function;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,7 +53,6 @@ import org.junit.jupiter.api.Test;
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
 @DisplayName("PI-013: a month's close reads its present lock's run and its standing proposal, whatever the database's clock did (P15-TSK-033)")
-@SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class CloseRunClockStepDatabaseTest {
 
     @BeforeAll
@@ -148,70 +139,5 @@ class CloseRunClockStepDatabaseTest {
         Actor approver = person();
         inScope(approver, uow -> periods().approveUnlock(uow, period, periods().pendingUnlock(uow, period).orElseThrow(), approver,
                 "a correction is owed", correlation()));
-    }
-
-    /**
-     * The database's clock read {@link #BEHIND} behind, on demand, on one session (`P15-TSK-033`; lending's {@code ClockStep} and {@code
-     * MerchantBnplEnablementDatabaseTest}'s shadow, which this package's suites cannot reach): the four clock functions shadowed in a schema of the bootstrap
-     * superuser's, {@code closeclock} - its own name, so no other suite's install or drop meets it - which a session opts into by putting it before {@code
-     * pg_catalog} on its {@code search_path}. Accounting's triggers are invoker's rights with no path of their own, so the production code and the production
-     * triggers run unchanged on the shadowed clock. {@code closeclock.back}, set for the session before its transaction begins, is taken from every reading -
-     * the transaction's start included - so the whole transaction stands where a clock stepped back by that much would put it. Only the opted-in session
-     * sees it.
-     */
-    private static final class ShadowClock {
-
-        /** Far beyond any real step measured (2.8 s) and any gap between two of this suite's acts, so the planted step alone decides the order. */
-        static final Duration BEHIND = Duration.ofMinutes(10);
-
-        private ShadowClock() {}
-
-        static void install() throws SQLException {
-            bootstrap("CREATE SCHEMA IF NOT EXISTS closeclock;"
-                    + " GRANT USAGE ON SCHEMA closeclock TO PUBLIC;"
-                    + " CREATE OR REPLACE FUNCTION closeclock.back() RETURNS interval LANGUAGE sql STABLE AS"
-                    + " $$ SELECT coalesce(nullif(pg_catalog.current_setting('closeclock.back', true), ''), '0')::interval $$;"
-                    + " CREATE OR REPLACE FUNCTION closeclock.transaction_timestamp() RETURNS timestamptz LANGUAGE sql STABLE"
-                    + " AS $$ SELECT pg_catalog.transaction_timestamp() - closeclock.back() $$;"
-                    + " CREATE OR REPLACE FUNCTION closeclock.now() RETURNS timestamptz LANGUAGE sql STABLE AS"
-                    + " $$ SELECT pg_catalog.transaction_timestamp() - closeclock.back() $$;"
-                    + " CREATE OR REPLACE FUNCTION closeclock.statement_timestamp() RETURNS timestamptz LANGUAGE sql STABLE"
-                    + " AS $$ SELECT pg_catalog.statement_timestamp() - closeclock.back() $$;"
-                    + " CREATE OR REPLACE FUNCTION closeclock.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS"
-                    + " $$ SELECT pg_catalog.clock_timestamp() - closeclock.back() $$;");
-        }
-
-        static void uninstall() throws SQLException {
-            bootstrap("DROP SCHEMA IF EXISTS closeclock CASCADE");
-        }
-
-        /** {@code work} in one transaction of a fresh application-role session whose database clock reads {@link #BEHIND} behind, as {@code actor}. */
-        static <R> R behind(Actor actor, Function<Connection, R> work) {
-            try (SecurityContext.Scope who = SecurityContext.enter(actor);
-                    CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()));
-                    Connection connection = DatabaseRoles.application()) {
-                try (Statement statement = connection.createStatement()) {
-                    statement.execute("SET search_path = closeclock, pg_catalog, \"$user\", public");
-                    statement.execute("SET closeclock.back = '" + BEHIND.toSeconds() + " seconds'");
-                }
-                connection.setAutoCommit(false);
-                try {
-                    R result = work.apply(connection);
-                    connection.commit();
-                    return result;
-                } catch (RuntimeException failure) {
-                    connection.rollback();
-                    throw failure;
-                }
-            } catch (SQLException failure) {
-                throw new IllegalStateException(failure);
-            }
-        }
-
-        private static void bootstrap(String sql) throws SQLException {
-            try (Connection owner = DatabaseRoles.bootstrap(); Statement statement = owner.createStatement()) {
-                statement.execute(sql);
-            }
-        }
     }
 }

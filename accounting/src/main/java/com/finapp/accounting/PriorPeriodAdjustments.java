@@ -18,7 +18,6 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -39,7 +38,7 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>The machine</strong>: {@code PROPOSED -> POSTED | REJECTED}. Two rows, this one and the ledger's proposal ({@link PriorPeriodPostings}, origin {@code ACCOUNTING}), one transaction each time.
  *
  * <p><strong>Which month, and where it lands</strong> ({@link #propose}): the corrected month must be {@code CLOSED}, at the revision the person read; a {@code LOCKED} month's way back is the unlock. The date is
- * <strong>today, chosen here and stored</strong>, the day {@link AccountingPeriods#openNext} would say; nothing in a request can name it. It lands in <em>the month holding that date</em>, which must be {@code OPEN}, never
+ * <strong>today on the database's clock, chosen here and stored</strong>, the day {@link AccountingPeriods#openNext} reads (`P14-REM-009`); nothing in a request can name it. It lands in <em>the month holding that date</em>, which must be {@code OPEN}, never
  * {@link AccountingPeriods#firstOpen}: the earliest open month may be a reopened one, being re-closed, and dating a correction into it is the re-dating {@code INV-ACC-10} forbids. A month with no row yet is refused: a correction never
  * births a period, and the schedule will. The ledger's two dates are this one date, so nothing about the entry points into the closed month.
  *
@@ -280,12 +279,13 @@ public final class PriorPeriodAdjustments {
         requireCoherent(lines);
         // A1, oldest first. The month is frozen from birth, so the unlocked read only names which rows.
         YearMonth correctedMonth = periods.find(unitOfWork, corrected).orElseThrow(AccountingPeriods.PeriodNotFound::new).month();
-        LocalDate today = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
+        AccountingPeriodStore.PeriodRow correctedRow = periods.lockShared(unitOfWork, correctedMonth).orElseThrow(AccountingPeriods.PeriodNotFound::new);
+        // The database's date (P14-REM-009), the day AccountingPeriods.openNext reads, read holding the corrected month's row: the target's row can only be named from it.
+        LocalDate today = periods.today(unitOfWork);
         YearMonth targetMonth = YearMonth.from(today);
         if (!targetMonth.isAfter(correctedMonth)) {
             throw new AccountingPeriods.PeriodStale("a correction lands in a month after the one it corrects; today is in " + targetMonth);
         }
-        AccountingPeriodStore.PeriodRow correctedRow = periods.lockShared(unitOfWork, correctedMonth).orElseThrow(AccountingPeriods.PeriodNotFound::new);
         Optional<AccountingPeriodStore.PeriodRow> target = periods.lockShared(unitOfWork, targetMonth);
         if (correctedRow.status() != PeriodStatus.CLOSED) {
             throw new AccountingPeriods.PeriodStale("the period is " + correctedRow.status().name() + "; a prior-period adjustment corrects a CLOSED period - a LOCKED one is unlocked");

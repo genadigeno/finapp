@@ -5301,6 +5301,7 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `regulatory_submission` | `prepared_by` | `CONFIDENTIAL` | A person; never its approver, by `CHECK`; never served |
 | `regulatory_submission` | `prepared_by_type` | `INTERNAL` | The preparer's actor type |
 | `regulatory_submission` | `prepared_at` | `INTERNAL` | The database's stamp |
+| `regulatory_submission` | `recorded_order` | `INTERNAL` | A place in the order the rows were recorded in (`V014`): a position, no money and no one's data |
 | `regulatory_submission` | `preparation_reason` | `RESTRICTED-PII` | Person-written; screened; never logged, never in a summary or an event; served to the approver's door alone |
 | `regulatory_submission` | `validation_outcome` | `CONFIDENTIAL` | Rules, currencies and codes; never an amount |
 | `regulatory_submission` | `validation_passed` | `INTERNAL` | Whether every rule passed |
@@ -5379,6 +5380,7 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `regulatory_provider_answer` | `received_bytes` | `INTERNAL` | What arrived, whatever was kept |
 | `regulatory_provider_answer` | `truncated` | `INTERNAL` | Whether the bound cut it |
 | `regulatory_provider_answer` | `received_at` | `INTERNAL` | The database's stamp |
+| `regulatory_provider_answer` | `recorded_order` | `INTERNAL` | A place in the order the answers were recorded in (`V014`): a position, no money and no one's data |
 | `regulatory_provider_answer` | `correlation_id` | `INTERNAL` | The flow |
 
 ### Free text, classified at its ceiling
