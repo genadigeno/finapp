@@ -25,9 +25,11 @@ import org.postgresql.util.PasswordUtil;
  * statements are logged, sampled and kept in {@code pg_stat_statements}. Each password is turned into its SCRAM verifier
  * <em>here</em>, in this process, which is what the server stores anyway.
  *
- * <p><strong>A role that exists is verified, never changed.</strong> The step can be re-run safely (a later task's role
- * joins the list) and it changes no password: rotation is a procedure of its own. A role found with a right it must not
- * hold stops the step rather than being repaired, because how it got that right is something a person has to look at.
+ * <p><strong>A role that exists is verified; its rights and its password are never changed.</strong> The step can be re-run
+ * safely (a later task's role joins the list) and it changes no password: rotation is a procedure of its own. A role found
+ * with a right it must not hold stops the step rather than being repaired, because how it got that right is something a
+ * person has to look at. <strong>A role's settings are the exception</strong>: applied on every run, so a release that changes
+ * one reaches a role that already exists when the step is run for it ({@code DATA_MIGRATIONS.md} section 2.2).
  */
 final class RoleBootstrap {
 
@@ -41,6 +43,20 @@ final class RoleBootstrap {
 
     /** The attributes {@code 00-roles.sql} gives every role, and the two a managed master could otherwise hand down. */
     static final String ATTRIBUTES = "LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION";
+
+    /**
+     * What a {@code finapp_app} session may spend idle inside an open transaction: the value the server spells, the same one
+     * {@code 00-roles.sql} sets, held between its bounds by {@code DatabaseRoleSettingsAreSafeTest}.
+     *
+     * <p>An idle transaction can hold an xid and so stop the source-join census's walk, which stops a person noticing anything until the
+     * stall page an hour later. This ends it at the source: the server closes the session, the transaction rolls back whole, and the
+     * pool discards the connection, so the caller fails and retries under its idempotency key. It reaches only a session that has
+     * stopped sending statements while a transaction stands open, never a long statement and never an idle pool connection.
+     */
+    static final String APP_IDLE_IN_TRANSACTION_TIMEOUT = "5min";
+
+    private static final String APP_ROLE_SETTING =
+            "ALTER ROLE finapp_app SET idle_in_transaction_session_timeout = '" + APP_IDLE_IN_TRANSACTION_TIMEOUT + "'";
 
     private static final long LOCK_KEY = 0x66696e5f726f6cL; // "fin_rol"
 
@@ -143,6 +159,9 @@ final class RoleBootstrap {
             // CREATE on its public schema, which would let any role of the cluster connect and create objects beside ours.
             grantOnThisDatabase(statement, "REVOKE ALL ON DATABASE %I FROM PUBLIC");
             statement.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC");
+            // A setting, not a right: re-applied on every run, so a role that already exists has it from the next run of this step.
+            statement.execute(APP_ROLE_SETTING);
+            report.add("role=finapp_app idle_in_transaction_session_timeout=" + APP_IDLE_IN_TRANSACTION_TIMEOUT);
             master.commit();
             return report;
         } catch (SQLException | RuntimeException failure) {

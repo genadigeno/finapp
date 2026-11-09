@@ -90,14 +90,37 @@ springdoc = "3.1.1"
 # A constraint rather than `force`: it participates in conflict resolution, so when a future Spring
 # Boot manages 11.0.26 the newer version still wins and this entry does not hold the platform back.
 #
-# This is a deliberate deviation from the BOM and it is the only one. Revisit it when Spring Boot
-# manages 11.0.25 or later, at which point the constraint becomes redundant - harmless, but one
-# fewer thing to explain.
+# This is a deliberate deviation from the BOM; the only other one is Jackson's, below. Revisit it when
+# Spring Boot manages 11.0.25 or later, at which point the constraint becomes redundant - harmless,
+# but one fewer thing to explain.
 #
 # The three embed artefacts are constrained together. Only -core is affected, but they are released
 # as one and share internals; a build running 11.0.25 core against 11.0.24 el is a configuration
 # nobody tested.
 tomcat = "11.0.25"
+
+# Security floors on three libraries nothing here depends on by name (P15-TSK-041): each arrives
+# through something else, and the image scan named HIGH findings in the version it brought.
+#
+#   jackson3    Spring Boot 4.1.1 manages 3.1.5, with five HIGH findings fixed by 3.1.7. Held at 3.1.8,
+#               the last patch of the line the BOM is on, whose notes close one type-id finding more.
+#               Revisit it when Spring Boot manages 3.1.8 or later.
+#   jackson2    The test classpath's Jackson 2, which springdoc brings: 2.22.1 carries the same five CVE ids,
+#               listed in the build's SBOM, which CI's dependency-scan job reads against the one list of
+#               carried findings. 2.22.3 is the first 2.22 release the scan names as fixing all five. Test
+#               scope only: none of it reaches an image. Revisit it when springdoc brings 2.22.3 or later.
+#   lz4Java    kafka-clients 4.2.1 names 1.10.1; the scan names 1.11.4 as fixed. Published as at.yawk.lz4:
+#               the original org.lz4:lz4-java ended in 1.8.1, a relocation POM to this group. This artefact
+#               declares org.lz4's capabilities, so a second copy on one classpath is a resolution
+#               failure rather than a silent duplicate of its classes.
+#   snappyJava  kafka-clients 4.2.1 names 1.1.10.7; the scan names 1.1.10.9 as fixed.
+#               Revisit both when a Kafka client names these versions or later.
+#
+# Applied once, as dependency CONSTRAINTS, by the java-conventions plugin; the reasoning is there.
+jackson3 = "3.1.8"
+jackson2 = "2.22.3"
+lz4Java = "1.11.4"
+snappyJava = "1.1.10.9"
 
 junitJupiter = "6.1.3"
 assertj = "3.27.7"
@@ -177,6 +200,11 @@ spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-start
 tomcat-embed-core = { module = "org.apache.tomcat.embed:tomcat-embed-core", version.ref = "tomcat" }
 tomcat-embed-el = { module = "org.apache.tomcat.embed:tomcat-embed-el", version.ref = "tomcat" }
 tomcat-embed-websocket = { module = "org.apache.tomcat.embed:tomcat-embed-websocket", version.ref = "tomcat" }
+# The security floors - see the version note. Constraints only: no module declares these as a dependency.
+jackson-bom = { module = "tools.jackson:jackson-bom", version.ref = "jackson3" }
+jackson2-bom = { module = "com.fasterxml.jackson:jackson-bom", version.ref = "jackson2" }
+lz4-java = { module = "at.yawk.lz4:lz4-java", version.ref = "lz4Java" }
+snappy-java = { module = "org.xerial.snappy:snappy-java", version.ref = "snappyJava" }
 # Jakarta Bean Validation, added by P0-TSK-025: rejection at the boundary, declared on the
 # request type rather than written by hand in every handler.
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }

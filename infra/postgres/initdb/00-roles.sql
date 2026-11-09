@@ -72,6 +72,12 @@ BEGIN
 END
 $$;
 
+-- A session of the application left idle inside an open transaction can hold an xid and so stop the source-join census's walk, which
+-- nothing pages on for an hour. docs/architecture/CONFIGURATION_REGISTER.md section 5 is the reasoning, and
+-- DatabaseRoleSettingsAreSafeTest holds this value above the waits it names and below that page. RoleBootstrap sets the same on
+-- a deployed role. Re-run safe: a setting, not a right.
+ALTER ROLE finapp_app SET idle_in_transaction_session_timeout = '5min';
+
 -- Database-level grants, against whichever database this script is being run in.
 --
 -- current_database() rather than a literal 'finapp'. The entrypoint runs init scripts against

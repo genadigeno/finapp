@@ -66,11 +66,12 @@ class PlatformAlertRulesTest {
     /** A counter's or a histogram's series: never NaN, so never needs an unreadable rule. */
     private static final Pattern NOT_A_GAUGE = Pattern.compile(".*_(total|count|sum|bucket)$");
     /**
-     * A sweep's switch, {@code enabled ? 1 : 0} from its configuration: it reads no database, so its only no-value is the
-     * refresher's - before its first read, or once an ask has waited stale-after - which is exactly the canary's, and
-     * {@code GaugesStale} counts that per instance.
+     * A sweep's switch, {@code enabled ? 1 : 0} from its configuration, or the configuration fingerprint, always 1 (`P15-TSK-031`): each reads no
+     * database, so its only no-value is the refresher's - before its first read, or once an ask has waited stale-after - which is exactly the
+     * canary's, and {@code GaugesStale} counts that per instance. The fingerprint's alert reads its label and never its value, so a NaN there
+     * cannot blind it even for the instance it comes from: {@code config-fingerprint.test.yml}'s NaN case holds that.
      */
-    private static final Pattern CONFIGURATION_CONSTANT = Pattern.compile("finapp_.+_sweeper_enabled");
+    private static final Pattern CONFIGURATION_CONSTANT = Pattern.compile("finapp_.+_sweeper_enabled|finapp_config_fingerprint");
 
     @Test
     @DisplayName("every gauge an alert of any rule file reads has an unreadable rule (x != x) in some rule file, or is a sweep's configuration switch, whose only NaN is the refresher's and GaugesStale's - P15-TSK-024's fix round: since every gauge reads off the scrape, every gauge can be NaN, and a threshold never compares a NaN")

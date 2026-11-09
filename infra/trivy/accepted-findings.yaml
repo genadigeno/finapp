@@ -11,8 +11,9 @@
 #   - A FINDING IS REMOVED HERE WHEN ITS FIX ARRIVES. Keep this file to what is actually carried: a fixed finding's
 #     row stays harmlessly silent, so check it at each base-image or dependency bump.
 #
-# As found on 2026-11-08 by Trivy 0.76.2 on the application image built from this change: 18 HIGH, 0 CRITICAL, no secret,
-# no misconfiguration. The migrator image, read separately, carries the ten base-image rows below and none of the eight library rows.
+# As read on 2026-11-09 by Trivy 0.76.2 on both images, freshly built: 10 HIGH, 0 CRITICAL, no secret, no misconfiguration, the same
+# ten rows on each. Eight more, on the application's own libraries, were carried here until those libraries were moved to
+# their fixed releases, the same day: section 6 item 12 of the threat register keeps that record.
 vulnerabilities:
   # The Debian 13 packages of the pinned distroless runtime base, whose digest is the current digest of its tag
   # (checked 2026-11-08): nothing here can be fixed in this repository except by a newer base image.
@@ -46,30 +47,3 @@ vulnerabilities:
   - id: CVE-2026-85091
     statement: "zlib1g in the pinned distroless base; Debian has a fixed package but no newer distroless digest carries it yet; re-read when check-pinned-images.sh reports one"
     expired_at: 2027-01-31
-
-  # The application's own libraries. Each has a fixed release: carried only until the upgrades are made, which change
-  # the JSON library and the Kafka compression codecs every module runs on and so need the full test tiers.
-  - id: CVE-2026-68497
-    statement: "jackson-databind 3.1.5 (via the Spring Boot BOM); fixed in 3.1.6 and 3.2.2; carried until the upgrade, which needs a full regression pass of the JSON every module exchanges"
-    expired_at: 2026-12-31
-  - id: CVE-2026-91776
-    statement: "jackson-databind 3.1.5 (via the Spring Boot BOM); fixed in 3.1.7 and 3.2.3; carried until the upgrade, which needs a full regression pass of the JSON every module exchanges"
-    expired_at: 2026-12-31
-  - id: CVE-2026-91777
-    statement: "jackson-databind 3.1.5 (via the Spring Boot BOM); fixed in 3.1.7 and 3.2.3; carried until the upgrade, which needs a full regression pass of the JSON every module exchanges"
-    expired_at: 2026-12-31
-  - id: CVE-2026-89407
-    statement: "jackson-core 3.1.5 (via the Spring Boot BOM); fixed in 3.1.7 and 3.2.2; carried until the upgrade, which needs a full regression pass of the JSON every module exchanges"
-    expired_at: 2026-12-31
-  - id: CVE-2026-89425
-    statement: "jackson-core 3.1.5 (via the Spring Boot BOM); fixed in 3.1.7 and 3.2.3; carried until the upgrade, which needs a full regression pass of the JSON every module exchanges"
-    expired_at: 2026-12-31
-  - id: CVE-2026-106451
-    statement: "lz4-java 1.10.1 (via kafka-clients); fixed in 1.11.4; carried until a version override is verified against the Kafka client's codecs in the kafkaTest tier"
-    expired_at: 2026-12-31
-  - id: CVE-2026-108106
-    statement: "snappy-java 1.1.10.7 (via kafka-clients); fixed in 1.1.10.9; carried until a version override is verified against the Kafka client's codecs in the kafkaTest tier"
-    expired_at: 2026-12-31
-  - id: CVE-2026-93451
-    statement: "snappy-java 1.1.10.7 (via kafka-clients); fixed in 1.1.10.9; carried until a version override is verified against the Kafka client's codecs in the kafkaTest tier"
-    expired_at: 2026-12-31
