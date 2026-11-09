@@ -82,6 +82,7 @@ public final class Rehearsal {
             case "workload" -> rehearsal.workload(args[2]);
             case "replay" -> rehearsal.replay(args[2], args[3], args[4], args[5]);
             case "edge" -> rehearsal.edge();
+            case "forged" -> rehearsal.forged(args[2], Integer.parseInt(args[3]));
             case "map-gl" -> rehearsal.mapGl();
             case "gl-check" -> rehearsal.glCheck();
             default -> throw new IllegalArgumentException("unknown step " + args[1]);
@@ -637,8 +638,16 @@ public final class Rehearsal {
         System.out.println("edge operator-route-on-operator status=" + operator.status() + " body=" + operator.body().replaceAll("\\s+", " "));
         Answer actuator = get(publicBase, "/actuator/health", null);
         System.out.println("edge actuator-on-public status=" + actuator.status());
-        String marker = UUID.randomUUID().toString();
-        call("GET", publicBase + "/v1/me?forged=" + marker, null, Map.of("X-Forwarded-For", "198.51.100.77"));
-        System.out.println("edge forged marker=" + marker + " client=" + java.net.InetAddress.getLocalHost().getHostAddress());
+    }
+
+    /**
+     * Requests at the recovery door, each forging a different address: the door counts per source before it reads the body, so an empty one is enough and changes
+     * nothing. The first address after the valve is what the count is keyed on.
+     */
+    private void forged(String label, int requests) throws Exception {
+        for (int i = 1; i <= requests; i++) {
+            Answer answer = call("POST", publicBase + "/v1/recoveries", "{}", Map.of("X-Forwarded-For", "198.51.100." + i));
+            System.out.println("forged " + label + " status=" + answer.status() + " client=" + java.net.InetAddress.getLocalHost().getHostAddress());
+        }
     }
 }

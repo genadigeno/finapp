@@ -990,22 +990,6 @@ grep -q 'edge operator-route-on-public status=404' "$ART/edge.txt" \
 grep -Eq 'edge operator-route-on-operator status=401 ' "$ART/edge.txt" \
     && pass "a /v1/operator route reaches the application on the operator host" \
     || fail "the operator route on the operator host: $(grep 'operator-route-on-operator' "$ART/edge.txt")"
-# (3) A forged X-Forwarded-For does not become the address the application records. What it records is request.getRemoteAddr(), and Tomcat's access
-# log (FINAPP's kind overlay, SERVER_TOMCAT_ACCESSLOG_*) writes that same value after the RemoteIpValve: the header's forged value against the connection's own address.
-marker=$(sed -n 's/^edge forged marker=\([^ ]*\) client=\([^ ]*\).*/\1/p' "$ART/edge.txt")
-client_address=$(sed -n 's/^edge forged marker=\([^ ]*\) client=\([^ ]*\).*/\2/p' "$ART/edge.txt")
-[ -n "$marker" ] && [ -n "$client_address" ] || fail "the forged-header request did not run: see edge.txt"
-sleep 3
-kube -n finapp logs -l app.kubernetes.io/name=finapp-app --tail=-1 --prefix=false 2>/dev/null | grep "^finapp-access .*forged=$marker" > "$ART/edge-forged.txt" || true
-if ! [ -s "$ART/edge-forged.txt" ]; then
-    fail "no access-log line for the forged request: the address the application saw was not read"
-elif grep -q '198\.51\.100\.77' "$ART/edge-forged.txt"; then
-    fail "a forged X-Forwarded-For became the address the application saw: $(cat "$ART/edge-forged.txt")"
-elif grep -qF "finapp-access $client_address " "$ART/edge-forged.txt"; then
-    pass "a forged X-Forwarded-For does not become the address the application saw: it recorded the controller's view, $client_address"
-else
-    fail "the application saw neither the forged address nor the client's: $(cat "$ART/edge-forged.txt")"
-fi
 grep -q 'edge actuator-on-public status=404' "$ART/edge.txt" \
     && pass "the actuator is not on the public host" \
     || fail "the actuator on the public host: $(grep 'actuator-on-public' "$ART/edge.txt")"
@@ -1325,6 +1309,28 @@ fi
 assert_handler_window rollout "$FROM_N" "$TO_N" "$UNSEEN"
 [ "$PROBE" != skip-replay ] || fail "PROBE skip-replay: the window was clean with no replay, so the assertion cannot fail"
 census handler-window-n
+
+step forged-address
+# (3) of the edge's acceptance. What the application keys on is request.getRemoteAddr() after the RemoteIpValve, and N's per-source limits are built on it, a bucket of the address
+# in platform.window_counter and never the address. The client calls this door nowhere else, so every row of its scope is this step's. Forged addresses that became the key would each
+# make a row; a key taken from the connection's peer, the controller, would put a second real client in the first one's row. A stopped client's address is reused, so the second
+# client runs while a holder keeps the first one's.
+forged_counts() { psql_query -c "SELECT count(DISTINCT counter_key) || '|' || coalesce(sum(admitted), 0) FROM platform.window_counter WHERE scope = 'door.recovery'" | tr -d '[:space:]'; }
+client forged first 5 > "$ART/edge-forged.txt" 2>&1 || fail "the forged-header requests did not run: see edge-forged.txt"
+holder="$CLUSTER-address-holder"
+dock run -d --rm --name "$holder" --network kind "$JDK_IMAGE" sleep 120 >> "$ART/apply.log" 2>&1 || cannot "the second client's address could not be held apart"
+! grep -Eq 'status=(429|5[0-9][0-9])' "$ART/edge-forged.txt" || fail "the forged-header requests were refused: see edge-forged.txt"
+observed=$(forged_counts)
+[ "$observed" = '1|5' ] || fail "five forged addresses gave '$observed' (buckets|counted) where one bucket of five was due: a forged X-Forwarded-For moved the key, or the door did not count"
+pass "five forged addresses landed in one bucket: a forged X-Forwarded-For does not become the address the application keys on"
+client forged second 1 >> "$ART/edge-forged.txt" 2>&1 || fail "the second client's request did not run: see edge-forged.txt"
+dock rm -f "$holder" >> "$ART/apply.log" 2>&1 || true
+first=$(sed -n 's/^forged first status=[0-9]* client=//p' "$ART/edge-forged.txt" | sort -u)
+second=$(sed -n 's/^forged second status=[0-9]* client=//p' "$ART/edge-forged.txt" | sort -u)
+[ -n "$first" ] && [ -n "$second" ] && [ "$first" != "$second" ] || cannot "the two clients did not have two addresses: '$first' and '$second'"
+observed=$(forged_counts)
+[ "$observed" = '2|6' ] || fail "a second client at $second gave '$observed' (buckets|counted) where two buckets of six in all were due: the key is not the address the controller saw"
+pass "a second real client lands in a bucket of its own: the key is the connection's address as the controller saw it"
 
 step kill
 start_workload kill retry

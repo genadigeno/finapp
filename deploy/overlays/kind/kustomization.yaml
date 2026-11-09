@@ -5,6 +5,7 @@
 # THE LOCAL CA, mounted by both workloads at /etc/finapp-local-ca from the Secret finapp-kind-local-ca the rehearsal generates per run:
 # ca.crt for PostgreSQL's sslrootcert and Kafka's truststore, and truststore.jks for the JVM's own, so the application's provider
 # clients verify the simulator's certificate as they would any provider's. Neither is secret, and the JKS file is read without a password.
+# The JVM takes it as jssecacerts in its own security directory, which it reads ahead of cacerts: a file, so no flag and no setting differs.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -32,22 +33,17 @@ configMapGenerator:
       - FINAPP_EDGE_PROXIES=10.244.0.0/16
       - FINAPP_KAFKA_SECURITYPROTOCOL=SASL_SSL
       - FINAPP_KAFKA_SSL_TRUSTSTORELOCATION=/etc/finapp-local-ca/ca.crt
-      - JDK_JAVA_OPTIONS=-Djavax.net.ssl.trustStore=/etc/finapp-local-ca/truststore.jks -Djavax.net.ssl.trustStoreType=JKS
       # The simulators are one small test-only JVM behind a TLS handshake every replica pays once: the defaults (2 s) are a provider's, on a
       # machine that is not running a kind cluster and six other builds.
       - FINAPP_PAYMENTS_PROVIDER_TIMEOUT=PT15S
       - FINAPP_PAYMENTMETHODS_TOKENISATION_TIMEOUT=PT15S
       - FINAPP_MERCHANT_PAYOUT_PROVIDER_TIMEOUT=PT15S
-      # The API port's access log on the pod's stdout, in the kind overlay alone: its %a, with request attributes enabled, is request.getRemoteAddr()
-      # after the RemoteIpValve, the value an offer acceptance records, so the rehearsal can read what the application saw through the real edge.
-      - SERVER_TOMCAT_ACCESSLOG_REQUESTATTRIBUTESENABLED=true
-      - SERVER_TOMCAT_ACCESSLOG_ENABLED=true
-      - SERVER_TOMCAT_ACCESSLOG_DIRECTORY=/dev
-      - SERVER_TOMCAT_ACCESSLOG_PREFIX=stdout
-      - SERVER_TOMCAT_ACCESSLOG_SUFFIX=
-      - SERVER_TOMCAT_ACCESSLOG_ROTATE=false
-      - SERVER_TOMCAT_ACCESSLOG_BUFFERED=false
-      - SERVER_TOMCAT_ACCESSLOG_PATTERN=finapp-access %a %s %r
+      # One client on one address is every customer of the rehearsal, so the two doors its workload walks through are opened. The doors it never calls keep
+      # their reference numbers: the recovery door is what the forged-address step counts on.
+      - FINAPP_ABUSE_REGISTRATION_LIMIT=1000000
+      - FINAPP_ABUSE_REGISTRATION_SITE_LIMIT=1000000
+      - FINAPP_ABUSE_SIGN_IN_LIMIT=1000000
+      - FINAPP_ABUSE_SIGN_IN_SITE_LIMIT=1000000
 
 patches:
   - target:
@@ -83,6 +79,13 @@ patches:
         value:
           name: local-ca
           mountPath: /etc/finapp-local-ca
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: local-ca
+          mountPath: /usr/lib/jvm/temurin-21-jre-amd64/lib/security/jssecacerts
+          subPath: truststore.jks
           readOnly: true
   - target:
       kind: Job
