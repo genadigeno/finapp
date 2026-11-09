@@ -339,17 +339,6 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # P15-TSK-019: the key-ring activation check compares this change with its base commit.
-          fetch-depth: 0
-
-      - name: A key ring's version is activated only in a change after one that listed it
-        # P15-TSK-019, ADR-0123. Refuses a change that makes a version active which its base did not already list, so a
-        # replica can never be asked to read a version nothing told it to hold. A schedule or a manual run has no base to compare.
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
-        env:
-          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
-        run: ./infra/scripts/key-ring-activation-check.sh "$BASE_REF"
 
       - name: Render and validate every overlay, and prove every policy refuses its plant
         # The same script a developer runs; the tool pins live in infra/scanner-pins.sh.
@@ -358,6 +347,28 @@ jobs:
       - name: The edge - its manifests and policies, and every spelling of an operator path through the real proxy
         # P15-TSK-011. The pinned Traefik with the committed route files, against a stand-in backend; no cluster, no credential.
         run: ./infra/scripts/edge-check.sh
+
+  # ---------------------------------------------------------------------------
+  # A key ring's version is activated only in a change after one that listed it
+  # (P15-TSK-019, ADR-0123): compares this change with its base, so a replica is
+  # never asked to read a version nothing told it to hold. Its own job because a
+  # schedule or a manual run has no base to compare. No credential.
+  # ---------------------------------------------------------------------------
+  key-ring-activation:
+    name: Key-ring activation order
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Refuse activating a version the base did not list
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: ./infra/scripts/key-ring-activation-check.sh "$BASE_REF"
 
   # ---------------------------------------------------------------------------
   # The alert rules and routing (P15-TSK-025, ADR-0124): promtool checks every

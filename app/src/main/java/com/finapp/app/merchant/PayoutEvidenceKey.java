@@ -51,11 +51,17 @@ public final class PayoutEvidenceKey {
 
     private static final String V3_KEY_PROPERTY = "finapp.merchant.payout.evidence.v3.key";
 
+    private static final String RING_VERSIONS_PROPERTY = "finapp.merchant.payout.evidence.ring.versions";
+
+    private static final String RING_ACTIVE_VERSION_PROPERTY = "finapp.merchant.payout.evidence.ring.active-version";
+
+    private static final String RING_RETIRED_VERSIONS_PROPERTY = "finapp.merchant.payout.evidence.ring.retired-versions";
+
     private static final ConfinedKeyRing.RingProperties RING =
             new ConfinedKeyRing.RingProperties(
-                    "finapp.merchant.payout.evidence.ring.versions",
-                    "finapp.merchant.payout.evidence.ring.active-version",
-                    "finapp.merchant.payout.evidence.ring.retired-versions",
+                    RING_VERSIONS_PROPERTY,
+                    RING_ACTIVE_VERSION_PROPERTY,
+                    RING_RETIRED_VERSIONS_PROPERTY,
                     Map.of(2, V2_KEY_PROPERTY, 3, V3_KEY_PROPERTY));
 
     /**
