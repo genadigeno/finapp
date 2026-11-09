@@ -13,7 +13,6 @@ import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.security.InstrumentShapes;
-import com.finapp.sharedkernel.security.InstrumentShapes;
 import jakarta.servlet.http.HttpServletRequest;
 import java.sql.Connection;
 import java.time.Clock;
@@ -85,16 +84,6 @@ public final class RefusedActs {
     private static final Pattern A_UUID =
             Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
     private static final String NOT_AN_ID = "(not an id)";
-
-    /** A declared provider's, a settlement source's or a rail's code: {@code FxProviderDeclaration}'s and {@code RailId}'s shape. */
-    private static final Pattern A_DECLARED_CODE = Pattern.compile("[a-z][a-z0-9-]{0,31}");
-
-    /** A route's variables that name a code, by the name the route gives them, and the only shape each is written in. */
-    private static final Map<String, Pattern> NAMED_CODES = Map.of(
-            "pair", Pattern.compile("[A-Z]{3}-[A-Z]{3}"),
-            "corridor", Pattern.compile("[A-Z]{3}-[A-Z]{3}-[A-Z]{2}"),
-            "code", A_DECLARED_CODE,
-            "rail", A_DECLARED_CODE);
 
     /** A declared provider's, a settlement source's or a rail's code: {@code FxProviderDeclaration}'s and {@code RailId}'s shape. */
     private static final Pattern A_DECLARED_CODE = Pattern.compile("[a-z][a-z0-9-]{0,31}");

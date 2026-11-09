@@ -7,7 +7,6 @@ import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.api.ProblemDetail;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Set;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -42,9 +41,6 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 @Slf4j
 @RequiredArgsConstructor
 public class RefusedActAdvice implements ResponseBodyAdvice<Object> {
-
-    private static final Set<String> NOT_RECORDED_HERE =
-            Set.of(IdentityErrorCode.ASSURANCE_REQUIRED.code(), PlatformErrorCode.IDEMPOTENCY_IN_PROGRESS.code());
 
     private static final Set<String> NOT_RECORDED_HERE =
             Set.of(IdentityErrorCode.ASSURANCE_REQUIRED.code(), PlatformErrorCode.IDEMPOTENCY_IN_PROGRESS.code());
