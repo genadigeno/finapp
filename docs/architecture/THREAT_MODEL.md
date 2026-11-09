@@ -539,7 +539,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T15 | The database reachable only from the application's and the migrator's pods | PLANNED | `P15-TSK-010` |
 | T15 | The database has no public address, sits on the workload subnets alone, and admits one security group on its port, the cluster's nodes, so the credential is no use from outside the cluster's network. Asserted over a plan against a mock provider, never applied. Every pod on a node shares that group, so it narrows who can reach the port and does nothing against a holder of the credential on a node | EXISTS | `infra/terraform/modules/postgres/tests/postgres.tftest.hcl` `contains: The database has a public address.` `contains: Something other than the given security group is admitted to the database.`; `infra/terraform/environments/production/tests/production.tftest.hcl` `contains: Production's database does not admit the cluster's nodes, and only them.` `contains: Production's database is not on exactly the workload subnets.` |
 | T15 | As written in the rule files, the product proofs and projection drift page on their first breach, with no budget and no `for`, routed to a placeholder receiver until an on-call tool exists (the test reads each rule's text; only projection drift and the other new correctness rules have `promtool` cases): detection for the books those proofs cover (§5), and nothing for a balanced shift between accounts no proof covers | EXISTS | `app/src/test/java/com/finapp/app/telemetry/AlertCatalogueTest.java#theCorrectnessSignalsPageOnTheirFirstSample` |
-| T15 | The source-join census: every journal entry joined by its `reference` and `idempotency_scope` to the domain record that caused it, with equal amounts, on every book (the ten accounts no proof reads among them), paging on its first break; it detects an entry with no domain record behind it, not one whose domain record was written first | PLANNED | `P15-TSK-035` |
+| T15 | The source-join census, a detective control on every book (the ten accounts no proof reads among them): every registered posting namespace has a join, through its own module's read port, from each entry to the domain record that names it, amounts and currency compared per currency in minor units; the walk's position is the ledger's own `(txid, id)`, stamped by the database from the inserting transaction and bounded by the oldest transaction still running, so neither an id an inserter chooses nor a skewed instance's mint can be walked past (the position's database cases are written and owed to the phase's pass; the SQL was shown on a real PostgreSQL); a first non-zero sample pages, to a placeholder receiver until an on-call tool exists. It does not detect: an entry whose domain record was written first; a second entry under an existing key (the journal does not hold keys unique); extra balanced lines in a currency the record names no figure for. It does not compare which accounts an entry touched. The application's own credential can still jump the head forward (a trigger refuses backward and past any running transaction) or hold the head's row; the latter stalls the walk, which pages after an hour | EXISTS | `app/src/test/java/com/finapp/app/accounting/SourceJoinCoverageTest.java#everyRegisteredNamespaceHasASourceJoin`, `accounting/src/test/java/com/finapp/accounting/SourceJoinComparisonTest.java#theCurrencyIsTheComparison`, `app/src/test/java/com/finapp/app/accounting/LedgerJournalCensusWalkTest.java#thePositionIsTheTransactionThenTheId`, `app/src/test/java/com/finapp/app/accounting/SourceCensusDatabaseTest.java#anEntryMintedBelowTheHeadIsStillJudged`, `app/src/test/java/com/finapp/app/accounting/SourceCensusDatabaseTest.java#aWalletToWalletEntryWithNoTransferIsCounted`, `app/src/test/java/com/finapp/app/telemetry/AlertCatalogueTest.java#theCorrectnessSignalsPageOnTheirFirstSample` |
 | T15 | Refusal of a balanced, rule-shaped entry inserted by a holder of the application's credential (a definer-rights posting path as the journal's only `INSERT`, the projection's `UPDATE` revoked, a role per module), and detection of one whose domain record was written first | GAP | `PI-016`; owner: the owner, since 2026-11-08 |
 | T16 | Ten instances submitting one key produce exactly one transfer (`INV-IDEM-01`) | EXISTS | `app/src/test/java/com/finapp/app/transfers/TransferExecutionDatabaseTest.java#tenConcurrentIdenticalKeysProduceOneTransfer` |
 | T16 | A key reused with a different request is refused as a distinct conflict, never replayed (`INV-IDEM-03`) | EXISTS | `platform/src/test/java/com/finapp/platform/idempotency/IdempotentExecutorTest.java#differingFingerprintIsRejected` |
@@ -721,7 +721,8 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
     is not seen. Also detected: merchant payable lines under a `bnpl.` key (the three-way proof's merchant leg), an
     entry whose namespace no rule registers or whose shape no rule allows (rule conformance, at the month's close),
     and a projection row left stale (the projection check).
-  - **Undetected:** a balanced entry of a registered shape, both projection rows co-updated in the same transaction,
+  - **Undetected by any proof** (the source-join census below reads these books too):
+    a balanced entry of a registered shape, both projection rows co-updated in the same transaction,
     between accounts no proof reads (**10**): **customer wallets**; **merchant payables** apart from `bnpl.`-keyed
     lines (their check sums the payable's own breakdown, which equals its position by construction, so a balanced
     entry cannot fail it); the platform's **fee revenue**; **loan interest income, BNPL interest income and BNPL
@@ -729,12 +730,13 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
     undetected: a line on loan fee income or BNPL merchant fee income that no row names, and any book above once the
     product's row is forged first. Two examples: one customer's wallet debited and another's credited, then a
     legitimate withdrawal; or fee revenue debited and the payable of a merchant the attacker controls credited, then
-    an ordinary payout. Neither raises anything: no proof reads those accounts, reconciliation sees only the
+    an ordinary payout. Neither is raised by a proof: no proof reads those accounts, reconciliation sees only the
     legitimate withdrawal or payout, and the trial balance stays zero.
   Phase 15's controls lower the likelihood: the credential reaches only the application's pods (`-018`), and the
   database only the cluster's nodes (a security group of its own; `-010` narrows a node to those pods). They do not change the impact. **Owner item 2, decided 2026-11-08**: the
-  source-join census (`P15-TSK-035`) reads every book, the ten above among them, and detects an entry with no domain
-  record behind it; the preventive fix is postponed to before production use (`PI-016`). An entry whose domain record
+  source-join census reads every book, the ten above among them, and detects an entry with no domain
+  record behind it, or whose record's amounts differ from its lines (written and held by its guard; its database cases owed to the
+  phase's pass); the preventive fix is postponed to before production use (`PI-016`). An entry whose domain record
   was written first stays neither refused nor detected until `PI-016` lands.
 - **T45, injection through hand-written JDBC.** Every statement is hand-written. The codebase's idiom is constant SQL
   with bind parameters, and the statements read for this register were constant. Some concatenate constants
@@ -892,8 +894,8 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
      15, which leaves every posting path as Phases 3–14 built it (`PHASE_15_PLAN.md` §1). Add **(a)** now, as the
      source-join census rather than the wallet proof, as a new Phase 15 item after the correctness pages, so that something reads
      the uncovered books until (b) lands. With (a) and (b) both declined, the residual stays a `GAP` and must be
-     accepted by the owner before production use. **Decided 2026-11-08**: (a) is `P15-TSK-035`, the source-join census,
-     after the correctness pages; (b) is `PI-016`, postponed by the owner and required before production use.
+     accepted by the owner before production use. **Decided 2026-11-08**: (a) is the source-join census, built after
+     the correctness pages; (b) is `PI-016`, postponed by the owner and required before production use.
 3. **T29's residual.** No task builds the human identity controls of a real cloud account. *Recommendation*: widen
    `P15-TSK-016` with a human IAM baseline in the `security` module (MFA required by policy, no long-lived human access
    keys, permission boundaries), asserted by `terraform test` with mock providers like the rest of the module.
@@ -927,7 +929,7 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
    The options: (a) a census item inside Phase 15, before the database pass: each read classified as deciding or
    displaying, every deciding one ranked by the rows or named by identity, with a clock-step case, and risk `V002`
    given the terms' rule; (b) postpone it, required before production use; (c) accept the residual. *Recommendation*:
-   **(a)**, sized like `P15-TSK-035`, after `P15-TST-002`'s dependencies are settled, so its database cases run in the
+   **(a)**, sized like the source-join census, after `P15-TST-002`'s dependencies are settled, so its database cases run in the
    pass; if Phase 15 must shrink, (b), never (c), since PI-013 shows one such read can stop a month's close.
    **Decided 2026-11-08**: (a), before the database pass. *Built*: the census guard, every deciding read fixed, risk on the
    terms' rule by a forward migration (T13's rows), the clock-step cases written and owed to the database pass.

@@ -443,7 +443,12 @@ class NoSingleInstanceAssumptionRulesTest {
                     // database clock, so ten sweepers delete disjoint batches, a row is deleted once, and a crash rolls the
                     // batch back for the next tick. Register row: DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper race is
                     // RetentionSweepDatabaseTest#tenSweepersDeleteDisjointBatches (owed, C14).
-                    "com.finapp.app.eventing.RetentionSweepSchedule");
+                    "com.finapp.app.eventing.RetentionSweepSchedule",
+                    // P15-TSK-035: the rule's other half - one walker at a time, by PostgreSQL: each batch claims the census's
+                    // one head row FOR UPDATE SKIP LOCKED, so ten instances judge each entry once, and a contender does nothing
+                    // that tick. Register row: DISTRIBUTED_EXECUTION.md section 3; the ten-walker race is
+                    // SourceCensusDatabaseTest#tenWalkersJudgeEachEntryOnce (owed, C14).
+                    "com.finapp.app.accounting.SourceCensusSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =
