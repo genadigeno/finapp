@@ -67,8 +67,8 @@ spec:
             - --run-service-proxy=false
             - --bgp-graceful-restart=false
             # Its pod-event syncs miss a short-lived pod's address (seen: a Job pod connecting within seconds, refused by the target's ipset, no sync until
-            # the five-minute default). Five seconds keeps a new pod's window shorter than a JVM's start.
-            - --iptables-sync-period=5s
+            # the five-minute default). One second keeps the window a new pod is unreachable in under a JVM's start.
+            - --iptables-sync-period=1s
             - --v=1
           env:
             - name: NODE_NAME
