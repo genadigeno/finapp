@@ -1,6 +1,8 @@
 package com.finapp.identity;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -24,7 +26,7 @@ public interface RecoveryRequestStore<T> {
      *
      * @return how many were cancelled; zero for an unknown identifier and for an identity with none
      */
-    int cancelLiveFor(T unitOfWork, LoginIdentifier login, Instant at);
+    int cancelLiveFor(T unitOfWork, LoginIdentifier login);
 
     /**
      * Creates a request, but only for an identity that can actually recover.
@@ -35,8 +37,13 @@ public interface RecoveryRequestStore<T> {
      * {@code INSERT … SELECT}. The caller receives the same answer and pays the same work in every
      * case, so {@code POST /v1/recoveries} discloses nothing ({@code INV-IDN-07}).
      *
-     * @param notBefore the cooling-off boundary; an identity that initiated after this instant is
-     *     refused, which bounds how often an attacker can make somebody's inbox ring
+     * <p><strong>No instant crosses this port</strong> ({@code P15-TSK-038}, ADR-0014): the database
+     * stamps {@code initiated_at} and {@code expires_at} and judges the cooling-off, all at one
+     * {@code now()}. The durations are the policy; an instance's clock is not an input.
+     *
+     * @param lifetime how long the token stands, from the database's {@code now()}
+     * @param coolingOff how long after an initiation another is refused, which bounds how often an
+     *     attacker can make somebody's inbox ring
      * @return the request, or empty for every reason there could be one
      */
     Optional<RecoveryRequest> initiate(
@@ -44,9 +51,8 @@ public interface RecoveryRequestStore<T> {
             LoginIdentifier login,
             ContactChannelKind kind,
             SingleUseToken token,
-            Instant at,
-            Instant expiresAt,
-            Instant notBefore);
+            Duration lifetime,
+            Duration coolingOff);
 
     /**
      * Spends a token, if everything about the request is still true.
@@ -55,8 +61,25 @@ public interface RecoveryRequestStore<T> {
      * the request was bound to</strong> — the last being the concurrent-recovery-and-login control.
      * The row count is the outcome, so ten instances presenting one token produce one completion.
      *
-     * @return the identity whose credential may now be replaced, or empty for every reason
+     * <p>The expiry is judged and the completion stamped in the statement, on the database's clock
+     * ({@code P15-TSK-038}).
+     *
+     * @return the request and the instant the database completed it, or empty for every reason
      */
-    Optional<RecoveryRequest> consume(
-            T unitOfWork, RecoveryRequestId id, SingleUseToken presented, Instant at);
+    Optional<Consumed> consume(T unitOfWork, RecoveryRequestId id, SingleUseToken presented);
+
+    /**
+     * What spending a token answers.
+     *
+     * @param request the identity whose credential may now be replaced
+     * @param completedAt the row's own {@code completed_at}, the database's reading: the instant the
+     *     caller records beside it, so the audit record and the row carry one clock
+     */
+    record Consumed(RecoveryRequest request, Instant completedAt) {
+
+        public Consumed {
+            Objects.requireNonNull(request, "request must not be null");
+            Objects.requireNonNull(completedAt, "completedAt must not be null");
+        }
+    }
 }

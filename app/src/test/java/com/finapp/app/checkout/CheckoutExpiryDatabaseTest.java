@@ -36,6 +36,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -50,8 +51,9 @@ import org.junit.jupiter.api.Test;
  * landing on an expired offer, the merchant credited, the order born — is
  * {@code CheckoutFlowDatabaseTest}'s, because it needs the whole flow to be real.
  *
- * <p>The clock is <strong>injected and moved</strong>, never slept against: a test that waits
- * thirty minutes is a test nobody runs.
+ * <p>The clock is <strong>moved</strong>, never slept against: a test that waits thirty minutes is a
+ * test nobody runs. Since `P15-TSK-038` the sweeper holds no clock and judges on the database's, so
+ * the clock moved here is the database's, for the sweep's own session ({@code DatabaseClockFrame}).
  */
 @Tag("database")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
@@ -72,9 +74,13 @@ class CheckoutExpiryDatabaseTest {
     @DisplayName("an OPEN session past its deadline becomes EXPIRED - the state a filter"
             + " cannot be: audited, in history, and announced")
     void anOverdueOpenSessionExpires() throws Exception {
-        Clock late = pastTheDeadline();
+        Duration late = pastTheDeadline();
         drain(late);
         CheckoutSession session = insertOpen();
+        assertThat(Instant.now(CLOCK))
+                .as("precondition: this instance's clock still reads the offer as live, so only the database's"
+                        + " clock, moved for the sweep's session, can have ended it (P15-TSK-038)")
+                .isBefore(session.expiresAt());
 
         CheckoutExpirySweeper.SweepResult result = sweeperAt(late).sweep();
 
@@ -101,7 +107,7 @@ class CheckoutExpiryDatabaseTest {
         // purpose - a declined payment is the PAYMENT's state - so nothing else can ever end
         // this row, and without this edge it is stuck for ever (ADR-0044's doctrine).
         CheckoutSession session = insertOpen();
-        CheckoutSession pending = session.confirm(CLOCK, IDS.next());
+        CheckoutSession pending = session.confirm(Instant.now(CLOCK), IDS.next());
         runAsPlatform(uow -> sessions.transition(uow, session, pending));
 
         // Grace ZERO, so the only thing being tested is that the state is swept at all.
@@ -120,7 +126,7 @@ class CheckoutExpiryDatabaseTest {
             + " OPEN one beside it expires - a provider answering slowly is not a dead offer")
     void theGraceProtectsAPaymentInFlight() throws Exception {
         CheckoutSession stillPaying = insertOpen();
-        CheckoutSession pending = stillPaying.confirm(CLOCK, IDS.next());
+        CheckoutSession pending = stillPaying.confirm(Instant.now(CLOCK), IDS.next());
         runAsPlatform(uow -> sessions.transition(uow, stillPaying, pending));
         CheckoutSession nobodyPaid = insertOpen();
 
@@ -128,10 +134,7 @@ class CheckoutExpiryDatabaseTest {
         // the one with a payment in flight is not. Expiring the second would be HARMLESS - the
         // EXPIRED -> COMPLETED_LATE edge catches the capture - but it would make the honest
         // exception the ordinary case, which is the whole point of the margin.
-        sweeperAt(
-                        Clock.offset(CLOCK, OFFER_WINDOW.plusMinutes(1)),
-                        Duration.ofMinutes(10))
-                .sweep();
+        sweeperAt(OFFER_WINDOW.plusMinutes(1), Duration.ofMinutes(10)).sweep();
 
         assertThat(statusOf(nobodyPaid.id())).isEqualTo("EXPIRED");
         assertThat(statusOf(stillPaying.id())).isEqualTo("PAYMENT_PENDING");
@@ -143,9 +146,9 @@ class CheckoutExpiryDatabaseTest {
     void aLiveOfferIsNotSwept() throws Exception {
         CheckoutSession session = insertOpen();
 
-        // At the REAL clock, nothing anywhere in the schema is overdue by this offer's window,
-        // so this tick's zero is about every live offer rather than only this one.
-        CheckoutExpirySweeper.SweepResult result = sweeperAt(CLOCK).sweep();
+        // At the REAL database clock, nothing anywhere in the schema is overdue by this offer's
+        // window, so this tick's zero is about every live offer rather than only this one.
+        CheckoutExpirySweeper.SweepResult result = sweeperAt(Duration.ZERO).sweep();
 
         assertThat(result.expired()).isZero();
         assertThat(statusOf(session.id())).isEqualTo("OPEN");
@@ -158,7 +161,7 @@ class CheckoutExpiryDatabaseTest {
     @DisplayName("TEN SWEEPERS on one overdue session produce ONE expiry - one history row,"
             + " one audit record, one event, and nine honest skips")
     void tenSweepersProduceOneExpiry() throws Exception {
-        Clock late = pastTheDeadline();
+        Duration late = pastTheDeadline();
         drain(late);
         CheckoutSession session = insertOpen();
 
@@ -205,8 +208,8 @@ class CheckoutExpiryDatabaseTest {
             + " leaves no trace at all")
     void aSweeperRacingAConfirmationHasOneWinner() throws Exception {
         CheckoutSession session = insertOpen();
-        Clock late = pastTheDeadline();
-        CheckoutSession confirmed = session.confirm(CLOCK, IDS.next());
+        Duration late = pastTheDeadline();
+        CheckoutSession confirmed = session.confirm(Instant.now(CLOCK), IDS.next());
         // A REAL grace, and the first draft of this test is why. With grace ZERO the sweeper
         // can win the race for OPEN -> EXPIRED *and*, having lost it, still take the
         // PAYMENT_PENDING row the confirmation just produced - two legitimate transitions in
@@ -262,7 +265,7 @@ class CheckoutExpiryDatabaseTest {
     @DisplayName("a session already EXPIRED is a SKIP, not a second expiry - and a terminal"
             + " one is never a candidate at all")
     void alreadyEndedSessionsAreNotSweptAgain() throws Exception {
-        Clock late = pastTheDeadline();
+        Duration late = pastTheDeadline();
         drain(late);
         CheckoutSession session = insertOpen();
         sweeperAt(late).sweep();
@@ -281,7 +284,7 @@ class CheckoutExpiryDatabaseTest {
     @DisplayName("the batch bounds the tick - a sweeper never takes more rows than it was told"
             + " to, so a backlog drains over ticks rather than in one transaction storm")
     void theBatchBoundsTheTick() throws Exception {
-        Clock late = pastTheDeadline();
+        Duration late = pastTheDeadline();
         drain(late);
         for (int i = 0; i < 4; i++) {
             insertOpen();
@@ -296,7 +299,7 @@ class CheckoutExpiryDatabaseTest {
     // ----------------------------------------------------------------- fixtures
 
     /**
-     * Expires everything already overdue at {@code clock}, so the next tick's COUNT is about
+     * Expires everything already overdue at {@code frame}, so the next tick's COUNT is about
      * this test's own row.
      *
      * <p>The sweeper is deliberately unscoped — it is the platform's, not a tenant's — so a
@@ -304,10 +307,10 @@ class CheckoutExpiryDatabaseTest {
      * candidates. Draining first is the honest way to assert on a tick's tally; scoping the
      * query to make a test easier would be testing a sweeper the platform does not run.
      */
-    private void drain(Clock clock) {
+    private void drain(Duration frame) {
         // Twice: the first pass may itself leave rows another suite committed mid-pass.
-        sweeper(clock, Duration.ZERO, 500).sweep();
-        sweeper(clock, Duration.ZERO, 500).sweep();
+        sweeper(frame, Duration.ZERO, 500).sweep();
+        sweeper(frame, Duration.ZERO, 500).sweep();
     }
 
     private CheckoutSession insertOpen() throws Exception {
@@ -316,7 +319,7 @@ class CheckoutExpiryDatabaseTest {
         CheckoutSession session =
                 CheckoutSession.open(
                         IDS,
-                        CLOCK,
+                        Instant.now(CLOCK),
                         IDS.next(),
                         AMOUNT,
                         "Two coffees and a pastry",
@@ -327,53 +330,45 @@ class CheckoutExpiryDatabaseTest {
         return session;
     }
 
-    /** A clock a minute past the offer window, so an offer opened now is already dead. */
-    private static Clock pastTheDeadline() {
-        return Clock.offset(CLOCK, OFFER_WINDOW.plusMinutes(1));
+    /** The database's clock a minute past the offer window, so an offer opened now is already dead. */
+    private static Duration pastTheDeadline() {
+        return OFFER_WINDOW.plusMinutes(1);
     }
 
-    private CheckoutExpirySweeper sweeperAt(Clock clock) {
-        return sweeper(clock, Duration.ZERO, 50);
+    private CheckoutExpirySweeper sweeperAt(Duration frame) {
+        return sweeper(frame, Duration.ZERO, 50);
     }
 
-    private CheckoutExpirySweeper sweeperAt(Clock clock, Duration grace) {
-        return sweeper(clock, grace, 50);
+    private CheckoutExpirySweeper sweeperAt(Duration frame, Duration grace) {
+        return sweeper(frame, grace, 50);
     }
 
-    private CheckoutExpirySweeper sweeper(Clock clock, Duration grace, int batchSize) {
+    private CheckoutExpirySweeper sweeper(Duration frame, Duration grace, int batchSize) {
         return new CheckoutExpirySweeper(
-                testRunner(),
+                testRunner(frame),
                 sessions,
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                clock,
                 grace,
                 batchSize,
                 // This suite's sessions carry no real intents: the cancel is the flow suite's.
                 com.finapp.checkout.UndispatchedPayments.none());
     }
 
-    /** One transaction per call, on the application role — the production runner's contract. */
-    private static CheckoutTransactionRunner testRunner() {
+    /** One transaction per call on the application role and the moved clock: the production runner's contract. */
+    private static CheckoutTransactionRunner testRunner(Duration frame) {
         return new CheckoutTransactionRunner() {
             @Override
             public <R> R inTransaction(Function<Connection, R> work) {
-                try (Connection unitOfWork = DatabaseRoles.application()) {
-                    unitOfWork.setAutoCommit(false);
-                    try {
-                        R result = work.apply(unitOfWork);
-                        unitOfWork.commit();
-                        return result;
-                    } catch (RuntimeException failure) {
-                        unitOfWork.rollback();
-                        throw failure;
-                    }
-                } catch (SQLException failure) {
-                    throw new IllegalStateException(failure);
-                }
+                return com.finapp.platform.testing.database.DatabaseClockFrame.inOneTransaction(frame, work);
             }
         };
+    }
+
+    @BeforeAll
+    static void installTheMovedClock() {
+        com.finapp.platform.testing.database.DatabaseClockFrame.install();
     }
 
     // ----------------------------------------------------------------- reads

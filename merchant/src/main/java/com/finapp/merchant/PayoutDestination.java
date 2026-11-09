@@ -158,12 +158,16 @@ public final class PayoutDestination {
      * A second operator approves: the cooling-off starts now and its deadline is pinned on the
      * row, so a later change to the configured period never alters an approved change.
      *
+     * @param databaseNow the database's clock, read under the row's lock ({@code P15-TSK-038},
+     *     ADR-0014): the deadline every instance's sweep judges on the same clock, so a skewed
+     *     instance can neither extend the cooling-off nor shorten it
      * @throws PayoutDestinationSelfApprovalException the approver is the proposer
      *     ({@code INV-AUD-04})
      * @throws IllegalPayoutDestinationTransitionException the change is not {@code PROPOSED}
      */
-    public PayoutDestination approve(String approver, Clock clock, Duration coolingOff) {
+    public PayoutDestination approve(String approver, Instant databaseNow, Duration coolingOff) {
         Objects.requireNonNull(approver, "approver must not be null");
+        Objects.requireNonNull(databaseNow, "databaseNow must not be null");
         Objects.requireNonNull(coolingOff, "coolingOff must not be null");
         if (coolingOff.isNegative() || coolingOff.isZero()) {
             throw new IllegalArgumentException("the cooling-off must be positive");
@@ -172,7 +176,11 @@ public final class PayoutDestination {
         if (approver.equals(proposedBy)) {
             throw new PayoutDestinationSelfApprovalException();
         }
-        Instant now = Instant.now(clock);
+        // The deadline runs from the database's reading, never from the floor below: a proposer's
+        // fast clock must not lengthen the control. approved_at is floored at the proposal (the
+        // P1-TSK-031 drift, CheckoutSession's idiom): proposed_at is business time from the
+        // proposing instance's clock, and the database's reading may stand behind it.
+        Instant approvedAt = databaseNow.isBefore(proposedAt) ? proposedAt : databaseNow;
         return new PayoutDestination(
                 id,
                 merchantId,
@@ -183,8 +191,8 @@ public final class PayoutDestination {
                 proposedAt,
                 proposalReason,
                 approver,
-                now,
-                now.plus(coolingOff),
+                approvedAt,
+                databaseNow.plus(coolingOff),
                 null,
                 null,
                 null,
@@ -216,12 +224,13 @@ public final class PayoutDestination {
     /**
      * The platform makes the approved destination effective once its cooling-off has elapsed.
      *
+     * @param databaseNow the database's clock, read under the row's lock ({@code P15-TSK-038})
      * @throws IllegalStateException the cooling-off is still running — `V006`'s
      *     {@code effective_at >= cooling_off_until} is the same rule for every other writer
      */
-    public PayoutDestination effect(Clock clock) {
+    public PayoutDestination effect(Instant databaseNow) {
         requireEdge(PayoutDestinationStatus.EFFECTIVE);
-        Instant now = Instant.now(clock);
+        Instant now = Objects.requireNonNull(databaseNow, "databaseNow must not be null");
         if (now.isBefore(coolingOffUntil)) {
             throw new IllegalStateException(
                     "a payout destination takes effect only once its cooling-off has elapsed");
@@ -244,10 +253,14 @@ public final class PayoutDestination {
                 null);
     }
 
-    /** A later destination took effect in this one's place, in the same transaction. Terminal. */
-    public PayoutDestination supersede(Clock clock) {
+    /**
+     * A later destination took effect in this one's place, in the same transaction. Terminal.
+     *
+     * @param databaseNow the database's clock, the same reading the successor's effect uses
+     */
+    public PayoutDestination supersede(Instant databaseNow) {
         requireEdge(PayoutDestinationStatus.SUPERSEDED);
-        Instant now = Instant.now(clock);
+        Instant now = Objects.requireNonNull(databaseNow, "databaseNow must not be null");
         return new PayoutDestination(
                 id,
                 merchantId,

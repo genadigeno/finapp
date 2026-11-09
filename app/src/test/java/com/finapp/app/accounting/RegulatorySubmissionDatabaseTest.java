@@ -21,11 +21,13 @@ import com.finapp.accounting.JdbcReturnsAReopenOvertakes;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.accounting.RegulatoryAdapters;
+import com.finapp.accounting.RegulatoryAnswerReading;
 import com.finapp.accounting.RegulatoryForm;
 import com.finapp.accounting.RegulatoryFormLine;
 import com.finapp.accounting.RegulatoryObligationId;
 import com.finapp.accounting.RegulatoryObligationStatus;
 import com.finapp.accounting.RegulatoryObligations;
+import com.finapp.accounting.RegulatoryReportingProvider;
 import com.finapp.accounting.RegulatoryReportingProvider.Answer;
 import com.finapp.accounting.RegulatorySubmissionId;
 import com.finapp.accounting.RegulatorySubmissionStore;
@@ -44,9 +46,12 @@ import com.finapp.accounting.testing.RegulatoryWorld;
 import com.finapp.accounting.testing.ScriptedRegulatoryProvider;
 import com.finapp.accounting.testing.TestReportDefinition;
 import com.finapp.platform.audit.JdbcAuditWriter;
+import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.sharedkernel.correlation.Correlation;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
@@ -70,6 +75,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -90,6 +96,7 @@ import org.junit.jupiter.api.Test;
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
 @DisplayName("the regulatory framework against the database (P14-TSK-018)")
+@SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class RegulatorySubmissionDatabaseTest {
 
     private static final int INSTANCES = 10;
@@ -132,9 +139,15 @@ class RegulatorySubmissionDatabaseTest {
     private final RegulatorySubmissionDriver driver = new RegulatorySubmissionDriver(machine, TRANSACTIONS, metrics, new CloseRunMetrics(new SimpleMeterRegistry()), AccountingFlowScope.NONE, LEASE, INTERVAL, 100);
 
     @BeforeAll
-    static void aChartInForce() {
+    static void aChartInForce() throws SQLException {
         AccountingPeriodFixture.openJanuaryAndFebruary();
         PeriodCloseFixture.mappingInForce();
+        ShadowClock.install();
+    }
+
+    @AfterAll
+    static void dropTheShadowClock() throws SQLException {
+        ShadowClock.uninstall();
     }
 
     // ------------------------------------------------------------------ the ladder
@@ -938,6 +951,99 @@ class RegulatorySubmissionDatabaseTest {
         assertThat(rowOf(sent.id()).nextInquiryAt().orElseThrow()).isAfter(NOW.instant().plusSeconds(60));
         Optional<RegulatorySubmissions.Claimed> notYet = inScope(Actor.SYSTEM, uow -> machine.claim(uow, sent.id(), LEASE));
         assertThat(notYet).as("the permit is a lease ahead, and no lock is left to skip").isEmpty();
+    }
+
+    @Test
+    @DisplayName("what stands follows the order the rows were recorded in: a return born on a clock stepped back behind an earlier one comes after it, and the cursor of the earlier finds it (P14-REM-009; on prepared_at it was skipped)")
+    void aWalkOfWhatStandsSurvivesABackwardStep() {
+        Case earlier = drafted();
+        YearMonth month = closedMonth();
+        issued(month);
+        Form form = activeForm();
+        Actor preparer = person();
+        AccountingPeriodId period = id(month);
+        RegulatorySubmissions.Acted later = ShadowClock.behind(preparer, uow -> machine.draft(uow, new RegulatorySubmissions.Draft(form.obligation(), period, Optional.empty(), REASON), preparer, correlation()));
+        assertThat(rowOf(later.id()).preparedAt()).as("the precondition: the later return is stamped before the earlier one - the step is real").isBefore(rowOf(earlier.id()).preparedAt());
+
+        assertThat(walkAfter(earlier.id())).as("after the earlier one's cursor").contains(later.id());
+        assertThat(walkAfter(later.id())).as("no row twice: the later one's cursor is past the earlier").doesNotContain(earlier.id());
+        assertThat(walkFromTheStart()).as("a walk from the first page").containsSubsequence(earlier.id(), later.id());
+    }
+
+    @Test
+    @DisplayName("the newest answers are the last recorded: an answer kept on a clock stepped back behind an earlier one is the newest, and a read limited to one serves it (P14-REM-009; on received_at it served the other)")
+    void theNewestAnswersAreTheLastRecorded() {
+        Case sent = submitted();
+        UUID earlier = IDS.next();
+        UUID later = IDS.next();
+        inScope(Actor.SYSTEM, uow -> {
+            STORE.appendAnswer(uow, unknownAnswer(earlier, sent));
+            return null;
+        });
+        ShadowClock.behind(Actor.SYSTEM, uow -> {
+            STORE.appendAnswer(uow, unknownAnswer(later, sent));
+            return null;
+        });
+        List<RegulatorySubmissionStore.AnswerRow> both = inScope(Actor.SYSTEM, uow -> STORE.answers(uow, sent.id(), 2));
+        assertThat(both).extracting(RegulatorySubmissionStore.AnswerRow::id).as("oldest of them first, in the order they were recorded").containsExactly(earlier, later);
+        assertThat(both.get(1).receivedAt()).as("the precondition: the later answer is stamped before the earlier one - the step is real").isBefore(both.get(0).receivedAt());
+
+        List<RegulatorySubmissionStore.AnswerRow> newest = inScope(Actor.SYSTEM, uow -> STORE.answers(uow, sent.id(), 1));
+        assertThat(newest).extracting(RegulatorySubmissionStore.AnswerRow::id).containsExactly(later);
+    }
+
+    @Test
+    @DisplayName("recorded_order is frozen by grant: GENERATED ALWAYS still admits SET recorded_order = DEFAULT, which would draw a new number and move an old return to the end of the walk, and the application role is refused it on both tables (P14-REM-009; ConsentHistoryDatabaseTest's trap)")
+    void theRecordedOrderIsFrozenByGrant() {
+        Case born = drafted();
+        assertThatThrownBy(() -> asApplication("UPDATE accounting.regulatory_submission SET recorded_order = DEFAULT WHERE id = ?", born.id().value()))
+                .isInstanceOfSatisfying(SQLException.class, refused -> assertThat(refused.getSQLState()).isEqualTo(INSUFFICIENT_PRIVILEGE));
+        assertThatThrownBy(() -> asApplication("UPDATE accounting.regulatory_provider_answer SET recorded_order = DEFAULT WHERE submission_id = ?", born.id().value()))
+                .isInstanceOfSatisfying(SQLException.class, refused -> assertThat(refused.getSQLState()).isEqualTo(INSUFFICIENT_PRIVILEGE));
+    }
+
+    private static List<RegulatorySubmissionId> walkFromTheStart() {
+        List<RegulatorySubmissionStore.Row> rows = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 1000));
+        return rows.stream().map(RegulatorySubmissionStore.Row::id).toList();
+    }
+
+    private static List<RegulatorySubmissionId> walkAfter(RegulatorySubmissionId cursor) {
+        List<RegulatorySubmissionStore.Row> rows = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.of(cursor), 1000));
+        return rows.stream().map(RegulatorySubmissionStore.Row::id).toList();
+    }
+
+    private static RegulatorySubmissionStore.NewAnswer unknownAnswer(UUID id, Case sent) {
+        return new RegulatorySubmissionStore.NewAnswer(id, sent.id(), 1, RegulatoryAnswerReading.of(RegulatoryReportingProvider.CallKind.INQUIRE, Answer.unknown(Optional.empty(), "not yet".getBytes(StandardCharsets.UTF_8))), Optional.empty(), correlation());
+    }
+
+    @Test
+    @DisplayName("a number is not commit order, and that is the accepted window: a birth still uncommitted when a later number is served is missed by that walk, and the next walk serves it in its place (P14-REM-009)")
+    void aBirthCommittedBehindAServedNumberIsFoundByTheNextWalk() throws SQLException {
+        YearMonth firstMonth = closedMonth();
+        issued(firstMonth);
+        Form firstForm = activeForm();
+        YearMonth secondMonth = closedMonth();
+        issued(secondMonth);
+        Form secondForm = activeForm();
+        Actor preparer = person();
+        AccountingPeriodId firstPeriod = id(firstMonth);
+        try (Connection held = DatabaseRoles.application()) {
+            held.setAutoCommit(false);
+            RegulatorySubmissions.Acted uncommitted;
+            try (SecurityContext.Scope who = SecurityContext.enter(preparer);
+                    CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()))) {
+                uncommitted = machine.draft(held, new RegulatorySubmissions.Draft(firstForm.obligation(), firstPeriod, Optional.empty(), REASON), preparer, correlation());
+            }
+            Case served = draftedIn(secondMonth, secondForm);
+
+            assertThat(walkFromTheStart()).as("this walk").contains(served.id()).doesNotContain(uncommitted.id());
+            assertThat(walkAfter(served.id())).as("nothing past the cursor brings it back").doesNotContain(uncommitted.id());
+
+            held.commit();
+
+            assertThat(walkFromTheStart()).as("the next walk, in the order the numbers were drawn").containsSubsequence(uncommitted.id(), served.id());
+            assertThat(walkAfter(served.id())).as("the precondition: its number is below the one served").doesNotContain(uncommitted.id());
+        }
     }
 
     @Test

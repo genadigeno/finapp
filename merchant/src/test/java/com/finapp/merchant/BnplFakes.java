@@ -214,9 +214,9 @@ final class BnplFakes {
         }
 
         @Override
-        public boolean insertVersionIfNumberIsFree(Connection unitOfWork, FeeScheduleVersion version) {
+        public Optional<FeeScheduleVersion> insertVersionIfNumberIsFree(Connection unitOfWork, FeeScheduleVersion version) {
             versions.put(version.id(), version);
-            return true;
+            return Optional.of(version);
         }
 
         @Override
@@ -258,8 +258,7 @@ final class BnplFakes {
         }
 
         @Override
-        public Optional<FeeScheduleVersion> findEffectiveVersionFor(
-                Connection unitOfWork, MerchantId merchantId, Instant instant) {
+        public Optional<FeeScheduleVersion> findEffectiveVersionFor(Connection unitOfWork, MerchantId merchantId) {
             return Optional.empty();
         }
     }

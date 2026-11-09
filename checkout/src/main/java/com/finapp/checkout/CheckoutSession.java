@@ -135,18 +135,22 @@ public final class CheckoutSession {
     /**
      * A new offer, {@code OPEN}. The only door — no edge targets {@code OPEN}, at the aggregate
      * as at the schema, so birth is the one way in (the {@code PaymentIntent} shape).
+     *
+     * @param databaseNow the database's clock, read by the caller after its locks
+     *     ({@code P15-TSK-038}): the offer's birth, and with {@code expiresAt} a deadline every
+     *     instance judges on one clock
      */
     public static CheckoutSession open(
             IdGenerator ids,
-            Clock clock,
+            Instant databaseNow,
             UUID merchantRef,
             Money amount,
             String lineSummary,
             UUID feeScheduleVersionRef,
             CheckoutSessionToken token,
             Instant expiresAt) {
+        Objects.requireNonNull(databaseNow, "databaseNow must not be null");
         Objects.requireNonNull(token, "token must not be null");
-        Instant now = Instant.now(clock);
         return new CheckoutSession(
                 CheckoutSessionId.next(ids),
                 merchantRef,
@@ -159,8 +163,8 @@ public final class CheckoutSession {
                 Optional.empty(),
                 CheckoutSessionStatus.OPEN,
                 expiresAt,
-                now,
-                now);
+                databaseNow,
+                databaseNow);
     }
 
     /** Reconstitutes from storage. Applies the coherence; a corrupt row is refused at read. */
@@ -204,15 +208,17 @@ public final class CheckoutSession {
      * refuses a session that has already left {@code OPEN}, and the clock refuses one whose
      * deadline has passed while the sweeper has not yet arrived. See the class javadoc.
      *
+     * @param databaseNow the database's clock ({@code P15-TSK-038}): the deadline is one the
+     *     database stamped, so an instance's clock is never its judge
      * @throws CheckoutSessionExpiredException if the deadline has passed
      * @throws IllegalCheckoutSessionTransitionException if the session has left {@code OPEN}
      */
-    public CheckoutSession confirm(Clock clock, UUID intentRef) {
+    public CheckoutSession confirm(Instant databaseNow, UUID intentRef) {
         Objects.requireNonNull(intentRef, "intentRef must not be null");
-        if (hasExpired(clock)) {
+        if (hasExpired(databaseNow)) {
             throw new CheckoutSessionExpiredException();
         }
-        CheckoutSession moved = transitioned(CheckoutSessionStatus.PAYMENT_PENDING, clock);
+        CheckoutSession moved = transitionedAt(CheckoutSessionStatus.PAYMENT_PENDING, databaseNow);
         return moved.withIntent(intentRef);
     }
 
@@ -299,9 +305,13 @@ public final class CheckoutSession {
         return transitioned(CheckoutSessionStatus.COMPLETED_LATE, clock);
     }
 
-    /** The sweeper's act: {@code OPEN | PAYMENT_PENDING → EXPIRED}. */
-    public CheckoutSession expire(Clock clock) {
-        return transitioned(CheckoutSessionStatus.EXPIRED, clock);
+    /**
+     * The sweeper's act: {@code OPEN | PAYMENT_PENDING → EXPIRED}, at the database's reading taken
+     * under the row's lock ({@code P15-TSK-038}): the same instant the sweeper judged the deadline
+     * against, so the row and the record agree.
+     */
+    public CheckoutSession expire(Instant databaseNow) {
+        return transitionedAt(CheckoutSessionStatus.EXPIRED, databaseNow);
     }
 
     /** An offer nobody acted on, cancelled: {@code OPEN → ABANDONED}. */
@@ -310,6 +320,10 @@ public final class CheckoutSession {
     }
 
     private CheckoutSession transitioned(CheckoutSessionStatus to, Clock clock) {
+        return transitionedAt(to, Instant.now(clock));
+    }
+
+    private CheckoutSession transitionedAt(CheckoutSessionStatus to, Instant now) {
         if (!status.canTransitionTo(to)) {
             throw new IllegalCheckoutSessionTransitionException(status, to);
         }
@@ -318,7 +332,6 @@ public final class CheckoutSession {
         // instance's, or this one stepped back by time sync; ADR-0014: skew is bounded,
         // never zero), and a legal edge moments after the offer opened must not die on the
         // ordering the constructor and `V002`'s CHECK are right to refuse.
-        Instant now = Instant.now(clock);
         return new CheckoutSession(
                 id,
                 merchantRef,
@@ -371,9 +384,13 @@ public final class CheckoutSession {
      *
      * <p>A session can be expired by this measure and still read {@code OPEN}: the state is the
      * sweeper's to produce. Both answers are true at once and neither is the other's substitute.
+     *
+     * @param databaseNow the database's clock ({@code P15-TSK-038}): a deadline the database
+     *     stamped is judged on the database's clock, whichever instance is asking
      */
-    public boolean hasExpired(Clock clock) {
-        return !Instant.now(clock).isBefore(expiresAt);
+    public boolean hasExpired(Instant databaseNow) {
+        Objects.requireNonNull(databaseNow, "databaseNow must not be null");
+        return !databaseNow.isBefore(expiresAt);
     }
 
     /** Whether this session may still start something — the machine's half of the gate. */

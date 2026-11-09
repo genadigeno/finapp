@@ -185,9 +185,8 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
 
     @Override
     public java.util.List<CheckoutSession> findExpirable(
-            Connection unitOfWork, Instant openBefore, Instant pendingBefore, int limit) {
-        Objects.requireNonNull(openBefore, "openBefore must not be null");
-        Objects.requireNonNull(pendingBefore, "pendingBefore must not be null");
+            Connection unitOfWork, java.time.Duration paymentGrace, int limit) {
+        Objects.requireNonNull(paymentGrace, "paymentGrace must not be null");
         if (limit <= 0) {
             throw new IllegalArgumentException("limit must be positive: " + limit);
         }
@@ -203,16 +202,20 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
         //
         // Ordered by the deadline then the id - deterministic, so N sweepers walk the same
         // queue in the same order and contend on the oldest row rather than scattering.
+        //
+        // now(), NEVER A BOUND THE CALLER READ (P15-TSK-038, ADR-0014): a candidate list in its own
+        // short transaction with nothing to wait on, and now() is STABLE, so the partial index on
+        // expires_at serves it. The grace is the policy, bound as integer milliseconds.
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
                         "SELECT " + COLUMNS + " FROM checkout.checkout_session"
-                                + " WHERE (status = 'OPEN' AND expires_at <= ?)"
-                                + "    OR (status = 'PAYMENT_PENDING' AND expires_at <= ?)"
+                                + " WHERE (status = 'OPEN' AND expires_at <= now())"
+                                + "    OR (status = 'PAYMENT_PENDING'"
+                                + "        AND expires_at <= now() - (? * INTERVAL '1 millisecond'))"
                                 + " ORDER BY expires_at, id"
                                 + " LIMIT ?")) {
-            select.setTimestamp(1, Timestamp.from(openBefore));
-            select.setTimestamp(2, Timestamp.from(pendingBefore));
-            select.setInt(3, limit);
+            select.setLong(1, paymentGrace.toMillis());
+            select.setInt(2, limit);
             try (ResultSet rows = select.executeQuery()) {
                 java.util.List<CheckoutSession> expirable = new java.util.ArrayList<>();
                 while (rows.next()) {

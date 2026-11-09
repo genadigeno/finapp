@@ -84,8 +84,9 @@ public interface KycCaseStore<T> {
      *
      * <p>`P2-TSK-015`'s linking read: a declaration pins the owner's <em>current</em>
      * verification, which is the open case while one runs and the latest decided case
-     * otherwise. Ordered by {@code id}, because a UUIDv7 is time-ordered by construction
-     * (ADR-0013) — the one ordering a clock correction cannot reshuffle.
+     * otherwise. Ranked by {@code case_order}, a sequence drawn at the insert (`P15-TSK-037`, kyc
+     * {@code V012}), the one order no clock - the database's or a minting instance's - can
+     * reshuffle; a case from before {@code V012} ranks below every numbered one, by its id.
      */
     Optional<KycCase> findLatestFor(T unitOfWork, UUID customerId);
 

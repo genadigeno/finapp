@@ -1,0 +1,22 @@
+# Not the catalogue, on purpose. The test run that reads this file proves the module plans whatever file it
+# is given, so a list inside the module could not pass: the names, class and retention here match nothing
+# real. infra/kafka/topics.yaml is the catalogue.
+classes:
+  fixture-class:
+    partitions: 2
+    replication-factor: 3
+    config:
+      min.insync.replicas: "2"
+      cleanup.policy: delete
+      retention.ms: "1234567"
+
+topics:
+  fixture.one: fixture-class
+
+principals:
+  application:
+    topics: [Read]
+    groups:
+      prefix: fixture.
+      operations: [Read]
+    cluster: []

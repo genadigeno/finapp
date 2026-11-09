@@ -42,7 +42,7 @@ public interface AccountingPeriodStore {
     /** The earliest period not yet {@code CLOSED} - the close's backlog. Unlocked. */
     Optional<PeriodRow> oldestUnclosed(Connection unitOfWork);
 
-    /** Today, UTC, on the database's clock - what {@code finapp.accounting.period.open.age} measures from, so every instance reads one number (`P14-TSK-020`). */
+    /** Today, UTC, on the database's clock, read when this is called - what the lock's grace is judged on, the month the open leg and a prior-period correction take (`P14-REM-009`), and what {@code finapp.accounting.period.open.age} measures from, so every instance reads one number (`P14-TSK-020`). */
     LocalDate today(Connection unitOfWork);
 
     /** The latest {@code limit} periods, newest first. Unlocked. */

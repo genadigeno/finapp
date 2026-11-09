@@ -149,7 +149,8 @@ public final class RoutingAdministration {
     /** The acceptance: the minted version and its audit record, one commit under the key. */
     private CommandResult accept(
             Connection uow, NewVersion request, Actor actor, Correlation correlation) {
-        RoutingPolicyVersion version = mintVersion(uow, request, actor);
+        Minted minted = mintVersion(uow, request, actor);
+        RoutingPolicyVersion version = minted.stored();
         audit.append(
                 uow,
                 new AuditRecord(
@@ -167,7 +168,7 @@ public final class RoutingAdministration {
                         Optional.of(
                                 "version=" + version.version()
                                         + ", rules=" + version.rules().size()
-                                        + ", effectiveFrom=" + version.effectiveFrom())));
+                                        + ", " + effectiveFromForAudit(version.effectiveFrom(), minted.asked()))));
         return CommandResult.succeeded(
                 StoredResponse.of(
                         version.id().value().toString().getBytes(StandardCharsets.UTF_8),
@@ -283,7 +284,19 @@ public final class RoutingAdministration {
         return new Explanation(decision, version);
     }
 
-    private RoutingPolicyVersion mintVersion(
+    /** A minted version as the insert stored it, and the instant the request asked for it to start. */
+    private record Minted(RoutingPolicyVersion stored, Instant asked) {}
+
+    /**
+     * The audit's start (`P15-TSK-037`): the instant stored; and where the insert's floor moved it, the instant asked for too, so
+     * the record says both. Compared past the column's microsecond, whose rounding is not a floor.
+     */
+    static String effectiveFromForAudit(Instant stored, Instant asked) {
+        return "effectiveFrom=" + stored
+                + (stored.isAfter(asked.plus(1, java.time.temporal.ChronoUnit.MICROS)) ? ", askedEffectiveFrom=" + asked : "");
+    }
+
+    private Minted mintVersion(
             Connection unitOfWork, NewVersion request, Actor actor) {
         for (int attempt = 1; attempt <= MAX_MINTING_ATTEMPTS; attempt++) {
             RoutingPolicyVersion candidate =
@@ -295,8 +308,9 @@ public final class RoutingAdministration {
                             actor.id(),
                             request.reason(),
                             clock);
-            if (routing.insertVersionIfNumberIsFree(unitOfWork, candidate)) {
-                return candidate;
+            Optional<RoutingPolicyVersion> stored = routing.insertVersionIfNumberIsFree(unitOfWork, candidate);
+            if (stored.isPresent()) {
+                return new Minted(stored.get(), candidate.effectiveFrom());
             }
         }
         throw new PaymentsStorageException(

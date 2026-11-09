@@ -1,6 +1,6 @@
 package com.finapp.identity;
 
-import java.time.Instant;
+import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -13,15 +13,20 @@ import java.util.Optional;
  */
 public interface ContactChannelStore<T> {
 
-    /** Adds an unverified channel carrying a pending challenge. */
-    void add(T unitOfWork, ContactChannel channel, SingleUseToken challenge, Instant expiresAt);
+    /**
+     * Adds an unverified channel carrying a pending challenge.
+     *
+     * @param lifetime how long the challenge stands, from the database's {@code now()}: the bound
+     *     the database judges at {@link #verify} is one the database stamped ({@code P15-TSK-038})
+     */
+    void add(T unitOfWork, ContactChannel channel, SingleUseToken challenge, Duration lifetime);
 
     /**
      * Spends a verification challenge.
      *
      * <p>Conditional on the challenge being live, so the row count is the outcome and ten instances
-     * presenting one token produce one verification. Also conditional on the channel not already
-     * being verified: a second verification would reset {@code verified_at}, and
+     * presenting one token produce one verification. Judged and stamped on the database's clock
+     * ({@code P15-TSK-038}). Also conditional on the channel not already being verified: a second verification would reset {@code verified_at}, and
      * {@code verifiedFor} - the input to the "recently changed channel" abuse case - would then
      * report a fresh channel as old.
      *
@@ -34,7 +39,7 @@ public interface ContactChannelStore<T> {
      *     rolls back to a savepoint before throwing. Not one of the reasons above, because it is
      *     reachable only by presenting a live challenge - so it tells nobody without one anything
      */
-    Optional<ContactChannel> verify(T unitOfWork, SingleUseToken presented, Instant at);
+    Optional<ContactChannel> verify(T unitOfWork, SingleUseToken presented);
 
     /** The identity's verified channel of that kind, if it has one. */
     Optional<ContactChannel> findVerified(T unitOfWork, IdentityId identityId, ContactChannelKind kind);

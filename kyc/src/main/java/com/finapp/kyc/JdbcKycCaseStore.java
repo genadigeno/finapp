@@ -29,6 +29,17 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
     /** PostgreSQL SQLStates. Locale-independent, unlike the messages. */
     private static final String UNIQUE_VIOLATION = "23505";
 
+    /**
+     * A customer's latest case: ranked by {@code case_order}, a sequence drawn at the insert under {@code
+     * kyc_case_one_open_per_customer} (kyc {@code V012}, `P15-TSK-037`). The {@code id} is a UUIDv7 minted from an
+     * instance's clock (ADR-0013), time-ordered only while no instance's clock moved; it ranked here until then and now
+     * only breaks a tie among rows from before that migration. The {@code opened_at} column is display, not ordering.
+     */
+    static final String LATEST_FOR_CUSTOMER =
+            "SELECT id, customer_id, case_kind, status, policy_version, opened_at,"
+                    + " status_changed_at FROM " + TABLE
+                    + " WHERE customer_id = ? ORDER BY case_order DESC NULLS LAST, id DESC LIMIT 1";
+
     @Override
     public Opening openOrConverge(Connection unitOfWork, KycCase fresh) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
@@ -200,13 +211,7 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
     public Optional<KycCase> findLatestFor(Connection unitOfWork, UUID customerId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(customerId, "customerId must not be null");
-        // Ordered by id: a UUIDv7 is time-ordered by construction (ADR-0013), which no clock
-        // correction can reshuffle - the opened_at column is display, not ordering.
-        try (PreparedStatement select =
-                unitOfWork.prepareStatement(
-                        "SELECT id, customer_id, case_kind, status, policy_version, opened_at,"
-                                + " status_changed_at FROM " + TABLE
-                                + " WHERE customer_id = ? ORDER BY id DESC LIMIT 1")) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(LATEST_FOR_CUSTOMER)) {
             select.setObject(1, customerId);
             try (ResultSet row = select.executeQuery()) {
                 if (!row.next()) {

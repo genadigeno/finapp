@@ -54,11 +54,19 @@ public interface PayoutDestinationStore<T> {
     Optional<PayoutDestination> findEffectiveForShare(T unitOfWork, MerchantId merchant);
 
     /**
-     * Approved changes whose cooling-off has elapsed at {@code now}, oldest deadline first, at
-     * most {@code limit} — the effectuation sweep's candidates. A candidate is a hint, never a
-     * judgement: the sweep re-reads it locked and re-judges it against the clock.
+     * Approved changes whose cooling-off has elapsed at the database's {@code now()}, oldest
+     * deadline first, at most {@code limit} — the effectuation sweep's candidates. A candidate is a
+     * hint, never a judgement: the sweep re-reads it locked and re-judges it against the database's
+     * clock ({@code P15-TSK-038}, ADR-0014: no instance's clock is an input).
      */
-    List<PayoutDestination> findDue(T unitOfWork, Instant now, int limit);
+    List<PayoutDestination> findDue(T unitOfWork, int limit);
+
+    /**
+     * The database's clock, read <strong>as its own statement after the caller's lock</strong>
+     * ({@code P15-TSK-038}; {@code CheckoutSessionStore.databaseNow}'s form): the instant an approval
+     * pins a cooling-off from and an effectuation judges it against.
+     */
+    Instant databaseNow(T unitOfWork);
 
     /**
      * Applies {@code after}'s lifecycle columns conditionally — {@code WHERE status = ?} on the

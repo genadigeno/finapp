@@ -304,6 +304,8 @@ change — a drift check is a scheduled plan in a real environment).
 | `registry` | ECR repositories with immutable tags, scan on push, lifecycle rules | `-016` |
 | `observability` | Log and trace retention buckets, alerting endpoints (placeholders) | `-016` |
 
+*(Corrected by `P15-TSK-015`, 2026-11-09, wherever this plan says backups are under a separate key (this table, §9.2's T7 and §12's backup row): RDS encrypts its automated backups and snapshots with the instance's key and offers no setting, and within one account and region an AWS Backup vault's key does not change that. A separate key needs a copy across an account or region, which is what the module builds; point-in-time recovery stays under the volume's key. `THREAT_MODEL.md` §6 item 23.)*
+
 **Verification without an account**: `terraform fmt -check`, `terraform validate`, `tflint` (pinned), `trivy config`
 (the pinned scanner) and **`terraform test` with mock providers** asserting the security properties (encryption on, public
 access off, deletion protection on, Multi-AZ on, `max_connections` equal to the application's declaration). **Never
@@ -792,7 +794,7 @@ Recommended dispositions, for the owner's ratification (C15); `P15-TSK-002` appl
 | `X-TSK-015` callbacks as hints for the Phase 5 and 7 providers | Scheduled into this phase on ratification, as its own item after `-001` (security, T8) |
 | `X-TSK-014` explicit scale on pre-Phase-9 amount events | `-027` (cut candidate) |
 | PI-012…PI-015 | `-033` (PI-013, PI-014's production defects) and `P15-TST-002` (PI-012, PI-014's suites, PI-015) |
-| Time decided on an instance's clock: the lock's grace (A4-F1) | **`P14-REM-009`'s** (the completion gate's entry, `PLANNED`, "Phase 15 at the latest"): scheduled by the owner inside this phase, recommended before `P15-TST-002` so its database cases run in the pass *(read "recommended into `-033`" until the gate's merge was taken in, 2026-11-07)* |
+| Time decided on an instance's clock: the lock's grace (A4-F1) | **`P14-REM-009`'s** (the completion gate's entry, `PLANNED`, "Phase 15 at the latest"): scheduled by the owner inside this phase, recommended before `P15-TST-002` so its database cases run in the pass *(read "recommended into `-033`" until the gate's merge was taken in, 2026-11-07)* *(built 2026-11-09, the prior-period correction's month with it; its database cases owed to `P15-TST-002`)* |
 | `X-TSK-008`'s five stores (time decided across instances) | Recommended into `-033` beside PI-013 (the same class: an instant decided outside the database's clock) |
 | `P14-REM-001`…`-011` (the Phase 14 completion gate's remediation entries, `BACKLOG.md` §Phase 14 remediation) | Stay `PLANNED` and outside every Phase 15 milestone, as the gate wrote them; horizons "before production use", "before any real regulatory channel", "before production write-offs and BNPL", and `-009` "Phase 15 at the latest". `-002` names each with its horizon, and `-034`'s readiness review counts each still-open entry as a named gap of the unit it touches. Scheduling them is the owner's |
 | The posting once-ness's second rank (debt #61) | Ruled by `-002`: a uniqueness on the posting scope before any idempotency sweep, or the sweep stays excluded |

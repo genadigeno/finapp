@@ -71,7 +71,7 @@ import lombok.RequiredArgsConstructor;
  * creation</strong>. The alternative is discovering it at the capture — inside the transaction
  * that moves money, after the customer has paid — which is the difference between a merchant
  * fixing their configuration and a customer's money needing a refund. The third, the expired
- * session, is refused at confirmation by the aggregate's own clock.
+ * session, is refused at confirmation on the database's clock (`P15-TSK-038`).
  */
 @RequiredArgsConstructor
 public final class CheckoutSessions {
@@ -174,11 +174,16 @@ public final class CheckoutSessions {
         // The authoritative reads, BEFORE the claim: every refusal here writes nothing and
         // consumes no key (PaymentCreation's recorded order).
         requireTrading(unitOfWork, command.merchant().value());
+        // AFTER THE SHARE LOCK, ON THE DATABASE'S CLOCK (P15-TSK-038, PI-002, BnplPricing's read):
+        // the version in force is resolved in its statement, so ten skewed instances resolve one
+        // version for one instant, and an instance's clock is not an input.
         FeeScheduleVersion pricing =
                 feeSchedules
-                        .effectiveVersionFor(
-                                unitOfWork, command.merchant(), Instant.now(clock))
+                        .effectiveVersionFor(unitOfWork, command.merchant())
                         .orElseThrow(MerchantNotPriceableException::new);
+        // The offer's birth and deadline: the database's clock, read here after the lock
+        // (X-TSK-008's treatment) so every instance's sweep and confirmation judge one clock.
+        Instant databaseNow = sessions.databaseNow(unitOfWork);
         // THE PRICE, AND WHETHER THE SALE COVERS IT (P6-TST-001, ADR-0058). Priced under the
         // version this session will carry: an amount whose fee meets or exceeds it would leave
         // the merchant paying to sell - its payable driven below zero at capture, and a refund
@@ -225,7 +230,8 @@ public final class CheckoutSessions {
                                         pricing,
                                         token,
                                         actor,
-                                        correlation));
+                                        correlation,
+                                        databaseNow));
 
         CheckoutSessionId id =
                 CheckoutSessionId.of(
@@ -254,17 +260,18 @@ public final class CheckoutSessions {
             FeeScheduleVersion pricing,
             CheckoutSessionToken token,
             Actor actor,
-            Correlation correlation) {
+            Correlation correlation,
+            Instant databaseNow) {
         CheckoutSession session =
                 CheckoutSession.open(
                         ids,
-                        clock,
+                        databaseNow,
                         command.merchant().value(),
                         command.amount(),
                         command.lineSummary(),
                         pricing.id().value(),
                         token,
-                        Instant.now(clock).plus(OFFER_WINDOW));
+                        databaseNow.plus(OFFER_WINDOW));
         sessions.insert(unitOfWork, session);
 
         audit.append(
@@ -272,7 +279,7 @@ public final class CheckoutSessions {
                 new AuditRecord(
                         AuditId.next(ids),
                         actor,
-                        Instant.now(clock),
+                        session.createdAt(),
                         CheckoutAuditAction.CHECKOUT_SESSION_CREATED,
                         SESSION_TARGET_TYPE,
                         session.id().value().toString(),
@@ -348,7 +355,9 @@ public final class CheckoutSessions {
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
 
-        CheckoutSession pending = session.confirm(clock, intentRef);
+        // The deadline is one the database stamped, so it is judged and the edge stamped on the
+        // database's clock (P15-TSK-038): the state and the record read the one instant.
+        CheckoutSession pending = session.confirm(sessions.databaseNow(unitOfWork), intentRef);
         if (!sessions.transition(unitOfWork, session, pending)) {
             return false;
         }
@@ -357,7 +366,7 @@ public final class CheckoutSessions {
                 new AuditRecord(
                         AuditId.next(ids),
                         actor,
-                        Instant.now(clock),
+                        pending.statusChangedAt(),
                         CheckoutAuditAction.CHECKOUT_SESSION_CONFIRMED,
                         SESSION_TARGET_TYPE,
                         session.id().value().toString(),

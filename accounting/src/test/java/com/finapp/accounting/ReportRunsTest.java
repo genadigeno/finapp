@@ -64,7 +64,7 @@ class ReportRunsTest {
     private static final Actor CONTROLLER = new Actor("controller-1", ActorType.CUSTOMER);
 
     private final MovableClock clock = new MovableClock(Instant.parse("2026-10-10T09:00:00Z"));
-    private final InMemoryAccountingPeriodStore periodStore = new InMemoryAccountingPeriodStore();
+    private final InMemoryAccountingPeriodStore periodStore = new InMemoryAccountingPeriodStore(clock);
     private final InMemoryGlMappingStore mappings = new InMemoryGlMappingStore();
     private final InMemoryReportRunStore store = new InMemoryReportRunStore(clock, periodStore);
     private final List<AuditRecord> audit = Collections.synchronizedList(new ArrayList<>());
@@ -447,8 +447,8 @@ class ReportRunsTest {
     /** September opened and locked (its grace passed on the 10th of October); October open. */
     private AccountingPeriodId lockedSeptember() {
         Clock september = Clock.fixed(Instant.parse("2026-09-15T09:00:00Z"), ZoneOffset.UTC);
-        new AccountingPeriods(periodStore, mappings, new StandInCutoff(), LockGrace.standard(), (u, r) -> {},
-                (u, e, p, m) -> {}, IDS, september, runs()).openNext(UOW, Actor.SYSTEM, correlation());
+        periodStore.onDatabaseDate(LocalDate.of(2026, 9, 15), () -> new AccountingPeriods(periodStore, mappings, new StandInCutoff(), LockGrace.standard(), (u, r) -> {},
+                (u, e, p, m) -> {}, IDS, september, runs()).openNext(UOW, Actor.SYSTEM, correlation()));
         periods().openNext(UOW, Actor.SYSTEM, correlation());
         AccountingPeriodId id = periodStore.month(SEPTEMBER).orElseThrow().id();
         periods().lock(UOW, id, ACCOUNTANT, null, correlation());
