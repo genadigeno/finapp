@@ -33,8 +33,10 @@ locals {
   ]
   rows = concat(local.inventory_rows, local.beside_rows)
 
-  # Every line of each table, its header and separator aside, must have parsed.
-  unparsed_rows = (length(regexall("(?m)^\\|", local.inventory_body)) - 2 - length(local.inventory_rows)) + (length(regexall("(?m)^\\|", local.beside_body)) - 2 - length(local.beside_rows))
+  # Every line of each table, its header and separator aside, must have parsed. Counted per table: summed, a section with
+  # no table at all (minus two) could cancel two unread rows in the other.
+  unparsed_inventory_rows = length(regexall("(?m)^\\|", local.inventory_body)) - 2 - length(local.inventory_rows)
+  unparsed_beside_rows    = length(regexall("(?m)^\\|", local.beside_body)) - 2 - length(local.beside_rows)
 
   class_of    = { for row in local.inventory_rows : row.variable => row.class }
   consumer_of = { for row in local.inventory_rows : row.variable => row.consumer }
@@ -91,6 +93,11 @@ locals {
     for key, entry in local.entries : key if !startswith(entry.name, "finapp/${local.environment}/${entry.workload}/")
   ]
 
+  # The one entry anything may read from outside its own path, by the name the managed brokers dictate.
+  entries_read_elsewhere_off_their_name = distinct([
+    for item in local.delivered_entries : "${item.workload}/${item.variable}" if !item.own && item.name != "AmazonMSK_${var.name_prefix}-application"
+  ])
+
   # Everything each workload's reader may read: its own entries, and what its ExternalSecret reads elsewhere.
   reads = {
     for workload in keys(local.external_secrets) :
@@ -103,6 +110,11 @@ locals {
 
   # The field-level keys are wrapped by a key of their own (ADR-0123 decision 1).
   key_purpose_of = { for key, entry in local.entries : key => lookup(local.class_of, entry.variable, "") == "field-encryption-key" ? "field_keys" : "secrets" }
+
+  # A field key's entry is the only copy of that key, so a renamed row must not schedule its deletion. Every other
+  # entry can be filled again, and guarding those too would make removing a provider a state surgery.
+  field_key_entries = { for key, entry in local.entries : key => entry if local.key_purpose_of[key] == "field_keys" }
+  other_entries     = { for key, entry in local.entries : key => entry if local.key_purpose_of[key] != "field_keys" }
 
   reader_key_purposes = {
     for workload in keys(local.external_secrets) :
@@ -177,8 +189,12 @@ locals {
     logs            = { description = "the CloudWatch log groups and the telemetry buckets", services = ["s3"] }
   }
 
-  # Only a copy crossing an account needs the source key shared with its destination.
+  # Only a copy crossing an account needs the source key shared with its destination, and then only through the services
+  # that make the copy, in this region and the vault's.
   backup_copy_account = split(":", var.database_backup_copy_vault_arn)[4]
+  backup_copy_services = flatten([
+    for region in distinct([var.region, split(":", var.database_backup_copy_vault_arn)[3]]) : ["backup.${region}.amazonaws.com", "rds.${region}.amazonaws.com"]
+  ])
 
   key_policies = {
     for purpose, key in local.key_purposes : purpose => {
@@ -198,6 +214,16 @@ locals {
           Action    = local.key_use_through_a_service
           Resource  = "*"
           Condition = { StringEquals = { "kms:ViaService" = [for service in key.services : "${service}.${var.region}.amazonaws.com"] } }
+        }] : [],
+        # EKS needs the caller of CreateCluster to describe the key and make the grant. Neither kms:ViaService nor
+        # kms:GrantIsForAWSResource can bound it: AWS lists no ViaService name for EKS, and documents that the
+        # second is not supported for CreateCluster. So this is the account's, in IAM's hands, and these two actions alone.
+        purpose == "etcd" ? [{
+          Sid       = "TheCallerOfCreateClusterDescribesAndGrants"
+          Effect    = "Allow"
+          Principal = { AWS = local.account_root }
+          Action    = ["kms:CreateGrant", "kms:DescribeKey"]
+          Resource  = "*"
         }] : [],
         purpose == "etcd" ? [{
           Sid       = "TheClusterRoleEncryptsEtcd"
@@ -224,11 +250,20 @@ locals {
           }
         }] : [],
         purpose == "database" && local.backup_copy_account != var.account_id ? [{
-          Sid       = "TheBackupCopysDestinationAccount"
+          Sid       = "TheBackupCopysAccountUsesItThroughTheCopy"
           Effect    = "Allow"
           Principal = { AWS = "arn:aws:iam::${local.backup_copy_account}:root" }
-          Action    = ["kms:CreateGrant", "kms:Decrypt", "kms:DescribeKey", "kms:GenerateDataKey", "kms:ReEncryptFrom", "kms:ReEncryptTo"]
+          Action    = ["kms:Decrypt", "kms:DescribeKey", "kms:GenerateDataKey", "kms:ReEncryptFrom", "kms:ReEncryptTo"]
           Resource  = "*"
+          Condition = { StringEquals = { "kms:ViaService" = local.backup_copy_services } }
+        }] : [],
+        purpose == "database" && local.backup_copy_account != var.account_id ? [{
+          Sid       = "TheBackupCopysAccountGrantsOnlyToAnAwsService"
+          Effect    = "Allow"
+          Principal = { AWS = "arn:aws:iam::${local.backup_copy_account}:root" }
+          Action    = ["kms:CreateGrant"]
+          Resource  = "*"
+          Condition = { Bool = { "kms:GrantIsForAWSResource" = "true" } }
         }] : [],
       )
     }
@@ -238,16 +273,24 @@ locals {
   # People. Workforce federation waits for a workforce identity provider (C13); until then a person is an IAM user
   # in one group, whose only standing rights are enrolling a factor and assuming the roles below with it.
   # --------------------------------------------------------------------------------------------------
-  human_roles = {
+  roles_on_the_cluster = {
     # The session is what bounds break-glass in time: Kubernetes RBAC has no expiring binding. One hour is the least
     # a role can be given, and OPERATIONS_RUNBOOK.md 11.25 holds the incident to it.
     "break-glass" = { kubernetes_group = "finapp-break-glass", session_seconds = 3600 }
     "read-only"   = { kubernetes_group = "finapp-read-only", session_seconds = 14400 }
   }
 
-  # What a person may do before a factor is on the session, and nothing else. The first list is scoped to the person's
-  # own user and device; ListVirtualMFADevices takes no resource, and GetSessionToken needs no permission at all but
-  # must not be refused, because it is how a person's session gains the factor.
+  # The role for the one-time bootstrap step exists only while someone has asked for it, and is never on the cluster.
+  human_roles = merge(
+    local.roles_on_the_cluster,
+    { for name, role in { bootstrap = { kubernetes_group = "", session_seconds = 3600 } } : name => role if var.bootstrap_role_enabled },
+  )
+
+  # What a person may do in the console before a factor is on the session, and nothing else. The first list is scoped to the
+  # person's own user and device, so a device must be named after its user; ListVirtualMFADevices takes no resource.
+  # A person has no access key, so no shell session: signing in to the console is the only way a factor reaches a
+  # session, and from there a person can assume a role but has no kubectl and no route to the private endpoint
+  # (THREAT_MODEL.md section 6 item 31).
   mfa_enrolment_on_oneself = [
     "iam:ChangePassword",
     "iam:CreateVirtualMFADevice",
@@ -256,7 +299,7 @@ locals {
     "iam:ListMFADevices",
     "iam:ResyncMFADevice",
   ]
-  mfa_enrolment = concat(local.mfa_enrolment_on_oneself, ["iam:ListVirtualMFADevices", "sts:GetSessionToken"])
+  mfa_enrolment = concat(local.mfa_enrolment_on_oneself, ["iam:ListVirtualMFADevices"])
 
   describe_the_cluster = {
     Sid      = "DescribeTheCluster"
@@ -265,8 +308,9 @@ locals {
     Resource = [local.cluster_arn]
   }
 
-  # The only values a person reads, for the one-time bootstrap step: the master credential, and the passwords it sets, which
-  # are the rows the inventory names that step as a consumer of (SECRET_MANAGEMENT.md 3.2, DATA_MIGRATIONS.md 2.2).
+  # The only values a person can read, and only through the bootstrap role while it exists: the master credential, and the
+  # passwords the step sets, which are the rows the inventory names it as a consumer of (SECRET_MANAGEMENT.md 3.2,
+  # DATA_MIGRATIONS.md 2.2).
   bootstrap_step_entries = sort(distinct([
     for key, entry in local.entries : entry.name if strcontains(lookup(local.consumer_of, entry.variable, ""), "bootstrap-step")
   ]))
@@ -320,12 +364,25 @@ resource "aws_kms_alias" "this" {
 # ------------------------------------------------------------------------------------------------
 
 resource "aws_secretsmanager_secret" "entry" {
-  for_each = local.entries
+  for_each = local.other_entries
 
   name                    = each.value.name
   description             = "${each.value.variable} of finapp-${each.value.workload} in ${local.environment}: docs/architecture/SECRET_MANAGEMENT.md section 3."
   kms_key_id              = aws_kms_key.this[local.key_purpose_of[each.key]].arn
   recovery_window_in_days = 30
+}
+
+resource "aws_secretsmanager_secret" "field_key" {
+  for_each = local.field_key_entries
+
+  name                    = each.value.name
+  description             = "${each.value.variable} of finapp-${each.value.workload} in ${local.environment}: docs/architecture/SECRET_MANAGEMENT.md section 3."
+  kms_key_id              = aws_kms_key.this["field_keys"].arn
+  recovery_window_in_days = 30
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # ------------------------------------------------------------------------------------------------
@@ -432,9 +489,11 @@ resource "aws_iam_group_policy" "humans" {
 resource "aws_iam_user" "human" {
   for_each = var.human_users
 
-  name          = each.key
-  path          = "/humans/"
-  force_destroy = false
+  name = each.key
+  path = "/humans/"
+  # A person's password and device are made by hand, so without this their removal fails at apply, DeleteUser refusing
+  # while either exists, and the group and trust updates that depend on it are skipped: they would keep break-glass.
+  force_destroy = true
 }
 
 resource "aws_iam_group_membership" "humans" {
@@ -458,14 +517,27 @@ data "aws_iam_access_keys" "human" {
   }
 }
 
-# What any human role can ever do, whatever is later attached to it.
+# What any human role on the cluster can ever do, whatever is later attached to it.
 resource "aws_iam_policy" "human_boundary" {
   name        = "${var.name_prefix}-human-boundary"
-  description = "The most any human role can do in this account."
+  description = "The most a human role on the cluster can do in this account."
 
   policy = jsonencode({
     Version   = "2012-10-17"
-    Statement = concat([local.describe_the_cluster], local.read_what_the_bootstrap_step_reads)
+    Statement = [local.describe_the_cluster]
+  })
+}
+
+# And the most the bootstrap role can do, for as long as it exists.
+resource "aws_iam_policy" "bootstrap_boundary" {
+  count = var.bootstrap_role_enabled ? 1 : 0
+
+  name        = "${var.name_prefix}-human-bootstrap-boundary"
+  description = "The most the one-time bootstrap role can do in this account."
+
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = local.read_what_the_bootstrap_step_reads
   })
 }
 
@@ -474,7 +546,7 @@ resource "aws_iam_role" "human" {
 
   name                 = "${var.name_prefix}-human-${each.key}"
   max_session_duration = each.value.session_seconds
-  permissions_boundary = aws_iam_policy.human_boundary.arn
+  permissions_boundary = each.key == "bootstrap" ? aws_iam_policy.bootstrap_boundary[0].arn : aws_iam_policy.human_boundary.arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -499,8 +571,11 @@ resource "aws_iam_role_policy" "human" {
   role = aws_iam_role.human[each.key].id
 
   policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = concat([local.describe_the_cluster], [for statement in local.read_what_the_bootstrap_step_reads : statement if each.key == "break-glass"])
+    Version = "2012-10-17"
+    Statement = concat(
+      [for statement in [local.describe_the_cluster] : statement if each.key != "bootstrap"],
+      [for statement in local.read_what_the_bootstrap_step_reads : statement if each.key == "bootstrap"],
+    )
   })
 }
 
@@ -511,7 +586,7 @@ resource "aws_iam_role_policy" "human" {
 # ------------------------------------------------------------------------------------------------
 
 resource "aws_eks_access_entry" "human" {
-  for_each = local.human_roles
+  for_each = local.roles_on_the_cluster
 
   cluster_name      = var.cluster_name
   principal_arn     = aws_iam_role.human[each.key].arn

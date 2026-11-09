@@ -5,11 +5,16 @@ output "kms_key_arns" {
 
 output "secret_entry_names" {
   description = "Every entry this module creates, by workload and variable. A plan whose inventory and manifests disagree stops here."
-  value       = { for key, entry in local.entries : key => aws_secretsmanager_secret.entry[key].name }
+  value       = merge({ for key, entry in aws_secretsmanager_secret.entry : key => entry.name }, { for key, entry in aws_secretsmanager_secret.field_key : key => entry.name })
 
   precondition {
-    condition     = local.unparsed_rows == 0
+    condition     = local.unparsed_inventory_rows == 0 && local.unparsed_beside_rows == 0
     error_message = "A row of SECRET_MANAGEMENT.md sections 3.2 or 3.3 could not be read: the entries cannot be taken from a table this module does not understand."
+  }
+
+  precondition {
+    condition     = length(local.entries_read_elsewhere_off_their_name) == 0
+    error_message = "An entry read from another store is not this environment's application SCRAM entry: ${join(", ", local.entries_read_elsewhere_off_their_name)}."
   }
 
   precondition {

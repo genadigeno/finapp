@@ -2230,20 +2230,24 @@ There is no raw `UPDATE` in this procedure, and none is needed.
 
 1. List the entries from the environment's root: `terraform output -json secret_entry_names`.
 2. For each, skip it if it already has a current version: `aws secretsmanager describe-secret --secret-id "$name" --query VersionIdsToStages`.
-   **A fill never overwrites.** A field key's entry already in use is what the rows under it decrypt with.
+   **A fill must not overwrite.** A field key's entry already in use is what the rows under it decrypt with. This check alone is check-then-write; step 4's
+   fixed token is what closes the gap.
 3. Generate by the rule `infra/scripts/kind-secrets.sh` states: a name ending `_KEY`, 32 random bytes as base64; a name ending `_PASSWORD`,
-   64 random hex characters. Anything else is not a secret and is given by what knows it: the URL from `database_endpoint`, a user from the
-   bootstrap step's conventions.
+   64 random hex characters. Anything else is not a secret and is given by what knows it: the database URL from `database_endpoint`, the broker list
+   `FINAPP_KAFKA_BOOTSTRAPSERVERS` from `kafka_bootstrap_brokers`, a user from the bootstrap step's conventions.
 4. Write it from a pipe, so that it reaches no command line, file or terminal:
-   `... | aws secretsmanager put-secret-value --secret-id "$name" --secret-string file:///dev/stdin > /dev/null`.
+   `... | aws secretsmanager put-secret-value --secret-id "$name" --secret-string file:///dev/stdin --client-request-token 00000000-0000-4000-8000-000000000001 > /dev/null`.
+   The token becomes this version's id, so a second run that generated a different value fails rather than replaces it.
 5. The two SCRAM entries are `modules/kafka`'s, filled before stage `principals` (that module's README). The master credential is RDS's own.
 6. **Verify:** every name reports an `AWSCURRENT` stage, and `kubectl get externalsecret -n finapp` shows `Ready=True` after the first sync.
 
-Whoever runs this needs `secretsmanager:PutSecretValue` on these entries and never needs to read one. No role in this repository holds that
-right yet: it is the pipeline role of `THREAT_MODEL.md` §6 item 7, and §6 item 31 records the gap. **Then run the bootstrap step** (§11.1b): it
-reads the master credential and the three role passwords, through break-glass, which is the only human reach to a secret.
+Whoever runs this needs `secretsmanager:DescribeSecret` and `secretsmanager:PutSecretValue` on these entries and `kms:GenerateDataKey` on their keys (`secrets`,
+`field_keys`), and never needs to read one. No role in this repository holds that right yet: it is the pipeline role of `THREAT_MODEL.md` §6 item 7, and §6 item 31(b)
+records the gap. **Then run the bootstrap step** (§11.1b): it reads the master credential and the three role passwords through the bootstrap role, which exists only while
+`bootstrap_role_enabled` is on. Turn it on by a reviewed change for the one step, and off after it. **Today nobody can run the step**: nothing reaches the database and no
+person has a shell session (§6 item 31(e)). Nothing records that read until the account has a trail (item 31(c)).
 
-**Rotate a value.** Write a new version with `put-secret-value`, as above, then §5.2's sync and roll. The new value becomes `AWSCURRENT`, and
+**Rotate a value.** Write a new version with `put-secret-value`, as above but without the fixed token (the CLI makes one), then §5.2's sync and roll. The new value becomes `AWSCURRENT`, and
 the previous one stays as `AWSPREVIOUS` until the next write. **To go back**, move the stage: `aws secretsmanager update-secret-version-stage
 --secret-id "$name" --version-stage AWSCURRENT --move-to-version-id <previous> --remove-from-version-id <current>`, then sync and roll.
 
@@ -2252,8 +2256,8 @@ nothing rolls. To rotate one early: `aws kms rotate-key-on-demand --key-id <arn>
 
 **Revoke a reader or a person.** A reader's token is the operator's: to cut one, remove the ServiceAccount's annotation and restart the operator, or
 detach the role's policy. To end every session already issued for a role, attach an inline policy denying everything for sessions issued before now
-(`aws:TokenIssueTime`), which is what the console's "Revoke active sessions" does. A person is removed from `human_users` and the plan removes them
-from the group and from the trust. Delete any access key by hand: the next plan fails until it is gone.
+(`aws:TokenIssueTime`), which is what the console's "Revoke active sessions" does. A person is removed from `human_users`, and the plan removes them
+with their password, device and any access key, and from the group and the trust. Delete any access key by hand: the next plan fails until it is gone.
 
 **A key suspected of compromise.** Rotating the key does not help: what was decrypted is out. Rotate every secret under that key (§5.1), and for
 `field_keys` follow §5.1's key-ring row. Disable a key only knowing what stops: `etcd` stops the cluster reading its Secrets, `secrets` stops every sync,
@@ -2422,9 +2426,10 @@ sync, is too slow or is the thing that broke. Nothing else. A change you would l
 **What bounds it in time, plainly.** Kubernetes RBAC has no expiring binding, so nothing in the cluster ends this. The binding
 in `deploy/base/rbac-humans.yaml` names the group `finapp-break-glass`, which has no members. In a real environment a person
 reaches it only through a cloud role that carries that group, and **that session's lifetime is the bound**: a role whose session lasts
-an hour and whose assumption needs a factor at most an hour old (`modules/security`, asserted over a plan). A token already issued
-lives at most fifteen minutes more. No account exists, so none of that has ever run; **until one does the bound is a procedure**: the
-steps below, kept by people, enforced by nothing.
+an hour and whose assumption needs a factor at most an hour old (`modules/security`, asserted over a plan). How long a token already issued,
+or a `watch` already open, outlives the session is unverified. **Today no person can use this role from a terminal**: a person has no access key,
+so no shell session, the console has no `kubectl`, and nothing routes to the private endpoint (`THREAT_MODEL.md` §6 item 31(e)). No account exists, so
+none of that has ever run; **until one does the bound is a procedure**: the steps below, kept by people, enforced by nothing.
 
 **What it can do.** Everything `finapp-read-only` reads, except the RBAC, network and ExternalSecret objects, and exactly four writes: delete a
 pod, evict a pod, read and change a Deployment's scale.
@@ -2648,9 +2653,9 @@ It fetches the providers once into a mirror, verified against the lock file, so 
 one per directory. It then runs `terraform fmt -check`, `tflint`, `trivy config` (HIGH and CRITICAL fail), and, in every directory that
 holds a `.tf` file, `terraform init -backend=false -lockfile=readonly`, `terraform validate` and `terraform test`.
 Each test only plans; the roots' tests and the concern modules' tests plan against mock providers (AWS, and Kafka for the
-brokers' topics and ACLs), and the conventions module uses no provider. It then plants forty-two defects in copies of the
+brokers' topics and ACLs), and the conventions module uses no provider. It then plants forty-three defects in copies of the
 tree (six over the checks themselves, seven over the network and cluster modules' named properties, fourteen over the
-data tier's, fifteen over the security modules') and requires each check to refuse its plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
+data tier's, sixteen over the security modules') and requires each check to refuse its plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
 reason`, and the exit status is 0. A line starting `!!` names what failed:
 
 - **a check failed** on the tree: fix the code. For a formatting failure, `terraform fmt -recursive infra/terraform`

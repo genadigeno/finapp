@@ -117,6 +117,7 @@ variables {
   database_backup_copy_vault_arn = "arn:aws:backup:eu-central-1:999999999999:backup-vault:finapp-copies"
   audit_archive_lock             = { mode = "GOVERNANCE", days = 42 }
   kafka_provisioning_stage       = "enforced"
+  other_environment_account_ids  = ["222222222222"]
   human_users = {
     alice = { roles = ["read-only", "break-glass"] }
     bob   = { roles = ["read-only"] }
@@ -419,4 +420,24 @@ run "a_zone_of_another_region_is_refused" {
   }
 
   expect_failures = [var.availability_zones]
+}
+
+run "a_backup_copy_in_another_environments_account_is_refused" {
+  command = plan
+
+  variables {
+    database_backup_copy_vault_arn = "arn:aws:backup:eu-central-1:222222222222:backup-vault:finapp-copies"
+  }
+
+  expect_failures = [var.database_backup_copy_vault_arn]
+}
+
+run "the_other_environment_cannot_be_left_unnamed" {
+  command = plan
+
+  variables {
+    other_environment_account_ids = []
+  }
+
+  expect_failures = [var.other_environment_account_ids]
 }

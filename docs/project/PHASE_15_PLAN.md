@@ -313,7 +313,7 @@ change — a drift check is a scheduled plan in a real environment).
 
 *(Corrected by `P15-TSK-015`, 2026-11-09, wherever this plan says backups are under a separate key (this table, §9.2's T7 and §12's backup row): RDS encrypts its automated backups and snapshots with the instance's key and offers no setting, and within one account and region an AWS Backup vault's key does not change that. A separate key needs a copy across an account or region, which is what the module builds; point-in-time recovery stays under the volume's key. `THREAT_MODEL.md` §6 item 23.)*
 
-*(Corrected by `P15-TSK-016`, 2026-11-09, on the `observability` row: no cloud alerting endpoint is built. The placeholder receivers are Alertmanager's (`infra/alertmanager/alertmanager.yml`), and a topic nobody subscribes to would read as paging. The `security` row's list of key purposes is longer as built: etcd, database, database backup, secrets, field-level keys, brokers, state, archive and logs.)*
+*(Corrected by `P15-TSK-016`, 2026-11-09, on the `observability` row: no cloud alerting endpoint is built. The placeholder receivers are Alertmanager's (`infra/alertmanager/alertmanager.yml`), and a topic nobody subscribes to would read as paging. The `security` row's list of key purposes is longer as built: etcd, database, database backup, secrets, field-level keys, brokers, state, archive and logs. On the `registry` row, no lifecycle rule is built until a promotion lands under an immutable tag.)*
 
 **Verification without an account**: `terraform fmt -check`, `terraform validate`, `tflint` (pinned), `trivy config`
 (the pinned scanner) and **`terraform test` with mock providers** asserting the security properties (encryption on, public

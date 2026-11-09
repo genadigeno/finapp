@@ -79,7 +79,7 @@ variable "workload_identity_issuer" {
 }
 
 variable "master_user_secret_arn" {
-  description = "The database's own master credential, which RDS names and keeps: the postgres module's master_user_secret_arn. Only break-glass reads it, and no workload."
+  description = "The database's own master credential, which RDS names and keeps: the postgres module's master_user_secret_arn. Only the bootstrap role reads it, while that role exists, and no workload."
   type        = string
 }
 
@@ -94,7 +94,7 @@ variable "database_backup_copy_vault_arn" {
 }
 
 variable "human_users" {
-  description = "The people with access to this environment, by IAM user name, and the roles each may assume (read-only, break-glass). No default: an empty list locks everyone out, and who holds break-glass is a decision."
+  description = "The people with access to this environment, by IAM user name, and the roles each may assume (read-only, break-glass, bootstrap). No default: an empty list locks everyone out, and who holds break-glass is a decision."
   type = map(object({
     roles = set(string)
   }))
@@ -105,13 +105,25 @@ variable "human_users" {
   }
 
   validation {
-    condition     = alltrue([for user in values(var.human_users) : length(setsubtract(user.roles, ["read-only", "break-glass"])) == 0])
-    error_message = "A person's roles are read-only and break-glass, and nothing else exists."
+    condition     = alltrue([for user in values(var.human_users) : length(setsubtract(user.roles, ["read-only", "break-glass", "bootstrap"])) == 0])
+    error_message = "A person's roles are read-only, break-glass and bootstrap, and nothing else exists."
   }
 
   # IAM refuses a trust policy naming no principal.
   validation {
     condition     = alltrue([for role in ["read-only", "break-glass"] : anytrue([for user in values(var.human_users) : contains(user.roles, role)])])
     error_message = "Each of read-only and break-glass needs at least one person who may assume it."
+  }
+}
+
+variable "bootstrap_role_enabled" {
+  description = "Whether the role that reads what the one-time bootstrap step reads exists. It has no access entry and is off unless a change turns it on: for that step, with a person given the bootstrap role in human_users, and off again after it."
+  type        = bool
+  default     = false
+
+  # IAM refuses a trust policy naming no principal.
+  validation {
+    condition     = !var.bootstrap_role_enabled || anytrue([for user in values(var.human_users) : contains(user.roles, "bootstrap")])
+    error_message = "The bootstrap role needs at least one person who may assume it."
   }
 }

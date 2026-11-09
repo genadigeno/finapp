@@ -27,6 +27,11 @@ mock_provider "aws" {
   }
 
   override_resource {
+    target = aws_iam_policy.bootstrap_boundary[0]
+    values = { arn = "arn:aws:iam::111111111111:policy/finapp-staging-human-bootstrap-boundary" }
+  }
+
+  override_resource {
     target = aws_iam_role.human["break-glass"]
     values = { arn = "arn:aws:iam::111111111111:role/finapp-staging-human-break-glass" }
   }
@@ -115,10 +120,21 @@ run "no_key_policy_locks_everyone_out_or_lets_the_account_use_it" {
     condition = alltrue([
       for key in aws_kms_key.this : alltrue([
         for statement in jsondecode(key.policy).Statement :
-        try(statement.Principal.AWS, "") != "arn:aws:iam::111111111111:root" || can(statement.Condition.StringEquals["kms:ViaService"]) || length(setintersection(statement.Action, ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey", "kms:ReEncryptFrom", "kms:ReEncryptTo", "kms:CreateGrant"])) == 0
+        try(statement.Principal.AWS, "") != "arn:aws:iam::111111111111:root" || can(statement.Condition.StringEquals["kms:ViaService"]) || length(setintersection(statement.Action, ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey", "kms:ReEncryptFrom", "kms:ReEncryptTo"])) == 0
       ])
     ])
     error_message = "A key's administration statement lets the account use the key without naming a service."
+  }
+
+  # CreateCluster's caller must make a grant, and neither condition that could bound it applies to EKS.
+  assert {
+    condition = alltrue([
+      for purpose, key in aws_kms_key.this : alltrue([
+        for statement in jsondecode(key.policy).Statement :
+        purpose == "etcd" || try(statement.Principal.AWS, "") != "arn:aws:iam::111111111111:root" || can(statement.Condition.StringEquals["kms:ViaService"]) || !contains(statement.Action, "kms:CreateGrant")
+      ])
+    ])
+    error_message = "A key other than etcd's lets the account make a grant outside a service."
   }
 
   assert {
@@ -149,8 +165,13 @@ run "each_key_admits_the_services_its_purpose_names_and_no_other" {
   }
 
   assert {
-    condition     = length(jsondecode(aws_kms_key.this["etcd"].policy).Statement) == 2 && jsondecode(aws_kms_key.this["etcd"].policy).Statement[1].Principal == { AWS = var.cluster_role_arn }
+    condition     = length(jsondecode(aws_kms_key.this["etcd"].policy).Statement) == 3 && jsondecode(aws_kms_key.this["etcd"].policy).Statement[2].Principal == { AWS = var.cluster_role_arn }
     error_message = "The etcd key's policy does not admit this environment's cluster role and nobody else."
+  }
+
+  assert {
+    condition     = jsondecode(aws_kms_key.this["etcd"].policy).Statement[1].Principal == { AWS = "arn:aws:iam::111111111111:root" } && toset(jsondecode(aws_kms_key.this["etcd"].policy).Statement[1].Action) == toset(["kms:CreateGrant", "kms:DescribeKey"])
+    error_message = "The etcd key does not let the caller of CreateCluster describe it and make the grant, or lets it do more."
   }
 
   assert {
@@ -163,13 +184,36 @@ run "the_database_key_is_shared_with_a_backup_copys_account_only_across_an_accou
   command = plan
 
   assert {
-    condition     = jsondecode(aws_kms_key.this["database"].policy).Statement[2].Principal == { AWS = "arn:aws:iam::999999999999:root" }
+    condition     = jsondecode(aws_kms_key.this["database"].policy).Statement[2].Principal == { AWS = "arn:aws:iam::999999999999:root" } && jsondecode(aws_kms_key.this["database"].policy).Statement[3].Principal == { AWS = "arn:aws:iam::999999999999:root" }
     error_message = "The database key does not admit the backup copy's destination account."
+  }
+
+  assert {
+    condition     = !contains(jsondecode(aws_kms_key.this["database"].policy).Statement[2].Action, "kms:CreateGrant") && toset(try(jsondecode(aws_kms_key.this["database"].policy).Statement[2].Condition.StringEquals["kms:ViaService"], [])) == toset(["backup.eu-central-1.amazonaws.com", "rds.eu-central-1.amazonaws.com"])
+    error_message = "The backup copy's account can use the database key outside the copy."
+  }
+
+  assert {
+    condition     = jsondecode(aws_kms_key.this["database"].policy).Statement[3].Action == ["kms:CreateGrant"] && try(jsondecode(aws_kms_key.this["database"].policy).Statement[3].Condition.Bool["kms:GrantIsForAWSResource"], "") == "true"
+    error_message = "The backup copy's account can make a grant that is not for an AWS service."
   }
 
   assert {
     condition     = alltrue([for purpose, key in aws_kms_key.this : purpose == "database" || !strcontains(key.policy, "999999999999")])
     error_message = "A key other than the database's admits the backup copy's destination account."
+  }
+}
+
+run "a_copy_to_another_region_names_that_regions_services_too" {
+  command = plan
+
+  variables {
+    database_backup_copy_vault_arn = "arn:aws:backup:eu-west-1:999999999999:backup-vault:finapp-copies"
+  }
+
+  assert {
+    condition     = toset(try(jsondecode(aws_kms_key.this["database"].policy).Statement[2].Condition.StringEquals["kms:ViaService"], [])) == toset(["backup.eu-central-1.amazonaws.com", "rds.eu-central-1.amazonaws.com", "backup.eu-west-1.amazonaws.com", "rds.eu-west-1.amazonaws.com"])
+    error_message = "The copy's services are not this region's and the vault's."
   }
 }
 
@@ -194,7 +238,7 @@ run "the_entries_are_what_the_inventory_delivers" {
   command = plan
 
   assert {
-    condition = toset([for entry in aws_secretsmanager_secret.entry : entry.name]) == toset([
+    condition = toset(concat([for entry in aws_secretsmanager_secret.entry : entry.name], [for entry in aws_secretsmanager_secret.field_key : entry.name])) == toset([
       "finapp/staging/app/FINAPP_DB_URL",
       "finapp/staging/app/FINAPP_MFA_KEY",
       "finapp/staging/app/FINAPP_PAYMENTS_WEBHOOK_KEY",
@@ -206,12 +250,12 @@ run "the_entries_are_what_the_inventory_delivers" {
   }
 
   assert {
-    condition     = alltrue([for entry in aws_secretsmanager_secret.entry : !strcontains(entry.name, "MASTER") && !strcontains(entry.name, "AmazonMSK_")])
+    condition     = alltrue([for entry in concat(values(aws_secretsmanager_secret.entry), values(aws_secretsmanager_secret.field_key)) : !strcontains(entry.name, "MASTER") && !strcontains(entry.name, "AmazonMSK_")])
     error_message = "An entry was created for the master credential or for a SCRAM secret, which are RDS's and the kafka module's."
   }
 
   assert {
-    condition     = alltrue([for entry in aws_secretsmanager_secret.entry : entry.recovery_window_in_days == 30])
+    condition     = alltrue([for entry in concat(values(aws_secretsmanager_secret.entry), values(aws_secretsmanager_secret.field_key)) : entry.recovery_window_in_days == 30])
     error_message = "An entry can be deleted with less than the thirty-day recovery window."
   }
 }
@@ -220,12 +264,12 @@ run "each_entry_is_under_its_purposes_key" {
   command = plan
 
   assert {
-    condition     = aws_secretsmanager_secret.entry["app/FINAPP_MFA_KEY"].kms_key_id == aws_kms_key.this["field_keys"].arn
+    condition     = toset(keys(aws_secretsmanager_secret.field_key)) == toset(["app/FINAPP_MFA_KEY"]) && aws_secretsmanager_secret.field_key["app/FINAPP_MFA_KEY"].kms_key_id == aws_kms_key.this["field_keys"].arn
     error_message = "A field-level encryption key's entry is not under the field_keys key."
   }
 
   assert {
-    condition     = alltrue([for key, entry in aws_secretsmanager_secret.entry : key == "app/FINAPP_MFA_KEY" || entry.kms_key_id == aws_kms_key.this["secrets"].arn])
+    condition     = alltrue([for entry in aws_secretsmanager_secret.entry : entry.kms_key_id == aws_kms_key.this["secrets"].arn])
     error_message = "An entry that is not a field-level key is not under the secrets key."
   }
 }
@@ -258,6 +302,29 @@ run "an_inventory_row_that_cannot_be_read_stops_the_plan" {
 
   variables {
     secret_inventory_path = "tests/fixture-inventory-unread-row.md"
+  }
+
+  expect_failures = [output.secret_entry_names]
+}
+
+run "two_unread_rows_cannot_hide_behind_a_section_with_no_table" {
+  command = plan
+
+  variables {
+    secret_inventory_path = "tests/fixture-inventory-cancelling-tables.md"
+  }
+
+  expect_failures = [output.secret_entry_names]
+}
+
+run "an_entry_read_elsewhere_must_be_the_applications_scram_entry" {
+  command = plan
+
+  variables {
+    external_secret_manifest_paths = {
+      app      = "tests/fixture-externalsecret-app-other-scram.yaml"
+      migrator = "tests/fixture-externalsecret-migrator.yaml"
+    }
   }
 
   expect_failures = [output.secret_entry_names]
@@ -492,36 +559,81 @@ run "every_person_is_in_the_group_that_refuses_everything_without_a_factor" {
   }
 }
 
-run "only_break_glass_reads_what_the_bootstrap_step_reads" {
+run "a_person_can_be_removed_whatever_they_enrolled" {
   command = plan
 
   assert {
-    condition = toset(jsondecode(aws_iam_role_policy.human["break-glass"].policy).Statement[1].Resource) == toset([
+    condition     = alltrue([for user in aws_iam_user.human : user.force_destroy == true])
+    error_message = "A person who has a password or a device cannot be removed: the apply would fail and leave them in the trust."
+  }
+}
+
+run "the_bootstrap_role_exists_only_when_asked_for" {
+  command = plan
+
+  variables {
+    bootstrap_role_enabled = true
+    human_users = {
+      alice = { roles = ["read-only", "break-glass"] }
+      bob   = { roles = ["read-only", "bootstrap"] }
+    }
+  }
+
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.human["bootstrap"].policy).Statement[0].Resource) == toset([
       var.master_user_secret_arn,
       "arn:aws:secretsmanager:eu-central-1:111111111111:secret:finapp/staging/migrator/FINAPP_DB_MIGRATOR_PASSWORD-??????",
     ])
-    error_message = "Break-glass does not read exactly the master credential and the passwords the inventory names the bootstrap step as consuming."
+    error_message = "The bootstrap role does not read exactly the master credential and the passwords the inventory names the step as consuming."
   }
 
   assert {
-    condition     = strcontains(aws_iam_policy.human_boundary.policy, var.master_user_secret_arn)
-    error_message = "The boundary would refuse the master credential to the bootstrap step."
+    condition     = toset(keys(aws_eks_access_entry.human)) == toset(["break-glass", "read-only"])
+    error_message = "The bootstrap role has a way into the cluster."
   }
 
   assert {
-    condition     = !strcontains(aws_iam_role_policy.human["read-only"].policy, "secretsmanager:") && !strcontains(aws_iam_role_policy.human["read-only"].policy, "kms:")
-    error_message = "The read-only role can read a secret or use a key."
+    condition     = aws_iam_role.human["bootstrap"].max_session_duration == 3600 && aws_iam_role.human["bootstrap"].permissions_boundary == aws_iam_policy.bootstrap_boundary[0].arn && try(jsondecode(aws_iam_role.human["bootstrap"].assume_role_policy).Statement[0].Condition.Bool["aws:MultiFactorAuthPresent"], "") == "true"
+    error_message = "The bootstrap role lasts more than an hour, has no boundary of its own, or needs no factor."
   }
 
   assert {
-    condition = alltrue(flatten([
-      for policy in [aws_iam_policy.human_boundary.policy, aws_iam_role_policy.human["break-glass"].policy, aws_iam_role_policy.human["read-only"].policy] : [
-        for statement in jsondecode(policy).Statement : [
-          for resource in statement.Resource : !strcontains(resource, "*") && !strcontains(resource, "FINAPP_MFA_KEY") && !strcontains(resource, "FINAPP_PAYMENTS_WEBHOOK_KEY") && !strcontains(resource, "AmazonMSK_")
-        ]
-      ]
-    ]))
-    error_message = "A human role reaches a secret the bootstrap step does not read, or names a wildcard resource."
+    condition     = jsondecode(aws_iam_role.human["bootstrap"].assume_role_policy).Statement[0].Principal == { AWS = [aws_iam_user.human["bob"].arn] }
+    error_message = "The bootstrap role may be assumed by someone not given it."
+  }
+
+  assert {
+    condition     = !strcontains(aws_iam_role_policy.human["break-glass"].policy, "secretsmanager:") && !strcontains(aws_iam_policy.human_boundary.policy, "secretsmanager:")
+    error_message = "Break-glass or its boundary can read a secret while the bootstrap role exists."
+  }
+}
+
+run "the_bootstrap_role_needs_a_person_who_may_assume_it" {
+  command = plan
+
+  variables {
+    bootstrap_role_enabled = true
+  }
+
+  expect_failures = [var.bootstrap_role_enabled]
+}
+
+run "no_standing_human_role_reads_a_secret" {
+  command = plan
+
+  assert {
+    condition     = toset(keys(aws_iam_role.human)) == toset(["break-glass", "read-only"]) && length(aws_iam_policy.bootstrap_boundary) == 0
+    error_message = "The bootstrap role exists though nobody asked for it."
+  }
+
+  assert {
+    condition     = alltrue([for policy in aws_iam_role_policy.human : !strcontains(policy.policy, "secretsmanager:") && !strcontains(policy.policy, "kms:")])
+    error_message = "A standing human role can read a secret or use a key."
+  }
+
+  assert {
+    condition     = !strcontains(aws_iam_policy.human_boundary.policy, "secretsmanager:") && !strcontains(aws_iam_policy.human_boundary.policy, "kms:")
+    error_message = "The boundary of the standing human roles would let one read a secret."
   }
 }
 

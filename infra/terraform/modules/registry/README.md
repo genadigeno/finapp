@@ -12,12 +12,12 @@ not the service's behaviour.
 | One repository per image, named `finapp-<environment>-<name>` | `there_is_one_repository_per_image_named_from_the_conventions_prefix` |
 | Tags are immutable, and a plan cannot delete a repository with its images | `every_tag_is_immutable` |
 | Every push is scanned | `every_push_is_scanned` |
-| Only an untagged image expires, after 30 days | `only_an_untagged_image_can_expire` |
 | No image, or one not named for the platform, is refused | the `..._refused` runs |
 
-**Why only untagged images expire.** A release is pushed under a tag, and a deployed digest stays the rollback target. An age or a
-count on tagged images would delete a release nothing else holds. Unverified: how a lifecycle rule treats the untagged children of a
-multi-architecture index, or a signature stored as a referrer.
+**Nothing expires yet, deliberately.** An untagged image is not safely a stray. A promotion that copies a digest with no tag would leave a running
+image, and the rollback target it becomes, untagged, and an expiry rule would remove it within a day of its age. AWS protects an image a manifest list refers to,
+and expires a referrer with its subject, and says nothing that would protect a deployed digest. An expiry rule comes back once a promotion lands under an
+immutable tag and signature storage is decided (`P15-TSK-017`, `P15-TSK-007`). Until then the repositories only grow.
 
 **Encrypted with the service's own key.** The images hold no credential and are scanned for one, so a customer-managed key would
 protect nothing the scans do not.

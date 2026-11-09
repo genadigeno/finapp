@@ -65,6 +65,7 @@
 #   key-no-rotation            a key's rotation turned off                         the security module's test
 #   key-lock-out               the account's PutKeyPolicy removed                  the security module's test
 #   key-account-uses-it        the account's administration given Decrypt          the security module's test
+#   backup-copy-unconditioned  the copy's account free to use the database key     the security module's test
 #   inventory-row-no-entry     an inventory row no ExternalSecret reads            production's test
 #   registry-mutable           a repository's tags made mutable                    the registry module's test
 #   registry-no-scan           scan on push turned off                             the registry module's test
@@ -299,7 +300,7 @@ HCL
     planted break-glass-long-session modules/security/main.tf
 
     plant human-role-no-boundary
-    sed -i '/permissions_boundary = aws_iam_policy\.human_boundary\.arn/d' \
+    sed -i '/permissions_boundary = each\.key == "bootstrap"/d' \
         /scratch/plants/human-role-no-boundary/infra/terraform/modules/security/main.tf
     planted human-role-no-boundary modules/security/main.tf
 
@@ -326,6 +327,11 @@ HCL
     sed -i 's/^    "kms:PutKeyPolicy",$/    "kms:Decrypt",\n    "kms:PutKeyPolicy",/' \
         /scratch/plants/key-account-uses-it/infra/terraform/modules/security/main.tf
     planted key-account-uses-it modules/security/main.tf
+
+    plant backup-copy-unconditioned
+    sed -i '/Condition = { StringEquals = { "kms:ViaService" = local\.backup_copy_services } }/d' \
+        /scratch/plants/backup-copy-unconditioned/infra/terraform/modules/security/main.tf
+    planted backup-copy-unconditioned modules/security/main.tf
 
     plant inventory-row-no-entry
     sed -i '/^| `FINAPP_MFA_KEY` /a | `FINAPP_PLANTED_KEY` | none | webhook-hmac | `payments` | two-valid-window | `finapp-app` | `finapp-app-secrets` |' \
@@ -553,6 +559,7 @@ refuses person-holds-a-key "data.aws_iam_access_keys.human" terraform_on "$PLANT
 refuses key-no-rotation "A key does not rotate" terraform_on "$PLANTS/key-no-rotation/infra/terraform" modules/security
 refuses key-lock-out "has no statement letting the account repair it" terraform_on "$PLANTS/key-lock-out/infra/terraform" modules/security
 refuses key-account-uses-it "lets the account use the key" terraform_on "$PLANTS/key-account-uses-it/infra/terraform" modules/security
+refuses backup-copy-unconditioned "can use the database key outside the copy" terraform_on "$PLANTS/backup-copy-unconditioned/infra/terraform" modules/security
 refuses inventory-row-no-entry "An inventory row has no entry" terraform_on "$PLANTS/inventory-row-no-entry/infra/terraform" environments/production
 refuses registry-mutable "tags are not immutable" terraform_on "$PLANTS/registry-mutable/infra/terraform" modules/registry
 refuses registry-no-scan "does not scan on push" terraform_on "$PLANTS/registry-no-scan/infra/terraform" modules/registry

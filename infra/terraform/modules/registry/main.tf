@@ -10,11 +10,9 @@
 # Who may push is not here. Nothing has a push credential until the delivery path exists (no CI credential reaches
 # production), and the nodes pull through their own role.
 
-locals {
-  # Only untagged images ever expire. A release is pushed under a tag, so a release, and the rollback target it
-  # becomes, cannot be expired by a count or an age here.
-  expire_untagged_after_days = 30
-}
+# NOTHING EXPIRES HERE YET. An untagged image is not safely a stray: a promotion that copies a digest with no tag would
+# leave a running image, and the rollback target it becomes, untagged, and an expiry rule would remove it. An expiry
+# rule comes back only once a promotion lands under an immutable tag and signature storage is decided.
 
 resource "aws_ecr_repository" "this" {
   for_each = var.images
@@ -30,24 +28,4 @@ resource "aws_ecr_repository" "this" {
   encryption_configuration {
     encryption_type = "AES256"
   }
-}
-
-resource "aws_ecr_lifecycle_policy" "this" {
-  for_each = var.images
-
-  repository = aws_ecr_repository.this[each.key].name
-
-  policy = jsonencode({
-    rules = [{
-      rulePriority = 1
-      description  = "An untagged image is a push that was never a release."
-      selection = {
-        tagStatus   = "untagged"
-        countType   = "sinceImagePushed"
-        countUnit   = "days"
-        countNumber = local.expire_untagged_after_days
-      }
-      action = { type = "expire" }
-    }]
-  })
 }

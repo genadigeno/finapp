@@ -73,6 +73,9 @@ class TerraformIsPinnedAndCheckedTest {
             "aws_db_instance_automated_backups_replication", "aws_backup_vault", "aws_kms_key", "aws_kms_replica_key",
             "aws_kms_external_key");
 
+    /** Single resources held to the same rule: a field key's entry is the only copy of that key. */
+    static final Set<String> GUARDED_RESOURCES = Set.of("aws_secretsmanager_secret.field_key");
+
     /**
      * Resource and data types whose state holds a secret value they generate or read (ADR-0121 decision 3: the secrets
      * manager generates credentials; Terraform creates only the entries and the policies).
@@ -295,6 +298,7 @@ class TerraformIsPinnedAndCheckedTest {
                 .containsEntry("key-no-rotation", "terraform")
                 .containsEntry("key-lock-out", "terraform")
                 .containsEntry("key-account-uses-it", "terraform")
+                .containsEntry("backup-copy-unconditioned", "terraform")
                 .containsEntry("inventory-row-no-entry", "terraform")
                 .containsEntry("registry-mutable", "terraform")
                 .containsEntry("registry-no-scan", "terraform");
@@ -343,7 +347,7 @@ class TerraformIsPinnedAndCheckedTest {
     }
 
     @Test
-    @DisplayName("every resource of a guarded type (the database, its backups, every KMS key) declares prevent_destroy")
+    @DisplayName("every resource of a guarded type (the database, its backups, every KMS key) and each field key's entry declares prevent_destroy")
     void everyGuardedResourcePreventsItsDestruction() {
         List<String> violations = new ArrayList<>();
         files.forEach((path, text) -> {
@@ -579,10 +583,15 @@ class TerraformIsPinnedAndCheckedTest {
                 }
                 resource "aws_s3_bucket" "unguarded_by_design" {
                 }
-                """)).as("two guarded types without prevent_destroy = true, and only those")
-                .hasSize(2)
+                resource "aws_secretsmanager_secret" "entry" {
+                }
+                resource "aws_secretsmanager_secret" "field_key" {
+                }
+                """)).as("two guarded types and the field keys' entries without prevent_destroy = true, and only those")
+                .hasSize(3)
                 .anySatisfy(violation -> assertThat(violation).contains("aws_kms_key.unguarded "))
-                .anySatisfy(violation -> assertThat(violation).contains("aws_db_instance.allowed_to_go "));
+                .anySatisfy(violation -> assertThat(violation).contains("aws_db_instance.allowed_to_go "))
+                .anySatisfy(violation -> assertThat(violation).contains("aws_secretsmanager_secret.field_key "));
 
         assertThat(secretViolations("plant.tf", """
                 resource "random_password" "database" {
@@ -1048,7 +1057,7 @@ class TerraformIsPinnedAndCheckedTest {
     static List<String> destroyViolations(String path, String text) {
         List<String> violations = new ArrayList<>();
         for (Block resource : blocksOfType(text, "resource")) {
-            if (!GUARDED.contains(resource.labels().get(0))) {
+            if (!GUARDED.contains(resource.labels().get(0)) && !GUARDED_RESOURCES.contains(String.join(".", resource.labels()))) {
                 continue;
             }
             boolean prevented = blocks(resource.body()).stream()

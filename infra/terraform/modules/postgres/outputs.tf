@@ -34,7 +34,7 @@ output "backup_vault_kms_key_arn" {
 }
 
 output "master_user_secret_arn" {
-  description = "The master credential's entry, which RDS names and keeps: only the security module's break-glass role reads it."
+  description = "The master credential's entry, which RDS names and keeps: only the security module's bootstrap role reads it, while that role exists."
   value       = aws_db_instance.this.master_user_secret[0].secret_arn
 }
 

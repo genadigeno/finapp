@@ -16,10 +16,10 @@ what is planned to the real files, and `TerraformIsPinnedAndCheckedTest` refuses
 |---|---|
 | One key per purpose (`etcd`, `database`, `database_backup`, `secrets`, `field_keys`, `brokers`, `state`, `archive`, `logs`), rotation on, a 30-day deletion window, `prevent_destroy` (`TerraformIsPinnedAndCheckedTest`) | `there_is_one_key_per_purpose_with_rotation_and_a_deletion_window` |
 | A key's policy lets the account administer it, so a wrong policy can be repaired and no key is locked, and gives the account no use of it | `no_key_policy_locks_everyone_out_or_lets_the_account_use_it` |
-| Each key admits the services its purpose names, by `kms:ViaService`; the etcd key this cluster's role alone; the logs key CloudWatch Logs, bound to this account's and this environment's log groups | `each_key_admits_the_services_its_purpose_names_and_no_other` |
-| The database key is shared with a backup copy's destination only when that is another account | `the_database_key_is_shared_with_a_backup_copys_account_only_across_an_account`, `a_backup_copy_inside_this_account_shares_the_key_with_nobody` |
+| Each key admits the services its purpose names, by `kms:ViaService`; the etcd key this cluster's role and, for two actions, the caller of `CreateCluster`; the logs key CloudWatch Logs, bound to this account's and this environment's log groups | `each_key_admits_the_services_its_purpose_names_and_no_other` |
+| The database key is shared with a backup copy's destination only when that is another account, use bounded to the copy's services and grants to an AWS service; a root refuses a copy in another environment's account | `the_database_key_is_shared_with_a_backup_copys_account_only_across_an_account`, `a_backup_copy_inside_this_account_shares_the_key_with_nobody` |
 | One entry per row the inventory delivers, without a value, under `finapp/<environment>/<app\|migrator>/<VARIABLE>`; none for the master credential or a SCRAM secret; a field-level key under `field_keys`, every other under `secrets` | `the_entries_are_what_the_inventory_delivers`, `each_entry_is_under_its_purposes_key` |
-| A plan stops on an inventory row with no entry, an entry with no row, a row it could not parse, or a store on another environment's path | the `..._stops_the_plan` runs |
+| A plan stops on an inventory row with no entry, an entry with no row, a row it could not parse in either table, a store on another environment's path, or an entry read from another store that is not the application's SCRAM entry | the `..._stops_the_plan` runs, `two_unread_rows_cannot_hide_behind_a_section_with_no_table`, `an_entry_read_elsewhere_must_be_the_applications_scram_entry` |
 | Each reader is trusted by its own ServiceAccount alone, `sub` and `aud` by `StringEquals` | `each_reader_is_trusted_by_its_own_service_account_alone` |
 | Each reader reads exactly its own entries by name, and the application's also its SCRAM entry; nothing with a wildcard; nothing on a bucket; never the master credential | `each_reader_reads_exactly_its_own_entries` |
 | Each reader decrypts only through Secrets Manager, and only under the keys its own entries are under | `each_reader_decrypts_only_through_secrets_manager_under_its_own_keys` |
@@ -28,7 +28,8 @@ what is planned to the real files, and `TerraformIsPinnedAndCheckedTest` refuses
 | Every human role needs a factor, names exactly its people, has the permission boundary, and forces the session to carry the person's name | `every_human_role_needs_a_factor_names_its_people_and_has_its_boundary` |
 | Every person is in the group that refuses everything without a factor and refuses a long-lived credential | `every_person_is_in_the_group_that_refuses_everything_without_a_factor` |
 | A person holding an access key, however it was made, stops the next plan | `a_person_holding_an_access_key_stops_the_plan` |
-| Only break-glass reads a secret, and only what the bootstrap step reads: the master credential and the passwords the inventory names that step as consuming | `only_break_glass_reads_what_the_bootstrap_step_reads` |
+| No standing human role reads a secret. A bootstrap role, absent unless `bootstrap_role_enabled` is on, reads exactly the master credential and the passwords the inventory names that step as consuming, and has no access entry | `no_standing_human_role_reads_a_secret`, `the_bootstrap_role_exists_only_when_asked_for` |
+| A person can be removed whatever they enrolled | `a_person_can_be_removed_whatever_they_enrolled` |
 | Two access entries, each one group on its role, with no access policy | `the_access_entries_carry_each_group_on_its_role_and_nothing_else`; no association anywhere: `TerraformIsPinnedAndCheckedTest` |
 
 Each root's own tests assert the wiring against the real files: an entry per row of the real inventory, the application's reader
@@ -44,20 +45,24 @@ reading `modules/kafka`'s own entry, the trust naming what the overlay names, th
   prefix would hand a reader whatever is created under it later.
 - **The account administers a key and does not use it.** Without an administration statement a wrong policy would lock a key for
   good. With the usual `kms:*` every principal in the account could use it, given an IAM permission. So administration is an
-  explicit list, use is by statement, and no statement holds a wildcard.
+  explicit list, use is by statement, and no statement holds a wildcard. **`kms:PutKeyPolicy` is one call from use**: whoever holds it can
+  write themselves a statement, so this bounds an accident, not someone who can change a key's policy.
 - **A service is admitted by `kms:ViaService`, from this account.** RDS, MSK, S3, AWS Backup and Secrets Manager call KMS as their
   caller, so there is no service principal to name. The equivalent bound is the service, and the root principal keeps it in this
-  account. CloudWatch Logs does call as a service principal, so its statement is bound to this account's log groups instead.
+  account. CloudWatch Logs does call as a service principal, so its statement is bound to this account's log groups instead. **EKS is the
+  exception**: AWS lists no `kms:ViaService` name for it and documents `kms:GrantIsForAWSResource` as not supported for `CreateCluster`, so the etcd
+  key lets the account describe it and make a grant, those two actions alone, with no condition.
 - **No rotation schedule on any entry.** "Rotation where managed" is the master credential's, which RDS manages. Every other class
   rotates by an act the fleet follows (`SECRET_MANAGEMENT.md` §5.2), and a schedule would move a value on a clock the fleet cannot see.
   `TerraformIsPinnedAndCheckedTest` refuses `aws_secretsmanager_secret_rotation`.
 - **Who may be a person.** Workforce federation waits for a workforce identity provider (C13). Until then a person is an IAM user in
   the `/humans/` path and the one group, named in `human_users`. A person's password and device are enrolled by hand and are in no
   Terraform state. A person holds no right but enrolling a factor and assuming the roles the trust names.
-- **Break-glass reads what the bootstrap step reads.** The one-time step needs the master credential and the three passwords it sets
+- **A role for the bootstrap step, and no standing read.** The one-time step needs the master credential and the three passwords it sets
   (`SECRET_MANAGEMENT.md` §3.2, `DATA_MIGRATIONS.md` §2.2), and a person runs it. Those are the rows whose Consumer names the step, read
-  from the inventory, and this is the only human reach to any secret: Kubernetes RBAC still gives no person a Secret. The step's URL is
-  no secret and comes from the root's `database_endpoint` output.
+  from the inventory. The role that reads them exists only while `bootstrap_role_enabled` is on, has no access entry and a boundary of its own.
+  Break-glass reads no secret, as `deploy/base/rbac-humans.yaml` intends. The step's URL is no secret and comes from the root's
+  `database_endpoint` output.
 
 ## What could not be checked without an account
 
@@ -70,6 +75,8 @@ Each of these reads as AWS documents it and has never met AWS. A real first appl
 | The brokers read the SCRAM entries through a grant under the `secrets` key | `kafka` is admitted for this; whether MSK also needs `secretsmanager` as its caller is unverified |
 | RDS writes its master credential under the `secrets` key through Secrets Manager | `secretsmanager` is admitted; a further `rds` statement may be needed |
 | A backup copy across accounts needs the destination account on the database key | Named by `P15-TSK-015` from AWS's documentation, and that vault does not exist (`THREAT_MODEL.md` §6 item 23) |
+| That bound holds a copy to the copy's services | AWS says the destination account's service-linked role makes the copy, and that `kms:ViaService` applies to forward access sessions alone; AWS's own sample leaves use unbounded. If the bound refuses, the copy fails closed, and the first copy job in staging shows it |
+| The caller of `CreateCluster` needs `kms:CreateGrant` and `kms:DescribeKey` on the etcd key | AWS's EKS page names both for that caller. Whether the grant needs anything more is unverified |
 | The operator needs `secretsmanager:GetSecretValue` alone | Read from the operator's source by `P15-TSK-018`, never run against a store |
 | `aws:MultiFactorAuthAge` bounds the factor, and `sts:RoleSessionName` can be held to `${aws:username}` | As AWS documents them; the cluster's and CloudTrail's naming of the session has not been seen |
 
@@ -77,7 +84,7 @@ Each of these reads as AWS documents it and has never met AWS. A real first appl
 
 Inputs: `name_prefix`, `region`, `account_id`, `secret_inventory_path`, `external_secret_manifest_paths`, `secret_store_manifest_path`,
 `workload_namespace`, `cluster_name`, `cluster_role_arn`, `workload_identity_provider_arn`, `workload_identity_issuer`,
-`master_user_secret_arn`, `database_backup_copy_vault_arn`, `human_users`.
+`master_user_secret_arn`, `database_backup_copy_vault_arn`, `human_users`, `bootstrap_role_enabled`.
 Outputs: `kms_key_arns`, `secret_entry_names` (carrying the plan's stops), `secret_reader_role_arns`, `human_role_arns`, and three that read
 the plan back for the roots' tests. See `variables.tf` and `outputs.tf`.
 
@@ -88,9 +95,13 @@ the plan back for the roots' tests. See `variables.tf` and `outputs.tf`.
 - **The overlays' account and region stay placeholders in this repository.** The real role ARNs are the roots' `secret_reader_role_arns`
   outputs. An environment supplies them as a Kustomize patch held with that environment's delivery configuration, never committed here
   (`SECRET_MANAGEMENT.md` §3.5). The manifest policy refuses a real account in anything rendered from this repository.
-- **The cluster's API**: a person assumes the role with a factor, naming their own session
-  (`aws sts assume-role --role-session-name "$USER" ...`), and `aws eks update-kubeconfig`. A token outlives its session by at most
-  fifteen minutes, so the hour is the bound to within that.
+- **Today no person can reach the cluster or the database.** A person has no access key, so no shell session; `GetSessionToken` needs a long-term
+  key, and the console has no `kubectl`. Nothing routes to the private endpoint either. A person can sign in to the console and assume a role, no more.
+  That fails closed, and it means the roles above cannot yet be exercised. Workforce federation (C13) is the real answer, and a network route has to
+  come with it: `THREAT_MODEL.md` §6 item 31(e).
+- **What a person enrolls**: a virtual device must be named after the IAM user (the policy scopes it to `mfa/${aws:username}`), and a role's session must
+  be named exactly the IAM user's name, or the trust refuses it. How long an issued token or an open `watch` outlives a session is unverified.
+- **Removing a person** takes their password, device and any access key with them (`force_destroy`), so the apply does not stop halfway.
 - **A key's deletion window** is 30 days and `prevent_destroy` refuses the plan. `aws kms cancel-key-deletion` stops one in the window.
 - **Before relying on this**: run the checks (`OPERATIONS_RUNBOOK.md` §11.13).
 
@@ -98,4 +109,4 @@ the plan back for the roots' tests. See `variables.tf` and `outputs.tf`.
 
 No secret value, no generator, no rotation function, no signing key (`P15-TSK-007`), no backup account or vault (`THREAT_MODEL.md` §6
 item 23), no cloud API trail and nothing that installs a cluster's first components (§6 item 31), no resource policy on an entry, no
-workforce federation (C13), and no apply.
+way for a person to reach the cluster, no workforce federation (C13), and no apply.

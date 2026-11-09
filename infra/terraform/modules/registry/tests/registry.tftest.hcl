@@ -42,25 +42,6 @@ run "every_push_is_scanned" {
   }
 }
 
-run "only_an_untagged_image_can_expire" {
-  command = plan
-
-  assert {
-    condition = alltrue(flatten([
-      for policy in aws_ecr_lifecycle_policy.this : [
-        for rule in jsondecode(policy.policy).rules :
-        rule.selection.tagStatus == "untagged" && rule.selection.countType == "sinceImagePushed" && rule.selection.countNumber >= 30 && rule.action.type == "expire"
-      ]
-    ]))
-    error_message = "A lifecycle rule can expire a tagged image, which is a release and a rollback target."
-  }
-
-  assert {
-    condition     = length(aws_ecr_lifecycle_policy.this) == length(aws_ecr_repository.this)
-    error_message = "A repository has no lifecycle policy."
-  }
-}
-
 run "no_image_is_refused" {
   command = plan
 

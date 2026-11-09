@@ -136,6 +136,7 @@ module "security" {
   master_user_secret_arn         = module.postgres.master_user_secret_arn
   database_backup_copy_vault_arn = var.database_backup_copy_vault_arn
   human_users                    = var.human_users
+  bootstrap_role_enabled         = var.bootstrap_role_enabled
 }
 
 module "registry" {

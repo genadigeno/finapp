@@ -68,7 +68,7 @@ automated backups to another region would keep point-in-time recovery under anot
 
 Each key's policy is in the security module: the `database` key admits RDS, and the destination's account when the copy crosses one;
 the `database_backup` key admits AWS Backup. The master credential's entry is RDS's own, under the `secrets` key, and only that
-module's break-glass role reads it, through this module's `master_user_secret_arn`.
+module's bootstrap role reads it, while that role exists, through this module's `master_user_secret_arn`.
 
 ## Inputs and outputs
 

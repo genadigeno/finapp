@@ -169,8 +169,9 @@ The test asks Spring, not a string transform, whether each variable reaches its 
 needed once per database (`DATA_MIGRATIONS.md` §2.2), and a value kept in a cluster Secret between two uses of it is standing
 exposure for nothing. **It is the managed database's own**: `modules/postgres` sets `manage_master_user_password`, so RDS generates
 it and keeps it in Secrets Manager under a name of RDS's choosing and the environment's `secrets` key, and nothing in this
-repository reads it. The person running that step reads it, through the audited break-glass access, into the step's own
-environment for that run; no workload role may read it. It is the only value that step reads which no workload holds. The
+repository reads it. The person running that step reads it through a role that exists only for that step (`bootstrap_role_enabled`, off by
+default, `infra/terraform/modules/security`), into the step's own environment for that run; no workload role may read it. Nothing records that read until
+the account has a trail (`THREAT_MODEL.md` §6 item 31). It is the only value that step reads which no workload holds. The
 manifest policy refuses it in either Secret.
 
 ### 3.3 Delivered beside the secrets, and not secrets
