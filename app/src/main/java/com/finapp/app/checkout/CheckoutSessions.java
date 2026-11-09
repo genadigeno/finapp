@@ -71,7 +71,7 @@ import lombok.RequiredArgsConstructor;
  * creation</strong>. The alternative is discovering it at the capture — inside the transaction
  * that moves money, after the customer has paid — which is the difference between a merchant
  * fixing their configuration and a customer's money needing a refund. The third, the expired
- * session, is refused at confirmation by the aggregate's own clock.
+ * session, is refused at confirmation on the database's clock (`P15-TSK-038`).
  */
 @RequiredArgsConstructor
 public final class CheckoutSessions {

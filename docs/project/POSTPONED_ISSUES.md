@@ -11,7 +11,7 @@ commit and the date; do not delete the entry.
 | ID | Status | Found by | Area |
 |---|---|---|---|
 | PI-001 | `POSTPONED` | P12-TSK-003 (2026-10-17) | lending — loan account opener |
-| PI-002 | `POSTPONED` | Phase 12 → 13 transition gate, R2 (2026-10-22) | merchant — card-payment fee version in force on the JVM clock |
+| PI-002 | `FIXED` (2026-11-09, `c04dfbf3`, `P15-TSK-038`; its database case owed to `P15-TST-002`) | Phase 12 → 13 transition gate, R2 (2026-10-22) | merchant — card-payment fee version in force on the JVM clock |
 | PI-003 | `POSTPONED` | Phase 12 → 13 transition gate, R2 (2026-10-22) | merchant — Phase 6 reason columns unscreened for card and account numbers |
 | PI-004 | `POSTPONED` | P13-TST-001, by the owner (2026-10-27) | every later phase's storm (`TST-001`) — run after the project's phases (`P13-TST-001` itself closed by the owner's acceptance, 2026-10-27) |
 | PI-005 | `POSTPONED` | P14-TSK-021, by the owner (2026-11-04) | lending, bnpl — a write-off approved in error has no way back; required before production use of write-offs |
@@ -57,7 +57,7 @@ commit and the date; do not delete the entry.
 
 ## PI-002 — The card-payment fee version in force is chosen on the JVM clock
 
-- **Status:** `POSTPONED` — recorded by the Phase 12 → 13 transition gate (2026-10-22) as out of its scope, at the
+- **Status:** `FIXED` (2026-11-09, `P15-TSK-038`; see the closing paragraph of this entry). `POSTPONED` until then — recorded by the Phase 12 → 13 transition gate (2026-10-22) as out of its scope, at the
   coordinator's direction; **the owner confirms it as post-phase or schedules it** (the gate's owner list, N17). The
   debt row "Time decided across instances outside the session store" (`X-TSK-008`, `CURRENT_STATE.md` §Known
   Architectural Debt) already names this site and says "Phase 15 at the latest" and "the fee schedule is due before the
@@ -85,6 +85,8 @@ commit and the date; do not delete the entry.
   `-033` closes before the ruling reaches it, the post-phase clean-up stays the owner.)* *(Same day: the ruling reached
   `P15-TSK-033` after its gate, which returned the five stores untaken to `X-TSK-008` and the owner; this fix is theirs
   to schedule again - recommended as its own Phase 15 item before `P15-TST-002`.)*
+
+- **`FIXED` (2026-11-09, commit `c04dfbf3`, `P15-TSK-038`, struck at that task's merge as the owner scheduled it):** `CheckoutSessions.open` resolves the version in force after the merchant's share lock in `JdbcFeeScheduleStore.findEffectiveVersionFor`'s own statement, on `GREATEST(clock_timestamp(), transaction_timestamp())`, with the immediately-effective rule; merchant `V014` binds the pin: the insert's own stamp over any writer's value and the version in force by it, `V013`'s corrected form of `V012`'s rank. Held by `StoredBoundsAreTheDatabasesTest` and `CheckoutSessionsFeeVersionOrderTest`; the regression case with the instance's clock and the database's disagreeing across a version boundary is `StoredBoundsClockSkewDatabaseTest#theVersionInForceIsTheDatabasesClock`, written and owed to `P15-TST-002` (C14).
 
 ## PI-003 — Phase 6 merchant reason columns are not screened for card or account numbers
 
