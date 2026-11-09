@@ -85,7 +85,7 @@ class PriorPeriodAdjustmentDeskTest {
     private static final String TODAY = "2026-03-10";
     private static final String REASON = "the secret reason: a fee booked twice";
 
-    private final InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore();
+    private final InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore(CLOCK);
     private final InMemoryPriorPeriodAdjustmentStore store = new InMemoryPriorPeriodAdjustmentStore(periods);
     private final InMemoryPriorPeriodPostings ledger = new InMemoryPriorPeriodPostings();
     private final InMemoryGlMappingStore mappings = new InMemoryGlMappingStore();

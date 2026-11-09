@@ -102,7 +102,6 @@ class RecoveryConcurrencyDatabaseTest {
                     sessions,
                     deriver,
                     IDS,
-                    CLOCK,
                     RANDOMNESS,
                     audit,
                     outbox);

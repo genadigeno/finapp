@@ -59,7 +59,7 @@ class PriorPeriodAdjustmentsTest {
     private static final CorrelationId FLOW = CorrelationId.of("flow-1");
     private static final String REASON = "the secret reason: a fee was booked twice";
 
-    private final InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore();
+    private final InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore(Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC));
     private final InMemoryPriorPeriodAdjustmentStore store = new InMemoryPriorPeriodAdjustmentStore(periods);
     private final InMemoryPriorPeriodPostings ledger = new InMemoryPriorPeriodPostings();
     private final InMemoryGlMappingStore mappings = new InMemoryGlMappingStore();
@@ -73,7 +73,9 @@ class PriorPeriodAdjustmentsTest {
         return machine(store, ledger, periods, Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC));
     }
 
+    /** The machine as of {@code clock}: this instance's clock and the database's agree unless a case then sets the database's apart. */
     private PriorPeriodAdjustments machine(PriorPeriodAdjustmentStore adjustments, PriorPeriodPostings postings, AccountingPeriodStore periodStore, Clock clock) {
+        periods.databaseToday(LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC));
         return new PriorPeriodAdjustments(periodStore, adjustments, postings, mappings, (uow, record) -> audit.add(record), (uow, envelope, payload, mediaType) -> {
             events.add(envelope);
             payloads.add(new String(payload, StandardCharsets.UTF_8));
@@ -213,6 +215,36 @@ class PriorPeriodAdjustmentsTest {
 
         assertThat(periods.all()).hasSize(rows);
         nothingProposed();
+    }
+
+    @Test
+    @DisplayName("the month a correction lands in, and its date, are the database's whatever this instance's clock reads: an instance a month ahead lands it where the database stands, and one behind cannot land it in a month the database has left (P14-REM-009)")
+    void theMonthIsTheDatabases() {
+        Clock april = Clock.fixed(Instant.parse("2026-04-20T09:00:00Z"), ZoneOffset.UTC);
+        PriorPeriodAdjustments ahead = machine(store, ledger, periods, april);
+        periods.databaseToday(TODAY);
+
+        PriorPeriodAdjustments.Acted proposed = ahead.propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW);
+
+        assertThat(proposed.targetMonth()).as("April has no row: on this instance's clock it was refused").isEqualTo(MARCH);
+        assertThat(proposed.postingDate()).isEqualTo(TODAY);
+
+        Clock february = Clock.fixed(Instant.parse("2026-02-27T09:00:00Z"), ZoneOffset.UTC);
+        PriorPeriodAdjustments behind = machine(store, ledger, periods, february);
+        periods.databaseToday(LocalDate.of(2026, 4, 1));
+        assertThatThrownBy(() -> behind.propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW)).isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("has no period yet");
+    }
+
+    @Test
+    @DisplayName("the date is read holding the corrected month's row, and names the target's: corrected FOR SHARE, the date, target FOR SHARE (P14-REM-009)")
+    void theDateIsReadHoldingTheCorrectedRow() {
+        List<String> order = new ArrayList<>();
+        PriorPeriodAdjustments recording = machine(recording(PriorPeriodAdjustmentStore.class, store, order), recording(PriorPeriodPostings.class, ledger, order), recording(AccountingPeriodStore.class, periods, order),
+                Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC));
+
+        recording.propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW);
+
+        assertThat(order).containsSubsequence("lockShared(2026-01)", "today", "lockShared(2026-03)");
     }
 
     @Test

@@ -103,12 +103,14 @@ public interface CheckoutSessionStore<T> {
      * <p>The candidates are a <em>suggestion</em>: each is re-read and re-judged under its own
      * lock, because another writer may have moved it since the list was taken.
      *
-     * @param openBefore an {@code OPEN} session with {@code expires_at} at or before this is
-     *     overdue
-     * @param pendingBefore the same for {@code PAYMENT_PENDING}, already reduced by the grace
+     * <p><strong>No instant crosses this port</strong> ({@code P15-TSK-038}, ADR-0014): the
+     * deadlines are judged in the statement at the database's {@code now()}.
+     *
+     * @param paymentGrace how long past its deadline a {@code PAYMENT_PENDING} session is left
+     *     alone
      */
     java.util.List<CheckoutSession> findExpirable(
-            T unitOfWork, java.time.Instant openBefore, java.time.Instant pendingBefore, int limit);
+            T unitOfWork, java.time.Duration paymentGrace, int limit);
 
     boolean transition(T unitOfWork, CheckoutSession before, CheckoutSession transitioned);
 

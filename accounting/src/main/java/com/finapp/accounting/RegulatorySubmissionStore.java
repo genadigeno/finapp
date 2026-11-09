@@ -48,7 +48,7 @@ public interface RegulatorySubmissionStore {
 
     List<RegulatoryFormLine> lines(Connection unitOfWork, RegulatorySubmissionId id);
 
-    /** The newest {@code limit} kept answers, oldest of them first. */
+    /** The newest {@code limit} kept answers, oldest of them first: by the order they were recorded in, never by a stamp (`P14-REM-009`). */
     List<AnswerRow> answers(Connection unitOfWork, RegulatorySubmissionId id, int limit);
 
     /** How many answers are kept. */
@@ -97,7 +97,7 @@ public interface RegulatorySubmissionStore {
 
     void appendEvent(Connection unitOfWork, EventRow event);
 
-    /** What a person must act on or know of: everything live, a return rejected or undelivered with no correction, one sent or acknowledged and overtaken ({@link Row#overtaken}), and any holding a contrary answer. Oldest first, from after {@code after}, a keyset on what is frozen. */
+    /** What a person must act on or know of: everything live, a return rejected or undelivered with no correction, one sent or acknowledged and overtaken ({@link Row#overtaken}), and any holding a contrary answer. Oldest first by the order the rows were recorded in, from after {@code after}, a keyset on what is frozen by grant (`P14-REM-009`). */
     List<Row> standing(Connection unitOfWork, Optional<RegulatorySubmissionId> after, int limit);
 
     /** Those {@code VALIDATED} and prepared by anyone but {@code reader}, oldest first: the filter is the statement's, before its limit. */

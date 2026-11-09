@@ -70,7 +70,7 @@ class AccountingCloseScheduleTest {
             new Class<?>[] {Connection.class}, (proxy, method, args) -> null);
     private static final Actor ACCOUNTANT = new Actor("accountant-1", ActorType.CUSTOMER);
 
-    private final InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore();
+    private final InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore(CLOCK);
     private final InMemoryCloseRunStore store = new InMemoryCloseRunStore(periods);
     private final CloseRuns runs = new CloseRuns(store, periods, new InMemoryAccountingBreakStore(), CloseRuns.Leases.STANDARD,
             (uow, record) -> { }, IDS, CLOCK);

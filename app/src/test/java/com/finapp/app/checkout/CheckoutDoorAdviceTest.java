@@ -82,7 +82,7 @@ class CheckoutDoorAdviceTest {
             participants(),
             products(),
             enrolments(),
-            CLOCK);
+            unitOfWork -> CLOCK.instant());
 
     // ------------------------------------------------------------------ the advice
 

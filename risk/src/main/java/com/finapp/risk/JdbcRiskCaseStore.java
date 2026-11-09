@@ -52,8 +52,19 @@ public final class JdbcRiskCaseStore implements RiskCaseStore {
     static final String LOCK_OPEN = "SELECT " + COLUMNS + " FROM risk.risk_case"
             + " WHERE subject_ref = ? AND kind = ? AND status <> 'DISPOSED' FOR UPDATE";
 
-    static final String LATEST_DISPOSED = "SELECT id FROM risk.risk_case"
-            + " WHERE subject_ref = ? AND kind = ? AND status = 'DISPOSED' ORDER BY disposed_at DESC, id DESC LIMIT 1";
+    /**
+     * The disposed case the next one names as its predecessor: the chain's tail, the disposed case no case of the subject's and
+     * kind names (P15-TSK-037). It read {@code ORDER BY disposed_at DESC, id DESC} until then: {@code risk_case_one_open} makes
+     * a subject's cases of a kind strictly sequential, so the tail is the row order's answer and no clock's; a stamp a stepped
+     * database clock wrote could name an earlier case the latest. {@code c.id} (a UUIDv7) only breaks a tie among tails a past
+     * branch of the chain might have left, never the chain's order. A disposal committing between this read and the insert still
+     * reads as no successor yet, as the stamp did: the link is shown to a person and decides nothing, so the lag stands.
+     */
+    static final String LATEST_DISPOSED = "SELECT c.id FROM risk.risk_case c"
+            + " WHERE c.subject_ref = ? AND c.kind = ? AND c.status = 'DISPOSED'"
+            + " AND NOT EXISTS (SELECT 1 FROM risk.risk_case s WHERE s.subject_ref = c.subject_ref AND s.kind = c.kind"
+            + " AND s.predecessor_case_id = c.id)"
+            + " ORDER BY c.id DESC LIMIT 1";
 
     /** The step - conditional on the revision the lock read; the revision the database's + 1. */
     static final String ADVANCE = "UPDATE risk.risk_case SET status = ?, revision = revision + 1, level = ?, queue = ?,"

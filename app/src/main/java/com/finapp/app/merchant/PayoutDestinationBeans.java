@@ -97,7 +97,6 @@ public class PayoutDestinationBeans {
             PayoutDestinationStore<Connection> payoutDestinationStore,
             AuditWriter<Connection> auditWriter,
             IdGenerator ids,
-            Clock clock,
             PlatformTransactionManager transactionManager,
             DataSource dataSource,
             @Value("${finapp.merchant.payout-destination.effectuation.batch:50}") int batchSize) {
@@ -106,7 +105,6 @@ public class PayoutDestinationBeans {
                 payoutDestinationStore,
                 auditWriter,
                 ids,
-                clock,
                 batchSize);
     }
 

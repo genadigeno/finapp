@@ -131,6 +131,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
@@ -167,6 +169,16 @@ class PriorPeriodAdjustmentDatabaseTest {
     private final JdbcLedgerAccountStore accounts = new JdbcLedgerAccountStore();
     private final JdbcPriorPeriodAdjustmentStore store = new JdbcPriorPeriodAdjustmentStore();
 
+    @BeforeAll
+    static void installTheShadowClock() throws SQLException {
+        ShadowClock.install();
+    }
+
+    @AfterAll
+    static void dropTheShadowClock() throws SQLException {
+        ShadowClock.uninstall();
+    }
+
     @BeforeEach
     void januaryClosedFebruaryOpen() {
         AccountingPeriodFixture.openJanuaryAndFebruary();
@@ -191,6 +203,25 @@ class PriorPeriodAdjustmentDatabaseTest {
         Actor rejecter = person();
         inScope(rejecter, uow -> machine().reject(uow, proposed.id(), rejecter, "no longer owed", correlation()));
         assertThat(standing(java.time.Duration.ofMillis(1))).isEqualTo(before);
+    }
+
+    /** Through the real store, so the real {@code TODAY_SQL} on a session whose clock {@link ShadowClock} moved: every other case here is {@link AccountingPeriodFixture#datedBy dated by a test double}. */
+    @Test
+    @DisplayName("the month a correction lands in and its date are the database's own reading, with this instance's clock decades away and a month with no period on it (P14-REM-009)")
+    void theMonthIsTheDatabasesOwnReading() throws Exception {
+        assertThat(LocalDate.ofInstant(NOW.instant(), java.time.ZoneOffset.UTC)).as("the precondition: this instance's clock is past February 1999").isAfter(FEBRUARY.atEndOfMonth());
+        assertThat(ShadowClock.on(LANDS_ON, ACCOUNTANT, AccountingPeriodFixture.STORE::today)).as("the precondition: the store's real reading, on the stepped session").isEqualTo(LANDS_ON);
+        PriorPeriodAdjustments onTheRealStore = new PriorPeriodAdjustments(AccountingPeriodFixture.STORE, store, postings(), new JdbcGlMappingStore(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
+        AccountingPeriodId january = id(JANUARY);
+        int revision = row(JANUARY).revision();
+        List<PriorPeriodPostings.Line> lines = lines();
+
+        PriorPeriodAdjustments.Acted proposed = ShadowClock.on(LANDS_ON, ACCOUNTANT, uow -> onTheRealStore.propose(uow, january, revision, lines, ACCOUNTANT, REASON, correlation()));
+
+        assertThat(proposed.targetMonth()).as("on this instance's clock the month has no period, and it was refused").isEqualTo(FEBRUARY);
+        assertThat(proposed.postingDate()).isEqualTo(LANDS_ON);
+        Actor rejecter = person();
+        inScope(rejecter, uow -> machine().reject(uow, proposed.id(), rejecter, "the clock's case is done", correlation()));
     }
 
     private long standing(java.time.Duration bound) throws SQLException {
@@ -865,7 +896,7 @@ class PriorPeriodAdjustmentDatabaseTest {
     }
 
     private PriorPeriodAdjustments machine(Clock clock) {
-        return new PriorPeriodAdjustments(AccountingPeriodFixture.STORE, store, postings(), new JdbcGlMappingStore(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, clock);
+        return new PriorPeriodAdjustments(AccountingPeriodFixture.datedBy(clock), store, postings(), new JdbcGlMappingStore(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, clock);
     }
 
     private LedgerPriorPeriodPostings postings() {

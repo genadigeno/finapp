@@ -58,6 +58,23 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
     /** SQLState 23505. The arbiter's answer, not a failure. */
     private static final String UNIQUE_VIOLATION = "23505";
 
+    /**
+     * A version's birth, its start floored at the latest immediately-effective lower-numbered version's of the same schedule
+     * (P15-TSK-037; the routing version's rule): an immediate version is stamped by its creating instance's clock, so two minted
+     * within a step or skew of one another could read reversed and the later (the higher number) be shadowed by the earlier for
+     * good, a stale rate pricing every payment after it - in force is the greatest {@code effective_from}. The floor applies to
+     * every new version, a scheduled one included: a scheduled start below an immediate predecessor's would be shadowed by it the
+     * same way, so the stored start can be later than the instant asked for (by the immediate version's lead over the operator's
+     * clock). The minting arbiter admits a number only after every lower number of the schedule committed, so this statement's
+     * snapshot sees them all. {@code RETURNING} hands back what was stored, so the caller's version, its audit and its answer
+     * are the row's.
+     */
+    static final String INSERT_VERSION = "INSERT INTO merchant.fee_schedule_version (" + VERSION_COLUMNS + ")"
+            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GREATEST(CAST(? AS timestamptz),"
+            + " (SELECT max(v.effective_from) FROM merchant.fee_schedule_version v WHERE v.fee_schedule_id = ? AND v.version < ?"
+            + " AND v.effective_from = v.created_at)), ?, ?)"
+            + " RETURNING effective_from, created_at";
+
     // ----------------------------------------------------------------- schedules
 
     @Override
@@ -104,7 +121,7 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
     // ----------------------------------------------------------------- versions
 
     @Override
-    public boolean insertVersionIfNumberIsFree(
+    public Optional<FeeScheduleVersion> insertVersionIfNumberIsFree(
             Connection unitOfWork, FeeScheduleVersion version) {
         // The savepoint is what keeps a lost race cheap: a unique violation poisons the
         // transaction, and without one the audit record written beside this version would be
@@ -116,10 +133,7 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
             throw new MerchantStorageException(
                     DatabaseFailure.describe("preparing a fee schedule version insert", failure));
         }
-        try (PreparedStatement insert =
-                unitOfWork.prepareStatement(
-                        "INSERT INTO merchant.fee_schedule_version (" + VERSION_COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+        try (PreparedStatement insert = unitOfWork.prepareStatement(INSERT_VERSION)) {
             insert.setObject(1, version.id().value());
             insert.setObject(2, version.scheduleId().value());
             insert.setInt(3, version.version());
@@ -130,16 +144,26 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
             insert.setString(8, version.roundingPolicy().policyName());
             insert.setString(9, version.refundFeePolicy().name());
             insert.setTimestamp(10, Timestamp.from(version.effectiveFrom()));
-            insert.setTimestamp(11, Timestamp.from(version.createdAt()));
-            insert.setString(12, version.createdBy());
-            insert.executeUpdate();
+            insert.setObject(11, version.scheduleId().value());
+            insert.setInt(12, version.version());
+            insert.setTimestamp(13, Timestamp.from(version.createdAt()));
+            insert.setString(14, version.createdBy());
+            FeeScheduleVersion stored;
+            try (ResultSet row = insert.executeQuery()) {
+                row.next();
+                // Both stamps as stored: the column's precision, so the version's forward-only rule compares like with like.
+                stored = FeeScheduleVersion.rehydrate(version.id(), version.scheduleId(), version.version(), version.rate(),
+                        version.fixed(), version.roundingPolicy(), version.refundFeePolicy(),
+                        row.getTimestamp("effective_from").toInstant(), row.getTimestamp("created_at").toInstant(),
+                        version.createdBy());
+            }
             unitOfWork.releaseSavepoint(attempt);
-            return true;
+            return Optional.of(stored);
         } catch (SQLException failure) {
             if (UNIQUE_VIOLATION.equals(failure.getSQLState())) {
                 // Another writer took this number. Not an error - the arbiter answering.
                 rollbackTo(unitOfWork, attempt);
-                return false;
+                return Optional.empty();
             }
             throw new MerchantStorageException(
                     DatabaseFailure.describe("inserting a fee schedule version", failure));
@@ -293,18 +317,27 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
 
     @Override
     public Optional<FeeScheduleVersion> findEffectiveVersionFor(
-            Connection unitOfWork, MerchantId merchantId, Instant instant) {
+            Connection unitOfWork, MerchantId merchantId) {
+        // ON THE DATABASE'S CLOCK, AFTER THE CALLER'S LOCKS (P15-TSK-038, PI-002): the instant is
+        // this statement's own, BnplPricing's reading, so no instance's clock chooses the version.
+        // A version created to take effect immediately is in force from its commit, whatever its
+        // creating instance's clock stamped (the rule findEffectiveVersion reads), unless the
+        // insert floored its start (P15-TSK-037): then effective_from is above created_at, it is
+        // judged as a scheduled version, and the one before it keeps answering until the clock
+        // reaches the floor - bounded by the skew or step that made the floor necessary.
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
                         "SELECT " + prefixed(VERSION_COLUMNS, "v")
                                 + " FROM merchant.merchant_fee_schedule a"
                                 + " JOIN merchant.fee_schedule_version v"
                                 + "   ON v.fee_schedule_id = a.fee_schedule_id"
-                                + " WHERE a.merchant_id = ? AND v.effective_from <= ?"
+                                + " WHERE a.merchant_id = ?"
+                                + " AND (v.effective_from <= GREATEST(clock_timestamp(),"
+                                + " transaction_timestamp())"
+                                + " OR v.effective_from = v.created_at)"
                                 + " ORDER BY v.effective_from DESC, v.version DESC"
                                 + " LIMIT 1")) {
             select.setObject(1, merchantId.value());
-            select.setTimestamp(2, Timestamp.from(instant));
             try (ResultSet rows = select.executeQuery()) {
                 return rows.next() ? Optional.of(versionFrom(rows)) : Optional.empty();
             }

@@ -146,7 +146,8 @@ public final class FeeSchedules {
                         .findSchedule(unitOfWork, scheduleId)
                         .orElseThrow(UnknownFeeScheduleException::new);
 
-        FeeScheduleVersion version = mintVersion(unitOfWork, schedule, request, actor);
+        Minted minted = mintVersion(unitOfWork, schedule, request, actor);
+        FeeScheduleVersion version = minted.stored();
 
         audit.append(
                 unitOfWork,
@@ -167,8 +168,20 @@ public final class FeeSchedules {
                                         + ", fixed=" + version.fixed()
                                         + ", rounding=" + version.roundingPolicy().policyName()
                                         + ", refundFee=" + version.refundFeePolicy()
-                                        + ", effectiveFrom=" + version.effectiveFrom())));
+                                        + ", " + effectiveFromForAudit(version.effectiveFrom(), minted.asked()))));
         return version;
+    }
+
+    /** A minted version as the insert stored it, and the instant the request asked for it to start. */
+    private record Minted(FeeScheduleVersion stored, Instant asked) {}
+
+    /**
+     * The audit's start (`P15-TSK-037`): the instant stored; and where the insert's floor moved it, the instant asked for too, so
+     * the record says both. Compared past the column's microsecond, whose rounding is not a floor.
+     */
+    static String effectiveFromForAudit(Instant stored, Instant asked) {
+        return "effectiveFrom=" + stored
+                + (stored.isAfter(asked.plus(1, java.time.temporal.ChronoUnit.MICROS)) ? ", askedEffectiveFrom=" + asked : "");
     }
 
     /**
@@ -258,7 +271,7 @@ public final class FeeSchedules {
      * that a pathological storm fails loudly rather than spinning: sixteen concurrent version
      * creations on one schedule is not a workload, it is a defect somewhere else.
      */
-    private FeeScheduleVersion mintVersion(
+    private Minted mintVersion(
             Connection unitOfWork, FeeSchedule schedule, NewVersion request, Actor actor) {
         for (int attempt = 1; attempt <= MAX_MINTING_ATTEMPTS; attempt++) {
             FeeScheduleVersion candidate =
@@ -273,8 +286,9 @@ public final class FeeSchedules {
                             request.effectiveFrom(),
                             actor.id(),
                             clock);
-            if (schedules.insertVersionIfNumberIsFree(unitOfWork, candidate)) {
-                return candidate;
+            Optional<FeeScheduleVersion> stored = schedules.insertVersionIfNumberIsFree(unitOfWork, candidate);
+            if (stored.isPresent()) {
+                return new Minted(stored.get(), candidate.effectiveFrom());
             }
         }
         throw new MerchantStorageException(
@@ -304,28 +318,29 @@ public final class FeeSchedules {
     }
 
     /**
-     * The version pricing {@code merchantId} at {@code instant} — what {@code P6-TSK-005} pins
-     * at intent creation, and the reason the rest of this class exists.
+     * The version pricing {@code merchantId} now, on the database's clock
+     * ({@code P15-TSK-038}, PI-002) — what {@code P6-TSK-005} pins at intent creation, and the
+     * reason the rest of this class exists.
      *
      * <p>Empty when the merchant has no assignment, or has one whose schedule has no version
      * effective yet. Honest rather than defaulted: fabricating a schedule for an unpriced
      * merchant would price a capture at a number nobody agreed.
      */
     public Optional<FeeScheduleVersion> effectiveVersionFor(
-            Connection unitOfWork, MerchantId merchantId, Instant instant) {
-        return schedules.findEffectiveVersionFor(unitOfWork, merchantId, instant);
+            Connection unitOfWork, MerchantId merchantId) {
+        return schedules.findEffectiveVersionFor(unitOfWork, merchantId);
     }
 
     /**
-     * Prices {@code gross} for {@code merchantId} as at {@code instant}, pinning the version
-     * that priced it.
+     * Prices {@code gross} for {@code merchantId} now, on the database's clock, pinning the
+     * version that priced it.
      *
      * <p>Composition only — the arithmetic is {@link FeeCalculation}'s and is pure, so that the
      * property that matters ({@code fee + net == gross}) is provable without a database.
      */
     public Optional<FeeAssessment> assess(
-            Connection unitOfWork, MerchantId merchantId, Money gross, Instant instant) {
-        return effectiveVersionFor(unitOfWork, merchantId, instant)
+            Connection unitOfWork, MerchantId merchantId, Money gross) {
+        return effectiveVersionFor(unitOfWork, merchantId)
                 .map(version -> FeeCalculation.assess(gross, version));
     }
 

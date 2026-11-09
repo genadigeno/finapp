@@ -97,7 +97,6 @@ public class CheckoutBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
-            Clock clock,
             PlatformTransactionManager transactionManager,
             DataSource dataSource,
             @org.springframework.beans.factory.annotation.Value(
@@ -114,7 +113,6 @@ public class CheckoutBeans {
                 auditWriter,
                 outboxWriter,
                 ids,
-                clock,
                 paymentGrace,
                 batchSize,
                 // THE UNDISPATCHED PAYMENT ENDS WITH ITS SESSION (the Phase 7 -> 8 transition):
@@ -193,7 +191,7 @@ public class CheckoutBeans {
                         paymentParticipants,
                         customerAccountStore,
                         mfaEnrolmentStore,
-                        clock));
+                        checkoutSessions::databaseNow));
     }
 
     @Bean
