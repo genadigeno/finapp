@@ -34,7 +34,7 @@ RUN java -Djarmode=tools -jar application.jar extract --layers --launcher --dest
 
 # The runtime base: distroless Java 21, the nonroot variant - no shell, no package manager, a JRE and its certificates.
 # A stage of its own, with nothing added, so that the two images built on it (below) name one pin between them.
-FROM gcr.io/distroless/java21-debian13:nonroot@sha256:b22857e939bd95abd69d9d747f0421a274f9f70855ecfc335f7d97f6eeef578d AS distroless
+FROM gcr.io/distroless/java21-debian13:nonroot@sha256:d978eefd303c59c42f382aef811a0e41f2c68a6e5c319a23769cd3d1d5bf8e3c AS distroless
 
 # The migrator image, finapp-migrator (P15-TSK-004; PHASE_15_PLAN.md section 5; ADR-0120 decision 1): every module's
 # migrations and the program that applies them, on the same base as the application. Build it with
