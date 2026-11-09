@@ -32,10 +32,30 @@
 #   no-etcd-encryption      the cluster's encryption block removed      the kubernetes module's test
 #   two-zones               the three-zone rule relaxed to two          the network module's test
 #
+# And one per named property of the data tier. A plant can mutate infra/kafka and read deploy too,
+# because each copy keeps the repository's shape, and those are the files the data tier reads:
+#
+#   multi-az-off              the database's standby turned off         the postgres module's test
+#   force-ssl-off             rds.force_ssl set to 0                    the postgres module's test
+#   database-public           the database given a public address       the postgres module's test
+#   backup-key-shared         the separate-key rule removed             the postgres module's test
+#   max-connections-restated  a number in place of the overlay's        production's test
+#   unclean-election-on       the posture's unclean election turned on  the kafka module's test
+#   auto-create-on            the posture's auto-create turned on       the kafka module's test
+#   min-insync-one            the posture's min.insync.replicas at 1    the kafka module's test
+#   brokers-plaintext         clients admitted without TLS              the kafka module's test
+#   brokers-unauthenticated   unauthenticated access turned on          the kafka module's test
+#   scram-unprefixed          a SCRAM secret without MSK's prefix       the kafka module's test
+#   topics-from-a-copy        production's topics read from another     production's test
+#                             file
+#   public-archive            one of a bucket's public blocks off       the object-storage test
+#   no-object-lock            the audit archive created without a lock  the object-storage test
+#
 # WHAT IT NEVER DOES. It initialises no backend (every init is -backend=false) and holds no credential:
-# no container is given a variable or a file from the host beyond the infra directory, mounted
-# read-only, and a scratch volume of its own, removed at exit. terraform test keeps its state in
-# memory, and every test file mocks every provider its root requires (TerraformIsPinnedAndCheckedTest).
+# no container is given a variable or a file from the host beyond the infra and deploy directories,
+# mounted read-only (deploy holds the overlays, whose max_connections the database reads), and a
+# scratch volume of its own, removed at exit. terraform test keeps its state in memory, and every test
+# file mocks every provider its root requires (TerraformIsPinnedAndCheckedTest).
 # Nothing here can change the tree, the lock files or any cloud account.
 #
 # SAME BYTES HERE AND IN CI. Every tool is an image pinned by digest in infra/scanner-pins.sh; tflint
@@ -54,43 +74,53 @@ set -eu
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 # ---------------------------------------------------------------------------------------------------
-# Inside the Terraform container: /repo/infra is the repository's infra directory, read-only;
-# /scratch is this run's volume. Called by the host half below, never by hand.
+# Inside the Terraform container: /repo/infra and /repo/deploy are the repository's directories,
+# read-only; /scratch is this run's volume. Called by the host half below, never by hand.
 # ---------------------------------------------------------------------------------------------------
 TREE=/repo/infra/terraform
 
+# A copy keeps the repository's shape, so a root's ../../../kafka and ../../../../deploy resolve in it.
 plant() {
     rm -rf "/scratch/plants/$1"
-    mkdir -p /scratch/plants
-    cp -R "$TREE" "/scratch/plants/$1"
+    mkdir -p "/scratch/plants/$1/infra"
+    cp -R "$TREE" "/scratch/plants/$1/infra/terraform"
+    cp -R /repo/infra/kafka "/scratch/plants/$1/infra/kafka"
+    cp -R /repo/deploy "/scratch/plants/$1/deploy"
 }
 
 planted() {
-    if cmp -s "$TREE/$2" "/scratch/plants/$1/$2"; then
+    if cmp -s "$TREE/$2" "/scratch/plants/$1/infra/terraform/$2"; then
         echo "!!   plant $1 was not planted: $2 is unchanged, so its mutation no longer applies" >&2
+        exit 1
+    fi
+}
+
+planted_posture() {
+    if cmp -s /repo/infra/kafka/broker.properties "/scratch/plants/$1/infra/kafka/broker.properties"; then
+        echo "!!   plant $1 was not planted: broker.properties is unchanged, so its mutation no longer applies" >&2
         exit 1
     fi
 }
 
 plant_all() {
     plant unformatted
-    printf 'locals {\n    plant   =     "unformatted"\n}\n' >> /scratch/plants/unformatted/environments/staging/main.tf
+    printf 'locals {\n    plant   =     "unformatted"\n}\n' >> /scratch/plants/unformatted/infra/terraform/environments/staging/main.tf
     planted unformatted environments/staging/main.tf
 
     plant unpinned-provider
-    sed -i '/^ *version *= /d' /scratch/plants/unpinned-provider/environments/staging/versions.tf
+    sed -i '/^ *version *= /d' /scratch/plants/unpinned-provider/infra/terraform/environments/staging/versions.tf
     planted unpinned-provider environments/staging/versions.tf
 
     plant camel-case
-    sed -i 's/^module "conventions"/module "namingConventions"/' /scratch/plants/camel-case/environments/staging/main.tf
+    sed -i 's/^module "conventions"/module "namingConventions"/' /scratch/plants/camel-case/infra/terraform/environments/staging/main.tf
     sed -i 's/module\.conventions\./module.namingConventions./g' \
-        /scratch/plants/camel-case/environments/staging/main.tf \
-        /scratch/plants/camel-case/environments/staging/providers.tf \
-        /scratch/plants/camel-case/environments/staging/outputs.tf
+        /scratch/plants/camel-case/infra/terraform/environments/staging/main.tf \
+        /scratch/plants/camel-case/infra/terraform/environments/staging/providers.tf \
+        /scratch/plants/camel-case/infra/terraform/environments/staging/outputs.tf
     planted camel-case environments/staging/main.tf
 
     plant public-bucket
-    cat > /scratch/plants/public-bucket/environments/staging/plant.tf <<'HCL'
+    cat > /scratch/plants/public-bucket/infra/terraform/environments/staging/plant.tf <<'HCL'
 resource "aws_s3_bucket" "plant" {
   bucket = "finapp-staging-plant"
 }
@@ -107,45 +137,115 @@ HCL
 
     plant invalid
     printf '\noutput "plant" {\n  description = "A reference to nothing."\n  value       = local.undeclared\n}\n' \
-        >> /scratch/plants/invalid/environments/staging/outputs.tf
+        >> /scratch/plants/invalid/infra/terraform/environments/staging/outputs.tf
     planted invalid environments/staging/outputs.tf
 
     plant untagged
-    sed -i '/ManagedBy/d' /scratch/plants/untagged/modules/conventions/main.tf
+    sed -i '/ManagedBy/d' /scratch/plants/untagged/infra/terraform/modules/conventions/main.tf
     planted untagged modules/conventions/main.tf
 
     plant public-endpoint
     sed -i 's/endpoint_public_access  = false/endpoint_public_access  = true/' \
-        /scratch/plants/public-endpoint/modules/kubernetes/main.tf
+        /scratch/plants/public-endpoint/infra/terraform/modules/kubernetes/main.tf
     planted public-endpoint modules/kubernetes/main.tf
 
     plant public-workload-subnet
     sed -i '/^resource "aws_subnet" "private"/,/^}/ s/map_public_ip_on_launch = false/map_public_ip_on_launch = true/' \
-        /scratch/plants/public-workload-subnet/modules/network/main.tf
+        /scratch/plants/public-workload-subnet/infra/terraform/modules/network/main.tf
     planted public-workload-subnet modules/network/main.tf
 
     plant cluster-on-edge-tier
     sed -i 's/module\.network\.private_subnet_ids_by_zone/module.network.public_subnet_ids_by_zone/' \
-        /scratch/plants/cluster-on-edge-tier/environments/staging/main.tf
+        /scratch/plants/cluster-on-edge-tier/infra/terraform/environments/staging/main.tf
     planted cluster-on-edge-tier environments/staging/main.tf
 
     plant no-flow-logs
     sed -i 's/traffic_type             = "ALL"/traffic_type             = "REJECT"/' \
-        /scratch/plants/no-flow-logs/modules/network/main.tf
+        /scratch/plants/no-flow-logs/infra/terraform/modules/network/main.tf
     planted no-flow-logs modules/network/main.tf
 
     plant no-audit-log
-    sed -i 's/\["api", "audit", /["api", /' /scratch/plants/no-audit-log/modules/kubernetes/main.tf
+    sed -i 's/\["api", "audit", /["api", /' /scratch/plants/no-audit-log/infra/terraform/modules/kubernetes/main.tf
     planted no-audit-log modules/kubernetes/main.tf
 
     plant no-etcd-encryption
-    sed -i '/^  encryption_config {/,/^  }/d' /scratch/plants/no-etcd-encryption/modules/kubernetes/main.tf
+    sed -i '/^  encryption_config {/,/^  }/d' /scratch/plants/no-etcd-encryption/infra/terraform/modules/kubernetes/main.tf
     planted no-etcd-encryption modules/kubernetes/main.tf
 
     plant two-zones
     sed -i 's/length(distinct(var\.availability_zones)) >= 3/length(distinct(var.availability_zones)) >= 2/' \
-        /scratch/plants/two-zones/modules/network/variables.tf
+        /scratch/plants/two-zones/infra/terraform/modules/network/variables.tf
     planted two-zones modules/network/variables.tf
+
+    plant multi-az-off
+    sed -i 's/multi_az               = true/multi_az               = false/' \
+        /scratch/plants/multi-az-off/infra/terraform/modules/postgres/main.tf
+    planted multi-az-off modules/postgres/main.tf
+
+    plant force-ssl-off
+    sed -i '/name         = "rds.force_ssl"/,/apply_method/ s/value        = "1"/value        = "0"/' \
+        /scratch/plants/force-ssl-off/infra/terraform/modules/postgres/main.tf
+    planted force-ssl-off modules/postgres/main.tf
+
+    plant database-public
+    sed -i 's/publicly_accessible    = false/publicly_accessible    = true/' \
+        /scratch/plants/database-public/infra/terraform/modules/postgres/main.tf
+    planted database-public modules/postgres/main.tf
+
+    plant backup-key-shared
+    sed -i 's/condition     = var\.backup_kms_key_arn != var\.storage_kms_key_arn/condition     = true/' \
+        /scratch/plants/backup-key-shared/infra/terraform/modules/postgres/variables.tf
+    planted backup-key-shared modules/postgres/variables.tf
+
+    plant max-connections-restated
+    sed -i 's/max_connections           = local\.server_max_connections/max_connections           = 90/' \
+        /scratch/plants/max-connections-restated/infra/terraform/environments/production/main.tf
+    planted max-connections-restated environments/production/main.tf
+
+    plant unclean-election-on
+    sed -i 's/^unclean\.leader\.election\.enable=false/unclean.leader.election.enable=true/' \
+        /scratch/plants/unclean-election-on/infra/kafka/broker.properties
+    planted_posture unclean-election-on
+
+    plant auto-create-on
+    sed -i 's/^auto\.create\.topics\.enable=false/auto.create.topics.enable=true/' \
+        /scratch/plants/auto-create-on/infra/kafka/broker.properties
+    planted_posture auto-create-on
+
+    plant min-insync-one
+    sed -i 's/^min\.insync\.replicas=2/min.insync.replicas=1/' \
+        /scratch/plants/min-insync-one/infra/kafka/broker.properties
+    planted_posture min-insync-one
+
+    plant brokers-plaintext
+    sed -i 's/client_broker = "TLS"/client_broker = "TLS_PLAINTEXT"/' \
+        /scratch/plants/brokers-plaintext/infra/terraform/modules/kafka/main.tf
+    planted brokers-plaintext modules/kafka/main.tf
+
+    plant brokers-unauthenticated
+    sed -i 's/unauthenticated = false/unauthenticated = true/' \
+        /scratch/plants/brokers-unauthenticated/infra/terraform/modules/kafka/main.tf
+    planted brokers-unauthenticated modules/kafka/main.tf
+
+    plant scram-unprefixed
+    sed -i 's/name        = "AmazonMSK_\${each\.value}"/name        = each.value/' \
+        /scratch/plants/scram-unprefixed/infra/terraform/modules/kafka/main.tf
+    planted scram-unprefixed modules/kafka/main.tf
+
+    plant topics-from-a-copy
+    sed -i 's#\${path\.module}/\.\./\.\./\.\./kafka/topics\.yaml#${path.module}/../../modules/kafka/tests/fixture-topics.yaml#' \
+        /scratch/plants/topics-from-a-copy/infra/terraform/environments/production/main.tf
+    planted topics-from-a-copy environments/production/main.tf
+
+    plant public-archive
+    sed -i 's/block_public_policy     = true/block_public_policy     = false/' \
+        /scratch/plants/public-archive/infra/terraform/modules/object-storage/main.tf
+    planted public-archive modules/object-storage/main.tf
+
+    plant no-object-lock
+    sed -i 's/object_lock_enabled = each\.key == "audit-archive"/object_lock_enabled = false/' \
+        /scratch/plants/no-object-lock/infra/terraform/modules/object-storage/main.tf
+    planted no-object-lock modules/object-storage/main.tf
 }
 
 # Every directory holding a .tf file, found rather than listed, so a module added later is checked
@@ -224,9 +324,11 @@ trap 'exit 130' INT TERM
 
 # MSYS_NO_PATHCONV stops Git Bash on Windows rewriting /repo and /scratch into host paths. Unset and
 # harmless on Linux, where CI runs.
+REPO=$(CDPATH= cd -- "$DIR/.." && pwd)
+
 in_terraform() {
     MSYS_NO_PATHCONV=1 docker run --rm --entrypoint /bin/sh \
-        -v "$DIR:/repo/infra:ro" -v "$VOLUME:/scratch" \
+        -v "$DIR:/repo/infra:ro" -v "$REPO/deploy:/repo/deploy:ro" -v "$VOLUME:/scratch" \
         "$TERRAFORM_IMAGE" /repo/infra/scripts/terraform-check.sh --in-container "$@"
 }
 
@@ -240,13 +342,13 @@ terraform_on() {
 
 tflint_on() {
     MSYS_NO_PATHCONV=1 docker run --rm \
-        -v "$DIR:/repo/infra:ro" -v "$VOLUME:/scratch:ro" \
+        -v "$DIR:/repo/infra:ro" -v "$REPO/deploy:/repo/deploy:ro" -v "$VOLUME:/scratch:ro" \
         "$TFLINT_IMAGE" --recursive --chdir="$1" --config="$1/.tflint.hcl" --no-color
 }
 
 trivy_on() {
     MSYS_NO_PATHCONV=1 docker run --rm \
-        -v "$DIR:/repo/infra:ro" -v "$VOLUME:/scratch:ro" \
+        -v "$DIR:/repo/infra:ro" -v "$REPO/deploy:/repo/deploy:ro" -v "$VOLUME:/scratch:ro" \
         "$TRIVY_IMAGE" config --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --quiet "$1"
 }
 
@@ -291,19 +393,33 @@ check "tflint" tflint_on "$TREE"
 check "trivy config" trivy_on "$TREE"
 check "terraform validate and test" terraform_on "$TREE"
 
-refuses unformatted "environments/staging/main.tf" fmt_on "$PLANTS/unformatted"
-refuses unpinned-provider "terraform_required_providers" tflint_on "$PLANTS/unpinned-provider"
-refuses camel-case "terraform_naming_convention" tflint_on "$PLANTS/camel-case"
-refuses public-bucket "AWS-0086" trivy_on "$PLANTS/public-bucket"
-refuses invalid "Reference to undeclared local value" terraform_on "$PLANTS/invalid" environments/staging
-refuses untagged "convention's tags" terraform_on "$PLANTS/untagged" modules/conventions
-refuses public-endpoint "The API endpoint has a public address" terraform_on "$PLANTS/public-endpoint" modules/kubernetes
-refuses public-workload-subnet "A workload subnet assigns a public address" terraform_on "$PLANTS/public-workload-subnet" modules/network
-refuses cluster-on-edge-tier "not on exactly the workload subnets" terraform_on "$PLANTS/cluster-on-edge-tier" environments/staging
-refuses no-flow-logs "flow log does not cover every flow" terraform_on "$PLANTS/no-flow-logs" modules/network
-refuses no-audit-log "audit log is off" terraform_on "$PLANTS/no-audit-log" modules/kubernetes
-refuses no-etcd-encryption "Kubernetes Secrets are not encrypted in etcd" terraform_on "$PLANTS/no-etcd-encryption" modules/kubernetes
-refuses two-zones "var.availability_zones, was expected to report" terraform_on "$PLANTS/two-zones" modules/network
+refuses unformatted "environments/staging/main.tf" fmt_on "$PLANTS/unformatted/infra/terraform"
+refuses unpinned-provider "terraform_required_providers" tflint_on "$PLANTS/unpinned-provider/infra/terraform"
+refuses camel-case "terraform_naming_convention" tflint_on "$PLANTS/camel-case/infra/terraform"
+refuses public-bucket "AWS-0086" trivy_on "$PLANTS/public-bucket/infra/terraform"
+refuses invalid "Reference to undeclared local value" terraform_on "$PLANTS/invalid/infra/terraform" environments/staging
+refuses untagged "convention's tags" terraform_on "$PLANTS/untagged/infra/terraform" modules/conventions
+refuses public-endpoint "The API endpoint has a public address" terraform_on "$PLANTS/public-endpoint/infra/terraform" modules/kubernetes
+refuses public-workload-subnet "A workload subnet assigns a public address" terraform_on "$PLANTS/public-workload-subnet/infra/terraform" modules/network
+refuses cluster-on-edge-tier "not on exactly the workload subnets" terraform_on "$PLANTS/cluster-on-edge-tier/infra/terraform" environments/staging
+refuses no-flow-logs "flow log does not cover every flow" terraform_on "$PLANTS/no-flow-logs/infra/terraform" modules/network
+refuses no-audit-log "audit log is off" terraform_on "$PLANTS/no-audit-log/infra/terraform" modules/kubernetes
+refuses no-etcd-encryption "Kubernetes Secrets are not encrypted in etcd" terraform_on "$PLANTS/no-etcd-encryption/infra/terraform" modules/kubernetes
+refuses two-zones "var.availability_zones, was expected to report" terraform_on "$PLANTS/two-zones/infra/terraform" modules/network
+refuses multi-az-off "The database has no synchronous standby" terraform_on "$PLANTS/multi-az-off/infra/terraform" modules/postgres
+refuses force-ssl-off "The server accepts a connection without TLS" terraform_on "$PLANTS/force-ssl-off/infra/terraform" modules/postgres
+refuses database-public "The database has a public address" terraform_on "$PLANTS/database-public/infra/terraform" modules/postgres
+refuses backup-key-shared "var.backup_kms_key_arn, was expected to report" terraform_on "$PLANTS/backup-key-shared/infra/terraform" modules/postgres
+refuses max-connections-restated "not what production's overlay declares" terraform_on "$PLANTS/max-connections-restated/infra/terraform" environments/production
+refuses unclean-election-on "Unclean leader election is on" terraform_on "$PLANTS/unclean-election-on/infra/terraform" modules/kafka
+refuses auto-create-on "A broker would create a topic" terraform_on "$PLANTS/auto-create-on/infra/terraform" modules/kafka
+refuses min-insync-one "min.insync.replicas is not 2" terraform_on "$PLANTS/min-insync-one/infra/terraform" modules/kafka
+refuses brokers-plaintext "A client or a broker can talk to a broker without TLS" terraform_on "$PLANTS/brokers-plaintext/infra/terraform" modules/kafka
+refuses brokers-unauthenticated "A client can reach the brokers unauthenticated" terraform_on "$PLANTS/brokers-unauthenticated/infra/terraform" modules/kafka
+refuses scram-unprefixed "does not start with AmazonMSK_" terraform_on "$PLANTS/scram-unprefixed/infra/terraform" modules/kafka
+refuses topics-from-a-copy "topics are not the catalogue's" terraform_on "$PLANTS/topics-from-a-copy/infra/terraform" environments/production
+refuses public-archive "A bucket admits public access" terraform_on "$PLANTS/public-archive/infra/terraform" modules/object-storage
+refuses no-object-lock "Object Lock is not on at the audit archive" terraform_on "$PLANTS/no-object-lock/infra/terraform" modules/object-storage
 
 if [ "$status" -eq 0 ]; then
     echo "ok   every check green, every plant refused for its reason"

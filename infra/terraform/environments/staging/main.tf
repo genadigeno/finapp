@@ -34,3 +34,75 @@ module "kubernetes" {
   # Kept with no expiry: the audit class's period is a jurisdiction's (PHASE_15_PLAN.md C12), and none is invented here.
   control_plane_log_retention_days = 0
 }
+
+# THE ONE DECLARATION of the server's max_connections is this environment's overlay, the same literal the
+# application reads (FINAPP_DB_SERVER_MAX_CONNECTIONS) and the manifest policy's budget counts. Read, not
+# restated: the number appears nowhere under infra/terraform. A literal missing, duplicated or not a number
+# stops the plan. It is static on the engine, so a change needs a reboot and an order: the postgres
+# module's README.
+locals {
+  application_literals = flatten([
+    for generator in yamldecode(file("${path.module}/../../../../deploy/overlays/staging/kustomization.yaml")).configMapGenerator :
+    generator.literals if generator.name == "finapp-app-config"
+  ])
+
+  server_max_connections = one([
+    for literal in local.application_literals : tonumber(split("=", literal)[1])
+    if startswith(literal, "FINAPP_DB_SERVER_MAX_CONNECTIONS=")
+  ])
+}
+
+module "postgres" {
+  source = "../../modules/postgres"
+
+  name_prefix                = module.conventions.name_prefix
+  region                     = var.region
+  account_id                 = var.account_id
+  vpc_id                     = module.network.vpc_id
+  private_subnet_ids_by_zone = module.network.private_subnet_ids_by_zone
+  client_security_group_id   = module.kubernetes.node_security_group_id
+
+  instance_class            = "db.m7g.large"
+  allocated_storage_gib     = 100
+  max_allocated_storage_gib = 500
+  max_connections           = local.server_max_connections
+
+  storage_kms_key_arn   = var.data_tier_kms_key_arns.database
+  backup_kms_key_arn    = var.data_tier_kms_key_arns.database_backup
+  secrets_kms_key_arn   = var.data_tier_kms_key_arns.secrets
+  backup_copy_vault_arn = var.database_backup_copy_vault_arn
+
+  backup_retention_days   = 7
+  snapshot_retention_days = 14
+}
+
+module "kafka" {
+  source = "../../modules/kafka"
+
+  name_prefix                = module.conventions.name_prefix
+  vpc_id                     = module.network.vpc_id
+  private_subnet_ids_by_zone = module.network.private_subnet_ids_by_zone
+  client_security_group_id   = module.kubernetes.node_security_group_id
+
+  topic_catalogue_path   = "${path.module}/../../../kafka/topics.yaml"
+  broker_properties_path = "${path.module}/../../../kafka/broker.properties"
+
+  broker_instance_type      = "kafka.m7g.large"
+  broker_volume_gib         = 100
+  broker_log_retention_days = 90
+
+  at_rest_kms_key_arn = var.data_tier_kms_key_arns.brokers
+  scram_kms_key_arn   = var.data_tier_kms_key_arns.secrets
+  provisioning_stage  = var.kafka_provisioning_stage
+}
+
+module "object_storage" {
+  source = "../../modules/object-storage"
+
+  name_prefix             = module.conventions.name_prefix
+  account_id              = var.account_id
+  state_kms_key_arn       = var.data_tier_kms_key_arns.state
+  archive_kms_key_arn     = var.data_tier_kms_key_arns.archive
+  audit_archive_lock      = var.audit_archive_lock
+  archive_transition_days = 90
+}

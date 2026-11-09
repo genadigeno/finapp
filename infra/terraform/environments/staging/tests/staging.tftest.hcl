@@ -38,13 +38,149 @@ mock_provider "aws" {
     target = module.network.aws_subnet.public["eu-central-1c"]
     values = { id = "subnet-public-c" }
   }
+
+  override_resource {
+    target = module.kubernetes.aws_eks_cluster.this
+    values = {
+      identity   = [{ oidc = [{ issuer = "https://oidc.example.invalid/id/mock" }] }]
+      vpc_config = { cluster_security_group_id = "sg-nodes" }
+    }
+  }
 }
 
+mock_provider "kafka" {}
+
+# The lock's mode and period below are test inputs and decide nothing: the audit class's period is OPEN
+# until a real jurisdiction is chosen.
 variables {
-  region             = "eu-central-1"
-  account_id         = "111111111111"
-  availability_zones = ["eu-central-1a", "eu-central-1b", "eu-central-1c"]
-  etcd_kms_key_arn   = "arn:aws:kms:eu-central-1:111111111111:key/11111111-2222-3333-4444-555555555555"
+  region                         = "eu-central-1"
+  account_id                     = "111111111111"
+  availability_zones             = ["eu-central-1a", "eu-central-1b", "eu-central-1c"]
+  etcd_kms_key_arn               = "arn:aws:kms:eu-central-1:111111111111:key/11111111-2222-3333-4444-555555555555"
+  database_backup_copy_vault_arn = "arn:aws:backup:eu-central-1:999999999999:backup-vault:finapp-copies"
+  audit_archive_lock             = { mode = "GOVERNANCE", days = 42 }
+  kafka_provisioning_stage       = "enforced"
+  data_tier_kms_key_arns = {
+    database        = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000001"
+    database_backup = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000002"
+    secrets         = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000003"
+    brokers         = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000004"
+    state           = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000005"
+    archive         = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000006"
+  }
+}
+
+# Read from the overlay's own file, never restated: the two sides of the budget are the same bytes.
+run "staging_max_connections_is_the_overlays_declaration" {
+  command = plan
+
+  assert {
+    condition = tonumber(module.postgres.max_connections) == one([
+      for literal in flatten([for generator in yamldecode(file("../../../../deploy/overlays/staging/kustomization.yaml")).configMapGenerator : generator.literals if generator.name == "finapp-app-config"]) :
+      tonumber(split("=", literal)[1]) if startswith(literal, "FINAPP_DB_SERVER_MAX_CONNECTIONS=")
+    ])
+    error_message = "The database's max_connections is not what staging's overlay declares to the application."
+  }
+}
+
+run "staging_keeps_the_data_tier_on_the_workload_tier_behind_the_nodes" {
+  command = plan
+
+  assert {
+    condition     = module.postgres.subnet_group_subnet_ids == toset(["subnet-private-a", "subnet-private-b", "subnet-private-c"])
+    error_message = "Staging's database is not on exactly the workload subnets."
+  }
+
+  assert {
+    condition     = toset(module.kafka.broker_subnet_ids) == toset(["subnet-private-a", "subnet-private-b", "subnet-private-c"])
+    error_message = "Staging's brokers are not on exactly the workload subnets."
+  }
+
+  assert {
+    condition     = module.postgres.client_security_group_id == "sg-nodes"
+    error_message = "Staging's database does not admit the cluster's nodes, and only them."
+  }
+
+  assert {
+    condition     = module.postgres.multi_az == true
+    error_message = "Staging's database has no synchronous standby."
+  }
+}
+
+run "staging_gives_each_store_its_own_key" {
+  command = plan
+
+  assert {
+    condition     = module.postgres.storage_kms_key_arn == var.data_tier_kms_key_arns.database && module.postgres.backup_vault_kms_key_arn == var.data_tier_kms_key_arns.database_backup
+    error_message = "Staging's database or its backup vault is not under the key given for it."
+  }
+
+  assert {
+    condition     = module.object_storage.encryption_key_arns["audit-archive"] == var.data_tier_kms_key_arns.archive && module.object_storage.encryption_key_arns["terraform-state"] == var.data_tier_kms_key_arns.state
+    error_message = "Staging's archive or state bucket is not under the key given for it."
+  }
+}
+
+run "staging_plans_the_catalogue_itself" {
+  command = plan
+
+  assert {
+    condition     = toset(keys(module.kafka.topics)) == toset(keys(yamldecode(file("../../../kafka/topics.yaml")).topics))
+    error_message = "Staging's topics are not the catalogue's: the root passes the module something other than infra/kafka/topics.yaml."
+  }
+
+  assert {
+    condition     = contains(split("\n", module.kafka.server_properties), "min.insync.replicas=2") && contains(split("\n", module.kafka.server_properties), "unclean.leader.election.enable=false")
+    error_message = "Staging's brokers do not carry the posture of infra/kafka/broker.properties."
+  }
+
+  assert {
+    condition     = module.kafka.acls_enforced == true && contains(split("\n", module.kafka.server_properties), "allow.everyone.if.no.acl.found=false")
+    error_message = "Staging's finished stage leaves a resource with no ACL open to any principal."
+  }
+}
+
+run "the_audit_archives_lock_reaches_the_bucket" {
+  command = plan
+
+  assert {
+    condition     = module.object_storage.audit_archive_lock.mode == var.audit_archive_lock.mode && module.object_storage.audit_archive_lock.days == var.audit_archive_lock.days
+    error_message = "Staging's audit archive is not locked with the mode and period the root was given."
+  }
+}
+
+run "a_data_tier_key_of_another_account_is_refused" {
+  command = plan
+
+  variables {
+    data_tier_kms_key_arns = {
+      database        = "arn:aws:kms:eu-central-1:222222222222:key/aaaaaaaa-0000-0000-0000-000000000001"
+      database_backup = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000002"
+      secrets         = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000003"
+      brokers         = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000004"
+      state           = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000005"
+      archive         = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000006"
+    }
+  }
+
+  expect_failures = [var.data_tier_kms_key_arns]
+}
+
+run "the_databases_own_key_is_refused_for_the_archive" {
+  command = plan
+
+  variables {
+    data_tier_kms_key_arns = {
+      database        = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000001"
+      database_backup = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000002"
+      secrets         = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000003"
+      brokers         = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000004"
+      state           = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000005"
+      archive         = "arn:aws:kms:eu-central-1:111111111111:key/aaaaaaaa-0000-0000-0000-000000000001"
+    }
+  }
+
+  expect_failures = [var.data_tier_kms_key_arns]
 }
 
 run "staging_names_and_tags_itself_staging" {
