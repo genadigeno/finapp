@@ -24,6 +24,13 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
             "id, attempt_id, amount_minor, currency, scale, reason, hold_reference,"
                     + " provider_idempotency_reference, provider_reference, status, created_at";
 
+    /**
+     * The refund the takeover converges on: named by its dispatch key - {@code refund_one_row_per_dispatch_key} holds at most
+     * one row per key (a {@code NULL} key never equals one), so no order decides which (P15-TSK-037; it read {@code ORDER BY
+     * created_at DESC, id DESC LIMIT 1} until then, a stamp over a set of one).
+     */
+    static final String BY_DISPATCH_KEY = "SELECT " + COLUMNS + " FROM payments.refund WHERE dispatch_key = ?";
+
     /** {@link #COLUMNS}, each qualified as {@code r.<column>} — for the joined reads
      * (the attempt store's idiom, since the sweepable partition joins the attempt). */
     private static String qualified() {
@@ -269,9 +276,7 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
         Objects.requireNonNull(dispatchKey, "dispatchKey must not be null");
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT " + COLUMNS + " FROM payments.refund"
-                                + " WHERE dispatch_key = ?"
-                                + " ORDER BY created_at DESC, id DESC LIMIT 1")) {
+                        BY_DISPATCH_KEY)) {
             read.setString(1, dispatchKey);
             try (ResultSet row = read.executeQuery()) {
                 return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();

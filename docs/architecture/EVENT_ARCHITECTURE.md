@@ -310,8 +310,8 @@ topic, reading the window from `EventingBeans`' own `@Value` and the committed `
 seen by a build; the configuration register (`P15-TSK-031`) carries that floor. The broker posture
 the clients rely on is [`infra/kafka/broker.properties`](../../infra/kafka/broker.properties): no
 auto-creation, no unclean leader election, three replicas with two in sync, SCRAM-SHA-512 only, and
-nothing permitted that no ACL grants. `P15-TSK-015` provisions both files on the managed brokers and
-`P15-TSK-012` on its test-only `kind` broker (one node: replication 1, nothing else changed).
+nothing permitted that no ACL grants. `infra/terraform/modules/kafka` (`P15-TSK-015`) plans both files onto the managed brokers, read and never copied, and nothing has applied them;
+`P15-TSK-012` provisions them on its test-only `kind` broker (one node: replication 1, nothing else changed).
 
 **Off loopback the clients speak `SASL_SSL` with SCRAM-SHA-512** (owner decision C11).
 `KafkaTransportGuard` refuses to start when a bootstrap off this machine is reached by any protocol

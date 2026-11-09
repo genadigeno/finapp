@@ -25,16 +25,25 @@ public interface RoutingStore<T> {
     int nextVersionNumber(T unitOfWork);
 
     /**
-     * Inserts the version with its rules and candidate rails, or answers {@code false} when
+     * Inserts the version with its rules and candidate rails, or answers empty when
      * another writer took the number first — the unique index answering, not an error.
+     *
+     * <p>The row can start later than {@code version} asked: the insert floors every new
+     * version's {@code effective_from} at the latest immediately-effective lower-numbered
+     * version's (`P15-TSK-037`). So the answer is the version <em>as stored</em>, and the
+     * caller's audit and answer are built from it.
+     *
+     * @return the version as stored, or empty when the number was taken
      */
-    boolean insertVersionIfNumberIsFree(T unitOfWork, RoutingPolicyVersion version);
+    Optional<RoutingPolicyVersion> insertVersionIfNumberIsFree(T unitOfWork, RoutingPolicyVersion version);
 
     /**
      * The version in force at {@code at}: newest {@code effective_from} not after it,
      * highest version number breaking the tie (the fee schedule's `EFFECTIVE_ORDER`).
      * Empty only before the `V013` seed has been applied — a wiring fault for a running
-     * platform, judged by the caller.
+     * platform, judged by the caller. A version the insert floored (`P15-TSK-037`) is not yet
+     * in force until the clock reaches its floor: for that span, bounded by the skew or step that
+     * made the floor necessary, an older version answers, or none if none has started.
      */
     Optional<RoutingPolicyVersion> findVersionInForce(T unitOfWork, Instant at);
 

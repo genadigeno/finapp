@@ -306,6 +306,8 @@ change — a drift check is a scheduled plan in a real environment).
 | `registry` | ECR repositories with immutable tags, scan on push, lifecycle rules | `-016` |
 | `observability` | Log and trace retention buckets, alerting endpoints (placeholders) | `-016` |
 
+*(Corrected by `P15-TSK-015`, 2026-11-09, wherever this plan says backups are under a separate key (this table, §9.2's T7 and §12's backup row): RDS encrypts its automated backups and snapshots with the instance's key and offers no setting, and within one account and region an AWS Backup vault's key does not change that. A separate key needs a copy across an account or region, which is what the module builds; point-in-time recovery stays under the volume's key. `THREAT_MODEL.md` §6 item 23.)*
+
 **Verification without an account**: `terraform fmt -check`, `terraform validate`, `tflint` (pinned), `trivy config`
 (the pinned scanner) and **`terraform test` with mock providers** asserting the security properties (encryption on, public
 access off, deletion protection on, Multi-AZ on, `max_connections` equal to the application's declaration). **Never

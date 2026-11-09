@@ -692,7 +692,7 @@ class PaymentConfirmationTest {
         }
 
         @Override
-        public boolean insertVersionIfNumberIsFree(Connection uow, RoutingPolicyVersion v) {
+        public Optional<RoutingPolicyVersion> insertVersionIfNumberIsFree(Connection uow, RoutingPolicyVersion v) {
             throw new UnsupportedOperationException("this suite mints no versions");
         }
 

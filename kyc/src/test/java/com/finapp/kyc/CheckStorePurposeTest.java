@@ -49,14 +49,14 @@ class CheckStorePurposeTest {
 
     @Test
     @DisplayName("latestDecidedScreenings - risk's T-eval read (the review's MINOR 6) - is bounded: per screening type one"
-            + " LIMIT 1 probe in verification_check_decided_latest's order, decided checks of both purposes")
+            + " LIMIT 1 probe in verification_check_decided_latest_by_order's order, decided checks of both purposes")
     void theScreeningReadIsBounded() {
         store.latestDecidedScreenings(recording(), KycCaseId.next(IDS));
         assertThat(prepared).singleElement().asString()
                 .contains("(VALUES ('SANCTIONS'), ('PEP'))")
                 .contains("CROSS JOIN LATERAL")
                 .contains("WHERE case_id = ? AND check_type = screening.screened_type AND status IN ('CLEAR', 'HIT')")
-                .contains("ORDER BY requested_at DESC, status_changed_at DESC, id DESC LIMIT 1")
+                .contains("ORDER BY check_order DESC NULLS LAST, requested_at DESC, status_changed_at DESC, id DESC LIMIT 1")
                 .doesNotContain("purpose =");
     }
 
@@ -65,7 +65,7 @@ class CheckStorePurposeTest {
             + " rescreen is never converged on")
     void theRunConvergesOnOnboardingAlone() {
         store.requestOrConverge(recording(), VerificationCheck.request(IDS, CLOCK, KycCaseId.next(IDS), CheckType.PEP));
-        assertThat(prepared).first().asString().contains("ORDER BY requested_at DESC").contains("purpose = 'ONBOARDING'");
+        assertThat(prepared).first().asString().contains("ORDER BY check_order DESC NULLS LAST, requested_at DESC").contains("purpose = 'ONBOARDING'");
         assertThat(prepared).anySatisfy(sql -> assertThat(sql).startsWith("INSERT INTO kyc.verification_check")
                 .contains("'ONBOARDING'"));
     }

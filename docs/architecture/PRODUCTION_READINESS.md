@@ -61,7 +61,7 @@ fixed here, so that `-034` does not decide them unit by unit:
 
 - **PostgreSQL and Kafka, Deployment (a), (b) and (c).** Both are managed services outside the cluster (C3). The
   platform builds, signs and deploys no image of either, so "built by CI", "signed with provenance" and "deployed by
-  digest through GitOps" do not apply. Their deployment is the Terraform data-tier module (`-015`), whose own checks
+  digest through GitOps" do not apply. Their deployment is the Terraform data-tier modules (`infra/terraform/modules/postgres` and `kafka`), whose own checks
   stand in. Clause (d), "rolled and rolled back on `kind`", applies to the test-only single-node copies of the `kind`
   overlay (`-012`).
 - **`finapp-migrator`, Health checks and Metrics.** A Job that exits has no probe and no scrape. Its health is its exit
@@ -150,7 +150,7 @@ gaps of the module they touch (§4).
 
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
-| Deployment | Missing: compose only, PostgreSQL 18.6 on loopback | — | — | — |
+| Deployment | Missing: compose only, PostgreSQL 18.6 on loopback. The managed database is configured as Terraform (Multi-AZ, TLS forced, no public address) and has never been applied (`infra/terraform/modules/postgres`) | — | — | — |
 | Health checks | — | — | — | — |
 | Logging | — | — | — | — |
 | Metrics | Missing | — | — | — |
@@ -159,7 +159,7 @@ gaps of the module they touch (§4).
 | Security | Partial: three least-privilege roles - the migrator, the application and report generation's `SELECT`-only `finapp_reporting` (`P15-TSK-021`) - per-table grants in every migration, the application role's `DELETE` on the outbox and the inbox replaced by the retention sweeps' two definer functions (platform `V012`), `verify-full` required off loopback; no encryption at rest beyond the application's field-level ciphers (`SECURITY_ARCHITECTURE.md` §Encryption at rest) | — | — | — |
 | Resource limits | Partial: the connection budget guarded by `ConnectionPoolSizingGuard` against a declared instance count | — | — | — |
 | Failure handling | — | — | — | — |
-| Recovery | Missing: no backup, no restore, no rehearsal | — | — | — |
+| Recovery | Missing: no backup, no restore, no rehearsal. Point-in-time recovery and a daily copy are configured and never applied; a backup under a separate key is `THREAT_MODEL.md` §6 item 23 | — | — | — |
 | Ownership | Missing | — | — | — |
 | Runbooks | Missing | — | — | — |
 | Multi-instance | Every arbitration of the platform is here (`DISTRIBUTED_EXECUTION.md`); its own availability is Phase 16's | — | — | — |
@@ -168,13 +168,13 @@ gaps of the module they touch (§4).
 
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
-| Deployment | Missing: compose only, single node, `PLAINTEXT`, replication factor 1. The topics and the broker posture exist as code (`infra/kafka/`, `P15-TSK-026`), applied by no broker yet (`P15-TSK-015`, `-012`) | — | — | — |
+| Deployment | Missing: compose only, single node, `PLAINTEXT`, replication factor 1. The topics and the broker posture exist as code (`infra/kafka/`, `P15-TSK-026`), applied by no broker yet: planned by `infra/terraform/modules/kafka`, never applied, and `-012` next | — | — | — |
 | Health checks | — | — | — | — |
 | Logging | — | — | — | — |
 | Metrics | Missing | — | — | — |
 | Tracing | — | — | — | — |
 | Alerting | Missing | — | — | — |
-| Security | Partial: off loopback the clients require `SASL_SSL` with SCRAM-SHA-512 and the marked local password is refused (`KafkaTransportGuard`); ACLs per principal written in `infra/kafka/topics.yaml`, not yet applied (`P15-TSK-015`); no real TLS handshake run yet (`P15-TSK-012`) (`THREAT_MODEL.md` T9) *(read "`PLAINTEXT` refused off loopback; `SASL_PLAINTEXT` admitted; no SASL or TLS configuration, no ACLs" until 2026-11-08)* | — | — | — |
+| Security | Partial: off loopback the clients require `SASL_SSL` with SCRAM-SHA-512 and the marked local password is refused (`KafkaTransportGuard`); ACLs per principal written in `infra/kafka/topics.yaml` and planned as resources, never applied (`THREAT_MODEL.md` §6 item 23); no real TLS handshake run yet (`P15-TSK-012`) (`THREAT_MODEL.md` T9) *(read "`PLAINTEXT` refused off loopback; `SASL_PLAINTEXT` admitted; no SASL or TLS configuration, no ACLs" until 2026-11-08)* | — | — | — |
 | Resource limits | — | — | — | — |
 | Failure handling | — | — | — | — |
 | Recovery | — | — | — | — |
