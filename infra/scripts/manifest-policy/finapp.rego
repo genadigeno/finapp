@@ -377,6 +377,9 @@ deny contains msg if {
 # A credential written inline escapes the rule above, so a literal under a credential's name is refused too.
 credential_name := `(?i)(password|passwd|secret|token|credential|api[-_]?key|private[-_]?key|jaas)`
 
+# One name "token" reads wrongly in: a client's timeout for tokenising a card. It is a duration, and only this exact ending is let through.
+tokenisation_timeout := `(?i)_TOKENI[SZ]ATION_TIMEOUT$`
+
 deny contains msg if {
 	some [doc, _, container] in all_containers
 	some env in list_of(container, "env")
@@ -389,6 +392,7 @@ deny contains msg if {
 	some doc in of_kind("ConfigMap")
 	some key, _ in doc.data
 	regex.match(credential_name, key)
+	not regex.match(tokenisation_timeout, key)
 	msg := sprintf("[no-secret-literal] %s holds %s: a credential is never configuration", [label(doc), key])
 }
 
