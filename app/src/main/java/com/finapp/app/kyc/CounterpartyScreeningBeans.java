@@ -68,12 +68,8 @@ public class CounterpartyScreeningBeans {
      */
     @Bean
     CounterpartySubjectCipher counterpartySubjectCipher(
-            @Value("${finapp.doc.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}") String configuredKey,
-            @Value("${finapp.doc.key-version:1}") int keyVersion,
-            Environment environment,
-            SecureRandom kycRandomness) {
-        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new CounterpartySubjectCipher(DocumentKey.decode(configuredKey, loopback), keyVersion, kycRandomness);
+            com.finapp.platform.security.KeyRing documentKeyRing, SecureRandom kycRandomness) {
+        return new CounterpartySubjectCipher(documentKeyRing, kycRandomness);
     }
 
     @Bean

@@ -1,5 +1,6 @@
 package com.finapp.settlement;
 
+import com.finapp.platform.security.KeyRing;
 import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
@@ -7,7 +8,6 @@ import java.util.Objects;
 import java.util.UUID;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Encrypts settlement file chunks at rest (`P8-TSK-002`, ADR-0066 §6, {@code INV-REC-10}).
@@ -46,8 +46,7 @@ public final class SettlementFileCipher {
     /** 16 + 16 + 32 + 4: two UUIDs, the SHA-256, the chunk's seat. */
     private static final int AAD_BYTES = 68;
 
-    private final SecretKeySpec key;
-    private final int version;
+    private final KeyRing ring;
     private final SecureRandom randomness;
 
     /**
@@ -56,22 +55,38 @@ public final class SettlementFileCipher {
      * @param version recorded on every file, so a rotation can tell which key wrote which
      */
     public SettlementFileCipher(byte[] key, int version, SecureRandom randomness) {
+        this(ringOfOne(key, version), randomness);
+    }
+
+    /**
+     * A cipher over a {@link KeyRing}: encrypts under the ring's active version, decrypts under each row's stamped version
+     * (`P15-TSK-019`, ADR-0123 point 4).
+     */
+    public SettlementFileCipher(KeyRing ring, SecureRandom randomness) {
+        this.ring = Objects.requireNonNull(ring, "ring must not be null");
+        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+    }
+
+    private static KeyRing ringOfOne(byte[] key, int version) {
         Objects.requireNonNull(key, "key must not be null");
         if (key.length != KEY_BYTES) {
-            // Never the length seen: it is a fact about the key material.
-            throw new IllegalArgumentException(
-                    "The settlement file key must be exactly " + KEY_BYTES + " bytes");
+            // The message never states the length seen: it is a fact about the key material.
+            throw new IllegalArgumentException("The settlement file key must be exactly " + KEY_BYTES + " bytes");
         }
         if (version < 1) {
             throw new IllegalArgumentException("key version must be positive");
         }
-        this.key = new SecretKeySpec(key, "AES");
-        this.version = version;
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+        return KeyRing.single("settlement file key", key, version);
     }
 
+    /** The version the file row is stamped with: every chunk of one file is written under it. */
     public int version() {
-        return version;
+        return ring.activeVersion();
+    }
+
+    /** Whether this instance's ring holds {@code version}: a file stamped with one it does not hold is refused before any decryption. */
+    public boolean holdsVersion(int version) {
+        return ring.holds(version);
     }
 
     /** The chunk's binding, encoded at fixed widths. */
@@ -103,7 +118,7 @@ public final class SettlementFileCipher {
         randomness.nextBytes(nonce);
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, nonce));
+            cipher.init(Cipher.ENCRYPT_MODE, ring.activeKey(), new GCMParameterSpec(TAG_BITS, nonce));
             cipher.updateAAD(associatedData);
             return new Encrypted(cipher.doFinal(plaintext), nonce);
         } catch (GeneralSecurityException e) {
@@ -114,14 +129,18 @@ public final class SettlementFileCipher {
     }
 
     /**
-     * Decrypts one chunk.
+     * Decrypts one chunk, under the version stamped on its file (`settlement.file.key_version`): a chunk carries no
+     * version of its own, because every chunk of one file is written under one version.
      *
+     * @param keyVersion the version on the file row - never this ring's active version
      * @throws IllegalStateException on tampering, a transplanted chunk or the wrong key — one
      *     indistinguishable failure, deliberately, and none ever yields content
+     * @throws com.finapp.platform.security.UnknownKeyVersionException if the file names a version this ring does not hold
      */
-    public byte[] decrypt(Encrypted encrypted, byte[] associatedData) {
+    public byte[] decrypt(Encrypted encrypted, byte[] associatedData, int keyVersion) {
         Objects.requireNonNull(encrypted, "encrypted must not be null");
         Objects.requireNonNull(associatedData, "associatedData must not be null");
+        javax.crypto.SecretKey key = ring.keyFor(keyVersion, "Could not decrypt a settlement file chunk");
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(

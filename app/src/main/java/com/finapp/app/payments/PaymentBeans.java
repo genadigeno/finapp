@@ -73,16 +73,18 @@ public class PaymentBeans {
      * wiring, credential six.
      */
     @Bean
-    EvidenceCipher evidenceCipher(
+    com.finapp.platform.security.KeyRing paymentEvidenceKeyRing(
             @Value("${finapp.payments.evidence.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
             @Value("${finapp.payments.evidence.key-version:1}") int keyVersion,
-            SecureRandom paymentsRandomness,
             Environment environment) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new EvidenceCipher(
-                PaymentEvidenceKey.decode(configuredKey, loopback), keyVersion,
-                paymentsRandomness);
+        return PaymentEvidenceKey.ring(configuredKey, keyVersion, environment, loopback);
+    }
+
+    @Bean
+    EvidenceCipher evidenceCipher(com.finapp.platform.security.KeyRing paymentEvidenceKeyRing, SecureRandom paymentsRandomness) {
+        return new EvidenceCipher(paymentEvidenceKeyRing, paymentsRandomness);
     }
 
     @Bean
@@ -818,18 +820,19 @@ public class PaymentBeans {
      * decoded through the confinement, the marked local default loopback-only.
      */
     @Bean
-    com.finapp.payments.DisputeEvidenceStore<Connection> disputeEvidenceStore(
+    com.finapp.platform.security.KeyRing disputeEvidenceKeyRing(
             @Value("${finapp.payments.dispute.evidence.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
             @Value("${finapp.payments.dispute.evidence.key-version:1}") int keyVersion,
-            SecureRandom paymentsRandomness,
             Environment environment) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new com.finapp.payments.JdbcDisputeEvidenceStore(
-                new EvidenceCipher(
-                        DisputeEvidenceKey.decode(configuredKey, loopback),
-                        keyVersion,
-                        paymentsRandomness));
+        return DisputeEvidenceKey.ring(configuredKey, keyVersion, environment, loopback);
+    }
+
+    @Bean
+    com.finapp.payments.DisputeEvidenceStore<Connection> disputeEvidenceStore(
+            com.finapp.platform.security.KeyRing disputeEvidenceKeyRing, SecureRandom paymentsRandomness) {
+        return new com.finapp.payments.JdbcDisputeEvidenceStore(new EvidenceCipher(disputeEvidenceKeyRing, paymentsRandomness));
     }
 
     @Bean
@@ -1327,7 +1330,10 @@ public class PaymentBeans {
             Clock clock) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
         return new com.finapp.payments.WebhookSignature(
-                PaymentWebhookKey.decode(configuredKey, loopback), tolerance, clock);
+                PaymentWebhookKey.decode(configuredKey, loopback),
+                PaymentWebhookKey.previousWindow(environment, loopback, clock.instant()),
+                tolerance,
+                clock);
     }
 
     @Bean
@@ -1542,7 +1548,10 @@ public class PaymentBeans {
             Clock clock) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
         return new com.finapp.payments.WebhookSignature(
-                InstantWebhookKey.decode(configuredKey, loopback), tolerance, clock);
+                InstantWebhookKey.decode(configuredKey, loopback),
+                InstantWebhookKey.previousWindow(environment, loopback, clock.instant()),
+                tolerance,
+                clock);
     }
 
     @Bean

@@ -116,17 +116,18 @@ public class FxProviderBeans {
     }
 
     @Bean
-    FxEvidenceCipher fxEvidenceCipher(
+    com.finapp.platform.security.KeyRing fxEvidenceKeyRing(
             @Value("${finapp.fx.evidence.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
             @Value("${finapp.fx.evidence.key-version:1}") int keyVersion,
             Environment environment) {
-        return new FxEvidenceCipher(
-                FxEvidenceKey.decode(
-                        configuredKey,
-                        DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment))),
-                keyVersion,
-                new SecureRandom());
+        return FxEvidenceKey.ring(
+                configuredKey, keyVersion, environment, DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment)));
+    }
+
+    @Bean
+    FxEvidenceCipher fxEvidenceCipher(com.finapp.platform.security.KeyRing fxEvidenceKeyRing) {
+        return new FxEvidenceCipher(fxEvidenceKeyRing, new SecureRandom());
     }
 
     @Bean

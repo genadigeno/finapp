@@ -593,6 +593,12 @@ public class SettlementOperations {
         }
         return switch (outcome) {
             case EvidenceContentReads.Outcome.Unknown unknown -> throw fileNotFound();
+            case EvidenceContentReads.Outcome.KeyVersionNotHeld notHeld ->
+                    // The FAILED audit record (naming the version) committed above; the file's integrity is not in question.
+                    throw new ApiException(
+                            PlatformErrorCode.INTERNAL_ERROR,
+                            "A settlement file could not be read: this instance does not hold the key version it was written"
+                                    + " under, and its integrity is not in question");
             case EvidenceContentReads.Outcome.Corrupt corrupt ->
                     // The FAILED audit record committed with the transaction above; the
                     // corruption is reported only after it is on the record.

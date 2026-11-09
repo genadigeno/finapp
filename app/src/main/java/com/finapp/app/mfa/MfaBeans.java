@@ -62,16 +62,20 @@ class MfaBeans {
      * machine?".
      */
     @Bean
-    SecretCipher mfaSecretCipher(
+    com.finapp.platform.security.KeyRing mfaKeyRing(
             @Value("${finapp.mfa.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}") String configuredKey,
             @Value("${finapp.mfa.key-version:1}") int keyVersion,
-            org.springframework.core.env.Environment environment,
-            SecureRandom mfaRandomness) {
+            org.springframework.core.env.Environment environment) {
         // Read through DatabaseEndpoint rather than a @Value of my own: P0-TSK-031's review found
         // the credential guard reading `spring.datasource.url` while Hikari's `jdbc-url` actually
         // wins - a proven bypass. One definition of "what does the pool connect with", not two.
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new SecretCipher(MfaKey.decode(configuredKey, loopback), keyVersion, mfaRandomness);
+        return MfaKey.ring(configuredKey, keyVersion, environment, loopback);
+    }
+
+    @Bean
+    SecretCipher mfaSecretCipher(com.finapp.platform.security.KeyRing mfaKeyRing, SecureRandom mfaRandomness) {
+        return new SecretCipher(mfaKeyRing, mfaRandomness);
     }
 
     /**

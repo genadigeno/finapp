@@ -231,4 +231,61 @@ class WebhookSignatureTest {
                     StandardCharsets.ISO_8859_1);
         }
     }
+
+    // -----------------------------------------------------------------
+    // The rotation window (P15-TSK-019)
+
+    private static final byte[] PREVIOUS_KEY = "the-previous-signing-key-for-tests-only".getBytes(StandardCharsets.UTF_8);
+
+    private WebhookSignature withWindow(Instant windowEnds, Clock clock) {
+        return new WebhookSignature(
+                KEY, com.finapp.platform.security.PreviousKeyWindow.of(PREVIOUS_KEY, windowEnds, NOW), TOLERANCE, clock);
+    }
+
+    private String signedUnder(byte[] key, String timestamp, byte[] body) {
+        return new WebhookSignature(key, TOLERANCE, CLOCK).sign(timestamp, body);
+    }
+
+    @Test
+    @DisplayName("during a rotation window, the current key and the previous key both verify")
+    void bothKeysVerifyDuringTheWindow() {
+        byte[] body = "{\"eventId\":\"evt_2\"}".getBytes(StandardCharsets.UTF_8);
+        WebhookSignature rotating = withWindow(NOW.plus(Duration.ofHours(1)), CLOCK);
+
+        assertThat(rotating.matches(freshTimestamp(), body, rotating.sign(freshTimestamp(), body))).isTrue();
+        assertThat(rotating.matches(freshTimestamp(), body, signedUnder(PREVIOUS_KEY, freshTimestamp(), body))).isTrue();
+    }
+
+    @Test
+    @DisplayName("the previous key's signature is refused the moment its window has closed, with nothing restarted")
+    void thePreviousKeyIsRefusedOnceTheWindowHasClosed() {
+        byte[] body = "{\"eventId\":\"evt_3\"}".getBytes(StandardCharsets.UTF_8);
+        Instant windowEnds = NOW.plus(Duration.ofHours(1));
+        Clock afterTheWindow = Clock.fixed(windowEnds.plusSeconds(1), ZoneOffset.UTC);
+        WebhookSignature rotating = withWindow(windowEnds, afterTheWindow);
+        // Signed at the instant being judged, so freshness is not what refuses it.
+        String timestamp = Long.toString(windowEnds.plusSeconds(1).getEpochSecond());
+
+        assertThat(rotating.matches(timestamp, body, signedUnder(PREVIOUS_KEY, timestamp, body)))
+                .as("past the window, the previous key is any other key").isFalse();
+        assertThat(rotating.matches(timestamp, body, rotating.sign(timestamp, body)))
+                .as("the current key is unaffected").isTrue();
+    }
+
+    @Test
+    @DisplayName("a key that is neither current nor previous is refused during the window")
+    void aThirdKeyIsRefusedDuringTheWindow() {
+        byte[] body = "{\"eventId\":\"evt_4\"}".getBytes(StandardCharsets.UTF_8);
+        WebhookSignature rotating = withWindow(NOW.plus(Duration.ofHours(1)), CLOCK);
+        byte[] third = "a-third-signing-key-for-tests-only-here".getBytes(StandardCharsets.UTF_8);
+
+        assertThat(rotating.matches(freshTimestamp(), body, signedUnder(third, freshTimestamp(), body))).isFalse();
+    }
+
+    @Test
+    @DisplayName("no window configured: only the current key verifies")
+    void withNoWindowOnlyTheCurrentKeyVerifies() {
+        byte[] body = "{\"eventId\":\"evt_5\"}".getBytes(StandardCharsets.UTF_8);
+        assertThat(signature.matches(freshTimestamp(), body, signedUnder(PREVIOUS_KEY, freshTimestamp(), body))).isFalse();
+    }
 }
