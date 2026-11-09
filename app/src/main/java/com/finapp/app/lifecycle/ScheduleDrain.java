@@ -3,7 +3,9 @@ package com.finapp.app.lifecycle;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -39,10 +41,15 @@ public final class ScheduleDrain {
     /** How long it then waits for the tick it interrupted. */
     public static final Duration INTERRUPT_GRACE = Duration.ofSeconds(2);
 
+    /** How often a held schedule's thread looks again: what a stop waits for at worst while it is held. */
+    static final Duration HOLD_POLL = Duration.ofMillis(500);
+
     private final String name;
     private final Duration bound;
     private final Duration grace;
+    private final AtomicBoolean gateQueued = new AtomicBoolean();
     private volatile ExecutorService executor;
+    private volatile WorkHold hold = WorkHold.NONE;
 
     /**
      * @param name the schedule's thread name: what a stopping instance's log calls it
@@ -82,6 +89,74 @@ public final class ScheduleDrain {
      */
     public void started(ExecutorService started) {
         this.executor = Objects.requireNonNull(started, "started");
+        queueGate();
+    }
+
+    /**
+     * Puts this schedule behind {@code hold}, before it starts (`P15-TSK-005`): its thread does no tick while the hold is on.
+     * Every schedule's ticks run on one thread of an executor it hands to {@link #started}, so one task on that executor that
+     * waits while the hold is on keeps every tick off it, with no change to any schedule. It is queued at the start, ahead of a
+     * first tick that waits out its interval, and again whenever the hold comes on. The tick in flight finishes, as at a stop.
+     *
+     * <p>A schedule with several threads, or a first tick with no delay, calls {@link #awaitReleased()} at the top of its tick
+     * instead.
+     *
+     * @param hold what says whether this instance may work
+     */
+    public void heldBy(WorkHold hold) {
+        this.hold = Objects.requireNonNull(hold, "hold");
+        hold.whenHeld(this::queueGate);
+    }
+
+    /** @return whether this schedule's hold says not to work now; false for one held by nothing */
+    public boolean held() {
+        return hold.held();
+    }
+
+    private void queueGate() {
+        ExecutorService running = executor;
+        if (running == null || running.isShutdown() || hold == WorkHold.NONE || !gateQueued.compareAndSet(false, true)) {
+            return;
+        }
+        boolean queued = false;
+        try {
+            running.execute(this::waitWhileHeld);
+            queued = true;
+        } catch (RejectedExecutionException closing) {
+            log.debug("Schedule {} is stopping: no hold to queue", name);
+        } finally {
+            if (!queued) {
+                gateQueued.set(false);
+            }
+        }
+    }
+
+    /**
+     * Waits on this thread while the hold is on.
+     *
+     * @return whether the hold is off and the tick may run; false when the schedule began to stop or the thread was interrupted
+     */
+    public boolean awaitReleased() {
+        try {
+            while (hold.held() && !stopping()) {
+                Thread.sleep(HOLD_POLL.toMillis());
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return !stopping();
+    }
+
+    private void waitWhileHeld() {
+        try {
+            awaitReleased();
+        } finally {
+            gateQueued.set(false);
+        }
+        if (hold.held() && !stopping()) {
+            queueGate(); // came on between this gate's last look and its flag going down, when the news could not queue another
+        }
     }
 
     /** @return whether the schedule still claims: started, and not yet stopping */

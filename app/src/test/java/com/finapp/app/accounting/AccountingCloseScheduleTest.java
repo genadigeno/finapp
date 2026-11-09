@@ -188,6 +188,41 @@ class AccountingCloseScheduleTest {
         }
     }
 
+    @Test
+    @DisplayName("P15-TSK-005: held at the start no leg runs, and released, each runs at once, not a poll later")
+    void aHeldScheduleRunsNoLegUntilReleased() throws Exception {
+        lockedMarch();
+        CountDownLatch orphaned = new CountDownLatch(1);
+        orphans = (limit, actor) -> {
+            orphaned.countDown();
+            return 0;
+        };
+        cadence = new AccountingCloseSchedule.Cadence(Duration.ofHours(1), Duration.ofHours(1), Duration.ofHours(1), 18, 10);
+        AccountingCloseSchedule schedule = schedule();
+        java.util.concurrent.atomic.AtomicBoolean held = new java.util.concurrent.atomic.AtomicBoolean(true);
+        schedule.drain().heldBy(new com.finapp.app.lifecycle.WorkHold() {
+            @Override
+            public boolean held() {
+                return held.get();
+            }
+
+            @Override
+            public void whenHeld(Runnable onHeld) {
+                // Each leg asks at its top, so it needs no telling.
+            }
+        });
+        schedule.start();
+        try {
+            assertThat(orphaned.await(700, TimeUnit.MILLISECONDS)).as("held: no leg").isFalse();
+
+            held.set(false);
+            assertThat(orphaned.await(30, TimeUnit.SECONDS)).as("released: at once, its poll being an hour").isTrue();
+            awaitEveryCheckConcluded();
+        } finally {
+            schedule.stop();
+        }
+    }
+
     /** The check leg's first pass, on the schedule's own executor: one run, all nine judged - eight concluded, {@code VALUATION_SET_APPROVED} waiting on a set this fixture never approves (`P14-TSK-012`, M-6). */
     private void awaitEveryCheckConcluded() {
         long waited = 0;

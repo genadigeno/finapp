@@ -237,8 +237,117 @@ Only the final step is irreversible, it is a migration of its own, and it does n
 the same release as the switch. If the verify step cannot reconcile old and new exactly, the
 migration is wrong — do not proceed, and do not "explain" the difference.
 
+#### Enforced: the expand-only lint (`P15-TSK-005`, ADR-0122 decision 5)
+
+The migration Job runs first and the replicas roll after it, so for as long as a rollout lasts replicas of release N − 1
+are serving on release N's schema, and after a rollback they serve on it again. **Release N's schema must serve release
+N − 1's code.** `MigrationsAreExpandOnlyTest` (`app`, the architecture tier) holds that over every module's migrations;
+`ExpandOnlyLintTest` holds its rules on planted files, through the same path.
+
+**What is read: the floor.** Every migration above its module's line in
+[`docs/migrations/released-schema-floor.yaml`](../migrations/released-schema-floor.yaml). The repository has no release tag and
+CI clones shallowly, so a lint that asked git for "the last release" would pass on nothing; the floor is a committed file,
+one line per module, and moving it is a reviewed change. The same test leaves the next floor under
+`app/build/schema-floor/`, also when it goes red. **It moves on two occasions and no others**: when a release is cut, by copying
+that file over the committed one and setting `release` to the version just cut; and, while `release` is `none`, at the
+coordinator's merge of work whose migrations landed beside it, since those are not contracts with a release that exists. Moving it to get
+a refused migration past the lint is the thing the review of this file is there to stop. A module the file does not name is read from its first migration, and a floor above a
+module's newest file is refused, since a file added below it would never be read.
+
+**While no release has been cut**, the file says `release: "none"`: no release N − 1 exists, so nothing can be broken yet,
+and every line stands at the newest migration on master when the file was last recorded. Migrations added above those lines
+are read from the moment they appear.
+
+**Refused, unless the file carries a contract marker:**
+
+| Class | What it is | Why it is refused |
+|---|---|---|
+| `DROP` | `DROP` of anything; `ALTER … DROP` of a column, a constraint, a default, `NOT NULL`; `SET DEFAULT NULL`, however the null is written | N − 1 reads, writes or relies on it |
+| `RENAME` | `RENAME` of anything; `SET SCHEMA` | N − 1 names the old one |
+| `TYPE_CHANGE` | A column's type, or an attribute's | N − 1 binds the old one |
+| `TRUNCATE` | The statement | It destroys what N − 1 reads |
+| `DELETE` | A `DELETE`, also inside a `WITH` | Likewise, a row at a time; unlike an `UPDATE` backfill, it can only take away |
+| `CHECK` | A new `CHECK`, on a table or inline in `ADD COLUMN`; a domain's new constraint; a new column typed by a domain with a `CHECK`; a partition of a released table with a column or constraint list of its own | It can refuse a write N − 1 makes |
+| `TRIGGER` | `CREATE [CONSTRAINT] TRIGGER`, `ENABLE TRIGGER`, `DISABLE TRIGGER` | Likewise, and this repository adds refusing triggers often. One firing on `TRUNCATE` alone is exempt: the application holds no `TRUNCATE`, so it can refuse nothing a release makes. A backfill bracketed by `DISABLE` and `ENABLE` in one file nets nothing, and says so with a marker of `ANY` |
+| `UNIQUE` | `UNIQUE`, `PRIMARY KEY`, `EXCLUDE`, `CREATE UNIQUE INDEX` | Likewise |
+| `FOREIGN_KEY` | `FOREIGN KEY`, inline `REFERENCES` | Likewise |
+| `ALTERED_CONSTRAINT` | `ALTER CONSTRAINT` | It changes when, or whether, a constraint is checked against N − 1's writes |
+| `SET_NOT_NULL` | `SET NOT NULL` | Likewise |
+| `SET_GENERATED` | `ALTER COLUMN … SET GENERATED` | `BY DEFAULT` to `ALWAYS` refuses an explicit value with `428C9`, which N − 1 may still write |
+| `NOT_NULL_WITHOUT_DEFAULT` | `ADD COLUMN … NOT NULL`, or typed by a domain that is, with no default; a default that is `NULL`, `(NULL)` or `CAST(NULL AS …)` is none (a generated or serial column has one) | N − 1's insert does not name it |
+| `REVOKE` | Any `REVOKE`, a role's membership and a whole schema's tables included | N − 1 may use the privilege |
+| `ROW_SECURITY` | `ENABLE`/`FORCE ROW LEVEL SECURITY`, `CREATE POLICY` | It can hide or refuse rows |
+| `RULE` | `CREATE RULE` | It can rewrite or refuse a write |
+| `REPLACED_BODY` | `CREATE OR REPLACE` of a function, procedure, aggregate or view that a migration at or below the floor defined, or of one in another module's schema | See below |
+| `OPAQUE_BLOCK` | A `DO` block; a top-level call of a function this module defined | Its body is not read, so it is not vouched for |
+| `UNRECOGNISED` | A statement form the lint does not know | The list of what passes is an allow-list: unknown is refused, never passed |
+
+**Exempt: a table created earlier in the same file.** A `CHECK`, trigger, `UNIQUE`, foreign key, `SET NOT NULL`, policy or
+`REVOKE` on it refuses nothing a release makes, so it needs no marker; nor does a `REVOKE` on a function or sequence created
+earlier in the file. `CREATE TABLE IF NOT EXISTS` and `PARTITION OF` do not earn this: such a table may already hold a
+release's rows. Nor does a `TEMP` table, or an unqualified table after the file moves its `search_path`: either may hide a
+released table of the same name. Destructive statements are never exempt.
+
+**A new table's foreign key to a released table is not refused**, though it can refuse release N − 1's `DELETE` of a parent row
+that N has referenced. It takes a row only N writes, on a parent N − 1 must then delete or re-key during the rollout window,
+and the schema's parents are mostly append-only to the application role. Refusing it would ask a marker of nearly every new
+table. The rehearsal (`P15-TSK-012`) is what would show otherwise.
+
+**Words inside comments, string literals, function bodies and quoted names do not count**: the file is tokenised and read
+statement by statement. The cost is that a `CREATE FUNCTION`'s body is not read at all.
+
+**What the lint does not do.** It reads no function body, and `CREATE OR REPLACE FUNCTION` on a trigger's function can add
+a refusal without any of the words above. So it does not try to judge one: **every** replacement of something a release
+already holds is refused as `REPLACED_BODY`, whatever the body says, and passes only with a marker, which is a person's
+reviewed statement. A first definition by `CREATE OR REPLACE` is additive and passes. The lint cannot tell whether a
+marker's claim is true: that release N − 1 runs on release N's schema is `P15-TSK-012`'s rehearsal.
+
+**The contract marker, whose form is fixed here for `P15-TSK-017`'s promotion script.** One `--` line starting at column 0
+in the file's header, before its first statement, matching exactly:
+
+`^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\.[0-9]+\.[0-9]+); waives=([A-Z_]+(?:,[A-Z_]+)*); reason=(\S.*)$`
+
+For example:
+
+```sql
+-- finapp-contract: first-conforming-release=1.4.0; waives=DROP; reason=the last writer of legacy_status went in 1.4.0
+```
+
+- **`first-conforming-release`** names the first release whose code conforms to this migration. A release is named by the
+  Gradle `version` it was built with, less `-SNAPSHOT` (`/actuator/info` publishes it), compared as a version.
+- **`ANY`** says every release's code conforms, so it excludes nothing from a rollback: a tightening that refuses nothing,
+  such as a widened `CHECK` replaced in place, or a function body that changed only how it reads the clock.
+- **A named release must already be out** (`MARKER_AHEAD_OF_THE_RELEASE`): it may not be newer than the floor's `release`,
+  because release N − 1 is running while this migration applies, and a contract N − 1 does not meet breaks it. While the
+  floor says `none` there is no N − 1 to compare with, and any well-formed name stands.
+- A line starting `-- finapp-contract` that does not parse, a second marker, or one after the first statement is
+  `MALFORMED_MARKER`, and passes nothing. A marker inside a string or a block comment is not a marker.
+- **`waives`** names the classes this marker answers, comma-separated, and only those are waived: a reason written for a
+  replaced body says nothing about a dropped column beside it. A class no marker can answer, or one that does not exist, is
+  `MALFORMED_MARKER`.
+- It cannot waive `UNREADABLE` (a file that cannot be read to its end), `NOT_A_MIGRATION` (a file in the directory that is
+  not a `V<version>__<name>.sql` directly in it, which the migrator image would not stage), or a marker's own refusals.
+
+**The promotion script's rule (`P15-TSK-017`).** A rollback to release R is refused when any migration above R's own newest
+version in that module carries a marker naming a release newer than R. Past such a marker the way back is a forward fix.
+`ANY` never refuses.
+
+**Enforced at run time: the schema-version guard.** The build embeds each schema's newest version, read from the migrations
+on the application's runtime classpath. The readiness contributor `schemaVersion` answers `OUT_OF_SERVICE` while any schema
+is **older** than that, so a replica of N on N − 1's schema waits and the rollout pauses at `maxUnavailable: 0`. A **newer**
+schema is never held against it: a replica of N − 1 on N's schema is what a rollout and a rollback are. Liveness never reads
+it. Versions compare as versions, the highest row with `success = true`, read through `platform.applied_migration_versions()`
+(§6). The probe never reads the database: a daemon thread does, one statement for every schema, at most once a minute on a
+ready replica (`SchemaVersionGuard`; the runbook's §11.1c).
+
+**Background work waits with it.** Readiness stops HTTP only, and a consumed event or a scheduled tick is traffic too: a handler
+naming a column not yet applied fails with `42703`, which is not transient, so a valid financial event would be parked. So every
+schedule, the outbox relay and every consumer loop does no work until the guard has proven the schema, and pauses while it is
+found older. A failed read moves nothing: only a read that succeeded and shows an older schema takes a ready replica out.
+
 ### 4.2 Destructive DDL
 
+The build refuses destructive DDL that carries no contract marker (§4.1). The marker is necessary, and these still apply.
 `DROP TABLE`, `DROP COLUMN`, destructive `ALTER`, and any `DELETE` or `UPDATE` against
 financial history require **all** of:
 
@@ -357,7 +466,7 @@ rather than being applied later by hand.
 | Role | Is | Holds |
 |------|----|-------|
 | `finapp_migrator` | The owner of the `platform` schema and every object in it. Flyway connects as this | DDL on its own schema. **Not** a superuser |
-| `finapp_app` | What the application connects as | Per-table DML, granted by the migration that creates the table. No DDL, no access to the migration history |
+| `finapp_app` | What the application connects as | Per-table DML, granted by the migration that creates the table. No DDL, and no access to any `flyway_schema_history` table: its one view of what has been applied is `EXECUTE` on the definer function `platform.applied_migration_versions()` (platform `V013`, `P15-TSK-005`), which returns each schema's successful versions and nothing else, for the readiness guard (§4.1) |
 | `finapp_reporting` | What report generation reads as (`P15-TSK-021`, C13) | `SELECT` on the tables a report run reads, granted by a migration of each owning module (accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V034`) and pinned by `ReportingRoleIsSelectOnlyTest`. Nothing else. It must exist before those migrations run: the local role script creates it, and in a deployed database the one-time bootstrap step (`P15-TSK-004`) |
 
 **Roles are provisioned by infrastructure, not by a migration.** A role is a cluster-level
@@ -418,6 +527,7 @@ Before merging a migration:
 - Touches only the owning module's schema; no cross-schema foreign keys
 - Names the invariants it affects, if any
 - Destructive changes: separate migration, justified, ADR where evidence is affected
+- Expand-only, or carries a contract marker naming the first release that conforms (§4.1; the build refuses it otherwise)
 - Backfills: idempotent, batched, separate from DDL, verified by reconciliation
 - Grants stated for any new table, appropriate to its mutability
 - Monetary fields declared through `MoneyColumns`, not hand-written

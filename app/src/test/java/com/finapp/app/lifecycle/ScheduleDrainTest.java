@@ -57,6 +57,118 @@ class ScheduleDrainTest {
         assertThat(ticking.drain.isRunning()).isFalse();
     }
 
+    /** A hold a test turns on and off, telling what it was told to tell. */
+    private static final class Hold implements WorkHold {
+        private volatile boolean on;
+        private final List<Runnable> told = new ArrayList<>();
+
+        private Hold(boolean on) {
+            this.on = on;
+        }
+
+        @Override
+        public boolean held() {
+            return on;
+        }
+
+        @Override
+        public void whenHeld(Runnable onHeld) {
+            told.add(onHeld);
+        }
+
+        private void comeOn() {
+            on = true;
+            told.forEach(Runnable::run);
+        }
+    }
+
+    private static ScheduledExecutorService ticking(AtomicInteger ticks, ScheduleDrain drain) {
+        ScheduledExecutorService executor = daemon(drain.name());
+        executor.scheduleWithFixedDelay(ticks::incrementAndGet, 20, 20, TimeUnit.MILLISECONDS);
+        drain.started(executor);
+        return executor;
+    }
+
+    private static void awaitTicks(AtomicInteger ticks, int above) throws InterruptedException {
+        for (int waited = 0; waited < 200 && ticks.get() <= above; waited++) {
+            Thread.sleep(50);
+        }
+        assertThat(ticks.get()).as("ticks resumed").isGreaterThan(above);
+    }
+
+    @Test
+    @DisplayName("while the hold is on from the start no tick runs, and once it comes off the schedule ticks")
+    void aHeldScheduleRunsNoTick() throws Exception {
+        Hold hold = new Hold(true);
+        ScheduleDrain drain = new ScheduleDrain("held", Duration.ofSeconds(10), GRACE);
+        drain.heldBy(hold);
+        AtomicInteger ticks = new AtomicInteger();
+        ticking(ticks, drain);
+        try {
+            Thread.sleep(500);
+            assertThat(ticks).as("held from the start").hasValue(0);
+            assertThat(drain.isRunning()).as("held is not stopped").isTrue();
+
+            hold.on = false;
+            awaitTicks(ticks, 0);
+        } finally {
+            drain.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("a hold coming on over a running schedule stops its ticks after the one in flight, and coming off resumes them")
+    void aHoldComingOnPausesARunningSchedule() throws Exception {
+        Hold hold = new Hold(false);
+        ScheduleDrain drain = new ScheduleDrain("held", Duration.ofSeconds(10), GRACE);
+        drain.heldBy(hold);
+        AtomicInteger ticks = new AtomicInteger();
+        ticking(ticks, drain);
+        try {
+            awaitTicks(ticks, 2);
+
+            hold.comeOn();
+            Thread.sleep(200);
+            int atTheHold = ticks.get();
+            Thread.sleep(500);
+            assertThat(ticks).as("no tick while held").hasValue(atTheHold);
+
+            hold.on = false;
+            awaitTicks(ticks, atTheHold);
+        } finally {
+            drain.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("a held schedule stops at once, not at its bound: the hold waits for nothing a stop needs")
+    void aHeldScheduleStopsPromptly() {
+        Hold hold = new Hold(true);
+        ScheduleDrain drain = new ScheduleDrain("held", Duration.ofSeconds(30), GRACE);
+        drain.heldBy(hold);
+        ticking(new AtomicInteger(), drain);
+
+        long started = System.nanoTime();
+        drain.stop();
+
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(10));
+        assertThat(drain.isRunning()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a schedule held by nothing runs as it always has, and asking answers no")
+    void withNoHoldNothingChanges() throws Exception {
+        ScheduleDrain drain = new ScheduleDrain("free", Duration.ofSeconds(10), GRACE);
+        AtomicInteger ticks = new AtomicInteger();
+        ticking(ticks, drain);
+        try {
+            awaitTicks(ticks, 0);
+            assertThat(drain.held()).isFalse();
+        } finally {
+            drain.stop();
+        }
+    }
+
     @Test
     @DisplayName("past its bound the tick is interrupted, and stop returns within the bound and the grace")
     void pastTheBoundTheTickIsInterrupted() throws Exception {

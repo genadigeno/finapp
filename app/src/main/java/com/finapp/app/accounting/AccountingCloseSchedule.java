@@ -232,7 +232,13 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
         for (Leg leg : List.of(new Leg(cadence.openPoll(), this::openOnce), new Leg(cadence.checksPoll(), this::checksOnce),
                 new Leg(cadence.orphansPoll(), this::orphansOnce), new Leg(cadence.inquiryPoll(), this::inquiryOnce))) {
             // At once, not after a poll: an hour's open leg would otherwise never run on a fleet restarted within the hour.
-            started.scheduleWithFixedDelay(leg.work()::getAsInt, 0, leg.poll().toMillis(), TimeUnit.MILLISECONDS);
+            // Waits at the top of the leg (P15-TSK-005): several threads, and a first tick with no delay, which ScheduleDrain's gate
+            // cannot cover. Waits rather than skips, so a leg held at the start still runs at once when released, not a poll later.
+            started.scheduleWithFixedDelay(() -> {
+                if (drain.awaitReleased()) {
+                    leg.work().getAsInt();
+                }
+            }, 0, leg.poll().toMillis(), TimeUnit.MILLISECONDS);
         }
         drain.started(started);
     }

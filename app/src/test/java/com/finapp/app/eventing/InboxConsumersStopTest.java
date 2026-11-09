@@ -2,6 +2,7 @@ package com.finapp.app.eventing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.lifecycle.WorkHold;
 import com.finapp.platform.inbox.InboxConnectionSource;
 import com.finapp.platform.inbox.InboxConsumer;
 import com.finapp.platform.inbox.InboxEventHandler;
@@ -142,6 +143,10 @@ class InboxConsumersStopTest {
     }
 
     private static InboxConsumers consumers(LikeTheRealConsumer consumer, Reaction reaction, Duration pollTimeout) {
+        return consumers(consumer, reaction, pollTimeout, WorkHold.NONE);
+    }
+
+    private static InboxConsumers consumers(LikeTheRealConsumer consumer, Reaction reaction, Duration pollTimeout, WorkHold hold) {
         FakeStore store = new FakeStore();
         InboxConsumer<Connection> inbox = new InboxConsumer<>(store, Clock.systemUTC(), Duration.ofDays(1));
         InboxConnectionSource connections = () -> fakeConnection(store);
@@ -149,7 +154,64 @@ class InboxConsumersStopTest {
                 List.of(handler(reaction)),
                 (group, handlers) -> new KafkaEventReceiver(consumer, group, connections, inbox, com.finapp.platform.testing.InboxParkingDoubles.NEVER_PARKS, handlers, pollTimeout),
                 Duration.ofMillis(50),
-                new SimpleMeterRegistry());
+                new SimpleMeterRegistry(),
+                hold);
+    }
+
+    private static WorkHold holdOn(AtomicBoolean held) {
+        return new WorkHold() {
+            @Override
+            public boolean held() {
+                return held.get();
+            }
+
+            @Override
+            public void whenHeld(Runnable onHeld) {
+                // A loop asks before every poll, so it needs no telling.
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("while the hold is on from the start no loop polls, so nothing is consumed; once off, the record is handled")
+    void aHeldLoopDoesNotPoll() throws Exception {
+        LikeTheRealConsumer consumer = new LikeTheRealConsumer();
+        consumer.addRecord(record(0));
+        AtomicBoolean held = new AtomicBoolean(true);
+        CountDownLatch handled = new CountDownLatch(1);
+        InboxConsumers consumers = consumers(consumer, (connection, event) -> handled.countDown(), Duration.ofMillis(20), holdOn(held));
+        consumers.start();
+        try {
+            Thread.sleep(400);
+            assertThat(consumer.polls).as("held: no poll, so this member has not joined its group").isZero();
+            assertThat(handled.getCount()).as("nothing handled").isEqualTo(1);
+
+            held.set(false);
+            assertThat(handled.await(10, TimeUnit.SECONDS)).as("released").isTrue();
+        } finally {
+            consumers.stop();
+        }
+    }
+
+    @Test
+    @DisplayName("a hold coming on over a polling loop stops its polls, and the loop still stops when asked")
+    void aHoldComingOnStopsPolling() throws Exception {
+        LikeTheRealConsumer consumer = new LikeTheRealConsumer();
+        AtomicBoolean held = new AtomicBoolean(false);
+        InboxConsumers consumers = consumers(consumer, (connection, event) -> { }, Duration.ofMillis(20), holdOn(held));
+        consumers.start();
+        try {
+            assertThat(consumer.polling.await(10, TimeUnit.SECONDS)).isTrue();
+
+            held.set(true);
+            Thread.sleep(300);
+            int atTheHold = consumer.polls;
+            Thread.sleep(400);
+            assertThat(consumer.polls).as("no poll while held").isEqualTo(atTheHold);
+        } finally {
+            consumers.stop();
+        }
+        assertThat(consumer.closed()).as("a held loop still closes its consumer at a stop").isTrue();
     }
 
     /** What the consumer acknowledged, read after it closed: a closed {@code MockConsumer} answers nothing. */

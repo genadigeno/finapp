@@ -73,10 +73,10 @@ class ShutdownOrderTest {
 
     private static final String PROBE_PATH = "/__drain-probe";
 
-    /** The platform's lifecycle components: thirty-five schedules (the two retention sweeps, `P15-TSK-029`, the latest), the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`). */
-    private static final int COMPONENTS = 37;
+    /** The platform's lifecycle components: thirty-six schedules (`P15-TSK-035`'s census the latest), the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`). */
+    private static final int COMPONENTS = 38;
 
-    private static final int SCHEDULES = 35;
+    private static final int SCHEDULES = 36;
 
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
 
@@ -105,6 +105,10 @@ class ShutdownOrderTest {
         assertThat(snapshot.components).as("the platform's lifecycle components").hasSize(COMPONENTS);
         assertThat(snapshot.schedules).as("its schedules").hasSize(SCHEDULES);
         assertThat(snapshot.components.values()).allSatisfy(component -> assertThat(component.isRunning()).isTrue());
+        assertThat(snapshot.schedules.values())
+                .as("the database is absent, so the guard has proven nothing: every schedule in the real wiring is held by it (P15-TSK-005)")
+                .allSatisfy(schedule -> assertThat(drainOf(schedule).held()).isTrue());
+        assertThat(snapshot.consumers.held()).as("and so are the consumer loops").isTrue();
         assertThat(snapshot.timeout).as("production states the phase timeout").isEqualTo(Duration.ofSeconds(30));
 
         CompletableFuture<HttpResponse<String>> request = HTTP.sendAsync(
@@ -253,6 +257,9 @@ class ShutdownOrderTest {
             "--finapp.merchant.payout.provider.url=http://127.0.0.1:9",
             "--finapp.fx.reference.url=http://127.0.0.1:9",
             "--management.health.db.enabled=false",
+            // The schema-version guard (P15-TSK-005) would answer OUT_OF_SERVICE here with no database, before the stop as well
+            // as during it, and "readiness refuses" would then prove nothing about the stop: readiness stays readinessState alone.
+            "--management.endpoint.health.group.readiness.include=readinessState",
             "--management.endpoint.health.validate-group-membership=false",
             "--logging.level.com.finapp.app.lifecycle=DEBUG",
             "--logging.level.com.finapp.platform.metrics.GaugeRefresher=DEBUG"

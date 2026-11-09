@@ -190,3 +190,7 @@ Financial impact:
   synchronously — which needs its own decision, not a default.
 - **A liveness signal with substance** once there is a workload that can wedge.
 - **`socketTimeout`** with Phase 3, when there are real queries to measure.
+- *(Noted by `P15-TSK-005`, 2026-11-09: readiness gains `schemaVersion`, `OUT_OF_SERVICE` while any schema is older than the build
+  expects; this ADR kept: liveness reads nothing of it. Decision 3 is kept too: it reads through the pool the application uses. It
+  does so on a thread of its own, never the probe's, because `db` already spends the probe's time waiting on the pool when the
+  database is gone.)*

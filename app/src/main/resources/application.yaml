@@ -289,8 +289,15 @@ management:
         # ordinary failure, counted in finapp.inbox.poll.failures, not a readiness fault. Never
         # in liveness, for the reason above.
         # KafkaConsumersReadinessTest fails if it leaves this group or joins liveness.
+        #
+        # `schemaVersion` (P15-TSK-005): OUT_OF_SERVICE while any schema is OLDER than this build
+        # expects, so a new replica on an old schema waits and the rollout pauses at
+        # maxUnavailable: 0. Never on a newer schema: release N - 1 on release N's schema is what a
+        # rollout and a rollback are. It reads the database on a thread of its own, never the
+        # probe's. Never in liveness: a restart does not apply a migration (ADR-0016).
+        # SchemaVersionReadinessTest fails if it leaves this group or joins liveness.
         readiness:
-          include: readinessState,db,kafkaConsumers
+          include: readinessState,db,kafkaConsumers,schemaVersion
 
   info:
     build:

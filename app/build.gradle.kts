@@ -1,3 +1,6 @@
+import java.math.BigInteger
+import java.util.zip.ZipFile
+
 plugins {
     id("finapp.java-conventions")
     // The Spring Boot plugin is applied ONLY here, to the executable module.
@@ -280,6 +283,52 @@ tasks.processResources {
             exclude()
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// The schema versions this build expects (P15-TSK-005; DATA_MIGRATIONS.md section 4.1).
+//
+// Read from the migrations actually on the runtime classpath - each module's jar, the same scripts the migrator image
+// stages - and never from a list, so a module's new migration moves what a replica requires of its database with no edit
+// here. The application's SchemaVersionGuard reads the file; ExpectedSchemaVersionsTest holds it equal to a scan of the
+// classpath and a walk of the repository, which also catches this parsing and that one disagreeing.
+//
+// Compared as versions, part by part as whole numbers: as text, V9 would sort after V10. No instant and a sorted order, so
+// that two builds of one commit embed the same bytes (P15-TSK-003).
+// ---------------------------------------------------------------------------
+val expectedSchemaVersions by tasks.registering {
+    group = "build"
+    description = "Writes each schema's latest migration version, read from the runtime classpath, for the application to embed."
+    val written = layout.buildDirectory.file("generated/schema-versions/expected-schema-versions.properties")
+    inputs.files(configurations.runtimeClasspath).withPropertyName("runtimeClasspath").withNormalizer(ClasspathNormalizer::class.java)
+    outputs.file(written).withPropertyName("expectedSchemaVersions")
+    doLast {
+        val script = Regex("db/migration/([^/]+)/V([0-9]+(?:[._][0-9]+)*)__[^/]*\\.sql")
+        fun parts(version: String) = version.split('.', '_').map { it.toBigInteger() }
+        fun above(one: String, other: String): Boolean {
+            val (a, b) = parts(one) to parts(other)
+            for (i in 0 until maxOf(a.size, b.size)) {
+                val compared = a.getOrElse(i) { BigInteger.ZERO }.compareTo(b.getOrElse(i) { BigInteger.ZERO })
+                if (compared != 0) return compared > 0
+            }
+            return false
+        }
+        val latest = sortedMapOf<String, String>()
+        inputs.files.files.filter { it.isFile && it.name.endsWith(".jar") }.forEach { jar ->
+            ZipFile(jar).use { zip ->
+                zip.entries().asSequence().mapNotNull { script.matchEntire(it.name) }.forEach { match ->
+                    val (schema, version) = match.destructured
+                    if (latest[schema]?.let { above(version, it) } != false) latest[schema] = version
+                }
+            }
+        }
+        check(latest.isNotEmpty()) { "no migration on the runtime classpath: the guard would expect nothing" }
+        written.get().asFile.writeText(latest.entries.joinToString("") { (schema, version) -> "$schema=$version\n" })
+    }
+}
+
+tasks.processResources {
+    from(expectedSchemaVersions) { into("com/finapp/app/database") }
 }
 
 tasks.bootJar {
@@ -716,6 +765,10 @@ tasks.withType<Test>().configureEach {
         .withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.files(rootProject.fileTree("docs/events"))
         .withPropertyName("eventContractCatalogues")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    // MigrationsAreExpandOnlyTest (P15-TSK-005) reads the committed floor of the last release.
+    inputs.files(rootProject.fileTree("docs/migrations"))
+        .withPropertyName("schemaFloor")
         .withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.files(rootProject.layout.projectDirectory.file("gradle/verification-metadata.xml"))
         .withPropertyName("dependencyVerificationMetadata")
