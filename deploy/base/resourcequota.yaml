@@ -1,0 +1,24 @@
+# Production's numbers; staging and kind patch them. A pod stating no requests at all meets the LimitRange first, which runs
+# before this in admission. What this adds is the container that states none beside one that does: the LimitRange's per-pod
+# sum passes such a pod, and this checks each container ("must specify ..."), but only for the keys it states, so none may be
+# dropped and none scoped.
+#
+# THE ARITHMETIC, held equal by manifest-policy/finapp.rego against the rendered stream. A pod inside its grace is still charged,
+# so the worst moment of a rollout is the one the connection budget counts (PHASE_15_PLAN.md section 6.1):
+#   app pods   maxReplicas 7 + 2 x maxSurge 1 + 1 (a terminating pod from outside the rollout)  = 10
+#   migrator   its Job, one at a time (a failed pod is not charged)                               1
+#   pods                                                                                         11
+#   requests.cpu       10 x 500m  + 250m                                                      5250m
+#   limits.cpu         10 x 2     + 1                                                            21
+#   memory, both       10 x 2Gi   + 512Mi                                                    20992Mi
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: finapp
+spec:
+  hard:
+    pods: "11"
+    requests.cpu: 5250m
+    requests.memory: 20992Mi
+    limits.cpu: "21"
+    limits.memory: 20992Mi

@@ -1,0 +1,131 @@
+# Test-only: what the rehearsal's single-node copies need under the base's default-deny. In kind the data tier is inside
+# the cluster, so pods are selected where every other overlay states addresses. Refused in any other overlay.
+#
+# The provider list is the same documentation range as the others': kind's providers are simulated, so nothing should
+# leave, and the "unlisted egress" test has a listed one to compare with.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-app-data-tier
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.0/24
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-migrator-data-tier
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-migrator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-postgres-ingress
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-migrator
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-kafka-ingress
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-kafka
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+# The broker's own advertised listener is resolved by name, its probe's included; its traffic to itself never leaves the pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-kafka-egress
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-kafka
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

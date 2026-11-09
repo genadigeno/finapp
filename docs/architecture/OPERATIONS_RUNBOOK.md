@@ -1860,12 +1860,13 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.7 Rotation and revocation per secret class; a key compromise | `-018`…`-020` | `-020` |
 | 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `P15-TSK-024` (instance down, stale gauges: written below, 2026-11-08), `P15-TSK-025` (burn rate and certificates: written below, 2026-11-08) | `-032` |
 | 11.9 A failing scan *(written 2026-11-08, below)*; a refused image | `P15-TSK-006` (the failing scan), `-007` (the refused image) | `-007` |
-| 11.10 Edge, abuse and break-glass | `-010`, `-011`, `-022` | `-032` |
+| 11.10 Edge and abuse *(the break-glass half is §11.25, since 2026-11-09; this row read "Edge, abuse and break-glass" until then)* | `-011`, `-022` | `-032` |
 | 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
 | 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |
 | 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) |
 | 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads *(written 2026-11-08, below)* | `-009` | `-009` (the check runs on Docker, each plant refused) |
 | 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below)* | `-029` | `-032` |
+| 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` |
 | 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
@@ -2314,6 +2315,68 @@ No amount appears in any of them: the audited operator reports answer the figure
 | `CrossBorderCancellationSpike` | Cancellations rising | Read by corridor; a provider or a rate is the usual cause |
 | `FxGaugesUnreadable` | An FX gauge cannot be read | §11.8 |
 
+### 11.25 Break-glass (`P15-TSK-010`)
+
+*Not rehearsed: `-032` does. No cluster, cloud account or person exists to hold this role; the procedure is written for the
+environment that will.*
+
+**What it is for.** An incident that cannot wait for a reviewed change, where the normal path, a pull request and the GitOps
+sync, is too slow or is the thing that broke. Nothing else. A change you would like to make is a pull request.
+
+**What bounds it in time, plainly.** Kubernetes RBAC has no expiring binding, so nothing in the cluster ends this. The binding
+in `deploy/base/rbac-humans.yaml` names the group `finapp-break-glass`, which has no members. In a real environment a person
+reaches it only through a cloud role that carries that group, and **that session's lifetime is the bound** (`-016` builds the
+access entry; no account exists, so it has never run). **Until that exists the bound is a procedure**: the steps below, kept by
+people, enforced by nothing.
+
+**What it can do.** Everything `finapp-read-only` reads, except the RBAC, network and ExternalSecret objects, and exactly four writes: delete a
+pod, evict a pod, read and change a Deployment's scale.
+
+**What it cannot do, deliberately.** Read a Secret in any verb. Exec, attach, port-forward, add an ephemeral container or proxy into
+a pod. Create a pod or change a template, because a template can mount every Secret in the namespace, and that would be reading
+them. Change RBAC. If an incident needs one of those, it needs the reviewed path, or the cluster administrator's own access,
+which is the identity layer's and leaves its own record.
+
+**Open.**
+
+1. Declare the incident and open its record: the reason, the person, the approver (a second person, never the holder), the
+   time, and the **end time, at most one hour ahead**.
+2. The approver grants it through the identity layer. Nobody edits the binding: it names only the group.
+3. Note the session's start in the incident record.
+
+**Use.** One pod at a time: each terminating pod keeps its whole connection pool open through its grace, and the budget allows one
+beyond a rollout (`PHASE_15_PLAN.md` §6.1).
+
+- Stop one pod, prefer an eviction, which respects the disruption budget. Delete only a pod eviction refuses and that is
+  genuinely stuck.
+- **Stop the fleet** (a defect moving money the wrong way, say): scale the Deployment to zero. The autoscaler treats zero as
+  disabled and leaves it. It does not drain anything you did not ask for, and pending work stays in PostgreSQL. To restart, scale to the
+  autoscaler's `minReplicas` (3) and it resumes.
+- Don't scale above the autoscaler's maximum: the connection budget counts on it.
+
+**Close.** Before the end time, however the incident stands:
+
+1. End the session and confirm it is gone (a request with the old credential is refused).
+2. Record the end time in the incident record, and every pod deleted and every scale change, read from the API audit log rather
+   than from memory.
+3. Restore what you changed: `kubectl get deployment finapp-app` shows the HPA's count, and the GitOps sync shows no drift.
+
+**Afterwards.** The second person reviews the audit log against the incident record, within one working day. Anything in the log that
+the record doesn't explain is a security event of its own.
+
+**Verify it holds** (from a principal in the group):
+
+```bash
+kubectl auth can-i get secrets -n finapp                    # no
+kubectl auth can-i list secrets -n finapp                   # no
+kubectl auth can-i create pods/exec -n finapp               # no
+kubectl auth can-i patch deployments -n finapp              # no
+kubectl auth can-i delete pods -n finapp                    # yes
+```
+
+**The audit.** Every call is in the cluster's API audit log, which `modules/kubernetes` turns on (asserted over a plan, never applied).
+That is the record of what was done; the incident record is why. Application logs are neither.
+
 ### 11.27 A source-join break, the census behind or unreadable, the fleet blind - `JournalEntryUnsourced`, `SourceCensusFindingsRecent`, `SourceCensusLagging`, `SourceCensusStalled`, `GaugesStaleAcrossTheFleet`
 
 *(Written by `P15-TSK-035`, 2026-11-09, from the census (`accounting`'s `SourceCensus`, the per-module `*JournalSources` read ports) and `infra/prometheus/rules/correctness.yml`. **Not yet rehearsed** (`P15-TSK-032`).)*
@@ -2492,14 +2555,15 @@ backend (the `object-storage` README) and the brokers come up in three stages (t
 
 **The layout.** `deploy/base` is the application's desired state and is never rendered alone: only an overlay names an
 image digest. One Deployment, one Service (8080 only), a hash-named ConfigMap, two ServiceAccounts with no token, a
-PodDisruptionBudget, a HorizontalPodAutoscaler that alone owns the replica count (the Deployment states none), and the
-migrator Job.
+PodDisruptionBudget, a HorizontalPodAutoscaler that alone owns the replica count (the Deployment states none), the
+migrator Job and, since 2026-11-09, the default-deny, the application's and migrator's NetworkPolicies, the two human Roles,
+the quota and the `LimitRange`.
 
 | Overlay | For | `maxReplicas` | `FINAPP_DB_INSTANCES` | Difference from the base |
 |---|---|---|---|---|
-| `kind` | The rehearsal, test-only | 3 | 6, the formula exactly | Single-node PostgreSQL and Kafka, ephemeral, labelled `finapp/test-only`; 1 GiB; the zone spread relaxed, since `kind`'s nodes carry no zone label |
-| `staging` | Reference values | 4 | 7 | The maximum, and its budget |
-| `production` | Reference values | 7 | 10 | Its own statement of the same numbers |
+| `kind` | The rehearsal, test-only | 3 | 6, the formula exactly | Single-node PostgreSQL and Kafka, ephemeral, labelled `finapp/test-only`; 1 GiB; the zone spread relaxed, since `kind`'s nodes carry no zone label; NetworkPolicies selecting those copies; a quota of 9 pods |
+| `staging` | Reference values | 4 | 7 | The maximum, its budget and a quota of 8 pods; placeholder data-tier and provider addresses |
+| `production` | Reference values | 7 | 10 | Its own statement of the same numbers; the base's quota of 11 pods; placeholder data-tier and provider addresses |
 
 **Nothing real is committed.** No secret, no hostname, no endpoint. An image is `finapp-app@sha256:` and sixty-four
 zeros until a promotion replaces it, which no registry serves, so an unpromoted overlay cannot start a pod, and with
@@ -2541,8 +2605,18 @@ eight minutes for three replicas, longer at the maximum. That is the price of ne
 `KUBERNETES_VERSION` in `infra/scanner-pins.sh`, whose minor `KubernetesManifestsTest` holds equal to each environment's
 `kubernetes_version` in Terraform: raise the two together.
 
-**What this does not cover.** A cluster's own refusal (Pod Security Admission, NetworkPolicy, quotas: `-010`), a real
-rollout and the measured connection peak (`-012`), and delivery (`-017`).
+**Change the fleet and the quota follows.** Each overlay's `ResourceQuota` must equal `maxReplicas + 2 × maxSurge + 1`
+application pods, the migrator and anything test-only, in pods, CPU and memory: a pod inside its grace is still charged. The
+policy reads each number from the rendered stream and refuses a quota above or below it (`deploy/base/resourcequota.yaml` shows
+the sum), and the `LimitRange`'s `max` must equal the largest pod rendered. A controller that needs RBAC goes on
+`controller_accounts` in `finapp.rego`, one line: a binding to any other ServiceAccount is refused. A new egress or a new client of the application is refused until a flow is added to `finapp.rego` beside its
+NetworkPolicy: the allowed flows are the decision, written once there and once in the policy.
+
+**`deploy/namespaces` is rendered separately.** An overlay's `namespace: finapp` renames every Namespace it renders, so the three
+namespaces are a root of their own, appended to each overlay's stream by this check and applied before an overlay.
+
+**What this does not cover.** A cluster's own refusal (no admission controller or network plugin runs here: `-012`), a real
+rollout and the measured connection peak (`-012`), and delivery (`-017`). *(Read "(Pod Security Admission, NetworkPolicy, quotas: `-010`)" until 2026-11-09.)*
 
 ### 11.15 Retention sweeps - `finapp.retention.swept`, `finapp.retention.sweep.failed`
 

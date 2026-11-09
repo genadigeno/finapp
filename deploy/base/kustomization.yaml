@@ -10,6 +10,12 @@ resources:
   - poddisruptionbudget.yaml
   - horizontalpodautoscaler.yaml
   - migrator-job.yaml
+  - networkpolicy-default-deny.yaml
+  - networkpolicy-app.yaml
+  - networkpolicy-migrator.yaml
+  - rbac-humans.yaml
+  - resourcequota.yaml
+  - limitrange.yaml
 
 # Non-secret values only, named with a content hash so that a change rolls the Deployment. The three
 # numbers below are ConnectionPoolSizingGuard's declaration, and the manifest policy holds them

@@ -311,11 +311,12 @@ class KubernetesManifestsTest {
             refusedPlants.add(refused.group(1));
             refusedIds.add(refused.group(2));
         }
-        Matcher other = Pattern.compile("(?m)^(?:schema_refused|render_refused) (\\S+) ").matcher(script);
+        // `accepted` is a plant the policies must let through (a controller's role, P15-TSK-010): made, and answered for.
+        Matcher other = Pattern.compile("(?m)^(?:schema_refused|render_refused|accepted) (\\S+)\\b").matcher(script);
         while (other.find()) {
             refusedPlants.add(other.group(1));
         }
-        Matcher made = Pattern.compile("(?m)^\\s+plant(?:_on)? ([a-z][a-z-]*)\\b").matcher(script);
+        Matcher made = Pattern.compile("(?m)^\\s+(?:plant(?:_on)?|human_rule|break_glass_rule) ([a-z][a-z-]*)\\b").matcher(script);
         while (made.find()) {
             planted.add(made.group(1));
         }

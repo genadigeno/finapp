@@ -1,0 +1,15 @@
+# Every pod in the namespace, in both directions, with no rule: whatever is not listed elsewhere is refused
+# (P15-TSK-010, PHASE_15_PLAN.md section 6). The empty selector names no pod on purpose: it covers every replica, every
+# surge pod and every Job retry, and whatever is added later.
+#
+# A policy is only as true as the network plugin enforcing it: EKS's agent is turned on by modules/kubernetes, and kind's
+# kindnetd enforces from kind v0.24.0. No test here proves either; the rehearsal does.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
