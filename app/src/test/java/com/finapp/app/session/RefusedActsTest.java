@@ -57,7 +57,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * What the declaration does at each kind of refusal (`P15-TSK-039`), through the real error contract: the real
  * {@code ApiErrorHandler} and {@code RefusedActAdvice} over a stand-in door, with the audit store a list. Whether a real
  * door declares it is {@code RefusedActsAreRecordedTest}'s; the row in PostgreSQL is
- * {@code RefusedActsDatabaseTest}'s, owed (C14).
+ * {@code FxAdministrationEndpointDatabaseTest}'s and {@code IdentityAdministrationDatabaseTest}'s, owed (C14).
  */
 @DisplayName("a declared door's refused and failed acts are recorded with their outcome (P15-TSK-039)")
 @SuppressWarnings("try") // The scopes are used for their close side effect (the established idiom).

@@ -105,6 +105,24 @@ class RoleGrantDoorTest {
         assertThat(limits).allMatch(limit -> limit == 201);
     }
 
+    @Test
+    @DisplayName("the only production path to a role is the one that checks the factor: no other caller of Authorization.assign")
+    void theOnlyGrantIsTheOneThatChecks() {
+        var callers = new com.tngtech.archunit.core.importer.ClassFileImporter()
+                .withImportOption(com.tngtech.archunit.core.importer.ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPackages("com.finapp")
+                .stream()
+                .flatMap(javaClass -> javaClass.getMethodCallsFromSelf().stream())
+                .filter(call -> call.getName().equals("assign")
+                        && call.getTargetOwner().isEquivalentTo(com.finapp.identity.Authorization.class))
+                .map(call -> call.getOriginOwner().getSimpleName())
+                .collect(java.util.stream.Collectors.toSet());
+
+        assertThat(callers)
+                .as("a new caller of Authorization.assign is a grant that skips the factor check")
+                .containsExactly("IdentityAdministration");
+    }
+
     private static MockHttpServletRequest requestWithSession() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setAttribute(SessionAuthenticationInterceptor.CURRENT_SESSION,
