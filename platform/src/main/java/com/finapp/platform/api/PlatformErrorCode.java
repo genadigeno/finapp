@@ -97,6 +97,18 @@ public enum PlatformErrorCode implements ErrorCode {
     FORBIDDEN("api.Forbidden", 403, "You do not have permission to do that."),
 
     /**
+     * A door's per-source limit was reached (`P15-TSK-022`). It says nothing about what the request contained: the decision is made
+     * on the connection's address alone, before the body is read. {@code Retry-After} says when, from the database's clock.
+     */
+    TOO_MANY_REQUESTS("api.TooManyRequests", 429, "Too many requests."),
+
+    /**
+     * The door could not count the request, so it stays closed: the counter's store is unavailable (`P15-TSK-022`). Retryable, and
+     * not a statement about the request.
+     */
+    TEMPORARILY_UNAVAILABLE("api.TemporarilyUnavailable", 503, "Temporarily unavailable; try again shortly."),
+
+    /**
      * Something failed that the client cannot do anything about.
      *
      * <p>The catch-all, and the one that matters most for {@code INV-AUD-02}: its title says

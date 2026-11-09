@@ -105,7 +105,7 @@ server:
   # X-Forwarded-For from every private range. native + an empty list trusts nobody: blank is off the machine and on a
   # laptop alike. Only a Kubernetes overlay names a network, and in staging and production that is the whole VPC, since
   # pods take their addresses from it. So this list does not stop a pod naming its own address, in the record of an
-  # acceptance or in the key P15-TSK-022 will limit on: P15-TSK-010's NetworkPolicy, finapp-app-ingress, does, by admitting
+  # acceptance or in the key the per-source limits count on: P15-TSK-010's NetworkPolicy, finapp-app-ingress, does, by admitting
   # only the edge's controllers to this port. ForwardedAddressTest holds the valve's half on a real Tomcat.
   forward-headers-strategy: native
   tomcat:
@@ -131,6 +131,33 @@ server:
 # database that is merely down. It is a DECLARATION, and a wrong declaration is a wrong answer.
 # ---------------------------------------------------------------------------
 finapp:
+  # The public doors' per-source limits (P15-TSK-022, OPERATIONS_RUNBOOK.md 11.30). One bucket per source per window across every
+  # replica, arbitrated in PostgreSQL: the edge's limits are a first, coarse layer. Reference numbers, calibrated by Phase 16 against
+  # real traffic; a carrier's NAT shares an address, so they are per address and not per person.
+  abuse:
+    registration:
+      limit: ${FINAPP_ABUSE_REGISTRATION_LIMIT:10}
+      window: ${FINAPP_ABUSE_REGISTRATION_WINDOW:PT1H}
+    authentication:
+      limit: ${FINAPP_ABUSE_AUTHENTICATION_LIMIT:100}
+      window: ${FINAPP_ABUSE_AUTHENTICATION_WINDOW:PT15M}
+    recovery:
+      limit: ${FINAPP_ABUSE_RECOVERY_LIMIT:10}
+      window: ${FINAPP_ABUSE_RECOVERY_WINDOW:PT1H}
+    recovery-completion:
+      limit: ${FINAPP_ABUSE_RECOVERY_COMPLETION_LIMIT:20}
+      window: ${FINAPP_ABUSE_RECOVERY_COMPLETION_WINDOW:PT1H}
+    channel-verification:
+      limit: ${FINAPP_ABUSE_CHANNEL_VERIFICATION_LIMIT:20}
+      window: ${FINAPP_ABUSE_CHANNEL_VERIFICATION_WINDOW:PT1H}
+    # At most this many counts in flight per instance, of the pool's seven; past it a count is refused at once and never queued.
+    max-concurrent-counts: ${FINAPP_ABUSE_MAX_CONCURRENT_COUNTS:3}
+    # Ended windows. One instance's capacity per interval (batch-size x 20 batches) is held above the worst creation rate by
+    # SourceLimitBudgetTest, reading these numbers.
+    sweep:
+      interval: PT1M
+      batch-size: 1000
+      grace: PT1M
   database:
     # ADR-0014: N is never 1.
     instances: ${FINAPP_DB_INSTANCES:10}

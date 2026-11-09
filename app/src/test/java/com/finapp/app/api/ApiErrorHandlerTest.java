@@ -84,6 +84,17 @@ class ApiErrorHandlerTest {
                     + " PROPOSED");
         }
 
+        /** A door's refusals (`P15-TSK-022`): the interceptor throws these before a handler runs; here the rendering alone is held. */
+        @PostMapping(path = "/probe/too-many", consumes = MediaType.APPLICATION_JSON_VALUE)
+        String tooMany(@RequestBody String body) {
+            throw com.finapp.app.abuse.SourceLimitRefused.exceeded(61);
+        }
+
+        @PostMapping(path = "/probe/door-closed", consumes = MediaType.APPLICATION_JSON_VALUE)
+        String doorClosed(@RequestBody String body) {
+            throw com.finapp.app.abuse.SourceLimitRefused.storeUnavailable();
+        }
+
         @PostMapping(path = "/probe/body", consumes = MediaType.APPLICATION_JSON_VALUE)
         String body(@RequestBody Payload payload) {
             return "ok";
@@ -116,6 +127,37 @@ class ApiErrorHandlerTest {
         assertThat(response.body())
                 .contains("\"instance\":\"" + ApiVersion.CURRENT_PREFIX + "/probe/api-exception\"");
         assertThat(response.body()).doesNotContain(SECRET);
+    }
+
+    @Test
+    @DisplayName("a throttled request is 429 with Retry-After, in the contract's shape (P15-TSK-022)")
+    void aThrottledRequestRendersTheContract() throws Exception {
+        HttpResponse<String> response = postJson("/probe/too-many", "{}");
+
+        assertContract(response, 429, "api.TooManyRequests");
+        assertThat(response.headers().firstValue("Retry-After")).contains("61");
+    }
+
+    @Test
+    @DisplayName("a throttled answer is byte-identical whatever identifier the body named, so it discloses none (P15-TSK-022, INV-IDN-07)")
+    void aThrottledAnswerSaysNothingOfTheIdentifier() throws Exception {
+        String taken = postJson("/probe/too-many", "{\"loginIdentifier\":\"someone-who-exists\"}").body();
+        String free = postJson("/probe/too-many", "{\"loginIdentifier\":\"nobody-at-all\"}").body();
+
+        assertThat(withoutCorrelation(taken)).isEqualTo(withoutCorrelation(free));
+    }
+
+    @Test
+    @DisplayName("a door that could not count is 503, with no Retry-After it could not know (P15-TSK-022)")
+    void aClosedDoorRendersTheContract() throws Exception {
+        HttpResponse<String> response = postJson("/probe/door-closed", "{}");
+
+        assertContract(response, 503, "api.TemporarilyUnavailable");
+        assertThat(response.headers().firstValue("Retry-After")).isEmpty();
+    }
+
+    private static String withoutCorrelation(String body) {
+        return body.replaceAll("\"correlationId\":\"[^\"]+\"", "");
     }
 
     @Test

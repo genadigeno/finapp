@@ -131,6 +131,8 @@ live in `CorrelationId`.*
 | Over the limit | `api.PayloadTooLarge` (413) |
 | Body fails declared constraints | `api.ValidationFailed` (422) |
 | Body will not parse | `api.MalformedRequest` (400) |
+| A public door's per-source limit reached | `api.TooManyRequests` (429), with `Retry-After` in whole seconds |
+| A public door's count could not be taken | `api.TemporarilyUnavailable` (503), the request not served |
 
 **400 versus 422** is the distinction between "your serialiser is wrong" and "your data is
 wrong": a client can act on the second, and only a developer can act on the first.
@@ -152,6 +154,13 @@ an error message becomes a vector (`INV-AUD-02`).
 
 *Proven by `RequestValidationTest`, which counts handler entries rather than reading the response —
 a 422 returned after the handler ran and did half the work looks identical from outside.*
+
+**The per-source limits** (`P15-TSK-022`) are on the five doors that need no session and no signature: `POST /v1/registrations`, `POST
+/v1/authentications`, `POST /v1/recoveries`, its completion, and `POST /v1/me/channels/verification`. One count per source and fixed
+window, across every replica, held in PostgreSQL. A source is the connection's address, an IPv4 address whole or an IPv6 address by its
+/64; a forwarded header never chooses it (`SourceLimitInterceptorTest`). A window's end is the database's, so a retry after `Retry-After` is
+served whichever replica takes it. Two sources behind one carrier's NAT are one source. A provider's signed callback is not counted:
+its signature is checked first, and nothing is written for a forged one.
 
 ## 6. Idempotency — **Implemented** (`P0-TSK-017`; first *used* by `P1-TSK-006`)
 
@@ -308,7 +317,6 @@ Recorded so their absence is not mistaken for an oversight.
 | Not decided | Owning phase |
 |---|---|
 | Authentication and authorization at the boundary — schemes, token shape, `401` versus `403` in practice | Phase 1 (`P0-EPIC-10` provides the Phase 0 baseline) |
-| Rate limiting and the response that signals it | Phase 13 (limits and velocity) |
 | Filtering and sorting parameter grammar | The first endpoint that needs one |
 | Bulk and batch request shapes | The first capability that needs one |
 | Asynchronous request/response (`202` and its polling contract) | Phase 5, with payment lifecycles |

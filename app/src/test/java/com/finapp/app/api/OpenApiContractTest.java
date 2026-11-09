@@ -181,6 +181,26 @@ class OpenApiContractTest {
     }
 
     @Test
+    @DisplayName("a throttled answer publishes Retry-After, and no other error does (P15-TSK-022)")
+    void onlyTheThrottledAnswerPublishesRetryAfter() throws Exception {
+        JsonNode responses = OpenApiDocument.parse(publishedDocument()).path("components").path("responses");
+
+        for (String code : responses.propertyNames()) {
+            JsonNode retryAfter = responses.get(code).path("headers").path(OpenApiDocument.RETRY_AFTER_HEADER);
+            if ("api.TooManyRequests".equals(code)) {
+                assertThat(retryAfter.path("$ref").stringValue())
+                        .as("the client is told when, in the contract as well as on the wire")
+                        .isEqualTo("#/components/headers/" + OpenApiDocument.RETRY_AFTER_HEADER);
+            } else {
+                assertThat(retryAfter.isMissingNode()).as(code).isTrue();
+            }
+        }
+        JsonNode header = OpenApiDocument.parse(publishedDocument()).path("components").path("headers").path(OpenApiDocument.RETRY_AFTER_HEADER);
+        assertThat(header.path("required").booleanValue()).isTrue();
+        assertThat(header.path("schema").path("minimum").intValue()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("each error response pins its status, code and type as data, not only as prose")
     void statusAndCodeArePublishedAsData() throws Exception {
         // Mutation found the absence of this. With the status living only inside a description,

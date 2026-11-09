@@ -60,6 +60,9 @@ final class OpenApiDocument {
      */
     static final String CLIENT_CORRELATION_HEADER = CorrelationFilter.CLIENT_HEADER;
 
+    /** The header {@code api.TooManyRequests} always arrives with (`P15-TSK-022`). */
+    static final String RETRY_AFTER_HEADER = "Retry-After";
+
     /**
      * The component name of the shared problem-detail schema.
      *
@@ -200,9 +203,18 @@ final class OpenApiDocument {
         clientHeader.put("required", false);
         clientHeader.set("schema", MAPPER.createObjectNode().put("type", "string"));
 
+        ObjectNode retryAfter = MAPPER.createObjectNode();
+        retryAfter.put(
+                "description",
+                "Whole seconds until this source's window ends on the server's clock. Retry after that; retrying sooner is refused and "
+                        + "does not move the window.");
+        retryAfter.put("required", true);
+        retryAfter.set("schema", MAPPER.createObjectNode().put("type", "integer").put("minimum", 1));
+
         ObjectNode headers = MAPPER.createObjectNode();
         headers.set(CORRELATION_HEADER, header);
         headers.set(CLIENT_CORRELATION_HEADER, clientHeader);
+        headers.set(RETRY_AFTER_HEADER, retryAfter);
         return headers;
     }
 
@@ -229,6 +241,11 @@ final class OpenApiDocument {
             responseHeaders.set(
                     name,
                     MAPPER.createObjectNode().put("$ref", "#/components/headers/" + name));
+        }
+        if (code == com.finapp.platform.api.PlatformErrorCode.TOO_MANY_REQUESTS) {
+            responseHeaders.set(
+                    RETRY_AFTER_HEADER,
+                    MAPPER.createObjectNode().put("$ref", "#/components/headers/" + RETRY_AFTER_HEADER));
         }
 
         ObjectNode media = MAPPER.createObjectNode();

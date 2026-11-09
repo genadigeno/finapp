@@ -1874,6 +1874,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` |
 | 11.26 The edge: two controllers, the generated route lists, a renewed certificate *(written 2026-11-09, below)* | `-011` | `-012`, `-020` |
 | 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` |
+| 11.30 Abuse limits: the doors' per-source limits, a door that refuses everyone, a store that cannot count, raising a limit *(written 2026-11-09, below)* | `P15-TSK-022` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -2746,6 +2747,26 @@ proves that swap on the pinned image. A real cluster's is `P15-TSK-020`'s rehear
 the controller pods do not start.
 
 **Failure and rollback.** An edge outage is refused traffic and nothing more: the application stays ready, and its schedules and consumers do not notice. Revert by the previous manifest digest; every route and limit is in the ConfigMap's hash, so a revert restores them together.
+
+### 11.30 Abuse limits - `finapp.abuse.requests` (`P15-TSK-022`)
+
+*(Written by `P15-TSK-022`, 2026-11-09, from the code and its tests. The counted case across real instances is owed to `P15-TST-002`; it has run on a scratch PostgreSQL by hand and on no cluster.)*
+
+**What is there.** The five doors that need no session and no signature (registration, authentication, recovery, recovery completion, channel verification) are each counted per source and fixed window in the unlogged table `platform.window_counter`, across every replica. The numbers are `finapp.abuse.*` in `application.yaml`, reference values calibrated by Phase 16. The edge's limits (§11.26) are a first, coarse layer, per controller; these are the ones that count. A provider's callback is not counted: its signature is checked first and a forged one writes nothing.
+
+**What a source is.** The connection's address as the edge set it (`FINAPP_EDGE_PROXIES`, §11.26): an IPv4 address whole, an IPv6 address by its /64, hashed to one of 65,536 buckets, and the table holds no address. So a carrier's NAT is one source, a host's whole /64 is one source, and two unlucky sources can share a bucket. If `FINAPP_EDGE_PROXIES` is wrong the edge's own address becomes every client's source and the doors start refusing almost everyone with `429`: check that value first when `outcome="refused"` jumps across every door at once.
+
+**Reading it.** `finapp.abuse.requests{type,outcome}`: `type` is the door, `outcome` is `admitted`, `refused` or `store_unavailable`. **This meter is the whole record of a refused request**: a refusal writes no audit row and no log line per request, by design, because either would let a flood write the table or fill the log. A rise in `refused` on one door is somebody at that door; the row (`SELECT scope, count(*), sum(admitted) FROM platform.window_counter GROUP BY 1`) says how many buckets are in use and how many requests were admitted, and never who.
+
+**A door answers `503 api.TemporarilyUnavailable`.** The count could not be taken: PostgreSQL unreachable, the pool exhausted, or this instance already running `finapp.abuse.max-concurrent-counts` counts. **Every door stays closed in that case and none fails open**: they all need the same database next, and a limit that lifted itself when the database was in trouble would be the attacker's best moment. `outcome="store_unavailable"` rising with the database healthy means the cap: counting itself is slow or the flood is large, and §11.21 is the next place to look.
+
+**Fixed windows.** A window has a fixed start and end, the same on every replica, so a source can be admitted twice its limit across a window's end. That is a burst bound, accepted; a limit a source hits repeatedly is hit at the same rate in every window.
+
+**Raising a limit.** Set `FINAPP_ABUSE_<DOOR>_LIMIT` (and `_WINDOW`) in the overlay and roll. There is no switch that turns a limit off, deliberately: a door without a limit is registration without a bound, and `THREAT_MODEL.md` T47's acceptance rests on it. Lowering a window below a minute is refused at start. A changed window applies to new windows; the row for the old one ages out.
+
+**After a failover.** The table is unlogged, so a crash or failover empties it: every source has a fresh window, once. That is the cost of a counter that adds nothing to the WAL. Nothing needs doing.
+
+**Size.** At most 65,537 rows per door per window, measured at about 14 MB per door-window including both indexes. `finapp.retention.sweep.failed{type="window_counter"}` rising means ended windows are not leaving; the doors keep working and the table grows by at most that bound each window. See §11.15 for a failing sweep.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

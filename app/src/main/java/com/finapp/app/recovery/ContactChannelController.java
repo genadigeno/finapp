@@ -66,6 +66,7 @@ public class ContactChannelController {
      * discloses nothing the uniform refusal protects: that refusal stops a caller without a live
      * token learning whether a verification is pending, and this one cannot be reached without one.
      */
+    @com.finapp.app.abuse.SourceLimited(com.finapp.app.abuse.Door.CHANNEL_VERIFICATION)
     @PostMapping("/verification")
     @Unauthenticated
     @ResponseStatus(HttpStatus.NO_CONTENT)

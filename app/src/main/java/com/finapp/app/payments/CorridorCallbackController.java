@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/providers/payments/corridor/webhooks")
+@com.finapp.app.abuse.NotSourceLimited(reason = "The signature is verified before anything is written, so a forged delivery costs an HMAC and no database work; a counter write per delivery is the cost this door avoids. The edge callback tier bounds it.")
 @Unauthenticated
 @ConditionalOnProperty("finapp.corridor.provider.url")
 @RequiredArgsConstructor

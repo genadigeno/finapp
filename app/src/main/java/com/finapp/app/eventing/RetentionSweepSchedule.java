@@ -31,7 +31,7 @@ import org.springframework.context.SmartLifecycle;
 public final class RetentionSweepSchedule implements SmartLifecycle {
 
     /** The batches one tick may delete before yielding to the next tick. */
-    static final int MAX_BATCHES = 20;
+    public static final int MAX_BATCHES = 20;
 
     private final RetentionSweep sweep;
     private final Duration interval;

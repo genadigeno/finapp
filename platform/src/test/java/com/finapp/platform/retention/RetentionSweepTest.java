@@ -45,6 +45,21 @@ class RetentionSweepTest {
     }
 
     @Test
+    @DisplayName("the window counter's sweep calls its own function with its grace and batch size (P15-TSK-022)")
+    void theWindowCounterSweepSendsItsGrace() {
+        ScriptedSweepConnections database = new ScriptedSweepConnections().deleting(3);
+
+        int deleted = RetentionSweep.ofExpiredWindowCounters(database::open, Duration.ofMinutes(1), 1000).sweepBatch();
+
+        assertThat(deleted).isEqualTo(3);
+        ScriptedSweepConnections.Batch batch = database.batches().get(0);
+        assertThat(batch.statement()).isEqualTo("SELECT platform.sweep_expired_window_counters(?, ?)");
+        assertThat(batch.boundMillis()).isEqualTo(Duration.ofMinutes(1).toMillis());
+        assertThat(batch.batchSize()).isEqualTo(1000);
+        assertThat(RetentionSweep.ofExpiredWindowCounters(database::open, Duration.ofMinutes(1), 1000).table()).isEqualTo("window_counter");
+    }
+
+    @Test
     @DisplayName("each batch borrows one connection and returns it before the next: the fleet's connection budget does not move")
     void oneConnectionPerBatch() {
         ScriptedSweepConnections database = new ScriptedSweepConnections().deleting(5, 5, 5);

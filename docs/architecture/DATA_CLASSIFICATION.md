@@ -182,6 +182,11 @@ no business data.
 | `dead_letter_discard` | `decided_at` | `INTERNAL` | |
 | `dead_letter_discard` | `decision_reason` | `CONFIDENTIAL` | Free text a person wrote; never served or logged. |
 | `outbox_event` | `last_error` | `CONFIDENTIAL` | A broker or adapter error. `V006` already forbids the payload here; an error string can still carry a host or endpoint |
+| `window_counter` | `scope` | `INTERNAL` | Which door or count: a value from the code, never a request's |
+| `window_counter` | `counter_key` | `INTERNAL` | A 16-bit bucket of a source, or another count's bounded key. **Not an address**: the table holds none, by design |
+| `window_counter` | `window_start` | `INTERNAL` | |
+| `window_counter` | `window_ends_at` | `INTERNAL` | |
+| `window_counter` | `admitted` | `INTERNAL` | How many were admitted in that window, never how many were refused |
 
 ### `party` and `identity` — *added by `P1-TSK-005`*
 
