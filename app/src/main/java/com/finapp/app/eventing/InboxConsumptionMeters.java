@@ -13,7 +13,8 @@ import java.util.Objects;
  * Micrometer answers a second registration of one name and tag set with the first meter, so the consumer counts into
  * these very counters. Per-instance counters; nothing here coordinates anything. The thrown polls'
  * {@code finapp.inbox.poll.failures{outcome}} (`P15-TSK-026`'s review fix round) is registered here
- * for the same reason, and so is {@code finapp.inbox.consumer.evictions} (`P15-TSK-025`).
+ * for the same reason, and so are {@code finapp.inbox.consumer.evictions} (`P15-TSK-025`) and
+ * {@code finapp.inbox.commits.deferred} (`P15-TSK-012`).
  */
 public final class InboxConsumptionMeters {
 
@@ -28,5 +29,6 @@ public final class InboxConsumptionMeters {
         OUTCOMES.forEach(outcome -> InboxConsumers.outcome(registry, outcome));
         POLL_FAILURE_OUTCOMES.forEach(outcome -> InboxConsumers.pollFailure(registry, outcome));
         InboxConsumers.eviction(registry);
+        InboxConsumers.deferredCommit(registry);
     }
 }

@@ -112,7 +112,14 @@ class KindRehearsalContractTest {
         String census = read(CENSUS);
         assertThat(census).contains("trial balance zero per currency").contains("one transfer per key").contains("one captured intent per key")
                 .contains("one payout per key").contains("the outbox drained").contains("no orphaned idempotency lease")
-                .contains("balances explain the journal");
+                .contains("balances explain the journal").contains("one posting per card capture").contains("one posting per payout")
+                .contains("the wallets hold what the client put in").contains("no payment intent left non-terminal");
+        assertThat(census).as("on the account's own normal side, and a line with no balance row is a difference")
+                .contains("l.direction = a.normal_balance").contains("FULL JOIN");
+        assertThat(harness).as("the provider's side is compared, and a census that printed nothing is not a green one")
+                .contains("one capture key at the provider per card payment").contains("one payout key at the provider per payout")
+                .contains("census_lines=");
+        assertThat(read("infra/scripts/kind-rehearsal/lost-events.sql")).contains("no event lost to a catalogued handler");
         assertThat(harness).as("GL = ledger is read at every census").contains("client gl-check");
         assertThat(read("infra/scripts/kind-rehearsal/Rehearsal.java")).as("from the application's own judgement of the month")
                 .contains("/v1/operator/accounting/gl/balances").contains("the General Ledger does not agree with the journal");
@@ -125,6 +132,15 @@ class KindRehearsalContractTest {
                 .contains("the peak of $peak connections exceeds instances x pool")
                 .contains("an operator was admitted at the peak")
                 .contains("handler window $label: every one of $total events applied exactly once");
+        assertThat(harness).as("the window closes when no pod is terminating, and the whole run is checked past the windows")
+                .contains("no_pod_terminating 300").contains("handler window, the whole run");
+        assertThat(harness).as("a kill that found nothing in flight is not a kill that passed")
+                .contains("the kill not exercised").contains("the claim the dead replica held")
+                .contains("touch /tmp/hold-payouts");
+        assertThat(harness).as("the budget is held per sample, with the reporting pool open, and tried at its ceiling")
+                .contains("assert_within_pods").contains("assert_reporting_open").contains("an operator is admitted with the fleet held at its budget");
+        assertThat(harness).as("the minReadySeconds probe raises the quota, so a seventh pod can exist").contains("the probe could not raise the quota");
+        assertThat(harness).as("every way out tears down").contains("' EXIT");
         assertThat(harness).as("every probe the entry names")
                 .contains("max-unavailable").contains("min-ready").contains("skip-replay").contains("no-default-deny");
     }

@@ -284,7 +284,7 @@ class KafkaEventReceiverTest {
         KafkaEventReceiver receiver = receiver(counting("probe.consumer", effects));
         consumer.addRecord(record(0, EventId.next(IDS), "probe.SomethingHappened", "x"));
 
-        assertThat(receiver.pollOnce()).as("a rebalance is not a failed poll").isEqualTo(new ReceiverPollResult(1, 0, 0, 0));
+        assertThat(receiver.pollOnce()).as("a rebalance is not a failed poll, and it is counted as what it is").isEqualTo(new ReceiverPollResult(1, 0, 0, 0, 0, 1));
         assertThat(rebalancing.attempts).as("the one refused").isEqualTo(1);
 
         assertThat(receiver.pollOnce()).as("nothing further on the partition").isEqualTo(new ReceiverPollResult(0, 0, 0, 0));
@@ -296,6 +296,23 @@ class KafkaEventReceiverTest {
         receiver.pollOnce();
 
         assertThat(rebalancing.attempts).as("sent once: nothing is owed now").isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a commit that failed for any other reason is not owed: an empty poll does not block in commitSync retrying it (P15-TSK-012)")
+    void aCommitThatFailedForAnotherReasonIsNotOwed() {
+        FailingOnceConsumer failing = new FailingOnceConsumer();
+        failing.assign(List.of(PARTITION));
+        failing.updateBeginningOffsets(Map.of(PARTITION, 0L));
+        consumer = failing;
+        KafkaEventReceiver receiver = receiver(counting("probe.consumer", new AtomicInteger()));
+        consumer.addRecord(record(0, EventId.next(IDS), "probe.SomethingHappened", "x"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(receiver::pollOnce)
+                .isInstanceOf(org.apache.kafka.common.errors.TimeoutException.class);
+        receiver.pollOnce();
+
+        assertThat(failing.attempts).as("the one that failed: the record redelivers into the dedupe").isEqualTo(1);
     }
 
     @Test
@@ -450,6 +467,24 @@ class KafkaEventReceiverTest {
         @Override
         public void commitSync(Map<TopicPartition, OffsetAndMetadata> offsets) {
             throw new org.apache.kafka.clients.consumer.CommitFailedException();
+        }
+    }
+
+    /** A commit that fails the way a broker that has gone fails it (`P15-TSK-012`). */
+    private static final class FailingOnceConsumer extends MockConsumer<String, byte[]> {
+        private int attempts;
+
+        private FailingOnceConsumer() {
+            super("earliest");
+        }
+
+        @Override
+        public void commitSync(Map<TopicPartition, OffsetAndMetadata> offsets) {
+            attempts++;
+            if (attempts == 1) {
+                throw new org.apache.kafka.common.errors.TimeoutException();
+            }
+            super.commitSync(offsets);
         }
     }
 

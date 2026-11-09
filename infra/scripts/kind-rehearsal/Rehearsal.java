@@ -83,6 +83,7 @@ public final class Rehearsal {
             case "replay" -> rehearsal.replay(args[2], args[3], args[4], args[5]);
             case "edge" -> rehearsal.edge();
             case "forged" -> rehearsal.forged(args[2], Integer.parseInt(args[3]));
+            case "report-token" -> System.out.println("token " + rehearsal.fresh("operator"));
             case "map-gl" -> rehearsal.mapGl();
             case "gl-check" -> rehearsal.glCheck();
             default -> throw new IllegalArgumentException("unknown step " + args[1]);

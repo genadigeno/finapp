@@ -1,7 +1,7 @@
 -- The financial census of the kind rehearsal (P15-TSK-012): read from the database after every step, by the test-only server's own
 -- superuser, because it spans schemas no application role may cross. Each statement prints one line: PASS|name|detail or FAIL|name|detail.
 -- The harness keeps the output per step and any FAIL fails the step. Variables: expected_transfers, expected_topups, expected_checkouts,
--- expected_payouts, which the harness computes from what the smoke client wrote down that it had been told was done.
+-- expected_payouts, expected_wallets, which the harness computes from what the smoke client wrote down that it had been told was done.
 \set ON_ERROR_STOP on
 \pset format unaligned
 \pset tuples_only on
@@ -51,6 +51,38 @@ SELECT CASE WHEN count(*) = :expected_payouts THEN 'PASS' ELSE 'FAIL' END,
   FROM merchant.merchant_payout
  WHERE status = 'COMPLETED';
 
+-- The postings behind them, which the intents and payouts above cannot show: a capture posted twice, or not at all, leaves its intent SUCCEEDED either way.
+SELECT CASE WHEN count(*) = :expected_topups + :expected_checkouts THEN 'PASS' ELSE 'FAIL' END,
+       'one posting per card capture',
+       count(*) || ' entries, client was told ' || (:expected_topups + :expected_checkouts)
+  FROM ledger.journal_entry
+ WHERE idempotency_scope LIKE 'ledger.post:payment-capture:%';
+
+SELECT CASE WHEN count(*) = :expected_payouts THEN 'PASS' ELSE 'FAIL' END,
+       'one posting per payout',
+       count(*) || ' entries, client was told ' || :expected_payouts
+  FROM ledger.journal_entry
+ WHERE idempotency_scope LIKE 'ledger.post:merchant-payout:%';
+
+-- The amounts: every top-up the client was told succeeded credited one wallet, and transfers only move money between the same wallets. A wrong amount passes every count above.
+SELECT CASE WHEN coalesce(sum(b.posted_minor), 0) = :expected_wallets THEN 'PASS' ELSE 'FAIL' END,
+       'the wallets hold what the client put in',
+       coalesce(sum(b.posted_minor), 0) || ' minor units in ' || count(*) || ' wallets, client put in ' || :expected_wallets
+  FROM ledger.account_balance b
+  JOIN ledger.ledger_account a ON a.id = b.ledger_account_id
+ WHERE a.purpose = 'CUSTOMER_WALLET';
+
+-- Nothing left in flight: with the workload stopped, an intent or a payout still between states is one nobody will finish.
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'no payment intent left non-terminal',
+       count(*) || ' intents awaiting confirmation or processing'
+  FROM payments.payment_intent
+ WHERE status IN ('REQUIRES_CONFIRMATION', 'PROCESSING');
+
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'no payout left unresolved',
+       count(*) || ' payouts neither completed nor failed'
+  FROM merchant.merchant_payout
+ WHERE status NOT IN ('COMPLETED', 'FAILED');
+
 -- The outbox drained, and nothing stuck behind a dead letter.
 SELECT CASE WHEN count(*) FILTER (WHERE published_at IS NULL AND discarded_at IS NULL) = 0 THEN 'PASS' ELSE 'FAIL' END,
        'the outbox drained',
@@ -74,15 +106,16 @@ SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'no orphaned idempote
  WHERE state = 'IN_PROGRESS'
    AND lease_expires_at < now();
 
--- Every balance explainable from the journal: the posted projection against the lines that made it.
+-- Every balance explainable from the journal: the posted projection against the lines that made it, on the account's own normal side, so a sign flipped is a difference and a line with no balance row is one too.
 SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'balances explain the journal', count(*) || ' accounts differ'
-  FROM (SELECT b.ledger_account_id
+  FROM (SELECT ledger_account_id
           FROM ledger.account_balance b
-          LEFT JOIN (SELECT ledger_account_id,
-                            sum(CASE direction WHEN 'CREDIT' THEN amount_minor ELSE -amount_minor END) AS net
-                       FROM ledger.journal_line
-                      GROUP BY ledger_account_id) l USING (ledger_account_id)
-         WHERE abs(coalesce(l.net, 0)) <> abs(b.posted_minor)) drift;
+          FULL JOIN (SELECT l.ledger_account_id,
+                            sum(CASE WHEN l.direction = a.normal_balance THEN l.amount_minor ELSE -l.amount_minor END) AS net
+                       FROM ledger.journal_line l
+                       JOIN ledger.ledger_account a ON a.id = l.ledger_account_id
+                      GROUP BY l.ledger_account_id) j USING (ledger_account_id)
+         WHERE coalesce(j.net, 0) <> coalesce(b.posted_minor, 0)) drift;
 
 -- TLS, as the server sees it: no application connection without it (the server refuses one anyway; this reads the fact).
 SELECT CASE WHEN count(*) FILTER (WHERE NOT s.ssl) = 0 AND count(*) > 0 THEN 'PASS' ELSE 'FAIL' END,

@@ -379,8 +379,8 @@ public final class KafkaEventReceiver implements AutoCloseable {
                 acknowledged.put(partition, new OffsetAndMetadata(record.offset() + 1));
             }
         }
-        acknowledge(acknowledged);
-        return new ReceiverPollResult(processed, duplicates, contended, failed, parked);
+        int deferred = acknowledge(acknowledged) ? 1 : 0;
+        return new ReceiverPollResult(processed, duplicates, contended, failed, parked, deferred);
     }
 
     /**
@@ -391,12 +391,22 @@ public final class KafkaEventReceiver implements AutoCloseable {
      * a real broker, `P15-TSK-012`). The offsets are kept and sent after the next poll, the call that finishes the rebalance,
      * whether or not it returned a record. A partition the rebalance moved away is dropped: its next owner redelivers into
      * the dedupe, and an offset sent from here could overwrite that owner's.
+     *
+     * <p>No rebalance listener is registered, so a partition lost and regained inside one poll looks held and keeps its offset.
+     * Sent then, that is a commit backward at worst: the partition's records past it were settled by someone, and they redeliver
+     * into the dedupe. It cannot move an offset past a record nobody settled, because this member settled everything below it.
+     *
+     * <p>Only a rebalance's refusal is owed. Any other failure, a broker that has gone among them, forgets the offsets and leaves
+     * as it left before: they redeliver into the dedupe, and an empty poll does not sit in {@code commitSync} for the API timeout
+     * retrying them.
+     *
+     * @return whether a rebalance refused this commit, so that it waits for the next poll
      */
-    private void acknowledge(Map<TopicPartition, OffsetAndMetadata> settled) {
+    private boolean acknowledge(Map<TopicPartition, OffsetAndMetadata> settled) {
         owedAcknowledgements.keySet().retainAll(consumer.assignment());
         owedAcknowledgements.putAll(settled);
         if (owedAcknowledgements.isEmpty()) {
-            return;
+            return false;
         }
         try {
             try {
@@ -408,8 +418,13 @@ public final class KafkaEventReceiver implements AutoCloseable {
                 consumer.commitSync(owedAcknowledgements);
             }
             owedAcknowledgements.clear();
+            return false;
         } catch (RebalanceInProgressException rebalancing) {
             log.info("A rebalance refused the offset commit on {}: sent after the next poll", groupId);
+            return true;
+        } catch (RuntimeException failed) {
+            owedAcknowledgements.clear();
+            throw failed;
         }
     }
 

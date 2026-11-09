@@ -44,6 +44,9 @@ configMapGenerator:
       - FINAPP_ABUSE_REGISTRATION_SITE_LIMIT=1000000
       - FINAPP_ABUSE_SIGN_IN_LIMIT=1000000
       - FINAPP_ABUSE_SIGN_IN_SITE_LIMIT=1000000
+      # Each replica generates a report so that its reporting pool opens and the budget's eighth connection is measured. A report inside its freshness window is answered from the
+      # one before it, by no pool at all, so the window is a second here.
+      - FINAPP_ACCOUNTING_REPORT_PROVISIONALFRESHNESS=PT1S
 
 patches:
   - target:

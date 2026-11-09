@@ -493,6 +493,7 @@ rehearsal's exported spans for the planted needles of `DATA_CLASSIFICATION.md`.
 | `finapp.outbox.oldest.publishable` | gauge in seconds: the oldest row the relay may still publish, the event-freshness SLI | `-025` |
 | `finapp.inbox.poll.failures` | counter by outcome (`refused`, `failed`): thrown consumer polls, registered by `-026`, alerted by `-025` | `-026`, `-025` |
 | `finapp.inbox.consumer.evictions` | counter: commits a group refused because it had evicted the member | `-025` |
+| `finapp.inbox.commits.deferred` | counter: offset commits a rebalance refused, sent after the next poll | `-012` |
 | `finapp.bnpl.sweeper.claim.failed` | counter by sweep (`origination`, `servicing`, `dispute`): a failed claim, the page read | `-025` |
 | `finapp.credit.scorecard.awaited` | gauge: requests admitted and waiting because no `RETAIL_SCORECARD` is `ACTIVE` | `-025` |
 | `finapp.platform.clock.offset` | gauge in seconds, per instance: this instance's clock minus the database's (ADR-0063's Follow-up) | `-025` |

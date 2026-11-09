@@ -30,6 +30,10 @@ import javax.net.ssl.SSLContext;
  * seconds, says how many requests arrived and how many distinct keys, per path, so "one effect per key" is counted on the provider's
  * side as well as the ledger's. The rehearsal reads it with {@code kubectl exec}; no port serves it.
  *
+ * <p>While {@code /tmp/hold-payouts} exists, a payout's answer is held after its effect is taken, for at most twenty seconds, and the
+ * caller's address and key are written to {@code /tmp/held.txt}. That is the worst moment for a replica to die, and the kill needs one
+ * it can name: the provider has moved the money and the platform has not heard.
+ *
  * <p>No port serves plain HTTP. It holds no credential and verifies none: a bearer key is the adapter's confinement rule to meet, and a
  * simulator that checked it would prove only that the rehearsal's generator and the application agree.
  */
@@ -38,6 +42,8 @@ public final class Simulator {
     private static final Map<String, String> ANSWERED = new ConcurrentHashMap<>();
     private static final Map<String, AtomicLong> REQUESTS = new ConcurrentHashMap<>();
     private static final Map<String, AtomicLong> KEYS = new ConcurrentHashMap<>();
+    private static final Path HOLD = Path.of("/tmp/hold-payouts");
+    private static final Path HELD = Path.of("/tmp/held.txt");
 
     private Simulator() {}
 
@@ -121,7 +127,21 @@ public final class Simulator {
                 return answer.of(key);
             });
         }
+        if ("/payouts".equals(path) && key != null && Files.exists(HOLD)) {
+            hold(exchange, key);
+        }
         send(exchange, 200, body);
+    }
+
+    private static void hold(HttpExchange exchange, String key) throws IOException {
+        Files.writeString(HELD, exchange.getRemoteAddress().getAddress().getHostAddress() + " " + key + "\n");
+        try {
+            for (int waited = 0; waited < 200 && Files.exists(HOLD); waited++) {
+                Thread.sleep(100);
+            }
+        } catch (InterruptedException stop) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static void send(HttpExchange exchange, int status, String body) throws IOException {

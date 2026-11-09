@@ -115,11 +115,16 @@ WORK=$(mktemp -d)
 CLIENT="$WORK/client"
 mkdir -p "$CLIENT" "$WORK/bin" "$WORK/render"
 SAMPLER=""
+REPORTER=""
 CONTAINERS=""
+FINISHED=""
 
 finish() {
+    [ -z "$FINISHED" ] || return 0
+    FINISHED=1
     set +e
     [ -z "$SAMPLER" ] || kill "$SAMPLER" 2>/dev/null
+    [ -z "$REPORTER" ] || kill "$REPORTER" 2>/dev/null
     for container in $CONTAINERS; do
         dock rm -f "$container" >/dev/null 2>&1
     done
@@ -142,7 +147,9 @@ finish() {
     log "RESULT: GREEN"
     exit 0
 }
-trap 'FAILED=${FAILED:-1}; finish' INT TERM
+trap 'FAILED=2; finish' INT TERM
+# An unguarded failure under set -e leaves through here: the keys in $WORK and the cluster go with it, and the run says it did not complete.
+trap 'status=$?; if [ -z "$FINISHED" ]; then [ "$status" = 0 ] || FAILED=2; finish; fi' EXIT
 
 # kubectl inside the node: the client that matches the server, and no route through the host. On a developer's machine an antivirus's
 # TLS interception breaks a host-side client that verifies the API server against the cluster's CA.
@@ -688,6 +695,30 @@ flow_ok_count() {
     cat "$CLIENT"/workload-*.tsv 2>/dev/null | awk -F'\t' -v flow="$1" '$1==flow && $NF=="ok"' | wc -l | tr -d ' '
 }
 
+HANDLER_EVENT=payments.PaymentCaptured
+HANDLER_CONSUMER=risk.signals
+
+# The handler catalogue, as (consumer, event type) rows for the lost-event check. The handler N adds is left out here: its window has its own, stricter, assertions.
+HANDLERS=$(sed -n "s/.*eventType: \"\([^\"]*\)\", consumerName: \"\([^\"]*\)\".*/('\2','\1')/p" "$ROOT/docs/events/handler-catalogue.yaml" | paste -sd, -)
+[ -n "$HANDLERS" ] || cannot "the handler catalogue could not be read"
+
+lost_events() {
+    psql_query -v "handlers=$HANDLERS" -v "added_event=$HANDLER_EVENT" -v "added_consumer=$HANDLER_CONSUMER" -f - < "$DIR/lost-events.sql"
+}
+
+# A partition with no live owner, or with records behind its owner; a LAG of "-" with records on the partition is a group that never committed there, which is not the same as none behind.
+lag_settled() {
+    deadline=$(( $(date +%s) + 240 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        kafka_admin kafka-consumer-groups.sh --describe --all-groups > "$ART/consumer-groups-$1.txt" 2>/dev/null || true
+        unowned=$(awk '$1 ~ /^finapp\./ && $2 ~ /^finapp\./ && ($7 == "-" || $6 + 0 > 0 || ($6 == "-" && $5 + 0 > 0))' "$ART/consumer-groups-$1.txt" | wc -l)
+        partitions=$(awk '$1 ~ /^finapp\./ && $2 ~ /^finapp\./' "$ART/consumer-groups-$1.txt" | wc -l)
+        [ "$partitions" -gt 0 ] && [ "$unowned" = 0 ] && return 0
+        sleep 5
+    done
+    return 1
+}
+
 SMOKE_TRANSFERS=0
 SMOKE_TOPUPS=0
 SMOKE_CHECKOUTS=0
@@ -701,14 +732,39 @@ census() {
     expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS ))
     expected_checkouts=$(( $(flow_ok_count checkout) + SMOKE_CHECKOUTS ))
     expected_payouts=$(( $(flow_ok_count payout) + SMOKE_PAYOUTS ))
+    # Every top-up credits one wallet: 5.00 in a smoke, 0.05 in the workload. Transfers move money between the same wallets and a checkout is paid by card.
+    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 ))
+    lag_settled "$label" || fail "census $label: a partition is unowned or lagging: see consumer-groups-$label.txt"
+    # A consumer's inbox row can trail the outbox by a poll: the check waits for it, bounded, and what it last read is the verdict.
+    lost_deadline=$(( $(date +%s) + 180 ))
+    while :; do
+        lost=$(lost_events 2>&1 | tail -1)
+        case $lost in PASS*) break ;; esac
+        [ "$(date +%s)" -lt "$lost_deadline" ] || break
+        sleep 3
+    done
+    # The simulator rewrites its counts every two seconds.
+    sleep 3
     sim=$(kube -n finapp-rehearsal exec deploy/finapp-simulator -- cat /tmp/counts.txt 2>/dev/null || true)
-    psql_query -v "expected_transfers=$expected_transfers" -v "expected_topups=$expected_topups" -v "expected_checkouts=$expected_checkouts" -v "expected_payouts=$expected_payouts" -f - < "$DIR/census.sql" > "$ART/census-$label.txt" 2>&1 \
+    psql_query -v "expected_transfers=$expected_transfers" -v "expected_topups=$expected_topups" -v "expected_checkouts=$expected_checkouts" -v "expected_payouts=$expected_payouts" -v "expected_wallets=$expected_wallets" -f - < "$DIR/census.sql" > "$ART/census-$label.txt" 2>&1 \
         || fail "census $label could not run: see census-$label.txt"
+    # A census that printed nothing exited 0 too.
+    census_lines=$(grep -c '^SELECT CASE' "$DIR/census.sql")
+    [ "$(grep -c '^\(PASS\|FAIL\)|' "$ART/census-$label.txt")" = "$census_lines" ] || fail "census $label printed $(grep -c '^\(PASS\|FAIL\)|' "$ART/census-$label.txt") verdicts where census.sql has $census_lines: see census-$label.txt"
+    provider_keys() { printf '%s\n' "$sim" | sed -n "s#^$1: [0-9]* requests, \([0-9]*\) keys.*#\1#p"; }
+    captures=$(provider_keys /captures)
+    payouts=$(provider_keys /payouts)
     {
+        if [ "${captures:-0}" = "$((expected_topups + expected_checkouts))" ]; then verdict=PASS; else verdict=FAIL; fi
+        printf '%s|one capture key at the provider per card payment|%s keys, client was told %s\n' "$verdict" "${captures:-0}" "$((expected_topups + expected_checkouts))"
+        if [ "${payouts:-0}" = "$expected_payouts" ]; then verdict=PASS; else verdict=FAIL; fi
+        printf '%s|one payout key at the provider per payout|%s keys, client was told %s\n' "$verdict" "${payouts:-0}" "$expected_payouts"
+        printf '%s\n' "$lost"
         printf 'INFO|simulator\n%s\n' "$sim"
         printf 'INFO|connections|%s\n' "$(psql_query -c "SELECT count(*), count(*) FILTER (WHERE s.ssl) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.application_name = 'finapp'" | tr '|' ' ')"
     } >> "$ART/census-$label.txt"
     # GL = ledger, the application's own judgement of the month: readable only because a mapping version is active.
+    case $lost in PASS*) ;; *) fail "census $label: $(printf '%s' "$lost" | cut -c1-400)" ;; esac
     gl=$(client gl-check 2>&1 | tail -1) || true
     printf '%s\n' "$gl" >> "$ART/census-$label.txt"
     case $gl in PASS*) ;; *) fail "census $label: GL = ledger: $(printf '%s' "$gl" | cut -c1-400)" ;; esac
@@ -1058,6 +1114,103 @@ peak_of() { awk -F'\t' 'NR>1 && $5+0 > m {m = $5+0} END {print m+0}' "$ART/sampl
 floor_of() { awk -F'\t' 'NR>1 && (m == "" || $2+0 < m) {m = $2+0} END {print m+0}' "$ART/samples-$1.tsv"; }
 operator_at_peak() { awk -F'\t' -v p="$(peak_of "$1")" 'NR>1 && $5+0 == p && $7 == "ok" {n++} END {print n+0}' "$ART/samples-$1.tsv"; }
 operator_refused() { awk -F'\t' 'NR>1 && $7 == "REFUSED" {n++} END {print n+0}' "$ART/samples-$1.tsv"; }
+fleet_connections() { psql_query -c "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'finapp'" | tr -d '[:space:]'; }
+
+# The peak says nothing about a pod that holds too many if the rollout had pods to spare, so each sample is held to its own pods as well.
+assert_within_pods() {
+    over=$(awk -F'\t' -v pool="$((WRITER_POOL + REPORTING_POOL))" 'NR>1 && $5+0 > $4*pool {n++} END {print n+0}' "$ART/samples-$1.tsv")
+    [ "$over" = 0 ] || fail "$1: $over samples held more than $((WRITER_POOL + REPORTING_POOL)) connections for each pod: see samples-$1.tsv"
+    pass "$1: no sample held more than $((WRITER_POOL + REPORTING_POOL)) connections for each pod it had"
+}
+
+assert_flows_ran() {
+    for flow in transfer top-up register authenticate checkout payout; do
+        done_count=$(sed -n "s/.*[{ ]$flow\.ok=\([0-9]*\).*/\1/p" "$CLIENT/workload-$1.summary" | head -1)
+        [ "${done_count:-0}" -gt 0 ] || fail "$1: the $flow flow completed nothing, and a dead thread reads like a quiet one: see workload-$1.tsv"
+    done
+    pass "$1: every flow of the workload completed work"
+}
+
+# The reporting pool opens on a pod's first report, so a fleet that has run none holds seven connections a pod and the eighth of the budget is never measured. One report per ready pod, sent to
+# that pod from the pod the policy admits to the API port: a report is generated by the replica that takes the request. The kind overlay shortens a provisional report's freshness, or the first
+# report would answer all the others.
+report_on() {
+    # report_on <pod address> <bearer>: the HTTP status of one report generated there. The bearer travels on stdin, never in an argument.
+    printf '%s\n' "$2" | kube -n finapp-edge exec -i np-edge -c probe -- /bin/sh -c '
+        IFS= read -r bearer
+        curl -s -o /dev/null -w "%{http_code}" --max-time 60 -X POST -H "Authorization: Bearer $bearer" -H "Content-Type: application/json" \
+            -H "Idempotency-Key: report-$(printf %s "$2" | tr . -)-$(date +%s)" -d "$1" "http://$2:8080/v1/operator/accounting/report-runs"' probe "$REPORT_BODY" "$1" 2>/dev/null
+}
+
+start_reporter() {
+    label=$1
+    REPORT_PERIOD=$(psql_query -c "SELECT id FROM accounting.accounting_period WHERE period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date" | tr -d '[:space:]')
+    [ -n "$REPORT_PERIOD" ] || fail "$label: this month has no accounting period to report on"
+    REPORT_BODY="{\"definition\":\"TRIAL_BALANCE\",\"periodId\":\"$REPORT_PERIOD\"}"
+    report_bearer=$(client report-token 2>/dev/null | sed -n 's/^token //p')
+    [ -n "$report_bearer" ] || fail "$label: no operator session for the reports"
+    : > "$WORK/reported-$label"
+    : > "$ART/reports-$label.tsv"
+    (
+        while [ ! -f "$WORK/reporter-stop-$label" ]; do
+            for ip in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}|{.status.conditions[?(@.type=="Ready")].status}|{.status.podIP}{"\n"}{end}' 2>/dev/null | awk -F'|' '$1=="" && $2=="True" {print $3}'); do
+                grep -qx "$ip" "$WORK/reported-$label" && continue
+                code=$(report_on "$ip" "$report_bearer" || true)
+                printf '%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$ip" "$code" >> "$ART/reports-$label.tsv"
+                case $code in 200|201) printf '%s\n' "$ip" >> "$WORK/reported-$label" ;; esac
+                sleep 2
+            done
+            sleep 3
+        done
+    ) &
+    REPORTER=$!
+}
+
+# Every replica now ready has generated its report: a replacement can come up after the rollout's own pods.
+wait_for_reports() {
+    settle_deadline=$(( $(date +%s) + 90 ))
+    while [ "$(date +%s)" -lt "$settle_deadline" ]; do
+        pending=0
+        for ip in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}|{.status.podIP}{"\n"}{end}' 2>/dev/null | awk -F'|' '$1=="" {print $2}'); do
+            grep -qx "$ip" "$WORK/reported-$1" || pending=$((pending + 1))
+        done
+        [ "$pending" = 0 ] && return 0
+        sleep 2
+    done
+    return 1
+}
+
+stop_reporter() {
+    touch "$WORK/reporter-stop-$1"
+    wait "$REPORTER" 2>/dev/null || true
+    REPORTER=""
+}
+
+# Three replicas, each having run a report, hold the whole pool: the fleet's own figure, once it has settled.
+assert_reporting_open() {
+    reported=$(awk -F'\t' '$3 ~ /^20[01]$/ {n++} END {print n+0}' "$ART/reports-$1.tsv")
+    [ "$reported" -ge 3 ] || fail "$1: only $reported pods generated a report, so the eighth connection was not measured: see reports-$1.tsv"
+    want=$((3 * (WRITER_POOL + REPORTING_POOL)))
+    settle_deadline=$(( $(date +%s) + 60 ))
+    while [ "$(date +%s)" -lt "$settle_deadline" ]; do
+        [ "$(fleet_connections)" = "$want" ] && break
+        sleep 3
+    done
+    held=$(fleet_connections)
+    [ "$held" = "$want" ] || fail "$1: the settled fleet holds $held connections where three replicas with their reporting pools open hold $want"
+    pass "$1: $reported pods generated a report, and the settled fleet holds $want connections, every pool open"
+}
+
+# `kubectl rollout status` returns once the last old pod is marked for deletion. That pod still runs its preStop and its drain with its consumers polling, so a window that closes there leaves a
+# tail acknowledged unseen and never replayed. The window closes when no pod is terminating.
+no_pod_terminating() {
+    settle_deadline=$(( $(date +%s) + $1 ))
+    while [ "$(date +%s)" -lt "$settle_deadline" ]; do
+        [ "$(sample_fleet | awk -F'|' 'NF>=3 && $2!="" {t++} END {print t+0}')" = 0 ] && return 0
+        sleep 2
+    done
+    return 1
+}
 
 start_workload() {
     name="$CLUSTER-workload-$1"
@@ -1087,15 +1240,18 @@ iso() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
 
 # The Eviction API, the way a node drain removes a pod: the PodDisruptionBudget still decides. Used mid-rollout for the budget's "+ 1" term.
 evict_during_rollout() {
+    # evict_during_rollout <image of the pod to evict> <label> [<terminating pods to wait for> <running pods to wait for>]
     old=$1
     label=$2
+    want_terminating=${3:-1}
+    want_running=${4:-4}
     deadline=$(( $(date +%s) + ROLLOUT_TIMEOUT ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
         fleet=$(sample_fleet || true)
         read -r t n <<COUNTS
 $(printf '%s\n' "$fleet" | awk -F'|' 'NF>=3 && $2!="" {t++} NF>=3 && $2=="" {n++} END {print t+0, n+0}')
 COUNTS
-        if [ "$t" -ge 1 ] && [ "$n" -ge 4 ]; then
+        if [ "$t" -ge "$want_terminating" ] && [ "$n" -ge "$want_running" ]; then
             victim=$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{range .items[*]}{.metadata.name}|{.metadata.deletionTimestamp}|{.spec.containers[0].image}{"\n"}{end}' \
                 | awk -F'|' -v old="$old" '$2=="" && $3==old {print $1; exit}')
             if [ -n "$victim" ]; then
@@ -1118,37 +1274,50 @@ rollout() {
     start_workload "$label"
     sleep 8
     start_sampler "$label"
+    start_reporter "$label"
     ROLLOUT_FROM=$(db_epoch)
     started=$(date +%s)
     kube -n finapp set image deployment/finapp-app "app=$2" >> "$ART/apply.log" 2>&1 || fail "the image could not be set"
     if [ "$4" = yes ]; then
-        evict_during_rollout "$3" "$label" &
+        if [ "$PROBE" = min-ready ]; then
+            # Three old pods held by the long preStop and three new ones running are six, the quota's own figure, which the probe has raised. Evicting a new pod then makes a seventh.
+            evict_during_rollout "$2" "$label" 3 3 &
+        else
+            evict_during_rollout "$3" "$label" &
+        fi
         EVICTOR=$!
     else
         EVICTOR=""
     fi
     if ! kube -n finapp rollout status deployment/finapp-app --timeout="${ROLLOUT_TIMEOUT}s" >> "$ART/apply.log" 2>&1; then
         kube -n finapp get pods -o wide > "$ART/pods-at-failure-$label.txt" 2>&1 || true
+        stop_reporter "$label"
         stop_sampler "$label"
         stop_workload "$label"
         fail "the rollout $label did not complete within ${ROLLOUT_TIMEOUT}s: see pods-at-failure-$label.txt"
     fi
-    ended=$(date +%s)
     [ -z "$EVICTOR" ] || wait "$EVICTOR" 2>/dev/null || true
+    no_pod_terminating 300 || fail "rollout $label: a pod was still terminating 300 s after the rollout"
+    ended=$(date +%s)
     ROLLOUT_TO=$(db_epoch)
     sleep 8
+    wait_for_reports "$label" || fail "rollout $label: a replica never generated its report: see reports-$label.tsv"
+    stop_reporter "$label"
     stop_sampler "$label"
     stop_workload "$label"
     printf 'rollout %s took %s s\n' "$label" "$((ended - started))" | tee -a "$ART/timings.txt" >> "$ART/rehearsal.log"
     [ "$(workload_failed "$label")" = 0 ] || fail "rollout $label: $(workload_failed "$label") failed requests, see workload-$label.tsv"
     pass "rollout $label: zero failed requests, $(sed -n 's/.* ok=\([0-9]*\) .*/\1/p' "$CLIENT/workload-$label.summary") succeeded"
+    assert_flows_ran "$label"
     peak=$(peak_of "$label")
     log "peak pg_stat_activity for finapp during $label: $peak (budget $BUDGET)"
     [ "$peak" -le "$BUDGET" ] || fail "rollout $label: the peak of $peak connections exceeds instances x pool = $BUDGET"
     pass "rollout $label: peak $peak connections within instances x pool = $BUDGET"
+    assert_within_pods "$label"
     [ "$(operator_at_peak "$label")" -ge 1 ] || fail "rollout $label: no operator connection was tried at the peak"
     [ "$(operator_refused "$label")" = 0 ] || fail "rollout $label: an operator was refused during the rollout"
     pass "rollout $label: an operator was admitted at the peak"
+    assert_reporting_open "$label"
 }
 
 assert_floor() {
@@ -1160,9 +1329,6 @@ assert_floor() {
 # ---------------------------------------------------------------------------------------------------
 # The handler window (a handler added in release N): what an N - 1 replica committed unseen, and the audited replay that heals it.
 # ---------------------------------------------------------------------------------------------------
-HANDLER_EVENT=payments.PaymentCaptured
-HANDLER_CONSUMER=risk.signals
-
 window_counts() {
     # window_counts <from epoch> <to epoch>: "unseen|total" of the handler's event type first published in the window.
     psql_query -c "SELECT count(*) FILTER (WHERE i.dedupe_key IS NULL), count(*) FROM platform.outbox_event e LEFT JOIN platform.inbox_message i ON i.consumer = '$HANDLER_CONSUMER' AND i.dedupe_key = e.event_id::text WHERE e.event_type = '$HANDLER_EVENT' AND COALESCE(e.first_published_at, e.published_at) >= to_timestamp($1) AND COALESCE(e.first_published_at, e.published_at) < to_timestamp($2)" | tr -d '[:space:]'
@@ -1278,6 +1444,9 @@ apply_probe() {
             kube -n finapp rollout status deployment/finapp-app --timeout="${ROLLOUT_TIMEOUT}s" >> "$ART/apply.log" 2>&1 || cannot "the probe's patch did not settle"
             ;;
         min-ready)
+            # The kind quota is the formula's six application pods, so it, and not the rollout, is what stops a seventh: the probe raises it by one pod, as an overlay's numbers drifting from the formula would.
+            kube -n finapp patch resourcequota finapp --type=json -p '[{"op":"replace","path":"/spec/hard/pods","value":"11"},{"op":"replace","path":"/spec/hard/requests.cpu","value":"4750m"},{"op":"replace","path":"/spec/hard/limits.cpu","value":"17"},{"op":"replace","path":"/spec/hard/requests.memory","value":"9216Mi"},{"op":"replace","path":"/spec/hard/limits.memory","value":"9216Mi"}]' >> "$ART/apply.log" 2>&1 \
+                || cannot "the probe could not raise the quota"
             kube -n finapp patch deployment finapp-app --type=json -p '[{"op":"replace","path":"/spec/minReadySeconds","value":0},{"op":"replace","path":"/spec/template/spec/containers/0/lifecycle/preStop/sleep/seconds","value":180},{"op":"replace","path":"/spec/template/spec/terminationGracePeriodSeconds","value":230}]' >> "$ART/apply.log" 2>&1 \
                 || cannot "the probe could not patch the Deployment"
             kube -n finapp rollout status deployment/finapp-app --timeout="${ROLLOUT_TIMEOUT}s" >> "$ART/apply.log" 2>&1 || cannot "the probe's patch did not settle"
@@ -1288,10 +1457,6 @@ apply_probe() {
 step rollout-to-n
 apply_probe
 if [ "$PROBE" = min-ready ]; then
-    # The entry's probe, as measured: at three replicas this rollout tops out at six pods, the formula's own maximum, and the peak stays inside the budget (42 of 48, seven
-    # connections a pod). What is left to show is that the assertion fails when a declaration falls short of what a rollout really reaches: the formula without its + 1.
-    BUDGET=$(( (FLEET_INSTANCES - 1) * (WRITER_POOL + REPORTING_POOL) ))
-    log "PROBE min-ready: the budget as the formula would read without its eviction term: $BUDGET"
     rollout rollout-to-n "$IMAGE_APP_N" "$IMAGE_APP_NM1" yes
     fail "PROBE min-ready: the peak stayed within the budget, so the assertion cannot fail"
 fi
@@ -1339,36 +1504,79 @@ observed=$(forged_counts)
 [ "$observed" = '2|6' ] || fail "a second client at $second gave '$observed' (buckets|counted) where two buckets of six in all were due: the key is not the address the controller saw"
 pass "a second real client lands in a bucket of its own: the key is the connection's address as the controller saw it"
 
+step budget-ceiling
+# The peaks above are what this rollout reached. Whether an operator is admitted with the fleet at its budget is a question about the ceiling, so the connections are held there: sessions
+# named as the fleet's, up to the budget exactly, and one operator tried while they stand.
+ceiling_have=$(fleet_connections)
+ceiling_need=$((BUDGET - ceiling_have))
+[ "$ceiling_need" -gt 0 ] || cannot "the fleet already holds $ceiling_have connections, and the ceiling is $BUDGET"
+kube -n finapp exec -i finapp-postgres-0 -c postgres -- /bin/sh -c "i=0; while [ \$i -lt $ceiling_need ]; do PGAPPNAME=finapp psql -q -X -U finapp -d finapp -c 'SELECT pg_sleep(30)' >/dev/null 2>&1 & i=\$((i + 1)); done; wait" >> "$ART/apply.log" 2>&1 &
+ceiling_holder=$!
+ceiling_deadline=$(( $(date +%s) + 25 ))
+while [ "$(date +%s)" -lt "$ceiling_deadline" ] && [ "$(fleet_connections)" -lt "$BUDGET" ]; do
+    sleep 1
+done
+ceiling_at=$(fleet_connections)
+[ "$ceiling_at" = "$BUDGET" ] || cannot "the fleet could not be held at its budget: $ceiling_at of $BUDGET"
+ceiling_total=$(psql_query -c "SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend'" | tr -d '[:space:]')
+[ "$(operator_connect || true)" = 1 ] || fail "an operator was refused with the fleet at its budget of $BUDGET connections, $ceiling_total client connections open"
+pass "an operator is admitted with the fleet held at its budget: $ceiling_at of $BUDGET, $ceiling_total client connections of the server's $(psql_query -c 'SHOW max_connections' | tr -d '[:space:]')"
+wait "$ceiling_holder" 2>/dev/null || true
+
 step kill
 start_workload kill retry
 sleep 15
 start_sampler kill
-VICTIM=$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{.items[0].metadata.name}')
-log "killing $VICTIM mid-workload: force, no grace"
+# A payout held at the provider, its effect already taken: a request is in flight on a replica we can name, with its claim IN_PROGRESS, whenever the kill comes. A kill that happens to find
+# nothing in flight proves nothing about a dead replica's claims.
+kube -n finapp-rehearsal exec deploy/finapp-simulator -- touch /tmp/hold-payouts >> "$ART/apply.log" 2>&1 || cannot "the provider could not be told to hold a payout"
+held=""
+held_deadline=$(( $(date +%s) + 90 ))
+while [ "$(date +%s)" -lt "$held_deadline" ]; do
+    held=$(kube -n finapp-rehearsal exec deploy/finapp-simulator -- cat /tmp/held.txt 2>/dev/null || true)
+    [ -n "$held" ] && break
+    sleep 1
+done
+[ -n "$held" ] || cannot "no payout reached the provider to be held"
+HELD_ADDRESS=${held%% *}
+VICTIM=$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{range .items[*]}{.metadata.name}|{.status.podIP}{"\n"}{end}' | awk -F'|' -v a="$HELD_ADDRESS" '$2==a {print $1}')
+[ -n "$VICTIM" ] || cannot "no replica has the address $HELD_ADDRESS the held payout came from"
+KILLED_CLAIM=$(psql_query -c "SELECT idempotency_key FROM platform.idempotency_record WHERE state = 'IN_PROGRESS' AND idempotency_key LIKE 'wl-kill-p%'" | tr -d '[:space:]')
+[ -n "$KILLED_CLAIM" ] || cannot "the payout held at the provider has no IN_PROGRESS claim to orphan"
+log "killing $VICTIM mid-workload, force and no grace: a payout it sent is held at the provider, its claim IN_PROGRESS"
 kube -n finapp delete pod "$VICTIM" --grace-period=0 --force >> "$ART/apply.log" 2>&1 || fail "could not kill $VICTIM"
+kube -n finapp-rehearsal exec deploy/finapp-simulator -- rm -f /tmp/hold-payouts >> "$ART/apply.log" 2>&1 || true
 sleep 20
 ready_three 400 || fail "the fleet did not return to three after the kill"
 sleep 30
+# The retry has to outlast the dead replica's lease, so the workload runs until the held payout's claim has been taken and finished by another replica.
+claim_state() { psql_query -c "SELECT state FROM platform.idempotency_record WHERE idempotency_key = '$KILLED_CLAIM'" | tr -d '[:space:]'; }
+claim_deadline=$(( $(date +%s) + 240 ))
+while [ "$(date +%s)" -lt "$claim_deadline" ]; do
+    [ "$(claim_state)" = COMPLETED ] && break
+    sleep 3
+done
 stop_sampler kill
 stop_workload kill
 [ "$(workload_unresolved kill)" = 0 ] || fail "the kill: $(workload_unresolved kill) requests stayed unresolved, see workload-kill.tsv"
-pass "the kill: $(workload_failed kill) attempts failed around the kill and were retried with the same key; none unresolved"
+if [ "$(workload_failed kill)" -gt 0 ]; then
+    pass "the kill: $(workload_failed kill) attempts failed around the kill and were retried with the same key; none unresolved"
+else
+    log "THE KILL NOT EXERCISED: no attempt failed around it"
+    printf 'the kill not exercised: no attempt failed around it\n' >> "$ART/not-exercised.txt"
+fi
+[ "$(claim_state)" = COMPLETED ] || fail "the kill: the claim the dead replica held is $(claim_state), and another replica should have taken it and finished"
+pass "the kill: the claim the dead replica held was taken over and completed by another replica"
+assert_flows_ran kill
 peak=$(peak_of kill)
 [ "$peak" -le "$BUDGET" ] || fail "the kill: the peak of $peak connections exceeds $BUDGET"
-pass "the kill: peak $peak connections within $BUDGET, $(operator_at_peak kill) operator connections admitted at the peak"
+pass "the kill: peak $peak connections within $BUDGET"
+assert_within_pods kill
+[ "$(operator_at_peak kill)" -ge 1 ] || fail "the kill: no operator connection was tried at the peak"
+[ "$(operator_refused kill)" = 0 ] || fail "the kill: an operator was refused"
+pass "the kill: an operator was admitted at the peak"
 drained 240 || fail "the outbox did not drain after the kill"
-# Claims and partitions: another member owns everything the dead one held.
-lag_settled() {
-    deadline=$(( $(date +%s) + 240 ))
-    while [ "$(date +%s)" -lt "$deadline" ]; do
-        kafka_admin kafka-consumer-groups.sh --describe --all-groups > "$ART/consumer-groups-$1.txt" 2>/dev/null || true
-        unowned=$(awk '$1 ~ /^finapp\./ && $2 ~ /^finapp\./ && ($7 == "-" || $6 + 0 > 0)' "$ART/consumer-groups-$1.txt" | wc -l)
-        partitions=$(awk '$1 ~ /^finapp\./ && $2 ~ /^finapp\./' "$ART/consumer-groups-$1.txt" | wc -l)
-        [ "$partitions" -gt 0 ] && [ "$unowned" = 0 ] && return 0
-        sleep 5
-    done
-    return 1
-}
+# Partitions: another member owns everything the dead one held.
 lag_settled kill || fail "after the kill, a partition is unowned or lagging: see consumer-groups-kill.txt"
 pass "after the kill, every partition has a live owner and no lag"
 census kill
@@ -1397,6 +1605,15 @@ log "handler window, rollback and re-roll: $UNSEEN of $TOTAL records unseen"
 [ "${UNSEEN:-0}" -gt 0 ] || fail "handler window: nothing reached an N - 1 replica over the rollback, so this rehearsal cannot show the case"
 replay_window "$ROLLBACK_REF_FROM" "$REROLL_TO" "the rehearsal: handler added in release N, over the rollback and re-roll windows"
 assert_handler_window rollback "$ROLLBACK_REF_FROM" "$REROLL_TO" "$UNSEEN"
+# The windows are the operator's arithmetic. This is the check of it: nothing of the type published since N's first rollout began is unseen, inside the two windows or outside them.
+unseen_since() { psql_query -c "SELECT count(*) FROM platform.outbox_event e LEFT JOIN platform.inbox_message i ON i.consumer = '$HANDLER_CONSUMER' AND i.dedupe_key = e.event_id::text WHERE e.event_type = '$HANDLER_EVENT' AND COALESCE(e.first_published_at, e.published_at) >= to_timestamp($FROM_N) AND i.dedupe_key IS NULL" | tr -d '[:space:]'; }
+whole_deadline=$(( $(date +%s) + 240 ))
+while [ "$(date +%s)" -lt "$whole_deadline" ]; do
+    [ "$(unseen_since)" = 0 ] && break
+    sleep 3
+done
+[ "$(unseen_since)" = 0 ] || fail "handler window, the whole run: $(unseen_since) events of the type published since N's first rollout began were never applied, inside the replayed windows or outside them"
+pass "handler window, the whole run: nothing of the type published since N's first rollout began is unseen"
 census final
 
 # A step that could not be shown is not a pass: a run in which N - 1 and N have the same schema proved nothing about the hold.
