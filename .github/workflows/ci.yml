@@ -365,7 +365,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Refuse activating a version the base did not list
+      - name: The check refuses what it exists to refuse
+        run: ./infra/scripts/key-ring-activation-check.sh --self-test
+
+      - name: Refuse a change that moves a ring out of order
         env:
           BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
         run: ./infra/scripts/key-ring-activation-check.sh "$BASE_REF"

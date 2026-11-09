@@ -29,7 +29,8 @@ import org.junit.jupiter.api.Test;
 @DisplayName("a committed key-ring configuration is well-formed and names only real rings and versions (P15-TSK-019)")
 class KeyRingDeployConfigurationTest {
 
-    private static final Pattern LITERAL = Pattern.compile("(?i).*_RING_(ACTIVEVERSION|VERSIONS|RETIREDVERSIONS).*");
+    /** Anything that reads like a ring setting, however spelled: the script's pattern. The first character stops "spring". */
+    private static final Pattern LITERAL = Pattern.compile("(?i)(^|.*[^a-z])ring[._-]*(active[._-]*version|retired[._-]*versions|versions).*");
     private static final Pattern FORM =
             Pattern.compile("^\\s*-\\s*(FINAPP_[A-Z0-9_]+)_RING_(ACTIVEVERSION|VERSIONS|RETIREDVERSIONS)=([0-9, ]*)$");
 
@@ -66,19 +67,23 @@ class KeyRingDeployConfigurationTest {
         assertThat(judge(List.of("      - FINAPP_DOC_RING_VERSIONS=1", "      - FINAPP_DOC_RING_ACTIVEVERSION=2"), entries, "a"))
                 .as("active is not listed").hasSize(1);
         assertThat(judge(List.of("      - FINAPP_DOC_RING_ACTIVEVERSION=2"), entries, "a")).as("active with no list").hasSize(1);
+        assertThat(judge(List.of("      - FINAPP_DOC_RING_ACTIVE_VERSION=2"), entries, "a")).as("the legacy spelling Spring still binds").hasSize(1);
+        assertThat(judge(List.of("      - finapp.doc.ring.active-version=2"), entries, "a")).as("a dotted property Spring still binds").hasSize(1);
+        assertThat(judge(List.of("      - spring.versions=2"), entries, "a")).as("spring is not a ring").isEmpty();
         assertThat(judge(List.of("      - FINAPP_DOC_RING_VERSIONS=1,2,3,4", "      - FINAPP_DOC_RING_ACTIVEVERSION=2"), entries, "a"))
                 .as("a version with no entry").hasSize(1);
     }
 
     @Test
-    @DisplayName("the activation check is committed executable, reads the two literals, and runs in CI against the base commit")
+    @DisplayName("the activation check is committed executable, carries its plants, and CI runs both them and the check against the base commit")
     void theActivationCheckRuns() throws IOException, InterruptedException {
         Path root = RepositoryPaths.locate("settings.gradle.kts").getParent();
         String script = Files.readString(root.resolve("infra/scripts/key-ring-activation-check.sh"), StandardCharsets.UTF_8);
-        assertThat(script).contains("_RING_ACTIVEVERSION").contains("VERSIONS").contains("git show");
+        assertThat(script).contains("_RING_ACTIVEVERSION").contains("_RING_VERSIONS").contains("--self-test").contains("top-version-dropped")
+                .contains("git archive");
 
         String workflow = Files.readString(root.resolve(".github/workflows/ci.yml"), StandardCharsets.UTF_8);
-        assertThat(workflow).contains("key-ring-activation-check.sh");
+        assertThat(workflow).contains("key-ring-activation-check.sh --self-test").contains("key-ring-activation-check.sh \"$BASE_REF\"");
 
         Process git = new ProcessBuilder("git", "ls-files", "-s", "infra/scripts/key-ring-activation-check.sh")
                 .directory(root.toFile()).redirectErrorStream(true).start();

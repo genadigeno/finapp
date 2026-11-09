@@ -215,8 +215,8 @@ class FileReceptionDatabaseTest {
         assertThat(rotatedStore.readContent(application, v1File)).as("the v1 file's chunks read under its stamp").isEqualTo(underV1);
         assertThat(rotatedStore.readContent(application, v2File)).isEqualTo(underV2);
         assertThatThrownBy(() -> store.readContent(application, v2File))
-                .as("a replica that does not hold version 2 refuses the file, naming the version")
-                .isInstanceOf(SettlementStorageException.class)
+                .as("a replica that does not hold version 2 refuses the file, naming the version, and it is not called corrupt")
+                .isInstanceOf(SettlementKeyVersionNotHeldException.class)
                 .hasMessageContaining("key version 2");
         application.rollback();
     }

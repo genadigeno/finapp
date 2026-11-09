@@ -59,6 +59,23 @@ class KeyRingRetirementGuardCoversEveryColumnTest {
     }
 
     @Test
+    @DisplayName("every column's census, at its timeout, still leaves the rest of startup inside the deployment's startup probe")
+    void theCensusFitsTheStartupProbe() throws IOException {
+        Path root = RepositoryPaths.locate("settings.gradle.kts").getParent();
+        String deployment = Files.readString(root.resolve("deploy/base/deployment.yaml"), StandardCharsets.UTF_8);
+        Matcher probe = Pattern.compile("startupProbe:(.*?)periodSeconds:\\s*(\\d+).*?failureThreshold:\\s*(\\d+)", Pattern.DOTALL).matcher(deployment);
+        assertThat(probe.find()).as("the deployment's startup probe was read").isTrue();
+        int probeSeconds = Integer.parseInt(probe.group(2)) * Integer.parseInt(probe.group(3));
+
+        Set<String> listed = new TreeSet<>();
+        KeyRingRetirementGuard.STAMPED_COLUMNS.values().forEach(listed::addAll);
+        int everyColumnSeconds = listed.size() * KeyRingRetirementGuard.CHECK_TIMEOUT_SECONDS;
+        // Sixty seconds for the rest of the application's startup: a figure, not a measurement, kept beside what it spends.
+        assertThat(everyColumnSeconds + 60).as("%d columns at %d s, inside the %d s startup probe", listed.size(), KeyRingRetirementGuard.CHECK_TIMEOUT_SECONDS, probeSeconds)
+                .isLessThanOrEqualTo(probeSeconds);
+    }
+
+    @Test
     @DisplayName("the document key's two cipher classes are built from one ring object: the second reads no key of its own")
     void theDocumentKeysTwoCiphersShareOneRing() throws IOException {
         Path root = RepositoryPaths.locate("settings.gradle.kts").getParent();

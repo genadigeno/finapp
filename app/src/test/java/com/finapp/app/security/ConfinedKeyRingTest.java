@@ -65,11 +65,21 @@ class ConfinedKeyRingTest {
     }
 
     @Test
-    @DisplayName("a base version configured away from 1 stays the one version, as the key-version companion always said")
-    void anExistingKeyVersionIsPreserved() {
-        KeyRing ring = ConfinedKeyRing.read(SPEC, PROPERTIES, encoded(1), 3, environment(), false);
+    @DisplayName("a base version configured away from 1 stays the one version only with the lower versions declared retired")
+    void anExistingKeyVersionIsPreservedOnlyIfTheLowerOnesAreRetired() {
+        MockEnvironment retired = environment().withProperty("finapp.test.ring.retired-versions", "1,2");
+        KeyRing ring = ConfinedKeyRing.read(SPEC, PROPERTIES, encoded(1), 3, retired, false);
         assertThat(ring.heldVersions()).containsExactly(3);
         assertThat(ring.activeVersion()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("a base version above 1 with the lower versions unaccounted for refuses to start: rows under them would be refused")
+    void aBaseVersionAboveOneRefusesWithoutTheLowerVersionsAccounted() {
+        assertThatThrownBy(() -> ConfinedKeyRing.read(SPEC, PROPERTIES, encoded(1), 4, environment(), false))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("version 1")
+                .hasMessageContaining("neither held nor retired");
     }
 
     @Test
@@ -171,7 +181,7 @@ class ConfinedKeyRingTest {
     }
 
     @Test
-    @DisplayName("a version dropped from the list without being declared retired refuses to start: nothing disappears unnoticed")
+    @DisplayName("a version dropped from the list without being declared retired refuses to start: the base and any below the top, never the top itself, which leaves no hole and is the activation check's to refuse in CI")
     void aDroppedVersionIsAHole() {
         MockEnvironment baseDropped = environment()
                 .withProperty("finapp.test.ring.versions", "2")
@@ -208,7 +218,10 @@ class ConfinedKeyRingTest {
                 .withProperty("finapp.test.v3.key", encoded(3));
         assertThatThrownBy(() -> ring(noSlot)).isInstanceOf(IllegalStateException.class).hasMessageContaining("no configured place for version 4");
 
-        MockEnvironment namedTwice = environment().withProperty("finapp.test.v2.key", encoded(2));
+        // Version 1 declared retired, so that base version 2 passes its anchor and the two-names rule is what answers.
+        MockEnvironment namedTwice = environment()
+                .withProperty("finapp.test.v2.key", encoded(2))
+                .withProperty("finapp.test.ring.retired-versions", "1");
         assertThatThrownBy(() -> ConfinedKeyRing.read(SPEC, PROPERTIES, encoded(1), 2, namedTwice, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("named twice");

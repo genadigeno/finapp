@@ -31,6 +31,7 @@ import java.util.UUID;
  * decrypts every chunk under the same binding, reassembles, and verifies the whole plaintext
  * against the stored address before serving one byte ({@code INV-HIST-02}).
  */
+@lombok.extern.slf4j.Slf4j
 public final class JdbcSettlementFileStore implements SettlementFileStore<Connection> {
 
     /** The 1 MiB provider-evidence bound, per chunk (ADR-0066 §6). */
@@ -477,10 +478,10 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
             }
             if (!cipher.holdsVersion(keyVersion)) {
                 // Named apart from tampering: nothing is decrypted to find this out, and "failed authenticated
-                // decryption" would misname a key this instance was never given.
-                throw new SettlementStorageException(
-                        "settlement file " + fileId + " is stamped with key version " + keyVersion
-                                + ", which this instance's ring does not hold: nothing is served");
+                // decryption" would misname a key this instance was never given. Its own type, so an operator read
+                // does not record an intact file as corrupt; the number here, because this path never reaches the ring.
+                log.warn("settlement file {} is stamped with key version {}, which this instance's ring does not hold", fileId, keyVersion);
+                throw new SettlementKeyVersionNotHeldException(fileId, keyVersion);
             }
             ByteArrayOutputStream plaintext = new ByteArrayOutputStream(declaredLength);
             try (PreparedStatement read =

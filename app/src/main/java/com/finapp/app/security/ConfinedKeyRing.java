@@ -28,6 +28,13 @@ import org.springframework.core.env.Environment;
  * whose key is gone, checked against the real tables by {@code KeyRingRetirementGuard}. All three are non-secret, so a
  * change to any of them is a line in a reviewed diff, and absent all three the ring is the base key alone.
  *
+ * <h2>What cannot be seen from here</h2>
+ *
+ * <p>A version dropped off the top of the ring leaves no hole: nothing in a replica's configuration says how high the ring
+ * once went. {@code infra/scripts/key-ring-activation-check.sh} catches that in CI, by comparing a change with its base
+ * (a {@code git revert} of a rotation, say). A {@code kubectl rollout undo} never reaches CI, so the runbook forbids it for a
+ * ring change (section 11.29).
+ *
  * <p>Refusals name properties and versions, never a value: a key pasted into the wrong property would otherwise reach a
  * log line (INV-AUD-02).
  */
@@ -70,6 +77,15 @@ public final class ConfinedKeyRing {
         Set<Integer> retired = versionsOf(environment, properties.retiredVersions(), Set.of());
         int active = activeOf(environment, properties.activeVersion(), baseVersion);
 
+        // Version numbers start at 1. A base key-version above 1 implies rows under the lower ones unless they are declared
+        // retired, which sends the question to the guard that reads the tables.
+        for (int lower = 1; lower < baseVersion; lower++) {
+            if (!versions.contains(lower) && !retired.contains(lower)) {
+                throw new IllegalStateException(
+                        "The " + spec.name() + " base key-version is " + baseVersion + " and version " + lower + " is neither held nor"
+                                + " retired: rows stamped with it would be refused with nothing having said so");
+            }
+        }
         if (!versions.contains(baseVersion) && !retired.contains(baseVersion)) {
             throw new IllegalStateException(
                     "The " + spec.name() + " base version " + baseVersion + " is neither held nor retired: every version"

@@ -55,7 +55,13 @@ public class KeyRingRetirementGuard {
     /** Columns the application role cannot read: a ring with one of these can never be proved retirable from here. */
     static final Set<String> NOT_READABLE_BY_THE_APPLICATION = Set.of("credit.credit_evidence.key_version");
 
-    private static final int CHECK_TIMEOUT_SECONDS = 60;
+    /**
+     * The longest one column's census may run. A passing answer is a full scan of that column, because no column carries an
+     * index, so this is kept small enough that every column there is fits inside the startup probe, a bound
+     * {@code KeyRingRetirementGuardCoversEveryColumnTest} holds against the deployment. A table too large to answer inside it
+     * refuses the retirement, fail closed.
+     */
+    static final int CHECK_TIMEOUT_SECONDS = 10;
 
     /** Whether any row stands under one of the versions, in one column. */
     @FunctionalInterface
