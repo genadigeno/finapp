@@ -258,8 +258,7 @@ final class BnplFakes {
         }
 
         @Override
-        public Optional<FeeScheduleVersion> findEffectiveVersionFor(
-                Connection unitOfWork, MerchantId merchantId, Instant instant) {
+        public Optional<FeeScheduleVersion> findEffectiveVersionFor(Connection unitOfWork, MerchantId merchantId) {
             return Optional.empty();
         }
     }

@@ -120,6 +120,11 @@ class CheckoutFlowDatabaseTest {
     @Autowired private com.finapp.ledger.PostingService postingService;
 
     @BeforeAll
+    static void installTheMovedClock() {
+        com.finapp.platform.testing.database.DatabaseClockFrame.install();
+    }
+
+    @BeforeAll
     static void startProvider() {
         if (provider == null) {
             provider = SimulatedProvider.start();
@@ -534,17 +539,22 @@ class CheckoutFlowDatabaseTest {
 
     /** The expiry sweeper at a chosen clock — the offer window is thirty minutes. */
     private com.finapp.checkout.CheckoutExpirySweeper expirySweeper(
-            Clock clock, java.time.Duration grace) {
+            java.time.Duration frame, java.time.Duration grace) {
+        // P15-TSK-038: the sweeper judges on the database's clock, so the clock this moves is the
+        // database's, for the sweep's own session, and the offer opened through the surface is
+        // overdue on it.
         return new com.finapp.checkout.CheckoutExpirySweeper(
-                new CheckoutTransactions(
-                        new org.springframework.transaction.support.TransactionTemplate(
-                                transactions),
-                        dataSource),
+                new com.finapp.checkout.CheckoutTransactionRunner() {
+                    @Override
+                    public <R> R inTransaction(java.util.function.Function<Connection, R> work) {
+                        return com.finapp.platform.testing.database.DatabaseClockFrame.inOneTransaction(
+                                frame, work);
+                    }
+                },
                 new com.finapp.checkout.JdbcCheckoutSessionStore(),
                 auditWriter,
                 outboxWriter,
                 IDS,
-                clock,
                 grace,
                 50,
                 // The wired port (the Phase 7 -> 8 transition): an undispatched intent ends with
@@ -1746,7 +1756,7 @@ class CheckoutFlowDatabaseTest {
         com.finapp.checkout.CheckoutSession session =
                 com.finapp.checkout.CheckoutSession.open(
                         IDS,
-                        CLOCK,
+                        java.time.Instant.now(CLOCK),
                         UUID.fromString(merchant.id()),
                         Money.ofMinorUnits(50_00L, CurrencyCode.of("EUR")),
                         "An offer from before the rule",
@@ -2226,7 +2236,7 @@ class CheckoutFlowDatabaseTest {
         // THE CLOCK RUNS OUT while the provider is still thinking. Grace ZERO, because what
         // this test is about is the edge, not the margin (the margin is
         // CheckoutExpiryDatabaseTest's).
-        expirySweeper(Clock.offset(CLOCK, Duration.ofMinutes(31)), Duration.ZERO).sweep();
+        expirySweeper(Duration.ofMinutes(31), Duration.ZERO).sweep();
         assertThat(sessionStatus(checkoutId)).isEqualTo("EXPIRED");
 
         // AND THEN THE PROVIDER ANSWERS. The payments sweeper resolves the stranded capture
@@ -2354,7 +2364,7 @@ class CheckoutFlowDatabaseTest {
 
         // THE CLOCK RUNS OUT while the payer is still at their PSP - the pay-by-bank shape
         // of the phase's named race: the payer's clock is not ours (ADR-0062 section 5).
-        expirySweeper(Clock.offset(CLOCK, Duration.ofMinutes(31)), Duration.ZERO).sweep();
+        expirySweeper(Duration.ofMinutes(31), Duration.ZERO).sweep();
         assertThat(sessionStatus(checkoutId)).isEqualTo("EXPIRED");
 
         // AND THEN THE PAYER EXECUTES. The confirmation lands through the signed door,
@@ -2705,7 +2715,7 @@ class CheckoutFlowDatabaseTest {
                 .isEqualTo(422);
         String intent = intentOfSession(checkoutId);
 
-        expirySweeper(Clock.offset(CLOCK, Duration.ofMinutes(45)), Duration.ZERO).sweep();
+        expirySweeper(Duration.ofMinutes(45), Duration.ZERO).sweep();
 
         assertThat(sessionStatus(checkoutId)).isEqualTo("EXPIRED");
         try (Connection app = DatabaseRoles.application()) {
@@ -3306,7 +3316,7 @@ class CheckoutFlowDatabaseTest {
         // above) and never against each other. Both lock the row and judge what they find under
         // the lock, so either may win; whichever does, landed money has its order, once.
         Merchant merchant = tradingMerchant("0.029", 30L);
-        Clock late = Clock.offset(CLOCK, Duration.ofMinutes(31));
+        Duration late = Duration.ofMinutes(31);
         // DRAINED FIRST, for the race rather than for tidiness: the sweeper walks the queue
         // oldest deadline first, fifty at a time, so other tests' leftovers could crowd this
         // session out of every racer's batch - and a race the sweeps never enter has one
@@ -3331,7 +3341,7 @@ class CheckoutFlowDatabaseTest {
             com.finapp.checkout.CheckoutSession open =
                     store.findById(app, CheckoutSessionId.of(UUID.fromString(checkoutId)))
                             .orElseThrow();
-            assertThat(store.transition(app, open, open.confirm(CLOCK, intent))).isTrue();
+            assertThat(store.transition(app, open, open.confirm(java.time.Instant.now(CLOCK), intent))).isTrue();
             app.commit();
         }
 
@@ -3430,7 +3440,7 @@ class CheckoutFlowDatabaseTest {
         Merchant merchant = tradingMerchant("0.029", 30L);
         Customer customer = payingCustomer();
         String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
-        expirySweeper(Clock.offset(CLOCK, Duration.ofMinutes(31)), Duration.ZERO).sweep();
+        expirySweeper(Duration.ofMinutes(31), Duration.ZERO).sweep();
         assertThat(sessionStatus(field(created, "checkoutId"))).isEqualTo("EXPIRED");
 
         HttpResponse<String> refused = confirm(customer, field(created, "sessionToken"));

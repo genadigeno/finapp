@@ -114,13 +114,19 @@ public interface FeeScheduleStore<T> {
             Instant at);
 
     /**
-     * The version pricing this merchant at {@code instant} — the resolution
-     * {@code P6-TSK-005} pins at intent creation, and the reason this port exists.
+     * The version pricing this merchant <strong>now, on the database's clock</strong> — the
+     * resolution {@code P6-TSK-005} pins at intent creation, and the reason this port exists.
+     *
+     * <p>The instant is the statement's own ({@code P15-TSK-038}, PI-002): the greatest
+     * {@code effective_from} at or before {@code clock_timestamp()}, read after the caller's share
+     * locks and never before its transaction's start, with a version created to take effect
+     * immediately ({@code effective_from = created_at}) in force from its commit — BNPL's
+     * {@link #findEffectiveVersion} rule. No caller's clock can reach it, so ten instances with ten
+     * skewed clocks resolve one version for one instant.
      *
      * <p>Empty when the merchant has no assignment. That is an honest answer rather than a
      * fabricated default schedule: what an unpriced merchant's session does about it is the
      * session's decision, not this port's.
      */
-    Optional<FeeScheduleVersion> findEffectiveVersionFor(
-            T unitOfWork, MerchantId merchantId, Instant instant);
+    Optional<FeeScheduleVersion> findEffectiveVersionFor(T unitOfWork, MerchantId merchantId);
 }

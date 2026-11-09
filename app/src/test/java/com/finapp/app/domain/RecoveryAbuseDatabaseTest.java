@@ -93,7 +93,6 @@ class RecoveryAbuseDatabaseTest {
                     sessions,
                     deriver,
                     IDS,
-                    CLOCK,
                     RANDOMNESS,
                     audit,
                     outbox);

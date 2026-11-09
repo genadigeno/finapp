@@ -507,7 +507,11 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T13 | PI-013's and PI-014's clock-step regression cases run green on PostgreSQL with the database's clock stepped back on demand (`CloseRunClockStepDatabaseTest`, `LoanTermsDatabaseTest`, `BnplTermsDatabaseTest`, written and owed) | PLANNED | `P15-TST-002` |
 | T13 | An instance whose clock has moved from the database's is visible per instance, its reading NaN and never zero when unreadable: ADR-0063's clamp hides the skew from the writes, and `InstanceClockOffset` tickets on it | EXISTS | `app/src/test/java/com/finapp/app/telemetry/ClockOffsetMetricsTest.java#theOffsetIsSigned`; `app/src/test/java/com/finapp/app/telemetry/ClockOffsetMetricsTest.java#unreadableIsNaN` |
 | T13 | The lock's grace and the submissions' orderings judged on the database's clock | REMEDIATION | `P14-REM-009` |
-| T13 | Five stores still comparing a stored bound with a caller's instant (recovery tokens, contact-channel verification, checkout expiry, the card fee version in force, payout-destination cooling-off), each judged and stamped on the database's clock | PLANNED | `P15-TSK-038` |
+| T13 | Recovery tokens, contact-channel verification, checkout expiry, the card fee version in force and payout-destination cooling-off are judged and stamped on the database's clock: no bound of the five stores is compared with a bind parameter, each deciding statement reads the database's clock in the statement, and the services above them carry that reading, the sweepers holding no clock | EXISTS | `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#noBoundIsComparedWithACallersInstant`; `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#eachStatementReadsTheDatabasesClock`; `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#theAnswerAgrees`; `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#theSweepersHoldNoClock` |
+| T13 | A new comparison of a timestamp column with a bind parameter, in any production source, fails the build until somebody has classified whose instant it is. Read from the migrations and the string literals: a `?` cannot say who read it, so the census is a person's reading per class and column | EXISTS | `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#everyStoreIsInTheCensus`; `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#theRuleSeesAPlantedComparison` |
+| T13 | The card fee version in force is resolved after the merchant's share lock, in a statement that takes no instant, and the card fee pin is stamped by its own insert on the database's clock with its version in force by that stamp | EXISTS | `app/src/test/java/com/finapp/app/checkout/CheckoutSessionsFeeVersionOrderTest.java#theVersionIsResolvedAfterTheShareLock`; `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#thePinIsBoundToTheDatabasesClock` |
+| T13 | The five stores' bounds run green on PostgreSQL with the instance's clock and the database's disagreeing, each case asserting that first (`StoredBoundsClockSkewDatabaseTest`, the rewritten expiry and cooling-off suites, written and owed) | PLANNED | `P15-TST-002` |
+| T13 | Instance clocks the census names outside the five: routing's version in force, a sweep's `UNKNOWN` arm, settlement's backoff, a gauge's horizon and risk's look-back windows. None decides a stored bound's truth, and routing chooses a rail rather than a price | GAP | `owner item 27`; owner: the owner, since 2026-11-09 |
 | T13 | Lending's functions, the helpers its triggers call for the business date included, read the database's clock whatever a role's `search_path` holds: every clock call names `pg_catalog` | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#noFunctionReadsTheClockThroughTheSearchPath`; `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#theRuleReadsCodeNotText`; `infra/scripts/migrator-verify.sh` `contains: a shadowing schema first in the path` |
 | T13 | 108 functions in eleven other schemas (accounting, bnpl, checkout, credit, crossborder, fx, ledger, merchant, payments, risk, settlement) still read a clock through a mutable `search_path`, each named by the same guard | PLANNED | `P15-TSK-040` |
 | T13 | Single-row reads that pick "the latest" by a database stamp outside accounting, lending and bnpl (ten by `grep`, `ORDER BY <stamp> DESC ... LIMIT 1`: risk three, kyc two, payments two, fx, reconciliation and `app`'s lending reports one each) not yet judged for whether the row they pick decides anything; and risk `V002`'s policy retirement, stamped like the terms retirement was, latent because nothing reads a policy version by an instant | PLANNED | `P15-TSK-037` |
@@ -843,7 +847,7 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
 ("accept recommendations", at the end of wave B); each item's decision follows its options. *(This paragraph read
 "Item 7 ... awaits the owner" and "Items 9 and 10 ... are open" until then.)* **Items 11, 12, 17 and 18 were added on 2026-11-08, and the owner decided them on
 2026-11-09, accepting each recommendation** ("accept recommendations", at the end of wave C); each item's decision follows its
-options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)*
+options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)* **Item 27 was added on 2026-11-09 and awaits the owner**; it is held by a `GAP` row of T13.
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1033,6 +1037,19 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
    the operator attesting from the broker's and the consumers' records that the first attempt was not delivered. It restores
    the event without a gap, at the price of a judgement the platform cannot check, and it needs a new four-eyes door. **Decided 2026-11-09**: keep the
    refusal.
+
+27. **T13's residual: the instance clocks the stored-bounds census found outside the five** *(added 2026-11-09)*. The rule
+   that holds the five stores reads every production source, and it found no other stored bound judged on an instance's
+   clock. It did find instance clocks placing a cutoff or a window: routing's version in force (`findVersionInForce`, read
+   with `Instant.now(clock)` at the payment confirmation and the withdrawal: a version's start is floored on the database's
+   clock, but this read is the instance's, so within the skew of a scheduled start a payment can be routed by the outgoing or
+   the incoming version); a sweep's `UNKNOWN` arm and settlement's parse and acceptance backoff (the cutoff picks candidates
+   or paces a retry, and a conditional write re-decides); a dispute-deadline gauge's horizon; and risk's rolling look-backs (a
+   skewed instance counts a window shifted by its skew). Each is named in the census with what it is, so none can grow
+   unseen. *Recommendation*: leave the candidate, pacing and gauge cutoffs where they are; accept the look-backs as a count
+   and not a bound; and move routing's read to the database's clock with its next change, before production use (one
+   statement, as the card fee version's was). It selects a rail and prices nothing, and a skew-sized choice of rail is
+   routing's normal uncertainty. *The alternative*: schedule the routing read as its own task now.
 
 ## 7. Decided against
 

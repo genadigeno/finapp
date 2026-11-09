@@ -631,7 +631,7 @@ public class CheckoutService {
                     .map(row -> row.status()
                             == com.finapp.payments.PaymentIntentStatus.REQUIRES_CONFIRMATION)
                     .orElse(false)) {
-                if (session.hasExpired(clock)) {
+                if (session.hasExpired(checkout.databaseNow(unitOfWork))) {
                     throw new CheckoutSessionExpiredException();
                 }
                 checkout.requireTrading(unitOfWork, session.merchantRef());
@@ -671,9 +671,10 @@ public class CheckoutService {
             // what NotConfirmable's own contract says it covers.
             throw new CheckoutSessionNotOpenException(session.status());
         }
-        if (session.hasExpired(clock)) {
-            // The clock as well as the state: a sweeper one minute behind is not a minute in
-            // which the platform honours a dead offer (ADR-0053 section 5).
+        if (session.hasExpired(checkout.databaseNow(unitOfWork))) {
+            // The database's clock as well as the state (P15-TSK-038): a sweeper one minute behind
+            // is not a minute in which the platform honours a dead offer (ADR-0053 section 5), and
+            // an instance's own clock is not the judge of a deadline the database stamped.
             throw new CheckoutSessionExpiredException();
         }
         // The merchant's standing as well as the session's (P6-DOC-001): an offer made while
@@ -737,7 +738,9 @@ public class CheckoutService {
                         com.finapp.merchant.MerchantId.of(session.merchantRef()),
                         FeeScheduleVersionId.of(session.feeScheduleVersionRef()),
                         session.amount(),
-                        Instant.now(clock),
+                        // Overwritten by the pin's own stamp on the database's clock (merchant
+                        // V014): a reading of that clock, so nothing here is an instance's.
+                        checkout.databaseNow(unitOfWork),
                         current.identityId().value().toString()));
 
         if (!checkout.paymentOpened(unitOfWork, session, created.intent().value())) {

@@ -217,7 +217,9 @@ public final class PayoutDestinations {
         }
         PayoutDestination approved;
         try {
-            approved = before.approve(actor.id(), clock, coolingOff);
+            // The database's clock, read after the row's lock (P15-TSK-038): the deadline every
+            // instance's sweep judges is one the database pinned.
+            approved = before.approve(actor.id(), destinations.databaseNow(unitOfWork), coolingOff);
         } catch (PayoutDestinationSelfApprovalException refused) {
             record(
                     unitOfWork,
