@@ -132,8 +132,11 @@ public interface FeeScheduleStore<T> {
      * {@code effective_from} at or before {@code clock_timestamp()}, read after the caller's share
      * locks and never before its transaction's start, with a version created to take effect
      * immediately ({@code effective_from = created_at}) in force from its commit — BNPL's
-     * {@link #findEffectiveVersion} rule. No caller's clock can reach it, so ten instances with ten
-     * skewed clocks resolve one version for one instant.
+     * {@link #findEffectiveVersion} rule, and its exception: a version the insert floored
+     * ({@code P15-TSK-037}) is judged as scheduled until the clock reaches the floor, so for that
+     * span, bounded by the skew or step that made the floor necessary, this can answer the version
+     * before it, or none. No caller's clock can reach it, so ten instances with ten skewed clocks
+     * resolve one version for one instant.
      *
      * <p>Empty when the merchant has no assignment. That is an honest answer rather than a
      * fabricated default schedule: what an unpriced merchant's session does about it is the

@@ -73,8 +73,9 @@ import org.junit.jupiter.api.Test;
  *       is only as good as the {@code Instant} its caller read.
  *   <li><strong>Equality, and SQL it cannot read.</strong> Ordering comparisons and {@code BETWEEN} only, not {@code =} (an
  *       assignment reads the same); a statement assembled from non-literal text; a comparison inside a trigger or function.
- *   <li><strong>Behaviour.</strong> That PostgreSQL does what the text says, under skew and after a lock wait, is the database
- *       cases' claim ({@code StoredBoundsClockSkewDatabaseTest}), owed to {@code P15-TST-002} (C14).
+ *   <li><strong>Behaviour.</strong> That PostgreSQL does what the text says under skew is the database cases' claim
+ *       ({@code StoredBoundsClockSkewDatabaseTest}), owed to {@code P15-TST-002} (C14). None of those cases holds a row lock,
+ *       so what a statement does after waiting on one is reasoned in the stores' comments and tested nowhere.
  * </ul>
  */
 @Tag("architecture")
@@ -227,6 +228,9 @@ class StoredBoundsAreTheDatabasesTest {
     private static final Pattern EXPRESSION_BOUND =
             Pattern.compile("\\)\\s*(<=|>=|<|>)\\s*\\?");
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z_0-9]*");
+    /** A method declaration of the class: a modifier first, and the name directly before its parenthesis. */
+    private static final Pattern DECLARED_METHOD =
+            Pattern.compile("(?m)^\\s*(?:public|protected|private|static|final)\\b[^=;(\\n]*?\\b([A-Za-z_][A-Za-z_0-9]*)\\s*\\(");
     /** A name immediately before the type: a column, or a function's parameter, which only widens what is read. */
     private static final Pattern TIMESTAMP_COLUMN =
             Pattern.compile(
@@ -403,10 +407,12 @@ class StoredBoundsAreTheDatabasesTest {
             {"com.finapp.merchant.PayoutDestinations", "approve"},
         };
         for (String[] site : noInstanceClockIn) {
-            String body = methodSource(readSourceOf(site[0]), site[1]);
+            // The method and every method of its class it reaches: a stamp one call away is the same second clock
+            // (PayoutDestinations.record stamped the approval's audit record on this instance's clock until the review).
+            String body = bodyAndCallees(readSourceOf(site[0]), site[1]);
             assertThat(body)
                     .as(site[0] + "." + site[1] + ": the statement decided on the database's clock, so a second clock"
-                            + " here is two clocks in one operation")
+                            + " here or in a method it calls is two clocks in one operation")
                     .doesNotContain("Instant.now(clock)")
                     .doesNotContain("clock.instant()")
                     .doesNotContain("confirm(clock")
@@ -415,11 +421,16 @@ class StoredBoundsAreTheDatabasesTest {
         assertThat(readSourceOf("com.finapp.app.checkout.CheckoutService"))
                 .as("the confirmation judges the offer's deadline on the database's clock")
                 .doesNotContain("hasExpired(clock)")
-                .contains("hasExpired(checkout.databaseNow(unitOfWork))");
+                .contains("hasExpired(checkout.databaseNow(unitOfWork))")
+                .contains("session.hasExpired(databaseNow)");
         assertThat(readSourceOf("com.finapp.app.checkout.CheckoutDoorStepUp"))
                 .as("the door judges the offer's deadline as the confirmation does")
                 .doesNotContain("hasExpired(clock)")
                 .doesNotContain("java.time.Clock");
+        assertThat(methodSource(readSourceOf("com.finapp.merchant.PayoutDestinations"), "approve"))
+                .as("the approval's record is the row's instant, and a refusal's the reading the decision used")
+                .contains("approved.approvedAt().orElseThrow()")
+                .contains("databaseNow);");
         String complete = methodSource(readSourceOf("com.finapp.identity.RecoveryService"), "complete");
         assertThat(complete)
                 .as("one reading for the whole completion")
@@ -745,6 +756,33 @@ class StoredBoundsAreTheDatabasesTest {
         return Pattern.compile("\\b" + Pattern.quote(name) + "\\b").matcher(body).find();
     }
 
+    /** The body of {@code method} and of every method declared in the same class that it reaches, transitively, by name. */
+    private static String bodyAndCallees(String source, String method) {
+        Set<String> declared = new TreeSet<>();
+        Matcher declaration = DECLARED_METHOD.matcher(source);
+        while (declaration.find()) {
+            declared.add(declaration.group(1));
+        }
+        Set<String> reached = new TreeSet<>();
+        List<String> pending = new ArrayList<>(List.of(method));
+        StringBuilder bodies = new StringBuilder();
+        while (!pending.isEmpty()) {
+            String next = pending.remove(pending.size() - 1);
+            if (!reached.add(next)) {
+                continue;
+            }
+            String body = methodSource(source, next);
+            bodies.append(body).append('\n');
+            for (String candidate : declared) {
+                if (!reached.contains(candidate)
+                        && Pattern.compile("\\b" + Pattern.quote(candidate) + "\\s*\\(").matcher(body).find()) {
+                    pending.add(candidate);
+                }
+            }
+        }
+        return bodies.toString();
+    }
+
     /** The body of the method DECLARED with this name, never a call site of it. */
     private static String methodSource(String source, String method) {
         int from = 0;
@@ -757,6 +795,7 @@ class StoredBoundsAreTheDatabasesTest {
             int lineStart = source.lastIndexOf(10, hit) + 1;
             String line = source.substring(lineStart, hit).trim();
             if (line.startsWith("public ") || line.startsWith("private ") || line.startsWith("static ")
+                    || line.startsWith("protected ") || line.startsWith("final ")
                     || line.startsWith("Optional<") || line.startsWith("List<")) {
                 signature = hit;
             }

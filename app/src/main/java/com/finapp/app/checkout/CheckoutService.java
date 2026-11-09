@@ -671,7 +671,8 @@ public class CheckoutService {
             // what NotConfirmable's own contract says it covers.
             throw new CheckoutSessionNotOpenException(session.status());
         }
-        if (session.hasExpired(checkout.databaseNow(unitOfWork))) {
+        Instant databaseNow = checkout.databaseNow(unitOfWork);
+        if (session.hasExpired(databaseNow)) {
             // The database's clock as well as the state (P15-TSK-038): a sweeper one minute behind
             // is not a minute in which the platform honours a dead offer (ADR-0053 section 5), and
             // an instance's own clock is not the judge of a deadline the database stamped.
@@ -739,8 +740,9 @@ public class CheckoutService {
                         FeeScheduleVersionId.of(session.feeScheduleVersionRef()),
                         session.amount(),
                         // Overwritten by the pin's own stamp on the database's clock (merchant
-                        // V014): a reading of that clock, so nothing here is an instance's.
-                        checkout.databaseNow(unitOfWork),
+                        // V014): the reading the deadline was judged on, so nothing here is an
+                        // instance's and nothing is read again under the merchant's share lock.
+                        databaseNow,
                         current.identityId().value().toString()));
 
         if (!checkout.paymentOpened(unitOfWork, session, created.intent().value())) {

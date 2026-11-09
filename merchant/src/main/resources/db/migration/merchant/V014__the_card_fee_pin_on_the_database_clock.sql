@@ -21,8 +21,12 @@
 -- A VERSION CREATED TO TAKE EFFECT IMMEDIATELY (effective_from = created_at, V004's "empty for immediately") is in force
 -- from its commit, as FeeScheduleStore reads it: it is stamped with its creating instance's clock, which may run ahead of
 -- the database's, and "immediately" must not wait for the database to catch up. A SCHEDULED version
--- (effective_from > created_at) is judged on the pin's instant alone. A session may name a version superseded since it
--- was opened: that is what a pin is for, and the rank asks only that the version had begun.
+-- (effective_from > created_at) is judged on the pin's instant alone. So is a version whose start the insert floored at an
+-- earlier immediate version's (P15-TSK-037, its effective_from above its created_at): "in force from its commit" does not
+-- hold for that row until the clock reaches the floor, bounded by the skew or step that made the floor necessary. A
+-- session may name a version superseded since it was opened: that is what a pin is for, and the rank asks only that the
+-- version had begun. V013's residual applies: a database clock stepped back between the session's opening and this insert
+-- can refuse a correctly resolved scheduled version with P0001 - rolled back, nothing written, the confirmation retried.
 --
 -- WHAT IT DOES NOT. It rewrites no row and touches no pin already written, and the existing rows keep the instants their
 -- instances gave them (no statement compares those). The pin's writer still binds a value: the column stays NOT NULL and

@@ -24,9 +24,10 @@ public final class JdbcContactChannelStore implements ContactChannelStore<Connec
     private static final String UNIQUE_VIOLATION = "23505";
 
     /**
-     * The database's clock after whatever this statement waited on ({@code P15-TSK-038}, ADR-0014):
-     * {@code JdbcRecoveryRequestStore}'s reading, for the same reason. A verification {@code UPDATE}
-     * that queued behind a racing one judges the challenge when it holds the row.
+     * The database's clock when this statement reads the row ({@code P15-TSK-038}, ADR-0014):
+     * {@code JdbcRecoveryRequestStore}'s reading, with the same limit. PostgreSQL re-evaluates the
+     * predicate only after a racer's committed update, so a challenge that lapsed during a wait on
+     * a racer that rolled back is still accepted, once.
      */
     private static final String DATABASE_NOW = "GREATEST(clock_timestamp(), transaction_timestamp())";
 
@@ -75,7 +76,7 @@ public final class JdbcContactChannelStore implements ContactChannelStore<Connec
         //                                 verifiedFor() report a freshly changed channel as old -
         //                                 and that is the input to INV-IDN-06's "recently changed
         //                                 channel" abuse case
-        //   verification_expires_at >     judged here on the database's clock after any wait
+        //   verification_expires_at >     judged here on the database's clock
         //     DATABASE_NOW                (P15-TSK-038): the server's clock decides in every
         //                                 cross-instance comparison (ADR-0014), and this bound is
         //                                 one the database stamped

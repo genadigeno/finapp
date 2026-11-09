@@ -32,10 +32,13 @@ public final class JdbcRecoveryRequestStore implements RecoveryRequestStore<Conn
             "id, identity_id, channel_id, status, credential_id, initiated_at, expires_at";
 
     /**
-     * The database's clock after whatever this statement waited on ({@code P15-TSK-038}, ADR-0014):
-     * {@code clock_timestamp()}, so an {@code UPDATE} that queued behind a racer's row lock judges the
-     * expiry at the moment it holds the lock and not at its transaction's start, and held at the
-     * transaction's start when a stepped clock reads behind it (merchant {@code V013}'s lesson).
+     * The database's clock when this statement reads the row ({@code P15-TSK-038}, ADR-0014):
+     * {@code clock_timestamp()}, not its transaction's start, and held at the transaction's start
+     * when a stepped clock reads behind it (merchant {@code V013}'s lesson). PostgreSQL re-evaluates
+     * the predicate only after a racer's <em>committed</em> update: after a racer that rolled back
+     * the statement proceeds on the reading it took before the wait, so a token that expired during
+     * that wait is spent. Harmless, and still single-use: the status in the same {@code WHERE} is
+     * what admits one consumer, and the lapse is bounded by the wait.
      */
     private static final String DATABASE_NOW = "GREATEST(clock_timestamp(), transaction_timestamp())";
 
@@ -161,8 +164,8 @@ public final class JdbcRecoveryRequestStore implements RecoveryRequestStore<Conn
         //   status = 'INITIATED'          single use; a replay finds nothing to consume
         //   expires_at > DATABASE_NOW     expiry is DERIVED, so it is checked here rather than read
         //                                 from a status column a sweep would have to maintain - on
-        //                                 the database's clock after any wait (P15-TSK-038): a
-        //                                 skewed instance can neither extend a token nor shorten it
+        //                                 the database's clock (P15-TSK-038): a skewed instance can
+        //                                 neither extend a token nor shorten it
         //   credential_id IS NOT DISTINCT FROM (active credential)
         //                                 THE CONCURRENT-RECOVERY-AND-LOGIN CONTROL. An attacker
         //                                 initiates, the customer changes their password, and the

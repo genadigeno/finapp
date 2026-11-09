@@ -350,7 +350,7 @@ class StoredBoundsClockSkewDatabaseTest {
     private void store(FeeSchedule schedule, FeeScheduleVersion version, MerchantId merchant) throws Exception {
         inTransactionAs(uow -> {
             fees.insertSchedule(uow, schedule);
-            assertThat(fees.insertVersionIfNumberIsFree(uow, version)).isTrue();
+            assertThat(fees.insertVersionIfNumberIsFree(uow, version)).isPresent();
             fees.assign(uow, merchant, Optional.empty(), schedule.id(), "terms", Instant.now(INSTANCE));
             return null;
         });
@@ -358,7 +358,7 @@ class StoredBoundsClockSkewDatabaseTest {
 
     private void insertVersion(FeeScheduleVersion version) throws Exception {
         inTransactionAs(uow -> {
-            assertThat(fees.insertVersionIfNumberIsFree(uow, version)).isTrue();
+            assertThat(fees.insertVersionIfNumberIsFree(uow, version)).isPresent();
             return null;
         });
     }

@@ -183,7 +183,8 @@ public final class PayoutDestinations {
                 Optional.of(command.reason()),
                 AuditOutcome.SUCCEEDED,
                 correlation,
-                "destination=" + proposed.id() + ", merchant=" + merchant.id());
+                "destination=" + proposed.id() + ", merchant=" + merchant.id(),
+                proposed.proposedAt());
         return CommandResult.succeeded(
                 StoredResponse.of(
                         proposed.id().value().toString().getBytes(StandardCharsets.UTF_8),
@@ -215,11 +216,13 @@ public final class PayoutDestinations {
         if (before.approvedBy().filter(actor.id()::equals).isPresent()) {
             return new Approved(before, true);
         }
+        // The database's clock, read after the row's lock (P15-TSK-038): the deadline every
+        // instance's sweep judges is one the database pinned, and the record beside it reads the
+        // row's instant, or this reading on a refusal, so one operation reads one clock.
+        Instant databaseNow = destinations.databaseNow(unitOfWork);
         PayoutDestination approved;
         try {
-            // The database's clock, read after the row's lock (P15-TSK-038): the deadline every
-            // instance's sweep judges is one the database pinned.
-            approved = before.approve(actor.id(), destinations.databaseNow(unitOfWork), coolingOff);
+            approved = before.approve(actor.id(), databaseNow, coolingOff);
         } catch (PayoutDestinationSelfApprovalException refused) {
             record(
                     unitOfWork,
@@ -230,7 +233,8 @@ public final class PayoutDestinations {
                     AuditOutcome.DENIED,
                     correlation,
                     "destination=" + before.id() + ", merchant=" + before.merchantId()
-                            + ", refused=self-approval");
+                            + ", refused=self-approval",
+                    databaseNow);
             return new SelfApprovalRefused();
         }
         requireLanded(unitOfWork, before, approved);
@@ -243,7 +247,8 @@ public final class PayoutDestinations {
                 AuditOutcome.SUCCEEDED,
                 correlation,
                 "destination=" + approved.id() + ", merchant=" + approved.merchantId()
-                        + ", coolingOffUntil=" + approved.coolingOffUntil().orElseThrow());
+                        + ", coolingOffUntil=" + approved.coolingOffUntil().orElseThrow(),
+                approved.approvedAt().orElseThrow());
         return new Approved(approved, false);
     }
 
@@ -344,7 +349,8 @@ public final class PayoutDestinations {
                 AuditOutcome.SUCCEEDED,
                 correlation,
                 "destination=" + ended.id() + ", merchant=" + ended.merchantId() + ", from="
-                        + before.status());
+                        + before.status(),
+                Instant.now(clock));
         return ended;
     }
 
@@ -377,13 +383,14 @@ public final class PayoutDestinations {
             Optional<String> reason,
             AuditOutcome outcome,
             Correlation correlation,
-            String summary) {
+            String summary,
+            Instant at) {
         audit.append(
                 unitOfWork,
                 new AuditRecord(
                         AuditId.next(ids),
                         actor,
-                        Instant.now(clock),
+                        at,
                         action,
                         TARGET_TYPE,
                         subject.id().value().toString(),

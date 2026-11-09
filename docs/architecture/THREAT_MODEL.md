@@ -514,7 +514,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T13 | A new comparison of a timestamp column with a bind parameter, in any production source, fails the build until somebody has classified whose instant it is. Read from the migrations and the string literals: a `?` cannot say who read it, so the census is a person's reading per class and column | EXISTS | `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#everyStoreIsInTheCensus`; `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#theRuleSeesAPlantedComparison` |
 | T13 | The card fee version in force is resolved after the merchant's share lock, in a statement that takes no instant, and the card fee pin is stamped by its own insert on the database's clock with its version in force by that stamp | EXISTS | `app/src/test/java/com/finapp/app/checkout/CheckoutSessionsFeeVersionOrderTest.java#theVersionIsResolvedAfterTheShareLock`; `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#thePinIsBoundToTheDatabasesClock` |
 | T13 | The five stores' bounds run green on PostgreSQL with the instance's clock and the database's disagreeing, each case asserting that first (`StoredBoundsClockSkewDatabaseTest`, the rewritten expiry and cooling-off suites, written and owed) | PLANNED | `P15-TST-002` |
-| T13 | Instance clocks the census names outside the five: routing's version in force, a sweep's `UNKNOWN` arm, settlement's backoff, a gauge's horizon and risk's look-back windows. None decides a stored bound's truth, and routing chooses a rail rather than a price | GAP | `owner item 27`; owner: the owner, since 2026-11-09 |
+| T13 | Instance clocks outside the five. In the SQL the census names: routing's version in force, which does judge a stored `effective_from` on the caller's clock (it chooses a rail, not a price), a sweep's `UNKNOWN` arm, settlement's backoff, a gauge's horizon and risk's look-back windows. In Java, which the census cannot see: the dispute door, judging a stored `respond_by` on the instance's clock | GAP | `owner item 27`; owner: the owner, since 2026-11-09 |
 | T13 | Lending's functions, the helpers its triggers call for the business date included, read the database's clock whatever a role's `search_path` holds: every clock call names `pg_catalog` | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#noFunctionReadsTheClockThroughTheSearchPath`; `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#theRuleReadsCodeNotText`; `infra/scripts/migrator-verify.sh` `contains: a shadowing schema first in the path` |
 | T13 | 108 functions in eleven other schemas (accounting, bnpl, checkout, credit, crossborder, fx, ledger, merchant, payments, risk, settlement) still read a clock through a mutable `search_path`, each named by the same guard | PLANNED | `P15-TSK-040` |
 | T13 | Every single-row read or value picked by a stamp outside the close and the terms, in the shapes the guard reads from the code (Java statements and text blocks, constants inlined; every function's and view's latest definition), is named in its census with a recorded judgement and reason, held equal to the code: a new read in any such shape, or a named read gone, is red, and each shape is proved by a plant | EXISTS | `app/src/test/java/com/finapp/app/architecture/StampOrderedReadsAreJudgedTest.java#everyStampReadIsJudged`; `app/src/test/java/com/finapp/app/architecture/StampOrderedReadsAreJudgedTest.java#plantedShapesAreRecognised` |
@@ -1050,18 +1050,22 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
    the event without a gap, at the price of a judgement the platform cannot check, and it needs a new four-eyes door. **Decided 2026-11-09**: keep the
    refusal.
 
-27. **T13's residual: the instance clocks the stored-bounds census found outside the five** *(added 2026-11-09)*. The rule
-   that holds the five stores reads every production source, and it found no other stored bound judged on an instance's
-   clock. It did find instance clocks placing a cutoff or a window: routing's version in force (`findVersionInForce`, read
-   with `Instant.now(clock)` at the payment confirmation and the withdrawal: a version's start is floored on the database's
-   clock, but this read is the instance's, so within the skew of a scheduled start a payment can be routed by the outgoing or
-   the incoming version); a sweep's `UNKNOWN` arm and settlement's parse and acceptance backoff (the cutoff picks candidates
-   or paces a retry, and a conditional write re-decides); a dispute-deadline gauge's horizon; and risk's rolling look-backs (a
-   skewed instance counts a window shifted by its skew). Each is named in the census with what it is, so none can grow
-   unseen. *Recommendation*: leave the candidate, pacing and gauge cutoffs where they are; accept the look-backs as a count
-   and not a bound; and move routing's read to the database's clock with its next change, before production use (one
-   statement, as the card fee version's was). It selects a rail and prices nothing, and a skew-sized choice of rail is
-   routing's normal uncertainty. *The alternative*: schedule the routing read as its own task now.
+27. **T13's residual: the instance clocks outside the five stores** *(added 2026-11-09)*. The stored-bounds rule reads every
+   production source's SQL, and classifies each comparison of a timestamp column with a bind parameter; it cannot say whose
+   instant a bind is, and it cannot see a bound judged in Java. Read by hand, two of what it surrounds do judge a stored
+   bound on an instance's clock. **Routing's version in force** (`findVersionInForce`, read with `Instant.now(clock)` at the
+   payment confirmation and the withdrawal): a version's start is floored on the database's clock, but this read is the
+   instance's, so within the skew of a scheduled start a payment can be routed by the outgoing or the incoming version. **The
+   dispute door** (`DisputeActs.requireRespondable`, from the response and the evidence upload), in Java, so outside the
+   census: a stored `respond_by` judged on the instance's clock, so within the skew of the deadline a response can be
+   refused or admitted early or late. The census also names instance clocks that place a cutoff or a window and decide
+   no bound: a sweep's `UNKNOWN` arm and settlement's parse and acceptance backoff (the cutoff picks candidates or paces a
+   retry, and a conditional write re-decides), a dispute-deadline gauge's horizon, and risk's rolling look-backs (a skewed
+   instance counts a window shifted by its skew). *Recommendation*: leave the candidate, pacing and gauge cutoffs where they
+   are; accept the look-backs as a count and not a bound; and move routing's read and the dispute door to the database's
+   clock with their next change, before production use (one read each, as the card fee version's was). Routing selects a
+   rail and prices nothing, and the door's window is the skew against a deadline the network set in days. *The alternative*:
+   schedule the two as their own task now.
 
 23. **T7's, T9's, T10's and T32's residuals: what a plan of the data tier cannot settle** *(added 2026-11-09 by the data-tier
    modules' gate; numbered for the tasks that ran beside it)*. Three questions, none yet asked of a real account.

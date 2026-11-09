@@ -321,7 +321,10 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
         // ON THE DATABASE'S CLOCK, AFTER THE CALLER'S LOCKS (P15-TSK-038, PI-002): the instant is
         // this statement's own, BnplPricing's reading, so no instance's clock chooses the version.
         // A version created to take effect immediately is in force from its commit, whatever its
-        // creating instance's clock stamped (the rule findEffectiveVersion reads).
+        // creating instance's clock stamped (the rule findEffectiveVersion reads), unless the
+        // insert floored its start (P15-TSK-037): then effective_from is above created_at, it is
+        // judged as a scheduled version, and the one before it keeps answering until the clock
+        // reaches the floor - bounded by the skew or step that made the floor necessary.
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
                         "SELECT " + prefixed(VERSION_COLUMNS, "v")

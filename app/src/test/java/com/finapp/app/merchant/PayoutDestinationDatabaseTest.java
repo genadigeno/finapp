@@ -143,8 +143,10 @@ class PayoutDestinationDatabaseTest {
         PayoutDestinationId proposed = propose(merchant, person(), "pdr_second1");
         Actor approver = person();
 
+        java.time.Instant before = databaseNow();
         PayoutDestinations.Approval first =
                 as(approver, uow -> destinations.approve(uow, merchant, proposed, "verified"));
+        java.time.Instant after = databaseNow();
         PayoutDestinations.Approval retry =
                 as(approver, uow -> destinations.approve(uow, merchant, proposed, "verified"));
 
@@ -153,8 +155,16 @@ class PayoutDestinationDatabaseTest {
         assertThat(retry).isInstanceOfSatisfying(
                 PayoutDestinations.Approved.class, a -> assertThat(a.replayed()).isTrue());
         PayoutDestination approved = ((PayoutDestinations.Approved) first).destination();
-        assertThat(approved.coolingOffUntil())
-                .contains(approved.approvedAt().orElseThrow().plus(Duration.ofHours(72)));
+        // The deadline is the policy after the DATABASE's reading (P15-TSK-038,
+        // PayoutDestinationTest#aFastProposerCannotLengthenTheCoolingOff), so it is bracketed by the
+        // database's readings around the call. Not approved_at plus the policy: proposed_at is this
+        // JVM's clock, and a container trailing it floors approved_at there while the deadline stays
+        // the reading's. The margin is this container's clock being corrected backwards between
+        // statements (CURRENT_STATE.md section Local Environment Prerequisites).
+        Duration policy = Duration.ofHours(72);
+        Duration stepMargin = Duration.ofSeconds(5);
+        assertThat(approved.coolingOffUntil().orElseThrow())
+                .isBetween(before.plus(policy).minus(stepMargin), after.plus(policy).plus(stepMargin));
         assertThat(count(
                         "SELECT count(*) FROM platform.audit_record WHERE operation ="
                                 + " 'merchant.PayoutDestinationApproved' AND target_id = ?",
@@ -548,6 +558,16 @@ class PayoutDestinationDatabaseTest {
     @BeforeAll
     static void installTheMovedClock() {
         com.finapp.platform.testing.database.DatabaseClockFrame.install();
+    }
+
+    /** The database's clock, as its own statement: what a deadline is read against. */
+    private static java.time.Instant databaseNow() throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                java.sql.PreparedStatement read = app.prepareStatement("SELECT statement_timestamp()");
+                java.sql.ResultSet row = read.executeQuery()) {
+            row.next();
+            return row.getObject(1, OffsetDateTime.class).toInstant();
+        }
     }
 
     /** Runs {@code work} as {@code actor} in one committed transaction on the app role. */
