@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.accounting.BreakType;
 import com.finapp.accounting.CloseCheckCode;
+import com.finapp.accounting.SourceFindingKind;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.app.accounting.AccountingBreakAgeMetrics;
 import com.finapp.app.accounting.AccountingBreakMetrics;
@@ -171,7 +172,7 @@ class AccountingMetersTest {
                 "command", lower(PostingObserver.Command.values()),
                 "type", names(BreakType.values()),
                 "definition", Set.copyOf(definitions.codes()),
-                "kind", Set.copyOf(RegulatoryAttentionMetrics.KINDS),
+                "kind", kinds(),
                 "outcome", outcomes,
                 "product", products);
     }
@@ -189,6 +190,13 @@ class AccountingMetersTest {
             }
         }
         return violations;
+    }
+
+    /** The two closed sets a {@code kind} tag holds: what stands needing a person, and the source-join census's findings. */
+    private static Set<String> kinds() {
+        Set<String> kinds = new TreeSet<>(RegulatoryAttentionMetrics.KINDS);
+        kinds.addAll(names(SourceFindingKind.values()));
+        return kinds;
     }
 
     private static Set<String> names(Enum<?>[] values) {
