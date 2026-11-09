@@ -611,7 +611,8 @@ expect_code "a body over the cap, chunked" 413 -X POST --data-binary @/tmp/three
 expect_code "the settlement upload's larger cap, on its own route" 200 -X POST --data-binary @/tmp/three-mib -H 'Content-Type: application/json' "$OPERATOR/v1/operator/settlement/files"
 expect_code "the operator surface's default cap" 413 -X POST --data-binary @/tmp/three-mib -H 'Content-Type: application/json' "$OPERATOR/v1/operator/merchants"
 
-# Each request names a different forged X-Forwarded-For. A limit keyed on that header would count sixty sources and limit none.
+# Each request names a different forged X-Forwarded-For. A limit keyed on that header would count sixty sources and limit none. Four at a
+# time, below the door tier's in-flight limit of five, so what answers 429 here is the rate limit.
 burst=""
 i=0
 while [ "$i" -lt 60 ]; do
@@ -620,7 +621,7 @@ while [ "$i" -lt 60 ]; do
     i=$((i + 1))
 done
 # shellcheck disable=SC2086
-codes=$(client curl -Z --parallel-max 50 $burst)
+codes=$(client curl -Z --parallel-max 4 $burst)
 served=$(printf '%s\n' "$codes" | grep -c '^200$' || true)
 limited=$(printf '%s\n' "$codes" | grep -c '^429$' || true)
 if [ "$served" -gt 0 ] && [ "$limited" -gt 0 ]; then
@@ -645,7 +646,7 @@ edge_answers_with_headers "the body cap's own answer" 413 -X POST --data-binary 
 
 echo "==   a tier's limit is one bucket across all its routes"
 sleep 3
-# door_burst <url>: thirty POSTs at once, half again the tier's burst of twenty; prints how many were served.
+# door_burst <url>: thirty POSTs, half again the tier's burst of twenty, four at a time so that the in-flight limit stays out of it; prints how many were served.
 door_burst() {
     burst=""
     i=0
@@ -655,7 +656,7 @@ door_burst() {
         i=$((i + 1))
     done
     # shellcheck disable=SC2086
-    client curl -Z --parallel-max 30 $burst | grep -c '^200$' || true
+    client curl -Z --parallel-max 4 $burst | grep -c '^200$' || true
 }
 first=$(door_burst "$PUBLIC/v1/authentications")
 second=$(door_burst "$PUBLIC/v1/registrations")
