@@ -328,10 +328,7 @@ class CommittedConfigurationHoldsNoSecretTest {
                 // P15-TSK-018: the operator's field names an environment variable, and nothing else is exempt.
                 "p.yaml | secretKey: hunter2",
                 "p.yaml | secretKey: finapp_mfa_key",
-                "p.yaml | createClusterSecretStore: hunter2",
-                // P15-TSK-018: the image scan's plant names are exempt beside their own rule alone.
-                "p.sh | refuses secret-in-layer \"hunter2\"",
-                "p.properties | provider.token=hunter2"
+                "p.yaml | createClusterSecretStore: hunter2"
             })
     void theExemptionsAreExact(String fileName, String content) {
         assertThat(offencesIn(content, fileName.endsWith(".kts")))
@@ -348,9 +345,7 @@ class CommittedConfigurationHoldsNoSecretTest {
                 "p.yaml | secretKey: FINAPP_MFA_KEY",
                 "p.yaml | - secretKey: FINAPP_DB_APP_PASSWORD",
                 "p.yaml | createClusterSecretStore: false",
-                "p.yaml | processPushSecret: false",
-                // P15-TSK-018: a plant of infra/scripts/image-scan.sh and the scanner rule that must refuse it.
-                "p.sh | refuses secret-in-layer \"github-pat\""
+                "p.yaml | processPushSecret: false"
             })
     void whatAnExemptionNamesIsAccepted(String fileName, String content) {
         assertThat(offencesIn(content, fileName.endsWith(".kts")))
@@ -425,8 +420,7 @@ class CommittedConfigurationHoldsNoSecretTest {
                         if (!literal.equals(DatabaseCredentialGuard.MARKED_LOCAL_DEFAULT)
                                 && !isKubernetesTokenSwitch(key, literal)
                                 && !isExternalSecretEntryName(key, literal)
-                                && !isOperatorChartSwitch(key, literal)
-                                && !isImageScanPlant(key, literal)) {
+                                && !isOperatorChartSwitch(key, literal)) {
                             offences.add(
                                     "key '"
                                             + key
@@ -463,18 +457,6 @@ class CommittedConfigurationHoldsNoSecretTest {
     private static boolean isOperatorChartSwitch(String key, String literal) {
         return OPERATOR_CHART_SWITCHES.contains(key) && (literal.equals("true") || literal.equals("false"));
     }
-
-    /**
-     * {@code infra/scripts/image-scan.sh} plants a generated secret in a throwaway image and names the scanner rule that must
-     * refuse it (`P15-TSK-006`): a plant's name beside a rule's, and a format whose value is made at run time. Exactly these pairs.
-     * This class was not run by name after that task, so the three stood red on master until `P15-TSK-018` ran it.
-     */
-    private static boolean isImageScanPlant(String key, String literal) {
-        return IMAGE_SCAN_PLANTS.contains(key + " " + literal);
-    }
-
-    private static final Set<String> IMAGE_SCAN_PLANTS =
-            Set.of("secret-in-layer github-pat", "secret-in-env aws-access-key-id", "provider.token ghp_%s\\n'");
 
     private static final Set<String> OPERATOR_CHART_SWITCHES =
             Set.of(
