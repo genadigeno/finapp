@@ -71,6 +71,11 @@ class FeeScheduleDatabaseTest {
     private static final String PASSWORD = "a-perfectly-fine-pw-7";
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
 
+    @org.junit.jupiter.api.BeforeAll
+    static void installTheMovedClock() {
+        com.finapp.platform.testing.database.DatabaseClockFrame.install();
+    }
+
     @LocalServerPort private int port;
     @Autowired private Authorization authorization;
     @Autowired private FeeSchedules feeSchedules;
@@ -129,7 +134,7 @@ class FeeScheduleDatabaseTest {
         Money gross = Money.ofMinorUnits(10_000L, EUR);
         MerchantId merchantId = MerchantId.of(UUID.fromString(merchant));
 
-        var priced = inTransaction(u -> feeSchedules.assess(u, merchantId, gross, now()));
+        var priced = inTransaction(u -> feeSchedules.assess(u, merchantId, gross));
         assertThat(priced).isPresent();
         assertThat(priced.get().version().value().toString()).isEqualTo(v1);
         assertThat(priced.get().fee().minorUnits()).isEqualTo(320L);
@@ -148,9 +153,13 @@ class FeeScheduleDatabaseTest {
                                         u, gross, FeeScheduleVersionId.of(UUID.fromString(v1))));
         assertThat(recomputed.fee().minorUnits()).isEqualTo(320L);
 
-        // And a capture priced AFTER the change gets the new version.
+        // And a capture priced AFTER the change gets the new version. Moved on the DATABASE's clock
+        // (DatabaseClockFrame, P15-TSK-038), the one the resolution reads: an hour and a margin,
+        // because the version's effective_from is a person's date and this JVM's reading of it.
         var afterwards =
-                inTransaction(u -> feeSchedules.assess(u, merchantId, gross, later.plusSeconds(1)));
+                com.finapp.platform.testing.database.DatabaseClockFrame.inOneTransaction(
+                        Duration.ofHours(1).plusSeconds(10),
+                        u -> feeSchedules.assess(u, merchantId, gross));
         assertThat(afterwards).isPresent();
         assertThat(afterwards.get().version().value().toString()).isEqualTo(v2);
         assertThat(afterwards.get().fee().minorUnits()).isEqualTo(540L);
@@ -281,13 +290,13 @@ class FeeScheduleDatabaseTest {
                         firstOfNextMonth);
 
         var priced =
-                inTransaction(
+                com.finapp.platform.testing.database.DatabaseClockFrame.inOneTransaction(
+                        Duration.ofDays(9).plusSeconds(10),
                         u ->
                                 feeSchedules.assess(
                                         u,
                                         MerchantId.of(UUID.fromString(merchant)),
-                                        Money.ofMinorUnits(10_000L, EUR),
-                                        firstOfNextMonth));
+                                        Money.ofMinorUnits(10_000L, EUR)));
         assertThat(priced).isPresent();
         assertThat(priced.get().version().value().toString())
                 .as("the mistyped rate never priced anything, and stays in the record")
@@ -578,10 +587,10 @@ class FeeScheduleDatabaseTest {
         assign(admin, onDear, dear, "standard tier");
 
         Money gross = Money.ofMinorUnits(10_000L, EUR);
-        var cheapPrice = inTransaction(u -> feeSchedules.assess(u, merchantId(onCheap), gross, now()));
-        var dearPrice = inTransaction(u -> feeSchedules.assess(u, merchantId(onDear), gross, now()));
+        var cheapPrice = inTransaction(u -> feeSchedules.assess(u, merchantId(onCheap), gross));
+        var dearPrice = inTransaction(u -> feeSchedules.assess(u, merchantId(onDear), gross));
         var nonePrice =
-                inTransaction(u -> feeSchedules.assess(u, merchantId(unpriced), gross, now()));
+                inTransaction(u -> feeSchedules.assess(u, merchantId(unpriced), gross));
 
         assertThat(cheapPrice).isPresent();
         assertThat(dearPrice).isPresent();
@@ -608,8 +617,7 @@ class FeeScheduleDatabaseTest {
                                 feeSchedules.assess(
                                         u,
                                         MerchantId.of(UUID.fromString(merchant)),
-                                        Money.ofMinorUnits(1_000L, EUR),
-                                        now()));
+                                        Money.ofMinorUnits(1_000L, EUR)));
         assertThat(priced)
                 .as("fabricating a schedule would price a capture at a number nobody agreed")
                 .isEmpty();

@@ -178,9 +178,9 @@ class CheckoutSessionTest {
                 .as("the state is the sweeper's to produce - it has not run")
                 .isEqualTo(CheckoutSessionStatus.OPEN);
         assertThat(open.acceptsNewWork()).as("the machine's half of the gate").isTrue();
-        assertThat(open.hasExpired(afterDeadline)).as("the clock's half").isTrue();
+        assertThat(open.hasExpired(afterDeadline.instant())).as("the clock's half").isTrue();
 
-        assertThatThrownBy(() -> open.confirm(afterDeadline, UUID.randomUUID()))
+        assertThatThrownBy(() -> open.confirm(afterDeadline.instant(), UUID.randomUUID()))
                 .as("a sweeper one minute behind is not a minute in which money may land")
                 .isInstanceOf(CheckoutSessionExpiredException.class);
     }
@@ -188,8 +188,8 @@ class CheckoutSessionTest {
     @Test
     @DisplayName("the deadline is exclusive at its own instant - at expires_at, it has expired")
     void theDeadlineIsInclusiveOfExpiry() {
-        assertThat(open().hasExpired(Clock.fixed(DEADLINE, ZoneOffset.UTC))).isTrue();
-        assertThat(open().hasExpired(Clock.fixed(DEADLINE.minusMillis(1), ZoneOffset.UTC)))
+        assertThat(open().hasExpired(DEADLINE)).isTrue();
+        assertThat(open().hasExpired(DEADLINE.minusMillis(1)))
                 .isFalse();
     }
 
@@ -197,7 +197,7 @@ class CheckoutSessionTest {
     @DisplayName("a confirmation before the deadline lands, and attaches the intent")
     void aTimelyConfirmationAttachesTheIntent() {
         UUID intent = UUID.randomUUID();
-        CheckoutSession confirmed = open().confirm(CLOCK, intent);
+        CheckoutSession confirmed = open().confirm(NOW, intent);
         assertThat(confirmed.status()).isEqualTo(CheckoutSessionStatus.PAYMENT_PENDING);
         assertThat(confirmed.paymentIntentRef()).contains(intent);
     }
@@ -207,8 +207,8 @@ class CheckoutSessionTest {
     void thePaymentIntentIsSetOnce() {
         // The aggregate's half; V002's trigger holds the same rule for raw SQL. A second value
         // would mean the session had quietly started a second payment.
-        CheckoutSession confirmed = open().confirm(CLOCK, UUID.randomUUID());
-        assertThatThrownBy(() -> confirmed.confirm(CLOCK, UUID.randomUUID()))
+        CheckoutSession confirmed = open().confirm(NOW, UUID.randomUUID());
+        assertThatThrownBy(() -> confirmed.confirm(NOW, UUID.randomUUID()))
                 .isInstanceOf(IllegalCheckoutSessionTransitionException.class);
     }
 
@@ -220,7 +220,7 @@ class CheckoutSessionTest {
         CheckoutSession session = open();
         Clock behind = Clock.fixed(session.createdAt().minusMillis(250), ZoneOffset.UTC);
 
-        CheckoutSession pending = session.confirm(behind, UUID.randomUUID());
+        CheckoutSession pending = session.confirm(behind.instant(), UUID.randomUUID());
         assertThat(pending.status()).isEqualTo(CheckoutSessionStatus.PAYMENT_PENDING);
         assertThat(pending.statusChangedAt()).isEqualTo(session.createdAt());
 
@@ -382,7 +382,7 @@ class CheckoutSessionTest {
         CheckoutSessionToken theirs = CheckoutSessionToken.issue(randomness);
         CheckoutSession session =
                 CheckoutSession.open(
-                        IDS, CLOCK, UUID.randomUUID(), AMOUNT, "Two coffees",
+                        IDS, NOW, UUID.randomUUID(), AMOUNT, "Two coffees",
                         UUID.randomUUID(), mine, DEADLINE);
 
         assertThat(session.authenticates(mine)).isTrue();
@@ -398,7 +398,7 @@ class CheckoutSessionTest {
     private static CheckoutSession openWith(Money amount, String summary, Instant expiresAt) {
         return CheckoutSession.open(
                 IDS,
-                CLOCK,
+                NOW,
                 UUID.randomUUID(),
                 amount,
                 summary,
@@ -450,7 +450,7 @@ class CheckoutSessionTest {
 
     private static CheckoutSession move(CheckoutSession session, CheckoutSessionStatus to) {
         return switch (to) {
-            case PAYMENT_PENDING -> session.confirm(CLOCK, UUID.randomUUID());
+            case PAYMENT_PENDING -> session.confirm(NOW, UUID.randomUUID());
             // Two producers of one state (P12-TSK-007): a financing from OPEN, a capture from
             // anywhere else - and the capture refuses every state but PAYMENT_PENDING itself.
             case COMPLETED ->
@@ -458,7 +458,7 @@ class CheckoutSessionTest {
                             ? session.completeByFinancing(NOW, UUID.randomUUID())
                             : session.complete(CLOCK);
             case COMPLETED_LATE -> session.completeLate(CLOCK);
-            case EXPIRED -> session.expire(CLOCK);
+            case EXPIRED -> session.expire(NOW);
             case ABANDONED -> session.abandon(CLOCK);
             // No producer, at the aggregate as at the schema: birth is the only door.
             case OPEN -> throw new IllegalCheckoutSessionTransitionException(

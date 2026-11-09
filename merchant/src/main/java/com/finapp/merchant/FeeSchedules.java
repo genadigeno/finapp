@@ -318,28 +318,29 @@ public final class FeeSchedules {
     }
 
     /**
-     * The version pricing {@code merchantId} at {@code instant} — what {@code P6-TSK-005} pins
-     * at intent creation, and the reason the rest of this class exists.
+     * The version pricing {@code merchantId} now, on the database's clock
+     * ({@code P15-TSK-038}, PI-002) — what {@code P6-TSK-005} pins at intent creation, and the
+     * reason the rest of this class exists.
      *
      * <p>Empty when the merchant has no assignment, or has one whose schedule has no version
      * effective yet. Honest rather than defaulted: fabricating a schedule for an unpriced
      * merchant would price a capture at a number nobody agreed.
      */
     public Optional<FeeScheduleVersion> effectiveVersionFor(
-            Connection unitOfWork, MerchantId merchantId, Instant instant) {
-        return schedules.findEffectiveVersionFor(unitOfWork, merchantId, instant);
+            Connection unitOfWork, MerchantId merchantId) {
+        return schedules.findEffectiveVersionFor(unitOfWork, merchantId);
     }
 
     /**
-     * Prices {@code gross} for {@code merchantId} as at {@code instant}, pinning the version
-     * that priced it.
+     * Prices {@code gross} for {@code merchantId} now, on the database's clock, pinning the
+     * version that priced it.
      *
      * <p>Composition only — the arithmetic is {@link FeeCalculation}'s and is pure, so that the
      * property that matters ({@code fee + net == gross}) is provable without a database.
      */
     public Optional<FeeAssessment> assess(
-            Connection unitOfWork, MerchantId merchantId, Money gross, Instant instant) {
-        return effectiveVersionFor(unitOfWork, merchantId, instant)
+            Connection unitOfWork, MerchantId merchantId, Money gross) {
+        return effectiveVersionFor(unitOfWork, merchantId)
                 .map(version -> FeeCalculation.assess(gross, version));
     }
 

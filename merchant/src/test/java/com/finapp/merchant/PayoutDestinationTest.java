@@ -51,11 +51,11 @@ class PayoutDestinationTest {
                 boolean legal = from.canTransitionTo(to);
                 Supplier<PayoutDestination> move =
                         switch (to) {
-                            case APPROVED -> () -> subject.approve(APPROVER, CLOCK, COOLING_OFF);
+                            case APPROVED -> () -> subject.approve(APPROVER, CLOCK.instant(), COOLING_OFF);
                             case REJECTED -> () -> subject.reject(APPROVER, CLOCK);
                             case WITHDRAWN -> () -> subject.withdraw(PROPOSER, CLOCK);
-                            case EFFECTIVE -> () -> subject.effect(LATER);
-                            case SUPERSEDED -> () -> subject.supersede(LATER);
+                            case EFFECTIVE -> () -> subject.effect(LATER.instant());
+                            case SUPERSEDED -> () -> subject.supersede(LATER.instant());
                             case PROPOSED -> throw new AssertionError("skipped above");
                         };
                 if (legal) {
@@ -74,7 +74,7 @@ class PayoutDestinationTest {
     void theProposerCannotApprove() {
         PayoutDestination proposed = proposed();
         assertThatExceptionOfType(PayoutDestinationSelfApprovalException.class)
-                .isThrownBy(() -> proposed.approve(PROPOSER, CLOCK, COOLING_OFF));
+                .isThrownBy(() -> proposed.approve(PROPOSER, CLOCK.instant(), COOLING_OFF));
         assertThat(proposed.status()).isEqualTo(PayoutDestinationStatus.PROPOSED);
         assertThat(proposed.approvedBy()).isEmpty();
     }
@@ -82,16 +82,29 @@ class PayoutDestinationTest {
     @Test
     @DisplayName("approval pins the cooling-off deadline on the row")
     void approvalPinsTheDeadline() {
-        PayoutDestination approved = proposed().approve(APPROVER, CLOCK, COOLING_OFF);
+        PayoutDestination approved = proposed().approve(APPROVER, CLOCK.instant(), COOLING_OFF);
         assertThat(approved.approvedBy()).contains(APPROVER);
         assertThat(approved.approvedAt()).contains(T0);
         assertThat(approved.coolingOffUntil()).contains(T0.plus(COOLING_OFF));
     }
 
     @Test
+    @DisplayName("the cooling-off runs from the database's reading: a proposer's fast clock floors approved_at and lengthens nothing")
+    void aFastProposerCannotLengthenTheCoolingOff() {
+        Instant databaseNow = T0.minusSeconds(5);
+        PayoutDestination approved = proposed().approve(APPROVER, databaseNow, COOLING_OFF);
+        assertThat(approved.approvedAt())
+                .as("the proposal is business time on its instance's clock, so the order the CHECK requires is floored")
+                .contains(T0);
+        assertThat(approved.coolingOffUntil())
+                .as("and the deadline, the control, is the database's reading plus the policy, not the floor's")
+                .contains(databaseNow.plus(COOLING_OFF));
+    }
+
+    @Test
     @DisplayName("a destination is due exactly from its deadline, and not a moment before")
     void dueExactlyFromTheDeadline() {
-        PayoutDestination approved = proposed().approve(APPROVER, CLOCK, COOLING_OFF);
+        PayoutDestination approved = proposed().approve(APPROVER, CLOCK.instant(), COOLING_OFF);
         Instant deadline = T0.plus(COOLING_OFF);
         assertThat(approved.isDue(deadline.minusNanos(1))).isFalse();
         assertThat(approved.isDue(deadline)).isTrue();
@@ -103,26 +116,26 @@ class PayoutDestinationTest {
     @Test
     @DisplayName("effect during the cooling-off is refused")
     void effectDuringTheCoolingOffIsRefused() {
-        PayoutDestination approved = proposed().approve(APPROVER, CLOCK, COOLING_OFF);
+        PayoutDestination approved = proposed().approve(APPROVER, CLOCK.instant(), COOLING_OFF);
         Clock oneSecondEarly = Clock.fixed(T0.plus(COOLING_OFF).minusSeconds(1), ZoneOffset.UTC);
-        assertThatIllegalStateException().isThrownBy(() -> approved.effect(oneSecondEarly));
-        assertThat(approved.effect(LATER).status()).isEqualTo(PayoutDestinationStatus.EFFECTIVE);
+        assertThatIllegalStateException().isThrownBy(() -> approved.effect(oneSecondEarly.instant()));
+        assertThat(approved.effect(LATER.instant()).status()).isEqualTo(PayoutDestinationStatus.EFFECTIVE);
     }
 
     @Test
     @DisplayName("a non-positive cooling-off is refused: zero is the control switched off")
     void aNonPositiveCoolingOffIsRefused() {
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> proposed().approve(APPROVER, CLOCK, Duration.ZERO));
+                .isThrownBy(() -> proposed().approve(APPROVER, CLOCK.instant(), Duration.ZERO));
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> proposed().approve(APPROVER, CLOCK, Duration.ofSeconds(-1)));
+                .isThrownBy(() -> proposed().approve(APPROVER, CLOCK.instant(), Duration.ofSeconds(-1)));
     }
 
     @Test
     @DisplayName("withdrawal during the cooling-off keeps the approval and records the end")
     void withdrawalDuringTheCoolingOff() {
         PayoutDestination withdrawn =
-                proposed().approve(APPROVER, CLOCK, COOLING_OFF).withdraw(PROPOSER, CLOCK);
+                proposed().approve(APPROVER, CLOCK.instant(), COOLING_OFF).withdraw(PROPOSER, CLOCK);
         assertThat(withdrawn.status()).isEqualTo(PayoutDestinationStatus.WITHDRAWN);
         assertThat(withdrawn.approvedBy()).contains(APPROVER);
         assertThat(withdrawn.endedBy()).contains(PROPOSER);
@@ -133,9 +146,9 @@ class PayoutDestinationTest {
     @Test
     @DisplayName("supersession is never recorded before the destination took effect")
     void supersessionNeverPrecedesTheEffect() {
-        PayoutDestination effective = proposed().approve(APPROVER, CLOCK, COOLING_OFF).effect(LATER);
+        PayoutDestination effective = proposed().approve(APPROVER, CLOCK.instant(), COOLING_OFF).effect(LATER.instant());
         // A second instance whose clock runs behind the one that effected it.
-        PayoutDestination superseded = effective.supersede(CLOCK);
+        PayoutDestination superseded = effective.supersede(CLOCK.instant());
         assertThat(superseded.supersededAt()).isEqualTo(effective.effectiveAt());
     }
 
@@ -255,10 +268,10 @@ class PayoutDestinationTest {
         PayoutDestination proposed = proposed();
         return switch (status) {
             case PROPOSED -> proposed;
-            case APPROVED -> proposed.approve(APPROVER, CLOCK, COOLING_OFF);
-            case EFFECTIVE -> proposed.approve(APPROVER, CLOCK, COOLING_OFF).effect(LATER);
+            case APPROVED -> proposed.approve(APPROVER, CLOCK.instant(), COOLING_OFF);
+            case EFFECTIVE -> proposed.approve(APPROVER, CLOCK.instant(), COOLING_OFF).effect(LATER.instant());
             case SUPERSEDED ->
-                    proposed.approve(APPROVER, CLOCK, COOLING_OFF).effect(LATER).supersede(LATER);
+                    proposed.approve(APPROVER, CLOCK.instant(), COOLING_OFF).effect(LATER.instant()).supersede(LATER.instant());
             case REJECTED -> proposed.reject(APPROVER, CLOCK);
             case WITHDRAWN -> proposed.withdraw(PROPOSER, CLOCK);
         };

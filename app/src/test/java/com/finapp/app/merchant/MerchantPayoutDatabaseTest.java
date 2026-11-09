@@ -149,6 +149,11 @@ class MerchantPayoutDatabaseTest {
     @Autowired private com.finapp.settlement.SettlementSources settlementSources;
 
     @BeforeAll
+    static void installTheMovedClock() {
+        com.finapp.platform.testing.database.DatabaseClockFrame.install();
+    }
+
+    @BeforeAll
     static void startProvider() {
         if (provider == null) {
             provider = SimulatedProvider.start();
@@ -1642,21 +1647,25 @@ class MerchantPayoutDatabaseTest {
                 destinations,
                 auditWriter,
                 IDS,
-                CLOCK,
                 1000);
     }
 
     /**
-     * The same sweep on a clock moved forward by {@code offset} - the
+     * The same sweep on the database's clock moved forward by {@code offset} - the
      * {@code PayoutDestinationDatabaseTest} shape, so a cooling-off is crossed, never waited for.
      */
     private com.finapp.merchant.PayoutDestinationEffectuation effectuationAt(Duration offset) {
         return new com.finapp.merchant.PayoutDestinationEffectuation(
-                new MerchantTransactions(new TransactionTemplate(transactionManager), dataSource),
+                new com.finapp.merchant.MerchantTransactionRunner() {
+                    @Override
+                    public <R> R inTransaction(java.util.function.Function<Connection, R> work) {
+                        return com.finapp.platform.testing.database.DatabaseClockFrame.inOneTransaction(
+                                offset, work);
+                    }
+                },
                 destinations,
                 auditWriter,
                 IDS,
-                Clock.offset(CLOCK, offset),
                 1000);
     }
 

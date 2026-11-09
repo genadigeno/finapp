@@ -997,8 +997,13 @@ final class BnplPayoutWorld implements AutoCloseable {
         }
 
         @Override
-        public List<PayoutDestination> findDue(Connection unitOfWork, Instant now, int limit) {
+        public List<PayoutDestination> findDue(Connection unitOfWork, int limit) {
             return List.of();
+        }
+
+        @Override
+        public Instant databaseNow(Connection unitOfWork) {
+            throw new UnsupportedOperationException("no destination moves in the payout world");
         }
 
         @Override

@@ -160,7 +160,7 @@ class CheckoutSessionDatabaseTest {
         runAsPlatform(uow -> sessions.insert(uow, session));
 
         UUID intent = IDS.next();
-        CheckoutSession confirmed = session.confirm(CLOCK, intent);
+        CheckoutSession confirmed = session.confirm(Instant.now(CLOCK), intent);
         boolean landed = asPlatform(uow -> sessions.transition(uow, session, confirmed));
         assertThat(landed).isTrue();
         CheckoutSession reread = asPlatform(uow -> sessions.findById(uow, session.id()).orElseThrow());
@@ -182,9 +182,9 @@ class CheckoutSessionDatabaseTest {
         CheckoutSession session = open(CheckoutSessionToken.issue(RANDOMNESS));
         runAsPlatform(uow -> sessions.insert(uow, session));
 
-        CheckoutSession pending = session.confirm(CLOCK, IDS.next());
+        CheckoutSession pending = session.confirm(Instant.now(CLOCK), IDS.next());
         runAsPlatform(uow -> sessions.transition(uow, session, pending));
-        CheckoutSession expired = pending.expire(CLOCK);
+        CheckoutSession expired = pending.expire(Instant.now(CLOCK));
         runAsPlatform(uow -> sessions.transition(uow, pending, expired));
 
         // The capture landed after the clock ran out. Without this edge the trigger would
@@ -256,7 +256,7 @@ class CheckoutSessionDatabaseTest {
     void thePaymentIntentReferenceIsSetOnce() throws Exception {
         CheckoutSession session = open(CheckoutSessionToken.issue(RANDOMNESS));
         runAsPlatform(uow -> sessions.insert(uow, session));
-        CheckoutSession confirmed = session.confirm(CLOCK, IDS.next());
+        CheckoutSession confirmed = session.confirm(Instant.now(CLOCK), IDS.next());
         runAsPlatform(uow -> sessions.transition(uow, session, confirmed));
 
         try (Connection migrator = DatabaseRoles.migrator()) {
@@ -281,7 +281,7 @@ class CheckoutSessionDatabaseTest {
         UUID intent = IDS.next();
         CheckoutSession first = open(CheckoutSessionToken.issue(RANDOMNESS));
         runAsPlatform(uow -> sessions.insert(uow, first));
-        runAsPlatform(uow -> sessions.transition(uow, first, first.confirm(CLOCK, intent)));
+        runAsPlatform(uow -> sessions.transition(uow, first, first.confirm(Instant.now(CLOCK), intent)));
         CheckoutSession second = open(CheckoutSessionToken.issue(RANDOMNESS));
         runAsPlatform(uow -> sessions.insert(uow, second));
 
@@ -327,7 +327,7 @@ class CheckoutSessionDatabaseTest {
         CheckoutSession session = open(CheckoutSessionToken.issue(RANDOMNESS));
         runAsPlatform(uow -> sessions.insert(uow, session));
         UUID theRealIntent = IDS.next();
-        CheckoutSession pending = session.confirm(CLOCK, theRealIntent);
+        CheckoutSession pending = session.confirm(Instant.now(CLOCK), theRealIntent);
         runAsPlatform(uow -> sessions.transition(uow, session, pending));
 
         CheckoutSession sameStateOtherIntent =
@@ -430,7 +430,7 @@ class CheckoutSessionDatabaseTest {
     void anUnpaidSessionProducesNoOrder() throws Exception {
         CheckoutSession session = open(CheckoutSessionToken.issue(RANDOMNESS));
         runAsPlatform(uow -> sessions.insert(uow, session));
-        runAsPlatform(uow -> sessions.transition(uow, session, session.expire(CLOCK)));
+        runAsPlatform(uow -> sessions.transition(uow, session, session.expire(Instant.now(CLOCK))));
 
         var order = asPlatform(uow -> orders.findBySession(uow, session.id()));
         assertThat(order).as("an abandoned checkout is not a cancelled order").isEmpty();
@@ -531,7 +531,7 @@ class CheckoutSessionDatabaseTest {
         // so this schema stands up with no merchant, no fee schedule and no payment anywhere.
         return CheckoutSession.open(
                 IDS,
-                CLOCK,
+                Instant.now(CLOCK),
                 IDS.next(),
                 AMOUNT,
                 "Two coffees and a pastry",
@@ -569,10 +569,10 @@ class CheckoutSessionDatabaseTest {
 
     private static CheckoutSession move(CheckoutSession session, CheckoutSessionStatus to) {
         return switch (to) {
-            case PAYMENT_PENDING -> session.confirm(CLOCK, IDS.next());
+            case PAYMENT_PENDING -> session.confirm(Instant.now(CLOCK), IDS.next());
             case COMPLETED -> session.complete(CLOCK);
             case COMPLETED_LATE -> session.completeLate(CLOCK);
-            case EXPIRED -> session.expire(CLOCK);
+            case EXPIRED -> session.expire(Instant.now(CLOCK));
             case ABANDONED -> session.abandon(CLOCK);
             case OPEN -> throw new IllegalStateException("birth is the only door");
         };

@@ -159,7 +159,6 @@ class CheckoutExpirySweeperScheduleTest {
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK,
                 Duration.ofMinutes(10),
                 50,
                 com.finapp.checkout.UndispatchedPayments.none());

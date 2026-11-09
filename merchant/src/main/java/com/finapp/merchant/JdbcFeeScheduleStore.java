@@ -317,18 +317,27 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
 
     @Override
     public Optional<FeeScheduleVersion> findEffectiveVersionFor(
-            Connection unitOfWork, MerchantId merchantId, Instant instant) {
+            Connection unitOfWork, MerchantId merchantId) {
+        // ON THE DATABASE'S CLOCK, AFTER THE CALLER'S LOCKS (P15-TSK-038, PI-002): the instant is
+        // this statement's own, BnplPricing's reading, so no instance's clock chooses the version.
+        // A version created to take effect immediately is in force from its commit, whatever its
+        // creating instance's clock stamped (the rule findEffectiveVersion reads), unless the
+        // insert floored its start (P15-TSK-037): then effective_from is above created_at, it is
+        // judged as a scheduled version, and the one before it keeps answering until the clock
+        // reaches the floor - bounded by the skew or step that made the floor necessary.
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
                         "SELECT " + prefixed(VERSION_COLUMNS, "v")
                                 + " FROM merchant.merchant_fee_schedule a"
                                 + " JOIN merchant.fee_schedule_version v"
                                 + "   ON v.fee_schedule_id = a.fee_schedule_id"
-                                + " WHERE a.merchant_id = ? AND v.effective_from <= ?"
+                                + " WHERE a.merchant_id = ?"
+                                + " AND (v.effective_from <= GREATEST(clock_timestamp(),"
+                                + " transaction_timestamp())"
+                                + " OR v.effective_from = v.created_at)"
                                 + " ORDER BY v.effective_from DESC, v.version DESC"
                                 + " LIMIT 1")) {
             select.setObject(1, merchantId.value());
-            select.setTimestamp(2, Timestamp.from(instant));
             try (ResultSet rows = select.executeQuery()) {
                 return rows.next() ? Optional.of(versionFrom(rows)) : Optional.empty();
             }
