@@ -59,6 +59,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * door declares it is {@code RefusedActsAreRecordedTest}'s; the row in PostgreSQL is
  * {@code FxAdministrationEndpointDatabaseTest}'s and {@code IdentityAdministrationDatabaseTest}'s, owed (C14).
  */
+@org.junit.jupiter.api.Tag("slice")
 @DisplayName("a declared door's refused and failed acts are recorded with their outcome (P15-TSK-039)")
 @SuppressWarnings("try") // The scopes are used for their close side effect (the established idiom).
 class RefusedActsTest {

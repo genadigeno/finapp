@@ -31,6 +31,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
  * The role grant's refusal and the check of standing holdings, at their doors (`P15-TSK-039`). The grant's rule is
  * {@code RoleGrantNeedsAFactorTest}'s; a real row is {@code IdentityAdministrationDatabaseTest}'s, owed.
  */
+@org.junit.jupiter.api.Tag("architecture")
 @DisplayName("the grant refused without a factor, and the standing holdings named, at the doors (P15-TSK-039)")
 class RoleGrantDoorTest {
 
