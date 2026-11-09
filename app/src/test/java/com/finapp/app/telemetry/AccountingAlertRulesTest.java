@@ -459,8 +459,10 @@ class AccountingAlertRulesTest {
         covered.add(alert);
     }
 
+    /** The source-join census's gauges are read by {@code correctness.yml}, not by this file: their unreadable and absent legs are that file's. */
     private static boolean isReadGauge(String name) {
-        return name.startsWith("finapp_accounting_") && !COUNTED.matcher(name).matches() && !name.equals(SWEEPER);
+        return name.startsWith("finapp_accounting_") && !name.startsWith("finapp_accounting_source_census_")
+                && !COUNTED.matcher(name).matches() && !name.equals(SWEEPER);
     }
 
     private static Set<String> values(List<RuleEvaluator.Sample> scrape, String name, String label) {

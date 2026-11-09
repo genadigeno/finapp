@@ -153,6 +153,11 @@ class MerchantPayoutDatabaseTest {
         com.finapp.platform.testing.database.DatabaseClockFrame.install();
     }
 
+    @AfterAll
+    static void putTheClockBack() {
+        com.finapp.platform.testing.database.DatabaseClockFrame.uninstall();
+    }
+
     @BeforeAll
     static void startProvider() {
         if (provider == null) {

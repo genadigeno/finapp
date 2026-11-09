@@ -40,87 +40,44 @@ import org.junit.jupiter.api.Test;
  * </ul>
  *
  * <p>What it finds is <strong>fixed here or named with an owner</strong>, and the lists below are equalities, not
- * allowances: a table fixed later must leave its list, or this goes red. Everything named is held by {@code THREAT_MODEL.md}
- * section 6 item 11, each list a {@code GAP} row of T33 or T13. Text, not behaviour: that the triggers fire and that the clock
- * is read is {@code infra/scripts/migrator-verify.sh} on a real database, and the database cases owed to {@code P15-TST-002}.
+ * allowances: a table fixed later must leave its list, or this goes red. Since {@code P15-TSK-040} (one forward migration per
+ * schema, the journal first) both lists are empty: no table and no function is left, and {@link #everyReplacedBodyDiffersFromItsLatestPredecessorOnlyInItsClockCalls}
+ * holds what those migrations did. Text, not behaviour: that the triggers fire and that the clock is read is
+ * {@code infra/scripts/migrator-verify.sh} on a real database, for the schemas it walks, and the database cases owed to {@code P15-TST-002}.
  */
 @Tag("architecture")
-@DisplayName("the migrations close the owner's reach over financial history, or name who will (P15-TSK-004)")
+@DisplayName("the migrations close the owner's reach over financial history, or name who will (P15-TSK-004, P15-TSK-040)")
 class OwnerReachOverHistoryIsClosedTest {
 
-    /** Every table that refuses DELETE by trigger and not TRUNCATE, by schema. Owner: {@code THREAT_MODEL.md} section 6 item 11. */
-    private static final Map<String, String> TRUNCATE_NOT_YET_REFUSED = Map.of(
-            "checkout", "checkout_order",
-            "crossborder", "beneficiary cancellation_request corridor corridor_availability corridor_enable_request"
-                    + " corridor_policy_event corridor_policy_version payment",
-            "fx", "availability_enable_request cover cover_attempt cover_execution fx_provider_evidence pair_availability"
-                    + " pricing_pair pricing_policy_event pricing_policy_version provider_availability quote quote_event"
-                    + " quote_request quote_sourcing_step rate_fetch_permit rate_snapshot trade trade_reversal"
-                    + " trade_reversal_event",
-            "kyc", "counterparty_screening",
-            "ledger", "adjustment_proposal_line counterparty journal_entry journal_line",
-            "merchant", "fee_schedule fee_schedule_version merchant_bnpl_fee_schedule_event payment_fee_pin payout_evidence"
-                    + " payout_return",
-            "payments", "clearing_record outbound_credit outbound_credit_return provider_evidence routing_decision"
-                    + " routing_decision_step routing_policy_version routing_rule routing_rule_rail scheme_execution_claim"
-                    + " unmatched_confirmation",
-            "risk", "monitored_transaction");
+    /** Every table that refuses DELETE by trigger and not TRUNCATE, by schema: empty since {@code P15-TSK-040}. A new one needs a refusal, or an owner here. */
+    private static final Map<String, String> TRUNCATE_NOT_YET_REFUSED = Map.of();
 
-    /** Every function that reads a clock through the path, by schema. Owner: {@code THREAT_MODEL.md} section 6 item 11. */
-    private static final Map<String, String> CLOCK_NOT_YET_QUALIFIED = Map.ofEntries(
-            Map.entry("accounting", "accounting_break_permits_only_machine_edges accounting_period_permits_only_machine_edges"
-                    + " break_event_is_append_only close_check_permits_only_machine_edges close_run_permits_only_machine_edges"
-                    + " gl_mapping_version_event_is_append_only gl_mapping_version_permits_only_machine_edges"
-                    + " period_close_permits_only_machine_edges period_event_is_append_only"
-                    + " period_reopen_permits_only_machine_edges period_unlock_end_is_the_pending_proposal"
-                    + " prior_period_adjustment_permits_only_machine_edges regulatory_obligation_permits_only_machine_edges"
-                    + " regulatory_provider_answer_is_append_only regulatory_submission_event_is_append_only"
-                    + " regulatory_submission_permits_only_machine_edges report_run_permits_only_machine_edges"
-                    + " valuation_rate_set_permits_only_machine_edges"),
-            Map.entry("bnpl", "acceptance_history_is_append_only bnpl_acceptance_is_born_once bnpl_agreement_is_born_once"
-                    + " bnpl_application_event_is_append_only bnpl_application_permits_only_machine_edges bnpl_billing_is_born_once"
-                    + " bnpl_collection_attempt_is_born_once bnpl_condition_event_is_born_once"
-                    + " bnpl_credit_balance_application_is_born_once bnpl_dispute_event_is_append_only"
-                    + " bnpl_dispute_permits_only_machine_edges bnpl_dispute_proposal_permits_only_machine_edges"
-                    + " bnpl_fee_assessment_is_born_once bnpl_interest_accrual_is_born_once bnpl_obligation_closure_is_born_once"
-                    + " bnpl_obligation_permits_only_machine_edges bnpl_offer_event_is_append_only"
-                    + " bnpl_offer_permits_only_machine_edges bnpl_payoff_execution_is_born_once bnpl_payoff_quote_is_born_once"
-                    + " bnpl_refund_is_born_once bnpl_repayment_is_born_once bnpl_repayment_reversal_permits_only_machine_edges"
-                    + " bnpl_schedule_is_born_once bnpl_terms_version_event_is_append_only"
-                    + " bnpl_terms_version_permits_only_machine_edges bnpl_waiver_decision_is_born_once bnpl_waiver_is_born_once"
-                    + " bnpl_write_off_decision_is_born_once bnpl_write_off_is_born_once business_date_latest"
-                    + " merchant_financing_is_born_once purchase_permits_only_machine_edges"),
-            Map.entry("checkout", "checkout_session_permits_only_machine_edges"),
-            Map.entry("credit", "credit_assessment_is_born_once credit_decision_is_born_once credit_evidence_is_born_once"
-                    + " credit_policy_event_is_append_only credit_policy_permits_only_machine_edges credit_profile_is_born_once"
-                    + " credit_record_is_born_once data_request_permits_only_machine_edges decision_request_event_is_append_only"
-                    + " decision_request_permits_only_machine_edges decision_snapshot_is_born_once policy_evaluation_is_born_once"
-                    + " scorecard_model_event_is_append_only scorecard_model_permits_only_machine_edges"
-                    + " underwriting_case_event_is_append_only underwriting_case_permits_only_machine_edges"),
-            Map.entry("crossborder", "cancellation_request_is_born_once"),
-            Map.entry("fx", "cover_execution_is_born_coherent cover_machine_is_legal quote_edge_is_legal quote_is_born_issued"
-                    + " quote_request_is_stamped_and_append_only rate_snapshot_is_newer_than_latest trade_is_born_booked"
-                    + " trade_reversal_edge_is_legal"),
-            Map.entry("ledger", "posting_cutoff_moves_one_period"),
-            Map.entry("merchant", "bnpl_fee_pin_names_a_returning_version_in_force"
-                    + " merchant_bnpl_enablement_permits_only_machine_edges merchant_payout_send_permit_is_the_databases"),
-            Map.entry("payments", "dispute_response_send_permit_is_the_databases outbound_credit_machine_is_legal"
-                    + " outbound_credit_return_is_born_exact payment_attempt_send_permit_is_the_databases"
-                    + " payment_capture_hold_resolves_once refund_send_permit_is_the_databases"
-                    + " withdrawal_send_permit_is_the_databases"),
-            Map.entry("risk", "customer_risk_profile_moves_with_its_versions customer_risk_profile_version_is_born_in_sequence"
-                    + " decision_override_permits_only_machine_edges monitored_transaction_is_stamped_by_the_database"
-                    + " monitoring_watermark_derives_its_sequence regulatory_report_event_is_append_only"
-                    + " regulatory_report_permits_only_machine_edges rescreening_permit_permits_only_machine_edges"
-                    + " risk_action_permits_only_machine_edges risk_alert_permits_only_machine_edges risk_assessment_is_born_stamped"
-                    + " risk_case_action_is_append_only risk_case_event_is_append_only risk_case_permits_only_machine_edges"
-                    + " risk_policy_version_event_is_append_only risk_policy_version_permits_only_machine_edges"
-                    + " risk_signal_is_born_once screening_list_version_permits_only_machine_edges velocity_window_counts_forward"),
-            Map.entry("settlement", "source_moves_forward_only"));
+    /** Every function that reads a clock through the path, by schema: empty since {@code P15-TSK-040}. A new one needs {@code pg_catalog.}, or an owner here. */
+    private static final Map<String, String> CLOCK_NOT_YET_QUALIFIED = Map.of();
+
+    /** The forward migrations that closed both lists ({@code P15-TSK-040}): one per schema, the version each took. */
+    private static final Map<String, Integer> CLOSING_MIGRATIONS = Map.ofEntries(
+            Map.entry("accounting", 16), Map.entry("bnpl", 22), Map.entry("checkout", 5), Map.entry("credit", 24),
+            Map.entry("crossborder", 7), Map.entry("fx", 12), Map.entry("kyc", 13), Map.entry("ledger", 35),
+            Map.entry("merchant", 15), Map.entry("payments", 39), Map.entry("risk", 21), Map.entry("settlement", 20));
+
+    /** How many functions each closing migration qualified: the guard's list, by schema, when it was emptied. */
+    private static final Map<String, Integer> QUALIFIED_BY_THE_CLOSING_MIGRATIONS = Map.ofEntries(
+            Map.entry("accounting", 18), Map.entry("bnpl", 33), Map.entry("checkout", 1), Map.entry("credit", 16),
+            Map.entry("crossborder", 1), Map.entry("fx", 8), Map.entry("ledger", 1), Map.entry("merchant", 3),
+            Map.entry("payments", 7), Map.entry("risk", 19), Map.entry("settlement", 1));
+
+    /** How many tables each closing migration closed: the guard's list, by schema, when it was emptied. */
+    private static final Map<String, Integer> TRUNCATE_CLOSED_BY_THE_CLOSING_MIGRATIONS = Map.ofEntries(
+            Map.entry("checkout", 1), Map.entry("crossborder", 8), Map.entry("fx", 19), Map.entry("kyc", 1),
+            Map.entry("ledger", 4), Map.entry("merchant", 6), Map.entry("payments", 11), Map.entry("risk", 1));
 
     /** The clock functions resolved through a path. {@code CURRENT_TIMESTAMP} and its like are keywords, so are absent by design. */
     private static final Set<String> CLOCK_FUNCTIONS =
             Set.of("now", "statement_timestamp", "clock_timestamp", "transaction_timestamp", "timeofday");
+
+    /** The qualifier a closing migration writes, exactly, before a clock call. */
+    private static final String QUALIFIER = "pg_catalog.";
 
     private static final Pattern VERSIONED = Pattern.compile("V(\\d+)__.*\\.sql");
     private static final Pattern CREATE_TRIGGER = Pattern.compile("(?is)^CREATE\\s+(?:CONSTRAINT\\s+)?TRIGGER\\s+(\\w+)\\s+"
@@ -141,9 +98,15 @@ class OwnerReachOverHistoryIsClosedTest {
 
     private static final Map<String, String> FUNCTIONS = new TreeMap<>();
     private static final Set<String> TABLES = new TreeSet<>();
+    /** Every definition of every function, in chain order: a replaced body is compared with the one before it. */
+    private static final Map<String, List<Definition>> DEFINITIONS = new TreeMap<>();
+    /** Each migration's statements as the walk read them, by {@code module/Vn}. */
+    private static final Map<String, List<String>> STATEMENTS_BY_MIGRATION = new TreeMap<>();
     private static int modulesRead;
 
     record Trigger(String table, String timing, String events, String function) {}
+
+    record Definition(String migration, String statement) {}
 
     @BeforeAll
     static void readEveryMigrationInChainOrder() throws IOException {
@@ -161,7 +124,7 @@ class OwnerReachOverHistoryIsClosedTest {
                         .toList();
             }
             for (Path script : scripts) {
-                readStatements(EvidenceCitations.read(script));
+                readStatements(module.getFileName() + "/V" + version(script), EvidenceCitations.read(script));
             }
         }
     }
@@ -190,6 +153,11 @@ class OwnerReachOverHistoryIsClosedTest {
         assertThat(FUNCTIONS.keySet().stream().filter(function -> function.startsWith("lending.") && reachesTheClock(function)))
                 .as("lending's functions that read a clock were found, so a green rule below is not a parse that saw none")
                 .hasSizeGreaterThanOrEqualTo(39);
+        QUALIFIED_BY_THE_CLOSING_MIGRATIONS.forEach((schema, count) -> assertThat(FUNCTIONS.keySet().stream()
+                        .filter(function -> function.startsWith(schema + ".") && reachesTheClock(function)))
+                .as("%s's functions that read a clock were found, so a green rule below is not a parse that saw none", schema)
+                .hasSizeGreaterThanOrEqualTo(count));
+        assertThat(refusing("TRUNCATE")).as("the 212 that already refused, and the 51 closed").hasSizeGreaterThanOrEqualTo(263);
     }
 
     @Test
@@ -221,6 +189,105 @@ class OwnerReachOverHistoryIsClosedTest {
                 .as("every clock call pg_catalog-qualified or the function's search_path fixed, or a name in this list with"
                         + " an owner; a function already fixed must leave the list")
                 .isEqualTo(expected(CLOCK_NOT_YET_QUALIFIED));
+    }
+
+    @Test
+    @DisplayName("every function the closing migrations replace differs from its latest predecessor only in its clock calls, and they say nothing else")
+    void everyReplacedBodyDiffersFromItsLatestPredecessorOnlyInItsClockCalls() {
+        Map<String, Integer> qualified = new TreeMap<>();
+        Map<String, Integer> closed = new TreeMap<>();
+        CLOSING_MIGRATIONS.forEach((module, version) -> {
+            String migration = module + "/V" + version;
+            assertThat(STATEMENTS_BY_MIGRATION).as("the closing migration %s is in the chain", migration).containsKey(migration);
+            for (String statement : STATEMENTS_BY_MIGRATION.get(migration)) {
+                Matcher function = CREATE_FUNCTION.matcher(statement);
+                Matcher trigger = CREATE_TRIGGER.matcher(statement);
+                if (function.find()) {
+                    if (replaced(function.group(1).toLowerCase(Locale.ROOT), migration, statement)) {
+                        qualified.merge(module, 1, Integer::sum);
+                    }
+                } else if (trigger.find()) {
+                    assertThat(trigger.group(2).toUpperCase(Locale.ROOT) + " " + trigger.group(3).trim().toUpperCase(Locale.ROOT))
+                            .as("%s: a trigger here refuses TRUNCATE and nothing else: %s", migration, statement)
+                            .isEqualTo("BEFORE TRUNCATE");
+                    assertThat(trigger.group(4).toLowerCase(Locale.ROOT)).startsWith(module + ".");
+                    assertThat(trigger.group(5).toUpperCase(Locale.ROOT)).contains("FOR EACH STATEMENT");
+                    closed.merge(module, 1, Integer::sum);
+                } else {
+                    assertThat(statement.toUpperCase(Locale.ROOT))
+                            .as("%s says nothing but its functions, its triggers and their comments: %s", migration, statement)
+                            .startsWith("COMMENT ON FUNCTION");
+                }
+            }
+        });
+        assertThat(qualified).as("the functions each closing migration qualified: 108, as the guard named them").isEqualTo(QUALIFIED_BY_THE_CLOSING_MIGRATIONS);
+        assertThat(closed).as("the tables each closing migration closed: 51, as the guard named them").isEqualTo(TRUNCATE_CLOSED_BY_THE_CLOSING_MIGRATIONS);
+    }
+
+    /** True when the statement replaces an earlier definition; false for a new function, which may only be the refusal. */
+    private static boolean replaced(String function, String migration, String statement) {
+        List<Definition> definitions = DEFINITIONS.get(function);
+        int position = -1;
+        for (int index = 0; index < definitions.size(); index++) {
+            if (definitions.get(index).migration().equals(migration)) {
+                position = index;
+                break;
+            }
+        }
+        assertThat(position).as("%s defined in %s", function, migration).isGreaterThanOrEqualTo(0);
+        if (position == 0) {
+            assertThat(function).as("a function new in %s can only be the TRUNCATE refusal", migration).endsWith(".history_is_never_truncated");
+            assertThat(clockCalls(statement)).as(function).isEmpty();
+            return false;
+        }
+        assertThat(clockCalls(statement)).as("%s: at least one clock call, and each one qualified", function)
+                .isNotEmpty().containsOnly("pg_catalog");
+        assertThat(withoutClockQualifiers(statement))
+                .as("%s in %s is its latest predecessor byte for byte, but for pg_catalog. before each clock call", function, migration)
+                .isEqualTo(asReplacement(definitions.get(position - 1).statement()));
+        return true;
+    }
+
+    /** A first definition was {@code CREATE FUNCTION}; the replacement that keeps it must say {@code OR REPLACE}, and that is the only other difference. */
+    private static String asReplacement(String statement) {
+        return statement.replaceFirst("(?i)^CREATE\\s+FUNCTION\\b", "CREATE OR REPLACE FUNCTION");
+    }
+
+    /** The statement with {@code pg_catalog.} taken from before each clock call in the body's code, and only there. */
+    private static String withoutClockQualifiers(String statement) {
+        int[] body = bodyOf(statement);
+        assertThat(body).as("a function with a body").isNotNull();
+        String code = statement.substring(body[0], body[1]);
+        StringBuilder result = new StringBuilder(statement.substring(0, body[0]));
+        int copied = 0;
+        int at = 0;
+        while (at < code.length()) {
+            char character = code.charAt(at);
+            if (code.startsWith("--", at)) {
+                int end = code.indexOf('\n', at);
+                at = end < 0 ? code.length() : end;
+            } else if (code.startsWith("/*", at)) {
+                at = code.indexOf("*/", at) + 2;
+            } else if (character == '\'') {
+                at = afterString(code, at);
+            } else if (character == '$' && dollarQuote(code, at) != null) {
+                at = dollarQuote(code, at)[1];
+            } else if (Character.isLetter(character) || character == '_') {
+                int end = at;
+                while (end < code.length() && (Character.isLetterOrDigit(code.charAt(end)) || code.charAt(end) == '_')) {
+                    end++;
+                }
+                if (CLOCK_FUNCTIONS.contains(code.substring(at, end).toLowerCase(Locale.ROOT)) && nextIsParenthesis(code, end)
+                        && at >= QUALIFIER.length() && code.startsWith(QUALIFIER, at - QUALIFIER.length())) {
+                    result.append(code, copied, at - QUALIFIER.length());
+                    copied = at;
+                }
+                at = end;
+            } else {
+                at++;
+            }
+        }
+        return result.append(code, copied, code.length()).append(statement, body[1], statement.length()).toString();
     }
 
     @Test
@@ -282,8 +349,10 @@ class OwnerReachOverHistoryIsClosedTest {
         return qualified.substring(qualified.indexOf('.') + 1);
     }
 
-    private static void readStatements(String sql) {
-        for (String statement : statementsOf(sql)) {
+    private static void readStatements(String migration, String sql) {
+        List<String> statements = statementsOf(sql);
+        STATEMENTS_BY_MIGRATION.put(migration, statements);
+        for (String statement : statements) {
             Matcher matcher = DROP_TRIGGER.matcher(statement);
             if (matcher.find()) {
                 TRIGGERS.remove(matcher.group(2).toLowerCase(Locale.ROOT) + "#" + matcher.group(1).toLowerCase(Locale.ROOT));
@@ -315,11 +384,14 @@ class OwnerReachOverHistoryIsClosedTest {
             matcher = DROP_FUNCTION.matcher(statement);
             if (matcher.find()) {
                 FUNCTIONS.remove(matcher.group(1).toLowerCase(Locale.ROOT));
+                DEFINITIONS.remove(matcher.group(1).toLowerCase(Locale.ROOT));
                 continue;
             }
             matcher = CREATE_FUNCTION.matcher(statement);
             if (matcher.find()) {
                 FUNCTIONS.put(matcher.group(1).toLowerCase(Locale.ROOT), statement);
+                DEFINITIONS.computeIfAbsent(matcher.group(1).toLowerCase(Locale.ROOT), function -> new ArrayList<>())
+                        .add(new Definition(migration, statement));
             }
         }
     }
