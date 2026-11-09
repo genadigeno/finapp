@@ -41,6 +41,10 @@ on:
     # commit, and it is the same bytes (each job refuses two builds of one commit that differ, and
     # every input is pinned), scanned against this run's own vulnerability database, never a cached one.
     - cron: '0 6 * * 1'
+    # Nightly, for the kind rehearsal (P15-TSK-012): a deployment rehearsal that only runs when deploy/ changes says
+    # nothing about the code that changed around it. GitHub offers no per-job schedule without another workflow, which
+    # CiWorkflowIsLockedDownTest refuses, so every job runs nightly too.
+    - cron: '0 3 * * *'
 
 # Least privilege. No job here needs to write to the repository; anything that later does
 # must raise its own permissions explicitly, at the job level, and be reviewed.
@@ -547,3 +551,80 @@ jobs:
 
       - name: Run the image against a throwaway database
         run: ./infra/scripts/migrator-verify.sh
+
+  # ---------------------------------------------------------------------------
+  # The kind rehearsal (P15-TSK-012, ADR-0120): the platform on a real Kubernetes API as
+  # three replicas, the migration Job, smoke through the real edge, a rolling update from
+  # N - 1 to N under a workload, a pod killed mid-workload, a rollback by digest and a
+  # re-roll, the financial census read from the database after each step.
+  #
+  # Expensive, so it runs where it pays: on master, nightly and on a pull request that
+  # changes deploy/ or the harness. On any other pull request the job's steps are skipped.
+  # It holds no credential: every key, password, CA and SCRAM user is generated per run
+  # into a temporary directory and handed to the cluster as Secrets (THREAT_MODEL.md T30).
+  # Its artefacts - logs, the census per step, the peak, the timings - are kept whether
+  # the job went green or red, because the artefacts are the evidence.
+  # ---------------------------------------------------------------------------
+  rehearsal:
+    name: Kubernetes rehearsal (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Check out, with the history N - 1 is built from
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Run only on master, nightly, or when deploy/ or the harness changed
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|infra/scripts/kind-rehearsal|infra/scripts/kind-secrets|infra/kafka/|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read the pinned Java version from the version catalog
+        id: toolchain
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          version=$(grep -E '^javaToolchain[[:space:]]*=' gradle/libs.versions.toml | cut -d'"' -f2)
+          if [ -z "$version" ]; then
+            echo "::error::javaToolchain not found in gradle/libs.versions.toml"
+            exit 1
+          fi
+          echo "java-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
+      - name: Set up Gradle
+        if: steps.gate.outputs.run == 'true'
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Install kind, at the pinned release
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          . infra/scanner-pins.sh
+          GOBIN="$HOME/.local/bin" go install "sigs.k8s.io/kind@$KIND_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: The rehearsal
+        if: steps.gate.outputs.run == 'true'
+        run: ./infra/scripts/kind-rehearsal.sh
+
+      - name: Keep the artefacts
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kind-rehearsal
+          path: build/rehearsal/
+          if-no-files-found: error
+          retention-days: 30

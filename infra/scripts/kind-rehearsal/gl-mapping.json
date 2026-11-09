@@ -1,0 +1,416 @@
+{
+  "accounts": [
+    {
+      "code": "1000",
+      "name": "Cash at bank",
+      "classification": "ASSET",
+      "section": "CASH_AND_BANK"
+    },
+    {
+      "code": "1100",
+      "name": "Card settlement clearing",
+      "classification": "ASSET",
+      "section": "CLEARING_AND_SETTLEMENT_RECEIVABLES"
+    },
+    {
+      "code": "1110",
+      "name": "Instant payment clearing",
+      "classification": "ASSET",
+      "section": "CLEARING_AND_SETTLEMENT_RECEIVABLES"
+    },
+    {
+      "code": "1120",
+      "name": "FX provider clearing",
+      "classification": "ASSET",
+      "section": "CLEARING_AND_SETTLEMENT_RECEIVABLES"
+    },
+    {
+      "code": "1130",
+      "name": "Chargebacks recoverable",
+      "classification": "ASSET",
+      "section": "OTHER_ASSETS"
+    },
+    {
+      "code": "1140",
+      "name": "FX position",
+      "classification": "ASSET",
+      "section": "OTHER_ASSETS"
+    },
+    {
+      "code": "1300",
+      "name": "Loans - principal",
+      "classification": "ASSET",
+      "section": "LOANS_AND_BNPL_RECEIVABLES"
+    },
+    {
+      "code": "1310",
+      "name": "Loans - interest receivable",
+      "classification": "ASSET",
+      "section": "LOANS_AND_BNPL_RECEIVABLES"
+    },
+    {
+      "code": "1320",
+      "name": "Loans - fees receivable",
+      "classification": "ASSET",
+      "section": "LOANS_AND_BNPL_RECEIVABLES"
+    },
+    {
+      "code": "1400",
+      "name": "BNPL - principal",
+      "classification": "ASSET",
+      "section": "LOANS_AND_BNPL_RECEIVABLES"
+    },
+    {
+      "code": "1410",
+      "name": "BNPL - interest receivable",
+      "classification": "ASSET",
+      "section": "LOANS_AND_BNPL_RECEIVABLES"
+    },
+    {
+      "code": "1420",
+      "name": "BNPL - fees receivable",
+      "classification": "ASSET",
+      "section": "LOANS_AND_BNPL_RECEIVABLES"
+    },
+    {
+      "code": "2000",
+      "name": "Customer funds",
+      "classification": "LIABILITY",
+      "section": "CUSTOMER_FUNDS"
+    },
+    {
+      "code": "2100",
+      "name": "Merchant payables",
+      "classification": "LIABILITY",
+      "section": "MERCHANT_PAYABLES"
+    },
+    {
+      "code": "2200",
+      "name": "Payout clearing",
+      "classification": "LIABILITY",
+      "section": "CLEARING_AND_SETTLEMENT_PAYABLES"
+    },
+    {
+      "code": "2210",
+      "name": "Cross-border corridor clearing",
+      "classification": "LIABILITY",
+      "section": "CLEARING_AND_SETTLEMENT_PAYABLES"
+    },
+    {
+      "code": "2300",
+      "name": "Borrower credit balances",
+      "classification": "LIABILITY",
+      "section": "OTHER_LIABILITIES"
+    },
+    {
+      "code": "2900",
+      "name": "Suspense - unmatched",
+      "classification": "LIABILITY",
+      "section": "SUSPENSE"
+    },
+    {
+      "code": "3000",
+      "name": "Lending capital",
+      "classification": "EQUITY",
+      "section": "CAPITAL"
+    },
+    {
+      "code": "4000",
+      "name": "Fee income",
+      "classification": "REVENUE",
+      "section": "FEE_AND_COMMISSION_INCOME"
+    },
+    {
+      "code": "4010",
+      "name": "BNPL merchant fee income",
+      "classification": "REVENUE",
+      "section": "FEE_AND_COMMISSION_INCOME"
+    },
+    {
+      "code": "4020",
+      "name": "Loan fee income",
+      "classification": "REVENUE",
+      "section": "FEE_AND_COMMISSION_INCOME"
+    },
+    {
+      "code": "4030",
+      "name": "BNPL fee income",
+      "classification": "REVENUE",
+      "section": "FEE_AND_COMMISSION_INCOME"
+    },
+    {
+      "code": "4100",
+      "name": "Loan interest income",
+      "classification": "REVENUE",
+      "section": "INTEREST_INCOME"
+    },
+    {
+      "code": "4110",
+      "name": "BNPL interest income",
+      "classification": "REVENUE",
+      "section": "INTEREST_INCOME"
+    },
+    {
+      "code": "4200",
+      "name": "FX spread revenue",
+      "classification": "REVENUE",
+      "section": "FX_RESULT"
+    },
+    {
+      "code": "4210",
+      "name": "FX realised gains",
+      "classification": "REVENUE",
+      "section": "FX_RESULT"
+    },
+    {
+      "code": "4300",
+      "name": "Reconciliation gains",
+      "classification": "REVENUE",
+      "section": "OTHER_INCOME"
+    },
+    {
+      "code": "5000",
+      "name": "Processing costs",
+      "classification": "EXPENSE",
+      "section": "PROCESSING_AND_DISPUTE_COSTS"
+    },
+    {
+      "code": "5010",
+      "name": "Dispute costs",
+      "classification": "EXPENSE",
+      "section": "PROCESSING_AND_DISPUTE_COSTS"
+    },
+    {
+      "code": "5100",
+      "name": "Loan write-offs",
+      "classification": "EXPENSE",
+      "section": "CREDIT_LOSSES"
+    },
+    {
+      "code": "5110",
+      "name": "BNPL write-offs",
+      "classification": "EXPENSE",
+      "section": "CREDIT_LOSSES"
+    },
+    {
+      "code": "5200",
+      "name": "FX realised losses",
+      "classification": "EXPENSE",
+      "section": "FX_RESULT"
+    },
+    {
+      "code": "5210",
+      "name": "Rounding residual",
+      "classification": "EXPENSE",
+      "section": "FX_RESULT"
+    },
+    {
+      "code": "5300",
+      "name": "Reconciliation losses",
+      "classification": "EXPENSE",
+      "section": "OTHER_EXPENSES"
+    }
+  ],
+  "rules": [
+    {
+      "purpose": "CUSTOMER_WALLET",
+      "ownerKind": "CUSTOMER",
+      "glAccountCode": "2000"
+    },
+    {
+      "purpose": "MERCHANT_PAYABLE",
+      "ownerKind": "MERCHANT",
+      "glAccountCode": "2100"
+    },
+    {
+      "purpose": "LOAN_PRINCIPAL",
+      "ownerKind": "LOAN",
+      "glAccountCode": "1300"
+    },
+    {
+      "purpose": "LOAN_PRINCIPAL_DUE",
+      "ownerKind": "LOAN",
+      "glAccountCode": "1300"
+    },
+    {
+      "purpose": "LOAN_INTEREST_ACCRUED",
+      "ownerKind": "LOAN",
+      "glAccountCode": "1310"
+    },
+    {
+      "purpose": "LOAN_INTEREST_DUE",
+      "ownerKind": "LOAN",
+      "glAccountCode": "1310"
+    },
+    {
+      "purpose": "LOAN_FEES_DUE",
+      "ownerKind": "LOAN",
+      "glAccountCode": "1320"
+    },
+    {
+      "purpose": "LOAN_CREDIT_BALANCE",
+      "ownerKind": "LOAN",
+      "glAccountCode": "2300"
+    },
+    {
+      "purpose": "BNPL_PRINCIPAL",
+      "ownerKind": "BNPL_OBLIGATION",
+      "glAccountCode": "1400"
+    },
+    {
+      "purpose": "BNPL_PRINCIPAL_DUE",
+      "ownerKind": "BNPL_OBLIGATION",
+      "glAccountCode": "1400"
+    },
+    {
+      "purpose": "BNPL_INTEREST_ACCRUED",
+      "ownerKind": "BNPL_OBLIGATION",
+      "glAccountCode": "1410"
+    },
+    {
+      "purpose": "BNPL_INTEREST_DUE",
+      "ownerKind": "BNPL_OBLIGATION",
+      "glAccountCode": "1410"
+    },
+    {
+      "purpose": "BNPL_FEES_DUE",
+      "ownerKind": "BNPL_OBLIGATION",
+      "glAccountCode": "1420"
+    },
+    {
+      "purpose": "BNPL_CREDIT_BALANCE",
+      "ownerKind": "BNPL_OBLIGATION",
+      "glAccountCode": "2300"
+    },
+    {
+      "purpose": "SETTLEMENT_CLEARING",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "1100"
+    },
+    {
+      "purpose": "PAYOUT_CLEARING",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "2200"
+    },
+    {
+      "purpose": "INSTANT_CLEARING",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "1110"
+    },
+    {
+      "purpose": "CASH_AT_BANK",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "1000"
+    },
+    {
+      "purpose": "CHARGEBACK_RECOVERABLE",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "1130"
+    },
+    {
+      "purpose": "DISPUTE_COSTS",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "5010"
+    },
+    {
+      "purpose": "PROCESSING_COSTS",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "5000"
+    },
+    {
+      "purpose": "RECONCILIATION_LOSSES",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "5300"
+    },
+    {
+      "purpose": "FEE_REVENUE",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "4000"
+    },
+    {
+      "purpose": "RECONCILIATION_GAINS",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "4300"
+    },
+    {
+      "purpose": "FX_POSITION",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "1140"
+    },
+    {
+      "purpose": "ROUNDING_RESIDUAL",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "5210"
+    },
+    {
+      "purpose": "FX_SPREAD_REVENUE",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "4200"
+    },
+    {
+      "purpose": "FX_REALISED_GAINS",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "4210"
+    },
+    {
+      "purpose": "FX_REALISED_LOSSES",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "5200"
+    },
+    {
+      "purpose": "FX_PROVIDER_CLEARING",
+      "ownerKind": "COUNTERPARTY",
+      "glAccountCode": "1120"
+    },
+    {
+      "purpose": "CORRIDOR_CLEARING",
+      "ownerKind": "COUNTERPARTY",
+      "glAccountCode": "2210"
+    },
+    {
+      "purpose": "LOAN_INTEREST_INCOME",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "4100"
+    },
+    {
+      "purpose": "LOAN_FEE_INCOME",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "4020"
+    },
+    {
+      "purpose": "LOAN_WRITE_OFF_EXPENSE",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "5100"
+    },
+    {
+      "purpose": "LENDING_CAPITAL",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "3000"
+    },
+    {
+      "purpose": "BNPL_MERCHANT_FEE_INCOME",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "4010"
+    },
+    {
+      "purpose": "BNPL_INTEREST_INCOME",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "4110"
+    },
+    {
+      "purpose": "BNPL_FEE_INCOME",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "4030"
+    },
+    {
+      "purpose": "BNPL_WRITE_OFF_EXPENSE",
+      "ownerKind": "OPERATIONAL",
+      "glAccountCode": "5110"
+    },
+    {
+      "purpose": "SUSPENSE_UNMATCHED",
+      "ownerKind": "SUSPENSE",
+      "glAccountCode": "2900"
+    }
+  ]
+}

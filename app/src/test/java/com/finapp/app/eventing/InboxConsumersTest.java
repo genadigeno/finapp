@@ -173,6 +173,22 @@ class InboxConsumersTest {
     }
 
     @Test
+    @DisplayName("a commit a rebalance refused has a series of its own, is no thrown poll, and its meter is eager (P15-TSK-012)")
+    void aDeferredCommitIsCountedApart() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        InboxConsumers consumers =
+                new InboxConsumers(
+                        List.of(), (group, handlers) -> failConnecting(), Duration.ofMillis(1),
+                        registry);
+        assertThat(registry.get(InboxConsumers.DEFERRED_COMMITS).counter().count()).isZero();
+
+        consumers.settle("kyc", () -> new ReceiverPollResult(1, 0, 0, 0, 0, 1));
+
+        assertThat(registry.get(InboxConsumers.DEFERRED_COMMITS).counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("finapp.inbox.poll.failures").tag("outcome", "failed").counter().count()).isZero();
+    }
+
+    @Test
     @DisplayName("an eviction has a series of its own, is no thrown poll and no refusal, and its meter is eager (P15-TSK-025)")
     void anEvictionIsCountedApart() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();

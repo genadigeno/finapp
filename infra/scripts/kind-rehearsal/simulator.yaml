@@ -1,0 +1,109 @@
+# The kind rehearsal's own namespace and its provider simulators (P15-TSK-012). Test-only and never rendered by any overlay: the
+# rehearsal applies this file itself, after creating the namespace's ConfigMap (Simulator.java) and Secret (a keystore from the local
+# CA, generated per run). Its image is the JDK the application is built with, by the digest the root Dockerfile pins.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-simulator
+  namespace: finapp-rehearsal
+spec:
+  selector:
+    app.kubernetes.io/name: finapp-simulator
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-simulator
+  namespace: finapp-rehearsal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-simulator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-simulator
+        finapp/role: provider-simulator
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: simulator
+          image: JDK_IMAGE
+          imagePullPolicy: IfNotPresent
+          command: ["java", "-XX:MaxRAMPercentage=60.0", "--source", "21", "/simulator/Simulator.java", "/tls/keystore.p12", "/tls/store-phrase"]
+          ports:
+            - name: https
+              containerPort: 8443
+          readinessProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 2
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: source
+              mountPath: /simulator
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: source
+          configMap:
+            name: finapp-simulator-source
+        - name: tls
+          secret:
+            secretName: finapp-simulator-tls
+        - name: tmp
+          emptyDir: {}
+---
+# The simulator admits what the application sends and nothing else, and reaches nothing: the same default-deny as the namespace it serves.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-simulator
+  namespace: finapp-rehearsal
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-simulator
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+      ports:
+        - protocol: TCP
+          port: 8443

@@ -377,6 +377,16 @@ deny contains msg if {
 # A credential written inline escapes the rule above, so a literal under a credential's name is refused too.
 credential_name := `(?i)(password|passwd|secret|token|credential|api[-_]?key|private[-_]?key|jaas)`
 
+# Two names "token" reads wrongly in: a client's timeout for tokenising a card, each named whole, and only with a value that is a duration.
+tokenisation_timeouts := {"FINAPP_PAYMENTMETHODS_TOKENISATION_TIMEOUT", "FINAPP_MERCHANT_PAYOUTDESTINATION_TOKENISATION_TIMEOUT"}
+
+iso_duration := `^PT[0-9]+(\.[0-9]+)?[SMH]$`
+
+a_tokenisation_timeout(key, value) if {
+	tokenisation_timeouts[key]
+	regex.match(iso_duration, value)
+}
+
 deny contains msg if {
 	some [doc, _, container] in all_containers
 	some env in list_of(container, "env")
@@ -387,8 +397,9 @@ deny contains msg if {
 
 deny contains msg if {
 	some doc in of_kind("ConfigMap")
-	some key, _ in doc.data
+	some key, value in doc.data
 	regex.match(credential_name, key)
+	not a_tokenisation_timeout(key, value)
 	msg := sprintf("[no-secret-literal] %s holds %s: a credential is never configuration", [label(doc), key])
 }
 
@@ -992,6 +1003,13 @@ egress_flow(rule, "kafka") if {
 egress_flow(rule, "providers") if {
 	every_peer_an_address(rule)
 	ports_within(rule, {["TCP", 443]})
+}
+
+# kind's providers are simulated, by one test-only pod in the rehearsal's own namespace on its own port. Refused in every other overlay.
+egress_flow(rule, "providers") if {
+	data.overlay == "kind"
+	every_peer_selects(rule, "egress", "finapp-rehearsal", "finapp/role", "provider-simulator")
+	ports_within(rule, {["TCP", 8443]})
 }
 
 ingress_flow(rule, "edge") if {

@@ -105,6 +105,7 @@ public final class InboxConsumers implements SmartLifecycle {
     private final Counter pollsRefused;
     private final Counter pollsFailed;
     private final Counter evictions;
+    private final Counter deferredCommits;
 
     /** Each module's lag on this instance as of its last good poll (`P15-TSK-025`): absent is unknown, read as NaN. */
     private final Map<String, Long> lags = new ConcurrentHashMap<>();
@@ -137,6 +138,9 @@ public final class InboxConsumers implements SmartLifecycle {
 
     /** {@code finapp.inbox.consumer.evictions}, a consumer evicted past its poll budget (`P15-TSK-025`). */
     public static final String EVICTIONS = "finapp.inbox.consumer.evictions";
+
+    /** {@code finapp.inbox.commits.deferred}, an offset commit a rebalance refused, sent after the next poll (`P15-TSK-012`). */
+    public static final String DEFERRED_COMMITS = "finapp.inbox.commits.deferred";
 
     /** One poll, as a loop makes it: the seam the refusal tests drive without a broker. */
     @FunctionalInterface
@@ -177,6 +181,7 @@ public final class InboxConsumers implements SmartLifecycle {
         this.pollsRefused = pollFailure(registry, "refused");
         this.pollsFailed = pollFailure(registry, "failed");
         this.evictions = eviction(registry);
+        this.deferredCommits = deferredCommit(registry);
         handlersByModule.keySet().forEach(module -> Gauge.builder(LAG, lags, known -> lagOf(known, module))
                 .tag("module", module)
                 .description("Records awaiting this instance's consumer of the module, from its last good poll; NaN"
@@ -246,6 +251,16 @@ public final class InboxConsumers implements SmartLifecycle {
     static Counter eviction(MeterRegistry registry) {
         return Counter.builder(EVICTIONS)
                 .description("Offset commits refused because the group had evicted this consumer")
+                .register(registry);
+    }
+
+    /**
+     * Commits a rebalance refused (`P15-TSK-012`): each is sent after the next poll, so one alone is nothing, and a rate of them is
+     * a group that keeps rebalancing while its committed offsets stand still. A refused commit used to read as a failed poll.
+     */
+    static Counter deferredCommit(MeterRegistry registry) {
+        return Counter.builder(DEFERRED_COMMITS)
+                .description("Offset commits a rebalance refused, sent after the next poll")
                 .register(registry);
     }
 
@@ -345,6 +360,7 @@ public final class InboxConsumers implements SmartLifecycle {
     ReceiverPollResult settle(String module, PollAttempt attempt) {
         try {
             ReceiverPollResult result = attempt.poll();
+            deferredCommits.increment(result.deferredCommits());
             boolean delivered =
                     result.processed() + result.duplicates() + result.contended() + result.failed() + result.parked() > 0;
             refusedModules.computeIfPresent(

@@ -17,14 +17,20 @@ package com.finapp.platform.inbox.kafka;
  * @param failed records that stalled their partition for redelivery
  * @param parked records set aside in this poll, their budget spent (`P15-TSK-028`); acknowledged,
  *     so their partition went on
+ * @param deferredCommits offset commits a rebalance refused in this poll, sent after the next one (`P15-TSK-012`)
  */
-public record ReceiverPollResult(int processed, int duplicates, int contended, int failed, int parked) {
+public record ReceiverPollResult(int processed, int duplicates, int contended, int failed, int parked, int deferredCommits) {
 
     /** An empty poll — nothing arrived, or the receiver was woken for shutdown mid-poll. */
-    public static final ReceiverPollResult NOTHING = new ReceiverPollResult(0, 0, 0, 0, 0);
+    public static final ReceiverPollResult NOTHING = new ReceiverPollResult(0, 0, 0, 0, 0, 0);
+
+    /** A poll whose commit no rebalance refused. */
+    public ReceiverPollResult(int processed, int duplicates, int contended, int failed, int parked) {
+        this(processed, duplicates, contended, failed, parked, 0);
+    }
 
     /** A poll that parked nothing. */
     public ReceiverPollResult(int processed, int duplicates, int contended, int failed) {
-        this(processed, duplicates, contended, failed, 0);
+        this(processed, duplicates, contended, failed, 0, 0);
     }
 }

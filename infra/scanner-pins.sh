@@ -108,7 +108,25 @@ CURL_DIGEST=sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3f
 # The schemas kubeconform reads for cert-manager's kinds (the kind overlay's local CA), at one commit of datreeio/CRDs-catalog.
 CRD_SCHEMAS_COMMIT=49729e49e8f062933e3716a26540d41b0cd0856c
 
-# cert-manager, for the kind rehearsal alone: P15-TSK-012 installs this chart. A chart, so check-pinned-images.sh has no release list to compare it to.
+# cert-manager, for the kind rehearsal alone: infra/scripts/kind-rehearsal.sh installs this chart. A chart, so check-pinned-images.sh has no release list to compare it to.
 CERT_MANAGER_REPOSITORY=quay.io/jetstack/charts/cert-manager
 CERT_MANAGER_VERSION=v1.21.3
 CERT_MANAGER_DIGEST=sha256:e482675aec32862d323a9218293ff7de81192337998615e4378c56498473f240
+
+# The kind rehearsal (P15-TSK-012): sourced by infra/scripts/kind-rehearsal.sh. KIND_NODE_VERSION's minor is KUBERNETES_VERSION's, which
+# KindRehearsalContractTest holds equal, so the rehearsal runs the API the clusters and the schemas declare. KIND_VERSION is the kind
+# release CI installs, which needs to be at least v0.24.0: kindnetd enforces NetworkPolicy from there. Helm renders cert-manager's chart.
+KIND_VERSION=v0.33.0
+KIND_NODE_REPOSITORY=kindest/node
+KIND_NODE_VERSION=v1.34.11
+KIND_NODE_DIGEST=sha256:44e222ee2132dab25ff87301682f89eb82c7880ea3a1bf543bfe9708fd08d67d
+
+HELM_REPOSITORY=alpine/helm
+HELM_VERSION=3.19.0
+HELM_DIGEST=sha256:aef9b56f64e866207d9591d0abd8f6d767b36aadd12edf68f8a719716d9d29c9
+
+# Only where kindnetd cannot enforce NetworkPolicy, because the kernel has no nft_queue (Docker Desktop's WSL2 kernel): REHEARSAL_POLICY_ENGINE=kube-router.
+# The rehearsal says in its record which engine enforced the policies it tested, and CI never sets it.
+KUBE_ROUTER_REPOSITORY=cloudnativelabs/kube-router
+KUBE_ROUTER_VERSION=v2.12.0
+KUBE_ROUTER_DIGEST=sha256:e1da38f71e2f1521e7a74c5cdaa511fdee9d2ee76972b25c9b5785b030b96fe4

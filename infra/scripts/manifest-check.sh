@@ -300,6 +300,9 @@ YAML
 
     plant_on inline-env-value "$DEPLOYMENT" 's/^          env:$/          env:\n            - name: FINAPP_DB_APP_PASSWORD\n              value: this-is-a-plant/'
     plant_on inline-config-value "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_KAFKA_JAAS_CONFIG=this-is-a-plant/'
+    plant_on inline-config-named-timeout "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_DB_PASSWORD_TOKENISATION_TIMEOUT=${plant}/'
+    plant_on inline-config-timeout-not-a-duration "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_PAYMENTMETHODS_TOKENISATION_TIMEOUT=not-a-duration/'
+    plant_on inline-config-tokenisation "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_PAYMENTMETHODS_TOKENISATION_TOKEN=${plant}/'
     plant_on no-endpoint-url "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_CALLBACK=https:\/\/provider.invalid\/hook/'
     plant_on no-endpoint-key "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_DB_URL=placeholder/'
     plant_on no-endpoint-broker "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_BROKERS=broker-1:9092/'
@@ -416,6 +419,30 @@ plant_namespace_security() {
     plant_on default-deny-narrowed "$DENY" 's/^  podSelector: {}$/  podSelector:\n    matchLabels:\n      app.kubernetes.io\/name: finapp-app/'
 
     # The form of a rule: no peers is everyone, no ports is every port, two list items are OR.
+    # kind's simulated providers are one rule of its own overlay: the same rule anywhere else names no listed flow.
+    plant netpol-simulator-outside-kind
+    add_resource netpol-simulator-outside-kind simulator.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: simulator
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-rehearsal
+          podSelector:
+            matchLabels:
+              finapp/role: provider-simulator
+      ports:
+        - protocol: TCP
+          port: 8443
+YAML
     plant netpol-open-egress
     add_resource netpol-open-egress wide.yaml <<'YAML'
 apiVersion: networking.k8s.io/v1
@@ -1394,6 +1421,9 @@ refused generation-ahead secret-generation
 refused generation-delivery-absent secret-generation
 refused inline-env-value no-secret-literal
 refused inline-config-value no-secret-literal
+refused inline-config-tokenisation no-secret-literal
+refused inline-config-named-timeout no-secret-literal
+refused inline-config-timeout-not-a-duration no-secret-literal
 refused no-endpoint-url no-endpoint
 refused no-endpoint-key no-endpoint
 refused no-endpoint-broker no-endpoint
@@ -1476,6 +1506,7 @@ refused no-default-deny netpol-default-deny
 refused default-deny-ingress-only netpol-default-deny
 refused default-deny-opened netpol-default-deny
 refused default-deny-narrowed netpol-default-deny
+refused netpol-simulator-outside-kind netpol-egress-closed
 refused netpol-open-egress netpol-open-peer
 refused netpol-open-ingress netpol-open-peer
 refused netpol-empty-rule netpol-open-peer

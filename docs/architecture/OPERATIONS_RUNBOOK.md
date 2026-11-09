@@ -1874,6 +1874,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` |
 | 11.26 The edge: two controllers, the generated route lists, a renewed certificate *(written 2026-11-09, below)* | `-011` | `-012`, `-020` |
 | 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` |
+| 11.28 The `kind` rehearsal: running it, reading it, the last record *(written 2026-11-09, below)* | `P15-TSK-012` | `P15-TSK-012` |
 | 11.30 Abuse limits: the doors' per-source limits, a door that refuses everyone, a store that cannot count, raising a limit, rotating the bucket key *(written 2026-11-09, below)* | `P15-TSK-022` | `-032` |
 | 11.29 Key rotation and key compromise: the field-level key rings and the callback window *(written 2026-11-09, below)* | `P15-TSK-019` | `-020` |
 | 11.31 Changing configuration: which class, which way, and `ConfigFingerprintDisagrees` *(written 2026-11-09, below)* | `P15-TSK-031` | `-032` |
@@ -1895,6 +1896,7 @@ row.)*
 
 *(Added 2026-11-09 by `P15-TSK-005`: §11.1c below is written, the schema-compatibility steps of rows 11.1 and 11.3, and §11.4's compatibility half; not yet rehearsed.)*
 *(Added 2026-11-09 by `P15-TSK-035`: §11.27 below is written, from the census's code and its rules in `infra/prometheus/rules/correctness.yml`; not yet rehearsed.)*
+*(Added 2026-11-09 by `P15-TSK-012`: §11.28 below records the `kind` rehearsal. §11.1, §11.1.1's handler-window case, §11.1b, §11.1c and §11.26's `kind` half have now run on one cluster on one machine; §11.28 says what that does and does not mean.)*
 *(Added 2026-11-09 by `P15-TSK-019`: §11.29 below is written, from the ring's code and the two-step's checks; rotation has not run on a cluster or against a store, and `-020` rehearses it.)*
 
 *(Added 2026-11-09 by `P15-TSK-031`: §11.31 below is written, from the register, the overlays and `infra/prometheus/rules/platform.yml`; not yet rehearsed.)*
@@ -1903,8 +1905,7 @@ row.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
-*(Written by `P15-TSK-008`, 2026-11-08, from the code and its tests; **not yet rehearsed** - `P15-TSK-012` rehearses it
-on `kind`. The `preStop` pause and the grace period are `P15-TSK-009`'s manifest; the rest of §11.1 is the other tasks'
+*(Written by `P15-TSK-008`, 2026-11-08, from the code and its tests; **rehearsed on `kind`** by `P15-TSK-012`, 2026-11-09, §11.28. The `preStop` pause and the grace period are `P15-TSK-009`'s manifest; the rest of §11.1 is the other tasks'
 the table names.)*
 
 A pod is stopped by every rollout step, scale-down, eviction and node drain. **Nothing an operator does is needed for
@@ -1931,8 +1932,7 @@ is killed - the same as any kill, and as correct.
 
 ### 11.1.1 A release that changes the handler set, or an event's contract (`P15-TSK-027`)
 
-*(Written by `P15-TSK-027`, 2026-11-08, from the tests; **not yet rehearsed** - `P15-TSK-012` rehearses the handler-window
-case on `kind`. The audited replay it names is `P15-TSK-028`'s door.)*
+*(Written by `P15-TSK-027`, 2026-11-08, from the tests; **the handler-window case rehearsed on `kind`** by `P15-TSK-012`, 2026-11-09, §11.28. The audited replay it names is `P15-TSK-028`'s door.)*
 
 The build refuses a release whose events a consumer of the last release cannot read, and a release that changes who
 handles what with no recorded way through (`EVENT_ARCHITECTURE.md` §Schema evolution and §Adding a handler). What it
@@ -1942,13 +1942,13 @@ cannot do is run the step, so a release with an entry in `docs/events/release-re
 
 1. Note the instant the rolling update starts.
 2. Let the rollout complete: every replica on N. While it runs, an N − 1 replica acknowledges records of the type unseen.
-3. Note the instant it completes. Those two instants are the rollout window.
+3. Wait until no pod is terminating, and note that instant. `kubectl rollout status` returns once the last old pod is marked for deletion, and that pod still runs its `preStop` and its drain with its consumers polling, so an instant taken then leaves a tail acknowledged unseen and never replayed. The instant of step 1 and this one are the rollout window.
 4. Replay that one event type over that window through the audited replay. The inbox deduplicates what N already applied,
    so nothing is applied twice. The operator's reason names the release.
 5. Check that the replay's audit record names the type and the window.
 
 **A rollback** after step 2 has the same exposure from the other side: every record of the type the rollback window
-carries is acknowledged unseen by N − 1. After the re-roll, replay the type again over the rollback window. A window older
+carries is acknowledged unseen by N − 1. After the re-roll, once no pod is terminating, replay the type again over the rollback window, from the start of the rollback to that instant. A window older
 than the inbox's dedupe window is refused by the replay itself.
 
 **A handler removed** (the record's `replay` over `[rollback]`): nothing to do unless the release is rolled back. If it
@@ -1975,8 +1975,8 @@ version is being written.
 
 ### 11.1b Deploy — the bootstrap step and the migration Job (`P15-TSK-004`)
 
-*(Written by `P15-TSK-004`, 2026-11-08, from the image and its acceptance run; **not yet rehearsed on a cluster** -
-`P15-TSK-012` does that, with this task's Job contract in `DATA_MIGRATIONS.md` §2.1, and `-017` orders it before the rollout.
+*(Written by `P15-TSK-004`, 2026-11-08, from the image and its acceptance run; **rehearsed on a cluster** by `P15-TSK-012`, 2026-11-09, §11.28,
+with this task's Job contract in `DATA_MIGRATIONS.md` §2.1; `-017` orders it before the rollout.
 The commands here are the image's own; the manifest is `P15-TSK-009`'s.)*
 
 **Before the first release to a database, and again only when a release adds a role or changes a role's setting**, run the one-time bootstrap step
@@ -1999,8 +1999,8 @@ with no `command` of its own. One line per schema and a result line:
 
 ### 11.1c Deploy — schema compatibility across the rollout, and the way back (`P15-TSK-005`)
 
-*(Written by `P15-TSK-005`, 2026-11-09, from the code and its tests; **not yet rehearsed** - `P15-TSK-012` runs release N − 1 on
-release N's schema on `kind`. Promotion and its refusal are `P15-TSK-017`'s.)*
+*(Written by `P15-TSK-005`, 2026-11-09, from the code and its tests; **rehearsed on `kind`** by `P15-TSK-012`, 2026-11-09, §11.28, release N − 1 run on
+release N's schema. Promotion and its refusal are `P15-TSK-017`'s.)*
 
 **A replica that will not go ready.** Readiness answers `503` with `{"status":"OUT_OF_SERVICE"}` while any schema is older
 than the build expects, and until a read has first shown otherwise. So the rollout pauses at `maxUnavailable: 0`, and the old
@@ -2072,7 +2072,7 @@ else.
 exists, and the rehearsal is `-032`'s. The consumption and freshness objectives are `docs/architecture/SLOS.md`'s, and their burn-rate alerts §11.8's; the signals
 below exist today.*
 
-**The consumer signals** (`P15-TSK-025`). Two series name what a poll cannot otherwise say. **`finapp.inbox.poll.failures{outcome}`** counts every thrown consumer poll: `InboxPollFailing` (page) reads `failed`, sustained for 15 minutes, and `InboxPollRefused` (page) reads `refused`, for 5. **`finapp.inbox.consumer.evictions`** counts a commit the group refused because it had already evicted the member: `InboxConsumerEvicted` (ticket). `finapp.inbox.lag{module}` is what `InboxLagHigh` (ticket, over 1000 records in a group for 15 minutes) and `ConsumptionBurnFast` read; a group's lag is the sum of its members', and a consumer whose polls throw publishes NaN, never its last number.
+**The consumer signals** (`P15-TSK-025`). Two series name what a poll cannot otherwise say. **`finapp.inbox.poll.failures{outcome}`** counts every thrown consumer poll: `InboxPollFailing` (page) reads `failed`, sustained for 15 minutes, and `InboxPollRefused` (page) reads `refused`, for 5. **`finapp.inbox.consumer.evictions`** counts a commit the group refused because it had already evicted the member: `InboxConsumerEvicted` (ticket). **`finapp.inbox.commits.deferred`** counts a commit a rebalance refused, sent after the next poll *(added 2026-11-09, `P15-TSK-012`; no alert reads it yet)*: one is nothing, and a sustained rate is a group that keeps rebalancing with its committed offsets standing still. `finapp.inbox.lag{module}` is what `InboxLagHigh` (ticket, over 1000 records in a group for 15 minutes) and `ConsumptionBurnFast` read; a group's lag is the sum of its members', and a consumer whose polls throw publishes NaN, never its last number.
 
 **What is at stake.** Kafka carries hints, never truth (`INV-EVT-02`). While the broker is away nothing financial is lost
 or wrong: every event waits in the outbox in PostgreSQL, in its aggregate's order, and every consumer's place is its
@@ -2211,7 +2211,7 @@ There is no raw `UPDATE` in this procedure, and none is needed.
 
 1. **Choose the type and the window** of first publication, `[from, to)`, as instants. One command, one type, at most 1000
    events, all or nothing. More than that: narrow the window and repeat. Replay at volume is Phase 16's.
-2. **Order it** after the rollout completes: `POST /v1/operator/events/replays` `{eventType, from, to, reason}`, on a
+2. **Order it** after the rollout completes and no pod is terminating (§11.1.1, step 3): `POST /v1/operator/events/replays` `{eventType, from, to, reason}`, on a
    `MULTI_FACTOR` session (`outbox.EventReplayOrdered`). The receipt says how many were requeued, not delivered.
 3. **What to expect**: the events return to the outbox, so `finapp.outbox.pending` rises and falls, the age measured from the order;
    consumers that already applied them count `finapp.inbox.consumption{outcome="duplicate"}`, and only a consumer without a
@@ -2832,9 +2832,8 @@ message a second effect (`INV-IDEM-04`). The application role cannot, and an ope
 
 ### 11.26 The edge: two controllers, the generated route lists, a renewed certificate (`P15-TSK-011`)
 
-*(Written by `P15-TSK-011`, 2026-11-09, from the manifests and their checks. **Not yet rehearsed on a cluster** - `P15-TSK-012` runs the
-`kind` half. What is proven today is what `infra/scripts/edge-check.sh` proves: the pinned proxy, with the committed files, against a
-stand-in backend.)*
+*(Written by `P15-TSK-011`, 2026-11-09, from the manifests and their checks. **Its `kind` half rehearsed on a cluster** by `P15-TSK-012`, 2026-11-09, §11.28. What
+`infra/scripts/edge-check.sh` proves is the pinned proxy, with the committed files, against a stand-in backend.)*
 
 **What is there.** Two Deployments in `finapp-edge`, `finapp-edge-public` and `finapp-edge-operator`, each Traefik by digest (`deploy/edge/base/controllers.yaml`,
 held equal to `infra/scanner-pins.sh`), on the file provider. Neither calls the Kubernetes API or holds a token. Routes reach a controller only through
@@ -2899,6 +2898,59 @@ the controller pods do not start.
 **After a failover.** The table is unlogged, so a crash or failover empties it: every source has a fresh window, once per crash or failover. That is the cost of a counter that puts no row in the WAL. Nothing needs doing.
 
 **Size.** At most 65,537 rows per count per window, measured at about 14 MB per count-window including both indexes; a door counted per /48 as well has two counts. `finapp.retention.sweep.failed{type="window_counter"}` rising means ended windows are not leaving; the doors keep working and the table grows by at most that bound each window. See §11.15 for a failing sweep.
+
+### 11.28 The kind rehearsal: running it, reading it, the last record (`P15-TSK-012`)
+
+*(Written by `P15-TSK-012`, 2026-11-09. This is a record of a rehearsal, not a procedure for a deployed environment: nothing here has run anywhere but one `kind` cluster on one machine. Numbers are from the run named below, on a loaded development machine, and are not a capacity statement.)*
+
+**What it is.** `infra/scripts/kind-rehearsal.sh` deploys the platform as the `kind` overlay describes it onto one real API server (node image `KIND_NODE_VERSION` in `infra/scanner-pins.sh`, the minor the clusters declare) and walks a release through: the role bootstrap Job, the migrator Job, release N − 1 on its own schema, smoke, the network-policy, admission and edge acceptance suites, a replica of N started ahead of its Job (the hold), N's migrator, N − 1 on N's schema, a rolling update to N under a scripted workload, the fleet held at its connection budget with an operator tried, a payout held at the provider and the replica that sent it killed, a rollback by digest with one eviction mid-way, a re-roll. After each step it reads the financial census from PostgreSQL. It exits `0` when every assertion held, `1` when one failed, `2` when a step could not run.
+
+**What is generated, per run, and removed at exit.** A local CA and everything it signs (PostgreSQL's server certificate, the broker's keystore, the simulator's keystore), the application's truststore, every value of the four Secrets `infra/scripts/kind-secrets.sh` writes, and the SCRAM user. Nothing of it is ever under the repository, and `CommittedConfigurationHoldsNoSecretTest` holds the committed side.
+
+**N − 1 and N, until a release is cut.** No release exists (`docs/migrations/released-schema-floor.yaml`: `none`), so N is the tree under test and N − 1 is the newest first-parent commit before the last migration landed, older code on a genuinely older schema; `REHEARSAL_NMINUS1_REF` names another. N − 1 is further built without one handler, so that "a handler added in release N" is a real case rather than an assertion: this is the rehearsal's stand-in, and the first real release moves both definitions.
+
+**Run it.** Docker, `kind` (`KIND`, default `kind`), a JDK for Gradle, `openssl`, `git`. On a Docker Desktop machine whose Linux kernel has no `CONFIG_NFT_QUEUE`, kindnetd cannot enforce NetworkPolicy; set `REHEARSAL_POLICY_ENGINE=kube-router`, and the record will say which engine answered. On a machine whose TLS is intercepted, `REHEARSAL_CA_BUNDLE` names a bundle Helm and the node trust. `REHEARSAL_KEEP=1` leaves the cluster; the artefacts go to `build/rehearsal` (`REHEARSAL_ARTEFACTS`). CI's `rehearsal` job runs it on `master`, nightly and on a change to `deploy/` or the harness.
+
+**A red run.** `assertions.tsv` holds every assertion's verdict, `rehearsal.log` the timeline. A red census names the failing clause in `census-<step>.txt`; a red rollout keeps `pods-at-failure-<step>.txt`; `samples-<step>.tsv` is the connection count every two seconds and `reports-<step>.tsv` each replica's report.
+
+| Step | What it asserts |
+|---|---|
+| bootstrap, migrator | The roles created over `verify-full`; every migration applied to an empty database; `result=APPLIED` |
+| smoke | Register, authenticate, a card top-up (authorize and capture through the simulated provider), a transfer, a checkout to the merchant, a payout: every step checked, through the real edge |
+| network policy | A pod in the rehearsal's own namespace reaches neither port of a replica; the scrape reaches 8081 only and the edge's controller 8080 only; from a replica's own network namespace an unlisted address and listener time out while PostgreSQL and DNS (UDP and TCP) answer; the migrator reaches PostgreSQL and not Kafka; a pod no other policy selects is held by `default-deny` |
+| admission | A pod stating no requests refused by the LimitRange (`No request is specified`), a second container stating nothing by the quota (`must specify`), a complete pod admitted, a pod breaking only `restricted` refused by Pod Security |
+| edge | A customer route over TLS with HSTS, the client trusting the edge's local CA alone; an operator route `404` on the public host and answered on the operator host; cert-manager's expiry series scraped |
+| hold | A replica of N ahead of its Job: not ready, its log saying why, no consumer-group membership, nothing parked, its relay publishing nothing while a smoke runs through the fleet |
+| census (each step) | Trial balance zero per currency and per entry; one transfer per reference and one entry per transfer; one captured intent and one posting per card payment the client was told succeeded; one payout and one posting per payout; one capture key and one payout key at the provider for each; the wallets' total against what the client put in; no intent or payout left in flight; the outbox drained, nothing dead-lettered, nothing parked; no expired idempotency lease; every balance explained by the journal, on its account's normal side; every partition owned and none behind; no published event of a catalogued handler's type without its inbox record; GL = ledger (the application's own `agrees` for the month, with the reference chart activated by two persons); the fleet on TLS. A census printing fewer verdicts than it has clauses is red |
+| rollout | Zero failed requests across it, every flow of the workload doing work; ready replicas never below three; the peak of `pg_stat_activity` for the fleet at most `instances x pool`, every sample at most eight for each pod, a report generated on each replica so that all eight open; an operator admitted at the peak; a window that closes only when no pod is terminating |
+| handler window | The records of the added handler's event that N − 1 committed unseen, counted; the audited replay over the window; every event of the window then applied exactly once; at the end, nothing of the type since N's first rollout began left unseen, in the windows or out of them |
+| budget's ceiling | The fleet held at exactly `instances x pool` connections, and an operator admitted while it is |
+| forged address | Five requests at the recovery door, each forging a different `X-Forwarded-For`, counted in one per-source bucket; a second real client at another address in a second: the key is the address the controller saw, and the door's count is read from `platform.window_counter` |
+| pod kill | A payout held at the provider after its effect, the replica that sent it killed with its claim `IN_PROGRESS`; requests retried with the same key until they resolve, each counted, a kill with no failed attempt being not exercised; the claim completed by another replica; the budget and an operator as for a rollout; another replica holding every partition; no lag, read from the broker's own offsets |
+
+**The last record.** 2026-11-09, one run of the whole sequence on a fresh cluster, both images built in the run, on one development machine: `kind` v0.33.0, node `v1.34.11`, kube-router as the policy engine (this machine's kernel has no nft queue), release N the merged tree `18326010`, N − 1 `740c87bf` built without the capture hint. 75 assertions held, none failed; each step's census was green.
+
+| Step | Measured |
+|---|---|
+| Migrator | N − 1: `result=APPLIED schemas=21 applied=329`, on an empty database. N: `applied=13`, on N − 1's schema; a surge replica of N stayed held until it had run |
+| Rolling update, N − 1 to N | 398 s to the last old pod gone; 878 requests succeeded, 0 failed, none unresolved; peak 39 connections of the budget 48, no sample above eight for each pod; an operator admitted at the peak; three replicas ready throughout; the settled fleet holding 24 connections, every reporting pool open |
+| Handler window | 166 of 331 `payments.PaymentCaptured` records committed unseen by N − 1, the window closed once no pod was terminating; after the audited replay each applied exactly once |
+| Forged address | Five forged `X-Forwarded-For` values at the recovery door: one bucket, counted five times; a second real client: a second bucket |
+| The budget's ceiling | The fleet held at 48 connections by sessions named as its own: an operator admitted, 49 client connections of the server's 60 |
+| Pod kill, force and no grace | A payout held at the provider after its effect, the replica that sent it killed with its claim `IN_PROGRESS`: 108 requests succeeded, 17 attempts failed and were retried with the same key, none unresolved; the claim taken over and completed by another replica, one payout key at the provider; peak 24, an operator admitted at it; every partition owned, none behind |
+| Rollback by digest, an eviction mid-way | 402 s; 862 requests succeeded, 0 failed; peak 39, an operator admitted at it |
+| Re-roll to N | 401 s; 869 succeeded, 0 failed; peak 39; a replica answers the scrape after traffic; the rollback window's 343 of 674 records each applied exactly once |
+| The whole run | Nothing of that type published since N's first rollout began left unseen, inside the two windows or outside them |
+
+**Two defects it found, both fixed.** The first scrape under traffic answered `500`: the SLO filter gave one route's timer a histogram and another's a summary under one name, which the Prometheus registry cannot hold (`SloLatencyBuckets` now gives every `http.server.requests` timer the boundary). After the pod kill one partition stayed one record behind for as long as no record arrived: an offset commit refused during a rebalance was not retried (`KafkaEventReceiver` now sends it after the next poll, for a partition this member still holds). Neither moved money: a record whose offset was never acknowledged is redelivered into the dedupe.
+
+**What the budget measured.** Each replica generates one report, so that its reporting pool opens and all eight of its connections count: without that a replica holds seven, and the eighth is never measured. (A provisional report's freshness is one second in this overlay, or the first report would answer all the others.) The peak is held to `instances x pool`, and each sample to eight for each pod it had. At three replicas the shipped rollout reached five pods at most in these runs. With `minReadySeconds: 0` and a long `preStop` it reaches six, the formula's maximum, and what stops a seventh is the `kind` overlay's `ResourceQuota`, which equals the formula, not the rollout. With that quota raised by one pod and a new pod evicted while the three old ones drain, 56 connections went past the budget of 48 and the run went red at its peak assertion.
+
+**Read from it rather than asserted.** Pods reaching Ready under `default-deny` with no rule naming the kubelet is this environment's evidence that node traffic is admitted. The zero failed requests through the edge across each rollout are what measure `maxIdleConnsPerHost: -1`, a new connection through the Service per request.
+
+**What this does not mean.** One node, one machine, three replicas plus a surge: load, chaos and ten instances are the storm's (`P15-TST-001`, postponed by the owner). The broker and the database are test-only copies. kindnetd has not answered yet: `THREAT_MODEL.md` section 6 item 30. No Prometheus runs in the cluster: cert-manager's series and a replica's scrape are read once by the rehearsal's own pod. The cooperative assignor's moving only what changes hands is counted by a test of the broker tier owed to `P15-TST-002`, and a refused broker credential failing readiness was not exercised. T40's acceptance rows were not created, because an offer needs the origination chain the rehearsal does not build: the forged address is measured on the per-source key, the same `request.getRemoteAddr()`. The numbers are from a loaded development machine.
+
+**CI's runner.** Nothing has run there. `ubuntu-latest` on a public repository is, by GitHub's published figures, 4 vCPUs and 16 GB. The application namespace's quota is 8 GiB, and the rest of the cluster comes on top of it (the node's own components, cert-manager, both edge controllers, the simulator, the client's JVM), so it should fit with little to spare, and a 7 GB runner would not. The job's first run is the test. It sits inside the workflow's `concurrency` group: a run in progress on `master` is not cancelled, but a newer push replaces one still waiting, so a rehearsal can be skipped between two pushes and the nightly run is what covers it.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

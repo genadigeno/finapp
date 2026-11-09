@@ -101,13 +101,17 @@ class NamespaceSecurityManifestsTest {
         for (String overlay : OVERLAYS) {
             String postgresql = REAL_OVERLAYS.contains(overlay) ? "TCP/5432 to 192.0.2.0/24" : "TCP/5432 to local finapp-postgres";
             String kafka = REAL_OVERLAYS.contains(overlay) ? "TCP/9096 to 198.51.100.0/24" : "TCP/9092 to local finapp-kafka";
-            assertThat(egress(overlay, APP)).as(overlay).containsExactlyInAnyOrder(
+            List<String> flows = new ArrayList<>(List.of(
                     "UDP/53 to kube-system k8s-app=kube-dns",
                     "TCP/53 to kube-system k8s-app=kube-dns",
                     "TCP/4318 to finapp-observability finapp/role=telemetry-collector",
                     postgresql,
                     kafka,
-                    "TCP/443 to 203.0.113.0/24");
+                    "TCP/443 to 203.0.113.0/24"));
+            if (!REAL_OVERLAYS.contains(overlay)) {
+                flows.add("TCP/8443 to finapp-rehearsal finapp/role=provider-simulator");
+            }
+            assertThat(egress(overlay, APP)).as(overlay).containsExactlyInAnyOrderElementsOf(flows);
         }
     }
 
@@ -530,13 +534,18 @@ class NamespaceSecurityManifestsTest {
 
     @SuppressWarnings("unchecked")
     private static void apply(Map<String, Object> doc, Map<?, ?> operation) {
-        assertThat(operation.get("op")).as("this test applies replace alone").isEqualTo("replace");
+        assertThat(operation.get("op")).as("this test applies replace, and add at the end of a list").isIn("replace", "add");
         String[] steps = String.valueOf(operation.get("path")).substring(1).split("/");
         Object current = doc;
         for (int index = 0; index < steps.length - 1; index++) {
             current = current instanceof List<?> items ? items.get(Integer.parseInt(steps[index])) : ((Map<String, Object>) current).get(steps[index]);
         }
         String last = steps[steps.length - 1];
+        if ("add".equals(operation.get("op"))) {
+            assertThat(last).as("%s: only an append to a list", operation.get("path")).isEqualTo("-");
+            ((List<Object>) current).add(operation.get("value"));
+            return;
+        }
         assertThat(((Map<String, Object>) current)).as("%s exists to be replaced", operation.get("path")).containsKey(last);
         ((Map<String, Object>) current).put(last, operation.get("value"));
     }

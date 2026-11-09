@@ -77,11 +77,11 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.abuse.recovery.limit` | `FINAPP_ABUSE_RECOVERY_LIMIT` | OPERATIONAL | `10` | default | overlay | default | default | default | - |
 | `finapp.abuse.recovery.site-limit` | `FINAPP_ABUSE_RECOVERY_SITE_LIMIT` | OPERATIONAL | `100` | default | overlay | default | default | default | - |
 | `finapp.abuse.recovery.window` | `FINAPP_ABUSE_RECOVERY_WINDOW` | OPERATIONAL | `PT1H` | default | default | default | default | default | - |
-| `finapp.abuse.registration.limit` | `FINAPP_ABUSE_REGISTRATION_LIMIT` | OPERATIONAL | `10` | default | overlay | default | default | default | - |
-| `finapp.abuse.registration.site-limit` | `FINAPP_ABUSE_REGISTRATION_SITE_LIMIT` | OPERATIONAL | `100` | default | overlay | default | default | default | - |
+| `finapp.abuse.registration.limit` | `FINAPP_ABUSE_REGISTRATION_LIMIT` | OPERATIONAL | `10` | default | overlay | overlay | default | default | - |
+| `finapp.abuse.registration.site-limit` | `FINAPP_ABUSE_REGISTRATION_SITE_LIMIT` | OPERATIONAL | `100` | default | overlay | overlay | default | default | - |
 | `finapp.abuse.registration.window` | `FINAPP_ABUSE_REGISTRATION_WINDOW` | OPERATIONAL | `PT1H` | default | default | default | default | default | - |
-| `finapp.abuse.sign-in.limit` | `FINAPP_ABUSE_SIGN_IN_LIMIT` | OPERATIONAL | `100` | default | overlay | default | default | default | - |
-| `finapp.abuse.sign-in.site-limit` | `FINAPP_ABUSE_SIGN_IN_SITE_LIMIT` | OPERATIONAL | `1000` | default | overlay | default | default | default | - |
+| `finapp.abuse.sign-in.limit` | `FINAPP_ABUSE_SIGN_IN_LIMIT` | OPERATIONAL | `100` | default | overlay | overlay | default | default | - |
+| `finapp.abuse.sign-in.site-limit` | `FINAPP_ABUSE_SIGN_IN_SITE_LIMIT` | OPERATIONAL | `1000` | default | overlay | overlay | default | default | - |
 | `finapp.abuse.sign-in.window` | `FINAPP_ABUSE_SIGN_IN_WINDOW` | OPERATIONAL | `PT15M` | default | default | default | default | default | - |
 | `finapp.abuse.sweep.batch-size` | `FINAPP_ABUSE_SWEEP_BATCHSIZE` | OPERATIONAL | `1000` | default | default | default | default | default | - |
 | `finapp.abuse.sweep.grace` | `FINAPP_ABUSE_SWEEP_GRACE` | OPERATIONAL | `PT1M` | default | default | default | default | default | - |
@@ -114,7 +114,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.accounting.report.max-attempts` | `FINAPP_ACCOUNTING_REPORT_MAXATTEMPTS` | OPERATIONAL | `5` | default | default | default | default | default | - |
 | `finapp.accounting.report.operational-permits` | `FINAPP_ACCOUNTING_REPORT_OPERATIONALPERMITS` | OPERATIONAL | `2` | default | default | default | default | default | - |
 | `finapp.accounting.report.operational-timeout` | `FINAPP_ACCOUNTING_REPORT_OPERATIONALTIMEOUT` | OPERATIONAL | `PT30S` | default | default | default | default | default | - |
-| `finapp.accounting.report.provisional-freshness` | `FINAPP_ACCOUNTING_REPORT_PROVISIONALFRESHNESS` | FINANCIAL | `PT15M` | default | default | default | default | default | Decides only whether a `PROVISIONAL` run is reused or run again. A provisional report is labelled with its own cut and is never an input to a posting, a close or a `FINAL` return, so a replica with the shorter bound runs once more and one with the longer serves an older cut that says so. |
+| `finapp.accounting.report.provisional-freshness` | `FINAPP_ACCOUNTING_REPORT_PROVISIONALFRESHNESS` | FINANCIAL | `PT15M` | default | default | overlay | default | default | Decides only whether a `PROVISIONAL` run is reused or run again. A provisional report is labelled with its own cut and is never an input to a posting, a close or a `FINAL` return, so a replica with the shorter bound runs once more and one with the longer serves an older cut that says so. |
 | `finapp.accounting.source-census.batch` | `FINAPP_ACCOUNTING_SOURCECENSUS_BATCH` | OPERATIONAL | `200` | default | default | default | default | default | - |
 | `finapp.accounting.source-census.enabled` | `FINAPP_ACCOUNTING_SOURCECENSUS_ENABLED` | OPERATIONAL | `true` | default | overlay | default | default | default | - |
 | `finapp.accounting.source-census.interval` | `FINAPP_ACCOUNTING_SOURCECENSUS_INTERVAL` | OPERATIONAL | `PT1M` | default | default | default | default | default | - |
@@ -218,8 +218,8 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.kafka.ack-timeout` | `FINAPP_KAFKA_ACKTIMEOUT` | OPERATIONAL | `PT10S` | default | default | default | default | default | - |
 | `finapp.kafka.bootstrap-servers` | `FINAPP_KAFKA_BOOTSTRAPSERVERS` | OPERATIONAL | (loopback) | default | default | generated | store | store | - |
 | `finapp.kafka.sasl.username` | `FINAPP_KAFKA_SASL_USERNAME` | OPERATIONAL | (blank) | default | default | generated | store | store | - |
-| `finapp.kafka.security-protocol` | `FINAPP_KAFKA_SECURITYPROTOCOL` | OPERATIONAL | `PLAINTEXT` | default | default | default | overlay | overlay | - |
-| `finapp.kafka.ssl.truststore-location` | `FINAPP_KAFKA_SSL_TRUSTSTORELOCATION` | OPERATIONAL | (blank) | default | default | default | default | default | - |
+| `finapp.kafka.security-protocol` | `FINAPP_KAFKA_SECURITYPROTOCOL` | OPERATIONAL | `PLAINTEXT` | default | default | overlay | overlay | overlay | - |
+| `finapp.kafka.ssl.truststore-location` | `FINAPP_KAFKA_SSL_TRUSTSTORELOCATION` | OPERATIONAL | (blank) | default | default | overlay | default | default | - |
 | `finapp.kyc.callback.previous.valid-until` | `FINAPP_KYC_CALLBACK_PREVIOUS_VALIDUNTIL` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.kyc.counterparty.batch` | `FINAPP_KYC_COUNTERPARTY_BATCH` | OPERATIONAL | `20` | default | default | default | default | default | - |
 | `finapp.kyc.counterparty.poll` | `FINAPP_KYC_COUNTERPARTY_POLL` | OPERATIONAL | `PT30S` | default | default | default | default | default | - |
@@ -258,7 +258,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.merchant.payout.evidence.ring.active-version` | `FINAPP_MERCHANT_PAYOUT_EVIDENCE_RING_ACTIVEVERSION` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.merchant.payout.evidence.ring.retired-versions` | `FINAPP_MERCHANT_PAYOUT_EVIDENCE_RING_RETIREDVERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.merchant.payout.evidence.ring.versions` | `FINAPP_MERCHANT_PAYOUT_EVIDENCE_RING_VERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
-| `finapp.merchant.payout.provider.timeout` | `FINAPP_MERCHANT_PAYOUT_PROVIDER_TIMEOUT` | OPERATIONAL | `PT2S` | default | default | default | default | default | - |
+| `finapp.merchant.payout.provider.timeout` | `FINAPP_MERCHANT_PAYOUT_PROVIDER_TIMEOUT` | OPERATIONAL | `PT2S` | default | default | overlay | default | default | - |
 | `finapp.merchant.payout.provider.url` | `FINAPP_MERCHANT_PAYOUT_PROVIDER_URL` | FINANCIAL | (none) | default | overlay | default | default | default | A rail exists on a replica exactly when this is set. Set on one replica and not another, a command reaching the one without it is refused and retried, and a callback there is refused and redelivered, so nothing moves on half a configuration, and the provider's idempotency key covers a retry that reaches the other replica. Absent in every environment until a real provider exists. |
 | `finapp.merchant.payout.return.sweeper.batch` | `FINAPP_MERCHANT_PAYOUT_RETURN_SWEEPER_BATCH` | OPERATIONAL | `50` | default | default | default | default | default | - |
 | `finapp.merchant.payout.return.sweeper.enabled` | `FINAPP_MERCHANT_PAYOUT_RETURN_SWEEPER_ENABLED` | OPERATIONAL | `true` | default | overlay | default | default | default | - |
@@ -275,7 +275,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.outbox.poll-interval` | `FINAPP_OUTBOX_POLLINTERVAL` | OPERATIONAL | `PT1S` | default | default | default | default | default | - |
 | `finapp.outbox.relay.enabled` | `FINAPP_OUTBOX_RELAY_ENABLED` | OPERATIONAL | `true` | default | overlay | default | default | default | - |
 | `finapp.outbox.retention` | `FINAPP_OUTBOX_RETENTION` | OPERATIONAL | `P30D` | default | default | default | default | default | - |
-| `finapp.paymentmethods.tokenisation.timeout` | `FINAPP_PAYMENTMETHODS_TOKENISATION_TIMEOUT` | OPERATIONAL | `PT2S` | default | default | default | default | default | - |
+| `finapp.paymentmethods.tokenisation.timeout` | `FINAPP_PAYMENTMETHODS_TOKENISATION_TIMEOUT` | OPERATIONAL | `PT2S` | default | default | overlay | default | default | - |
 | `finapp.paymentmethods.tokenisation.url` | `FINAPP_PAYMENTMETHODS_TOKENISATION_URL` | FINANCIAL | (none) | default | default | default | default | default | Where a card or payout destination is tokenised. A replica without it answers the honest unavailable error and takes no data, so a mix refuses on one replica what another completes; a retry reaches a replica that can. Absent in every environment until a real provider exists. |
 | `finapp.payments.callback-hint.batch` | `FINAPP_PAYMENTS_CALLBACKHINT_BATCH` | OPERATIONAL | `50` | default | default | default | default | default | - |
 | `finapp.payments.callback-hint.first-ask` | `FINAPP_PAYMENTS_CALLBACKHINT_FIRSTASK` | OPERATIONAL | `PT1M` | default | default | default | default | default | - |
@@ -321,7 +321,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.payments.payin.sweeper.enabled` | `FINAPP_PAYMENTS_PAYIN_SWEEPER_ENABLED` | OPERATIONAL | `true` | default | overlay | default | default | default | - |
 | `finapp.payments.payin.sweeper.initiation-age` | `FINAPP_PAYMENTS_PAYIN_SWEEPER_INITIATIONAGE` | OPERATIONAL | `PT2M` | default | default | default | default | default | - |
 | `finapp.payments.payin.sweeper.poll` | `FINAPP_PAYMENTS_PAYIN_SWEEPER_POLL` | OPERATIONAL | `PT30S` | default | default | default | default | default | - |
-| `finapp.payments.provider.timeout` | `FINAPP_PAYMENTS_PROVIDER_TIMEOUT` | OPERATIONAL | `PT2S` | default | default | default | default | default | - |
+| `finapp.payments.provider.timeout` | `FINAPP_PAYMENTS_PROVIDER_TIMEOUT` | OPERATIONAL | `PT2S` | default | default | overlay | default | default | - |
 | `finapp.payments.provider.url` | `FINAPP_PAYMENTS_PROVIDER_URL` | FINANCIAL | (none) | default | overlay | default | default | default | A rail exists on a replica exactly when this is set. Set on one replica and not another, a command reaching the one without it is refused and retried, and a callback there is refused and redelivered, so nothing moves on half a configuration, and the provider's idempotency key covers a retry that reaches the other replica. Absent in every environment until a real provider exists. |
 | `finapp.payments.return.sweeper.batch` | `FINAPP_PAYMENTS_RETURN_SWEEPER_BATCH` | OPERATIONAL | `25` | default | default | default | default | default | - |
 | `finapp.payments.return.sweeper.dispatched-age` | `FINAPP_PAYMENTS_RETURN_SWEEPER_DISPATCHEDAGE` | OPERATIONAL | `PT2M` | default | default | default | default | default | - |

@@ -1,0 +1,9 @@
+# The rehearsal's cluster: one node, the Kubernetes minor the Terraform roots declare, kind's default pod subnet because the overlay's
+# FINAPP_EDGE_PROXIES is that value, and the default CNI, kindnetd, which enforces NetworkPolicy from kind v0.24.0. The application's
+# images are loaded before the pods that name them.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  podSubnet: 10.244.0.0/16
+nodes:
+  - role: control-plane

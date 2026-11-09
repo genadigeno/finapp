@@ -1,0 +1,82 @@
+# The one-time role bootstrap (DATA_MIGRATIONS.md section 2.2), rehearsed as a Job of the migrator image with its command overridden.
+# Only this object holds the master credential. It is never rendered by an overlay: it runs before the first migration Job and once,
+# by the rehearsal, from the local CA at sslmode=verify-full. Labelled as the migrator so that its NetworkPolicies are the migrator's.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: finapp-role-bootstrap
+  namespace: finapp
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-migrator
+        app.kubernetes.io/part-of: finapp
+    spec:
+      restartPolicy: Never
+      serviceAccountName: finapp-migrator
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # A policy engine that programs a new pod's address asynchronously (kube-router, where it stands in for kindnetd) can leave the first
+      # seconds of a pod unreachable to its peers, and the role bootstrap has no retry loop of its own: nothing in this pod runs before PostgreSQL answers it.
+      initContainers:
+        - name: wait-for-postgres
+          image: PROBE_IMAGE
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "until nc -z -w 3 finapp-postgres.finapp.svc.cluster.local 5432; do sleep 1; done"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      containers:
+        - name: bootstrap
+          image: MIGRATOR_IMAGE
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/bin/java", "-cp", "/migrator/lib/*", "com.finapp.migrator.RoleBootstrapMain"]
+          envFrom:
+            - secretRef:
+                name: finapp-kind-bootstrap
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: local-ca
+              mountPath: /etc/finapp-local-ca
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: local-ca
+          secret:
+            secretName: finapp-kind-local-ca

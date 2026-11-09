@@ -5,8 +5,23 @@
 # capability dropped, and reached ready. Mounted at /var/lib/postgresql rather than /var/lib/postgresql/data, as
 # compose.yaml explains for PostgreSQL 18.
 #
-# TLS from the local CA, the migrator's roles and the generated password are the rehearsal's to supply: the
-# Secret below is generated per run and never committed.
+# TLS: the server's certificate and key come from the rehearsal's local CA, in the Secret finapp-kind-postgres-tls, generated per
+# run and never committed (infra/scripts/kind-rehearsal.sh), so the application and the migrator run at sslmode=verify-full against
+# a real handshake. Over the network only hostssl is admitted: a client that did not bring up TLS is refused, so "the fleet is on
+# TLS" is a fact the server enforces, not a setting. The socket inside the pod stays open to the bootstrap image and the census.
+#
+# The role initialisation is the bootstrap Job's (DATA_MIGRATIONS.md section 2.2) and the generated password is finapp-kind-postgres.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finapp-kind-postgres-hba
+  labels:
+    finapp/test-only: "true"
+data:
+  pg_hba.conf: |
+    local all all trust
+    hostssl all all all scram-sha-256
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -64,6 +79,14 @@ spec:
           args:
             - -c
             - max_connections=60
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/etc/finapp-postgres-tls/tls.crt
+            - -c
+            - ssl_key_file=/etc/finapp-postgres-tls/tls.key
+            - -c
+            - hba_file=/etc/finapp-postgres-hba/pg_hba.conf
           ports:
             - name: postgres
               containerPort: 5432
@@ -113,6 +136,12 @@ spec:
               mountPath: /var/run/postgresql
             - name: tmp
               mountPath: /tmp
+            - name: tls
+              mountPath: /etc/finapp-postgres-tls
+              readOnly: true
+            - name: hba
+              mountPath: /etc/finapp-postgres-hba
+              readOnly: true
       volumes:
         - name: data
           emptyDir: {}
@@ -120,3 +149,12 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        # 0440 and group 999 through fsGroup: PostgreSQL accepts a key the group can read only when root owns it, which a
+        # projected Secret file is.
+        - name: tls
+          secret:
+            secretName: finapp-kind-postgres-tls
+            defaultMode: 288
+        - name: hba
+          configMap:
+            name: finapp-kind-postgres-hba

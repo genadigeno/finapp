@@ -38,6 +38,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.AuthorizationException;
+import org.apache.kafka.common.errors.RebalanceInProgressException;
 import org.apache.kafka.common.errors.SslAuthenticationException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.header.Header;
@@ -245,6 +246,9 @@ public final class KafkaEventReceiver implements AutoCloseable {
     /** The last poll's lag: written and read by the one loop thread that polls, volatile for a test's reading. */
     private volatile OptionalLong lag = OptionalLong.empty();
 
+    /** Settled offsets a rebalance refused, sent after the next poll: only the one loop thread that polls touches it. */
+    private final Map<TopicPartition, OffsetAndMetadata> owedAcknowledgements = new HashMap<>();
+
     /**
      * Over any consumer, unsubscribed — the test seam ({@code MockConsumer}, a decorated real
      * consumer). Production goes through {@link #connect}, which is where subscription happens.
@@ -375,17 +379,53 @@ public final class KafkaEventReceiver implements AutoCloseable {
                 acknowledged.put(partition, new OffsetAndMetadata(record.offset() + 1));
             }
         }
-        if (!acknowledged.isEmpty()) {
+        int deferred = acknowledge(acknowledged) ? 1 : 0;
+        return new ReceiverPollResult(processed, duplicates, contended, failed, parked, deferred);
+    }
+
+    /**
+     * Sends a batch's acknowledgements, with any a rebalance refused earlier. A commit refused mid-rebalance leaves this
+     * member in its group and, under the cooperative assignor, usually still holding the partition with its position past
+     * the record, so nothing would ever send that offset again: on a quiet partition the group would read one record behind
+     * until the next record arrived, and a redelivery of it would be waiting at the next hand-over (found by the pod kill on
+     * a real broker, `P15-TSK-012`). The offsets are kept and sent after the next poll, the call that finishes the rebalance,
+     * whether or not it returned a record. A partition the rebalance moved away is dropped: its next owner redelivers into
+     * the dedupe, and an offset sent from here could overwrite that owner's.
+     *
+     * <p>No rebalance listener is registered, so a partition lost and regained inside one poll looks held and keeps its offset.
+     * Sent then, that is a commit backward at worst: the partition's records past it were settled by someone, and they redeliver
+     * into the dedupe. It cannot move an offset past a record nobody settled, because this member settled everything below it.
+     *
+     * <p>Only a rebalance's refusal is owed. Any other failure, a broker that has gone among them, forgets the offsets and leaves
+     * as it left before: they redeliver into the dedupe, and an empty poll does not sit in {@code commitSync} for the API timeout
+     * retrying them.
+     *
+     * @return whether a rebalance refused this commit, so that it waits for the next poll
+     */
+    private boolean acknowledge(Map<TopicPartition, OffsetAndMetadata> settled) {
+        owedAcknowledgements.keySet().retainAll(consumer.assignment());
+        owedAcknowledgements.putAll(settled);
+        if (owedAcknowledgements.isEmpty()) {
+            return false;
+        }
+        try {
             try {
-                consumer.commitSync(acknowledged);
+                consumer.commitSync(owedAcknowledgements);
             } catch (WakeupException stopping) {
                 // A stop woke this consumer while it settled (`P15-TSK-008`): the wakeup was meant for a poll, and is
                 // spent by this throw. The records above are settled - their effects committed - so their acknowledgement
                 // is still theirs to send, or the partition's next owner redelivers the whole batch into the dedupe.
-                consumer.commitSync(acknowledged);
+                consumer.commitSync(owedAcknowledgements);
             }
+            owedAcknowledgements.clear();
+            return false;
+        } catch (RebalanceInProgressException rebalancing) {
+            log.info("A rebalance refused the offset commit on {}: sent after the next poll", groupId);
+            return true;
+        } catch (RuntimeException failed) {
+            owedAcknowledgements.clear();
+            throw failed;
         }
-        return new ReceiverPollResult(processed, duplicates, contended, failed, parked);
     }
 
     private Delivery deliver(ConsumerRecord<String, byte[]> record) {
