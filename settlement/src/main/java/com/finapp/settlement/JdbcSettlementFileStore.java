@@ -31,6 +31,7 @@ import java.util.UUID;
  * decrypts every chunk under the same binding, reassembles, and verifies the whole plaintext
  * against the stored address before serving one byte ({@code INV-HIST-02}).
  */
+@lombok.extern.slf4j.Slf4j
 public final class JdbcSettlementFileStore implements SettlementFileStore<Connection> {
 
     /** The 1 MiB provider-evidence bound, per chunk (ADR-0066 §6). */
@@ -458,9 +459,10 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
             UUID sourceId;
             byte[] declaredSha;
             int declaredLength;
+            int keyVersion;
             try (PreparedStatement read =
                     unitOfWork.prepareStatement(
-                            "SELECT source_id, content_sha256, content_length"
+                            "SELECT source_id, content_sha256, content_length, key_version"
                                     + " FROM settlement.file WHERE id = ?")) {
                 read.setObject(1, fileId);
                 try (ResultSet row = read.executeQuery()) {
@@ -471,7 +473,15 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
                     sourceId = row.getObject("source_id", UUID.class);
                     declaredSha = row.getBytes("content_sha256");
                     declaredLength = row.getInt("content_length");
+                    keyVersion = row.getInt("key_version");
                 }
+            }
+            if (!cipher.holdsVersion(keyVersion)) {
+                // Named apart from tampering: nothing is decrypted to find this out, and "failed authenticated
+                // decryption" would misname a key this instance was never given. Its own type, so an operator read
+                // does not record an intact file as corrupt; the number here, because this path never reaches the ring.
+                log.warn("settlement file {} is stamped with key version {}, which this instance's ring does not hold", fileId, keyVersion);
+                throw new SettlementKeyVersionNotHeldException(fileId, keyVersion);
             }
             ByteArrayOutputStream plaintext = new ByteArrayOutputStream(declaredLength);
             try (PreparedStatement read =
@@ -498,7 +508,8 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
                                                     rows.getBytes("ciphertext"),
                                                     rows.getBytes("nonce")),
                                             SettlementFileCipher.associatedData(
-                                                    fileId, sourceId, declaredSha, seq));
+                                                    fileId, sourceId, declaredSha, seq),
+                                            keyVersion);
                         } catch (IllegalStateException tampered) {
                             // Tampering, a transplanted chunk and the wrong key are one
                             // indistinguishable failure - and none serves a byte.

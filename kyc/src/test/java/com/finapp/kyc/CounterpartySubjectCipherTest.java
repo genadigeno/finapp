@@ -85,4 +85,75 @@ class CounterpartySubjectCipherTest {
         assertThatThrownBy(() -> new CounterpartySubjectCipher(new byte[16], 1, new SecureRandom()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    private static final CounterpartyScreeningId GOLDEN_SCREENING =
+            CounterpartyScreeningId.of(java.util.UUID.fromString("01890000-0000-7000-8000-00000000c001"));
+
+    // ---------------------------------------------------------------- key rings (P15-TSK-019)
+
+    /**
+     * Bytes this class wrote before key rings existed: produced by the code on master 6a1e9626 from the fixture key below and a
+     * fixed nonce, so a change to the ciphertext's format, or a read that stops using the stamp, goes red here. Not a real key.
+     */
+    private static final String RING_GOLDEN_NONCE = "232323232323232323232323";
+
+    private static final String RING_GOLDEN_CIPHERTEXT = "b14a983ab2b436d00cc14af48edaf9ef4db8b8db5d046e5f2f90434ab289fe6dad4e73721c9578d1c829";
+
+    private static byte[] ringKey(int fill) {
+        byte[] key = new byte[32];
+        java.util.Arrays.fill(key, (byte) fill);
+        return key;
+    }
+
+    private static com.finapp.platform.security.KeyRing rotatedRing(int active) {
+        return com.finapp.platform.security.KeyRing.of(
+                "test key", java.util.Map.of(1, ringKey(0x13), 2, ringKey(0x41)), active, java.util.Set.of());
+    }
+
+    private static CounterpartySubjectCipher.Encrypted writtenBeforeRings() {
+        return new CounterpartySubjectCipher.Encrypted(
+                java.util.HexFormat.of().parseHex(RING_GOLDEN_CIPHERTEXT), java.util.HexFormat.of().parseHex(RING_GOLDEN_NONCE), 1);
+    }
+
+    @Test
+    @DisplayName("a row written before key rings existed decrypts unchanged, under a ring of one (the code on master, 6a1e9626)")
+    void aRowWrittenBeforeRingsDecryptsUnderARingOfOne() {
+        CounterpartySubjectCipher cipher = new CounterpartySubjectCipher(ringKey(0x13), 1, new java.security.SecureRandom());
+        assertThat(cipher.decrypt(GOLDEN_SCREENING, writtenBeforeRings())).isEqualTo("golden vector counterparty");
+    }
+
+    @Test
+    @DisplayName("a v1 row is read under version 1 after rotation to version 2: the stamp decides, never the active version")
+    void aV1RowIsReadUnderItsStampAfterRotation() {
+        CounterpartySubjectCipher cipher = new CounterpartySubjectCipher(rotatedRing(2), new java.security.SecureRandom());
+        assertThat(cipher.decrypt(GOLDEN_SCREENING, writtenBeforeRings())).isEqualTo("golden vector counterparty");
+    }
+
+    @Test
+    @DisplayName("new rows are written under the active version: version 1 before activation, version 2 after, each readable by every replica holding both")
+    void newRowsAreWrittenUnderTheActiveVersion() {
+        CounterpartySubjectCipher before = new CounterpartySubjectCipher(rotatedRing(1), new java.security.SecureRandom());
+        CounterpartySubjectCipher after = new CounterpartySubjectCipher(rotatedRing(2), new java.security.SecureRandom());
+
+        CounterpartySubjectCipher.Encrypted writtenBefore = before.encrypt(GOLDEN_SCREENING, "a later counterparty");
+        CounterpartySubjectCipher.Encrypted writtenAfter = after.encrypt(GOLDEN_SCREENING, "a later counterparty");
+
+        assertThat(writtenBefore.keyVersion()).as("a known version stays unused until it is activated").isEqualTo(1);
+        assertThat(writtenAfter.keyVersion()).as("the active pointer decides the version written").isEqualTo(2);
+        assertThat(after.decrypt(GOLDEN_SCREENING, writtenAfter)).isEqualTo("a later counterparty");
+        assertThat(before.decrypt(GOLDEN_SCREENING, writtenAfter)).as("a replica not yet activated reads its neighbour's new row").isEqualTo("a later counterparty");
+        assertThat(after.decrypt(GOLDEN_SCREENING, writtenBefore)).as("an activated replica reads an old row").isEqualTo("a later counterparty");
+    }
+
+    @Test
+    @DisplayName("a row stamped with a version the ring does not hold is refused, even when the active key could read it")
+    void anUnknownStampedVersionIsRefused() {
+        CounterpartySubjectCipher cipher = new CounterpartySubjectCipher(rotatedRing(1), new java.security.SecureRandom());
+        CounterpartySubjectCipher.Encrypted written = cipher.encrypt(GOLDEN_SCREENING, "a later counterparty");
+        assertThatThrownBy(() -> cipher.decrypt(GOLDEN_SCREENING, new CounterpartySubjectCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
+                .isInstanceOf(com.finapp.platform.security.UnknownKeyVersionException.class)
+                .as("one refusal, whatever went wrong: the version the row claims is not told to a caller")
+                .hasMessageNotContaining("9")
+                .hasNoCause();
+    }
 }

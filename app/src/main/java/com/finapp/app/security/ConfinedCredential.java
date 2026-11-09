@@ -26,9 +26,9 @@ import java.util.Objects;
  *
  * <p>The loopback predicate stays {@link DatabaseEndpoint}'s — one definition of "is this
  * machine's database local", shared with the transport guard, and callers pass the answer in as
- * {@code localDefaultPermitted} exactly as they always have. Rotation and a secrets manager stay
- * Phase 15's recorded deferral; this class is the seam they will replace, not a step toward
- * implementing them.
+ * {@code localDefaultPermitted} exactly as they always have. Key rings and the callback window are
+ * read over this class by {@code ConfinedKeyRing} (`P15-TSK-019`); a secrets manager stays Phase 15's
+ * recorded deferral, and this class remains the seam it will replace.
  *
  * <h2>The equivalence obligation</h2>
  *
@@ -187,6 +187,25 @@ public final class ConfinedCredential {
             }
             length.check(key.length, name);
             return key;
+        }
+
+        /**
+         * The spec of one further version of this key (`P15-TSK-019`): its own variable, its own locally derived bytes,
+         * this key's length rule and refusal. The marked-default confinement thus fires on every version of a ring.
+         *
+         * @param version the version number; the base key keeps this spec itself
+         * @param environmentVariable the variable that carries this version, named in a refusal
+         */
+        public KeySpec forVersion(int version, String environmentVariable) {
+            String named = name + " (version " + version + ")";
+            String confined = confinementName + " (version " + version + ")";
+            return new KeySpec(named, confined, environmentVariable, domainSuffix + "/v" + version, length, refusalTail);
+        }
+
+        /** The spec of the previous signing key during a rotation window (`P15-TSK-019`): its own variable and derived bytes. */
+        public KeySpec forPrevious(String environmentVariable) {
+            return new KeySpec(
+                    name + " (previous)", confinementName + " (previous)", environmentVariable, domainSuffix + "/previous", length, refusalTail);
         }
     }
 

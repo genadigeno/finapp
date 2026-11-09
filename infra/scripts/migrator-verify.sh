@@ -4,7 +4,8 @@
 # container of its own: nothing here can touch a developer's compose stack.
 #
 #   the bootstrap   creates the three roles with the local script's attributes, hashed client-side, the database's grants
-#                   and PUBLIC revoked; run again it changes nothing; a role holding a right it must not is refused.
+#                   and PUBLIC revoked; run again it changes nothing but a role setting found missing; a role holding a right it
+#                   must not is refused. The one role setting, read from the register, is on finapp_app alone, new and existing.
 #   the build's     ./gradlew flywayMigrate into one database, the image into another: every schema's history identical
 #   equal           (rank, version, description, type, script, checksum, installed_by, success) and pg_dump --schema-only
 #                   identical. The image never sees the build's database.
@@ -164,15 +165,29 @@ attributes=$(sql postgres "SELECT string_agg(rolname || ':' || rolcanlogin || ro
     || fail "the roles' attributes are not LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION: $attributes"
 hashed=$(sql postgres "SELECT count(*) FROM pg_authid WHERE rolname LIKE 'finapp\_%' AND rolpassword LIKE 'SCRAM-SHA-256\$%'")
 [ "$hashed" = 3 ] || fail "$hashed of the 3 roles hold a SCRAM verifier"
+# The register's value, read here and not copied (CONFIGURATION_REGISTER.md section 5), as the server holds it, on finapp_app and no other.
+role_settings() {
+    sql postgres "SELECT coalesce(string_agg(rolname || ':' || array_to_string(rolconfig, ','), ' ' ORDER BY rolname), 'none') FROM pg_roles
+        WHERE rolname LIKE 'finapp\_%' AND rolconfig IS NOT NULL"
+}
+idle_timeout=$(sed -n 's/^| `finapp_app` | `idle_in_transaction_session_timeout` | `\([0-9a-z]*\)` |.*/\1/p' docs/architecture/CONFIGURATION_REGISTER.md)
+[ -n "$idle_timeout" ] || cannot "the register's idle timeout could not be read"
+expected_settings="finapp_app:idle_in_transaction_session_timeout=$idle_timeout"
+settings=$(role_settings)
+[ "$settings" = "$expected_settings" ] || fail "the new roles' settings are not the register's: $settings"
 grants=$(sql finapp_build "SELECT has_database_privilege('finapp_migrator', current_database(), 'CREATE'),
     has_database_privilege('finapp_app', current_database(), 'CONNECT'), has_database_privilege('finapp_reporting', current_database(), 'CONNECT'),
     has_database_privilege('finapp_app', current_database(), 'CREATE'), has_database_privilege('finapp_reporting', current_database(), 'CREATE'),
     (SELECT count(*) FROM pg_database d, aclexplode(d.datacl) a WHERE d.datname = current_database() AND a.grantee = 0)")
 [ "$grants" = "t|t|t|f|f|0" ] || fail "the database's grants are not the local script's: $grants"
+# A role that already exists takes a setting at the step's next run: what a release changing one depends on.
+sql postgres 'ALTER ROLE finapp_app RESET idle_in_transaction_session_timeout' >/dev/null
 code=0
 bootstrap finapp_build > "$WORK/bootstrap2.log" 2>&1 || code=$?
 expect_exit 0 "$code" "the second bootstrap" "$WORK/bootstrap2.log"
 [ "$(grep -c 'present, unprivileged, unchanged' "$WORK/bootstrap2.log")" = 3 ] || fail "the second bootstrap changed something"
+settings=$(role_settings)
+[ "$settings" = "$expected_settings" ] || fail "the second bootstrap did not set a role that already existed: $settings"
 sql postgres 'ALTER ROLE finapp_reporting CREATEDB' >/dev/null
 code=0
 bootstrap finapp_build > "$WORK/bootstrap3.log" 2>&1 || code=$?

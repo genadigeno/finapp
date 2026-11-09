@@ -86,17 +86,19 @@ public class MerchantPayoutBeans {
     }
 
     @Bean
-    PayoutEvidenceCipher payoutEvidenceCipher(
+    com.finapp.platform.security.KeyRing payoutEvidenceKeyRing(
             @Value("${finapp.merchant.payout.evidence.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
             @Value("${finapp.merchant.payout.evidence.key-version:1}") int keyVersion,
-            SecureRandom payoutEvidenceRandomness,
             Environment environment) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new PayoutEvidenceCipher(
-                PayoutEvidenceKey.decode(configuredKey, loopback),
-                keyVersion,
-                payoutEvidenceRandomness);
+        return PayoutEvidenceKey.ring(configuredKey, keyVersion, environment, loopback);
+    }
+
+    @Bean
+    PayoutEvidenceCipher payoutEvidenceCipher(
+            com.finapp.platform.security.KeyRing payoutEvidenceKeyRing, SecureRandom payoutEvidenceRandomness) {
+        return new PayoutEvidenceCipher(payoutEvidenceKeyRing, payoutEvidenceRandomness);
     }
 
     @Bean

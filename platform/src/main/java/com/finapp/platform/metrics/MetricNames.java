@@ -276,7 +276,15 @@ public final class MetricNames {
                     // section 16: finapp.accounting.cutoff.refused{command}, finapp.accounting.cutoff.floored{command}):
                     // a ledger command carries no requesting module, so the plan's first thought, a module tag, could not
                     // be filled, and the alert needs the adjustment door told apart from a poster's defect.
-                    "command");
+                    "command",
+                    // A digest of this replica's effective FINANCIAL configuration (P15-TSK-031, ADR-0125 decision 4,
+                    // PHASE_15_PLAN.md section 11.2: "info gauge, value 1, the hash as its one tag"). Not the closed set at
+                    // compile time the rule above asks for, and that is argued rather than overlooked: it is ONE value per
+                    // process lifetime, written once at start from configuration, so never from a request and never one
+                    // series more for a replica; the set of values over time is the set of configurations ever deployed.
+                    // It is a whole SHA-256, so it names no value of its input. An alert compares it across instances, so
+                    // it has to be a label: a gauge's double holds 53 bits, and the hash could then only be a fold of itself.
+                    "fingerprint");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

@@ -1,0 +1,161 @@
+# promtool unit tests for ConfigFingerprintDisagrees and ConfigFingerprintAbsent in infra/prometheus/rules/platform.yml (P15-TSK-031). Run by
+# infra/scripts/alert-rules-check.sh and CI's alerts job. A disagreement that lasts a rollout never pages; one that outlives it does,
+# through the gaps and the NaN a real fleet produces.
+
+rule_files:
+  - ../rules/platform.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A rollout at its longest: A leaves as B arrives, the whole taking 70 minutes. The bound is 77 minutes, this window included. Nothing pages.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_config_fingerprint{env="production", instance="old-0:8081", fingerprint="a1"}'
+        values: '1x70'
+      - series: 'finapp_config_fingerprint{env="production", instance="new-0:8081", fingerprint="b2"}'
+        values: '_x1 1x118'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts: []
+      - eval_time: 79m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts: []
+      - eval_time: 110m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts: []
+
+  # Two replicas on different configurations from the first minute, for good: pending until its for, then a page.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_config_fingerprint{env="production", instance="a:8081", fingerprint="a1"}'
+        values: '1x120'
+      - series: 'finapp_config_fingerprint{env="production", instance="b:8081", fingerprint="b2"}'
+        values: '1x120'
+    alert_rule_test:
+      - eval_time: 75m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts:
+          - exp_labels:
+              env: production
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "The fleet in production is running 2 different financial configurations"
+              description: "Replicas have disagreed on the effective FINANCIAL configuration for longer than any rollout takes. Each such value is safe mixed only for the length of a rollout. See OPERATIONS_RUNBOOK.md section 11.31."
+
+  # Three replicas holding three configurations: a count, not a comparison of two.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_config_fingerprint{env="staging", instance="a:8081", fingerprint="a1"}'
+        values: '1x120'
+      - series: 'finapp_config_fingerprint{env="staging", instance="b:8081", fingerprint="b2"}'
+        values: '1x120'
+      - series: 'finapp_config_fingerprint{env="staging", instance="c:8081", fingerprint="c3"}'
+        values: '1x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts:
+          - exp_labels:
+              env: staging
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "The fleet in staging is running 3 different financial configurations"
+              description: "Replicas have disagreed on the effective FINANCIAL configuration for longer than any rollout takes. Each such value is safe mixed only for the length of a rollout. See OPERATIONS_RUNBOOK.md section 11.31."
+
+  # The odd replica out fails a scrape every twenty minutes. A failed scrape writes a staleness marker, so without the presence window its series
+  # ends at that evaluation and the for restarts: this case is red without the window (MUTATION_TESTING.md). With it, it fires on schedule.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_config_fingerprint{env="production", instance="a:8081", fingerprint="a1"}'
+        values: '1x120'
+      - series: 'finapp_config_fingerprint{env="production", instance="b:8081", fingerprint="b2"}'
+        values: '1x17 stale 1x17 stale 1x17 stale 1x17 stale 1x17 stale 1x20'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts:
+          - exp_labels:
+              env: production
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "The fleet in production is running 2 different financial configurations"
+              description: "Replicas have disagreed on the effective FINANCIAL configuration for longer than any rollout takes. Each such value is safe mixed only for the length of a rollout. See OPERATIONS_RUNBOOK.md section 11.31."
+
+  # The replica that differs has a stale refresher: its value is NaN for the whole of the disagreement. The label still counts.
+  - interval: 5m
+    input_series:
+      - series: 'finapp_config_fingerprint{env="production", instance="a:8081", fingerprint="a1"}'
+        values: '1x24'
+      - series: 'finapp_config_fingerprint{env="production", instance="b:8081", fingerprint="b2"}'
+        # promtool's expanding notation takes no NaN, so the samples are written out.
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts:
+          - exp_labels:
+              env: production
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "The fleet in production is running 2 different financial configurations"
+              description: "Replicas have disagreed on the effective FINANCIAL configuration for longer than any rollout takes. Each such value is safe mixed only for the length of a rollout. See OPERATIONS_RUNBOOK.md section 11.31."
+
+  # Agreement is silent, however often the pods are replaced: the count is of hashes, not instances.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_config_fingerprint{env="production", instance="a:8081", fingerprint="a1"}'
+        values: '1x40'
+      - series: 'finapp_config_fingerprint{env="production", instance="b:8081", fingerprint="a1"}'
+        values: '_x30 1x90'
+      - series: 'finapp_config_fingerprint{env="production", instance="c:8081", fingerprint="a1"}'
+        values: '1x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts: []
+      - eval_time: 110m
+        alertname: ConfigFingerprintAbsent
+        exp_alerts: []
+
+  # Two environments on different configurations are two fleets, each agreeing with itself.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_config_fingerprint{env="staging", instance="a:8081", fingerprint="s1"}'
+        values: '1x120'
+      - series: 'finapp_config_fingerprint{env="production", instance="b:8081", fingerprint="p1"}'
+        values: '1x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: ConfigFingerprintDisagrees
+        exp_alerts: []
+
+  # Nothing publishes the fingerprint: the rule that reads it would be silent, so this one is not.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConfigFingerprintAbsent
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: ConfigFingerprintAbsent
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "No instance publishes the configuration fingerprint"
+              description: "No replica has published finapp.config.fingerprint for 15 minutes, so ConfigFingerprintDisagrees is blind. See OPERATIONS_RUNBOOK.md section 11.31."

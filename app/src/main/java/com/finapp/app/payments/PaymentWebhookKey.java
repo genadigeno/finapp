@@ -2,6 +2,11 @@ package com.finapp.app.payments;
 
 import com.finapp.app.security.ConfinedCredential.KeyLength;
 import com.finapp.app.security.ConfinedCredential.KeySpec;
+import com.finapp.app.security.ConfinedKeyRing;
+import com.finapp.platform.security.PreviousKeyWindow;
+import java.time.Instant;
+import java.util.Optional;
+import org.springframework.core.env.Environment;
 
 /**
  * Where the payment webhook signing credential comes from (`P5-TSK-012`).
@@ -45,5 +50,17 @@ public final class PaymentWebhookKey {
      */
     public static byte[] decode(String configured, boolean localDefaultPermitted) {
         return SPEC.decode(configured, localDefaultPermitted);
+    }
+
+    /** The previous signing key's window (`P15-TSK-019`): named here so the secret inventory's net reads them. */
+    private static final String PREVIOUS_KEY_PROPERTY = "finapp.payments.webhook.previous.key";
+
+    private static final String PREVIOUS_VALID_UNTIL_PROPERTY = "finapp.payments.webhook.previous.valid-until";
+
+    /** The previous key's window, if one is open: {@link ConfinedKeyRing}'s rules, per door. */
+    public static Optional<PreviousKeyWindow> previousWindow(
+            Environment environment, boolean localDefaultPermitted, Instant now) {
+        return ConfinedKeyRing.previousWindow(
+                SPEC, PREVIOUS_KEY_PROPERTY, PREVIOUS_VALID_UNTIL_PROPERTY, environment, localDefaultPermitted, now);
     }
 }

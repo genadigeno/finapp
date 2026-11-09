@@ -1,5 +1,6 @@
 package com.finapp.kyc;
 
+import com.finapp.platform.security.KeyRing;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -9,7 +10,6 @@ import java.util.Objects;
 import java.util.UUID;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Encrypts a counterparty's name (`P9-TSK-016`, ADR-0081 point 1) - RESTRICTED-PII, held only by kyc:
@@ -25,22 +25,32 @@ public final class CounterpartySubjectCipher {
     public static final int NONCE_BYTES = 12;
     public static final int KEY_BYTES = 32;
 
-    private final SecretKeySpec key;
-    private final int version;
+    private final KeyRing ring;
     private final SecureRandom randomness;
 
     public CounterpartySubjectCipher(byte[] key, int version, SecureRandom randomness) {
+        this(ringOfOne(key, version), randomness);
+    }
+
+    /**
+     * A cipher over a {@link KeyRing}: encrypts under the ring's active version, decrypts under each row's stamped version
+     * (`P15-TSK-019`, ADR-0123 point 4).
+     */
+    public CounterpartySubjectCipher(KeyRing ring, SecureRandom randomness) {
+        this.ring = Objects.requireNonNull(ring, "ring must not be null");
+        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+    }
+
+    private static KeyRing ringOfOne(byte[] key, int version) {
         Objects.requireNonNull(key, "key must not be null");
-        Objects.requireNonNull(randomness, "randomness must not be null");
         if (key.length != KEY_BYTES) {
+            // The message never states the length seen: it is a fact about the key material.
             throw new IllegalArgumentException("the subject encryption key must be exactly " + KEY_BYTES + " bytes");
         }
         if (version < 1) {
             throw new IllegalArgumentException("a key version is positive");
         }
-        this.key = new SecretKeySpec(key.clone(), "AES");
-        this.version = version;
-        this.randomness = randomness;
+        return KeyRing.single("subject encryption key", key, version);
     }
 
     /** The ciphertext, its nonce and the key version that made it. */
@@ -98,9 +108,9 @@ public final class CounterpartySubjectCipher {
         randomness.nextBytes(nonce);
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, nonce));
+            cipher.init(Cipher.ENCRYPT_MODE, ring.activeKey(), new GCMParameterSpec(TAG_BITS, nonce));
             cipher.updateAAD(associatedData(screening.value()));
-            return new Encrypted(cipher.doFinal(plaintext), nonce, version);
+            return new Encrypted(cipher.doFinal(plaintext), nonce, ring.activeVersion());
         } catch (GeneralSecurityException impossible) {
             throw new IllegalStateException("could not encrypt counterparty screening content");
         }
@@ -110,9 +120,7 @@ public final class CounterpartySubjectCipher {
     public byte[] open(CounterpartyScreeningId screening, Encrypted encrypted) {
         Objects.requireNonNull(screening, "screening must not be null");
         Objects.requireNonNull(encrypted, "encrypted must not be null");
-        if (encrypted.keyVersion() != version) {
-            throw new IllegalStateException("the content was encrypted under key version " + encrypted.keyVersion());
-        }
+        javax.crypto.SecretKey key = ring.keyFor(encrypted.keyVersion(), "could not decrypt counterparty screening content");
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, encrypted.nonce()));
