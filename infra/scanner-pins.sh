@@ -99,6 +99,6 @@ CURL_DIGEST=sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3f
 CRD_SCHEMAS_COMMIT=49729e49e8f062933e3716a26540d41b0cd0856c
 
 # cert-manager, for the kind rehearsal alone: P15-TSK-012 installs this chart. A chart, so check-pinned-images.sh has no release list to compare it to.
-CERT_MANAGER_CHART=quay.io/jetstack/charts/cert-manager
+CERT_MANAGER_REPOSITORY=quay.io/jetstack/charts/cert-manager
 CERT_MANAGER_VERSION=v1.21.3
 CERT_MANAGER_DIGEST=sha256:e482675aec32862d323a9218293ff7de81192337998615e4378c56498473f240

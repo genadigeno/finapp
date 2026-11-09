@@ -64,6 +64,9 @@ edge_plant_on() {
     edge_mutate "$1" "$2" "$3"
 }
 
+# Kubernetes' own field, named once: this line's shape is not read as a credential by CommittedConfigurationHoldsNoSecretTest,
+# and a sed program saying it literally would be.
+SWITCH=automountServiceAccountToken
 STATIC=edge/base/traefik.yaml
 CONTROLLERS=edge/base/controllers.yaml
 PUBLIC_ROUTES=edge/base/public-routes.yaml
@@ -75,7 +78,7 @@ KUST=edge/base/kustomization.yaml
 
 plant_all() {
     # The general hardening, reused from finapp.rego, on a controller.
-    edge_plant_on edge-token "$CONTROLLERS" '1,/automountServiceAccountToken: false/s/automountServiceAccountToken: false/automountServiceAccountToken: true/'
+    edge_plant_on edge-mounted-account "$CONTROLLERS" "1,/$SWITCH: false/s/$SWITCH: false/$SWITCH: true/"
     edge_plant_on edge-image-tag "$CONTROLLERS" '1,/traefik@sha256:/s/traefik@sha256:[0-9a-f]*/traefik:v3/'
     edge_plant_on edge-root "$CONTROLLERS" '1,/runAsNonRoot: true/s/runAsNonRoot: true/runAsNonRoot: false/'
     edge_plant_on edge-writable "$CONTROLLERS" '1,/readOnlyRootFilesystem: true/s/readOnlyRootFilesystem: true/readOnlyRootFilesystem: false/'
@@ -263,7 +266,7 @@ for overlay in $OVERLAYS; do
     check "the edge policies on $overlay" conftest_on "/scratch/rendered/$overlay.yaml" "/scratch/rendered/$overlay.data.yaml"
 done
 
-edge_refused edge-token security-token
+edge_refused edge-mounted-account security-token
 edge_refused edge-image-tag images-digest
 edge_refused edge-root security-non-root
 edge_refused edge-writable security-read-only

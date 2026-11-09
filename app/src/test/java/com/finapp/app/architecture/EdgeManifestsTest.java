@@ -118,6 +118,7 @@ class EdgeManifestsTest {
     @DisplayName("no controller holds a Kubernetes credential: the file provider alone, tokenless, and no role, binding or routing object rendered")
     void theControllersHoldNoCredential() {
         assertThat(map(staticConfig, "providers").keySet()).containsExactly("file");
+        assertThat(staticConfig).as("no dashboard or API on any listener").doesNotContainKey("api");
         List<String> kinds = new ArrayList<>();
         for (Map<String, Object> document : controllers) {
             kinds.add((String) document.get("kind"));
