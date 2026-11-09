@@ -70,6 +70,7 @@ class ExpandOnlyLintTest {
     static Stream<Arguments> everyRefusedClass() {
         return Stream.of(
                 Arguments.of("DROP COLUMN", "ALTER TABLE ledger.account DROP COLUMN code;", Refused.DROP),
+                Arguments.of("in lower case, over several lines", "alter table\n  ledger.account\n  drop\n  column code;", Refused.DROP),
                 Arguments.of("DROP TABLE", "DROP TABLE ledger.account;", Refused.DROP),
                 Arguments.of("DROP CONSTRAINT", "ALTER TABLE ledger.account DROP CONSTRAINT account_pkey;", Refused.DROP),
                 Arguments.of("DROP DEFAULT", "ALTER TABLE ledger.account ALTER COLUMN code DROP DEFAULT;", Refused.DROP),
