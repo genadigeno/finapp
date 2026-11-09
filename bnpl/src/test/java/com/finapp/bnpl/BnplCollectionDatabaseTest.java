@@ -37,6 +37,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -72,6 +73,11 @@ class BnplCollectionDatabaseTest {
     @BeforeAll
     static void termsAndClock() {
         BnplBillingDatabaseTest.termsAndClock();
+    }
+
+    @AfterAll
+    static void putTheClockBack() {
+        BnplClockFrame.uninstall();
     }
 
     // ------------------------------------------------------------------ scenario 4

@@ -14,6 +14,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -36,6 +37,11 @@ class BnplWaiverDatabaseTest {
     @BeforeAll
     static void termsAndClock() {
         BnplBillingDatabaseTest.termsAndClock();
+    }
+
+    @AfterAll
+    static void putTheClockBack() {
+        BnplClockFrame.uninstall();
     }
 
     private static BnplFeeAssessment lateFee(BnplCorrectionDatabaseWorld world,
