@@ -8,9 +8,12 @@
 --
 -- UNLOGGED, ON PURPOSE
 --   A counter of unauthenticated requests is not a financial record (CLAUDE.md rule 12), so it pays nothing that financial records
---   pay for. An unlogged table writes no WAL, so a flood of refused requests adds no WAL volume, no fsync and no wait on a
---   synchronous standby to the commits that share them, and a journal entry's commit does not queue behind a registration flood.
---   The price: a crash or a failover truncates it. The cost of that is at most one extra window's budget for each key, once.
+--   pay for. An unlogged table's rows write no WAL, and a transaction that wrote only those waits on no fsync and no synchronous
+--   standby: an admitted count adds a commit record and nothing else, and a journal entry's commit does not queue behind a
+--   registration flood. A refused count adds nothing at all: its statement is read-only (WindowCounter), so it takes no row lock
+--   and no transaction id.
+--   The price: a crash or a failover truncates it. The cost of that is at most one extra window's budget for each key, once per
+--   crash or failover.
 --
 -- BOUNDED BY ITS KEYS AND BY ITS WINDOWS
 --   A row per source per window is attacker-sized, so the caller keys it on a 16-bit bucket of the source (SourceBucket), never the

@@ -90,7 +90,7 @@ single-sourced by enforcement: the build rejects any *other* local default, so t
 
 ### 3.2 The inventory: every secret the application reads — *Implemented* (`P15-TSK-018`)
 
-The inventory holds **32** secrets, **27** of them declared by a key class (`ConfinedCredential.KeySpec`). A count here is a claim,
+The inventory holds **33** secrets, **28** of them declared by a key class (`ConfinedCredential.KeySpec`). A count here is a claim,
 so `SecretInventoryIsCompleteTest` reads this sentence and fails when it is wrong. `PHASE_15_PLAN.md`'s 37 was a survey of names.
 
 **This set is not a search for words.** A search misses a credential called something else and catches what is not one. It is
@@ -109,6 +109,7 @@ the Secret that workload reads through `envFrom`; `none` means no Secret holds i
 
 | Variable | Property | Class | Owner | Rotation | Consumer | Delivered through |
 |---|---|---|---|---|---|---|
+| `FINAPP_ABUSE_BUCKET_KEY` | `finapp.abuse.bucket.key` | source-bucket-key | `abuse` | reshuffle-once | `finapp-app` (`AbuseBeans`) | `finapp-app-secrets` |
 | `FINAPP_MFA_KEY` | `finapp.mfa.key` | field-encryption-key | `mfa` | key-ring | `finapp-app` (`MfaBeans`) | `finapp-app-secrets` |
 | `FINAPP_DOC_KEY` | `finapp.doc.key` | field-encryption-key | `kyc` | key-ring | `finapp-app` (`KycBeans`) | `finapp-app-secrets` |
 | `FINAPP_PAYMENTS_EVIDENCE_KEY` | `finapp.payments.evidence.key` | field-encryption-key | `payments` | key-ring | `finapp-app` (`PaymentBeans`) | `finapp-app-secrets` |
@@ -290,6 +291,7 @@ until the last old replica has gone, and the class decides how.
 | `database-fleet-credential` | alternating-users | A second user holding exactly the first's grants; the store takes the user and the password together; sync, roll; the old user is retired once no replica uses it | Rehearsed by `P15-TSK-020` |
 | `database-job-credential` | between-releases | The migrator runs as a Job per release and reads its Secret at its start. Change the role's password and the store between two releases, then sync; nothing needs rolling | Ready. The next Job takes it |
 | `database-master` | managed-by-the-database-service | The managed database's own mechanism, recovered through the cloud account. The bootstrap step reads it for its run | The environment's |
+| `source-bucket-key` | reshuffle-once | One value for every replica, so it cannot be changed one replica at a time without a source counting once per key while both are on the fleet. Change the store, sync, roll. The buckets reshuffle once: each source starts a fresh window in a new bucket, so the rotation costs at most one window's budget and nothing is unreadable | Ready. Nothing is signed or encrypted with it, so no earlier row needs it |
 | `kafka-credential` | add-roll-remove | The brokers' ACLs name a SCRAM user, so the new credential is a second user with its grants (one more of `modules/kafka`'s `scram_users` and its own `AmazonMSK_…` entry). Point the two entries at it, sync, roll, then remove the old user | Rehearsed by `P15-TSK-020` |
 
 ### 5.2 What carries a rotation to the fleet — *Implemented as manifests; rehearsed by `P15-TSK-020`*

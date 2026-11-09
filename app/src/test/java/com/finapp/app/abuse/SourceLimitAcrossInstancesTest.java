@@ -38,6 +38,7 @@ class SourceLimitAcrossInstancesTest {
     private static final int LIMIT = 10;
     private static final int ATTEMPTS_EACH = 12;
     private static final String SOURCE = "198.51.100.7";
+    private static final SourceBucket BUCKETS = new SourceBucket("0123456789abcdef0123456789abcdef".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
     static class Registration {
         @SourceLimited(Door.REGISTRATION)
@@ -58,7 +59,10 @@ class SourceLimitAcrossInstancesTest {
             }
             // Each instance is its own counter, its own limits and its own meters: nothing but the store is shared.
             instances.add(new SourceLimitInterceptor(
-                    new WindowCounter(shared::open, 64), new SourceLimits(limits), new SourceLimitMeters(new SimpleMeterRegistry())));
+                    new WindowCounter(shared::open, 64, Duration.ZERO),
+                    BUCKETS,
+                    new SourceLimits(limits, Map.of(), Long.MAX_VALUE),
+                    new SourceLimitMeters(new SimpleMeterRegistry())));
         }
 
         ExecutorService threads = Executors.newFixedThreadPool(INSTANCES * ATTEMPTS_EACH);
@@ -92,7 +96,7 @@ class SourceLimitAcrossInstancesTest {
             }
             assertThat(admitted).as("exactly the limit across every instance").isEqualTo(LIMIT);
             assertThat(refused).isEqualTo(INSTANCES * ATTEMPTS_EACH - LIMIT);
-            assertThat(shared.admittedFor("door.registration", SourceBucket.keyOf(SOURCE))).isEqualTo(LIMIT);
+            assertThat(shared.admittedFor("door.registration", BUCKETS.of(SOURCE).key())).isEqualTo(LIMIT);
         } finally {
             threads.shutdownNow();
         }

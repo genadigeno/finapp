@@ -133,25 +133,32 @@ server:
 finapp:
   # The public doors' per-source limits (P15-TSK-022, OPERATIONS_RUNBOOK.md 11.30). One bucket per source per window across every
   # replica, arbitrated in PostgreSQL: the edge's limits are a first, coarse layer. Reference numbers, calibrated by Phase 16 against
-  # real traffic; a carrier's NAT shares an address, so they are per address and not per person.
+  # real traffic. They are per address and not per person, so a shared address (a carrier's NAT, an office) shares one budget and
+  # one device there can spend it for everyone: THREAT_MODEL.md section 6 item 33.
   abuse:
     registration:
       limit: ${FINAPP_ABUSE_REGISTRATION_LIMIT:10}
       window: ${FINAPP_ABUSE_REGISTRATION_WINDOW:PT1H}
+      # Per IPv6 /48, in the same window: registration tests identifiers (THREAT_MODEL.md T47), and a /48 holds 65,536 /64s.
+      site-limit: ${FINAPP_ABUSE_REGISTRATION_SITE_LIMIT:100}
     sign-in:
       limit: ${FINAPP_ABUSE_SIGN_IN_LIMIT:100}
       window: ${FINAPP_ABUSE_SIGN_IN_WINDOW:PT15M}
+      site-limit: ${FINAPP_ABUSE_SIGN_IN_SITE_LIMIT:1000}
     recovery:
       limit: ${FINAPP_ABUSE_RECOVERY_LIMIT:10}
       window: ${FINAPP_ABUSE_RECOVERY_WINDOW:PT1H}
+      site-limit: ${FINAPP_ABUSE_RECOVERY_SITE_LIMIT:100}
     recovery-completion:
       limit: ${FINAPP_ABUSE_RECOVERY_COMPLETION_LIMIT:20}
       window: ${FINAPP_ABUSE_RECOVERY_COMPLETION_WINDOW:PT1H}
     channel-verification:
       limit: ${FINAPP_ABUSE_CHANNEL_VERIFICATION_LIMIT:20}
       window: ${FINAPP_ABUSE_CHANNEL_VERIFICATION_WINDOW:PT1H}
-    # At most this many counts in flight per instance, of the pool's seven; past it a count is refused at once and never queued.
+    # At most this many counts in flight per instance, of the pool's seven; past it a count waits permit-wait for a place, then is
+    # refused and never queued behind the pool.
     max-concurrent-counts: ${FINAPP_ABUSE_MAX_CONCURRENT_COUNTS:3}
+    permit-wait: ${FINAPP_ABUSE_PERMIT_WAIT:PT0.1S}
     # Ended windows. One instance's capacity per interval (batch-size x 20 batches) is held above the worst creation rate by
     # SourceLimitBudgetTest, reading these numbers.
     sweep:

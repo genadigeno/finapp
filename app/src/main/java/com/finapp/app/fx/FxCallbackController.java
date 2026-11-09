@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/providers/fx/webhooks")
-@com.finapp.app.abuse.NotSourceLimited(reason = "The signature is verified before anything is written, so a forged delivery costs an HMAC and no database work; a counter write per delivery is the cost this door avoids. The edge callback tier bounds it.")
+@com.finapp.app.abuse.NotSourceLimited(reason = "The signature is verified before anything is written, so a forged delivery costs reading its body, up to the 1 MiB request limit, and an HMAC over it, and no database work; a counter write per delivery is the cost this door avoids. The edge callback tier bounds it.")
 @Unauthenticated
 @ConditionalOnProperty("finapp.fx.provider.url")
 @RequiredArgsConstructor

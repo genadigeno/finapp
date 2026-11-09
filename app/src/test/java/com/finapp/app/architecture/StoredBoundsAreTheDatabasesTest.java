@@ -332,8 +332,8 @@ class StoredBoundsAreTheDatabasesTest {
                 .contains("now() AS read_at")
                 .contains("b.window_start + b.stride - b.read_at");
         assertThat(literals.chars().filter(character -> character == '?').count())
-                .as("what is bound is the stride, the scope, the key and the limit, and no instant")
-                .isEqualTo(4);
+                .as("what is bound is the stride, the scope, the key and the limit, once for the read-only path and once for the update, and no instant")
+                .isEqualTo(5);
         assertThat(literals).doesNotContain("window_start < ?").doesNotContain("= ?::timestamptz").doesNotContain("?::timestamp");
         assertThat(source).as("an instance's clock is not this class's to read").doesNotContain("Clock").doesNotContain("Instant");
         for (Method method : com.finapp.platform.abuse.WindowCounter.class.getDeclaredMethods()) {

@@ -39,7 +39,7 @@ class WindowCounterDatabaseTest {
 
     private static final WindowLimit HOURLY_TEN = new WindowLimit(10, Duration.ofHours(1));
 
-    private final WindowCounter counter = new WindowCounter(DatabaseRoles::application, 64);
+    private final WindowCounter counter = new WindowCounter(DatabaseRoles::application, 64, Duration.ZERO);
 
     @BeforeEach
     @AfterEach
@@ -70,9 +70,9 @@ class WindowCounterDatabaseTest {
     void exactlyTheLimitIsAdmittedAcrossThreeInstances() throws Exception {
         awayFromAWindowEnd();
         List<WindowCounter> instances = List.of(
-                new WindowCounter(DatabaseRoles::application, 64),
-                new WindowCounter(DatabaseRoles::application, 64),
-                new WindowCounter(DatabaseRoles::application, 64));
+                new WindowCounter(DatabaseRoles::application, 64, Duration.ZERO),
+                new WindowCounter(DatabaseRoles::application, 64, Duration.ZERO),
+                new WindowCounter(DatabaseRoles::application, 64, Duration.ZERO));
         int perInstance = 12;
         ExecutorService threads = Executors.newFixedThreadPool(instances.size() * perInstance);
         CountDownLatch start = new CountDownLatch(1);
@@ -127,7 +127,7 @@ class WindowCounterDatabaseTest {
     }
 
     @Test
-    @DisplayName("a request past the limit writes no new row version: the cost of a refused flood is a lock, not a write")
+    @DisplayName("a request past the limit is read-only: no new row version and no row lock, so a refused flood writes nothing and takes no transaction id")
     void aRefusedRequestWritesNothing() throws Exception {
         awayFromAWindowEnd();
         WindowLimit one = new WindowLimit(1, Duration.ofHours(1));
@@ -137,7 +137,7 @@ class WindowCounterDatabaseTest {
         Admission refused = counter.admit(SCOPE, "refused", one);
 
         assertThat(refused.admitted()).isFalse();
-        assertThat(rowVersion("refused")).as("the row was not rewritten").isEqualTo(versionBefore);
+        assertThat(rowVersion("refused")).as("neither rewritten nor locked: xmax would change").isEqualTo(versionBefore);
         assertThat(admittedInRow("refused")).isEqualTo(1);
     }
 
@@ -237,7 +237,7 @@ class WindowCounterDatabaseTest {
     private String rowVersion(String key) throws SQLException {
         try (Connection connection = DatabaseRoles.migrator();
                 PreparedStatement read = connection.prepareStatement(
-                        "SELECT ctid::text || '/' || xmin::text FROM platform.window_counter WHERE scope = ? AND counter_key = ?")) {
+                        "SELECT ctid::text || '/' || xmin::text || '/' || xmax::text FROM platform.window_counter WHERE scope = ? AND counter_key = ?")) {
             read.setString(1, SCOPE);
             read.setString(2, key);
             try (ResultSet result = read.executeQuery()) {

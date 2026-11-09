@@ -24,8 +24,13 @@ public enum Door {
         return label;
     }
 
-    /** The scope this door counts under. */
+    /** The scope this door counts a source under. */
     String scope() {
         return "door." + label;
+    }
+
+    /** The scope this door counts an IPv6 /48 under, where it has that count. */
+    String siteScope() {
+        return scope() + ".site";
     }
 }

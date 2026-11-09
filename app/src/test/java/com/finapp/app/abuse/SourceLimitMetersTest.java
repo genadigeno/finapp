@@ -10,15 +10,15 @@ import org.junit.jupiter.api.Test;
 class SourceLimitMetersTest {
 
     @Test
-    @DisplayName("every door has every outcome at zero from the start, and fifteen series is all there is")
+    @DisplayName("every door has every outcome at zero from the start, and twenty-five series is all there is")
     void theSeriesAreEagerAndClosed() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
 
         new SourceLimitMeters(registry);
 
-        assertThat(registry.find("finapp.abuse.requests").counters()).hasSize(Door.values().length * 3);
+        assertThat(registry.find("finapp.abuse.requests").counters()).hasSize(Door.values().length * 5);
         for (Door door : Door.values()) {
-            for (String outcome : new String[] {"admitted", "refused", "store_unavailable"}) {
+            for (String outcome : new String[] {"admitted", "refused", "at_capacity", "store_unreachable", "store_error"}) {
                 assertThat(registry.get("finapp.abuse.requests").tag("type", door.label()).tag("outcome", outcome).counter().count()).isZero();
             }
         }

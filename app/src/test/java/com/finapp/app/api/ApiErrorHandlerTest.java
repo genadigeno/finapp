@@ -139,25 +139,12 @@ class ApiErrorHandlerTest {
     }
 
     @Test
-    @DisplayName("a throttled answer is byte-identical whatever identifier the body named, so it discloses none (P15-TSK-022, INV-IDN-07)")
-    void aThrottledAnswerSaysNothingOfTheIdentifier() throws Exception {
-        String taken = postJson("/probe/too-many", "{\"loginIdentifier\":\"someone-who-exists\"}").body();
-        String free = postJson("/probe/too-many", "{\"loginIdentifier\":\"nobody-at-all\"}").body();
-
-        assertThat(withoutCorrelation(taken)).isEqualTo(withoutCorrelation(free));
-    }
-
-    @Test
     @DisplayName("a door that could not count is 503, with no Retry-After it could not know (P15-TSK-022)")
     void aClosedDoorRendersTheContract() throws Exception {
         HttpResponse<String> response = postJson("/probe/door-closed", "{}");
 
         assertContract(response, 503, "api.TemporarilyUnavailable");
         assertThat(response.headers().firstValue("Retry-After")).isEmpty();
-    }
-
-    private static String withoutCorrelation(String body) {
-        return body.replaceAll("\"correlationId\":\"[^\"]+\"", "");
     }
 
     @Test

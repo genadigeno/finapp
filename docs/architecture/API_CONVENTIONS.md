@@ -160,7 +160,9 @@ a 422 returned after the handler ran and did half the work looks identical from 
 window, across every replica, held in PostgreSQL. A source is the connection's address, an IPv4 address whole or an IPv6 address by its
 /64; a forwarded header never chooses it (`SourceLimitInterceptorTest`). A window's end is the database's, so a retry after `Retry-After` falls in
 a new window whichever replica takes it. Two sources behind one carrier's NAT are one source. A provider's signed callback is not counted:
-its signature is checked first, and nothing is written for a forged one.
+its signature is checked first, and nothing is written for a forged one. **A retry counts**: a count comes after the `Idempotency-Key`
+header's shape is checked and before its record is read, so a same-key retry past the limit is answered `429` where the stored `201`
+would have been replayed, and gets that stored answer once the window has ended.
 
 ## 6. Idempotency — **Implemented** (`P0-TSK-017`; first *used* by `P1-TSK-006`)
 

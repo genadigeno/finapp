@@ -23,7 +23,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class ScriptedWindowConnections {
 
     /** One statement's arguments, and how its connection was left. */
-    public record Count(String statement, long windowSeconds, String scope, String key, int limit, boolean autoCommit, boolean closed) {}
+    public record Count(
+            String statement, long windowSeconds, String scope, String key, int limit, boolean autoCommit, int networkTimeoutMillis, boolean closed) {}
 
     private static final class Observed {
         String statement;
@@ -32,10 +33,11 @@ public final class ScriptedWindowConnections {
         String key;
         int limit;
         boolean autoCommit;
+        int networkTimeoutMillis;
         boolean closed;
 
         Count frozen() {
-            return new Count(statement, windowSeconds, scope, key, limit, autoCommit, closed);
+            return new Count(statement, windowSeconds, scope, key, limit, autoCommit, networkTimeoutMillis, closed);
         }
     }
 
@@ -45,6 +47,7 @@ public final class ScriptedWindowConnections {
     private final AtomicInteger peakOpen = new AtomicInteger();
     private volatile long retryAfterSeconds = 120;
     private volatile String failingWith;
+    private volatile boolean blackHoled;
     private volatile Runnable beforeEachCount = () -> {};
 
     /** Every count from now on fails with {@code sqlState}, the store being unavailable. */
@@ -62,6 +65,20 @@ public final class ScriptedWindowConnections {
     /** Runs inside each statement, while its connection is held: how a test holds counts in flight. */
     public ScriptedWindowConnections beforeEachCount(Runnable hook) {
         this.beforeEachCount = hook;
+        return this;
+    }
+
+    /**
+     * From now on (and until {@link #healed()}) the server stops answering, as a failover's old primary does: a read with a network
+     * timeout fails when it passes, and a read without one never returns.
+     */
+    public ScriptedWindowConnections blackHoled() {
+        this.blackHoled = true;
+        return this;
+    }
+
+    public ScriptedWindowConnections healed() {
+        this.blackHoled = false;
         return this;
     }
 
@@ -94,6 +111,10 @@ public final class ScriptedWindowConnections {
                 yield null;
             }
             case "getAutoCommit" -> count.autoCommit;
+            case "setNetworkTimeout" -> {
+                count.networkTimeoutMillis = (int) arguments[1];
+                yield null;
+            }
             case "prepareStatement" -> {
                 count.statement = (String) arguments[0];
                 yield statement(count);
@@ -127,11 +148,27 @@ public final class ScriptedWindowConnections {
                 count.limit = (int) arguments[1];
                 yield null;
             }
-            case "executeQuery" -> result(decide(count));
+            case "executeQuery" -> {
+                awaitAnAnswer(count);
+                yield result(decide(count));
+            }
             case "close" -> null;
             default -> throw new UnsupportedOperationException("PreparedStatement." + method.getName());
         };
         return (PreparedStatement) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {PreparedStatement.class}, handler);
+    }
+
+    /** What the driver does on a read the server never answers: time out if it was told to, and otherwise wait for ever. */
+    private void awaitAnAnswer(Observed count) throws SQLException, InterruptedException {
+        if (!blackHoled) {
+            return;
+        }
+        if (count.networkTimeoutMillis > 0) {
+            throw new SQLException("An I/O error occurred while sending to the backend", "08006");
+        }
+        while (blackHoled) {
+            Thread.sleep(10);
+        }
     }
 
     /** The row's atomic decision: under the limit, the count moves; at it, nothing does. */

@@ -51,7 +51,8 @@ class SourceLimitBudgetTest {
     void oneInstancesSweepOutrunsEveryDoor() {
         double worstRowsPerSecond = 0;
         for (String door : new String[] {"registration", "sign-in", "recovery", "recovery-completion", "channel-verification"}) {
-            worstRowsPerSecond += (double) (SourceBucket.BUCKETS + 1) / duration("finapp.abuse." + door + ".window").toSeconds();
+            int counts = SHIPPED.containsProperty("finapp.abuse." + door + ".site-limit") ? 2 : 1;
+            worstRowsPerSecond += (double) counts * (SourceBucket.BUCKETS + 1) / duration("finapp.abuse." + door + ".window").toSeconds();
         }
         double sweptPerSecond = (double) (number("finapp.abuse.sweep.batch-size") * com.finapp.app.eventing.RetentionSweepSchedule.MAX_BATCHES)
                 / duration("finapp.abuse.sweep.interval").toSeconds();
@@ -69,6 +70,20 @@ class SourceLimitBudgetTest {
 
         assertThat(counting * 2).as("%d counts in flight of a pool of %d", counting, pool).isLessThanOrEqualTo(pool);
         assertThat(counting).isPositive();
+    }
+
+    @Test
+    @DisplayName("what a count past the cap waits is short: a place is either coming or the door should say so")
+    void thePermitWaitIsShort() {
+        assertThat(duration("finapp.abuse.permit-wait")).isPositive().isLessThanOrEqualTo(Duration.ofMillis(250));
+    }
+
+    @Test
+    @DisplayName("the doors the /48 count is on are the ones whose abuse is multiplied by holding /64s")
+    void theSiteCountIsOnTheDoorsThatMatter() {
+        assertThat(number("finapp.abuse.registration.site-limit")).isGreaterThan(number("finapp.abuse.registration.limit"));
+        assertThat(number("finapp.abuse.sign-in.site-limit")).isGreaterThan(number("finapp.abuse.sign-in.limit"));
+        assertThat(number("finapp.abuse.recovery.site-limit")).isGreaterThan(number("finapp.abuse.recovery.limit"));
     }
 
     @Test

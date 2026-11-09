@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * {@code finapp.abuse.requests{type,outcome}}: what the doors did (`P15-TSK-022`). Fifteen series and no more.
+ * {@code finapp.abuse.requests{type,outcome}}: what the doors did (`P15-TSK-022`). Twenty-five series and no more.
  *
  * <p><strong>This is the whole record of a refused request.</strong> Not an audit row and not a log line per refusal: writing one per
  * refusal would make a flood write the audit table or fill the log, which turns the limit into the attack. Eager on every instance
@@ -17,11 +17,13 @@ public final class SourceLimitMeters {
 
     private static final String NAME = "finapp.abuse.requests";
 
-    /** A closed set of what a door can do with a request. */
+    /** A closed set of what a door can do with a request. Every outcome but the first two answered {@code 503}, each for its own cause. */
     enum Outcome {
         ADMITTED("admitted"),
         REFUSED("refused"),
-        STORE_UNAVAILABLE("store_unavailable");
+        AT_CAPACITY("at_capacity"),
+        STORE_UNREACHABLE("store_unreachable"),
+        STORE_ERROR("store_error");
 
         private final String tag;
 

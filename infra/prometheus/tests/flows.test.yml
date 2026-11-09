@@ -8,6 +8,54 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
+  # PublicDoorsRefusingMost: refusals spread over both instances; only the sum crosses 50 and the ratio.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_abuse_requests_total{job="finapp", instance="a:8081", type="sign-in", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_abuse_requests_total{job="finapp", instance="b:8081", type="sign-in", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_abuse_requests_total{job="finapp", instance="a:8081", type="sign-in", outcome="admitted"}'
+        values: '0+1x30'
+      - series: 'finapp_abuse_requests_total{job="finapp", instance="b:8081", type="sign-in", outcome="admitted"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PublicDoorsRefusingMost
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "Most requests at the public doors are being refused"
+              description: "Over half of the last 15 minutes' requests at the public doors were refused per source, at least 50 of them. See OPERATIONS_RUNBOOK.md section 11.30."
+
+  # PublicDoorsRefusingMost: one source at its limit among many admitted: healthy.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_abuse_requests_total{job="finapp", instance="a:8081", type="sign-in", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_abuse_requests_total{job="finapp", instance="b:8081", type="sign-in", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_abuse_requests_total{job="finapp", instance="a:8081", type="sign-in", outcome="admitted"}'
+        values: '0+100x30'
+      - series: 'finapp_abuse_requests_total{job="finapp", instance="b:8081", type="sign-in", outcome="admitted"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PublicDoorsRefusingMost
+        exp_alerts: []
+
+  # PublicDoorsRefusingMost: refused mostly, but too few to mean anything.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_abuse_requests_total{job="finapp", instance="a:8081", type="registration", outcome="refused"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PublicDoorsRefusingMost
+        exp_alerts: []
+
   # AuthenticationRefusalsSpike: refusals spread over both instances; only the sum crosses 50 and the ratio.
   - interval: 1m
     input_series:
