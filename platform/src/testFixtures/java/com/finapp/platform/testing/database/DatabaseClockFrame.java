@@ -17,8 +17,10 @@ import java.util.function.Function;
  * {@code search_path}, so the production statements run unchanged and read the moved clock.
  *
  * <p>Only an opted-in session sees the shadow, and only for unqualified calls: a function that names {@code pg_catalog}
- * (merchant {@code V014}'s pin trigger) cannot be moved this way, which is the property that qualification buys. The schema
- * is the bootstrap superuser's, created by {@link #install}, never a migration's.
+ * (merchant {@code V014}'s pin trigger) cannot be moved this way, which is the property that qualification buys. Since
+ * {@code P15-TSK-040} the production functions of every schema name it too, so {@link #install} also opens them again in this
+ * test database ({@link ReopenedClock}), and {@link #uninstall} closes them; V014's trigger stays closed. The schema is the
+ * bootstrap superuser's, created by {@link #install}, never a migration's.
  */
 public final class DatabaseClockFrame {
 
@@ -39,6 +41,12 @@ public final class DatabaseClockFrame {
                         + " $$ SELECT pg_catalog.statement_timestamp() + boundclock.frame() $$;"
                         + " CREATE OR REPLACE FUNCTION boundclock.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS"
                         + " $$ SELECT pg_catalog.clock_timestamp() + boundclock.frame() $$;");
+        ReopenedClock.reopen();
+    }
+
+    /** Closes every production function again, as the migrations left it. The shadow schema stays; the next install replaces it. */
+    public static void uninstall() {
+        ReopenedClock.restore();
     }
 
     /** An application-role session reading the clock moved by {@code frame}, its transaction not yet begun. */
