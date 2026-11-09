@@ -96,6 +96,7 @@ DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 # read-only; /scratch is this run's volume. Called by the host half below, never by hand.
 # ---------------------------------------------------------------------------------------------------
 TREE=/repo/infra/terraform
+INVENTORY=docs/architecture/SECRET_MANAGEMENT.md
 
 # A copy keeps the repository's shape, so a root's ../../../kafka and ../../../../deploy resolve in it.
 plant() {
@@ -105,7 +106,7 @@ plant() {
     cp -R /repo/infra/kafka "/scratch/plants/$1/infra/kafka"
     cp -R /repo/deploy "/scratch/plants/$1/deploy"
     mkdir -p "/scratch/plants/$1/docs/architecture"
-    cp /repo/docs/architecture/SECRET_MANAGEMENT.md "/scratch/plants/$1/docs/architecture/SECRET_MANAGEMENT.md"
+    cp "/repo/$INVENTORY" "/scratch/plants/$1/$INVENTORY"
 }
 
 planted() {
@@ -328,8 +329,8 @@ HCL
 
     plant inventory-row-no-entry
     sed -i '/^| `FINAPP_MFA_KEY` /a | `FINAPP_PLANTED_KEY` | none | webhook-hmac | `payments` | two-valid-window | `finapp-app` | `finapp-app-secrets` |' \
-        /scratch/plants/inventory-row-no-entry/docs/architecture/SECRET_MANAGEMENT.md
-    if cmp -s /repo/docs/architecture/SECRET_MANAGEMENT.md /scratch/plants/inventory-row-no-entry/docs/architecture/SECRET_MANAGEMENT.md; then
+        "/scratch/plants/inventory-row-no-entry/$INVENTORY"
+    if cmp -s "/repo/$INVENTORY" "/scratch/plants/inventory-row-no-entry/$INVENTORY"; then
         echo "!!   plant inventory-row-no-entry was not planted: the inventory is unchanged" >&2
         exit 1
     fi
