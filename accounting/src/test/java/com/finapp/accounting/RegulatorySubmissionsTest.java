@@ -669,6 +669,23 @@ class RegulatorySubmissionsTest {
     }
 
     @Test
+    @DisplayName("a walk of what stands follows the order the rows were recorded in: a return born on a clock stepped back comes after the one before it, and the cursor loses neither (P14-REM-009; V014's order, proven on the database by RegulatorySubmissionDatabaseTest)")
+    void aWalkOfWhatStandsFollowsTheRecordedOrder() {
+        world.closed(FEBRUARY);
+        world.issued(FEBRUARY, RegulatoryWorld.body(1, 1, 1, 1));
+        RegulatorySubmissions.Acted earlier = world.drafted(obligation, JANUARY);
+        clock.advance(Duration.ofMinutes(-5));
+        RegulatorySubmissions.Acted later = world.drafted(obligation, FEBRUARY);
+        assertThat(row(later).preparedAt()).as("the precondition: the later return is stamped before the earlier one").isBefore(row(earlier).preparedAt());
+
+        RegulatorySubmissions.Standing first = machine.standing(UOW, Optional.empty(), 1);
+        RegulatorySubmissions.Standing second = machine.standing(UOW, first.nextAfter(), 1);
+
+        assertThat(first.rows()).extracting(RegulatorySubmissionStore.Row::id).containsExactly(earlier.id());
+        assertThat(second.rows()).extracting(RegulatorySubmissionStore.Row::id).containsExactly(later.id());
+    }
+
+    @Test
     @DisplayName("a run's bytes differing at an act refuse it, apart from staleness: an integrity failure")
     void aRunsBytesAreReprovedAtEveryAct() {
         java.time.YearMonth march = java.time.YearMonth.of(2096, 3);

@@ -25,6 +25,18 @@ public final class JdbcRepudiationStore implements RepudiationStore {
 
     private static final String UNIQUE_VIOLATION = "23505";
 
+    /**
+     * The break a repudiation's new {@code MISSING_EXTERNAL} break continues ({@code follows_break_id}, P15-TSK-037): preferring the
+     * resolved break of the expectation and type no break continues. A trace link and nothing else - shown in a break's
+     * investigation, with nothing branching on it - so a {@code DISPLAYS} read: only a repudiation sets the link (the overdue sweep
+     * and matching raise a break with none), so several resolved breaks can have no successor and the UUIDv7 {@code b.id} then
+     * names one of them. It read {@code ORDER BY resolved_at DESC, id DESC} until then.
+     */
+    static final String LAST_RESOLVED_BREAK_ON = "SELECT b.id FROM reconciliation.break b WHERE b.expectation_id = ?"
+            + " AND b.type = ? AND b.status = 'RESOLVED'"
+            + " AND NOT EXISTS (SELECT 1 FROM reconciliation.break f WHERE f.expectation_id = b.expectation_id"
+            + " AND f.follows_break_id = b.id) ORDER BY b.id DESC LIMIT 1";
+
     private static final String ITEM_COLUMNS =
             "i.id, i.run_id, i.source_id, i.status, i.line_type, i.amount_minor,"
                     + " i.allocated_minor, i.parked_minor, i.currency, i.scale";
@@ -355,11 +367,7 @@ public final class JdbcRepudiationStore implements RepudiationStore {
     @Override
     public Optional<UUID> lastResolvedBreakOn(
             Connection unitOfWork, UUID expectationId, BreakType type) {
-        try (PreparedStatement read =
-                unitOfWork.prepareStatement(
-                        "SELECT id FROM reconciliation.break WHERE expectation_id = ?"
-                                + " AND type = ? AND status = 'RESOLVED'"
-                                + " ORDER BY resolved_at DESC, id DESC LIMIT 1")) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(LAST_RESOLVED_BREAK_ON)) {
             read.setObject(1, expectationId);
             read.setString(2, type.name());
             try (ResultSet row = read.executeQuery()) {

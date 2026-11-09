@@ -31,8 +31,8 @@ zone with a minimum of one makes that a count.
 
 Inputs: `name_prefix`, `tags`, `kubernetes_version`, `private_subnet_ids_by_zone`, `etcd_kms_key_arn`,
 `node_instance_types`, `node_root_volume_gib`, `nodes_per_zone`, `control_plane_log_retention_days`.
-Outputs: `cluster_name`, `workload_identity_provider_arn`, `workload_identity_issuer`, `node_role_arn`, and four that read
-the planned cluster back for the roots' tests. See `variables.tf` and `outputs.tf`.
+Outputs: `cluster_name`, `workload_identity_provider_arn`, `workload_identity_issuer`, `node_role_arn`,
+`node_security_group_id` (the source the data tier admits), and four that read the planned cluster back for the roots' tests. See `variables.tf` and `outputs.tf`.
 
 ## Operating it
 

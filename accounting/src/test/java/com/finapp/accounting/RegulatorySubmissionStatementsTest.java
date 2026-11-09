@@ -61,11 +61,21 @@ class RegulatorySubmissionStatementsTest {
         assertThat(JdbcRegulatoryObligationStore.AWAITING_SQL).endsWith("WHERE status = 'PROPOSED' AND proposed_by <> ? ORDER BY proposed_at, id LIMIT ?");
         assertThat(JdbcRegulatoryObligationStore.LOCK_SHARED_SQL).endsWith("WHERE id = ? FOR SHARE");
         assertThat(JdbcRegulatoryObligationStore.LOCK_FORM_SQL).endsWith("WHERE jurisdiction_code = ? AND form_code = ? ORDER BY id FOR UPDATE");
-        assertThat(JdbcRegulatorySubmissionStore.STANDING_SQL).endsWith("ORDER BY s.prepared_at, s.id LIMIT ?").contains("f.flag = 'CONTRARY'").contains(JdbcRegulatorySubmissionStore.OVERTAKEN);
-        assertThat(JdbcRegulatorySubmissionStore.STANDING_AFTER_SQL).endsWith("AND (s.prepared_at, s.id) > (SELECT l.prepared_at, l.id FROM accounting.regulatory_submission l WHERE l.id = ?) ORDER BY s.prepared_at, s.id LIMIT ?");
+        assertThat(JdbcRegulatorySubmissionStore.STANDING_SQL).contains("f.flag = 'CONTRARY'").contains(JdbcRegulatorySubmissionStore.OVERTAKEN);
         assertThat(JdbcRegulatorySubmissionStore.OVERTAKEN).contains("p.revision <> s.period_revision").contains("n.status = 'ACKNOWLEDGED' AND n.period_revision = p.revision");
         assertThat(JdbcRegulatorySubmissionStore.ATTENTION_SQL).contains(JdbcRegulatorySubmissionStore.OVERTAKEN).doesNotContain("CONTRARY");
-        assertThat(JdbcRegulatorySubmissionStore.ANSWERS_SQL).contains("ORDER BY received_at DESC, id DESC LIMIT ?").endsWith("newest ORDER BY received_at, id");
+        assertThat(JdbcRegulatorySubmissionStore.ANSWERS_SQL).contains("LIMIT ?");
+    }
+
+    @Test
+    @DisplayName("the submissions' two orderings are the insertion sequence, no stamp: the keyset, its first page and the newest answers, inner order and outer (P14-REM-009, G-9)")
+    void theOrderingsAreTheInsertionSequence() {
+        assertThat(JdbcRegulatorySubmissionStore.STANDING_SQL).endsWith("ORDER BY s.recorded_order, s.id LIMIT ?");
+        assertThat(JdbcRegulatorySubmissionStore.STANDING_AFTER_SQL).endsWith("AND (s.recorded_order, s.id) > (SELECT l.recorded_order, l.id FROM accounting.regulatory_submission l WHERE l.id = ?) ORDER BY s.recorded_order, s.id LIMIT ?");
+        assertThat(JdbcRegulatorySubmissionStore.ANSWERS_SQL).contains("ORDER BY recorded_order DESC, id DESC LIMIT ?").endsWith("newest ORDER BY recorded_order, id");
+        for (String statement : List.of(JdbcRegulatorySubmissionStore.STANDING_SQL, JdbcRegulatorySubmissionStore.STANDING_AFTER_SQL, JdbcRegulatorySubmissionStore.ANSWERS_SQL)) {
+            assertThat(statement.substring(statement.indexOf("ORDER BY"))).doesNotContain("prepared_at").doesNotContain("received_at");
+        }
     }
 
     @Test

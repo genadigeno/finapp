@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
@@ -41,6 +42,9 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
     private final CopyOnWriteArrayList<NewAnswer> answers = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<EventRow> events = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Instant> answerTimes = new CopyOnWriteArrayList<>();
+    /** {@code accounting V014}'s insertion sequence: what a page of what stands is ordered by, whatever the stamps say (`P14-REM-009`). A rollback leaves a number spent, as an identity does. */
+    private final AtomicLong recordedOrders = new AtomicLong();
+    private final ConcurrentHashMap<RegulatorySubmissionId, Long> recordedOrder = new ConcurrentHashMap<>();
 
     /** What the row holds beyond the row: its text, and its permit's instant kept apart from what a {@link Row} shows. */
     private record Stored(Row row, String content, String approvalReason, Optional<Instant> horizon) {
@@ -130,6 +134,7 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
             throw new IllegalStateException("regulatory_submission_permits_only_machine_edges: drawn only from a CLOSED period at its present revision");
         }
         RegulatoryObligationStore.Row obligation = obligations.find(unitOfWork, submission.obligation()).orElseThrow();
+        recordedOrder.put(submission.id(), recordedOrders.incrementAndGet());
         rows.put(submission.id(), new Stored(new Row(submission.id(), submission.obligation(), submission.jurisdiction(), submission.form(), submission.formVersion(), obligation.adapter(), submission.period(), period.month(),
                 submission.periodRevision(), period.revision(), period.status(), submission.corrects(), Optional.empty(), submission.contentSha256(), SubmissionStatus.DRAFT, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                 submission.preparedBy().id(), clock.instant(), submission.reason(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), 0, 0, Optional.empty(), Optional.empty(), false,
@@ -370,7 +375,7 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
 
     @Override
     public List<Row> standing(Connection unitOfWork, Optional<RegulatorySubmissionId> after, int limit) {
-        Comparator<Row> order = Comparator.comparing(Row::preparedAt).thenComparing(row -> row.id().value());
+        Comparator<Row> order = Comparator.comparing((Row row) -> recordedOrder.get(row.id())).thenComparing(row -> row.id().value());
         Optional<Row> last = after.flatMap(id -> find(unitOfWork, id));
         return rows.values().stream().map(this::read).filter(row -> row.status() == SubmissionStatus.DRAFT || row.status() == SubmissionStatus.VALIDATED || row.status() == SubmissionStatus.APPROVED || row.status() == SubmissionStatus.SUBMITTED
                 || ((row.status() == SubmissionStatus.REJECTED || row.status() == SubmissionStatus.UNDELIVERED) && !corrections.containsKey(row.id()))
