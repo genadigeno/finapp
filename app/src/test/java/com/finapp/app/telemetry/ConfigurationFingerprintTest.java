@@ -24,6 +24,7 @@ import org.springframework.core.env.SystemEnvironmentPropertySource;
  * (`P15-TSK-031`). It is computed from the register's own rows, so this reads the real table and not a fixture of it where that
  * matters; the promtool cases are {@code infra/prometheus/tests/config-fingerprint.test.yml}.
  */
+@org.junit.jupiter.api.Tag("slice") // ApplicationContextRunner: the taxonomy reads it as a slice
 @DisplayName("the configuration fingerprint: stable for equal configuration, moved by a FINANCIAL value, carrying none (P15-TSK-031)")
 class ConfigurationFingerprintTest {
 
