@@ -63,8 +63,8 @@ class SecurityScansAreWiredTest {
     private static final Map<String, String> IMAGE_PLANTS = Map.of(
             "vulnerable-base", "CVE-",
             "high-only", "CVE-2021-23337",
-            "secret-in-layer", "github-pat",
-            "secret-in-env", "aws-access-key-id",
+            "leak-in-layer", "github-pat",
+            "leak-in-env", "aws-access-key-id",
             "root-user", "DS-0002");
 
     private static final Map<String, String> SAST_PLANTS = Map.of(

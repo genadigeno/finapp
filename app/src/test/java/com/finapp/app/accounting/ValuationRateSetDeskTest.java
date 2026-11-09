@@ -83,7 +83,7 @@ class ValuationRateSetDeskTest {
     private static final List<CurrencyCode> VALUED = List.of(CurrencyCode.of("GBP"), CurrencyCode.of("JPY"));
     private static final UUID GBP_SNAPSHOT = UUID.randomUUID();
 
-    private final InMemoryAccountingPeriodStore periodStore = new InMemoryAccountingPeriodStore();
+    private final InMemoryAccountingPeriodStore periodStore = new InMemoryAccountingPeriodStore(CLOCK);
     private final InMemoryValuationRateSetStore store = new InMemoryValuationRateSetStore().watching(periodStore);
     private final List<AuditRecord> audited = new ArrayList<>();
     private final Map<IdempotencyKey, IdempotencyRecord> claims = new HashMap<>();
@@ -423,10 +423,10 @@ class ValuationRateSetDeskTest {
 
     /** September 2026, opened as the first period. */
     private String openSeptember() {
-        new AccountingPeriods(periodStore, new InMemoryGlMappingStore(), cutoff, LockGrace.standard(), (uow, record) -> { },
+        periodStore.onDatabaseDate(LocalDate.of(2026, 9, 15), () -> new AccountingPeriods(periodStore, new InMemoryGlMappingStore(), cutoff, LockGrace.standard(), (uow, record) -> { },
                 (uow, envelope, payload, mediaType) -> { }, IDS,
                 Clock.fixed(Instant.parse("2026-09-15T09:00:00Z"), ZoneOffset.UTC), (uow, period, actor, correlation) -> 0)
-                .openNext(UOW, Actor.SYSTEM, CorrelationId.generate(IDS));
+                .openNext(UOW, Actor.SYSTEM, CorrelationId.generate(IDS)));
         return periodStore.month(SEPTEMBER).orElseThrow().id().value().toString();
     }
 

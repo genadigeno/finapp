@@ -15,7 +15,6 @@ import com.finapp.sharedkernel.event.EventEnvelope;
 import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -108,7 +107,6 @@ public final class CheckoutExpirySweeper {
     private final AuditWriter<Connection> audit;
     private final OutboxWriter<Connection> outbox;
     private final IdGenerator ids;
-    private final Clock clock;
     private final Duration paymentGrace;
     private final int batchSize;
     private final UndispatchedPayments<Connection> undispatched;
@@ -119,7 +117,6 @@ public final class CheckoutExpirySweeper {
             AuditWriter<Connection> audit,
             OutboxWriter<Connection> outbox,
             IdGenerator ids,
-            Clock clock,
             Duration paymentGrace,
             int batchSize,
             UndispatchedPayments<Connection> undispatched) {
@@ -129,7 +126,6 @@ public final class CheckoutExpirySweeper {
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
         this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
         Objects.requireNonNull(paymentGrace, "paymentGrace must not be null");
         if (paymentGrace.isNegative()) {
             throw new IllegalArgumentException("paymentGrace must not be negative: " + paymentGrace);
@@ -163,12 +159,12 @@ public final class CheckoutExpirySweeper {
      */
     @SuppressWarnings("try") // The Scope is used for its close side effect (the established idiom).
     public SweepResult sweep() {
-        Instant now = Instant.now(clock);
+        // NO CLOCK HERE AT ALL (P15-TSK-038, ADR-0014): the list is the statement's on the
+        // database's now(), and each row below is re-judged and stamped on the database's clock read
+        // under its lock. An instance's skew has nothing to enter.
         List<CheckoutSession> candidates =
                 transactions.inTransaction(
-                        uow ->
-                                sessions.findExpirable(
-                                        uow, now, now.minus(paymentGrace), batchSize));
+                        uow -> sessions.findExpirable(uow, paymentGrace, batchSize));
 
         int expired = 0;
         int skipped = 0;
@@ -242,10 +238,12 @@ public final class CheckoutExpirySweeper {
                         // Confirmed, completed, abandoned or already expired since the list.
                         return declined(cancelled);
                     }
-                    // RE-JUDGED AGAINST THE CLOCK, not trusted from the list: the candidate was
-                    // read in an earlier transaction, and a row that is no longer overdue must
-                    // not be expired because a query once said it was.
-                    if (!isOverdue(current)) {
+                    // RE-JUDGED AGAINST THE DATABASE'S CLOCK, READ AFTER THE LOCK (P15-TSK-038,
+                    // P12-TSK-007's idiom), not trusted from the list: the candidate was read in
+                    // an earlier transaction, and a row that is no longer overdue must not be
+                    // expired because a query once said it was.
+                    Instant databaseNow = sessions.databaseNow(uow);
+                    if (!isOverdue(current, databaseNow)) {
                         return declined(cancelled);
                     }
                     if (current.status() == CheckoutSessionStatus.PAYMENT_PENDING
@@ -255,7 +253,7 @@ public final class CheckoutExpirySweeper {
                         return false;
                     }
 
-                    CheckoutSession expired = current.expire(clock);
+                    CheckoutSession expired = current.expire(databaseNow);
                     if (!sessions.transition(uow, current, expired)) {
                         // Another writer moved the row between the lock and the write. It
                         // cannot happen through this store - the lock serializes every writer
@@ -264,7 +262,8 @@ public final class CheckoutExpirySweeper {
                         return false;
                     }
 
-                    Instant at = Instant.now(clock);
+                    // The state, the record and the event carry the one reading judged above.
+                    Instant at = expired.statusChangedAt();
                     Actor platform = SecurityContext.require();
                     audit.append(
                             uow,
@@ -317,13 +316,12 @@ public final class CheckoutExpirySweeper {
      * be reading noise. The state a row is in <strong>when the decision is made</strong> is the
      * state whose deadline applies.
      */
-    private boolean isOverdue(CheckoutSession session) {
-        Instant now = Instant.now(clock);
+    private boolean isOverdue(CheckoutSession session, Instant databaseNow) {
         Instant deadline =
                 session.status() == CheckoutSessionStatus.PAYMENT_PENDING
                         ? session.expiresAt().plus(paymentGrace)
                         : session.expiresAt();
-        return !now.isBefore(deadline);
+        return !databaseNow.isBefore(deadline);
     }
 
     /**

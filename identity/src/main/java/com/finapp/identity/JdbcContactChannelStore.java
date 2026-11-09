@@ -7,7 +7,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.Timestamp;
-import java.time.Instant;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,29 +23,40 @@ public final class JdbcContactChannelStore implements ContactChannelStore<Connec
     /** SQLState 23505. The one-verified-per-kind index answering, not a failure (`X-TSK-004`). */
     private static final String UNIQUE_VIOLATION = "23505";
 
+    /**
+     * The database's clock when this statement reads the row ({@code P15-TSK-038}, ADR-0014):
+     * {@code JdbcRecoveryRequestStore}'s reading, with the same limit. PostgreSQL re-evaluates the
+     * predicate only after a racer's committed update, so a challenge that lapsed during a wait on
+     * a racer that rolled back is still accepted, once.
+     */
+    private static final String DATABASE_NOW = "GREATEST(clock_timestamp(), transaction_timestamp())";
+
     @Override
     public void add(
             Connection unitOfWork,
             ContactChannel channel,
             SingleUseToken challenge,
-            Instant expiresAt) {
+            Duration lifetime) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(channel, "channel must not be null");
         Objects.requireNonNull(challenge, "challenge must not be null");
-        Objects.requireNonNull(expiresAt, "expiresAt must not be null");
+        Objects.requireNonNull(lifetime, "lifetime must not be null");
 
+        // The bound is the database's own stamp (P15-TSK-038): verify judges it on the same clock, so
+        // no instance's skew lengthens or shortens a challenge. added_at stays the deciding
+        // instance's business time: it is compared with nothing.
         String sql =
                 "INSERT INTO " + TABLE
                         + " (id, identity_id, kind, address, verification_token_hash,"
                         + " verification_expires_at, added_at)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?)";
+                        + " VALUES (?, ?, ?, ?, ?, now() + (? * INTERVAL '1 millisecond'), ?)";
         try (PreparedStatement insert = unitOfWork.prepareStatement(sql)) {
             insert.setObject(1, channel.id().value());
             insert.setObject(2, channel.identityId().value());
             insert.setString(3, channel.kind().name());
             insert.setString(4, channel.address().value());
             insert.setString(5, challenge.hash().expose());
-            insert.setTimestamp(6, Timestamp.from(expiresAt));
+            insert.setLong(6, lifetime.toMillis());
             insert.setTimestamp(7, Timestamp.from(channel.addedAt()));
             insert.executeUpdate();
         } catch (SQLException e) {
@@ -55,11 +66,9 @@ public final class JdbcContactChannelStore implements ContactChannelStore<Connec
     }
 
     @Override
-    public Optional<ContactChannel> verify(
-            Connection unitOfWork, SingleUseToken presented, Instant at) {
+    public Optional<ContactChannel> verify(Connection unitOfWork, SingleUseToken presented) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(presented, "presented must not be null");
-        Objects.requireNonNull(at, "at must not be null");
 
         // Conditional, and every clause is load-bearing:
         //   verification_token_hash = ?   the challenge itself
@@ -67,20 +76,22 @@ public final class JdbcContactChannelStore implements ContactChannelStore<Connec
         //                                 verifiedFor() report a freshly changed channel as old -
         //                                 and that is the input to INV-IDN-06's "recently changed
         //                                 channel" abuse case
-        //   verification_expires_at > ?   judged by the argument, which the caller takes from the
-        //                                 injected Clock; the server's clock decides in every
-        //                                 cross-instance comparison (ADR-0014)
+        //   verification_expires_at >     judged here on the database's clock
+        //     DATABASE_NOW                (P15-TSK-038): the server's clock decides in every
+        //                                 cross-instance comparison (ADR-0014), and this bound is
+        //                                 one the database stamped
         //
         // The token is CLEARED on success, so the challenge cannot be presented twice. That is the
         // single-use property, and it is here rather than in Java because the row count is what two
         // racing instances actually agree on.
         String sql =
                 "UPDATE " + TABLE
-                        + " SET verified_at = ?, verification_token_hash = NULL,"
+                        + " SET verified_at = " + DATABASE_NOW + ","
+                        + " verification_token_hash = NULL,"
                         + " verification_expires_at = NULL"
                         + " WHERE verification_token_hash = ?"
                         + " AND verified_at IS NULL"
-                        + " AND verification_expires_at > ?"
+                        + " AND verification_expires_at > " + DATABASE_NOW
                         + " RETURNING " + COLUMNS;
 
         // Behind a savepoint (`X-TSK-004`, JdbcPaymentFeePinStore's shape). Setting verified_at
@@ -101,9 +112,7 @@ public final class JdbcContactChannelStore implements ContactChannelStore<Connec
                     DatabaseFailure.describe("Could not prepare a contact channel verification", e));
         }
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
-            update.setTimestamp(1, Timestamp.from(at));
-            update.setString(2, presented.hash().expose());
-            update.setTimestamp(3, Timestamp.from(at));
+            update.setString(1, presented.hash().expose());
             Optional<ContactChannel> verified;
             try (ResultSet rows = update.executeQuery()) {
                 verified = rows.next() ? Optional.of(read(rows)) : Optional.empty();

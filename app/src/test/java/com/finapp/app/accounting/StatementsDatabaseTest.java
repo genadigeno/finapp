@@ -839,7 +839,7 @@ class StatementsDatabaseTest {
     // ------------------------------------------------------------------ the adjustment
 
     private static PriorPeriodAdjustments machine() {
-        return new PriorPeriodAdjustments(AccountingPeriodFixture.STORE, new JdbcPriorPeriodAdjustmentStore(), new LedgerPriorPeriodPostings(new AdjustmentService(new IdempotentExecutor(new JdbcIdempotencyRecordStore(), NOW, Duration.ofDays(1), Duration.ofMinutes(5)), new JdbcJournalEntryStore(IDS),
+        return new PriorPeriodAdjustments(AccountingPeriodFixture.datedBy(FEBRUARY_TENTH), new JdbcPriorPeriodAdjustmentStore(), new LedgerPriorPeriodPostings(new AdjustmentService(new IdempotentExecutor(new JdbcIdempotencyRecordStore(), NOW, Duration.ofDays(1), Duration.ofMinutes(5)), new JdbcJournalEntryStore(IDS),
                 new JdbcAdjustmentProposalStore(), new JdbcAuditWriter(), new JdbcOutboxWriter(), new JdbcBalanceProjection(), IDS, NOW, PostingObserver.NONE, ACCOUNTS), ACCOUNTS), new JdbcGlMappingStore(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, FEBRUARY_TENTH);
     }
 

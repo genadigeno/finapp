@@ -161,7 +161,10 @@ public enum ChecksAssessment {
         return all.stream().filter(VerificationCheck::onboarding).toList();
     }
 
-    /** The store's {@code ORDER BY requested_at DESC, id DESC}, in memory. */
+    /**
+     * Newest by {@code requested_at} then id, in memory (`P15-TSK-037`: the store's rank is {@code check_order}, which the domain
+     * object does not carry): it names only which of a type's {@code INDETERMINATE} checks a reviewer starts from, and decides nothing.
+     */
     private static final Comparator<VerificationCheck> NEWEST =
             Comparator.comparing(VerificationCheck::requestedAt)
                     .thenComparing(check -> check.id().value().toString());

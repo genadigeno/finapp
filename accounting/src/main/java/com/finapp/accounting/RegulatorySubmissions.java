@@ -813,7 +813,7 @@ public final class RegulatorySubmissions {
     }
 
     /**
-     * What a person must act on or know of, oldest first, one page: a keyset on what is frozen from birth, so a row turning up or leaving moves no other. The cursor is the last row's id.
+     * What a person must act on or know of, oldest first, one page: a keyset on what is frozen from birth (the application role's grant is what freezes {@code recorded_order}), so a row turning up or leaving moves no other. The cursor is the last row's id.
      *
      * @throws SubmissionInvalid a page out of bounds, or a cursor no return answers
      */

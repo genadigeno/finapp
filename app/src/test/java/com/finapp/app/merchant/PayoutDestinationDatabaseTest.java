@@ -46,6 +46,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -61,8 +62,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * the withdrawal that gives the cooling-off its teeth, and `V006` refusing — for raw SQL — what
  * the domain refuses. The HTTP surface is {@code PayoutDestinationEndpointDatabaseTest}'s.
  *
- * <p>The cooling-off is the context's default (72 hours) and the sweeps run on offset clocks, so
- * "during" and "after" are exact rather than waited for.
+ * <p>The cooling-off is the context's default (72 hours) and the sweeps run on the database's clock
+ * moved for their own session ({@code DatabaseClockFrame}, `P15-TSK-038`), so "during" and "after"
+ * are exact rather than waited for: the clock that decides a cooling-off is the database's, and an
+ * offset {@code Clock} would be moving a clock nothing reads any more.
  */
 @Tag("database")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
@@ -140,8 +143,10 @@ class PayoutDestinationDatabaseTest {
         PayoutDestinationId proposed = propose(merchant, person(), "pdr_second1");
         Actor approver = person();
 
+        java.time.Instant before = databaseNow();
         PayoutDestinations.Approval first =
                 as(approver, uow -> destinations.approve(uow, merchant, proposed, "verified"));
+        java.time.Instant after = databaseNow();
         PayoutDestinations.Approval retry =
                 as(approver, uow -> destinations.approve(uow, merchant, proposed, "verified"));
 
@@ -150,8 +155,16 @@ class PayoutDestinationDatabaseTest {
         assertThat(retry).isInstanceOfSatisfying(
                 PayoutDestinations.Approved.class, a -> assertThat(a.replayed()).isTrue());
         PayoutDestination approved = ((PayoutDestinations.Approved) first).destination();
-        assertThat(approved.coolingOffUntil())
-                .contains(approved.approvedAt().orElseThrow().plus(Duration.ofHours(72)));
+        // The deadline is the policy after the DATABASE's reading (P15-TSK-038,
+        // PayoutDestinationTest#aFastProposerCannotLengthenTheCoolingOff), so it is bracketed by the
+        // database's readings around the call. Not approved_at plus the policy: proposed_at is this
+        // JVM's clock, and a container trailing it floors approved_at there while the deadline stays
+        // the reading's. The margin is this container's clock being corrected backwards between
+        // statements (CURRENT_STATE.md section Local Environment Prerequisites).
+        Duration policy = Duration.ofHours(72);
+        Duration stepMargin = Duration.ofSeconds(5);
+        assertThat(approved.coolingOffUntil().orElseThrow())
+                .isBetween(before.plus(policy).minus(stepMargin), after.plus(policy).plus(stepMargin));
         assertThat(count(
                         "SELECT count(*) FROM platform.audit_record WHERE operation ="
                                 + " 'merchant.PayoutDestinationApproved' AND target_id = ?",
@@ -525,16 +538,36 @@ class PayoutDestinationDatabaseTest {
         effectuationAt(offset).sweep();
     }
 
-    /** The real sweep over the real store, on a clock moved forward by {@code offset}. */
+    /** The real sweep over the real store, on the database's clock moved forward by {@code offset}. */
     private PayoutDestinationEffectuation effectuationAt(Duration offset) {
         // A wide batch: rows other tests left approved are due too, and must not crowd ours out.
         return new PayoutDestinationEffectuation(
-                new MerchantTransactions(new TransactionTemplate(transactionManager), dataSource),
+                new com.finapp.merchant.MerchantTransactionRunner() {
+                    @Override
+                    public <R> R inTransaction(Function<Connection, R> work) {
+                        return com.finapp.platform.testing.database.DatabaseClockFrame.inOneTransaction(
+                                offset, work);
+                    }
+                },
                 store,
                 auditWriter,
                 IDS,
-                Clock.offset(Clock.system(ZoneOffset.UTC), offset),
                 1000);
+    }
+
+    @BeforeAll
+    static void installTheMovedClock() {
+        com.finapp.platform.testing.database.DatabaseClockFrame.install();
+    }
+
+    /** The database's clock, as its own statement: what a deadline is read against. */
+    private static java.time.Instant databaseNow() throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                java.sql.PreparedStatement read = app.prepareStatement("SELECT statement_timestamp()");
+                java.sql.ResultSet row = read.executeQuery()) {
+            row.next();
+            return row.getObject(1, OffsetDateTime.class).toInstant();
+        }
     }
 
     /** Runs {@code work} as {@code actor} in one committed transaction on the app role. */

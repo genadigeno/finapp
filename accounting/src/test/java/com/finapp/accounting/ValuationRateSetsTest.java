@@ -464,6 +464,7 @@ class ValuationRateSetsTest {
     }
 
     private AccountingPeriods periods(String day) {
+        periodStore.databaseToday(LocalDate.parse(day));
         Clock clock = Clock.fixed(Instant.parse(day + "T09:00:00Z"), ZoneOffset.UTC);
         PostingCutoff cutoff = new PostingCutoff() {
             @Override

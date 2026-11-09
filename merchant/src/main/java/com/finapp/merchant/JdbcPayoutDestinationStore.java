@@ -1,6 +1,7 @@
 package com.finapp.merchant;
 
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.security.Sensitive;
@@ -151,14 +152,15 @@ public final class JdbcPayoutDestinationStore implements PayoutDestinationStore<
     }
 
     @Override
-    public List<PayoutDestination> findDue(Connection unitOfWork, Instant now, int limit) {
+    public List<PayoutDestination> findDue(Connection unitOfWork, int limit) {
+        // now(), never a caller's instant (P15-TSK-038, ADR-0014): a candidate list in its own short
+        // transaction with nothing to wait on, re-judged under each row's lock.
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
                         "SELECT " + COLUMNS + " FROM " + TABLE
-                                + " WHERE status = 'APPROVED' AND cooling_off_until <= ?"
+                                + " WHERE status = 'APPROVED' AND cooling_off_until <= now()"
                                 + " ORDER BY cooling_off_until, id LIMIT ?")) {
-            select.setTimestamp(1, Timestamp.from(now));
-            select.setInt(2, limit);
+            select.setInt(1, limit);
             List<PayoutDestination> due = new ArrayList<>();
             try (ResultSet row = select.executeQuery()) {
                 while (row.next()) {
@@ -170,6 +172,11 @@ public final class JdbcPayoutDestinationStore implements PayoutDestinationStore<
             throw new MerchantStorageException(
                     DatabaseFailure.describe("reading due payout destinations", failure));
         }
+    }
+
+    @Override
+    public Instant databaseNow(Connection unitOfWork) {
+        return DatabaseTime.now(unitOfWork);
     }
 
     @Override

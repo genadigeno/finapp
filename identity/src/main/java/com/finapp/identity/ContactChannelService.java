@@ -77,7 +77,8 @@ public final class ContactChannelService {
                         Optional.empty(),
                         at);
 
-        channels.add(unitOfWork, channel, challenge, at.plus(CHALLENGE_LIFETIME));
+        // The challenge's bound is the database's (P15-TSK-038): only the lifetime crosses here.
+        channels.add(unitOfWork, channel, challenge, CHALLENGE_LIFETIME);
         audit(unitOfWork, at, IdentityAuditAction.CONTACT_CHANNEL_ADDED, channel, "kind=EMAIL");
 
         // No event. An unverified channel is not a fact about the account - announcing one would
@@ -100,15 +101,16 @@ public final class ContactChannelService {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(presented, "presented must not be null");
 
-        Instant at = Instant.now(clock);
         Optional<ContactChannel> verified =
-                channels.verify(unitOfWork, SingleUseToken.of(presented), at);
+                channels.verify(unitOfWork, SingleUseToken.of(presented));
 
+        // THE RECORD CARRIES THE ROW'S INSTANT (P15-TSK-038): the database judged the challenge and
+        // stamped verified_at, so the audit record is that instant, not this instance's clock.
         verified.ifPresent(
                 channel ->
                         audit(
                                 unitOfWork,
-                                at,
+                                channel.verifiedAt().orElseThrow(),
                                 IdentityAuditAction.CONTACT_CHANNEL_VERIFIED,
                                 channel,
                                 "identity=" + channel.identityId()));
