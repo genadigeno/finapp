@@ -68,7 +68,7 @@ throttle's counters, are that process's state, and retention is not what bounds 
 
 ## 3. Audit archival — the design
 
-The archive bucket's write-once lock is `P15-TSK-015`'s. Building what follows is re-dated to Phase 16's partitioning and archival of high-volume tables
+The archive bucket's write-once lock is configured (`infra/terraform/modules/object-storage`, never applied), with Object Lock on from creation and its mode and period required inputs with no default, because the period below is `OPEN`. Building what follows is re-dated to Phase 16's partitioning and archival of high-volume tables
 (ADR-0010's read-note). Nothing here is built.
 
 **No audit record is ever deleted.** Archival is a **copy** to write-once storage, verified before anything relies on it. The

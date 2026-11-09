@@ -8,6 +8,11 @@ output "broker_subnet_ids" {
   value       = aws_msk_cluster.this.broker_node_group_info[0].client_subnets
 }
 
+output "client_security_group_id" {
+  description = "The one security group admitted to the brokers' port, read from the planned rule."
+  value       = aws_vpc_security_group_ingress_rule.from_clients.referenced_security_group_id
+}
+
 output "server_properties" {
   description = "The brokers' configuration, as planned."
   value       = aws_msk_configuration.this.server_properties

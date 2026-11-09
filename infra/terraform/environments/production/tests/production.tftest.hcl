@@ -102,6 +102,11 @@ run "production_keeps_the_data_tier_on_the_workload_tier_behind_the_nodes" {
   }
 
   assert {
+    condition     = module.kafka.client_security_group_id == "sg-nodes"
+    error_message = "Production's brokers do not admit the cluster's nodes, and only them."
+  }
+
+  assert {
     condition     = module.postgres.multi_az == true
     error_message = "Production's database has no synchronous standby."
   }

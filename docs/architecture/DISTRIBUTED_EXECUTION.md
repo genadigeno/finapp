@@ -902,7 +902,11 @@ restart discovering it one instance at a time.
   before the pool is used, and one that queried the database would fail for a database that is
   merely down. `finapp.database.server-max-connections` is a *declaration* by the deployment, and a
   wrong declaration is a wrong answer. That is why it has no silent default in a deployment's own
-  configuration.
+  configuration. *(`P15-TSK-015`, 2026-11-09: on the reference cloud the declaration and the server's parameter are one
+  number, because each Terraform root reads its overlay's literal and its test compares the two. That closes the two
+  disagreeing in the repository. It does not close them disagreeing in time: `max_connections` is static, so after an
+  apply the server keeps its old value until a reboot, and no plan shows that. The order of a change is in the `postgres`
+  module's README. Nothing here has been applied.)*
 - The arithmetic assumes each instance holds its **full** pool. True here because `minimum-idle`
   equals `maximum-pool-size`, which is both HikariCP's recommendation and what makes the check
   meaningful — a pool that only sometimes reaches its maximum would make this a statement about the

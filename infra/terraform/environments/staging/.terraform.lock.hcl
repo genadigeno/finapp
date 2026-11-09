@@ -3,7 +3,7 @@
 
 provider "registry.terraform.io/hashicorp/aws" {
   version     = "6.72.0"
-  constraints = ">= 6.72.0, 6.72.0"
+  constraints = "6.72.0"
   hashes = [
     "h1:SMGODuhkqfLLPqHyfaelK7rfkN8uqLAstPwZ4DKUpv8=",
     "h1:v8OGTOUuY1sbRr4VDjYW7ypqV5NBB1cosUY5LrcwqTs=",
@@ -28,7 +28,7 @@ provider "registry.terraform.io/hashicorp/aws" {
 
 provider "registry.terraform.io/mongey/kafka" {
   version     = "0.13.2"
-  constraints = ">= 0.13.2, 0.13.2"
+  constraints = "0.13.2"
   hashes = [
     "h1:juhrQYOPutbOBQYZ0wEYfMud8kQiWhFVHo8dvhZSRF4=",
     "h1:rAofVc5/77XfDC1k73S7NdvYCiuKQmiWAfAfzulra7w=",

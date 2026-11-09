@@ -60,8 +60,8 @@
 #
 # SAME BYTES HERE AND IN CI. Every tool is an image pinned by digest in infra/scanner-pins.sh; tflint
 # uses only its bundled ruleset and trivy only the checks embedded in the pinned binary
-# (--skip-check-update), so nothing is fetched at run time except the providers, which init verifies
-# against the committed .terraform.lock.hcl. TERRAFORM_IMAGE, TFLINT_IMAGE and TRIVY_IMAGE override an
+# (--skip-check-update), so nothing is fetched at run time except the providers, once per run into a
+# mirror that every init reads and verifies against the committed .terraform.lock.hcl. TERRAFORM_IMAGE, TFLINT_IMAGE and TRIVY_IMAGE override an
 # image, as dependency-scan.sh allows, for a machine whose TLS is intercepted (OPERATIONS_RUNBOOK.md
 # section 11.13); CI never sets them.
 #
@@ -155,7 +155,7 @@ HCL
     planted public-workload-subnet modules/network/main.tf
 
     plant cluster-on-edge-tier
-    sed -i 's/module\.network\.private_subnet_ids_by_zone/module.network.public_subnet_ids_by_zone/' \
+    sed -i '/^module "kubernetes" {/,/^}/ s/module\.network\.private_subnet_ids_by_zone/module.network.public_subnet_ids_by_zone/' \
         /scratch/plants/cluster-on-edge-tier/infra/terraform/environments/staging/main.tf
     planted cluster-on-edge-tier environments/staging/main.tf
 
@@ -193,7 +193,7 @@ HCL
     planted database-public modules/postgres/main.tf
 
     plant backup-key-shared
-    sed -i 's/condition     = var\.backup_kms_key_arn != var\.storage_kms_key_arn/condition     = true/' \
+    sed -i 's/condition     = var\.backup_kms_key_arn != var\.storage_kms_key_arn/condition     = var.backup_kms_key_arn == var.backup_kms_key_arn/' \
         /scratch/plants/backup-key-shared/infra/terraform/modules/postgres/variables.tf
     planted backup-key-shared modules/postgres/variables.tf
 
@@ -263,12 +263,34 @@ terraform_directory() {
     TF_DATA_DIR=$data terraform -chdir="$1/$2" test -no-color
 }
 
+# Every provider the tree requires, fetched once per run and verified against the committed lock file.
+# Each root pins every provider a module uses (TerraformIsPinnedAndCheckedTest), so one root's list is the
+# whole list. Every init after this reads the mirror and needs no network, so a transient failure cannot
+# read as a plant refused for the wrong reason: the Kafka provider's checksums come from GitHub, and init
+# asks for them on every run, plugin cache or not. This one fetch is retried; a real failure still stops.
+mirror_providers() {
+    unset TF_CLI_CONFIG_FILE
+    rm -rf /scratch/mirror-config
+    mkdir -p /scratch/mirror-config /scratch/mirror
+    cp "$TREE/environments/production/versions.tf" "$TREE/environments/production/.terraform.lock.hcl" /scratch/mirror-config/
+    attempt=1
+    until terraform -chdir=/scratch/mirror-config providers mirror /scratch/mirror >/dev/null; do
+        [ "$attempt" -lt 3 ] || return 1
+        attempt=$((attempt + 1))
+        sleep 20
+    done
+    printf 'provider_installation {\n  filesystem_mirror {\n    path = "/scratch/mirror"\n  }\n}\n' > /scratch/terraformrc
+}
+
 in_container() {
-    export TF_IN_AUTOMATION=1 CHECKPOINT_DISABLE=1 TF_PLUGIN_CACHE_DIR=/scratch/plugins
+    export TF_IN_AUTOMATION=1 CHECKPOINT_DISABLE=1 TF_PLUGIN_CACHE_DIR=/scratch/plugins TF_CLI_CONFIG_FILE=/scratch/terraformrc
     mkdir -p /scratch/plugins
     step=$1
     shift
     case $step in
+        mirror)
+            mirror_providers
+            ;;
         plants)
             plant_all
             ;;
@@ -386,6 +408,7 @@ refuses() {
 
 PLANTS=/scratch/plants
 
+check "the providers are mirrored from the lock file" in_terraform mirror
 check "the plants are planted" in_terraform plants
 
 check "terraform fmt" fmt_on "$TREE"
