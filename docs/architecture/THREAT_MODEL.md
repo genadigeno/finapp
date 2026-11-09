@@ -442,7 +442,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T5 | One CycloneDX SBOM for each of the two images, kept with its job's run, the build failing if it does not list the image's operating-system packages and every third-party jar in the image by path, or lists a test-scope library | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#everySbomDescribesItsImage`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#ciScansBothImagesAndKeepsTheirSboms`; `infra/scripts/image-scan.sh` `contains: omits third-party jars the image holds` |
 | T5 | Each image's last build rescanned weekly against a fresh database: the workflow's schedule runs both image jobs, each of which rebuilds the last commit and refuses two builds of one commit that differ; the databases are never cached between runs | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#ciScansBothImagesAndKeepsTheirSboms`; `infra/scripts/image-scan.sh` `contains: --download-db-only` |
 | T5 | Static analysis of every module's production source in CI: Semgrep pinned by digest with no network, rules vendored, a finding needing a baseline row with a reason and an expiry, the scanner required to have read every Java file, the rules' own tests and the plants run in the same job | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theStaticAnalysisRunsOverTheVendoredRulesOffline`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theBaselineIsSmallAndReasoned`; `infra/scripts/sast.sh` `contains: --network none` |
-| T5 | The findings the image and dependency scans carry today (18 HIGH, 0 CRITICAL: ten in the distroless base's packages, which both images share, eight in the application's libraries), each with a reason and an expiry, applied by `infra/trivy/accepted-findings.yaml`; accepted by the owner on 2026-11-09, each until its date in §6 item 12 | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
+| T5 | The JSON library, in both its lines (3 in the image, 2 on the test classpath only, which the dependency scan reads), and the Kafka client's two compression codecs held at their fixed releases rather than carried: floors every module takes from the build logic on its runtime and test-fixture classpaths, the application's lockfile (what the image and the dependency scan's SBOM are built from) holding none of the versions the scans reported, and the list of carried findings naming none of them, so a finding on any of them fails its scan | EXISTS | `build-logic/src/main/kotlin/finapp.java-conventions.gradle.kts` `contains: listOf("jackson-bom", "jackson2-bom", "lz4-java", "snappy-java")` `contains: libraryFloors.forEach { "implementation"(it) }` `contains: libraryFloors.forEach { "testFixturesImplementation"(it) }`; `app/gradle.lockfile` `lacks: tools.jackson.core:jackson-core:3.1.5=` `lacks: tools.jackson.core:jackson-databind:3.1.5=` `lacks: com.fasterxml.jackson.core:jackson-core:2.22.1=` `lacks: com.fasterxml.jackson.core:jackson-databind:2.22.1=` `lacks: at.yawk.lz4:lz4-java:1.10.1=` `lacks: org.xerial.snappy:snappy-java:1.1.10.7=`; `infra/trivy/accepted-findings.yaml` `lacks: jackson` `lacks: lz4` `lacks: snappy`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#everyFindingCarriedIsInTheRegister` |
+| T5 | The findings the image and dependency scans carry today (10 HIGH, 0 CRITICAL, all in the distroless base's packages, which both images share), each with a reason and an expiry, applied by `infra/trivy/accepted-findings.yaml`; accepted by the owner on 2026-11-09, each until its date in §6 item 12 | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
 | T5 | Signatures and provenance, with admission refusing an unsigned image | PLANNED | `P15-TSK-007` |
 | T6 | No credential literal in committed configuration except the one marked local default | EXISTS | `app/src/test/java/com/finapp/app/security/CommittedConfigurationHoldsNoSecretTest.java#noCommittedConfigurationHoldsACredentialLiteral` |
 | T6 | The whole of git history scanned for secrets in CI, with the pinned scanner | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theHistoryIsScannedForSecrets` |
@@ -1040,9 +1041,9 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
     list and those files equal. An entry the owner withdraws is removed from its file and the job goes red. *(Read "are
     **proposed, not accepted**" and "An entry the owner refuses" until the owner's decision.)*
 
-    **(a) Eighteen HIGH findings on the application image and its libraries, no CRITICAL, no secret, no misconfiguration**
-    (Trivy 0.76.2, 2026-11-08). The migrator image carries the first ten, the same base packages at the same versions, and
-    none of the eight: its six third-party jars have no finding of their own, so it adds nothing to this list:
+    **(a) Ten HIGH findings on the images' base, no CRITICAL, no secret, no misconfiguration** (Trivy 0.76.2; found
+    2026-11-08, read again on both freshly built images 2026-11-09). The application and migrator images carry the same
+    ten, the same base packages at the same versions, and the migrator's six third-party jars have no finding of their own:
    - `CVE-2026-113351` (libexpat1), until 2027-01-31
    - `CVE-2026-115506` (libexpat1), until 2027-01-31
    - `CVE-2026-117610` (libexpat1), until 2027-01-31
@@ -1053,23 +1054,23 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
    - `CVE-2026-78410` (libuuid1), until 2027-01-31
    - `CVE-2026-76844` (zlib1g), until 2027-01-31
    - `CVE-2026-85091` (zlib1g), until 2027-01-31
-   - `CVE-2026-68497` (jackson-databind 3.1.5), until 2026-12-31
-   - `CVE-2026-91776` (jackson-databind 3.1.5), until 2026-12-31
-   - `CVE-2026-91777` (jackson-databind 3.1.5), until 2026-12-31
-   - `CVE-2026-89407` (jackson-core 3.1.5), until 2026-12-31
-   - `CVE-2026-89425` (jackson-core 3.1.5), until 2026-12-31
-   - `CVE-2026-106451` (lz4-java 1.10.1), until 2026-12-31
-   - `CVE-2026-108106` (snappy-java 1.1.10.7), until 2026-12-31
-   - `CVE-2026-93451` (snappy-java 1.1.10.7), until 2026-12-31
 
-    The first ten are in the Debian 13 packages of the pinned distroless runtime base, whose digest is the current digest of
+    They are in the Debian 13 packages of the pinned distroless runtime base, whose digest is the current digest of
     its tag (checked 2026-11-08): `libexpat1` and `libuuid1` have no fixed Debian package, `zlib1g`'s fix is not in a
     distroless build yet. *Recommendation*: accept, until 2027-01-31, re-read each time the pin check reports a newer base.
-    The last eight are the application's own libraries and each has a fixed release; moving them changes the JSON
-    library and the Kafka codecs every module runs on and needs the full test tiers, so it was not done inside a scan
-    task. *Recommendation*: accept, until 2026-12-31, and add **one small backlog item to Phase 15, before the database
-    pass**, moving Jackson to 3.1.7 or later and `lz4-java` and `snappy-java` to their fixed releases, so that the exit's
-    database pass runs on the moved versions; then these eight rows are removed.
+
+    **Eight more were carried here and are retired (2026-11-09).** The list above held eighteen until that day. The other
+    eight were on the application's own libraries, each with a fixed release, and the owner accepted them on 2026-11-09
+    until 2026-12-31: CVE-2026-68497, CVE-2026-91776 and CVE-2026-91777 (jackson-databind 3.1.5), CVE-2026-89407 and
+    CVE-2026-89425 (jackson-core 3.1.5), CVE-2026-106451 (lz4-java 1.10.1), CVE-2026-108106 and CVE-2026-93451 (snappy-java
+    1.1.10.7). The recommendation then was to accept them and add one small backlog item to Phase 15, before the
+    database pass, because moving the JSON library and the Kafka codecs needs that pass to run on the moved versions.
+    That item has landed: Jackson 3 is at 3.1.8, `lz4-java` at 1.11.4 and `snappy-java` at 1.1.10.9, a fresh scan of both images
+    reports none of the eight and nothing new at HIGH or CRITICAL, and **the owner's acceptance of those eight ends here**: their
+    rows left `infra/trivy/accepted-findings.yaml` and this list together. The same five Jackson ids were also on
+    the test classpath's Jackson 2.22.1 in the build's SBOM, covered by the same rows because a carried id is carried by id;
+    Jackson 2 moved to 2.22.3 with them, so the dependency scan stays green without them. The ids are written here without
+    code marks on purpose, because `SecurityScansAreWiredTest` holds every code-marked id in this item equal to that file.
 
     **(b) Fifty-six rows of `infra/semgrep/baseline.tsv`, each read and reasoned on 2026-11-08, until 2027-06-30.**
     Sixteen are T43's unbounded reads: each simulated provider's answer is read whole and then checked against the
@@ -1084,7 +1085,8 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
     row count are held by `SecurityScansAreWiredTest`.
 
     **Decided 2026-11-09**: (a) and (b) accepted as recommended, with the dates above, and the one dependency item added
-    as `P15-TSK-041`. (a)'s last eight expire on 2026-12-31, so that item must land first.
+    to the phase's backlog. *(Until that item landed, the same day, this read that (a)'s last eight expire on 2026-12-31, so the
+    item must land first.)*
     **One row has been added since, and the owner accepted it the same day, as recommended** (2026-11-09, the static analysis on the tree with wave D merged): a
     fifty-seventh in (b), a statement field of the source-join census's generic join, handed a `private static final` text by each
     module, until 2027-06-30, as the others.

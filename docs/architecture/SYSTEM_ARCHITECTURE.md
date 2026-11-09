@@ -61,7 +61,9 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | Java | 21 (LTS) | Pinned by Gradle toolchain, not by ambient `JAVA_HOME` |
 | Gradle | 9.7.1 | Distribution and wrapper jar verified by SHA-256 |
 | Spring Boot | 4.1.1 | Brings Spring Framework 7 and Jackson 3 |
-| Tomcat | 11.0.25 | **Pinned above the BOM**, which manages 11.0.24 — three CRITICAL advisories. The only deliberate deviation; see the catalog note |
+| Tomcat | 11.0.25 | **Pinned above the BOM**, which manages 11.0.24 — three CRITICAL advisories. One of two deliberate deviations; see the catalog note |
+| Jackson 3 | 3.1.8 | **Held above the BOM**, which manages 3.1.5 — HIGH findings the image scan named. The other deliberate deviation; see the catalog note |
+| `lz4-java`, `snappy-java` | 1.11.4, 1.1.10.9 | **Held above what the Kafka client names** (1.10.1, 1.1.10.7) — HIGH findings the image scan named; see the catalog note |
 | PostgreSQL | 18.6 | Debian-based image, ICU collation provider |
 | Kafka | 4.3.1 | KRaft mode, no ZooKeeper |
 | Redis | 8.10.1 | AOF persistence enabled locally |
