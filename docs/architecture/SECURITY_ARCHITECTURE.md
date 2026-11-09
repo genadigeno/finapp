@@ -99,7 +99,7 @@ The expectations per hop, and what enforces them (`P0-TSK-034`, ADR-0023).
 |---|---|---|---|
 | Application to PostgreSQL | plaintext, loopback only | `sslmode=verify-full` | `TransportSecurityGuard` - the application refuses to start otherwise. "Loopback" is every host the driver would reach: since `P15-TSK-026`'s review fix round a URL whose `host`, `PGHOST` or `service` query parameter could name another host, or whose authority holds an entry that is not strictly `host[:port]` or `[IPv6][:port]`, is unread and so not loopback - the pinned driver reads the query's host over the URL's, and an unbracketed IPv6 entry beside a loopback one had been dropped unread |
 | Application to Kafka | `PLAINTEXT` listeners, loopback only | `SASL_SSL`: TLS, with the client authenticated by SCRAM-SHA-512 (owner decision C11) | `KafkaTransportGuard` refuses startup when any bootstrap server is non-loopback and the protocol is anything but `SASL_SSL` (`PLAINTEXT`, `SASL_PLAINTEXT` and `SSL` alike), when a SASL protocol has no credential, when the SCRAM password is the marked local default, and - on loopback too - when the protocol is one Kafka does not define (`P2-TSK-001`, widened by `P15-TSK-026`). Both clients take their connection settings from `BrokerConnection` alone, which fixes the SCRAM mechanism and hostname verification on, so no configuration can disable verification elsewhere - the limit this row recorded until then. ACLs per principal are data in `infra/kafka/topics.yaml`, planned for the managed broker by `infra/terraform/modules/kafka` and never applied; a real TLS handshake is first exercised by `P15-TSK-012`'s rehearsal. Since the review fix round every bootstrap entry must be strictly `host:port` or `[IPv6]:port`, on loopback too (kafka-clients reads `localhost://kafka.internal:9092` as the remote host), and only `EventingBeans` makes a broker connection (`brokerConnectionsAreMadeBehindTheGuard`). **Its limit**: the guard reads the bootstrap list only; after first contact the clients follow the listeners the brokers advertise, so a loopback broker advertising a remote listener would take them there under the loopback protocol. *Read "TLS with client authentication ... the guard refuses `PLAINTEXT` ... TLS/SASL themselves are Phase 15's deployment posture; the guard's limit is that it cannot see hostname verification disabled elsewhere" until `P15-TSK-026`* |
-| Application to Redis | plaintext, no auth | TLS, and a credential | *Decided, not yet implemented* - there is no Redis client |
+| Application to Redis | no connection | no connection | Nothing to enforce: no code uses Redis and none is deployed (ADR-0030, C3). `compose.yaml` still starts one on loopback, plaintext, with no password |
 | Inbound HTTP | plaintext | TLS terminated at the edge; the application is never the TLS endpoint | *Decided, not yet implemented* - Phase 15, with deployment |
 | Application to a provider | plain `http` to the simulated providers, loopback only | `https` - the JDK `HttpClient`'s default certificate and hostname verification, never disabled by any adapter | `ProviderTransportGuard` - the application refuses to start when any provider base URL (`finapp.payments.provider.url`, `finapp.payments.instant.url`, `finapp.paymentmethods.tokenisation.url`, `finapp.kyc.provider.url`, `finapp.merchant.payout.provider.url`) is not `https` off loopback; since `P8-TSK-021` every settlement pull source URL (`finapp.settlement.psp.report.url`, `.scheme.report.url`, `.payout.report.url`, `finapp.settlement.bank.statement.url`) likewise, `sftp` admitted beside `https` for these alone (no `sftp` collector is built: the HTTP adapter refuses any other scheme at construction, so an `sftp` source fails startup). *This row read "none exist / Phase 5, with the first adapter" until the Phase 7 → 8 transition's gate found the hop enforced nowhere while it carried the instant scheme's bearer key, customers' linking grants, withdrawal destinations and decrypted dispute evidence; a new provider's URL joins the guard's one list* |
 
@@ -154,11 +154,12 @@ loopback rule (`ConfinedCredential`), so the database never holds it.
 | `FxEvidenceCipher` (fx) | FX provider evidence | `finapp.fx.evidence.key` | none |
 | `SettlementFileCipher` (settlement) | Settlement file chunks | `finapp.settlement.file.key` | file, source, content hash and position |
 
-**Key versioning.** Each key has a companion `…key-version` property (default `1`), and every row the cipher writes
-stamps the version beside its ciphertext. Settlement stamps it on the file. **Each instance holds exactly one key.**
-Decryption always uses that key, whatever version a row carries. `CounterpartySubjectCipher` refuses a row stamped with
-another version, and the other seven fail at the authentication tag. So **a key cannot be rotated today without making
-every earlier row unreadable**. Many of these tables are `INSERT`-only evidence that must never be re-encrypted.
+**Key versioning and rings.** Each key has a companion `…key-version` property (default `1`) naming its base key's
+version, and every row the cipher writes stamps the version beside its ciphertext; settlement stamps it on the file.
+Since `P15-TSK-019` each key is a ring (`KeyRing`, in `platform`): one active version encrypts, retained versions decrypt
+only the rows stamped with them, and a row stamped with a version the ring does not hold is refused rather than tried
+under another key. No stored row changed in form. Many of these tables are `INSERT`-only evidence that must never be
+re-encrypted, which is why a rotation only ever adds a version; `OPERATIONS_RUNBOOK.md` section 11.29 is the procedure.
 
 **Hashed, not encrypted.** Passwords (Argon2id, ADR-0032), session tokens, merchant API keys and checkout tokens are
 stored as derivations from which the original cannot be recovered (`INV-IDN-01`). Card data is tokenised at the
@@ -168,7 +169,7 @@ boundary and never stored. Raw bank details are held at the provider (ADR-0056).
 
 | Concern | Position today | Owner |
 |---|---|---|
-| Key rotation | No key ring. One active key per instance, so a rotation would strand every earlier row | `P15-TSK-019`: key rings, one active version, retained versions decrypting by the stamped version |
+| Key rotation | Rings built (`SECRET_MANAGEMENT.md` §5.1): a new version is known by every replica before any writes under it, and nothing is re-encrypted. Nothing has rotated in a deployment | `P15-TSK-020` (the rehearsal) |
 | Key management | Keys are environment values. There is no KMS and no wrapping, and no store exists yet; their delivery from one is written as manifests, never run (`SECRET_MANAGEMENT.md` §3.5) | `P15-TSK-016` (KMS keys per purpose and the store's entries), `-020` (the operator and rotation rehearsed) |
 | Associated data | Three classes bind it. **Five bind none** (`SecretCipher`, `DocumentCipher`, `EvidenceCipher`, `PayoutEvidenceCipher`, `FxEvidenceCipher`), so a ciphertext moved to another row decrypts cleanly | `X-TSK-010`, which names the first four; the fifth is routed onto it |
 | Every other column | Plaintext in PostgreSQL. Restricted columns outside the table above rely on the database's at-rest protection: configured as a volume encrypted under a customer-managed KMS key (`infra/terraform/modules/postgres`, `P15-TSK-015`), never applied, so nothing protects them yet | The key itself is `P15-TSK-016`'s |
@@ -382,8 +383,10 @@ The tag must prove *possession of a shared secret*, which is what HMAC is; the k
 then **each callback door has its own key**: five doors, five keys (`finapp.kyc.callback.key`,
 `finapp.payments.webhook.key`, `finapp.payments.instant.webhook.key`, `finapp.fx.webhook.key`,
 `finapp.corridor.webhook.key`). The payment webhooks' signature also covers a timestamp, checked within a freshness
-window. **Each key is still static, with no rotation.** The window that accepts the current and the previous secret is
-`P15-TSK-019`'s, and its rehearsal `-020`'s.)*
+window. **Each door now verifies against its current key and, during a window, its previous one** (`SECRET_MANAGEMENT.md`
+§5.1, `P15-TSK-019`), the window closing itself at its instant and limited to seven days ahead; `-020` rehearses it.)*
+*(Corrected 2026-11-09, `P15-TSK-019`: this note read "**Each key is still static, with no rotation.** The window that
+accepts the current and the previous secret is `P15-TSK-019`'s, and its rehearsal `-020`'s" until the window existed.)*
 
 **A callback is a hint, on every rail with a money path** (`P15-TSK-036`, 2026-11-08; ADR-0083). The signature proves who
 holds a webhook key, not that the claim is true, and the key sits on infrastructure the platform does not run. So after a

@@ -2,6 +2,11 @@ package com.finapp.app.kyc;
 
 import com.finapp.app.security.ConfinedCredential.KeyLength;
 import com.finapp.app.security.ConfinedCredential.KeySpec;
+import com.finapp.app.security.ConfinedKeyRing;
+import com.finapp.platform.security.PreviousKeyWindow;
+import java.time.Instant;
+import java.util.Optional;
+import org.springframework.core.env.Environment;
 
 /**
  * Where the provider-callback signing key comes from (`P2-TSK-011`).
@@ -46,5 +51,17 @@ public final class CallbackKey {
      */
     public static byte[] decode(String configured, boolean localDefaultPermitted) {
         return SPEC.decode(configured, localDefaultPermitted);
+    }
+
+    /** The previous signing key's window (`P15-TSK-019`): named here so the secret inventory's net reads them. */
+    private static final String PREVIOUS_KEY_PROPERTY = "finapp.kyc.callback.previous.key";
+
+    private static final String PREVIOUS_VALID_UNTIL_PROPERTY = "finapp.kyc.callback.previous.valid-until";
+
+    /** The previous key's window, if one is open: {@link ConfinedKeyRing}'s rules, per door. */
+    public static Optional<PreviousKeyWindow> previousWindow(
+            Environment environment, boolean localDefaultPermitted, Instant now) {
+        return ConfinedKeyRing.previousWindow(
+                SPEC, PREVIOUS_KEY_PROPERTY, PREVIOUS_VALID_UNTIL_PROPERTY, environment, localDefaultPermitted, now);
     }
 }

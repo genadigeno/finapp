@@ -108,14 +108,14 @@ class SecretInventoryIsCompleteTest {
             "processClusterExternalSecret", "processClusterPushSecret", "processClusterStore", "processClusterGenerator", "processPushSecret",
             "genericTargets", "installCRDs", "crds", "webhook", "certController", "rbac", "resources");
 
-    private static Path root;
-    private static List<Row> inventory;
-    private static List<Beside> beside;
+    static Path root;
+    static List<Row> inventory;
+    static List<Beside> beside;
     private static Map<String, String> notSecrets;
-    private static Map<String, String> sources;
-    private static Set<String> readProperties;
-    private static Map<String, Object> application;
-    private static String applicationText;
+    static Map<String, String> sources;
+    static Set<String> readProperties;
+    static Map<String, Object> application;
+    static String applicationText;
     private static String document;
 
     record Row(String variable, String property, String secretClass, String owner, String rotation, String consumer, List<String> delivered) {
@@ -658,7 +658,7 @@ class SecretInventoryIsCompleteTest {
         return passwords;
     }
 
-    private static Set<String> propertiesIn(String source) {
+    static Set<String> propertiesIn(String source) {
         Set<String> properties = new TreeSet<>();
         Matcher found = READ_PROPERTY.matcher(source);
         while (found.find()) {
@@ -688,7 +688,7 @@ class SecretInventoryIsCompleteTest {
         return properties;
     }
 
-    private static Map<String, Object> flatten(Map<String, Object> tree) {
+    static Map<String, Object> flatten(Map<String, Object> tree) {
         Map<String, Object> flat = new LinkedHashMap<>();
         flatten("", tree, flat);
         return flat;
@@ -706,7 +706,7 @@ class SecretInventoryIsCompleteTest {
     }
 
     /** Spring Boot's canonical mapping, the one {@link #everyVariableReachesItsProperty} asks Spring itself about. */
-    private static String environmentFormOf(String property) {
+    static String environmentFormOf(String property) {
         return property.replace("-", "").replace('.', '_').toUpperCase(Locale.ROOT);
     }
 
@@ -747,7 +747,7 @@ class SecretInventoryIsCompleteTest {
         return rows;
     }
 
-    private static List<String> cells(String line) {
+    static List<String> cells(String line) {
         String trimmed = line.trim();
         assertThat(trimmed).as("a table row").startsWith("|").endsWith("|");
         List<String> cells = new ArrayList<>();
@@ -794,7 +794,7 @@ class SecretInventoryIsCompleteTest {
     }
 
     /** Every module's {@code src/main/java}, by path relative to the repository's root. */
-    private static Map<String, String> productionSources() {
+    static Map<String, String> productionSources() {
         Map<String, String> found = new TreeMap<>();
         try (Stream<Path> modules = Files.list(root)) {
             for (Path module : modules.filter(Files::isDirectory).toList()) {
@@ -814,11 +814,11 @@ class SecretInventoryIsCompleteTest {
         return found;
     }
 
-    private static String read(String path) {
+    static String read(String path) {
         return readFile(root.resolve(path));
     }
 
-    private static List<Map<String, Object>> loadAll(String text) {
+    static List<Map<String, Object>> loadAll(String text) {
         Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         List<Map<String, Object>> documents = new ArrayList<>();
         for (Object doc : yaml.loadAll(text)) {

@@ -349,6 +349,31 @@ jobs:
         run: ./infra/scripts/edge-check.sh
 
   # ---------------------------------------------------------------------------
+  # A key ring's version is activated only in a change after one that listed it
+  # (P15-TSK-019, ADR-0123): compares this change with its base, so a replica is
+  # never asked to read a version nothing told it to hold. Its own job because a
+  # schedule or a manual run has no base to compare. No credential.
+  # ---------------------------------------------------------------------------
+  key-ring-activation:
+    name: Key-ring activation order
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: The check refuses what it exists to refuse
+        run: ./infra/scripts/key-ring-activation-check.sh --self-test
+
+      - name: Refuse a change that moves a ring out of order
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: ./infra/scripts/key-ring-activation-check.sh "$BASE_REF"
+
+  # ---------------------------------------------------------------------------
   # The alert rules and routing (P15-TSK-025, ADR-0124): promtool checks every
   # rule and runs every infra/prometheus/tests/*.test.yml, amtool checks the
   # routing and that a page and a ticket reach their receivers, and each kind of

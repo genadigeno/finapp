@@ -124,7 +124,8 @@ public class FxCoverBeans {
             Clock clock) {
         boolean loopback = com.finapp.app.security.DatabaseEndpoint.isEntirelyLoopback(
                 com.finapp.app.security.DatabaseEndpoint.url(environment));
-        return new com.finapp.payments.WebhookSignature(FxWebhookKey.decode(configuredKey, loopback), tolerance, clock);
+        return new com.finapp.payments.WebhookSignature(
+                FxWebhookKey.decode(configuredKey, loopback), FxWebhookKey.previousWindow(environment, loopback, clock.instant()), tolerance, clock);
     }
 
     /** The callback door: evidence first, the inbox, then the inquiry the hint triggers. */

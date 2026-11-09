@@ -1,11 +1,11 @@
 package com.finapp.kyc;
 
+import com.finapp.platform.security.KeyRing;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Objects;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Encrypts document content at rest (`P2-TSK-008`, ADR-0036, {@code INV-KYC-06}).
@@ -51,8 +51,7 @@ public final class DocumentCipher {
 
     public static final int KEY_BYTES = 32;
 
-    private final SecretKeySpec key;
-    private final int version;
+    private final KeyRing ring;
     private final SecureRandom randomness;
 
     /**
@@ -64,22 +63,32 @@ public final class DocumentCipher {
      *     wrote which row
      */
     public DocumentCipher(byte[] key, int version, SecureRandom randomness) {
+        this(ringOfOne(key, version), randomness);
+    }
+
+    /**
+     * A cipher over a {@link KeyRing}: encrypts under the ring's active version, decrypts under each row's stamped version
+     * (`P15-TSK-019`, ADR-0123 point 4).
+     */
+    public DocumentCipher(KeyRing ring, SecureRandom randomness) {
+        this.ring = Objects.requireNonNull(ring, "ring must not be null");
+        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+    }
+
+    private static KeyRing ringOfOne(byte[] key, int version) {
         Objects.requireNonNull(key, "key must not be null");
         if (key.length != KEY_BYTES) {
             // The message never states the length seen: it is a fact about the key material.
-            throw new IllegalArgumentException(
-                    "The document encryption key must be exactly " + KEY_BYTES + " bytes");
+            throw new IllegalArgumentException("The document encryption key must be exactly " + KEY_BYTES + " bytes");
         }
         if (version < 1) {
             throw new IllegalArgumentException("key version must be positive");
         }
-        this.key = new SecretKeySpec(key, "AES");
-        this.version = version;
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+        return KeyRing.single("document encryption key", key, version);
     }
 
     public int version() {
-        return version;
+        return ring.activeVersion();
     }
 
     /**
@@ -96,8 +105,8 @@ public final class DocumentCipher {
         randomness.nextBytes(nonce);
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, nonce));
-            return new Encrypted(cipher.doFinal(plaintext.value()), nonce, version);
+            cipher.init(Cipher.ENCRYPT_MODE, ring.activeKey(), new GCMParameterSpec(TAG_BITS, nonce));
+            return new Encrypted(cipher.doFinal(plaintext.value()), nonce, ring.activeVersion());
         } catch (GeneralSecurityException e) {
             // Never the cause: a provider exception can carry key-material context, and this
             // message reaches a log line (INV-AUD-02). The P1-TSK-008 DatabaseFailure precedent.
@@ -114,6 +123,7 @@ public final class DocumentCipher {
      */
     public byte[] decrypt(Encrypted encrypted) {
         Objects.requireNonNull(encrypted, "encrypted must not be null");
+        javax.crypto.SecretKey key = ring.keyFor(encrypted.keyVersion(), "Could not decrypt document content");
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(

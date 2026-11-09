@@ -36,6 +36,12 @@ class FxProviderEvidenceDatabaseTest {
     private static final String CHECK_VIOLATION = "23514";
     private static final String RAISED = "P0001";
 
+    private static byte[] filled(int fill) {
+        byte[] key = new byte[32];
+        java.util.Arrays.fill(key, (byte) fill);
+        return key;
+    }
+
     private final FxEvidenceCipher cipher = new FxEvidenceCipher(KEY, 1, new SecureRandom());
     private final FxProviderEvidenceStore<Connection> store =
             new JdbcFxProviderEvidenceStore(cipher, IDS);
@@ -61,6 +67,31 @@ class FxProviderEvidenceDatabaseTest {
                     .doesNotContain("quoted")
                     .doesNotContain("1.0850240000");
             app.commit();
+        }
+    }
+
+    @Test
+    @DisplayName("through the real store: a row under version 1 is read after rotation to version 2, version 2 is written once"
+            + " active, and a row stamped with a version the ring does not hold is refused (P15-TSK-019)")
+    void rotationReadsEveryRowUnderItsStamp() throws SQLException {
+        String reference = reference();
+        byte[] underV1 = "evidence under version 1".getBytes(StandardCharsets.UTF_8);
+        byte[] underV2 = "evidence under version 2".getBytes(StandardCharsets.UTF_8);
+        com.finapp.platform.security.KeyRing rotated =
+                com.finapp.platform.security.KeyRing.of(
+                        "fx evidence key", java.util.Map.of(1, KEY, 2, filled(7)), 2, java.util.Set.of());
+        FxProviderEvidenceStore<Connection> rotatedStore = new JdbcFxProviderEvidenceStore(new FxEvidenceCipher(rotated, new SecureRandom()), IDS);
+
+        try (Connection app = application()) {
+            store.append(app, "fx-sim-a", reference, FxProviderEvidenceStore.Kind.REQUEST, underV1, Instant.parse("2026-11-09T10:00:00Z"));
+            rotatedStore.append(app, "fx-sim-a", reference, FxProviderEvidenceStore.Kind.RESPONSE, underV2, Instant.parse("2026-11-09T10:00:01Z"));
+            app.commit();
+
+            assertThat(rotatedStore.payloadsFor(app, "fx-sim-a", reference)).containsExactly(underV1, underV2);
+            assertThatThrownBy(() -> store.payloadsFor(app, "fx-sim-a", reference))
+                    .as("a replica that does not hold version 2 refuses it")
+                    .isInstanceOf(com.finapp.platform.security.UnknownKeyVersionException.class);
+            app.rollback();
         }
     }
 

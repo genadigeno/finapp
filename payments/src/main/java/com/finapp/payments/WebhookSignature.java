@@ -1,5 +1,6 @@
 package com.finapp.payments;
 
+import com.finapp.platform.security.PreviousKeyWindow;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -8,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Objects;
+import java.util.Optional;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
@@ -53,6 +55,9 @@ public final class WebhookSignature {
     /** HMAC key material, not a stored credential value: named for what it is (ADR-0019). */
     private final byte[] key;
 
+    /** The previous key during a rotation window (`P15-TSK-019`); empty outside one. */
+    private final Optional<PreviousKeyWindow> previous;
+
     private final Duration tolerance;
     private final Clock clock;
 
@@ -61,7 +66,16 @@ public final class WebhookSignature {
      *     direction — the freshness window, server-clock judged (the ADR-0014 discipline)
      */
     public WebhookSignature(byte[] key, Duration tolerance, Clock clock) {
+        this(key, Optional.empty(), tolerance, clock);
+    }
+
+    /**
+     * @param previous the previous key and the instant its window closes, when a rotation is underway; empty otherwise
+     * @param tolerance how far a signed timestamp may sit from the server clock, either direction
+     */
+    public WebhookSignature(byte[] key, Optional<PreviousKeyWindow> previous, Duration tolerance, Clock clock) {
         Objects.requireNonNull(key, "key must not be null");
+        this.previous = Objects.requireNonNull(previous, "previous must not be null");
         if (key.length == 0) {
             throw new IllegalArgumentException("the webhook signing key must not be empty");
         }
@@ -74,10 +88,11 @@ public final class WebhookSignature {
     }
 
     /**
-     * Whether {@code presentedHex} is this key's fresh signature of
-     * {@code timestamp + "." + body}.
+     * Whether {@code presentedHex} is a fresh signature of {@code timestamp + "." + body} by this key or, while a
+     * rotation's window is open, by the previous one.
      *
-     * <p>Total: every refusal — whatever its cause — is {@code false}.
+     * <p>Total: every refusal — whatever its cause — is {@code false}. Both comparisons run whenever the window is open,
+     * with {@code |} rather than {@code ||}: a short-circuit would tell a forger whether the current key matched first.
      */
     public boolean matches(String presentedTimestamp, byte[] body, String presentedHex) {
         Objects.requireNonNull(body, "body must not be null");
@@ -112,20 +127,25 @@ public final class WebhookSignature {
         } catch (IllegalArgumentException notHex) {
             return false;
         }
-        return MessageDigest.isEqual(signatureOf(presentedTimestamp, body), presented);
+        boolean underCurrent = MessageDigest.isEqual(signatureOf(key, presentedTimestamp, body), presented);
+        boolean underPrevious = false;
+        if (previous.isPresent() && previous.get().isOpenAt(now)) {
+            underPrevious = MessageDigest.isEqual(signatureOf(previous.get().key(), presentedTimestamp, body), presented);
+        }
+        return underCurrent | underPrevious;
     }
 
     /** The fresh signature of {@code timestamp + "." + body}, hex — what a legitimate sender computes. */
     public String sign(String timestamp, byte[] body) {
         Objects.requireNonNull(timestamp, "timestamp must not be null");
         Objects.requireNonNull(body, "body must not be null");
-        return HexFormat.of().formatHex(signatureOf(timestamp, body));
+        return HexFormat.of().formatHex(signatureOf(key, timestamp, body));
     }
 
-    private byte[] signatureOf(String timestamp, byte[] body) {
+    private static byte[] signatureOf(byte[] signingKey, String timestamp, byte[] body) {
         try {
             Mac mac = Mac.getInstance(ALGORITHM);
-            mac.init(new SecretKeySpec(key, ALGORITHM));
+            mac.init(new SecretKeySpec(signingKey, ALGORITHM));
             // timestamp + "." + body, the bytes exactly as sent: the timestamp is ASCII
             // digits, so UTF-8 is its only encoding, and the body is never re-encoded.
             mac.update(timestamp.getBytes(java.nio.charset.StandardCharsets.UTF_8));

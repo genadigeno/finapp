@@ -2,55 +2,51 @@
 
 ## Baseline Stack
 
+The stack in use, read against the code.
+
 Backend:
-- Java
-- Spring Boot
-- Spring Security
+- Java 21
+- Spring Boot: web, actuator, JDBC. **No Spring Security**: authentication and authorisation are the platform's own interceptors
+  over server-side sessions and scoped merchant keys (ADR-0030, ADR-0031, ADR-0052), with `spring-security-crypto` for Argon2 only
 - Gradle
 
 Transactional:
-- PostgreSQL
+- PostgreSQL, through explicit JDBC
 
 Caching / ephemeral:
-- Redis
+- **None in the application.** No code uses Redis (ADR-0030 chose PostgreSQL for sessions) and it is not deployed (C3). `compose.yaml`
+  still starts one for local development
 
 Messaging:
 - Kafka
 
 Object storage:
-- S3-compatible storage
+- **None in the application** (ADR-0036: evidence and files are held in PostgreSQL). S3-compatible storage serves infrastructure only
 
 Observability:
-- OpenTelemetry
-- Prometheus
+- OpenTelemetry spans, recorded; no exporter is configured yet (ADR-0124)
+- Prometheus and Alertmanager
 - Grafana
-- centralized structured logging
-- distributed tracing
+- ECS JSON structured logging on the console
 
 Infrastructure:
-- Docker
-- Kubernetes
-- Terraform
+- Docker images
+- Kubernetes manifests and Terraform, written and checked in CI, never applied to a real environment (ADR-0120, ADR-0121)
 
 Testing:
 - JUnit
 - AssertJ
 - Testcontainers
 - WireMock
-- Gatling or k6
+- Load tooling: Phase 16
 
 API:
 - REST / OpenAPI
-- gRPC where justified
-- signed/idempotent webhooks
+- signed and idempotent webhooks
 
-*(The Phase 14 → 15 transition, 2026-11-07, read this list against the code (`PHASE_15_PLAN.md` §3): **Spring Security**
-is not used - authentication and authorisation are the platform's own interceptors over server-side sessions and scoped
-merchant keys (ADR-0030, ADR-0031, ADR-0052), with `spring-security-crypto` for Argon2 only; **Redis** runs in
-`compose.yaml` and no code uses it (ADR-0030 chose PostgreSQL for sessions) - it is not deployed (C3); **S3-compatible
-storage** is not used by the application (ADR-0036) and serves infrastructure only; **Docker, Kubernetes and Terraform**
-are Phase 15's (ADR-0120, ADR-0121, `Proposed`); **OpenTelemetry** spans are recorded and not yet exported (ADR-0124).
-`P15-TSK-031` rewrites the list to the stack in use.)*
+*(Rewritten by `P15-TSK-031` to the stack in use; the Phase 14 → 15 transition read it against the code first, `PHASE_15_PLAN.md` §3.
+Environments differ by values and never by a code path: no Spring profile exists, `NoSpringProfileDecidesBehaviourTest` holds that,
+and every property is in [`CONFIGURATION_REGISTER.md`](CONFIGURATION_REGISTER.md).)*
 ## Pinned Versions
 
 Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) and in
@@ -66,7 +62,7 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | `lz4-java`, `snappy-java` | 1.11.4, 1.1.10.9 | **Held above what the Kafka client names** (1.10.1, 1.1.10.7) — HIGH findings the image scan named; see the catalog note |
 | PostgreSQL | 18.6 | Debian-based image, ICU collation provider |
 | Kafka | 4.3.1 | KRaft mode, no ZooKeeper |
-| Redis | 8.10.1 | AOF persistence enabled locally |
+| Redis | 8.10.1 | In `compose.yaml` only, AOF persistence enabled; no code uses it and none is deployed |
 | Prometheus | v3.14.0 | Scrapes `/actuator/prometheus`; also guarded by `verifyInfrastructureVersions` |
 | Grafana | 12.4.10 | Renders the reviewed dashboard in git; UI edits disabled (ADR-0018) |
 | Alertmanager | v0.34.2 | Routes alerts by severity to placeholder receivers (`P15-TSK-025`); also guarded by `verifyInfrastructureVersions` |

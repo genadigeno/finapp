@@ -77,15 +77,17 @@ public class CreditBeans {
     }
 
     @Bean
-    CreditEvidenceCipher creditEvidenceCipher(
+    com.finapp.platform.security.KeyRing creditEvidenceKeyRing(
             @Value("${finapp.credit.evidence.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}") String configuredKey,
             @Value("${finapp.credit.evidence.key-version:1}") int keyVersion,
             Environment environment) {
-        return new CreditEvidenceCipher(
-                CreditEvidenceKey.decode(
-                        configuredKey, DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment))),
-                keyVersion,
-                new SecureRandom());
+        return CreditEvidenceKey.ring(
+                configuredKey, keyVersion, environment, DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment)));
+    }
+
+    @Bean
+    CreditEvidenceCipher creditEvidenceCipher(com.finapp.platform.security.KeyRing creditEvidenceKeyRing) {
+        return new CreditEvidenceCipher(creditEvidenceKeyRing, new SecureRandom());
     }
 
     @Bean

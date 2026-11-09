@@ -161,6 +161,27 @@ groups:
         annotations:
           summary: "The clock of {{ $labels.instance }} is off"
           description: "The clock of {{ $labels.instance }} differs from the database by over a second. See OPERATIONS_RUNBOOK.md section 11.21."
+      - alert: ConfigFingerprintDisagrees
+        # Aggregation: count - how many different financial configurations the fleet runs, per environment: a count of hashes and never of instances, so a replaced pod is no new disagreement
+        # A label is read here and a value never is, so a replica whose refresher is stale (the value NaN) keeps its place in the count.
+        # present_over_time keeps a series five minutes past its last sample: one missed scrape of the odd replica out would otherwise end the disagreement for one evaluation, and a for this long would restart at every flicker and never fire.
+        # The for outlasts any rollout an overlay allows: maxReplicas steps of at most progressDeadlineSeconds each, the last pod's grace, and this window. ConfigFingerprintAlertTest reads those numbers from the manifests. A rollout's expected disagreement never pages, and one that has outlived a rollout does.
+        expr: count(count by (env, fingerprint) (present_over_time(finapp_config_fingerprint[5m]))) by (env) > 1
+        for: 80m
+        labels:
+          severity: page
+        annotations:
+          summary: "The fleet in {{ $labels.env }} is running {{ $value }} different financial configurations"
+          description: "Replicas have disagreed on the effective FINANCIAL configuration for longer than any rollout takes. Each such value is safe mixed only for the length of a rollout. See OPERATIONS_RUNBOOK.md section 11.31."
+      - alert: ConfigFingerprintAbsent
+        # Aggregation: none - absent() asks whether any instance publishes the fingerprint at all, because ConfigFingerprintDisagrees cannot see a fleet that has stopped publishing it
+        expr: absent(finapp_config_fingerprint)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "No instance publishes the configuration fingerprint"
+          description: "No replica has published finapp.config.fingerprint for 15 minutes, so ConfigFingerprintDisagrees is blind. See OPERATIONS_RUNBOOK.md section 11.31."
       - alert: PlatformGaugesUnreadable
         # Aggregation: per instance by (job, instance) - x != x holds for NaN alone, and one instance unable to read is that instance's fault
         expr: label_replace(max by (job, instance) (finapp_outbox_pending != finapp_outbox_pending), "gauge", "finapp_outbox_pending", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_seconds != finapp_outbox_oldest_seconds), "gauge", "finapp_outbox_oldest_seconds", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_publishable_seconds != finapp_outbox_oldest_publishable_seconds), "gauge", "finapp_outbox_oldest_publishable_seconds", "", "") or label_replace(max by (job, instance) (finapp_inbox_lag != finapp_inbox_lag), "gauge", "finapp_inbox_lag", "", "") or label_replace(max by (job, instance) (finapp_platform_clock_offset_seconds != finapp_platform_clock_offset_seconds), "gauge", "finapp_platform_clock_offset_seconds", "", "")
