@@ -1,6 +1,7 @@
 package com.finapp.app.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.database.SchemaVersionGuard.Verdict;
 import com.finapp.platform.testing.RepositoryPaths;
@@ -17,7 +18,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.LoaderOptions;
@@ -161,7 +165,7 @@ class SchemaVersionGuardTest {
     }
 
     @Test
-    @DisplayName("a verdict that is not ready is read again sooner, within the probe's period, so the replica is ready soon after the Job")
+    @DisplayName("a verdict that is not ready is read again sooner: every probe asks, so the replica is ready at the second probe after the Job")
     void aBehindVerdictIsReadAgainSooner() {
         AtomicInteger reads = new AtomicInteger();
         SchemaVersionGuard guard = onTheCallersThread(() -> {
@@ -185,7 +189,7 @@ class SchemaVersionGuardTest {
         int period = (Integer) ((Map<String, Object>) container.get("readinessProbe")).get("periodSeconds");
 
         assertThat(SchemaVersionGuard.UNSETTLED)
-                .as("a replica that started before the Job finished is ready at the next probe after it does")
+                .as("below the period, so every probe of a replica not yet ready asks for a read")
                 .isLessThan(Duration.ofSeconds(period));
     }
 
@@ -213,26 +217,99 @@ class SchemaVersionGuardTest {
     }
 
     @Test
-    @DisplayName("a refused read proves nothing, whatever was read before: the function absent means platform's migration has not run")
+    @DisplayName("on a replica never ready, a refused read proves nothing: the function absent means platform's migration has not run")
     void aRefusedReadIsNotReady() {
-        Scripted applied = new Scripted(AS_EXPECTED, new SQLException("no such function", "42883"), AS_EXPECTED, new SQLException("denied", "42501"));
-        SchemaVersionGuard guard = onTheCallersThread(applied);
-        assertThat(probe(guard)).isEqualTo(Verdict.READY);
-        assertThat(probe(guard)).as("42883: the function does not exist").isEqualTo(Verdict.UNPROVEN);
-        assertThat(probe(guard)).isEqualTo(Verdict.READY);
-        assertThat(probe(guard)).as("42501: this role cannot execute it").isEqualTo(Verdict.UNPROVEN);
+        assertThat(probe(onTheCallersThread(new Scripted(new SQLException("no such function", "42883"))))).isEqualTo(Verdict.UNPROVEN);
+        assertThat(probe(onTheCallersThread(new Scripted(new SQLException("denied", "42501"))))).isEqualTo(Verdict.UNPROVEN);
     }
 
     @Test
-    @DisplayName("a version that does not parse proves nothing")
-    void anUnparseableVersionIsNotReady() {
+    @DisplayName("a ready replica stands on a refused read: the same refusal meets every replica at once, and the schema has not moved")
+    void aReadyReplicaStandsOnARefusedRead() {
+        Scripted applied = new Scripted(AS_EXPECTED, new SQLException("no such function", "42883"), new SQLException("denied", "42501"), versions("9", "9"));
+        SchemaVersionGuard guard = onTheCallersThread(applied);
+        assertThat(probe(guard)).isEqualTo(Verdict.READY);
+        assertThat(probe(guard)).as("42883").isEqualTo(Verdict.READY);
+        assertThat(probe(guard)).as("42501").isEqualTo(Verdict.READY);
+        assertThat(probe(guard)).as("only a read that shows an older schema moves it").isEqualTo(Verdict.BEHIND);
+    }
+
+    @Test
+    @DisplayName("a version that does not parse is never guessed at: nothing is proven on a replica never ready, and a ready one stands")
+    void anUnparseableVersionProvesNothing() {
         AppliedSchemaVersions garbled = () -> {
             throw new IllegalArgumentException("not a migration version: x");
         };
+        assertThat(probe(onTheCallersThread(garbled))).isEqualTo(Verdict.UNPROVEN);
+
         Scripted first = new Scripted(AS_EXPECTED);
         SchemaVersionGuard guard = onTheCallersThread(() -> first.remaining() > 0 ? first.read() : garbled.read());
         assertThat(probe(guard)).isEqualTo(Verdict.READY);
-        assertThat(probe(guard)).isEqualTo(Verdict.UNPROVEN);
+        assertThat(probe(guard)).isEqualTo(Verdict.READY);
+    }
+
+    @Test
+    @DisplayName("background work is held until ready has been proven, and while behind")
+    void theHoldFollowsTheVerdict() {
+        Scripted applied = new Scripted(new SQLException("gone", "08006"), versions("9", "9"), AS_EXPECTED, new SQLException("gone", "08006"), versions("9", "9"));
+        SchemaVersionGuard guard = onTheCallersThread(applied);
+        clock.advance(Duration.ofMinutes(5));
+        assertThat(guard.held()).as("no read has succeeded").isTrue();
+        clock.advance(Duration.ofMinutes(5));
+        assertThat(guard.held()).as("behind").isTrue();
+        clock.advance(Duration.ofMinutes(5));
+        assertThat(guard.held()).as("proven").isFalse();
+        clock.advance(Duration.ofMinutes(5));
+        assertThat(guard.held()).as("a blip does not hold a ready replica").isFalse();
+        clock.advance(Duration.ofMinutes(5));
+        assertThat(guard.held()).as("a read that shows an older schema does").isTrue();
+    }
+
+    @Test
+    @DisplayName("work already running is told only when a ready replica is found behind")
+    void workIsToldWhenTheHoldComesOn() {
+        Scripted applied = new Scripted(versions("9", "9"), AS_EXPECTED, AS_EXPECTED, versions("9", "9"), versions("9", "9"));
+        SchemaVersionGuard guard = onTheCallersThread(applied);
+        AtomicInteger told = new AtomicInteger();
+        guard.whenHeld(told::incrementAndGet);
+
+        assertThat(probe(guard)).as("never ready: nothing is running to tell").isEqualTo(Verdict.BEHIND);
+        assertThat(told).hasValue(0);
+        probe(guard);
+        probe(guard);
+        assertThat(told).as("ready, and ready").hasValue(0);
+        assertThat(probe(guard)).isEqualTo(Verdict.BEHIND);
+        assertThat(told).as("ready to behind").hasValue(1);
+        probe(guard);
+        assertThat(told).as("still behind: not told twice").hasValue(1);
+    }
+
+    @Test
+    @DisplayName("an executor that cannot start a read does not leave the guard believing one is running")
+    void aReadThatCouldNotStartIsReleased() {
+        AtomicInteger attempts = new AtomicInteger();
+        SchemaVersionGuard guard = new SchemaVersionGuard(expected(), () -> AS_EXPECTED, clock, read -> {
+            attempts.incrementAndGet();
+            throw new OutOfMemoryError("unable to create native thread");
+        });
+        assertThatThrownBy(guard::ask).isInstanceOf(OutOfMemoryError.class);
+        assertThatThrownBy(guard::ask).as("asked again, so the flag came down").isInstanceOf(OutOfMemoryError.class);
+        assertThat(attempts).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("the production executor reads on a daemon thread of its own, never the caller's")
+    void theProductionExecutorIsADaemonThread() throws InterruptedException {
+        AtomicReference<Thread> ran = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        SchemaVersionGuard.ON_A_DAEMON_THREAD.execute(() -> {
+            ran.set(Thread.currentThread());
+            done.countDown();
+        });
+        assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(ran.get()).isNotSameAs(Thread.currentThread());
+        assertThat(ran.get().isDaemon()).isTrue();
+        assertThat(ran.get().getName()).isEqualTo(SchemaVersionGuard.THREAD);
     }
 
     @Test

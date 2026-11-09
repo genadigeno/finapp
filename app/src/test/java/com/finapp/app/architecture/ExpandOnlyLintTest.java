@@ -43,7 +43,7 @@ class ExpandOnlyLintTest {
             CREATE VIEW ledger.account_codes AS SELECT code FROM ledger.account;
             """;
 
-    private static final String MARKER = "-- finapp-contract: first-conforming-release=ANY; reason=no release writes this column\n";
+    private static final String MARKER = "-- finapp-contract: first-conforming-release=ANY; waives=DROP; reason=no release writes this column\n";
 
     @TempDir Path root;
 
@@ -52,9 +52,9 @@ class ExpandOnlyLintTest {
     }
 
     private void write(String file, String sql) throws IOException {
-        Path directory = root.resolve(MODULE).resolve("src/main/resources/db/migration").resolve(MODULE);
-        Files.createDirectories(directory);
-        Files.writeString(directory.resolve(file), sql, StandardCharsets.UTF_8);
+        Path target = root.resolve(MODULE).resolve("src/main/resources/db/migration").resolve(MODULE).resolve(file);
+        Files.createDirectories(target.getParent());
+        Files.writeString(target, sql, StandardCharsets.UTF_8);
     }
 
     private Outcome lint(String plant) throws IOException {
@@ -113,6 +113,21 @@ class ExpandOnlyLintTest {
                 Arguments.of("a replaced function", "CREATE OR REPLACE FUNCTION ledger.refuse_change() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'no'; END; $$;", Refused.REPLACED_BODY),
                 Arguments.of("a replaced view", "CREATE OR REPLACE VIEW ledger.account_codes AS SELECT code FROM ledger.account;", Refused.REPLACED_BODY),
                 Arguments.of("a DO block", "DO $$ BEGIN ALTER TABLE ledger.account DROP COLUMN code; END $$;", Refused.OPAQUE_BLOCK),
+                Arguments.of("a function created and called", "CREATE FUNCTION ledger.h() RETURNS void LANGUAGE sql AS 'SELECT 1';\nSELECT ledger.h();", Refused.OPAQUE_BLOCK),
+                Arguments.of("a released function called", "SELECT ledger.refuse_change();", Refused.OPAQUE_BLOCK),
+                Arguments.of("SET GENERATED", "ALTER TABLE ledger.account ALTER COLUMN id SET GENERATED ALWAYS;", Refused.SET_GENERATED),
+                Arguments.of("SET DEFAULT NULL", "ALTER TABLE ledger.account ALTER COLUMN code SET DEFAULT NULL;", Refused.DROP),
+                Arguments.of("SET DEFAULT (NULL)", "ALTER TABLE ledger.account ALTER COLUMN code SET DEFAULT (NULL);", Refused.DROP),
+                Arguments.of("DELETE", "DELETE FROM ledger.account;", Refused.DELETE),
+                Arguments.of("DELETE in a CTE", "WITH gone AS (DELETE FROM ledger.account RETURNING id) SELECT count(*) FROM gone;", Refused.DELETE),
+                Arguments.of("a column named serial, not null", "ALTER TABLE ledger.account ADD COLUMN serial text NOT NULL;", Refused.NOT_NULL_WITHOUT_DEFAULT),
+                Arguments.of("a column named generated, not null", "ALTER TABLE ledger.account ADD COLUMN generated boolean NOT NULL;", Refused.NOT_NULL_WITHOUT_DEFAULT),
+                Arguments.of("NOT NULL DEFAULT (NULL)", "ALTER TABLE ledger.account ADD COLUMN kind text NOT NULL DEFAULT (NULL);", Refused.NOT_NULL_WITHOUT_DEFAULT),
+                Arguments.of("DEFAULT CAST(NULL)", "ALTER TABLE ledger.account ADD COLUMN kind text DEFAULT CAST(NULL AS text) NOT NULL;", Refused.NOT_NULL_WITHOUT_DEFAULT),
+                Arguments.of("a partition with a CHECK of its own", "CREATE TABLE ledger.p PARTITION OF ledger.account (CHECK (id > 0)) FOR VALUES IN (1);", Refused.CHECK),
+                Arguments.of("a NOT NULL domain on a new column", "CREATE DOMAIN ledger.d AS int NOT NULL;\nALTER TABLE ledger.account ADD COLUMN x ledger.d;", Refused.NOT_NULL_WITHOUT_DEFAULT),
+                Arguments.of("a CHECK domain on a new column", "CREATE DOMAIN ledger.d AS int CHECK (VALUE > 0);\nALTER TABLE ledger.account ADD COLUMN x ledger.d;", Refused.CHECK),
+                Arguments.of("another schema's function replaced", "CREATE OR REPLACE FUNCTION platform.f() RETURNS void LANGUAGE sql AS 'SELECT 1';", Refused.REPLACED_BODY),
                 Arguments.of("a form the lint does not know", "CLUSTER ledger.account;", Refused.UNRECOGNISED),
                 Arguments.of("ALTER DEFAULT PRIVILEGES", "ALTER DEFAULT PRIVILEGES IN SCHEMA ledger GRANT SELECT ON TABLES TO finapp_app;", Refused.UNRECOGNISED));
     }
@@ -128,7 +143,7 @@ class ExpandOnlyLintTest {
     @MethodSource("everyRefusedClass")
     @DisplayName("and every one of them passes once the file carries a contract marker")
     void aMarkedContractIsAccepted(String name, String plant, Refused expected) throws IOException {
-        assertThat(lint(MARKER + plant).refusals()).as(plant).isEmpty();
+        assertThat(lint("-- finapp-contract: first-conforming-release=ANY; waives=" + expected + "; reason=reviewed\n" + plant).refusals()).as(plant).isEmpty();
     }
 
     @ParameterizedTest
@@ -156,6 +171,19 @@ class ExpandOnlyLintTest {
                 .containsExactly(Refused.CHECK);
         assertThat(rulesFor("CREATE TABLE ledger.p PARTITION OF ledger.account FOR VALUES IN (1);\nALTER TABLE ledger.p ADD CHECK (id > 0);"))
                 .containsExactly(Refused.CHECK);
+    }
+
+    @Test
+    @DisplayName("a temporary table, or one made wherever a moved search_path points, cannot excuse a released table of the same name")
+    void aShadowingTableIsNotExempt() throws IOException {
+        assertThat(rulesFor("CREATE TEMP TABLE account (a bigint);\nALTER TABLE ledger.account ADD CHECK (a > 0);")).containsExactly(Refused.CHECK);
+        assertThat(rulesFor("SET search_path = elsewhere;\nCREATE TABLE account (a bigint);\nALTER TABLE ledger.account ADD CHECK (a > 0);"))
+                .containsExactly(Refused.CHECK);
+        assertThat(rulesFor("SELECT set_config('search_path', 'elsewhere', true);\nCREATE TABLE account (a bigint);\nALTER TABLE ledger.account ADD CHECK (a > 0);"))
+                .containsExactly(Refused.CHECK);
+        assertThat(lint("SET search_path = elsewhere;\nCREATE TABLE ledger.fresh (a bigint);\nALTER TABLE ledger.fresh ADD CHECK (a > 0);").refusals())
+                .as("a table named with its schema is the table named")
+                .isEmpty();
     }
 
     @Test
@@ -278,18 +306,31 @@ class ExpandOnlyLintTest {
     @ParameterizedTest
     @ValueSource(
             strings = {
-                "-- finapp-contract: first-conforming-release=; reason=x\n",
-                "-- finapp-contract: first-conforming-release=1.4; reason=x\n",
-                "-- finapp-contract: first-conforming-release=latest; reason=x\n",
+                "-- finapp-contract: first-conforming-release=; waives=DROP; reason=x\n",
+                "-- finapp-contract: first-conforming-release=1.4; waives=DROP; reason=x\n",
+                "-- finapp-contract: first-conforming-release=latest; waives=DROP; reason=x\n",
                 "-- finapp-contract: first-conforming-release=ANY\n",
-                "-- finapp-contract: first-conforming-release=ANY; reason=\n",
-                "-- finapp-contract first-conforming-release=ANY; reason=x\n",
-                "--finapp-contract: first-conforming-release=ANY; reason=x\n",
-                "-- FINAPP-CONTRACT: first-conforming-release=ANY; reason=x\n",
+                "-- finapp-contract: first-conforming-release=ANY; waives=DROP; reason=\n",
+                "-- finapp-contract first-conforming-release=ANY; waives=DROP; reason=x\n",
+                "--finapp-contract: first-conforming-release=ANY; waives=DROP; reason=x\n",
+                "-- FINAPP-CONTRACT: first-conforming-release=ANY; waives=DROP; reason=x\n",
+                "-- finapp-contract: first-conforming-release=ANY; reason=x\n",
+                "-- finapp-contract: first-conforming-release=ANY; waives=; reason=x\n",
+                "-- finapp-contract: first-conforming-release=ANY; waives=NO_SUCH_CLASS; reason=x\n",
+                "-- finapp-contract: first-conforming-release=ANY; waives=UNREADABLE; reason=x\n",
             })
     @DisplayName("a marker that does not parse passes nothing, and is itself refused")
     void aMalformedMarkerIsRefused(String marker) throws IOException {
         assertThat(rulesFor(marker + DROP)).as(marker).contains(Refused.MALFORMED_MARKER, Refused.DROP);
+    }
+
+    @Test
+    @DisplayName("a marker waives the classes it names and no others: a reason given for a replaced body does not cover a dropped column")
+    void aMarkerWaivesOnlyWhatItNames() throws IOException {
+        String both = "CREATE OR REPLACE FUNCTION ledger.refuse_change() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;\n" + DROP;
+        assertThat(rulesFor("-- finapp-contract: first-conforming-release=ANY; waives=REPLACED_BODY; reason=its clock calls only\n" + both))
+                .containsExactly(Refused.DROP);
+        assertThat(lint("-- finapp-contract: first-conforming-release=ANY; waives=REPLACED_BODY,DROP; reason=both reviewed\n" + both).refusals()).isEmpty();
     }
 
     @Test
@@ -302,10 +343,10 @@ class ExpandOnlyLintTest {
     @ParameterizedTest
     @ValueSource(
             strings = {
-                "/* -- finapp-contract: first-conforming-release=ANY; reason=x */\n",
-                "/*\n-- finapp-contract: first-conforming-release=ANY; reason=x\n*/\n",
-                "SELECT '\n-- finapp-contract: first-conforming-release=ANY; reason=x\n';\n",
-                "  -- finapp-contract: first-conforming-release=ANY; reason=x\n"
+                "/* -- finapp-contract: first-conforming-release=ANY; waives=DROP; reason=x */\n",
+                "/*\n-- finapp-contract: first-conforming-release=ANY; waives=DROP; reason=x\n*/\n",
+                "SELECT '\n-- finapp-contract: first-conforming-release=ANY; waives=DROP; reason=x\n';\n",
+                "  -- finapp-contract: first-conforming-release=ANY; waives=DROP; reason=x\n"
             })
     @DisplayName("a marker inside a block comment or a string, or indented, is not a marker")
     void onlyALineCommentAtTheStartOfALineIsAMarker(String notAMarker) throws IOException {
@@ -316,7 +357,7 @@ class ExpandOnlyLintTest {
     @DisplayName("a marker naming a release not yet out is refused: release N - 1 is running and does not conform")
     void aMarkerAheadOfTheLastReleaseIsRefused() throws IOException {
         write("V001__released.sql", RELEASED);
-        write("V002__planted.sql", "-- finapp-contract: first-conforming-release=1.5.0; reason=x\n" + DROP);
+        write("V002__planted.sql", "-- finapp-contract: first-conforming-release=1.5.0; waives=DROP; reason=x\n" + DROP);
         assertThat(MigrationLint.check(root, MigrationLint.floor("1.4.0", Map.of(MODULE, "1"))).refusals())
                 .extracting(Refusal::rule)
                 .containsExactly(Refused.MARKER_AHEAD_OF_THE_RELEASE, Refused.DROP);
@@ -327,7 +368,7 @@ class ExpandOnlyLintTest {
     @DisplayName("a marker naming the last release or an earlier one, or ANY, stands")
     void aMarkerAtOrBelowTheLastReleaseStands(String named) throws IOException {
         write("V001__released.sql", RELEASED);
-        write("V002__planted.sql", "-- finapp-contract: first-conforming-release=" + named + "; reason=x\n" + DROP);
+        write("V002__planted.sql", "-- finapp-contract: first-conforming-release=" + named + "; waives=DROP; reason=x\n" + DROP);
         assertThat(MigrationLint.check(root, MigrationLint.floor("1.4.0", Map.of(MODULE, "1"))).refusals()).isEmpty();
     }
 
@@ -335,14 +376,14 @@ class ExpandOnlyLintTest {
     @DisplayName("a release that is compared is compared as a version: 1.10.0 is after 1.9.0")
     void releasesAreComparedAsVersions() throws IOException {
         write("V001__released.sql", RELEASED);
-        write("V002__planted.sql", "-- finapp-contract: first-conforming-release=1.9.0; reason=x\n" + DROP);
+        write("V002__planted.sql", "-- finapp-contract: first-conforming-release=1.9.0; waives=DROP; reason=x\n" + DROP);
         assertThat(MigrationLint.check(root, MigrationLint.floor("1.10.0", Map.of(MODULE, "1"))).refusals()).isEmpty();
     }
 
     @Test
     @DisplayName("while no release has been cut, there is no release N - 1 and any well-formed name stands")
     void noReleaseYetMeansNoMarkerIsAhead() throws IOException {
-        assertThat(lint("-- finapp-contract: first-conforming-release=99.0.0; reason=x\n" + DROP).refusals()).isEmpty();
+        assertThat(lint("-- finapp-contract: first-conforming-release=99.0.0; waives=DROP; reason=x\n" + DROP).refusals()).isEmpty();
     }
 
     // -----------------------------------------------------------------
@@ -394,6 +435,15 @@ class ExpandOnlyLintTest {
     void anUnreadableFileIsRefused(String sql) throws IOException {
         assertThat(rulesFor(sql)).as(sql).containsExactly(Refused.UNREADABLE);
         assertThat(rulesFor(MARKER + sql)).as(sql).containsExactly(Refused.UNREADABLE);
+    }
+
+    @Test
+    @DisplayName("a script in a subdirectory, which Flyway would find and the migrator image would not stage, is refused rather than unread")
+    void aScriptInASubdirectoryIsRefused() throws IOException {
+        write("nested/V002__below.sql", "SELECT 1;");
+        assertThat(MigrationLint.check(root, atTheFirstMigration()).refusals())
+                .extracting(Refusal::rule)
+                .containsExactly(Refused.NOT_A_MIGRATION);
     }
 
     @ParameterizedTest

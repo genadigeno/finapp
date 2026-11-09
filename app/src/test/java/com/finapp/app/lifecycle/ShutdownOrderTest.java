@@ -105,6 +105,10 @@ class ShutdownOrderTest {
         assertThat(snapshot.components).as("the platform's lifecycle components").hasSize(COMPONENTS);
         assertThat(snapshot.schedules).as("its schedules").hasSize(SCHEDULES);
         assertThat(snapshot.components.values()).allSatisfy(component -> assertThat(component.isRunning()).isTrue());
+        assertThat(snapshot.schedules.values())
+                .as("the database is absent, so the guard has proven nothing: every schedule in the real wiring is held by it (P15-TSK-005)")
+                .allSatisfy(schedule -> assertThat(drainOf(schedule).held()).isTrue());
+        assertThat(snapshot.consumers.held()).as("and so are the consumer loops").isTrue();
         assertThat(snapshot.timeout).as("production states the phase timeout").isEqualTo(Duration.ofSeconds(30));
 
         CompletableFuture<HttpResponse<String>> request = HTTP.sendAsync(

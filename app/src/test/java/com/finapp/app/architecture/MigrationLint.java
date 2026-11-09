@@ -7,10 +7,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -63,7 +66,7 @@ public final class MigrationLint {
      * form.
      */
     public static final String MARKER_FORM =
-            "^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\\.[0-9]+\\.[0-9]+); reason=(\\S.*)$";
+            "^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\\.[0-9]+\\.[0-9]+); waives=([A-Z_]+(?:,[A-Z_]+)*); reason=(\\S.*)$";
 
     private static final Pattern MARKER = Pattern.compile(MARKER_FORM);
 
@@ -75,11 +78,12 @@ public final class MigrationLint {
 
     private static final Set<String> SERIAL_TYPES = Set.of("SMALLSERIAL", "SERIAL", "BIGSERIAL", "SERIAL2", "SERIAL4", "SERIAL8");
 
-    private static final Set<String> ADDITIVE_STATEMENTS =
-            Set.of("GRANT", "COMMENT", "INSERT", "UPDATE", "DELETE", "SELECT", "WITH", "SET", "RESET", "LOCK", "ANALYZE");
+    private static final Set<String> ADDITIVE_STATEMENTS = Set.of("GRANT", "COMMENT", "INSERT", "UPDATE", "SELECT", "RESET", "LOCK", "ANALYZE");
 
-    private static final Set<String> ADDITIVE_OBJECTS =
-            Set.of("TYPE", "DOMAIN", "SCHEMA", "EXTENSION", "CAST", "OPERATOR", "COLLATION");
+    /** What can call a function: a call of one this module defined runs a body nobody here read, as a {@code DO} does. */
+    private static final Set<String> CALLING_STATEMENTS = Set.of("INSERT", "UPDATE", "SELECT", "WITH");
+
+    private static final Set<String> ADDITIVE_OBJECTS = Set.of("TYPE", "SCHEMA", "EXTENSION", "CAST", "OPERATOR", "COLLATION");
 
     private static final Set<String> BODIES = Set.of("FUNCTION", "PROCEDURE", "AGGREGATE");
 
@@ -98,6 +102,8 @@ public final class MigrationLint {
         UNIQUE,
         FOREIGN_KEY,
         ALTERED_CONSTRAINT,
+        SET_GENERATED,
+        DELETE,
         SET_NOT_NULL,
         NOT_NULL_WITHOUT_DEFAULT,
         REVOKE,
@@ -207,24 +213,30 @@ public final class MigrationLint {
         List<Refusal> refusals = new ArrayList<>();
         for (String module : modules(root)) {
             Map<SchemaVersion, Path> ordered = new TreeMap<>();
+            Path directory = directory(root, module);
             for (Path file : files(root, module)) {
                 Matcher name = MIGRATION_FILE.matcher(file.getFileName().toString());
-                if (name.matches()) {
+                // Flyway finds a script in a subdirectory, and the migrator image stages only the top level, so one there is
+                // applied by the build and never by a deployment: refused, never silently unread.
+                if (name.matches() && file.getParent().equals(directory)) {
                     ordered.put(SchemaVersion.parse(name.group(1)), file);
                 } else {
-                    refusals.add(new Refusal(module, file.getFileName().toString(), Refused.NOT_A_MIGRATION, "the file's name"));
+                    refusals.add(new Refusal(module, directory.relativize(file).toString(), Refused.NOT_A_MIGRATION, "the file's name or place"));
                 }
             }
             Set<String> released = new HashSet<>();
+            Set<String> earlier = new HashSet<>();
             SchemaVersion moduleFloor = floor.of(module);
             for (Map.Entry<SchemaVersion, Path> migration : ordered.entrySet()) {
                 String fileName = migration.getValue().getFileName().toString();
                 if (migration.getKey().compareTo(moduleFloor) <= 0) {
-                    released.addAll(definitionsIn(read(migration.getValue()), module));
+                    Set<String> definitions = definitionsIn(read(migration.getValue()), module, earlier);
+                    released.addAll(definitions);
+                    earlier.addAll(definitions);
                     continue;
                 }
                 read.add(module + "/" + fileName);
-                refusals.addAll(lint(read(migration.getValue()), module, fileName, released, floor.release()));
+                refusals.addAll(lint(read(migration.getValue()), module, fileName, released, earlier, floor.release()));
             }
         }
         return new Outcome(List.copyOf(read), List.copyOf(refusals));
@@ -234,8 +246,9 @@ public final class MigrationLint {
         return root.resolve(module).resolve("src/main/resources/db/migration").resolve(module);
     }
 
+    /** Every file under the module's directory, however deep: Flyway recurses, so a file this did not see would be unread. */
     private static List<Path> files(Path root, String module) throws IOException {
-        try (Stream<Path> files = Files.list(directory(root, module))) {
+        try (Stream<Path> files = Files.walk(directory(root, module))) {
             return files.filter(Files::isRegularFile).sorted().toList();
         }
     }
@@ -249,20 +262,20 @@ public final class MigrationLint {
     }
 
     /** What a migration at or below the floor defined: a replacement of one of these is a change to something released. */
-    private static Set<String> definitionsIn(String sql, String module) {
+    private static Set<String> definitionsIn(String sql, String module, Set<String> earlier) {
         Tokenised text;
         try {
             text = tokenise(sql);
         } catch (UnreadableSql unreadable) {
             return Set.of();
         }
-        Reading reading = new Reading(module, "", Set.of());
+        Reading reading = new Reading(module, "", Set.of(), earlier);
         statements(text.tokens()).forEach(reading::statement);
         return reading.defined;
     }
 
     /** One file: its refusals after its marker, if it carries one. */
-    private static List<Refusal> lint(String sql, String module, String file, Set<String> released, String release) {
+    private static List<Refusal> lint(String sql, String module, String file, Set<String> released, Set<String> earlier, String release) {
         Tokenised text;
         try {
             text = tokenise(sql);
@@ -270,16 +283,13 @@ public final class MigrationLint {
             return List.of(new Refusal(module, file, Refused.UNREADABLE, unreadable.getMessage()));
         }
         List<Refusal> refusals = new ArrayList<>();
-        Reading reading = new Reading(module, file, released);
+        Reading reading = new Reading(module, file, released, earlier);
         statements(text.tokens()).forEach(reading::statement);
+        earlier.addAll(reading.defined);
 
         Marker marker = marker(text, module, file, release);
         refusals.addAll(marker.refusals());
-        if (marker.valid()) {
-            reading.refusals.stream().filter(refusal -> !refusal.rule().waivedByAMarker()).forEach(refusals::add);
-        } else {
-            refusals.addAll(reading.refusals);
-        }
+        reading.refusals.stream().filter(refusal -> !marker.waived().contains(refusal.rule())).forEach(refusals::add);
         return refusals;
     }
 
@@ -287,11 +297,12 @@ public final class MigrationLint {
     // The marker
     // -----------------------------------------------------------------
 
-    private record Marker(boolean valid, List<Refusal> refusals) {}
+    /** What a file's marker answers: only the classes it names, so a reason written for one cannot cover another. */
+    private record Marker(Set<Refused> waived, List<Refusal> refusals) {}
 
     private static Marker marker(Tokenised text, String module, String file, String release) {
         List<Refusal> refusals = new ArrayList<>();
-        List<String> found = new ArrayList<>();
+        List<Matcher> found = new ArrayList<>();
         for (LineComment comment : text.comments()) {
             if (!MARKER_LIKE.matcher(comment.text()).matches()) {
                 continue;
@@ -305,24 +316,33 @@ public final class MigrationLint {
                 refusals.add(new Refusal(module, file, Refused.MALFORMED_MARKER, comment.text()));
                 continue;
             }
-            found.add(parsed.group(1));
+            found.add(parsed);
         }
         if (found.size() > 1) {
             refusals.add(new Refusal(module, file, Refused.MALFORMED_MARKER, "more than one marker"));
         }
         if (found.size() != 1 || !refusals.isEmpty()) {
-            return new Marker(false, refusals);
+            return new Marker(Set.of(), refusals);
         }
-        String named = found.getFirst();
+        Set<Refused> waived = EnumSet.noneOf(Refused.class);
+        for (String named : found.getFirst().group(2).split(",")) {
+            Optional<Refused> rule = Arrays.stream(Refused.values()).filter(known -> known.name().equals(named)).findFirst();
+            if (rule.isEmpty() || !rule.get().waivedByAMarker()) {
+                refusals.add(new Refusal(module, file, Refused.MALFORMED_MARKER, "waives " + named + ", which no marker can"));
+                return new Marker(Set.of(), refusals);
+            }
+            waived.add(rule.get());
+        }
+        String release1 = found.getFirst().group(1);
         // The named release must already be out: release N's schema serves release N - 1's code, so a contract whose first
         // conforming release is not yet out breaks the release still running. While nothing is cut there is no N - 1.
-        if (!ANY_RELEASE.equals(named) && !NO_RELEASE.equals(release)
-                && SchemaVersion.parse(named).compareTo(SchemaVersion.parse(release)) > 0) {
+        if (!ANY_RELEASE.equals(release1) && !NO_RELEASE.equals(release)
+                && SchemaVersion.parse(release1).compareTo(SchemaVersion.parse(release)) > 0) {
             refusals.add(new Refusal(module, file, Refused.MARKER_AHEAD_OF_THE_RELEASE,
-                    "names " + named + ", newer than the last release " + release));
-            return new Marker(false, refusals);
+                    "names " + release1 + ", newer than the last release " + release));
+            return new Marker(Set.of(), refusals);
         }
-        return new Marker(true, refusals);
+        return new Marker(waived, refusals);
     }
 
     // -----------------------------------------------------------------
@@ -334,14 +354,19 @@ public final class MigrationLint {
         private final String module;
         private final String file;
         private final Set<String> released;
+        private final Set<String> earlier;
         private final Set<String> created = new HashSet<>();
         private final Set<String> defined = new HashSet<>();
         private final List<Refusal> refusals = new ArrayList<>();
 
-        Reading(String module, String file, Set<String> released) {
+        /** After this file moves its {@code search_path}, an unqualified {@code CREATE} may have made something elsewhere. */
+        private boolean searchPathMoved;
+
+        Reading(String module, String file, Set<String> released, Set<String> earlier) {
             this.module = module;
             this.file = file;
             this.released = released;
+            this.earlier = earlier;
         }
 
         private void refuse(Refused rule, List<Token> where) {
@@ -349,20 +374,54 @@ public final class MigrationLint {
             refusals.add(new Refusal(module, file, rule, opening));
         }
 
+        private boolean known(String key) {
+            return created.contains(key) || earlier.contains(key);
+        }
+
         void statement(List<Token> s) {
-            switch (at(s, 0).word()) {
+            String first = at(s, 0).word();
+            switch (first) {
                 case "DROP" -> refuse(Refused.DROP, s);
                 case "TRUNCATE" -> refuse(Refused.TRUNCATE, s);
+                case "DELETE" -> refuse(Refused.DELETE, s);
                 case "ALTER" -> alter(s);
                 case "CREATE" -> create(s);
                 case "REVOKE" -> revoke(s);
                 case "DO" -> refuse(Refused.OPAQUE_BLOCK, s);
+                case "SET" -> searchPathMoved |= containsWord(s, "SEARCH_PATH");
+                case "WITH" -> {
+                    if (containsWord(s, "DELETE")) {
+                        refuse(Refused.DELETE, s);
+                    }
+                }
                 default -> {
-                    if (!ADDITIVE_STATEMENTS.contains(at(s, 0).word())) {
+                    if (!ADDITIVE_STATEMENTS.contains(first)) {
                         refuse(Refused.UNRECOGNISED, s);
                     }
                 }
             }
+            if (CALLING_STATEMENTS.contains(first)) {
+                searchPathMoved |= containsWord(s, "SET_CONFIG");
+                if (callsAFunctionOfItsOwn(s)) {
+                    refuse(Refused.OPAQUE_BLOCK, s);
+                }
+            }
+        }
+
+        /** A function this module defined, called at the top level: a body nobody here read, run now, as a {@code DO} is. */
+        private boolean callsAFunctionOfItsOwn(List<Token> s) {
+            for (int index = 0; index < s.size(); index++) {
+                Token token = s.get(index);
+                if (token.kind() != Kind.WORD && token.kind() != Kind.QUOTED) {
+                    continue;
+                }
+                Name called = name(s, index);
+                if (at(s, called.next()).isPunct("(") && known("function:" + called.text())) {
+                    return true;
+                }
+                index = called.next() - 1;
+            }
+            return false;
         }
 
         private void alter(List<Token> s) {
@@ -482,19 +541,24 @@ public final class MigrationLint {
         }
 
         private void addColumn(List<Token> a, List<Token> s, boolean fresh) {
-            List<Token> column = atDepthZero(a);
-            boolean notNull = containsSequence(column, "NOT", "NULL");
-            boolean defaulted = false;
-            for (int index = 0; index < column.size(); index++) {
-                if (column.get(index).is("DEFAULT") && !at(column, index + 1).is("NULL")) {
-                    defaulted = true;
-                }
+            int index = 1;
+            if (at(a, index).is("COLUMN")) {
+                index++;
             }
-            boolean generated = containsWord(column, "GENERATED") || column.stream().anyMatch(token -> SERIAL_TYPES.contains(token.word()));
-            if (notNull && !defaulted && !generated) {
+            if (at(a, index).is("IF") && at(a, index + 1).is("NOT")) {
+                index += 3;
+            }
+            index++; // past the column's own name, which may be spelt like anything
+            Name type = name(a, index);
+            List<Token> definition = a.subList(Math.min(type.next(), a.size()), a.size());
+            List<Token> column = atDepthZero(definition);
+            boolean notNull = containsSequence(column, "NOT", "NULL") || known("domain-not-null:" + type.text());
+            boolean generated = SERIAL_TYPES.contains(at(a, index).word()) || containsSequence(column, "GENERATED", "ALWAYS")
+                    || containsSequence(column, "GENERATED", "BY");
+            if (notNull && !hasADefault(definition) && !generated) {
                 tighten(Refused.NOT_NULL_WITHOUT_DEFAULT, s, fresh);
             }
-            if (containsWord(column, "CHECK")) {
+            if (containsWord(column, "CHECK") || known("domain-check:" + type.text())) {
                 tighten(Refused.CHECK, s, fresh);
             }
             if (containsWord(column, "UNIQUE") || containsWord(column, "PRIMARY")) {
@@ -503,6 +567,33 @@ public final class MigrationLint {
             if (containsWord(column, "REFERENCES")) {
                 tighten(Refused.FOREIGN_KEY, s, fresh);
             }
+        }
+
+        /** A default that is NULL is none, however it is written: {@code NULL}, {@code (NULL)}, {@code CAST(NULL AS text)}. */
+        private static boolean hasADefault(List<Token> definition) {
+            int depth = 0;
+            for (int index = 0; index < definition.size(); index++) {
+                Token token = definition.get(index);
+                depth += token.isPunct("(") ? 1 : token.isPunct(")") ? -1 : 0;
+                if (depth == 0 && token.is("DEFAULT") && !isNull(definition, index + 1)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static boolean isNull(List<Token> tokens, int start) {
+            int index = start;
+            while (at(tokens, index).isPunct("(")) {
+                index++;
+            }
+            if (at(tokens, index).is("CAST") && at(tokens, index + 1).isPunct("(")) {
+                index += 2;
+                while (at(tokens, index).isPunct("(")) {
+                    index++;
+                }
+            }
+            return at(tokens, index).is("NULL");
         }
 
         private void alterColumn(List<Token> a, List<Token> s, boolean fresh) {
@@ -521,8 +612,11 @@ public final class MigrationLint {
                 refuse(Refused.TYPE_CHANGE, s);
             } else if (verb.is("SET") && object.is("NOT")) {
                 tighten(Refused.SET_NOT_NULL, s, fresh);
-            } else if (verb.is("DROP")) {
-                refuse(Refused.DROP, s);
+            } else if (verb.is("SET") && object.is("GENERATED")) {
+                // BY DEFAULT to ALWAYS refuses an explicit value with 428C9, which release N - 1 may still write.
+                tighten(Refused.SET_GENERATED, s, fresh);
+            } else if (verb.is("DROP") || verb.is("SET") && object.is("DEFAULT") && isNull(a, index + 2)) {
+                refuse(Refused.DROP, s); // SET DEFAULT NULL is DROP DEFAULT by another name
             } else if (!(verb.is("RESET")
                     || verb.is("SET") && (object.is("DEFAULT") || object.is("STATISTICS") || object.is("STORAGE")
                             || object.is("COMPRESSION") || object.isPunct("(")))) {
@@ -544,17 +638,20 @@ public final class MigrationLint {
                 replace = true;
                 index = 3;
             }
+            boolean temporary = false;
             while (TABLE_MODIFIERS.contains(at(s, index).word())) {
+                temporary |= at(s, index).is("TEMP") || at(s, index).is("TEMPORARY");
                 index++;
             }
             String kind = at(s, index).word();
             switch (kind) {
-                case "TABLE" -> createTable(s, index + 1);
+                case "TABLE" -> createTable(s, index + 1, temporary);
                 case "SEQUENCE" -> {
-                    if (!(at(s, index + 1).is("IF") && at(s, index + 2).is("NOT"))) {
+                    if (!temporary && !(at(s, index + 1).is("IF") && at(s, index + 2).is("NOT"))) {
                         created.add("sequence:" + name(s, index + 1).text());
                     }
                 }
+                case "DOMAIN" -> domain(s, index + 1);
                 case "UNIQUE" -> uniqueIndex(s, index);
                 case "INDEX" -> {}
                 case "CONSTRAINT", "TRIGGER" -> trigger(s, index);
@@ -572,7 +669,7 @@ public final class MigrationLint {
             }
         }
 
-        private void createTable(List<Token> s, int start) {
+        private void createTable(List<Token> s, int start, boolean temporary) {
             int index = start;
             boolean ifAbsent = false;
             if (at(s, index).is("IF") && at(s, index + 1).is("NOT")) {
@@ -581,16 +678,39 @@ public final class MigrationLint {
             }
             Name table = name(s, index);
             boolean partition = at(s, table.next()).is("PARTITION") && at(s, table.next() + 1).is("OF");
-            // A table that may already exist, or a partition of one that does, is not one nothing released can touch.
-            if (!ifAbsent && !partition) {
+            if (partition) {
+                // Its own columns and constraints apply to rows a write to the released parent routes here.
+                Name parent = name(s, table.next() + 2);
+                if (at(s, parent.next()).isPunct("(") && !created.contains("table:" + parent.text())) {
+                    refuse(Refused.CHECK, s);
+                }
+            }
+            // A table that may already exist, a partition of one that does, a temporary table hiding a released name, or one
+            // made wherever a moved search_path points is not a table nothing released can touch.
+            if (!ifAbsent && !partition && !temporary && (table.qualified() || !searchPathMoved)) {
                 created.add("table:" + table.text());
+            }
+        }
+
+        /** A domain that refuses a null or carries a check tightens the column that later takes it as its type. */
+        private void domain(List<Token> s, int start) {
+            Name name = name(s, start);
+            List<Token> body = atDepthZero(s.subList(Math.min(name.next(), s.size()), s.size()));
+            if (containsSequence(body, "NOT", "NULL")) {
+                created.add("domain-not-null:" + name.text());
+                defined.add("domain-not-null:" + name.text());
+            }
+            if (containsWord(body, "CHECK")) {
+                created.add("domain-check:" + name.text());
+                defined.add("domain-check:" + name.text());
             }
         }
 
         private void definition(List<Token> s, String kind, int start, boolean replace) {
             Name name = name(s, start);
             String key = kind + ":" + name.text();
-            if (replace && released.contains(key)) {
+            // A name still carrying a schema is another module's: this module's history cannot say it is a first definition.
+            if (replace && (released.contains(key) || name.text().contains("."))) {
                 refuse(Refused.REPLACED_BODY, s);
             }
             created.add(key);
@@ -683,11 +803,11 @@ public final class MigrationLint {
                 index += 2;
             }
             String text = parts.size() == 2 && parts.get(0).equals(module) ? parts.get(1) : String.join(".", parts);
-            return new Name(text, index);
+            return new Name(text, index, parts.size() > 1);
         }
     }
 
-    private record Name(String text, int next) {}
+    private record Name(String text, int next, boolean qualified) {}
 
     private static Token at(List<Token> tokens, int index) {
         return index >= 0 && index < tokens.size() ? tokens.get(index) : Token.END;

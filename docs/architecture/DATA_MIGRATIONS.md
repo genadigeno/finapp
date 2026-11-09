@@ -248,8 +248,10 @@ N − 1's code.** `MigrationsAreExpandOnlyTest` (`app`, the architecture tier) h
 [`docs/migrations/released-schema-floor.yaml`](../migrations/released-schema-floor.yaml). The repository has no release tag and
 CI clones shallowly, so a lint that asked git for "the last release" would pass on nothing; the floor is a committed file,
 one line per module, and moving it is a reviewed change. The same test leaves the next floor under
-`app/build/schema-floor/`, also when it goes red. **When a release is cut**, copy that file over the committed one and set
-`release` to the version just cut. A module the file does not name is read from its first migration, and a floor above a
+`app/build/schema-floor/`, also when it goes red. **It moves on two occasions and no others**: when a release is cut, by copying
+that file over the committed one and setting `release` to the version just cut; and, while `release` is `none`, at the
+coordinator's merge of work whose migrations landed beside it, since those are not contracts with a release that exists. Moving it to get
+a refused migration past the lint is the thing the review of this file is there to stop. A module the file does not name is read from its first migration, and a floor above a
 module's newest file is refused, since a file added below it would never be read.
 
 **While no release has been cut**, the file says `release: "none"`: no release N − 1 exists, so nothing can be broken yet,
@@ -260,28 +262,36 @@ are read from the moment they appear.
 
 | Class | What it is | Why it is refused |
 |---|---|---|
-| `DROP` | `DROP` of anything; `ALTER … DROP` of a column, a constraint, a default, `NOT NULL` | N − 1 reads, writes or relies on it |
+| `DROP` | `DROP` of anything; `ALTER … DROP` of a column, a constraint, a default, `NOT NULL`; `SET DEFAULT NULL`, however the null is written | N − 1 reads, writes or relies on it |
 | `RENAME` | `RENAME` of anything; `SET SCHEMA` | N − 1 names the old one |
 | `TYPE_CHANGE` | A column's type, or an attribute's | N − 1 binds the old one |
 | `TRUNCATE` | The statement | It destroys what N − 1 reads |
-| `CHECK` | A new `CHECK`, on a table or inline in `ADD COLUMN`; a domain's new constraint | It can refuse a write N − 1 makes |
+| `DELETE` | A `DELETE`, also inside a `WITH` | Likewise, a row at a time; unlike an `UPDATE` backfill, it can only take away |
+| `CHECK` | A new `CHECK`, on a table or inline in `ADD COLUMN`; a domain's new constraint; a new column typed by a domain with a `CHECK`; a partition of a released table with a column or constraint list of its own | It can refuse a write N − 1 makes |
 | `TRIGGER` | `CREATE [CONSTRAINT] TRIGGER`, `ENABLE TRIGGER`, `DISABLE TRIGGER` | Likewise, and this repository adds refusing triggers often. One firing on `TRUNCATE` alone is exempt: the application holds no `TRUNCATE`, so it can refuse nothing a release makes. A backfill bracketed by `DISABLE` and `ENABLE` in one file nets nothing, and says so with a marker of `ANY` |
 | `UNIQUE` | `UNIQUE`, `PRIMARY KEY`, `EXCLUDE`, `CREATE UNIQUE INDEX` | Likewise |
 | `FOREIGN_KEY` | `FOREIGN KEY`, inline `REFERENCES` | Likewise |
 | `ALTERED_CONSTRAINT` | `ALTER CONSTRAINT` | It changes when, or whether, a constraint is checked against N − 1's writes |
 | `SET_NOT_NULL` | `SET NOT NULL` | Likewise |
-| `NOT_NULL_WITHOUT_DEFAULT` | `ADD COLUMN … NOT NULL` with no default, or `DEFAULT NULL` (a generated or serial column has one) | N − 1's insert does not name it |
+| `SET_GENERATED` | `ALTER COLUMN … SET GENERATED` | `BY DEFAULT` to `ALWAYS` refuses an explicit value with `428C9`, which N − 1 may still write |
+| `NOT_NULL_WITHOUT_DEFAULT` | `ADD COLUMN … NOT NULL`, or typed by a domain that is, with no default; a default that is `NULL`, `(NULL)` or `CAST(NULL AS …)` is none (a generated or serial column has one) | N − 1's insert does not name it |
 | `REVOKE` | Any `REVOKE`, a role's membership and a whole schema's tables included | N − 1 may use the privilege |
 | `ROW_SECURITY` | `ENABLE`/`FORCE ROW LEVEL SECURITY`, `CREATE POLICY` | It can hide or refuse rows |
 | `RULE` | `CREATE RULE` | It can rewrite or refuse a write |
-| `REPLACED_BODY` | `CREATE OR REPLACE` of a function, procedure, aggregate or view that a migration at or below the floor defined | See below |
-| `OPAQUE_BLOCK` | A `DO` block | Its body is not read, so it is not vouched for |
+| `REPLACED_BODY` | `CREATE OR REPLACE` of a function, procedure, aggregate or view that a migration at or below the floor defined, or of one in another module's schema | See below |
+| `OPAQUE_BLOCK` | A `DO` block; a top-level call of a function this module defined | Its body is not read, so it is not vouched for |
 | `UNRECOGNISED` | A statement form the lint does not know | The list of what passes is an allow-list: unknown is refused, never passed |
 
 **Exempt: a table created earlier in the same file.** A `CHECK`, trigger, `UNIQUE`, foreign key, `SET NOT NULL`, policy or
 `REVOKE` on it refuses nothing a release makes, so it needs no marker; nor does a `REVOKE` on a function or sequence created
 earlier in the file. `CREATE TABLE IF NOT EXISTS` and `PARTITION OF` do not earn this: such a table may already hold a
-release's rows. Destructive statements are never exempt.
+release's rows. Nor does a `TEMP` table, or an unqualified table after the file moves its `search_path`: either may hide a
+released table of the same name. Destructive statements are never exempt.
+
+**A new table's foreign key to a released table is not refused**, though it can refuse release N − 1's `DELETE` of a parent row
+that N has referenced. It takes a row only N writes, on a parent N − 1 must then delete or re-key during the rollout window,
+and the schema's parents are mostly append-only to the application role. Refusing it would ask a marker of nearly every new
+table. The rehearsal (`P15-TSK-012`) is what would show otherwise.
 
 **Words inside comments, string literals, function bodies and quoted names do not count**: the file is tokenised and read
 statement by statement. The cost is that a `CREATE FUNCTION`'s body is not read at all.
@@ -295,12 +305,12 @@ marker's claim is true: that release N − 1 runs on release N's schema is `P15-
 **The contract marker, whose form is fixed here for `P15-TSK-017`'s promotion script.** One `--` line starting at column 0
 in the file's header, before its first statement, matching exactly:
 
-`^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\.[0-9]+\.[0-9]+); reason=(\S.*)$`
+`^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\.[0-9]+\.[0-9]+); waives=([A-Z_]+(?:,[A-Z_]+)*); reason=(\S.*)$`
 
 For example:
 
 ```sql
--- finapp-contract: first-conforming-release=1.4.0; reason=the last writer of legacy_status went in 1.4.0
+-- finapp-contract: first-conforming-release=1.4.0; waives=DROP; reason=the last writer of legacy_status went in 1.4.0
 ```
 
 - **`first-conforming-release`** names the first release whose code conforms to this migration. A release is named by the
@@ -312,8 +322,11 @@ For example:
   floor says `none` there is no N − 1 to compare with, and any well-formed name stands.
 - A line starting `-- finapp-contract` that does not parse, a second marker, or one after the first statement is
   `MALFORMED_MARKER`, and passes nothing. A marker inside a string or a block comment is not a marker.
-- A marker waives a statement's refusal. It does not waive `UNREADABLE` (a file that cannot be read to its end) or
-  `NOT_A_MIGRATION` (a file in the directory that is not a `V<version>__<name>.sql`).
+- **`waives`** names the classes this marker answers, comma-separated, and only those are waived: a reason written for a
+  replaced body says nothing about a dropped column beside it. A class no marker can answer, or one that does not exist, is
+  `MALFORMED_MARKER`.
+- It cannot waive `UNREADABLE` (a file that cannot be read to its end), `NOT_A_MIGRATION` (a file in the directory that is
+  not a `V<version>__<name>.sql` directly in it, which the migrator image would not stage), or a marker's own refusals.
 
 **The promotion script's rule (`P15-TSK-017`).** A rollback to release R is refused when any migration above R's own newest
 version in that module carries a marker naming a release newer than R. Past such a marker the way back is a forward fix.
@@ -326,6 +339,11 @@ schema is never held against it: a replica of N − 1 on N's schema is what a ro
 it. Versions compare as versions, the highest row with `success = true`, read through `platform.applied_migration_versions()`
 (§6). The probe never reads the database: a daemon thread does, one statement for every schema, at most once a minute on a
 ready replica (`SchemaVersionGuard`; the runbook's §11.1c).
+
+**Background work waits with it.** Readiness stops HTTP only, and a consumed event or a scheduled tick is traffic too: a handler
+naming a column not yet applied fails with `42703`, which is not transient, so a valid financial event would be parked. So every
+schedule, the outbox relay and every consumer loop does no work until the guard has proven the schema, and pauses while it is
+found older. A failed read moves nothing: only a read that succeeded and shows an older schema takes a ready replica out.
 
 ### 4.2 Destructive DDL
 

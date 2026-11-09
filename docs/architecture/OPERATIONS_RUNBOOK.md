@@ -1984,13 +1984,15 @@ with no `command` of its own. One line per schema and a result line:
 release N's schema on `kind`. Promotion and its refusal are `P15-TSK-017`'s.)*
 
 **A replica that will not go ready.** Readiness answers `503` with `{"status":"OUT_OF_SERVICE"}` while any schema is older
-than the build expects. So the rollout pauses at `maxUnavailable: 0`, and the old replicas keep serving. That is the guard
-working. Read the replica's log for the one line it writes:
+than the build expects, and until a read has first shown otherwise. So the rollout pauses at `maxUnavailable: 0`, and the old
+replicas keep serving. Its schedules, relay and consumers do no work in that time either: readiness holds HTTP back, and the
+same verdict holds those. That is the guard working. Read the replica's log for the one line it writes:
 
 | The log says | What it is | What to do |
 |---|---|---|
-| `This instance is out of service until the migration has run: [ledger is at 33, expected 34]` | This replica's build is newer than the schema. The migration Job has not run, or failed | §11.1b, §11.4. Do not touch the replicas. Once the Job succeeds they go ready at their next probe |
-| `The schema-version read failed: … (SQLState 42883)` | `platform.applied_migration_versions()` does not exist: platform's migrations have not reached this database at all | As above |
+| `This instance is out of service until the migration has run: [ledger is at 33, expected 34]` | This replica's build is newer than the schema. The migration Job has not run, or failed | §11.1b, §11.4. Do not touch the replicas. Once the Job succeeds they go ready at the second probe after it, up to about 20 s: the first asks for the read and answers what it last knew |
+| `The schema-version read failed: … (SQLState 42883)` on a replica that was never ready | `platform.applied_migration_versions()` does not exist: platform's migrations have not reached this database at all | As above |
+| `The schema-version read was refused: … ` at ERROR, on a replica that was ready | The function has gone or the role has changed under a running fleet. The replica stands on its verdict and keeps serving, because only a read showing an older schema moves it: this same refusal meets every replica at once, and flipping would stop the whole fleet over a fault that is not the schema's. While it lasts, nothing can show the replica an older schema | Find out what changed the function or the grant. Restore it; do not restart the fleet for this |
 | `The schema-version read failed: … (SQLState 42501)` | The connected role cannot execute it | The application is not connecting as `finapp_app`. Find out why; never grant it to something else to get past this |
 | `The schema-version read failed: … (SQLState 08…)` or no state | The database did not answer. A verdict already reached stands: a schema is not older for being unreachable, and `db` reports the outage | Treat it as the database's |
 

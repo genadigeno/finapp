@@ -1,5 +1,6 @@
 package com.finapp.app.eventing;
 
+import com.finapp.app.lifecycle.WorkHold;
 import com.finapp.app.security.ConfinedCredential;
 import com.finapp.app.security.KafkaTransportGuard;
 import com.finapp.platform.audit.AuditWriter;
@@ -315,6 +316,7 @@ public class EventingBeans {
             // Built after the transport guard ruled on it (see brokerConnection): the consumer
             // dials the same bootstrap, so it must not exist before the guard has ruled.
             BrokerConnection brokerConnection,
+            WorkHold workHold,
             @Value("${finapp.inbox.poll-timeout:PT1S}") Duration pollTimeout,
             @Value("${finapp.inbox.failure-backoff:PT1S}") Duration failureBackoff) {
         return new InboxConsumers(
@@ -329,7 +331,8 @@ public class EventingBeans {
                                 groupHandlers,
                                 pollTimeout),
                 failureBackoff,
-                registry);
+                registry,
+                workHold);
     }
 
     /**

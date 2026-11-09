@@ -1,6 +1,7 @@
 package com.finapp.app.eventing;
 
 import com.finapp.app.lifecycle.ShutdownOrder;
+import com.finapp.app.lifecycle.WorkHold;
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.kafka.BrokerAccessRefusedException;
 import com.finapp.platform.inbox.kafka.ConsumerEvictedException;
@@ -92,6 +93,7 @@ public final class InboxConsumers implements SmartLifecycle {
         KafkaEventReceiver connect(String groupId, List<InboxEventHandler> handlers);
     }
 
+    private final WorkHold hold;
     private final Map<String, List<InboxEventHandler>> handlersByModule;
     private final ReceiverFactory receivers;
     private final Duration failureBackoff;
@@ -147,6 +149,20 @@ public final class InboxConsumers implements SmartLifecycle {
             ReceiverFactory receivers,
             Duration failureBackoff,
             MeterRegistry registry) {
+        this(handlers, receivers, failureBackoff, registry, WorkHold.NONE);
+    }
+
+    /**
+     * @param hold while on, no loop polls (`P15-TSK-005`): a consumed event is traffic, and a handler on a schema older than this
+     *     build expects would fail on a column not yet there and park a valid event, or run without a trigger it relies on
+     */
+    public InboxConsumers(
+            List<InboxEventHandler> handlers,
+            ReceiverFactory receivers,
+            Duration failureBackoff,
+            MeterRegistry registry,
+            WorkHold hold) {
+        this.hold = Objects.requireNonNull(hold, "hold");
         this.handlersByModule = byModule(Objects.requireNonNull(handlers, "handlers"));
         this.receivers = Objects.requireNonNull(receivers, "receivers must not be null");
         this.failureBackoff = Objects.requireNonNull(failureBackoff, "failureBackoff");
@@ -216,6 +232,11 @@ public final class InboxConsumers implements SmartLifecycle {
      */
     public boolean brokerAccessRefused() {
         return !refusedModules.isEmpty();
+    }
+
+    /** @return whether this instance's loops are held from polling now (`P15-TSK-005`) */
+    public boolean held() {
+        return hold.held();
     }
 
     /**
@@ -401,6 +422,10 @@ public final class InboxConsumers implements SmartLifecycle {
         private void run() {
             try {
                 while (running) {
+                    if (hold.held()) {
+                        pause(); // no poll: while held from the start this member never joins its group
+                        continue;
+                    }
                     tick();
                 }
             } finally {

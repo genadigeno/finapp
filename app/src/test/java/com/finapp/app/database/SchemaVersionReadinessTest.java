@@ -20,6 +20,7 @@ import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * The contributor over the real actuator (`P15-TSK-005`), read from the running application's own health groups, with the
@@ -93,6 +94,12 @@ class SchemaVersionReadinessTest {
     @DisplayName("the name the readiness group includes is this contributor")
     void theContributorIsRegistered() {
         assertThat(registry.getContributor("schemaVersion")).isInstanceOf(SchemaVersionHealthIndicator.class);
+    }
+
+    @Test
+    @DisplayName("the real wiring reads on the daemon thread, never the probe's")
+    void theRealWiringReadsOffTheProbe() {
+        assertThat(ReflectionTestUtils.getField(guard, "reader")).isSameAs(SchemaVersionGuard.ON_A_DAEMON_THREAD);
     }
 
     @Test

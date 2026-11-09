@@ -1,11 +1,14 @@
 package com.finapp.app.database;
 
+import com.finapp.app.lifecycle.WorkHold;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -34,34 +37,40 @@ import lombok.extern.slf4j.Slf4j;
  * one read at a time, one statement for every schema, at most once per {@link #STEADY} while ready and once per
  * {@link #UNSETTLED} otherwise. Ten replicas read ten statements a minute, whatever the probes do.
  *
- * <h2>What a failed read means</h2>
+ * <h2>Only a read that succeeded moves the verdict</h2>
  *
- * <ul>
- *   <li><strong>The database did not answer</strong> (no connection, a timeout, a server going away): the verdict stands. A
- *       schema is forward-only, so it did not get older by being unreachable, and {@code db} is already reporting the
- *       database. Flipping here too would make every blip two faults. Before any read has succeeded the verdict stands too,
- *       and that verdict is {@link Verdict#UNPROVEN}, which is not ready.
- *   <li><strong>The database refused the read itself</strong> (SQLState class {@value #REFUSED_CLASS}: the function does not
- *       exist, so platform's migration has not run and the schema is older; or this role cannot execute it): nothing is
- *       proven, whatever an earlier read said. {@link Verdict#UNPROVEN}.
- *   <li><strong>A version that does not parse</strong>: {@link Verdict#UNPROVEN}. It is never guessed at.
- * </ul>
+ * <p>A failed read changes nothing, whatever failed: a replica that was {@link Verdict#READY} stands on it, and one that never
+ * was stays {@link Verdict#UNPROVEN}, which is not ready. A schema is forward-only, so it did not get older by being
+ * unreachable, and {@code db} is already reporting the database. The same holds for a read the database refuses (SQLState class
+ * {@value #REFUSED_CLASS}: the function gone, a role that cannot execute it): nothing about the schema moved, the same refusal
+ * meets every replica at once, and with the {@link WorkHold} on this verdict, flipping would stop the whole ready fleet's HTTP,
+ * consumers and schedules together over a fault that is not the schema's. It is logged at ERROR, once per outage, and only a
+ * read that shows an older schema takes a ready replica out of service. A version that does not parse is treated the same
+ * way: never guessed at, and never a reason to flip.
  *
  * <h2>Process-local on purpose</h2>
  *
  * <p>Readiness is one replica's opinion of itself, and every replica forms it from the one shared schema against its own
  * build. Nothing here coordinates anything or is written anywhere ({@code DISTRIBUTED_EXECUTION.md} section 3).
+ *
+ * <h2>It also holds the instance's background work</h2>
+ *
+ * <p>Readiness stops HTTP only. A consumed event and a scheduled tick are traffic too: a handler naming a column not yet
+ * applied fails with {@code 42703}, which is no transient class, so a valid financial event would be parked, and one relying on
+ * a new trigger would run without it. So this is the {@link WorkHold} that {@code ScheduleDrain} and {@code InboxConsumers}
+ * obey: no work until {@link Verdict#READY} has been proven, and none while {@link Verdict#BEHIND}.
  */
 @Slf4j
 @RequiredArgsConstructor
-public final class SchemaVersionGuard {
+public final class SchemaVersionGuard implements WorkHold {
 
     /** How long a ready verdict stands. Only a restore to an older dump could change it. */
     static final Duration STEADY = Duration.ofSeconds(60);
 
     /**
-     * How long any other verdict stands. Below the probe's period, so a replica that started before the migration Job
-     * finished is ready at the next probe after it does.
+     * How long any other verdict stands. Below the probe's period, so every probe asks for a read: a replica that started before
+     * the migration Job finished is ready at the second probe after the Job, up to about 20 s, the first asking for the read and
+     * answering what it last knew.
      */
     static final Duration UNSETTLED = Duration.ofSeconds(5);
 
@@ -84,7 +93,7 @@ public final class SchemaVersionGuard {
         READY,
         /** At least one schema is behind what this build expects. */
         BEHIND,
-        /** Nothing has established either: no read has succeeded yet, or the database refused the read. */
+        /** Nothing has established either: no read has yet succeeded on this replica. */
         UNPROVEN
     }
 
@@ -96,11 +105,24 @@ public final class SchemaVersionGuard {
     @NonNull private final Executor reader;
     private final AtomicReference<State> state = new AtomicReference<>(new State(Verdict.UNPROVEN, null, false));
     private final AtomicBoolean reading = new AtomicBoolean();
+    private final List<Runnable> whenHeld = new CopyOnWriteArrayList<>();
 
     /** The last verdict, at once; asks for a fresher one if this one has stood long enough. Never reads on this thread. */
     public Verdict verdict() {
         ask();
         return state.get().verdict();
+    }
+
+    /** Whether background work must wait: anything short of a proven {@link Verdict#READY}. */
+    @Override
+    public boolean held() {
+        return verdict() != Verdict.READY;
+    }
+
+    /** {@code onHeld} runs when a ready replica's schema is found older: a schedule already running puts its gate up. */
+    @Override
+    public void whenHeld(Runnable onHeld) {
+        whenHeld.add(Objects.requireNonNull(onHeld, "onHeld"));
     }
 
     /** Asks for a read, unless one is running or the last still stands. */
@@ -113,10 +135,16 @@ public final class SchemaVersionGuard {
         if (!reading.compareAndSet(false, true)) {
             return;
         }
+        boolean handedOver = false;
         try {
             reader.execute(this::readAndRelease);
+            handedOver = true;
         } catch (RejectedExecutionException noThread) {
-            reading.set(false);
+            log.debug("No thread for the schema-version read; the next probe asks again");
+        } finally {
+            if (!handedOver) {
+                reading.set(false);
+            }
         }
     }
 
@@ -139,16 +167,25 @@ public final class SchemaVersionGuard {
                 record(verdict, behind);
             }
             settle(verdict, false);
+            if (verdict == Verdict.BEHIND && before.verdict() == Verdict.READY) {
+                whenHeld.forEach(Runnable::run);
+            }
         } catch (SQLException failure) {
             boolean refused = failure.getSQLState() != null && failure.getSQLState().startsWith(REFUSED_CLASS);
             if (!before.failing()) {
-                log.warn("The schema-version read failed: {} (SQLState {}); {}", failure.getClass().getSimpleName(), failure.getSQLState(),
-                        refused ? "this instance stays out of service until it can be read" : "the verdict stands");
+                if (refused && before.verdict() == Verdict.READY) {
+                    log.error("The schema-version read was refused: {} (SQLState {}); this ready instance stands on its verdict,"
+                            + " and nothing can show it an older schema until the read works", failure.getClass().getSimpleName(), failure.getSQLState());
+                } else {
+                    log.warn("The schema-version read failed: {} (SQLState {}); the verdict stands", failure.getClass().getSimpleName(), failure.getSQLState());
+                }
             }
-            settle(refused ? Verdict.UNPROVEN : before.verdict(), true);
-        } catch (RuntimeException unreadable) {
-            log.warn("The schema-version read returned something that is not a version: {}", unreadable.getClass().getSimpleName());
-            settle(Verdict.UNPROVEN, true);
+            settle(before.verdict(), true);
+        } catch (IllegalArgumentException notAVersion) {
+            if (!before.failing()) {
+                log.error("The schema-version read returned something that is not a version; the verdict stands");
+            }
+            settle(before.verdict(), true);
         }
     }
 
