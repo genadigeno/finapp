@@ -72,14 +72,14 @@ tests:
               summary: "The fleet in staging is running 3 different financial configurations"
               description: "Replicas have disagreed on the effective FINANCIAL configuration for longer than any rollout takes. Each such value is safe mixed only for the length of a rollout. See OPERATIONS_RUNBOOK.md section 11.31."
 
-  # The odd replica out misses three scrapes every twenty minutes. Without the window each gap would end the disagreement for an evaluation
-  # and restart the for; it fires on schedule.
+  # The odd replica out fails a scrape every twenty minutes. A failed scrape writes a staleness marker, so without the presence window its series
+  # ends at that evaluation and the for restarts: this case is red without the window (MUTATION_TESTING.md). With it, it fires on schedule.
   - interval: 1m
     input_series:
       - series: 'finapp_config_fingerprint{env="production", instance="a:8081", fingerprint="a1"}'
         values: '1x120'
       - series: 'finapp_config_fingerprint{env="production", instance="b:8081", fingerprint="b2"}'
-        values: '1x17 _x2 1x17 _x2 1x17 _x2 1x17 _x2 1x17 _x2 1x20'
+        values: '1x17 stale 1x17 stale 1x17 stale 1x17 stale 1x17 stale 1x20'
     alert_rule_test:
       - eval_time: 90m
         alertname: ConfigFingerprintDisagrees
