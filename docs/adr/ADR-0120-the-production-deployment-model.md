@@ -46,10 +46,11 @@ some to answer the brief would break ADR-0001.
    `application_name = 'finapp'`. `podReplacementPolicy: TerminationComplete` would remove the second surge term, but
    it is alpha and not enabled on managed clusters; it is revisited when it is generally available. *(Corrected by the
    transition's review, 2026-11-07, its I-1: this read "`maxReplicas + maxSurge ≤ finapp.database.instances`".)*
-   *(Dated note, 2026-11-09, `P15-TSK-012`: **measured on `kind`, on one machine, at three replicas; the record is `OPERATIONS_RUNBOOK.md` §11.28.** The rule held in every rollout,
-   the pod kill and a rollback with an eviction mid-way, at seven connections a pod, the reporting pool's eighth opening only on a pod's first report and no report having run. Even `minReadySeconds: 0` with a long `preStop` tops out at six pods at three
-   replicas, the formula's own maximum, so the `+ 1` is needed rather than generous: that rollout's 42 connections pass a budget of 48 and fail the 40 a formula without it would declare. `maxUnavailable: 1`
-   fails no request while two replicas answer, so what it costs is the ready floor. No decision here changes.)*
+   *(Dated note, 2026-11-09, `P15-TSK-012`: **measured on `kind`, on one machine, at three replicas; the record is `OPERATIONS_RUNBOOK.md` §11.28.** The rule held through a rollout, a
+   pod kill and a rollback with an eviction mid-way, each replica's reporting pool opened by a report so that all eight of its connections count, and an operator was admitted with the fleet
+   held at the budget itself. At three replicas the formula's six pods are also the `kind` overlay's `ResourceQuota`: the shipped rollout reached five at most, `minReadySeconds: 0` with a long `preStop` reaches six,
+   and it is the quota, not the rollout, that stops a seventh. With the quota raised by one pod and a new pod evicted while the old ones drained, the fleet went past 48. So the quota's tie to the formula is
+   what makes the budget hold, and a quota moved without the formula is what breaks it. `maxUnavailable: 1` fails no request while two replicas answer, so what it costs is the ready floor. No decision here changes.)*
 3. **Probes map to ADR-0016.** The liveness, readiness and startup probes are served on a **management port**. No
    Service or ingress exposes that port. The image has no Docker `HEALTHCHECK`.
 4. **Graceful shutdown is stated and tested.** The sequence is: a `preStop` pause, graceful HTTP, schedules drained
