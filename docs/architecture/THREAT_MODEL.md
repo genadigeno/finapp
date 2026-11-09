@@ -1118,6 +1118,9 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
     **One row has been added since, and the owner accepted it the same day, as recommended** (2026-11-09, the static analysis on the tree with wave D merged): a
     fifty-seventh in (b), a statement field of the source-join census's generic join, handed a `private static final` text by each
     module, until 2027-06-30, as the others.
+    **Two more rows have been added since, and await the owner** (2026-11-10, the static analysis on the tree with wave E merged): the
+    key-ring retirement guard's statement, built from its own closed list of stamped columns, and the embedded configuration register's
+    read of its own classpath resource. *Recommendation*: accept both until 2027-06-30, as the others.
 18. **T10's and T37's residual: the tables the retention sweeps leave alone** *(added 2026-11-08 by the retention task's
    gate; numbered for the tasks that ran beside it)*. The audit archival is designed (`DATA_RETENTION.md` §3) and not
    built, so the audit table grows and no archive copy exists. Idempotency records and session rows are not swept: a sweep
