@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 class RepudiationStatementsTest {
 
     @Test
-    @DisplayName("the last resolved break on an expectation is the chain's tail: the resolved break no later break continues")
+    @DisplayName("the last resolved break on an expectation prefers the chain's tail, the resolved break no later break continues, and orders by no stamp (a trace link: DISPLAYS in the census)")
     void theLastResolvedBreakIsTheTail() {
         assertThat(JdbcRepudiationStore.LAST_RESOLVED_BREAK_ON)
                 .contains("AND NOT EXISTS (SELECT 1 FROM reconciliation.break f WHERE f.expectation_id = b.expectation_id AND f.follows_break_id = b.id)")

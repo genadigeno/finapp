@@ -3,22 +3,24 @@
 -- is V012: V011 is the last kyc migration (Flyway outOfOrder = false).
 --
 -- WHY THE STAMPS WERE WRONG
---   kyc.verification_check is stamped by the database's clock (requested_at, status_changed_at), and JdbcCheckStore.newestOfType
---   and CheckStore.latestDecidedScreenings ranked the checks by requested_at DESC: a backward step between two asks lets an earlier
+--   kyc.verification_check's requested_at is stamped by a clock - an instance's for an onboarding check (JdbcCheckStore.insert
+--   binds the domain's instant, V004), the database's for a rescreen (requestRescreen) - and JdbcCheckStore.newestOfType and
+--   CheckStore.latestDecidedScreenings ranked the checks by requested_at DESC: a skew or a backward step between two asks lets an earlier
 --   check read newer. The newest decides whether a successor is asked (a terminal INDETERMINATE under the budget) and which answer
 --   risk's T-eval reads (a HIT masked by an earlier CLEAR reads as clear). kyc.kyc_case had no stamp in its rank but a UUIDv7
 --   id minted from an instance's clock (ADR-0013): time-ordered only while no instance's clock moved.
 --
 -- WHAT THIS DOES - one order per table, drawn at the insert, ranked by the rows
 --   kyc.check_order, kyc.case_order    a sequence each: nextval is taken in call order whatever a clock does.
---   verification_check.check_order     DEFAULT nextval. Safe as a rank because the insert follows the arbiter that makes the
---                                      question sequential: an onboarding check is inserted only when its type's one-in-flight
---                                      index admits it, so a successor's insert follows its predecessor's terminal commit and
---                                      draws a number after it. A rescreen (keyed per list version, not per one-in-flight) asks
+--   verification_check.check_order     DEFAULT nextval, evaluated when the insert starts. Safe as a rank because a successor's insert
+--                                      starts after its predecessor's: the run inserts a successor only once it has read the
+--                                      predecessor terminal, and the one-in-flight index refuses any overlap, so a successor that
+--                                      lands draws a number after it. A rescreen (keyed per list version, not per one-in-flight) asks
 --                                      an independent question: two concurrent ones are concurrent asks, and either rank
 --                                      is an order of asking - a clock cannot reverse it.
---   kyc_case.case_order                DEFAULT nextval, under kyc_case_one_open_per_customer: a customer's next case is inserted
---                                      only after the last one is decided and committed, so it draws a number after it.
+--   kyc_case.case_order                DEFAULT nextval, under kyc_case_one_open_per_customer: a customer's next case's insert starts
+--                                      after the last one is decided, the index refusing any overlap, so a case that lands draws a
+--                                      number after it.
 --
 -- RELEASE N-1 AND ITS ROWS
 --   The column is added with no default and the default set afterwards, so no table rewrite assigns numbers to existing rows

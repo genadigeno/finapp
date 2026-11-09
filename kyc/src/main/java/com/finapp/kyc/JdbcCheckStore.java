@@ -282,9 +282,10 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
                     + " LIMIT 1) AS latest";
 
     /**
-     * The newest check of a type: ranked by {@code check_order} (kyc {@code V012}, `P15-TSK-037`), drawn at the insert after
-     * the one-in-flight index admitted it, so never by the database clock's {@code requested_at}; a pre-{@code V012} row has
-     * no order and ranks below every row that does, by its stamps, as before.
+     * The newest check of a type: ranked by {@code check_order} (kyc {@code V012}, `P15-TSK-037`), a sequence drawn at the
+     * insert, and a successor's insert starts after its predecessor's: the run inserts one only once it has read the
+     * predecessor terminal, and the one-in-flight index refuses any overlap. So never by {@code requested_at}, an instance's clock
+     * for an onboarding check; a pre-{@code V012} row has no order and ranks below every row that does, by its stamps, as before.
      */
     static final String NEWEST_ORDER = " ORDER BY check_order DESC NULLS LAST, requested_at DESC, id DESC LIMIT 1";
 

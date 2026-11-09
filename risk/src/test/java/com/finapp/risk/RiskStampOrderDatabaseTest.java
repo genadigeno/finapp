@@ -63,15 +63,15 @@ class RiskStampOrderDatabaseTest {
             String assessment = assessed.assessmentId().value().toString();
             // The clock steps back after the assessment: its stamp stands ahead of the clock.
             plant(uow, "UPDATE risk.risk_assessment SET assessed_at = clock_timestamp() + interval '1 hour' WHERE id = '" + assessment + "'");
-            assertThat(value(uow, "SELECT assessed_at > clock_timestamp() FROM risk.risk_assessment WHERE id = '" + assessment + "'"))
-                    .as("precondition: the assessment's stamp stands ahead of the clock").isEqualTo("t");
+            assertThat(truth(uow, "SELECT assessed_at > clock_timestamp() FROM risk.risk_assessment WHERE id = '" + assessment + "'"))
+                    .as("precondition: the assessment's stamp stands ahead of the clock").isTrue();
 
             RiskPolicyVersionId second = activate(uow, RiskOperation.TRANSFER);
 
-            assertThat(value(uow, "SELECT v.effective_to > a.assessed_at FROM risk.risk_policy_version v, risk.risk_assessment a WHERE v.id = '" + first.value()
-                    + "' AND a.id = '" + assessment + "'")).as("the version ends after its latest assessment").isEqualTo("t");
-            assertThat(value(uow, "SELECT p.effective_to = s.effective_from FROM risk.risk_policy_version p, risk.risk_policy_version s WHERE p.id = '" + first.value()
-                    + "' AND s.id = '" + second.value() + "'")).as("the successor starts exactly where its predecessor ends").isEqualTo("t");
+            assertThat(truth(uow, "SELECT v.effective_to > a.assessed_at FROM risk.risk_policy_version v, risk.risk_assessment a WHERE v.id = '" + first.value()
+                    + "' AND a.id = '" + assessment + "'")).as("the version ends after its latest assessment").isTrue();
+            assertThat(truth(uow, "SELECT p.effective_to = s.effective_from FROM risk.risk_policy_version p, risk.risk_policy_version s WHERE p.id = '" + first.value()
+                    + "' AND s.id = '" + second.value() + "'")).as("the successor starts exactly where its predecessor ends").isTrue();
         });
     }
 
@@ -82,13 +82,13 @@ class RiskStampOrderDatabaseTest {
             // The version starts ahead of the clock, as a stepped retirement leaves its successor.
             RiskPolicyVersionId version = activate(uow, RiskOperation.TRANSFER);
             plant(uow, "UPDATE risk.risk_policy_version SET effective_from = clock_timestamp() + interval '1 hour' WHERE id = '" + version.value() + "'");
-            assertThat(value(uow, "SELECT effective_from > clock_timestamp() FROM risk.risk_policy_version WHERE id = '" + version.value() + "'"))
-                    .as("precondition: the version's start stands ahead of the clock").isEqualTo("t");
+            assertThat(truth(uow, "SELECT effective_from > clock_timestamp() FROM risk.risk_policy_version WHERE id = '" + version.value() + "'"))
+                    .as("precondition: the version's start stands ahead of the clock").isTrue();
 
             RiskEvaluation.Assessed assessed = EVALUATION.evaluate(uow, transfer(IDS.next()));
 
-            assertThat(value(uow, "SELECT a.assessed_at >= v.effective_from FROM risk.risk_assessment a JOIN risk.risk_policy_version v ON v.id = a.policy_version_id"
-                    + " WHERE a.id = '" + assessed.assessmentId().value() + "'")).as("the floor holds whatever the assessment's clock read").isEqualTo("t");
+            assertThat(truth(uow, "SELECT a.assessed_at >= v.effective_from FROM risk.risk_assessment a JOIN risk.risk_policy_version v ON v.id = a.policy_version_id"
+                    + " WHERE a.id = '" + assessed.assessmentId().value() + "'")).as("the floor holds whatever the assessment's clock read").isTrue();
         });
     }
 
@@ -102,8 +102,8 @@ class RiskStampOrderDatabaseTest {
             plant(uow, disposedCase(older, subject, null) + "; " + disposedCase(newer, subject, older)
                     + "; UPDATE risk.risk_case SET disposed_at = clock_timestamp() + interval '1 hour' WHERE id = '" + older + "'"
                     + "; UPDATE risk.risk_case SET disposed_at = clock_timestamp() WHERE id = '" + newer + "'");
-            assertThat(value(uow, "SELECT older.disposed_at > newer.disposed_at FROM risk.risk_case older, risk.risk_case newer WHERE older.id = '" + older
-                    + "' AND newer.id = '" + newer + "'")).as("precondition: the older case carries the later stamp").isEqualTo("t");
+            assertThat(truth(uow, "SELECT older.disposed_at > newer.disposed_at FROM risk.risk_case older, risk.risk_case newer WHERE older.id = '" + older
+                    + "' AND newer.id = '" + newer + "'")).as("precondition: the older case carries the later stamp").isTrue();
 
             assertThat(CASE_STORE.latestDisposed(uow, subject, CaseKind.FRAUD)).contains(RiskCaseId.of(newer));
         });
@@ -118,8 +118,8 @@ class RiskStampOrderDatabaseTest {
             UUID higher = UUID.fromString("ffffffff-ffff-7fff-8fff-ffffffffffff");
             plant(uow, signal(higher, subject) + "; " + signal(lower, subject)
                     + "; UPDATE risk.risk_signal SET recorded_at = clock_timestamp() - interval '1 hour' WHERE id = '" + higher + "'");
-            assertThat(value(uow, "SELECT l.recorded_at > h.recorded_at FROM risk.risk_signal l, risk.risk_signal h WHERE l.id = '" + lower + "' AND h.id = '" + higher + "'"))
-                    .as("precondition: the lower id was recorded later").isEqualTo("t");
+            assertThat(truth(uow, "SELECT l.recorded_at > h.recorded_at FROM risk.risk_signal l, risk.risk_signal h WHERE l.id = '" + lower + "' AND h.id = '" + higher + "'"))
+                    .as("precondition: the lower id was recorded later").isTrue();
 
             assertThat(SIGNAL_STORE.latest(uow, subject, SignalKind.CREDENTIAL_CHANGED)).map(signal -> signal.id().value()).contains(higher);
         });
@@ -137,7 +137,7 @@ class RiskStampOrderDatabaseTest {
     private static String signal(UUID id, SignalSubject subject) {
         return "INSERT INTO risk.risk_signal (id, kind, subject_kind, subject_ref, source_event_id, source_event_type, source_event_version, producer,"
                 + " observed_at, recorded_at, correlation_id, causation_id) VALUES ('" + id + "', 'CREDENTIAL_CHANGED', 'IDENTITY', '" + subject.ref() + "', '"
-                + UUID.randomUUID() + "', 'x', 1, 'x', TIMESTAMPTZ '2030-01-01 00:00:00+00', clock_timestamp(), 'c', 'c')";
+                + UUID.randomUUID() + "', '" + SignalKind.CREDENTIAL_CHANGED.sourceEventType() + "', 1, 'x', TIMESTAMPTZ '2030-01-01 00:00:00+00', clock_timestamp(), 'c', 'c')";
     }
 
     private static RiskPolicyVersionId activate(Connection uow, RiskOperation operation) {
@@ -158,10 +158,10 @@ class RiskStampOrderDatabaseTest {
         }
     }
 
-    private static String value(Connection uow, String sql) throws SQLException {
+    private static boolean truth(Connection uow, String sql) throws SQLException {
         try (Statement statement = uow.createStatement(); ResultSet row = statement.executeQuery(sql)) {
             row.next();
-            return row.getString(1);
+            return row.getBoolean(1);
         }
     }
 

@@ -26,11 +26,11 @@ public final class JdbcRepudiationStore implements RepudiationStore {
     private static final String UNIQUE_VIOLATION = "23505";
 
     /**
-     * The break a repudiation's new {@code MISSING_EXTERNAL} break continues ({@code follows_break_id}, P15-TSK-037): the chain's
-     * tail - the resolved break of the expectation and type no break continues. {@code break_one_open_per_expectation} makes an
-     * expectation's breaks strictly sequential, so the tail is the row order's answer; it read {@code ORDER BY resolved_at DESC,
-     * id DESC} until then, a stamp a stepped database clock could reorder. {@code b.id} only breaks a tie among tails a past branch
-     * of the chain might have left, never the chain's order.
+     * The break a repudiation's new {@code MISSING_EXTERNAL} break continues ({@code follows_break_id}, P15-TSK-037): preferring the
+     * resolved break of the expectation and type no break continues. A trace link and nothing else - shown in a break's
+     * investigation, with nothing branching on it - so a {@code DISPLAYS} read: only a repudiation sets the link (the overdue sweep
+     * and matching raise a break with none), so several resolved breaks can have no successor and the UUIDv7 {@code b.id} then
+     * names one of them. It read {@code ORDER BY resolved_at DESC, id DESC} until then.
      */
     static final String LAST_RESOLVED_BREAK_ON = "SELECT b.id FROM reconciliation.break b WHERE b.expectation_id = ?"
             + " AND b.type = ? AND b.status = 'RESOLVED'"

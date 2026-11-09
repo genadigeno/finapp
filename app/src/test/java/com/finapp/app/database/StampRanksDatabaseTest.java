@@ -94,8 +94,8 @@ class StampRanksDatabaseTest {
             UUID clear = IDS.next();
             insertCheck(uow, indeterminate, kycCase, "SANCTIONS", "INDETERMINATE", T, null);
             insertCheck(uow, clear, kycCase, "SANCTIONS", "CLEAR", T.minus(Duration.ofSeconds(2)), null);
-            assertThat(value(uow, "SELECT i.requested_at > c.requested_at FROM kyc.verification_check i, kyc.verification_check c WHERE i.id = '" + indeterminate + "' AND c.id = '"
-                    + clear + "'")).as("precondition: the earlier-asked check carries the later stamp").isEqualTo("t");
+            assertThat(truth(uow, "SELECT i.requested_at > c.requested_at FROM kyc.verification_check i, kyc.verification_check c WHERE i.id = '" + indeterminate + "' AND c.id = '"
+                    + clear + "'")).as("precondition: the earlier-asked check carries the later stamp").isTrue();
 
             VerificationCheck fresh = VerificationCheck.request(IDS, AT_T, KycCaseId.of(kycCase), CheckType.SANCTIONS);
             CheckStore.Requested answer = KYC_CHECKS.requestOrConverge(uow, fresh);
@@ -114,8 +114,8 @@ class StampRanksDatabaseTest {
             UUID laterHit = IDS.next();
             insertCheck(uow, olderClear, kycCase, "SANCTIONS", "CLEAR", T, null);
             insertCheck(uow, laterHit, kycCase, "SANCTIONS", "HIT", T.minus(Duration.ofSeconds(2)), "rescreen-key-" + laterHit);
-            assertThat(value(uow, "SELECT c.check_order < h.check_order AND c.requested_at > h.requested_at FROM kyc.verification_check c, kyc.verification_check h"
-                    + " WHERE c.id = '" + olderClear + "' AND h.id = '" + laterHit + "'")).as("precondition: the later ask carries the earlier stamp").isEqualTo("t");
+            assertThat(truth(uow, "SELECT c.check_order < h.check_order AND c.requested_at > h.requested_at FROM kyc.verification_check c, kyc.verification_check h"
+                    + " WHERE c.id = '" + olderClear + "' AND h.id = '" + laterHit + "'")).as("precondition: the later ask carries the earlier stamp").isTrue();
 
             List<VerificationCheck> latest = KYC_CHECKS.latestDecidedScreenings(uow, KycCaseId.of(kycCase));
 
@@ -133,8 +133,8 @@ class StampRanksDatabaseTest {
             insertIntent(uow, intent);
             insertAttempt(uow, first, intent, T);
             insertAttempt(uow, second, intent, T.minus(Duration.ofSeconds(2)));
-            assertThat(value(uow, "SELECT f.attempt_order < s.attempt_order AND f.created_at > s.created_at FROM payments.payment_attempt f, payments.payment_attempt s WHERE f.id = '"
-                    + first + "' AND s.id = '" + second + "'")).as("precondition: the later attempt carries the earlier stamp").isEqualTo("t");
+            assertThat(truth(uow, "SELECT f.attempt_order < s.attempt_order AND f.created_at > s.created_at FROM payments.payment_attempt f, payments.payment_attempt s WHERE f.id = '"
+                    + first + "' AND s.id = '" + second + "'")).as("precondition: the later attempt carries the earlier stamp").isTrue();
 
             assertThat(ATTEMPTS.findForIntent(uow, PaymentIntentId.of(intent))).map(attempt -> attempt.id().value()).contains(second);
         });
@@ -150,9 +150,12 @@ class StampRanksDatabaseTest {
             UUID chosen = IDS.next();
             UUID refused = IDS.next();
             insertDecision(uow, chosen, intent, version.id().value(), "card", 0, T.minus(Duration.ofSeconds(2)));
+            // A chosen rail is the trail's own CHOSEN step, denormalised: RoutingDecision refuses the row without it.
+            execute(uow, "INSERT INTO payments.routing_decision_step (decision_id, step_index, rail, verdict, rejection, rail_available, descriptor_version)"
+                    + " VALUES (?, 0, 'card', 'CHOSEN', NULL, true, 1)", chosen);
             insertDecision(uow, refused, intent, version.id().value(), null, null, T);
-            assertThat(value(uow, "SELECT r.created_at > c.created_at FROM payments.routing_decision r, payments.routing_decision c WHERE r.id = '" + refused + "' AND c.id = '" + chosen + "'"))
-                    .as("precondition: the refused decision carries the later stamp").isEqualTo("t");
+            assertThat(truth(uow, "SELECT r.created_at > c.created_at FROM payments.routing_decision r, payments.routing_decision c WHERE r.id = '" + refused + "' AND c.id = '" + chosen + "'"))
+                    .as("precondition: the refused decision carries the later stamp").isTrue();
 
             assertThat(ROUTING.findLatestDecisionForIntent(uow, PaymentIntentId.of(intent))).map(found -> found.id().value()).contains(chosen);
         });
@@ -164,12 +167,13 @@ class StampRanksDatabaseTest {
         rolledBack(uow -> {
             int number = ROUTING.nextVersionNumber(uow);
             RoutingPolicyVersion ahead = routingVersion(uow, number, AT_T);
-            RoutingPolicyVersion behind = routingVersion(uow, number + 1, BEHIND_T);
-            assertThat(behind.effectiveFrom()).as("precondition: the later version was minted on a clock behind the earlier one's").isBefore(ahead.effectiveFrom());
-            assertThat(value(uow, "SELECT effective_from > created_at FROM payments.routing_policy_version WHERE id = '" + behind.id().value() + "'"))
-                    .as("the row's start is floored: it no longer reads the behind clock").isEqualTo("t");
+            RoutingPolicyVersion askedBehind = routingCandidate(number + 1, BEHIND_T);
+            assertThat(askedBehind.effectiveFrom()).as("precondition: the later version was minted on a clock behind the earlier one's").isBefore(ahead.effectiveFrom());
 
-            assertThat(ROUTING.findVersionInForce(uow, T.plusSeconds(1))).map(RoutingPolicyVersion::version).contains(behind.version());
+            RoutingPolicyVersion stored = ROUTING.insertVersionIfNumberIsFree(uow, askedBehind).orElseThrow();
+
+            assertThat(stored.effectiveFrom()).as("the row's start is floored, and the insert hands the stored instant back").isEqualTo(ahead.effectiveFrom());
+            assertThat(ROUTING.findVersionInForce(uow, T.plusSeconds(1))).map(RoutingPolicyVersion::version).contains(stored.version());
         });
     }
 
@@ -179,13 +183,32 @@ class StampRanksDatabaseTest {
         rolledBack(uow -> {
             FeeSchedule schedule = FeeSchedule.create(IDS, "floored", CurrencyCode.of("EUR"), "op", CLOCK);
             FEES.insertSchedule(uow, schedule);
-            FeeScheduleVersion ahead = feeVersion(schedule, 1, AT_T);
-            assertThat(FEES.insertVersionIfNumberIsFree(uow, ahead)).isTrue();
-            FeeScheduleVersion behind = feeVersion(schedule, 2, BEHIND_T);
-            assertThat(FEES.insertVersionIfNumberIsFree(uow, behind)).isTrue();
-            assertThat(behind.effectiveFrom()).as("precondition: the later version was minted on a clock behind the earlier one's").isBefore(ahead.effectiveFrom());
+            FeeScheduleVersion ahead = FEES.insertVersionIfNumberIsFree(uow, feeVersion(schedule, 1, AT_T, Optional.empty())).orElseThrow();
+            FeeScheduleVersion askedBehind = feeVersion(schedule, 2, BEHIND_T, Optional.empty());
+            assertThat(askedBehind.effectiveFrom()).as("precondition: the later version was minted on a clock behind the earlier one's").isBefore(ahead.effectiveFrom());
 
+            FeeScheduleVersion stored = FEES.insertVersionIfNumberIsFree(uow, askedBehind).orElseThrow();
+
+            assertThat(stored.effectiveFrom()).as("the row's start is floored, and the insert hands the stored instant back").isEqualTo(ahead.effectiveFrom());
             assertThat(FEES.findEffectiveVersion(uow, schedule.id(), T.plusSeconds(1))).map(FeeScheduleVersion::version).contains(2);
+        });
+    }
+
+    @Test
+    @DisplayName("a scheduled fee version asked to start below an immediate predecessor's stored start is stored at that start, not shadowed by it, and the insert says so")
+    void aScheduledStartBelowAnImmediatePredecessorIsFloored() throws SQLException {
+        rolledBack(uow -> {
+            FeeSchedule schedule = FeeSchedule.create(IDS, "floored scheduled", CurrencyCode.of("EUR"), "op", CLOCK);
+            FEES.insertSchedule(uow, schedule);
+            FeeScheduleVersion immediate = FEES.insertVersionIfNumberIsFree(uow, feeVersion(schedule, 1, AT_T, Optional.empty())).orElseThrow();
+            Instant askedStart = T.minus(Duration.ofSeconds(1));
+            FeeScheduleVersion scheduled = feeVersion(schedule, 2, BEHIND_T, Optional.of(askedStart));
+            assertThat(scheduled.effectiveFrom()).as("precondition: a scheduled start, ahead of its own clock, below the immediate version's").isEqualTo(askedStart).isBefore(immediate.effectiveFrom());
+
+            FeeScheduleVersion stored = FEES.insertVersionIfNumberIsFree(uow, scheduled).orElseThrow();
+
+            assertThat(stored.effectiveFrom()).as("stored at the immediate version's start: asked and stored differ").isEqualTo(immediate.effectiveFrom());
+            assertThat(FEES.findEffectiveVersion(uow, schedule.id(), T.plusSeconds(1))).map(FeeScheduleVersion::version).as("not shadowed").contains(2);
         });
     }
 
@@ -198,8 +221,8 @@ class StampRanksDatabaseTest {
             UUID newer = IDS.next();
             plant(uow, resolvedBreak(older, expectation, null, "clock_timestamp() + interval '1 hour'") + "; "
                     + resolvedBreak(newer, expectation, older, "clock_timestamp()"));
-            assertThat(value(uow, "SELECT o.resolved_at > n.resolved_at FROM reconciliation.break o, reconciliation.break n WHERE o.id = '" + older + "' AND n.id = '" + newer + "'"))
-                    .as("precondition: the older break carries the later stamp").isEqualTo("t");
+            assertThat(truth(uow, "SELECT o.resolved_at > n.resolved_at FROM reconciliation.break o, reconciliation.break n WHERE o.id = '" + older + "' AND n.id = '" + newer + "'"))
+                    .as("precondition: the older break carries the later stamp").isTrue();
 
             assertThat(REPUDIATIONS.lastResolvedBreakOn(uow, expectation, BreakType.MISSING_EXTERNAL)).contains(newer);
         });
@@ -236,16 +259,18 @@ class StampRanksDatabaseTest {
                 attempt, intent, "auth-" + IDS.next(), "cap-" + IDS.next(), "psp-a-" + IDS.next(), "psp-c-" + IDS.next(), Timestamp.from(createdAt));
     }
 
-    private static RoutingPolicyVersion routingVersion(Connection uow, int number, Clock clock) throws SQLException {
-        RoutingPolicyVersion version = RoutingPolicyVersion.create(IDS, number, List.of(new RoutingPolicyVersion.NewRule(PaymentDirection.PAY_IN, InstrumentKind.CARD_TOKEN,
+    private static RoutingPolicyVersion routingCandidate(int number, Clock clock) {
+        return RoutingPolicyVersion.create(IDS, number, List.of(new RoutingPolicyVersion.NewRule(PaymentDirection.PAY_IN, InstrumentKind.CARD_TOKEN,
                 Optional.empty(), Optional.empty(), List.of(RailId.of("card")))), Optional.empty(), "op-1", "the suite's reason", clock);
-        assertThat(ROUTING.insertVersionIfNumberIsFree(uow, version)).isTrue();
-        return version;
     }
 
-    private static FeeScheduleVersion feeVersion(FeeSchedule schedule, int number, Clock clock) {
+    private static RoutingPolicyVersion routingVersion(Connection uow, int number, Clock clock) {
+        return ROUTING.insertVersionIfNumberIsFree(uow, routingCandidate(number, clock)).orElseThrow();
+    }
+
+    private static FeeScheduleVersion feeVersion(FeeSchedule schedule, int number, Clock clock, Optional<Instant> effectiveFrom) {
         return FeeScheduleVersion.create(IDS, schedule, number, FeeRate.of(new BigDecimal("0.029")), Money.ofMinorUnits(30, CurrencyCode.of("EUR")),
-                RoundingPolicy.HALF_EVEN, RefundFeePolicy.RETAINED, Optional.empty(), "op", clock);
+                RoundingPolicy.HALF_EVEN, RefundFeePolicy.RETAINED, effectiveFrom, "op", clock);
     }
 
     private static void insertDecision(Connection uow, UUID id, UUID intent, UUID version, String chosen, Integer matched, Instant createdAt) throws SQLException {
@@ -269,10 +294,10 @@ class StampRanksDatabaseTest {
         }
     }
 
-    private static String value(Connection uow, String sql) throws SQLException {
+    private static boolean truth(Connection uow, String sql) throws SQLException {
         try (Statement statement = uow.createStatement(); ResultSet row = statement.executeQuery(sql)) {
             row.next();
-            return row.getString(1);
+            return row.getBoolean(1);
         }
     }
 

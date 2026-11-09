@@ -2,6 +2,7 @@ package com.finapp.merchant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +19,19 @@ class FeeScheduleVersionFloorStatementsTest {
     void theStartIsFlooredByVersionNumber() {
         assertThat(JdbcFeeScheduleStore.INSERT_VERSION)
                 .contains("GREATEST(CAST(? AS timestamptz), (SELECT max(v.effective_from) FROM merchant.fee_schedule_version v"
-                        + " WHERE v.fee_schedule_id = ? AND v.version < ? AND v.effective_from = v.created_at))");
+                        + " WHERE v.fee_schedule_id = ? AND v.version < ? AND v.effective_from = v.created_at))")
+                .endsWith("RETURNING effective_from, created_at");
+    }
+
+    @Test
+    @DisplayName("the audit says the start stored, and where the floor moved it the start asked for too; a rounding inside the column's microsecond is not a floor")
+    void theAuditSaysBothWhereTheFloorMovedIt() {
+        Instant asked = Instant.parse("2026-11-09T12:30:00Z");
+        assertThat(FeeSchedules.effectiveFromForAudit(Instant.parse("2026-11-09T12:40:00Z"), asked))
+                .isEqualTo("effectiveFrom=2026-11-09T12:40:00Z, askedEffectiveFrom=2026-11-09T12:30:00Z");
+        assertThat(FeeSchedules.effectiveFromForAudit(asked, asked)).isEqualTo("effectiveFrom=2026-11-09T12:30:00Z");
+        Instant nanos = Instant.parse("2026-11-09T12:30:00.123456789Z");
+        assertThat(FeeSchedules.effectiveFromForAudit(Instant.parse("2026-11-09T12:30:00.123457Z"), nanos))
+                .doesNotContain("askedEffectiveFrom");
     }
 }

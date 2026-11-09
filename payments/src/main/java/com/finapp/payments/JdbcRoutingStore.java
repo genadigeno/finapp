@@ -50,13 +50,16 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
      * A version's birth, its start floored at the latest immediately-effective lower-numbered version's (P15-TSK-037): an
      * immediate version is stamped by its creating instance's clock, so two minted within a step or skew of one another
      * could read reversed and the later (the higher number) be shadowed by the earlier for good - in force is the greatest
-     * {@code effective_from}. The minting arbiter admits a number only after every lower number committed, so this statement's
-     * snapshot sees them all. A scheduled version's start is a declaration and stands. The returned object carries the instant
-     * the caller asked for; the row carries the floor (never above the step), and the row is what is read back.
+     * {@code effective_from}. The floor applies to every new version, a scheduled one included: a scheduled start below an
+     * immediate predecessor's would be shadowed by it the same way, so the stored start can be later than the instant asked for
+     * (by the immediate version's lead over the operator's clock). The minting arbiter admits a number only after every lower
+     * number committed, so this statement's snapshot sees them all. {@code RETURNING} hands back what was stored, so the
+     * caller's version, its audit and its answer are the row's.
      */
     static final String INSERT_VERSION = "INSERT INTO payments.routing_policy_version (" + VERSION_COLUMNS + ")"
             + " VALUES (?, ?, GREATEST(CAST(? AS timestamptz), (SELECT max(v.effective_from) FROM payments.routing_policy_version v"
-            + " WHERE v.version < ? AND v.effective_from = v.created_at)), ?, ?, ?)";
+            + " WHERE v.version < ? AND v.effective_from = v.created_at)), ?, ?, ?)"
+            + " RETURNING effective_from, created_at";
 
     /**
      * The decision a payment was routed by: the chosen one first, named by {@code routing_decision_one_chosen_per_*}
@@ -83,7 +86,7 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
     }
 
     @Override
-    public boolean insertVersionIfNumberIsFree(
+    public Optional<RoutingPolicyVersion> insertVersionIfNumberIsFree(
             Connection unitOfWork, RoutingPolicyVersion version) {
         Savepoint attempt;
         try {
@@ -94,6 +97,7 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                             "preparing a routing policy version insert", failure));
         }
         try {
+            RoutingPolicyVersion stored;
             try (PreparedStatement insert = unitOfWork.prepareStatement(INSERT_VERSION)) {
                 insert.setObject(1, version.id().value());
                 insert.setInt(2, version.version());
@@ -102,16 +106,22 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                 insert.setTimestamp(5, Timestamp.from(version.createdAt()));
                 insert.setString(6, version.createdBy());
                 insert.setString(7, version.reason());
-                insert.executeUpdate();
+                try (ResultSet row = insert.executeQuery()) {
+                    row.next();
+                    // Both stamps as stored: the column's precision, so the version's forward-only rule compares like with like.
+                    stored = RoutingPolicyVersion.rehydrate(version.id(), version.version(), version.rules(),
+                            row.getTimestamp("effective_from").toInstant(), row.getTimestamp("created_at").toInstant(),
+                            version.createdBy(), version.reason());
+                }
             }
             insertRules(unitOfWork, version);
             unitOfWork.releaseSavepoint(attempt);
-            return true;
+            return Optional.of(stored);
         } catch (SQLException failure) {
             if (UNIQUE_VIOLATION.equals(failure.getSQLState())) {
                 // Another writer took this number. Not an error - the arbiter answering.
                 rollbackTo(unitOfWork, attempt);
-                return false;
+                return Optional.empty();
             }
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("inserting a routing policy version", failure));

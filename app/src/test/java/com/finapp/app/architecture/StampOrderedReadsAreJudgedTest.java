@@ -56,8 +56,12 @@ import org.junit.jupiter.api.Test;
  * <ul>
  *   <li>{@code RANKED}/{@code NAMED}: it decides, and the rows decide it (a version number, a row-order column, a chain's tail, a
  *       partial unique).
- *   <li>{@code FACT_TIME}: it decides, on an instant the platform's clock did not write and that must not be ranked by arrival: a
- *       provider's or a producer's own, by rule.
+ *   <li>{@code FACT_TIME}: it decides, on the fact's own instant as its source stamped it, by rule - a provider's observation, or an
+ *       in-platform producer's event time - never ranked by arrival, where an arrival order would let a late fact overtake. A stepped
+ *       producer clock can misorder two facts within one step and move the answer by at most that step.
+ *   <li>{@code BOUNDED}: it decides on an age or a bound (a first-seen bucket, a proof's floor), never on which of two facts came
+ *       first; a step or a skew moves the reading by at most itself, and the reader compares it at a coarser resolution or a stated
+ *       tolerance.
  *   <li>{@code DISPLAYS}: it is shown or counted and no code branches on the row. {@code SCHEDULES}: it decides only which due row
  *       is worked first or when a timer fires, the act itself being conditional or idempotent.
  *   <li>{@code ELSEWHERE}: accounting, lending or bnpl - {@code P15-TSK-033}'s and {@code P14-REM-009}'s, kept in the census so a new
@@ -71,7 +75,7 @@ import org.junit.jupiter.api.Test;
 @DisplayName("every single-row read or value picked by a stamp, in the shapes this guard reads from the code, is judged: deciding reads ranked by the rows, the rest recorded (P15-TSK-037)")
 class StampOrderedReadsAreJudgedTest {
 
-    enum Judgement { RANKED, NAMED, FACT_TIME, DISPLAYS, SCHEDULES, ELSEWHERE }
+    enum Judgement { RANKED, NAMED, FACT_TIME, BOUNDED, DISPLAYS, SCHEDULES, ELSEWHERE }
 
     enum Shape { SINGLE_ROW, DISTINCT_ON, WINDOW, AGGREGATE, SELECT_INTO, MIN_MAX }
 
@@ -107,8 +111,8 @@ class StampOrderedReadsAreJudgedTest {
                 ACCOUNTING);
         read("app.FxReferenceValuationRates|SINGLE_ROW|observed_at desc", 1, Judgement.FACT_TIME,
                 "the reference source's own observation instant, by rule: a valuation asks what the source observed before an instant, and the source's order is the fact (fx V002: one row per (source, pair, observed_at); a not-newer observation is declined)");
-        read("app.LedgerMonitoredLedger|SINGLE_ROW|id", 1, Judgement.SCHEDULES,
-                "a keyset step along the journal by id: the monitoring intake's cursor; every entry is read in turn, and the id only names a position, not which of two facts came first");
+        read("app.LedgerMonitoredLedger|SINGLE_ROW|id", 1, Judgement.DISPLAYS,
+                "the first journal entry past the monitoring watermark, read only by the age gauge (RiskAgeMetrics): reported, and nothing branches on it");
         read("app.LendingReports|SINGLE_ROW|e.occurred_at desc, e.id desc", 6, Judgement.DISPLAYS,
                 "a portfolio report: the status a loan was in at the end of a business date, counted and shown; nothing branches on it");
         read("app.ReconciliationMonthReads|MIN_MAX|min(r.decided_at)", 1, Judgement.ELSEWHERE,
@@ -144,9 +148,9 @@ class StampOrderedReadsAreJudgedTest {
         read("fx.JdbcRateSnapshotStore|SINGLE_ROW|observed_at desc", 3, Judgement.FACT_TIME,
                 "the reference source's own observation instant, by rule: \"the latest\" of a pair is the source's order, not the platform's clock; fx V002 keeps one row per (source, pair, observed_at) and declines an observation not newer than the latest, so a platform step cannot reorder it");
         read("kyc.JdbcCheckStore|SINGLE_ROW|check_order desc nulls last, requested_at desc, id desc", 2, Judgement.RANKED,
-                "check_order (kyc V012), a sequence drawn at the insert after the one-in-flight index admitted it; the stamps rank only rows from before V012, which have no order and sit below every row that does");
+                "check_order (kyc V012), a sequence drawn at the insert; a successor's insert starts after its predecessor's (the run reads the predecessor terminal first, the one-in-flight index refuses any overlap); the stamps rank only rows from before V012, which have no order and sit below every row that does");
         read("kyc.JdbcCheckStore|SINGLE_ROW|check_order desc nulls last, requested_at desc, status_changed_at desc, id desc", 1, Judgement.RANKED,
-                "check_order (kyc V012), a sequence drawn at the insert after the one-in-flight index admitted it; the stamps rank only rows from before V012, which have no order and sit below every row that does");
+                "check_order (kyc V012), a sequence drawn at the insert; a successor's insert starts after its predecessor's (the run reads the predecessor terminal first, the one-in-flight index refuses any overlap); the stamps rank only rows from before V012, which have no order and sit below every row that does");
         read("kyc.JdbcCounterpartyScreeningStore|MIN_MAX|min(decided_at)", 1, Judgement.DISPLAYS,
                 GAUGE);
         read("lending.JdbcLoanApplicationStore|MIN_MAX|min(submitted_at)", 1, Judgement.ELSEWHERE,
@@ -162,9 +166,9 @@ class StampOrderedReadsAreJudgedTest {
         read("merchant.JdbcFeeScheduleStore|MIN_MAX|max(v.effective_from)", 1, Judgement.RANKED,
                 "the write-time floor of an immediately-effective version: the greatest start among immediate lower-numbered versions, chosen by version number, keeping the newest immediate version in force (INSERT_VERSION); the minting arbiter has committed every lower number");
         read("merchant.JdbcFeeScheduleStore|SINGLE_ROW|effective_from desc, version desc", 1, Judgement.RANKED,
-                "in force is the greatest declared start, ties by version; an immediately-effective version's start is floored at the write, by version number, at its immediate predecessor's (JdbcFeeScheduleStore.INSERT_VERSION), so a stepped or skewed instance clock cannot shadow the newest rate");
+                "in force is the greatest effective_from, ties by version; every new version's start, a scheduled one too, is floored at the write at the latest immediate lower-numbered version's, by version number (JdbcFeeScheduleStore.INSERT_VERSION), so a stepped or skewed instance clock cannot shadow the newest rate; the stored start is returned and audited");
         read("merchant.JdbcFeeScheduleStore|SINGLE_ROW|v.effective_from desc, v.version desc", 1, Judgement.RANKED,
-                "in force is the greatest declared start, ties by version; an immediately-effective version's start is floored at the write, by version number, at its immediate predecessor's (JdbcFeeScheduleStore.INSERT_VERSION), so a stepped or skewed instance clock cannot shadow the newest rate");
+                "in force is the greatest effective_from, ties by version; every new version's start, a scheduled one too, is floored at the write at the latest immediate lower-numbered version's, by version number (JdbcFeeScheduleStore.INSERT_VERSION), so a stepped or skewed instance clock cannot shadow the newest rate; the stored start is returned and audited");
         read("merchant.JdbcMerchantPayoutStore|MIN_MAX|max(occurred_at)", 2, Judgement.SCHEDULES,
                 SWEEP_AGE);
         read("merchant.JdbcMerchantPayoutStore|MIN_MAX|min(case when p.status = '' then coalesce(h.entered, p.created_at) else p.last_dispatched_at end)", 1, Judgement.DISPLAYS,
@@ -196,7 +200,7 @@ class StampOrderedReadsAreJudgedTest {
         read("payments.JdbcRoutingStore|SINGLE_ROW|(chosen_rail is not null) desc, created_at desc, id desc", 2, Judgement.RANKED,
                 "the chosen decision first, named by routing_decision_one_chosen_per_*; the stamp orders only the refused decisions an operator's explanation lists, which branches on nothing");
         read("payments.JdbcRoutingStore|SINGLE_ROW|effective_from desc, version desc", 1, Judgement.RANKED,
-                "in force is the greatest declared start, ties by version; an immediately-effective version's start is floored at the write, by version number, at its immediate predecessor's (JdbcRoutingStore.INSERT_VERSION), so a stepped or skewed instance clock cannot shadow the newer one");
+                "in force is the greatest effective_from, ties by version; every new version's start, a scheduled one too, is floored at the write at the latest immediate lower-numbered version's, by version number (JdbcRoutingStore.INSERT_VERSION), so a stepped or skewed instance clock cannot shadow the newer one; the stored start is returned and audited");
         read("payments.JdbcUnmatchedConfirmationStore|MIN_MAX|min(received_at)", 1, Judgement.DISPLAYS,
                 GAUGE);
         read("payments.JdbcWithdrawalStore|MIN_MAX|max(occurred_at)", 2, Judgement.SCHEDULES,
@@ -217,8 +221,8 @@ class StampOrderedReadsAreJudgedTest {
                 "the fee variance report's latest expected fee of an item: shown in a report, it posts and decides nothing");
         read("reconciliation.JdbcReportReadings|SINGLE_ROW|case b.severity when '' then 0 when '' then 1 when '' then 2 else 3 end, b.raised_at, b.id", 2, Judgement.DISPLAYS,
                 "a report's worst open break of an item: severity first, then the oldest raise, to name one; shown, nothing branches on it");
-        read("reconciliation.JdbcRepudiationStore|SINGLE_ROW|b.id desc", 1, Judgement.RANKED,
-                "the break a repudiation continues: the chain's tail, the resolved break of the expectation and type no break continues (break_one_open_per_expectation makes them sequential); the id only breaks a tie among tails a past branch might have left");
+        read("reconciliation.JdbcRepudiationStore|SINGLE_ROW|b.id desc", 1, Judgement.DISPLAYS,
+                "the break a repudiation's new break continues: a trace link written once and shown in the investigation, nothing branches on it; only a repudiation sets the link, so several resolved breaks can have no successor and the UUIDv7 id then just names one of them");
         read("reconciliation.JdbcRunReadings|MIN_MAX|min(created_at)", 1, Judgement.DISPLAYS,
                 GAUGE);
         read("reconciliation.JdbcRunReadings|MIN_MAX|min(overdue_since)", 1, Judgement.DISPLAYS,
@@ -231,8 +235,8 @@ class StampOrderedReadsAreJudgedTest {
                 CLAIM);
         read("risk.JdbcRiskActionStore|SINGLE_ROW|next_attempt_at, id", 1, Judgement.SCHEDULES,
                 CLAIM);
-        read("risk.JdbcRiskAssessmentStore|SINGLE_ROW|id", 1, Judgement.DISPLAYS,
-                "the velocity proof's fixed floor (the first transfer ever judged): reported and compared by the proof, a step moves the floor by at most the step");
+        read("risk.JdbcRiskAssessmentStore|SINGLE_ROW|id", 1, Judgement.BOUNDED,
+                "the velocity proof's floor (the first transfer ever judged): the proof's link compares postings with it under its stated SKEW (5 s), never ordering two facts; a skewed mint moves the floor by at most the skew, narrowing the proof at that edge");
         read("risk.JdbcRiskCaseStore|MIN_MAX|min(opened_at)", 1, Judgement.DISPLAYS,
                 GAUGE);
         read("risk.JdbcRiskCaseStore|SINGLE_ROW|c.id desc", 1, Judgement.RANKED,
@@ -245,8 +249,8 @@ class StampOrderedReadsAreJudgedTest {
                 "the source event's own instant, by rule (INV-EVT-04: a delayed event must not overtake a later one; an arrival sequence would): recorded_at is no longer the tie-break, the id is");
         read("risk.JdbcScreeningListStore|SINGLE_ROW|enqueue_next_at, id", 1, Judgement.SCHEDULES,
                 CLAIM);
-        read("risk.JdbcVelocityWindowStore|MIN_MAX|min(w.window_start)", 1, Judgement.FACT_TIME,
-                "the subject's first counted hour, a bucket start read as an age to the hour (the velocity rules' novelty reading); no order between two facts is asked, a step moves it by at most the step across an hour's edge");
+        read("risk.JdbcVelocityWindowStore|MIN_MAX|min(w.window_start)", 1, Judgement.BOUNDED,
+                "the subject's first counted hour, a bucket start the platform derives from its own clock and read as an age to the hour (the velocity rules' novelty reading); no order between two facts is asked, a step moves it by at most the step across an hour's edge");
         read("risk.risk_policy_version_permits_only_machine_edges|MIN_MAX|max(a.assessed_at)", 1, Judgement.RANKED,
                 "V020: the retirement ends one microsecond after the latest assessment (max over the pins) and the successor starts exactly there, by row order; the max can only push the end later");
         read("settlement.JdbcSettlementBatchStore|MIN_MAX|max(status_changed_at)", 1, Judgement.DISPLAYS,
@@ -270,6 +274,8 @@ class StampOrderedReadsAreJudgedTest {
     private static final Pattern ORDERED_AGGREGATE = Pattern.compile("(?i)\\b(array_agg|string_agg|json_agg|jsonb_agg|xmlagg)\\s*$");
     private static final Pattern SINGLE_LIMIT = Pattern.compile("(?i)^\\)?\\s*(?:LIMIT\\s+1\\b|FETCH\\s+(?:FIRST|NEXT)\\s+(?:1\\s+)?ROWS?\\s+ONLY)");
     private static final Pattern ANY_LIMIT = Pattern.compile("(?i)^\\)?\\s*(?:LIMIT|FETCH\\s+(?:FIRST|NEXT))\\b");
+    /** PostgreSQL accepts a locking clause before {@code LIMIT}: read past it, so {@code ORDER BY a_at FOR UPDATE LIMIT 1} is seen. */
+    private static final Pattern LOCKING = Pattern.compile("(?i)^(?:FOR\\s+(?:NO\\s+KEY\\s+UPDATE|KEY\\s+SHARE|UPDATE|SHARE)(?:\\s+OF\\s+[\\w.]+(?:\\s*,\\s*[\\w.]+)*)?(?:\\s+NOWAIT|\\s+SKIP\\s+LOCKED)?\\s*)+");
     private static final Pattern ID_FIRST = Pattern.compile("(?i)^(?:[a-z_]\\w*\\.)?id(?:\\s+(?:asc|desc))?(?:\\s*,.*)?$");
     private static final Pattern WORD = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
@@ -347,7 +353,7 @@ class StampOrderedReadsAreJudgedTest {
         CENSUS.forEach((key, judged) -> expected.put(key, judged.count()));
         assertThat(FOUND)
                 .as("a new read that picks by a stamp is judged here (DECIDES: ranked by the rows or named by identity with a pin"
-                        + " and a clock-step case; DISPLAYS, SCHEDULES or FACT_TIME with its reason), or it is rewritten to rank by"
+                        + " and a clock-step case; DISPLAYS, SCHEDULES, FACT_TIME or BOUNDED with its reason), or it is rewritten to rank by"
                         + " the rows; a row with no read left in the code leaves the census")
                 .isEqualTo(expected);
     }
@@ -363,6 +369,8 @@ class StampOrderedReadsAreJudgedTest {
     void plantedShapesAreRecognised() {
         assertThat(analyse("SELECT x FROM t ORDER BY proposed_at DESC, id DESC LIMIT 1", false)).containsExactly("SINGLE_ROW|proposed_at desc, id desc");
         assertThat(analyse("SELECT x FROM t ORDER BY proposed_at FETCH FIRST 1 ROW ONLY", false)).containsExactly("SINGLE_ROW|proposed_at");
+        assertThat(analyse("SELECT x FROM t ORDER BY proposed_at FOR UPDATE SKIP LOCKED LIMIT 1", false)).as("a locking clause before the limit").containsExactly("SINGLE_ROW|proposed_at");
+        assertThat(analyse("SELECT x FROM t ORDER BY proposed_at FOR UPDATE OF t LIMIT ?", false)).as("a bound limit after a locking clause is still a page").isEmpty();
         assertThat(analyse("SELECT x FROM t ORDER BY proposed_at ASC LIMIT 1 OFFSET 2", false)).containsExactly("SINGLE_ROW|proposed_at asc");
         assertThat(analyse("SELECT x FROM t ORDER BY status DESC, proposed_at DESC LIMIT 1", false)).hasSize(1);
         assertThat(analyse("SELECT DISTINCT ON (k) x FROM t ORDER BY k, decided_at DESC", false)).containsExactly("DISTINCT_ON|k, decided_at desc");
@@ -387,6 +395,15 @@ class StampOrderedReadsAreJudgedTest {
                 }
                 """)).contains("SELECT x FROM t ORDER BY proposed_at DESC LIMIT 1", "SELECT y FROM u ORDER BY decided_at FETCH FIRST ROW ONLY")
                 .noneMatch(statement -> statement.contains("raised_at"));
+        assertThat(statementsOf("Twice", """
+                class Twice {
+                    String one() { return "SELECT a FROM t ORDER BY proposed_at DESC LIMIT 1"; }
+                    String two() { return "SELECT a FROM t ORDER BY proposed_at DESC LIMIT 1"; }
+                    static final String ONCE = "SELECT b FROM t ORDER BY proposed_at DESC LIMIT 1";
+                    String three() { return use(ONCE); }
+                }
+                """)).as("a byte-identical second read counts twice; a bare reference to a constant is the read at its definition")
+                .hasSize(3);
     }
 
     // ------------------------------------------------------------------------- reading the code
@@ -541,7 +558,7 @@ class StampOrderedReadsAreJudgedTest {
     }
 
     /** Every Java statement in one file, its strings and constants joined, whitespace collapsed: what the driver would receive. */
-    static Set<String> statementsOf(String className, String source) {
+    static List<String> statementsOf(String className, String source) {
         Map<String, List<Token>> constants = new HashMap<>();
         List<Token> tokens = lex(source);
         collectConstants(tokens, constants);
@@ -577,9 +594,9 @@ class StampOrderedReadsAreJudgedTest {
 
     private static final Set<String> SQL_MARKS = Set.of("ORDER BY", "MIN(", "MAX(", "DISTINCT ON", "OVER (", "ARRAY_AGG(");
 
-    private static Set<String> statements(String className, List<Token> tokens, Map<String, List<Token>> constants,
+    private static List<String> statements(String className, List<Token> tokens, Map<String, List<Token>> constants,
             Map<String, Map<String, List<Token>>> everyClass) {
-        Set<String> found = new LinkedHashSet<>();
+        List<String> found = new ArrayList<>();
         Map<String, StringBuilder> builders = new HashMap<>();
         List<Token> current = new ArrayList<>();
         for (Token token : tokens) {
@@ -592,31 +609,58 @@ class StampOrderedReadsAreJudgedTest {
                 current.add(token);
             }
         }
+        builders.values().forEach(builder -> found.add(builder.toString().replaceAll("\\s+", " ").strip()));
         return found;
     }
 
     /** One Java statement's text; a {@code StringBuilder}'s {@code append}s are chained across statements of one builder name. */
     private static void collect(String className, List<Token> statement, Map<String, List<Token>> constants,
-            Map<String, Map<String, List<Token>>> everyClass, Map<String, StringBuilder> builders, Set<String> found) {
+            Map<String, Map<String, List<Token>>> everyClass, Map<String, StringBuilder> builders, List<String> found) {
         String text = expand(statement, constants, everyClass, new LinkedHashSet<>()).replaceAll("\\s+", " ").strip();
         if (text.isEmpty()) {
             return;
         }
         if (statement.size() >= 3 && statement.get(1).equals(new Token('P', ".")) && statement.get(2).equals(new Token('I', "append"))) {
-            StringBuilder builder = builders.computeIfAbsent(statement.get(0).text(), name -> new StringBuilder());
-            builder.append(text);
-            found.add(builder.toString().replaceAll("\\s+", " ").strip());
+            builders.computeIfAbsent(statement.get(0).text(), name -> new StringBuilder()).append(text);
             return;
         }
         for (int i = 0; i + 1 < statement.size(); i++) {
             if (statement.get(i).equals(new Token('I', "StringBuilder")) && statement.get(i + 1).kind() == 'I') {
-                builders.put(statement.get(i + 1).text(), new StringBuilder(text));
+                StringBuilder previous = builders.put(statement.get(i + 1).text(), new StringBuilder(text));
+                if (previous != null) {
+                    found.add(previous.toString().replaceAll("\\s+", " ").strip());
+                }
+                return;
             }
+        }
+        // A bare reference to a constant is the read already counted at its definition; a second literal copy of it is a second read.
+        if (statement.stream().noneMatch(token -> token.kind() == 'S') && referencesOf(statement, constants, everyClass) == 1) {
+            return;
         }
         String upper = text.toUpperCase(Locale.ROOT).replaceAll("\\s+", " ");
         if (SQL_MARKS.stream().anyMatch(upper::contains) && upper.contains("SELECT") || upper.contains("ORDER BY")) {
             found.add(text);
         }
+    }
+
+    /** How many of the statement's identifiers name a constant the expansion would inline. */
+    private static long referencesOf(List<Token> statement, Map<String, List<Token>> constants, Map<String, Map<String, List<Token>>> everyClass) {
+        long references = 0;
+        for (int i = 0; i < statement.size(); i++) {
+            Token token = statement.get(i);
+            if (token.kind() != 'I' || (i + 1 < statement.size() && statement.get(i + 1).equals(new Token('P', "=")))) {
+                continue;
+            }
+            boolean qualified = i + 2 < statement.size() && statement.get(i + 1).equals(new Token('P', ".")) && statement.get(i + 2).kind() == 'I'
+                    && everyClass.containsKey(token.text()) && everyClass.get(token.text()).containsKey(statement.get(i + 2).text());
+            if (qualified) {
+                references++;
+                i += 2;
+            } else if (constants.containsKey(token.text())) {
+                references++;
+            }
+        }
+        return references;
     }
 
     private static String expand(List<Token> tokens, Map<String, List<Token>> constants, Map<String, Map<String, List<Token>>> everyClass,
@@ -681,7 +725,7 @@ class StampOrderedReadsAreJudgedTest {
             int start = orderBy.end();
             int end = endOfKeys(sql, start);
             String keys = sql.substring(start, end).strip().toLowerCase(Locale.ROOT);
-            String after = sql.substring(end).stripLeading();
+            String after = LOCKING.matcher(sql.substring(end).stripLeading()).replaceFirst("").stripLeading();
             int open = enclosingOpen(sql, orderBy.start());
             String beforeOpen = open < 0 ? "" : sql.substring(Math.max(0, open - 16), open).stripTrailing();
             boolean stamp = holdsAStamp(keys);

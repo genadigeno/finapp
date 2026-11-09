@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -37,10 +38,23 @@ class PaymentsStampOrderStatementsTest {
     }
 
     @Test
-    @DisplayName("a routing version's start is floored at the latest immediate lower-numbered version's, chosen by version number")
+    @DisplayName("a routing version's start is floored at the latest immediate lower-numbered version's, chosen by version number, and the row's start is handed back")
     void anImmediateVersionsStartIsFlooredByVersionNumber() {
         assertThat(JdbcRoutingStore.INSERT_VERSION)
-                .contains("GREATEST(CAST(? AS timestamptz), (SELECT max(v.effective_from) FROM payments.routing_policy_version v WHERE v.version < ? AND v.effective_from = v.created_at))");
+                .contains("GREATEST(CAST(? AS timestamptz), (SELECT max(v.effective_from) FROM payments.routing_policy_version v WHERE v.version < ? AND v.effective_from = v.created_at))")
+                .endsWith("RETURNING effective_from, created_at");
+    }
+
+    @Test
+    @DisplayName("the audit says the start stored, and where the floor moved it the start asked for too; a rounding inside the column's microsecond is not a floor")
+    void theAuditSaysBothWhereTheFloorMovedIt() {
+        Instant asked = Instant.parse("2026-11-09T12:30:00Z");
+        assertThat(RoutingAdministration.effectiveFromForAudit(Instant.parse("2026-11-09T12:40:00Z"), asked))
+                .isEqualTo("effectiveFrom=2026-11-09T12:40:00Z, askedEffectiveFrom=2026-11-09T12:30:00Z");
+        assertThat(RoutingAdministration.effectiveFromForAudit(asked, asked)).isEqualTo("effectiveFrom=2026-11-09T12:30:00Z");
+        Instant nanos = Instant.parse("2026-11-09T12:30:00.123456789Z");
+        assertThat(RoutingAdministration.effectiveFromForAudit(Instant.parse("2026-11-09T12:30:00.123457Z"), nanos))
+                .doesNotContain("askedEffectiveFrom");
     }
 
     @Test
