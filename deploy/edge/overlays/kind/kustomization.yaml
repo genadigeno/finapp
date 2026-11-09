@@ -1,0 +1,39 @@
+# The kind rehearsal's edge, test-only. A NodePort each and the local CA of certificates.yaml; P15-TSK-012 installs cert-manager at its
+# pinned version (infra/scanner-pins.sh) before this overlay and adds the node ports to the cluster's port mappings. The names
+# below are .test: a reserved domain nothing outside this overlay's own resolver serves.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: finapp-edge
+
+resources:
+  - ../../base
+  - certificates.yaml
+
+patches:
+  - target:
+      kind: Service
+      name: finapp-edge-public
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/externalTrafficPolicy
+        value: Local
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30443
+  - target:
+      kind: Service
+      name: finapp-edge-operator
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/externalTrafficPolicy
+        value: Local
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30444

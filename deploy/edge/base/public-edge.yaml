@@ -1,0 +1,74 @@
+# The internet's surface, everything but the routes themselves (P15-TSK-011, ADR-0120 decision 6). public-routes.yaml is generated
+# beside this file and names these middlewares.
+http:
+  services:
+    finapp-app:
+      loadBalancer:
+        serversTransport: no-reuse
+        # The client's Host header stops here. Nothing in the application needs it.
+        passHostHeader: false
+        servers:
+          - url: "http://finapp-app.finapp.svc.cluster.local:8080"
+
+  serversTransports:
+    # Every request is its own connection through the Service, so kube-proxy picks a ready replica per request: no affinity,
+    # and no idle connection to race Tomcat's keep-alive. No retry middleware anywhere: the edge never replays a request that
+    # moves money. Phase 16 measures whether the connection cost matters.
+    no-reuse:
+      maxIdleConnsPerHost: -1
+
+  middlewares:
+    # The application sets none of these; a test holds that, so nothing is set twice.
+    edge-headers:
+      headers:
+        stsSeconds: 31536000
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: no-referrer
+        contentSecurityPolicy: "default-src 'none'; frame-ancestors 'none'"
+        customRequestHeaders:
+          # RFC 7239's header and a prefix a framework might honour. Neither is read today; neither reaches a replica.
+          Forwarded: ""
+          X-Forwarded-Prefix: ""
+
+    # Above the application's own limit, so the application answers its own 413 and the edge only stops the gross case. Every
+    # provider's bound is inside this: a limit at the edge never cuts a signed delivery. EdgeAllowListTest reads both numbers.
+    body-cap:
+      buffering:
+        maxRequestBodyBytes: 2097152
+        memRequestBodyBytes: 65536
+
+    # Coarse, per source and per controller replica (so the real ceiling is this times the replica count). A first layer only;
+    # P15-TSK-022's limit, arbitrated in PostgreSQL, is the one that counts. The key is the connection's address: no
+    # sourceCriterion, so no header can choose it. Reference numbers, calibrated by Phase 16.
+    source-door:
+      rateLimit:
+        average: 10
+        period: 1s
+        burst: 20
+    source-session:
+      rateLimit:
+        average: 50
+        period: 1s
+        burst: 100
+    # Merchant servers and providers each arrive from a few addresses, so they get more room than a phone behind one.
+    source-machine:
+      rateLimit:
+        average: 200
+        period: 1s
+        burst: 400
+    source-callback:
+      rateLimit:
+        average: 500
+        period: 1s
+        burst: 1000
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      # A handshake naming nothing this edge holds is refused, not answered with a default certificate.
+      sniStrict: true
+  certificates:
+    - certFile: /etc/finapp-edge/dynamic/tls.crt
+      keyFile: /etc/finapp-edge/dynamic/tls.key

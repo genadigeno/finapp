@@ -24,6 +24,7 @@ configMapGenerator:
       - FINAPP_DB_INSTANCES=6
       - FINAPP_DB_SERVER_MAX_CONNECTIONS=60
       - FINAPP_DB_RESERVED_CONNECTIONS=12
+      - FINAPP_EDGE_PROXIES=10.244.0.0/16
 
 patches:
   - target:

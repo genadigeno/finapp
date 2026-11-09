@@ -100,6 +100,16 @@ spring:
 # ---------------------------------------------------------------------------
 server:
   shutdown: graceful
+  # WHOSE WORD THE CLIENT'S ADDRESS IS (P15-TSK-011, THREAT_MODEL.md T40). Stated, because unset is not "off": on
+  # Kubernetes Spring Boot detects the platform and installs the remote-address valve by itself, trusting
+  # X-Forwarded-For from every private range - so a request from any pod could name its own address, in the record of an
+  # acceptance and in the key P15-TSK-022 will limit on. native + an empty list trusts nobody: blank is off the machine
+  # and on a laptop alike. Only a Kubernetes overlay names a network, the one its edge controllers run in, and only a
+  # connection from that network has its X-Forwarded-For read at all. ForwardedAddressTest holds this on a real Tomcat.
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      internal-proxies: ${FINAPP_EDGE_PROXIES:}
 
 # ---------------------------------------------------------------------------
 # The connection-limit arithmetic (P1-TSK-004, ADR-0014).

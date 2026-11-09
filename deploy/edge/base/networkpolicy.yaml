@@ -1,0 +1,119 @@
+# The edge's own namespace, closed (P15-TSK-011, ADR-0120 decision 6): everything denied, then the flows the controllers have. The
+# application's side of the edge's one egress is P15-TSK-010's policy, which admits this namespace's pods labelled
+# finapp/role: ingress-controller on 8080.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-edge-default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-edge-public
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-edge-public
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # The internet, on the TLS listener alone.
+    - ports:
+        - protocol: TCP
+          port: 8443
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-observability
+          podSelector:
+            matchLabels:
+              finapp/role: metrics-scraper
+      ports:
+        - protocol: TCP
+          port: 8081
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-edge-operator
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-edge-operator
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # The internal network alone, the same ranges the proxy's own allow-list holds.
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 8443
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-observability
+          podSelector:
+            matchLabels:
+              finapp/role: metrics-scraper
+      ports:
+        - protocol: TCP
+          port: 8081
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

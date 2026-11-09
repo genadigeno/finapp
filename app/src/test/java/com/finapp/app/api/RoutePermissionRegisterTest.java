@@ -36,8 +36,8 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  * <p><strong>And every operator route is guarded</strong> (`P15-TSK-021`; {@code THREAT_MODEL.md} T31). The register
  * pins the permission of every route that declares one, and {@code EveryEndpointDeclaresARuleTest} refuses a route
  * that declares nothing - but a route under {@code /v1/operator} declaring only {@code @RequiresSession} passed both,
- * served to any customer's session and, because the edge's allow-list moves only the routes an operator permission
- * guards, left on the public ingress. {@link #everyOperatorRouteIsPermissionGuarded} refuses it by prefix, over the
+ * served to any customer's session. The edge keeps that prefix off the public host by path as well as by permission
+ * ({@code EdgeAllowListTest}). {@link #everyOperatorRouteIsPermissionGuarded} refuses the route itself by prefix, over the
  * same handler mapping, and {@link #anUnguardedOperatorRouteIsCaught} proves the rule can fail.
  */
 @Tag("slice")
@@ -46,7 +46,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 class RoutePermissionRegisterTest {
 
     /** Every {@code @RequiresPermission} route, as {@code METHOD path}, and what it requires. */
-    private static final Map<String, PermissionName> REGISTER =
+    static final Map<String, PermissionName> REGISTER =
             new TreeMap<>(
                     Map.ofEntries(
                     // Dead letters and replay (P15-TSK-028): one permission, EVENT_OPERATE; every act MULTI_FACTOR; the

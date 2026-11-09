@@ -204,19 +204,19 @@ gaps of the module they touch (§4).
 
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
-| Deployment | Missing: no ingress | — | — | — |
-| Health checks | — | — | — | — |
-| Logging | — | — | — | — |
-| Metrics | — | — | — | — |
+| Deployment | Partial: two controllers (`finapp-edge-public`, `finapp-edge-operator`) by digest in `deploy/edge`, rendered, validated and policy-checked in CI (`edge-check.sh`), each overlay with its own load balancer or node port; nothing applied to a cluster *(`P15-TSK-011`, 2026-11-09; read "Missing: no ingress" until then)* | — | — | — |
+| Health checks | Partial: the three probes read `/ping` on the management port, 8081, on no Service; unrehearsed *(`P15-TSK-011`, 2026-11-09)* | — | — | — |
+| Logging | Partial: a JSON access log with every request header dropped; no shipping *(`P15-TSK-011`, 2026-11-09)* | — | — | — |
+| Metrics | Partial: the proxy publishes on the management port; no scrape configuration is deployed *(`P15-TSK-011`, 2026-11-09)* | — | — | — |
 | Tracing | — | — | — | — |
 | Alerting | — | — | — | — |
-| Security | Missing: no TLS, no allow-list; the application's own port is the boundary | — | — | — |
-| Resource limits | — | — | — | — |
-| Failure handling | — | — | — | — |
+| Security | Partial: a TLS-only listener with HSTS, the route lists generated from the register by method and path, every client-supplied forwarded header dropped; proven against the pinned proxy (`edge-check.sh`), not on a cluster, and the application's own port remains the boundary wherever nothing is deployed *(`P15-TSK-011`, 2026-11-09; read "Missing: no TLS, no allow-list; the application's own port is the boundary" until then)* | — | — | — |
+| Resource limits | Partial: requests and limits on both controllers; a body cap above the application's own and per-source limits at the proxy, the latter per controller replica *(`P15-TSK-011`, 2026-11-09)* | — | — | — |
+| Failure handling | Partial: stateless, two replicas with a PodDisruptionBudget, a controller lost means the other serves; an edge outage leaves the application ready; unrehearsed *(`P15-TSK-011`, 2026-11-09)* | — | — | — |
 | Recovery | — | — | — | — |
 | Ownership | Missing | — | — | — |
-| Runbooks | Missing | — | — | — |
-| Multi-instance | No affinity by design (sessions in PostgreSQL); unrehearsed | — | — | — |
+| Runbooks | Partial: `OPERATIONS_RUNBOOK.md` §11.26, unrehearsed *(`P15-TSK-011`, 2026-11-09)* | — | — | — |
+| Multi-instance | No affinity by design (sessions in PostgreSQL), and no connection reused to a replica, so a request picks a ready replica every time; unrehearsed *(`P15-TSK-011`, 2026-11-09; read "No affinity by design (sessions in PostgreSQL); unrehearsed" until then)* | — | — | — |
 
 ---
 
