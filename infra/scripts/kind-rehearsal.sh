@@ -354,7 +354,7 @@ wait_job() {
 step build-images
 if [ -z "${REHEARSAL_SKIP_BUILD:-}" ]; then
     build_tree "$ROOT" n
-    build_nminus1
+    [ -n "${REHEARSAL_REUSE_NMINUS1:-}" ] || build_nminus1
 fi
 
 step cluster
