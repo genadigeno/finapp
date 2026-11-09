@@ -672,11 +672,11 @@ class RoutePermissionRegisterTest {
     }
 
     /**
-     * Every route that declares {@code @RequiresAssurance(MULTI_FACTOR)} (`P15-TSK-039`): a step-up is a reviewed decision as a
-     * permission is, so a route gaining one or losing one changes this register. {@code ApprovalAssuranceTest},
-     * {@code RuledDoorsStepUpTest} and the desks' own tests hold what each declaration does.
+     * The routes the access review ruled {@code MULTI_FACTOR} (`P15-TSK-039`; {@code PRIVILEGED_ACCESS_REVIEW.md} section 6):
+     * a step-up is a reviewed decision as a permission is. Only these eight: every other declaration is its own task's.
+     * {@code RuledDoorsStepUpTest} holds what the declaration does at each.
      */
-    private static final java.util.Set<String> MULTI_FACTOR_ROUTES = new java.util.TreeSet<>(java.util.Set.of(
+    private static final java.util.Set<String> RULED_MULTI_FACTOR_ROUTES = new java.util.TreeSet<>(java.util.Set.of(
             // The access review's two rulings (PRIVILEGED_ACCESS_REVIEW.md section 6, P15-TSK-039).
             "POST /v1/operator/merchants/{merchantId}/payout-destinations",
             "POST /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}/approval",
@@ -687,13 +687,12 @@ class RoutePermissionRegisterTest {
             "POST /v1/operator/fx/trades/{id}/reversal",
             "POST /v1/operator/fx/trades/{id}/reversal/{rid}/approval"));
 
-    /** The rulings' routes must be declared; every other MULTI_FACTOR route stays free to change with its own task. */
     @Test
     @DisplayName("the rulings' routes each declare MULTI_FACTOR, read from the handler that serves them (P15-TSK-039)")
     void everyRuledRouteDeclaresMultiFactor() {
         Map<String, HandlerMethod> served = served();
-        assertThat(served.keySet()).containsAll(MULTI_FACTOR_ROUTES);
-        for (String route : MULTI_FACTOR_ROUTES) {
+        assertThat(served.keySet()).containsAll(RULED_MULTI_FACTOR_ROUTES);
+        for (String route : RULED_MULTI_FACTOR_ROUTES) {
             com.finapp.app.session.RequiresAssurance declared =
                     served.get(route).getMethodAnnotation(com.finapp.app.session.RequiresAssurance.class);
             assertThat(declared).as(route).isNotNull();

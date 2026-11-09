@@ -24,8 +24,8 @@ import org.springframework.web.servlet.HandlerMapping;
  *
  * <p>A handler declaring {@link RequiresAssurance} is refused by {@link SessionAuthenticationInterceptor}, which records
  * the refusal itself and marks the request. Every other {@code identity.AssuranceRequired} - the conditional step-up of
- * a payout destination, a bank-account registration, a withdrawal, a wallet payment, a loan's or a BNPL agreement's
- * acceptance, thirty-odd throw sites - is thrown by the operation, inside the handler, where the handler's transaction
+ * a bank-account registration, a withdrawal, a wallet payment, a loan's or a BNPL agreement's acceptance, thirty-odd
+ * throw sites - is thrown by the operation, inside the handler, where the handler's transaction
  * rolls back with it. They all reach the error contract, which calls {@link #record} for that code alone: one choke
  * point, so a new conditional step-up is recorded with no edit.
  *

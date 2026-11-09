@@ -3,7 +3,6 @@ package com.finapp.app.administration;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.identity.RoleAssignmentStore;
-import com.finapp.identity.RoleName;
 import java.time.Instant;
 import java.util.List;
 import lombok.NonNull;
@@ -44,9 +43,9 @@ public class AccessReviewController {
     public record FactorlessHoldingsView(List<FactorlessHoldingView> holdings, boolean truncated) {}
 
     /** Who, which role, since when: nothing else about the person. */
-    public record FactorlessHoldingView(String identityId, RoleName role, Instant assignedAt) {
+    public record FactorlessHoldingView(String identityId, String role, Instant assignedAt) {
         static FactorlessHoldingView of(RoleAssignmentStore.FactorlessHolding holding) {
-            return new FactorlessHoldingView(holding.identityId().value().toString(), holding.role(), holding.assignedAt());
+            return new FactorlessHoldingView(holding.identityId().value().toString(), holding.role().name(), holding.assignedAt());
         }
     }
 }
