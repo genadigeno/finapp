@@ -1077,6 +1077,9 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
 
     **Decided 2026-11-09**: (a) and (b) accepted as recommended, with the dates above, and the one dependency item added
     as `P15-TSK-041`. (a)'s last eight expire on 2026-12-31, so that item must land first.
+    **One row has been added since, and awaits the owner** (2026-11-09, the static analysis on the tree with wave D merged): a
+    fifty-seventh in (b), a statement field of the source-join census's generic join, handed a `private static final` text by each
+    module. *Recommendation*: accept it until 2027-06-30, as the others.
 18. **T10's and T37's residual: the tables the retention sweeps leave alone** *(added 2026-11-08 by the retention task's
    gate; numbered for the tasks that ran beside it)*. The audit archival is designed (`DATA_RETENTION.md` §3) and not
    built, so the audit table grows and no archive copy exists. Idempotency records and session rows are not swept: a sweep
