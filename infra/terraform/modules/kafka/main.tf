@@ -135,6 +135,7 @@ resource "aws_vpc_security_group_ingress_rule" "from_clients" {
 resource "aws_cloudwatch_log_group" "brokers" {
   name                        = "/finapp/${var.name_prefix}/msk-brokers"
   retention_in_days           = var.broker_log_retention_days
+  kms_key_id                  = var.broker_log_kms_key_arn
   deletion_protection_enabled = true
 }
 

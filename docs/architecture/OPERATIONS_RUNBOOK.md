@@ -1862,7 +1862,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.4 A failed migration (forward fix only) | `-004`, `-005` | `-032` |
 | 11.5 Restore, then verify financially before any money moves | `-030` | `-030` |
 | 11.6 Broker outage, consumer lag, a poison record, dead letters and replay | `-026`, `-028` | `-028`, `-032` |
-| 11.7 Rotation and revocation per secret class; a key compromise | `-018`…`-020` | `-020` |
+| 11.7 Rotation and revocation per secret class; a key compromise *(the cloud half written 2026-11-09, below; the fleet's half is `SECRET_MANAGEMENT.md` §5.1 and §5.2)* | `-016`, `-018`…`-020` | `-020` |
 | 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `P15-TSK-024` (instance down, stale gauges: written below, 2026-11-08), `P15-TSK-025` (burn rate and certificates: written below, 2026-11-08) | `-032` |
 | 11.9 A failing scan *(written 2026-11-08, below)*; a refused image | `P15-TSK-006` (the failing scan), `-007` (the refused image) | `-007` |
 | 11.10 Edge and abuse *(the break-glass half is §11.25, since 2026-11-09; this row read "Edge, abuse and break-glass" until then)* | `-011`, `-022` | `-032` |
@@ -1898,6 +1898,8 @@ row.)*
 *(Added 2026-11-09 by `P15-TSK-019`: §11.29 below is written, from the ring's code and the two-step's checks; rotation has not run on a cluster or against a store, and `-020` rehearses it.)*
 
 *(Added 2026-11-09 by `P15-TSK-031`: §11.31 below is written, from the register, the overlays and `infra/prometheus/rules/platform.yml`; not yet rehearsed.)*
+
+*(Added 2026-11-09 by `P15-TSK-016`: §11.7 below is written, the cloud half; no account exists to run it.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
@@ -2219,6 +2221,52 @@ There is no raw `UPDATE` in this procedure, and none is needed.
    inside, and treat what is outside as a gap, recovered from the system of record by the owning domain. Only a type every
    consumer of which declares itself `naturallyIdempotent` on its handler may go past it, and none does today.
 
+### 11.7 Rotation and revocation: the cloud half (`P15-TSK-016`)
+
+*Written from `modules/security`, and never run: no account exists. `P15-TSK-020` rehearses the fleet's half on `kind`, and key rings are
+`P15-TSK-019`'s.* Each class's method and the sync and the roll are `SECRET_MANAGEMENT.md` §5.1 and §5.2; this is what happens in the account around them.
+
+**First fill: every entry needs a value before the first sync, once.** Terraform creates the entries empty and never holds a value. Under
+`Retain` one missing or empty entry fails the whole sync, the keys of providers that do not exist yet included, and no Secret is created.
+
+1. List the entries from the environment's root: `terraform output -json secret_entry_names`.
+2. For each, skip it if it already has a current version: `aws secretsmanager describe-secret --secret-id "$name" --query VersionIdsToStages`.
+   **A fill must not overwrite.** A field key's entry already in use is what the rows under it decrypt with. This check alone is check-then-write; step 4's
+   fixed token is what closes the gap.
+3. Generate by the rule `infra/scripts/kind-secrets.sh` states: a name ending `_KEY`, 32 random bytes as base64; a name ending `_PASSWORD`,
+   64 random hex characters. Anything else is not a secret and is given by what knows it: the database URL from `database_endpoint`, the broker list
+   `FINAPP_KAFKA_BOOTSTRAPSERVERS` from `kafka_bootstrap_brokers`, a user from the bootstrap step's conventions.
+4. Write it from a pipe, so that it reaches no command line, file or terminal:
+   `... | aws secretsmanager put-secret-value --secret-id "$name" --secret-string file:///dev/stdin --client-request-token 00000000-0000-4000-8000-000000000001 > /dev/null`.
+   The token becomes this version's id, so a second run that generated a different value fails rather than replaces it.
+5. The two SCRAM entries are `modules/kafka`'s, filled before stage `principals` (that module's README). The master credential is RDS's own.
+6. **Verify:** every name reports an `AWSCURRENT` stage, and `kubectl get externalsecret -n finapp` shows `Ready=True` after the first sync.
+
+Whoever runs this needs `secretsmanager:DescribeSecret` and `secretsmanager:PutSecretValue` on these entries and `kms:GenerateDataKey` on their keys (`secrets`,
+`field_keys`), and never needs to read one. No role in this repository holds that right yet: it is the pipeline role of `THREAT_MODEL.md` §6 item 7, and §6 item 31(b)
+records the gap. **Then run the bootstrap step** (§11.1b): it reads the master credential and the three role passwords through the bootstrap role, which exists only while
+`bootstrap_role_enabled` is on. Turn it on by a reviewed change for the one step, and off after it. **Today nobody can run the step**: nothing reaches the database and no
+person has a shell session (§6 item 31(e)). Nothing records that read until the account has a trail (item 31(c)).
+
+**Rotate a value.** Write a new version with `put-secret-value`, as above but without the fixed token (the CLI makes one), then §5.2's sync and roll. The new value becomes `AWSCURRENT`, and
+the previous one stays as `AWSPREVIOUS` until the next write. **To go back**, move the stage: `aws secretsmanager update-secret-version-stage
+--secret-id "$name" --version-stage AWSCURRENT --move-to-version-id <previous> --remove-from-version-id <current>`, then sync and roll.
+
+**Rotate a key.** Every KMS key rotates its material yearly, and old material stays to decrypt what it encrypted, so nothing is re-encrypted and
+nothing rolls. To rotate one early: `aws kms rotate-key-on-demand --key-id <arn>`. A KMS rotation is not a rotation of the secret under it.
+
+**Revoke a reader or a person.** A reader's token is the operator's: to cut one, remove the ServiceAccount's annotation and restart the operator, or
+detach the role's policy. To end every session already issued for a role, attach an inline policy denying everything for sessions issued before now
+(`aws:TokenIssueTime`), which is what the console's "Revoke active sessions" does. A person is removed from `human_users`, and the plan removes them
+with their password, device and any access key, and from the group and the trust. Delete any access key by hand: the next plan fails until it is gone.
+
+**A key suspected of compromise.** Rotating the key does not help: what was decrypted is out. Rotate every secret under that key (§5.1), and for
+`field_keys` follow §5.1's key-ring row. Disable a key only knowing what stops: `etcd` stops the cluster reading its Secrets, `secrets` stops every sync,
+`database` stops the database. **Deletion** is 30 days away by design, and `aws kms cancel-key-deletion` undoes it inside the window. A plan refuses it first.
+
+**What this does not cover.** A rotation function, because nothing rotates on a schedule. A cloud API trail: the record of who read a secret or
+used a key is the account's own, and no module creates one (`THREAT_MODEL.md` §6 item 31).
+
 ### 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate - `InstanceDown`, `FinappTargetsAbsent`, `GaugesStale`, `FxGaugesUnreadable`, `ReconciliationGaugesUnreadable`, `AuthenticationAvailabilityBurnFast` and `AuthenticationAvailabilityBurnSlow`, `AuthenticationLatencyBurnFast` and `AuthenticationLatencyBurnSlow`, `TransferAvailabilityBurnFast` and `TransferAvailabilityBurnSlow`, `TransferLatencyBurnFast` and `TransferLatencyBurnSlow`, `PaymentCheckoutBurnFast` and `PaymentCheckoutBurnSlow`, `MerchantApiBurnFast` and `MerchantApiBurnSlow`, `ProviderCallbacksBurnFast` and `ProviderCallbacksBurnSlow`, `OperatorSurfaceBurnFast` and `OperatorSurfaceBurnSlow`, `EventFreshnessBurnFast` and `EventFreshnessBurnSlow`, `ConsumptionBurnFast` and `ConsumptionBurnSlow`, `CertificateExpiringSoon`, `CertificateExpiring`, `CertificateExpirySeriesAbsent`
 
 *(Written by `P15-TSK-024`, 2026-11-08: the instance-down and stale-gauge parts, from `infra/prometheus/rules/platform.yml` and the code. **Not yet rehearsed**: `P15-TSK-032` rehearses this section on `kind` or compose and records the result. Every alert is routed by severity to a placeholder receiver (`infra/alertmanager/alertmanager.yml`); no on-call tool exists.)*
@@ -2378,9 +2426,11 @@ sync, is too slow or is the thing that broke. Nothing else. A change you would l
 
 **What bounds it in time, plainly.** Kubernetes RBAC has no expiring binding, so nothing in the cluster ends this. The binding
 in `deploy/base/rbac-humans.yaml` names the group `finapp-break-glass`, which has no members. In a real environment a person
-reaches it only through a cloud role that carries that group, and **that session's lifetime is the bound** (`-016` builds the
-access entry; no account exists, so it has never run). **Until that exists the bound is a procedure**: the steps below, kept by
-people, enforced by nothing.
+reaches it only through a cloud role that carries that group, and **that session's lifetime is the bound**: a role whose session lasts
+an hour and whose assumption needs a factor at most an hour old (`modules/security`, asserted over a plan). How long a token already issued,
+or a `watch` already open, outlives the session is unverified. **Today no person can use this role from a terminal**: a person has no access key,
+so no shell session, the console has no `kubectl`, and nothing routes to the private endpoint (`THREAT_MODEL.md` §6 item 31(e)). No account exists, so
+none of that has ever run; **until one does the bound is a procedure**: the steps below, kept by people, enforced by nothing.
 
 **What it can do.** Everything `finapp-read-only` reads, except the RBAC, network and ExternalSecret objects, and exactly four writes: delete a
 pod, evict a pod, read and change a Deployment's scale.
@@ -2604,9 +2654,9 @@ It fetches the providers once into a mirror, verified against the lock file, so 
 one per directory. It then runs `terraform fmt -check`, `tflint`, `trivy config` (HIGH and CRITICAL fail), and, in every directory that
 holds a `.tf` file, `terraform init -backend=false -lockfile=readonly`, `terraform validate` and `terraform test`.
 Each test only plans; the roots' tests and the concern modules' tests plan against mock providers (AWS, and Kafka for the
-brokers' topics and ACLs), and the conventions module uses no provider. It then plants twenty-seven defects in copies of the
+brokers' topics and ACLs), and the conventions module uses no provider. It then plants forty-three defects in copies of the
 tree (six over the checks themselves, seven over the network and cluster modules' named properties, fourteen over the
-data tier's) and requires each check to refuse its plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
+data tier's, sixteen over the security modules') and requires each check to refuse its plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
 reason`, and the exit status is 0. A line starting `!!` names what failed:
 
 - **a check failed** on the tree: fix the code. For a formatting failure, `terraform fmt -recursive infra/terraform`
@@ -2616,8 +2666,8 @@ reason`, and the exit status is 0. A line starting `!!` names what failed:
 - **a plant was not planted**: a change moved the line its mutation edits. Update the mutation in the script so that
   it still plants the same defect.
 
-The script never writes the tree: it mounts `infra/` and `deploy/` read-only (the roots read each overlay's
-`FINAPP_DB_SERVER_MAX_CONNECTIONS` from `deploy/`) and works in a Docker volume it removes at exit.
+The script never writes the tree: it mounts `infra/`, `deploy/` and `docs/` read-only (the roots read each overlay's
+`FINAPP_DB_SERVER_MAX_CONNECTIONS` from `deploy/`, and the secret inventory from `docs/`) and works in a Docker volume it removes at exit.
 On a machine whose TLS is intercepted (a corporate proxy, or an antivirus's HTTPS scanning), `terraform init` in the
 container cannot reach the provider registry. In that case, build a local image `FROM` the pinned Terraform digest with
 that machine's root certificate added, and set `TERRAFORM_IMAGE` to it for the run. The Terraform binary stays the
@@ -2633,6 +2683,7 @@ pinned one, and the providers are still verified against the committed lock file
 | Names start `finapp-<environment>` and every resource carries `Project`, `Environment` and `ManagedBy`, from `modules/conventions` through the AWS provider's `default_tags` | `terraform test` (the conventions module and each root); `TerraformIsPinnedAndCheckedTest` (each root's provider takes the tags, each root calls the module as itself). Each concern module's tests assert the prefix on the resources they name; a new resource's use of it is a review point |
 | `prevent_destroy = true` on the database, its backups and every KMS key | `TerraformIsPinnedAndCheckedTest` |
 | No resource or data source that writes a secret value into state, and no database given its password (use `manage_master_user_password`) | `TerraformIsPinnedAndCheckedTest` |
+| The secret entries are read from the inventory and the `ExternalSecret`s, never listed; no `.tf` file names an inventoried variable; no policy holds a wildcard action on a secret or a key; no access policy and no scheduled secret rotation; a person, a group and an access entry only in `modules/security` | `TerraformIsPinnedAndCheckedTest`; each root's `terraform test` |
 | The topic catalogue and the brokers' posture are read from `infra/kafka/`, never copied under `infra/terraform/`; a variable holding an open decision has no default | `TerraformIsPinnedAndCheckedTest`; each root's `terraform test` |
 | Every test file mocks every provider its directory requires, and configures no real one | `TerraformIsPinnedAndCheckedTest` |
 
@@ -2650,8 +2701,11 @@ Dependabot pull request that moves one root and not the other, or the roots and 
 [`network`](../../infra/terraform/modules/network/README.md),
 [`kubernetes`](../../infra/terraform/modules/kubernetes/README.md),
 [`postgres`](../../infra/terraform/modules/postgres/README.md),
-[`kafka`](../../infra/terraform/modules/kafka/README.md) and
-[`object-storage`](../../infra/terraform/modules/object-storage/README.md).
+[`kafka`](../../infra/terraform/modules/kafka/README.md),
+[`object-storage`](../../infra/terraform/modules/object-storage/README.md),
+[`security`](../../infra/terraform/modules/security/README.md),
+[`registry`](../../infra/terraform/modules/registry/README.md) and
+[`observability`](../../infra/terraform/modules/observability/README.md).
 
 **Change the Terraform or `tflint` version.** Bump `VERSION` in `infra/scanner-pins.sh` and re-resolve `DIGEST` with
 `docker buildx imagetools inspect <repository>:<version>`, as for the scanners. For Terraform, set every root's

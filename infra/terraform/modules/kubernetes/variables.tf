@@ -86,3 +86,13 @@ variable "control_plane_log_retention_days" {
     error_message = "The control plane's logs are kept for at least a year, or without expiry (0), in one of the periods CloudWatch Logs accepts."
   }
 }
+
+variable "control_plane_log_kms_key_arn" {
+  description = "The customer-managed key the control plane's logs are encrypted under: the security module's logs key."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:kms:[a-z]{2}(-[a-z]+)+-[0-9]:[0-9]{12}:key/([0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}|mrk-[0-9a-f]{32})$", var.control_plane_log_kms_key_arn))
+    error_message = "The logs key is a KMS key's ARN, never an alias: an alias can be repointed."
+  }
+}

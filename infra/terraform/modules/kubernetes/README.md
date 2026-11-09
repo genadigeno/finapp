@@ -12,7 +12,7 @@ The security properties are literals in `main.tf`, not variables, so no environm
 |---|---|
 | The API endpoint is private: no public address, reachable from inside the VPC, on the workload subnets | `the_api_endpoint_is_private` |
 | Kubernetes Secrets are envelope-encrypted in etcd under the key given as `etcd_kms_key_arn`; the control plane's role can use that key and no other | `secrets_in_etcd_are_encrypted_under_the_given_key` |
-| All five control-plane logs are on, `audit` among them, into the log group EKS writes to, created first with its retention and deletion protection | `the_control_plane_audit_log_is_on` |
+| All five control-plane logs are on, `audit` among them, into the log group EKS writes to, created first with its retention, deletion protection and the customer-managed key it is given | `the_control_plane_audit_log_is_on` |
 | One managed node group per zone, at least three zones, each confined to its own zone's workload subnet and holding at least one node; an update takes one node at a time | `every_zone_has_its_own_node_group_with_a_node` |
 | A pod cannot reach its node's credentials (IMDSv2, one network hop); no node accepts SSH; root volumes encrypted; instances and volumes carry the conventions' tags | `the_node_template_keeps_pods_off_instance_metadata_and_sets_no_ssh_key` |
 | Workload identity: an OIDC provider on the cluster's issuer, audience STS alone | `workload_identity_is_the_clusters_oidc_issuer` |
@@ -30,16 +30,18 @@ zone with a minimum of one makes that a count.
 ## Inputs and outputs
 
 Inputs: `name_prefix`, `tags`, `kubernetes_version`, `private_subnet_ids_by_zone`, `etcd_kms_key_arn`,
-`node_instance_types`, `node_root_volume_gib`, `nodes_per_zone`, `control_plane_log_retention_days`.
-Outputs: `cluster_name`, `workload_identity_provider_arn`, `workload_identity_issuer`, `node_role_arn`,
+`node_instance_types`, `node_root_volume_gib`, `nodes_per_zone`, `control_plane_log_retention_days`, `control_plane_log_kms_key_arn`.
+Outputs: `cluster_name`, `cluster_role_arn`, `workload_identity_provider_arn`, `workload_identity_issuer`, `node_role_arn`,
 `node_security_group_id` (the source the data tier admits), and four that read the planned cluster back for the roots' tests. See `variables.tf` and `outputs.tf`.
 
 ## Operating it
 
-- **The key**: `etcd_kms_key_arn` is a root variable until the security module supplies it. Its key policy must let this
-  account's cluster role use it; the role's own policy here names that key and no other.
+- **The key**: each root gives this module the security module's `etcd` key. That key's policy admits this cluster's role
+  and no other, and the role's own policy here names that key and no other.
 - **Reaching the API**: the endpoint is private and the mode is `API`, so nobody reaches the cluster until access entries
-  exist. Humans and the GitOps controller are given theirs by the security module; this module creates none.
+  exist. The security module gives people theirs, one role each for the `finapp-read-only` and `finapp-break-glass` groups. A
+  controller running in the cluster uses its ServiceAccount and needs no entry; what installs the first controller is
+  `THREAT_MODEL.md` §6 item 31.
 - **Pods that read instance metadata** get no answer, by design. A workload that needs the region is given it in its
   environment, and gets credentials through workload identity.
 - **Upgrade**: raise `kubernetes_version` in staging's root first, then production's. The minor and the node sizes in the
@@ -52,5 +54,4 @@ Outputs: `cluster_name`, `workload_identity_provider_arn`, `workload_identity_is
 ## What it does not do
 
 No KMS key, no workload role, no access entry, no namespace policy (those live with their own tasks' modules and
-manifests), no customer-managed key on the control-plane log group (CloudWatch's default encryption applies), and no
-apply.
+manifests), and no apply.

@@ -22,7 +22,7 @@ tests).
 
 ## Inputs and outputs
 
-Inputs: `name_prefix`, `region`, `account_id`, `availability_zones`, `cidr_block`, `flow_log_retention_days`.
+Inputs: `name_prefix`, `region`, `account_id`, `availability_zones`, `cidr_block`, `flow_log_retention_days`, `flow_log_kms_key_arn`.
 Outputs: `vpc_id`, `private_subnet_ids_by_zone`, `public_subnet_ids_by_zone`. See `variables.tf` and `outputs.tf`; each is
 described there.
 
@@ -38,4 +38,4 @@ described there.
 ## What it does not do
 
 No database or broker networking rules (`-015`'s modules add their own), no load balancer (the edge is a Kubernetes
-concern), no customer-managed key on the flow-log group (CloudWatch's default encryption applies), and no apply.
+concern), and no apply.

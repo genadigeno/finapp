@@ -22,7 +22,10 @@ mock_provider "aws" {
 
   override_resource {
     target = aws_db_instance.this
-    values = { arn = "arn:aws:rds:eu-central-1:111111111111:db:finapp-staging-postgres" }
+    values = {
+      arn                = "arn:aws:rds:eu-central-1:111111111111:db:finapp-staging-postgres"
+      master_user_secret = [{ kms_key_id = "mock", secret_arn = "arn:aws:secretsmanager:eu-central-1:111111111111:secret:rds!db-mock-AbCdEf", secret_status = "active" }]
+    }
   }
 
   override_resource {

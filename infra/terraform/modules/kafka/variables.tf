@@ -97,3 +97,13 @@ variable "provisioning_stage" {
     error_message = "The stage is brokers, principals or enforced."
   }
 }
+
+variable "broker_log_kms_key_arn" {
+  description = "The customer-managed key the brokers' logs are encrypted under: the security module's logs key."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:kms:[a-z]{2}(-[a-z]+)+-[0-9]:[0-9]{12}:key/([0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}|mrk-[0-9a-f]{32})$", var.broker_log_kms_key_arn))
+    error_message = "The logs key is a KMS key's ARN, never an alias: an alias can be repointed."
+  }
+}

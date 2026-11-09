@@ -44,9 +44,9 @@ No object exists here yet. The archival that writes to this bucket is designed i
 
 ## Keys
 
-`state_kms_key_arn` and `archive_kms_key_arn` are inputs until the security module creates them. Each root refuses the
-archive key being the database's. A key's policy must admit its callers: the application's role has no access to any
-bucket here, and must not gain a delete permission on the archive.
+Each root gives this module the security module's `state` and `archive` keys, which are keys of their own, so the archive's can
+never be the database's. Each key's policy admits S3 and no other service. Neither workload's role holds an action on any bucket
+here (`modules/security`'s tests assert it).
 
 ## Inputs and outputs
 
