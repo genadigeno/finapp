@@ -1,0 +1,66 @@
+package com.finapp.app.accounting;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.finapp.accounting.EntryType;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The census's journal read (`P15-TSK-035`): read-only statements; the walk by the ledger's {@code (txid, id)}, bounded in its own
+ * statement by the oldest transaction still running; a posting's and a reversal's namespace and key suffix read from the ledger's own
+ * scope prefix, an adjustment's namespace from its proposal's origin. Its behaviour against the journal is
+ * {@code SourceCensusDatabaseTest}'s (owed).
+ */
+@DisplayName("the census's walk of the journal (P15-TSK-035)")
+class LedgerJournalCensusWalkTest {
+
+    @Test
+    @DisplayName("every statement is a SELECT that writes and locks nothing")
+    void everyStatementOnlyReads() {
+        for (String sql : List.of(LedgerJournalCensusWalk.PAGE, LedgerJournalCensusWalk.LINES, LedgerJournalCensusWalk.OLDEST_AFTER)) {
+            String upper = sql.toUpperCase(Locale.ROOT);
+            assertThat(upper).startsWith("SELECT ");
+            for (String forbidden : List.of("INSERT ", "UPDATE ", "DELETE ", "FOR SHARE", "FOR UPDATE", "PG_ADVISORY")) {
+                assertThat(upper).as(forbidden).doesNotContain(forbidden);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the position is the transaction, then the id: an id the inserter chose can never sort behind the head")
+    void thePositionIsTheTransactionThenTheId() {
+        assertThat(LedgerJournalCensusWalk.PAGE).contains("(entry.txid, entry.id) > (?::xid8, ?)").contains("ORDER BY entry.txid, entry.id LIMIT ?");
+        assertThat(LedgerJournalCensusWalk.PAGE).as("no comparison on the id alone").doesNotContain("entry.id > ?");
+        assertThat(LedgerJournalCensusWalk.OLDEST_AFTER).contains("(txid, id) > (?::xid8, ?)").contains("ORDER BY txid, id LIMIT 1");
+    }
+
+    @Test
+    @DisplayName("the bound is the oldest transaction still running, in the page's own statement: every txid below it is finished")
+    void theBoundIsTheOldestRunningTransactionOfThePagesOwnSnapshot() {
+        assertThat(LedgerJournalCensusWalk.PAGE).contains("entry.txid < pg_snapshot_xmin(pg_current_snapshot())");
+    }
+
+    @Test
+    @DisplayName("a posting's and a reversal's namespace is the command key's, off the ledger's scope prefix; an adjustment's is its origin")
+    void aNamespaceIsTheKeysOrTheOrigin() {
+        assertThat(LedgerJournalCensusWalk.namespace(EntryType.POSTING, "ledger.post:transfer:018f", null)).hasValue("transfer:");
+        assertThat(LedgerJournalCensusWalk.namespace(EntryType.REVERSAL, "ledger.reverse:transfer:018f", null)).hasValue("transfer:");
+        assertThat(LedgerJournalCensusWalk.namespace(EntryType.ADJUSTMENT, "ledger.adjust.approve:018f", "RECONCILIATION")).hasValue("RECONCILIATION");
+        assertThat(LedgerJournalCensusWalk.namespace(EntryType.POSTING, "something.else:transfer:018f", null)).isEqualTo(Optional.empty());
+        assertThat(LedgerJournalCensusWalk.namespace(EntryType.ADJUSTMENT, "other:018f", "RECONCILIATION")).isEqualTo(Optional.empty());
+    }
+
+    @Test
+    @DisplayName("the suffix is the key past its namespace; an adjustment's is the proposal; a key with no namespace has none")
+    void theSuffix() {
+        assertThat(LedgerJournalCensusWalk.suffix(EntryType.POSTING, "ledger.post:lending.accrual:018f:2026-11-09")).isEqualTo("018f:2026-11-09");
+        assertThat(LedgerJournalCensusWalk.suffix(EntryType.REVERSAL, "ledger.reverse:transfer:018f")).isEqualTo("018f");
+        assertThat(LedgerJournalCensusWalk.suffix(EntryType.ADJUSTMENT, "ledger.adjust.approve:018f")).isEqualTo("018f");
+        assertThat(LedgerJournalCensusWalk.suffix(EntryType.POSTING, "ledger.post:no-namespace-here")).isEmpty();
+        assertThat(LedgerJournalCensusWalk.suffix(EntryType.POSTING, "something.else:transfer:018f")).isEmpty();
+    }
+}

@@ -8,6 +8,7 @@ namespace: finapp
 resources:
   - ../../base
   - secret-store.yaml
+  - networkpolicy-data-tier.yaml
 
 # Endpoints and credentials, read from the store by the two ExternalSecrets.
 components:

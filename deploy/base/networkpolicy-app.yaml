@@ -1,0 +1,80 @@
+# What finapp-app may be reached by and may reach, beyond each overlay's addresses.
+#
+# THE KUBELET IS NOT NAMED, AND NEED NOT BE. A pod cannot block its resident node, so the probes on 8081 need no rule; and
+# nothing can name the kubelet alone (an ipBlock of the nodes' addresses would admit every host-network process on every
+# node). The same exemption means this policy does not close 8081 to anything else running on the pod's own node: on EKS
+# the agent admits the node's address on every port; on kind, kube-network-policies skips what the node's root user opens.
+# What it does close is every pod, in any namespace, but the scraper below.
+#
+# Peers name a namespace AND a pod in one entry. Written as two list items they would be OR: every pod in that namespace,
+# or that label anywhere in this one.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-app-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes:
+    - Ingress
+  ingress:
+    # The public and operator ingress controllers, on the API port alone.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-edge
+          podSelector:
+            matchLabels:
+              finapp/role: ingress-controller
+      ports:
+        - protocol: TCP
+          port: 8080
+    # The scrape, on the management port alone. No Service exposes 8081, so this is the only way to it from a pod.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-observability
+          podSelector:
+            matchLabels:
+              finapp/role: metrics-scraper
+      ports:
+        - protocol: TCP
+          port: 8081
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-app-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes:
+    - Egress
+  egress:
+    # The cluster's resolver, on UDP and on TCP: an answer too long for a datagram is retried over TCP, and refusing that
+    # fails only for the long answers. Nothing narrows what is asked, so a name is still a way to carry data out.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The one telemetry egress (C10): OTLP over HTTP.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-observability
+          podSelector:
+            matchLabels:
+              finapp/role: telemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4318

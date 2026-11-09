@@ -374,6 +374,660 @@ YAML
     plant_on schema-type "$DEPLOYMENT" 's/^  revisionHistoryLimit: 10$/  revisionHistoryLimit: ten/'
     plant render-broken
     mutate render-broken "$PRODUCTION" 's|^  - \.\./\.\./base$|  - ../../base-that-is-not-there|'
+
+    plant_namespace_security
+}
+
+# The namespaces are a root of their own, because an overlay's `namespace:` renames every Namespace it renders (see
+# deploy/namespaces/kustomization.yaml). Appended to each overlay's stream so the policies read them together.
+append_namespaces() {
+    printf -- '---\n' >> "$2"
+    kustomize build "$1/namespaces" >> "$2"
+}
+
+# One plant per way each namespace-security rule can be broken (P15-TSK-010), wildcards and null-valued keys included.
+plant_namespace_security() {
+    NS=namespaces/namespaces.yaml
+    DENY=base/networkpolicy-default-deny.yaml
+    APP=base/networkpolicy-app.yaml
+    MIGRATOR=base/networkpolicy-migrator.yaml
+    TIER=overlays/production/networkpolicy-data-tier.yaml
+    RBAC=base/rbac-humans.yaml
+    QUOTA=base/resourcequota.yaml
+    LIMITS=base/limitrange.yaml
+    # Kubernetes' own field, named once for the reason SWITCH is above.
+    MINTED_SOURCE=serviceAccountToken
+
+    # Namespaces and Pod Security.
+    plant_on namespace-edge-absent "$NS" 's/^  name: finapp-edge$/  name: not-the-edge/'
+    plant_on namespace-dropped "$PRODUCTION" '/^namespace: finapp$/d'
+    plant_on psa-enforce-baseline "$NS" '1,/enforce: restricted/s/enforce: restricted/enforce: baseline/'
+    plant_on psa-enforce-absent "$NS" '/pod-security.kubernetes.io\/enforce: restricted/d'
+    plant_on psa-audit-absent "$NS" '/pod-security.kubernetes.io\/audit: restricted/d'
+    plant_on psa-warn-absent "$NS" '/pod-security.kubernetes.io\/warn: restricted/d'
+    plant_on psa-version-latest "$NS" '1,/enforce-version:/s/enforce-version: .*/enforce-version: latest/'
+    plant_on psa-version-absent "$NS" '/pod-security.kubernetes.io\/enforce-version:/d'
+
+    # Default-deny, and what would quietly stop it being one.
+    plant no-default-deny
+    mutate no-default-deny base/kustomization.yaml '/networkpolicy-default-deny.yaml/d'
+    plant_on default-deny-ingress-only "$DENY" '/^    - Egress$/d'
+    plant_on default-deny-opened "$DENY" 's/^    - Egress$/    - Egress\n  egress:\n    - {}/'
+    plant_on default-deny-narrowed "$DENY" 's/^  podSelector: {}$/  podSelector:\n    matchLabels:\n      app.kubernetes.io\/name: finapp-app/'
+
+    # The form of a rule: no peers is everyone, no ports is every port, two list items are OR.
+    plant netpol-open-egress
+    add_resource netpol-open-egress wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+YAML
+    plant netpol-open-ingress
+    add_resource netpol-open-ingress wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8081
+YAML
+    plant netpol-empty-rule
+    add_resource netpol-empty-rule wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes: [Egress]
+  egress:
+    - {}
+YAML
+    plant netpol-no-ports
+    add_resource netpol-no-ports wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.0/24
+YAML
+    plant_on netpol-port-range "$APP" 's/^          port: 8080$/          port: 8080\n          endPort: 8090/'
+    plant_on netpol-named-port "$APP" 's/^          port: 8081$/          port: management/'
+    plant netpol-selector-expression
+    add_resource netpol-selector-expression wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: Exists
+  policyTypes: [Egress]
+YAML
+
+    # Who reaches the application: the management port above all.
+    plant_on netpol-peers-split "$APP" '1,/^          podSelector:$/s/^          podSelector:$/        - podSelector:/'
+    plant_on netpol-null-namespace "$APP" '/kubernetes.io\/metadata.name: finapp-edge/d'
+    plant netpol-any-namespace
+    add_resource netpol-any-namespace wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8081
+YAML
+    plant_on netpol-edge-reaches-management "$APP" '1,/^          port: 8080$/s/^          port: 8080$/          port: 8081/'
+    plant_on netpol-management-any-pod-there "$APP" '/finapp\/role: metrics-scraper/d'
+    plant_on netpol-management-other-namespace "$APP" '1,/finapp-observability/s/finapp-observability/finapp-edge/'
+    plant_on netpol-no-edge "$APP" '1,/^          port: 8080$/{/^    - from:$/,/^          port: 8080$/d}'
+    plant_on netpol-no-scrape "$APP" '/^    # The scrape/,/^          port: 8081$/d'
+
+    # What the application and the migrator reach.
+    plant netpol-unlisted-egress
+    add_resource netpol-unlisted-egress wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.0/24
+      ports:
+        - protocol: TCP
+          port: 25
+YAML
+    plant netpol-migrator-kafka
+    add_resource netpol-migrator-kafka wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-migrator
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 198.51.100.0/24
+      ports:
+        - protocol: TCP
+          port: 9096
+YAML
+    plant netpol-migrator-providers
+    add_resource netpol-migrator-providers wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-migrator
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.0/24
+      ports:
+        - protocol: TCP
+          port: 443
+YAML
+    plant netpol-every-pod-egress
+    add_resource netpol-every-pod-egress wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.0/24
+      ports:
+        - protocol: TCP
+          port: 443
+YAML
+    plant_on netpol-dns-udp-only "$APP" '/^        - protocol: TCP$/{N;/port: 53$/d}'
+    plant_on netpol-dns-tcp-only "$APP" '/^        - protocol: UDP$/{N;/port: 53$/d}'
+    plant_on netpol-migrator-dns-udp-only "$MIGRATOR" '/^        - protocol: TCP$/{N;/port: 53$/d}'
+    plant no-data-tier
+    mutate no-data-tier "$PRODUCTION" '/networkpolicy-data-tier.yaml/d'
+    plant_on netpol-egress-not-typed "$APP" 's/^    - Egress$/    - Ingress/'
+    plant_on netpol-real-address "$TIER" 's#cidr: 192.0.2.0/24#cidr: 10.20.0.0/16#'
+    plant_on netpol-world "$TIER" 's#cidr: 203.0.113.0/24#cidr: 0.0.0.0/0#'
+
+    # What a person may hold: a plant for each way of reading a Secret or getting inside a pod.
+    human_rule rbac-get-secrets '""' secrets get
+    human_rule rbac-list-secrets '""' secrets list
+    human_rule rbac-watch-secrets '""' secrets watch
+    human_rule rbac-wildcard-verb '""' pods '"*"'
+    human_rule rbac-wildcard-resource '""' '"*"' get
+    human_rule rbac-wildcard-group '"*"' pods get
+    human_rule rbac-wildcard-subresource '""' '"*/exec"' create
+    human_rule rbac-pods-exec '""' pods/exec get
+    human_rule rbac-pods-attach '""' pods/attach get
+    human_rule rbac-pods-portforward '""' pods/portforward get
+    human_rule rbac-pods-ephemeral '""' pods/ephemeralcontainers get
+    human_rule rbac-pods-proxy '""' pods/proxy get
+    human_rule rbac-mint-for-an-account '""' serviceaccounts/token create
+    human_rule rbac-impersonate '""' users impersonate
+    human_rule rbac-escalate rbac.authorization.k8s.io roles escalate
+    human_rule rbac-bind rbac.authorization.k8s.io roles bind
+    human_rule rbac-read-role-writes '""' configmaps patch
+    human_rule rbac-externalsecrets-write external-secrets.io externalsecrets patch
+    break_glass_rule rbac-break-glass-patches-template apps deployments patch
+    break_glass_rule rbac-break-glass-creates-pods '""' pods create
+    break_glass_rule rbac-break-glass-secrets '""' secrets get
+    break_glass_rule rbac-break-glass-exec '""' pods/exec create
+    break_glass_rule rbac-break-glass-wildcard '""' pods '"*"'
+    break_glass_rule rbac-break-glass-bind rbac.authorization.k8s.io roles bind
+    plant no-human-roles
+    mutate no-human-roles base/kustomization.yaml '/rbac-humans.yaml/d'
+    plant_on rbac-named-user "$RBAC" '1,/kind: Group/s/kind: Group/kind: User/'
+    plant_on rbac-system-masters "$RBAC" '1,/    name: finapp-read-only$/s/    name: finapp-read-only$/    name: system:masters/'
+    plant rbac-built-in-role
+    add_resource rbac-built-in-role binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: too-much
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-read-only
+YAML
+    plant rbac-cluster-wide
+    add_resource rbac-cluster-wide binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: everywhere
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: everywhere
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: everywhere
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-read-only
+YAML
+    plant rbac-unbound-role
+    add_resource rbac-unbound-role role.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nobody-yet
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+YAML
+    plant rbac-aggregated
+    add_resource rbac-aggregated role.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gathered
+aggregationRule:
+  clusterRoleSelectors:
+    - matchLabels:
+        finapp/aggregate: "true"
+rules: []
+YAML
+    plant rbac-workload-bound
+    add_resource rbac-workload-bound binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-reads
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-read-only
+subjects:
+  - kind: ServiceAccount
+    name: finapp-app
+    namespace: finapp
+YAML
+    plant rbac-migrator-bound
+    add_resource rbac-migrator-bound binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: migrator-reads
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-read-only
+subjects:
+  - kind: ServiceAccount
+    name: finapp-migrator
+    namespace: finapp
+YAML
+
+    # A controller may write Secrets; that role in a person's hands may not. The first of these must pass, the second must not.
+    # Against the kind overlay, the one place the test-only controller account is listed.
+    plant controller-writes-secrets kind
+    add_resource controller-writes-secrets controller.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-delivery
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: secret-delivery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: secret-delivery
+subjects:
+  - kind: ServiceAccount
+    name: finapp-test-only-controller
+    namespace: finapp
+YAML
+    plant controller-role-held-by-a-person kind
+    add_resource controller-role-held-by-a-person controller.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-delivery
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: secret-delivery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: secret-delivery
+subjects:
+  - kind: ServiceAccount
+    name: finapp-test-only-controller
+    namespace: finapp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: secret-delivery-too
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: secret-delivery
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-read-only
+YAML
+
+    # A ServiceAccount off the list is refused whatever it is granted: the namespace's default holding cluster-admin, the
+    # internet-facing controller's account reading this namespace's Secrets, an account with no namespace stated.
+    plant rbac-default-account-cluster-admin
+    add_resource rbac-default-account-cluster-admin binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: everything
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: finapp
+YAML
+    plant rbac-edge-account-reads-secrets
+    add_resource rbac-edge-account-reads-secrets binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reads
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reads
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: reads
+subjects:
+  - kind: ServiceAccount
+    name: ingress-controller
+    namespace: finapp-edge
+YAML
+    plant rbac-account-with-no-namespace
+    add_resource rbac-account-with-no-namespace binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: someone
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-read-only
+subjects:
+  - kind: ServiceAccount
+    name: finapp-test-only-controller
+YAML
+    plant rbac-test-only-account-in-production
+    add_resource rbac-test-only-account-in-production binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: someone
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-read-only
+subjects:
+  - kind: ServiceAccount
+    name: finapp-test-only-controller
+    namespace: finapp
+YAML
+    # On the list, and still refused a role this stream cannot read: the rule is no longer only about people.
+    plant rbac-listed-account-built-in-role kind
+    add_resource rbac-listed-account-built-in-role binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: built-in
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit
+subjects:
+  - kind: ServiceAccount
+    name: finapp-test-only-controller
+    namespace: finapp
+YAML
+    plant rbac-aggregated-into-view
+    add_resource rbac-aggregated-into-view role.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: merged-in
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get]
+YAML
+    # A second namespace, which an overlay's transformer would rewrite, so through the namespaces root. A same-named Role
+    # elsewhere must not borrow a controller's standing, and a person's binding is this namespace's alone.
+    plant rbac-same-name-elsewhere kind
+    add_resource rbac-same-name-elsewhere controller.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: shared-name
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shared-name
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: shared-name
+subjects:
+  - kind: ServiceAccount
+    name: finapp-test-only-controller
+    namespace: finapp
+YAML
+    add_to_namespaces rbac-same-name-elsewhere <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: shared-name
+  namespace: finapp-edge
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+YAML
+    plant rbac-person-bound-elsewhere
+    add_to_namespaces rbac-person-bound-elsewhere <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: finapp-break-glass
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-break-glass
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-break-glass
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-break-glass
+YAML
+
+    # The quota: every key the refusal depends on, and its arithmetic read from the manifests.
+    plant no-quota
+    mutate no-quota base/kustomization.yaml '/resourcequota.yaml/d'
+    plant_on quota-no-requests-cpu "$QUOTA" '/^    requests.cpu:/d'
+    plant_on quota-no-requests-memory "$QUOTA" '/^    requests.memory:/d'
+    plant_on quota-no-limits-cpu "$QUOTA" '/^    limits.cpu:/d'
+    plant_on quota-no-limits-memory "$QUOTA" '/^    limits.memory:/d'
+    plant_on quota-no-pods "$QUOTA" '/^    pods:/d'
+    plant_on quota-scoped "$QUOTA" 's/^  hard:$/  scopes:\n    - NotBestEffort\n  hard:/'
+    plant_on quota-pods-short "$QUOTA" 's/pods: "11"/pods: "10"/'
+    plant_on quota-requests-cpu-short "$QUOTA" 's/requests.cpu: 5250m/requests.cpu: 5249m/'
+    plant_on quota-requests-memory-short "$QUOTA" 's/requests.memory: 20992Mi/requests.memory: 20991Mi/'
+    plant_on quota-limits-cpu-short "$QUOTA" 's/limits.cpu: "21"/limits.cpu: "20"/'
+    plant_on quota-limits-memory-short "$QUOTA" 's/limits.memory: 20992Mi/limits.memory: 20991Mi/'
+    plant_on quota-follows-the-autoscaler "$HPA" 's/maxReplicas: 7/maxReplicas: 8/'
+    plant_on quota-follows-the-surge "$DEPLOYMENT" 's/maxSurge: 1/maxSurge: 2/'
+    plant_on quota-follows-the-request "$DEPLOYMENT" 's/cpu: 500m/cpu: 600m/'
+    plant_on quota-kind-short "$KIND" 's/value: "9"/value: "8"/' kind
+    plant_on quota-staging-short overlays/staging/kustomization.yaml 's/value: "8"/value: "7"/' staging
+    plant_on quota-pods-widened "$QUOTA" 's/pods: "11"/pods: "1000"/'
+    plant_on quota-limits-memory-widened "$QUOTA" 's/limits.memory: 20992Mi/limits.memory: 40000Mi/'
+
+    # The LimitRange: an injected default makes a pod without requests admitted, and a bound below a pod refuses the pod.
+    plant no-limitrange
+    mutate no-limitrange base/kustomization.yaml '/limitrange.yaml/d'
+    plant_on limitrange-default "$LIMITS" 's/^      max:$/      default:\n        cpu: "1"\n      max:/'
+    plant_on limitrange-default-request "$LIMITS" 's/^      max:$/      defaultRequest:\n        cpu: 100m\n      max:/'
+    plant_on limitrange-container-item "$LIMITS" 's/type: Pod/type: Container/'
+    plant_on limitrange-max-below-a-pod "$LIMITS" 's/memory: 2Gi/memory: 1Gi/'
+    plant_on limitrange-min-above-a-pod "$LIMITS" 's/cpu: 100m/cpu: 300m/'
+    plant_on limitrange-max-widened "$LIMITS" 's/memory: 2Gi/memory: 64Gi/'
+    plant_on limitrange-no-max "$LIMITS" '/^      max:$/,$d'
+    plant_on limitrange-null-max "$LIMITS" '/^        cpu: "2"$/d;/^        memory: 2Gi$/d'
+    plant_on limitrange-no-memory-bound "$LIMITS" '/^        memory: 128Mi$/d'
+
+    # Every kind branch of the flows reads the test-only copies by name, so a third workload's egress to the database is refused.
+    plant netpol-kafka-reaches-the-database kind
+    add_resource netpol-kafka-reaches-the-database wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-kafka
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+YAML
+
+    # A token can be mounted without the automount switch.
+    plant_on minted-volume "$DEPLOYMENT" "s/^      volumes:\$/      volumes:\n        - name: minted\n          projected:\n            sources:\n              - $MINTED_SOURCE:\n                  path: credential/"
+}
+
+# add_to_namespaces <plant>: stdin becomes more documents of the namespaces root, where no transformer rewrites a namespace.
+add_to_namespaces() {
+    { printf -- '---\n'; cat; } >> "$PLANTS/$1/deploy/namespaces/namespaces.yaml"
+}
+
+# human_rule <plant> <apiGroup> <resource> <verb>: one more rule on the standing read-only role.
+human_rule() {
+    plant_on "$1" "$RBAC" "1,/^rules:\$/s#^rules:\$#rules:\n  - apiGroups: [$2]\n    resources: [$3]\n    verbs: [$4]#"
+}
+
+# break_glass_rule <plant> <apiGroup> <resource> <verb>: the same, on the break-glass role.
+break_glass_rule() {
+    plant_on "$1" "$RBAC" "/^  name: finapp-break-glass\$/,/^rules:\$/s#^rules:\$#rules:\n  - apiGroups: [$2]\n    resources: [$3]\n    verbs: [$4]#"
 }
 
 in_container() {
@@ -384,6 +1038,7 @@ in_container() {
             mkdir -p /scratch/rendered
             for overlay in $OVERLAYS; do
                 kustomize build "/repo/deploy/overlays/$overlay" > "/scratch/rendered/$overlay.yaml"
+                append_namespaces /repo/deploy "/scratch/rendered/$overlay.yaml"
                 printf 'overlay: %s\n' "$overlay" > "/scratch/rendered/$overlay.data.yaml"
             done
             ;;
@@ -397,6 +1052,7 @@ in_container() {
                     || printf 'failed\n' > "$directory/render.failed"
                 [ -s "$directory/rendered.yaml" ] || [ -f "$directory/render.failed" ] \
                     || { echo "!!   plant $name rendered nothing" >&2; exit 1; }
+                [ -f "$directory/render.failed" ] || append_namespaces "$directory/deploy" "$directory/rendered.yaml"
                 if [ -f "$directory/after-render.sed" ]; then
                     cp "$directory/rendered.yaml" "$directory/rendered.before"
                     sed -i -f "$directory/after-render.sed" "$directory/rendered.yaml"
@@ -795,6 +1451,135 @@ refused job-failure-policy job-failure-policy
 refused job-entrypoint job-entrypoint
 refused job-restarts job-bounds
 refused no-migrator job-bounds
+
+# accepted <plant>: a case the policies must let through, so a rule cannot pass its plants by refusing everything.
+accepted() {
+    if output=$(conftest_on "/scratch/plants/$1/rendered.yaml" "/scratch/plants/$1/overlay.yaml" 2>&1); then
+        echo "ok   plant $1 accepted"
+    else
+        printf '%s\n' "$output"
+        echo "!!   plant $1 was refused, and must not be"
+        status=1
+    fi
+}
+
+refused namespace-edge-absent namespace-present
+refused namespace-dropped namespace-workload
+refused psa-enforce-baseline psa-restricted
+refused psa-enforce-absent psa-restricted
+refused psa-audit-absent psa-restricted
+refused psa-warn-absent psa-restricted
+refused psa-version-latest psa-version
+refused psa-version-absent psa-version
+
+refused no-default-deny netpol-default-deny
+refused default-deny-ingress-only netpol-default-deny
+refused default-deny-opened netpol-default-deny
+refused default-deny-narrowed netpol-default-deny
+refused netpol-open-egress netpol-open-peer
+refused netpol-open-ingress netpol-open-peer
+refused netpol-empty-rule netpol-open-peer
+refused netpol-no-ports netpol-ports
+refused netpol-port-range netpol-ports
+refused netpol-named-port netpol-ports
+refused netpol-selector-expression netpol-selector
+refused netpol-peers-split netpol-ingress-closed
+refused netpol-null-namespace netpol-ingress-closed
+refused netpol-any-namespace netpol-ingress-closed
+refused netpol-edge-reaches-management netpol-ingress-closed
+refused netpol-management-any-pod-there netpol-ingress-closed
+refused netpol-management-other-namespace netpol-ingress-closed
+refused netpol-no-edge netpol-flow-missing
+refused netpol-no-scrape netpol-flow-missing
+refused netpol-unlisted-egress netpol-egress-closed
+refused netpol-migrator-kafka netpol-egress-closed
+refused netpol-migrator-providers netpol-egress-closed
+refused netpol-every-pod-egress netpol-egress-closed
+refused netpol-dns-udp-only netpol-dns
+refused netpol-dns-tcp-only netpol-dns
+refused netpol-migrator-dns-udp-only netpol-dns
+refused no-data-tier netpol-flow-missing
+refused netpol-egress-not-typed netpol-flow-missing
+refused netpol-real-address netpol-placeholder-cidr
+refused netpol-world netpol-placeholder-cidr
+
+refused rbac-get-secrets rbac-human-secrets
+refused rbac-list-secrets rbac-human-secrets
+refused rbac-watch-secrets rbac-human-secrets
+refused rbac-wildcard-verb rbac-human-wildcard
+refused rbac-wildcard-resource rbac-human-wildcard
+refused rbac-wildcard-group rbac-human-wildcard
+refused rbac-wildcard-subresource rbac-human-wildcard
+refused rbac-pods-exec rbac-human-subresource
+refused rbac-pods-attach rbac-human-subresource
+refused rbac-pods-portforward rbac-human-subresource
+refused rbac-pods-ephemeral rbac-human-subresource
+refused rbac-pods-proxy rbac-human-subresource
+refused rbac-mint-for-an-account rbac-human-subresource
+refused rbac-impersonate rbac-human-privilege
+refused rbac-escalate rbac-human-privilege
+refused rbac-bind rbac-human-privilege
+refused rbac-read-role-writes rbac-human-verbs
+refused rbac-externalsecrets-write rbac-human-verbs
+refused rbac-break-glass-patches-template rbac-break-glass-writes
+refused rbac-break-glass-creates-pods rbac-break-glass-writes
+refused rbac-break-glass-secrets rbac-human-secrets
+refused rbac-break-glass-exec rbac-human-subresource
+refused rbac-break-glass-wildcard rbac-human-wildcard
+refused rbac-break-glass-bind rbac-human-privilege
+refused no-human-roles rbac-present
+refused rbac-named-user rbac-human-subject
+refused rbac-system-masters rbac-human-subject
+refused rbac-built-in-role rbac-binding-rendered
+refused rbac-cluster-wide rbac-human-cluster-wide
+refused rbac-unbound-role rbac-human-secrets
+refused rbac-aggregated rbac-human-aggregated
+refused rbac-workload-bound rbac-workload-none
+refused rbac-migrator-bound rbac-workload-none
+accepted controller-writes-secrets
+refused controller-role-held-by-a-person rbac-human-secrets
+refused rbac-default-account-cluster-admin rbac-account-unlisted
+refused rbac-edge-account-reads-secrets rbac-account-unlisted
+refused rbac-account-with-no-namespace rbac-account-unlisted
+refused rbac-test-only-account-in-production rbac-account-unlisted
+refused rbac-listed-account-built-in-role rbac-binding-rendered
+refused rbac-aggregated-into-view rbac-aggregate-label
+refused rbac-same-name-elsewhere rbac-human-secrets
+refused rbac-person-bound-elsewhere rbac-human-namespace
+
+refused no-quota quota-present
+refused quota-no-requests-cpu quota-requires
+refused quota-no-requests-memory quota-requires
+refused quota-no-limits-cpu quota-requires
+refused quota-no-limits-memory quota-requires
+refused quota-no-pods quota-requires
+refused quota-scoped quota-scoped
+refused quota-pods-short quota-pods
+refused quota-requests-cpu-short quota-compute
+refused quota-requests-memory-short quota-compute
+refused quota-limits-cpu-short quota-compute
+refused quota-limits-memory-short quota-compute
+refused quota-follows-the-autoscaler quota-pods
+refused quota-follows-the-surge quota-pods
+refused quota-follows-the-request quota-compute
+refused quota-kind-short quota-pods
+refused quota-staging-short quota-pods
+refused quota-pods-widened quota-pods
+refused quota-limits-memory-widened quota-compute
+
+refused no-limitrange limitrange-present
+refused limitrange-default limitrange-injects
+refused limitrange-default-request limitrange-injects
+refused limitrange-container-item limitrange-injects
+refused limitrange-max-below-a-pod limitrange-admits
+refused limitrange-min-above-a-pod limitrange-admits
+refused limitrange-max-widened limitrange-admits
+refused limitrange-no-max limitrange-present
+refused limitrange-null-max limitrange-present
+refused limitrange-no-memory-bound limitrange-present
+
+refused netpol-kafka-reaches-the-database netpol-egress-closed
+refused minted-volume security-token
 
 schema_refused schema-typo "revisionHistoryLimits"
 schema_refused schema-type "revisionHistoryLimit"

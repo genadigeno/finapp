@@ -750,6 +750,770 @@ migrator_exists if {
 	doc.metadata.name == "finapp-migrator"
 }
 
+# ------------------------------------------------------------------------------------- namespaces (P15-TSK-010)
+#
+# EVERYTHING BELOW HOLDS WHAT A CLUSTER WOULD BE TOLD, read from the rendered stream, and proves nothing about a network
+# plugin or an admission controller doing it. That is the kind rehearsal's. Each flow, role and number is read from the
+# manifests; only the allowed flows themselves are written here, because they are the decision.
+
+managed_namespaces := {"finapp", "finapp-edge", "finapp-observability"}
+
+namespace_of(doc) := object.get(section(doc, "metadata"), "namespace", "absent")
+
+namespace_rendered(name) if {
+	some doc in of_kind("Namespace")
+	doc.metadata.name == name
+}
+
+deny contains msg if {
+	some name in managed_namespaces
+	not namespace_rendered(name)
+	msg := sprintf("[namespace-present] namespace %s is not rendered: nothing would state its Pod Security level", [name])
+}
+
+deny contains msg if {
+	some [doc, _] in workloads
+	not namespace_of(doc) in managed_namespaces
+	msg := sprintf("[namespace-workload] %s is in namespace %v, which none of these policies is written for", [label(doc), namespace_of(doc)])
+}
+
+namespace_label(doc, name) := section(section(doc, "metadata"), "labels")[name]
+
+pod_security_restricted(doc, mode) if {
+	namespace_label(doc, sprintf("pod-security.kubernetes.io/%s", [mode])) == "restricted"
+}
+
+pod_security_version_pinned(doc, mode) if {
+	regex.match(`^v1\.[0-9]+$`, namespace_label(doc, sprintf("pod-security.kubernetes.io/%s-version", [mode])))
+}
+
+deny contains msg if {
+	some doc in of_kind("Namespace")
+	some mode in ["enforce", "audit", "warn"]
+	not pod_security_restricted(doc, mode)
+	msg := sprintf("[psa-restricted] namespace %s does not state Pod Security %s: restricted", [doc.metadata.name, mode])
+}
+
+# `latest`, or nothing, means the next upgrade changes what is refused without a commit saying so.
+deny contains msg if {
+	some doc in of_kind("Namespace")
+	some mode in ["enforce", "audit", "warn"]
+	not pod_security_version_pinned(doc, mode)
+	msg := sprintf("[psa-version] namespace %s does not pin Pod Security's %s version to a minor", [doc.metadata.name, mode])
+}
+
+# A projected volume can mint a token whatever automountServiceAccountToken says.
+deny contains msg if {
+	some [doc, spec] in workloads
+	some volume in list_of(spec, "volumes")
+	some source in list_of(section(volume, "projected"), "sources")
+	stated(source, "serviceAccountToken")
+	msg := sprintf("[security-token] %s projects a service-account token into volume %v", [label(doc), object.get(volume, "name", "with no name")])
+}
+
+# ------------------------------------------------------------------------------------- network policy (P15-TSK-010)
+
+network_policies := of_kind("NetworkPolicy")
+
+policy_spec(policy) := section(policy, "spec")
+
+policy_types(policy) := {type | some type in list_of(policy_spec(policy), "policyTypes")}
+
+# Every pod, both directions, no rule. `ingress: [{}]` is the opposite: one rule admitting everything.
+is_default_deny(policy) if {
+	count(section(policy_spec(policy), "podSelector")) == 0
+	policy_types(policy) == {"Ingress", "Egress"}
+	count(list_of(policy_spec(policy), "ingress")) == 0
+	count(list_of(policy_spec(policy), "egress")) == 0
+}
+
+default_denied(namespace) if {
+	some policy in network_policies
+	is_default_deny(policy)
+	namespace_of(policy) == namespace
+}
+
+# The edge's and telemetry's namespaces are the workloads' own tasks' to close: THREAT_MODEL.md section 6 item 21.
+deny contains msg if {
+	some [doc, _] in workloads
+	namespace_of(doc) == "finapp"
+	not default_denied("finapp")
+	msg := sprintf("[netpol-default-deny] %s runs where no NetworkPolicy denies every pod in both directions", [label(doc)])
+}
+
+selector_is_simple(selector) if {
+	count(selector) == 0
+}
+
+selector_is_simple(selector) if {
+	object.keys(selector) == {"matchLabels"}
+	is_object(selector.matchLabels)
+}
+
+deny contains msg if {
+	some policy in network_policies
+	not selector_is_simple(section(policy_spec(policy), "podSelector"))
+	msg := sprintf("[netpol-selector] %s selects by more than matchLabels, so these rules cannot say which pods it covers", [label(policy)])
+}
+
+direction_peer := {"ingress": "from", "egress": "to"}
+
+peers(rule, direction) := list_of(rule, direction_peer[direction])
+
+all_rules contains [policy, direction, rule] if {
+	some policy in network_policies
+	some direction, _ in direction_peer
+	some rule in list_of(policy_spec(policy), direction)
+}
+
+# No peers is the whole world, not nobody. Likewise no ports: every port. Both are what default-deny exists to refuse.
+deny contains msg if {
+	some [policy, direction, rule] in all_rules
+	count(peers(rule, direction)) == 0
+	msg := sprintf("[netpol-open-peer] %s has an %s rule naming no peer, which admits everything", [label(policy), direction])
+}
+
+port_is_exact(port) if {
+	is_number(port.port)
+	not stated(port, "endPort")
+}
+
+rule_names_its_ports(rule) if {
+	count(list_of(rule, "ports")) > 0
+	every port in list_of(rule, "ports") {
+		port_is_exact(port)
+	}
+}
+
+deny contains msg if {
+	some [policy, direction, rule] in all_rules
+	not rule_names_its_ports(rule)
+	msg := sprintf("[netpol-ports] %s has an %s rule that does not state exact numbered ports", [label(policy), direction])
+}
+
+ports_within(rule, allowed) if {
+	count(list_of(rule, "ports")) > 0
+	every port in list_of(rule, "ports") {
+		[object.get(port, "protocol", "TCP"), port.port] in allowed
+	}
+}
+
+# The data tier's addresses are per overlay and never real: RFC 5737's documentation ranges only, routed nowhere.
+documentation_ranges := {"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}
+
+in_documentation_range(cidr) if {
+	some range in documentation_ranges
+	net.cidr_contains(range, cidr)
+}
+
+deny contains msg if {
+	some [policy, direction, rule] in all_rules
+	some peer in peers(rule, direction)
+	stated(peer, "ipBlock")
+	not in_documentation_range(object.get(section(peer, "ipBlock"), "cidr", "absent"))
+	msg := sprintf("[netpol-placeholder-cidr] %s names %v: an address committed here is real or wrong", [label(policy), section(peer, "ipBlock")])
+}
+
+# A namespace AND a pod in one entry. Two entries would be OR.
+peer_selects(peer, namespace, key, value) if {
+	object.keys(peer) == {"namespaceSelector", "podSelector"}
+	peer.namespaceSelector == {"matchLabels": {"kubernetes.io/metadata.name": namespace}}
+	peer.podSelector == {"matchLabels": {key: value}}
+}
+
+peer_is_local(peer, names) if {
+	object.keys(peer) == {"podSelector"}
+	some name in names
+	peer.podSelector == {"matchLabels": {"app.kubernetes.io/name": name}}
+}
+
+peer_is_an_address(peer) if {
+	object.keys(peer) == {"ipBlock"}
+	in_documentation_range(peer.ipBlock.cidr)
+	not stated(peer.ipBlock, "except")
+}
+
+every_peer_selects(rule, direction, namespace, key, value) if {
+	count(peers(rule, direction)) > 0
+	every peer in peers(rule, direction) {
+		peer_selects(peer, namespace, key, value)
+	}
+}
+
+every_peer_local(rule, direction, names) if {
+	count(peers(rule, direction)) > 0
+	every peer in peers(rule, direction) {
+		peer_is_local(peer, names)
+	}
+}
+
+every_peer_an_address(rule) if {
+	count(peers(rule, "egress")) > 0
+	every peer in peers(rule, "egress") {
+		peer_is_an_address(peer)
+	}
+}
+
+# THE ALLOWED FLOWS, PHASE_15_PLAN.md section 6. A rule that is none of these opens something nobody decided.
+egress_flow(rule, "dns") if {
+	every_peer_selects(rule, "egress", "kube-system", "k8s-app", "kube-dns")
+	ports_within(rule, {["UDP", 53], ["TCP", 53]})
+}
+
+egress_flow(rule, "collector") if {
+	every_peer_selects(rule, "egress", "finapp-observability", "finapp/role", "telemetry-collector")
+	ports_within(rule, {["TCP", 4318]})
+}
+
+egress_flow(rule, "postgresql") if {
+	data.overlay != "kind"
+	every_peer_an_address(rule)
+	ports_within(rule, {["TCP", 5432]})
+}
+
+egress_flow(rule, "postgresql") if {
+	data.overlay == "kind"
+	every_peer_local(rule, "egress", {"finapp-postgres"})
+	ports_within(rule, {["TCP", 5432]})
+}
+
+egress_flow(rule, "kafka") if {
+	data.overlay != "kind"
+	every_peer_an_address(rule)
+	ports_within(rule, {["TCP", 9096]})
+}
+
+egress_flow(rule, "kafka") if {
+	data.overlay == "kind"
+	every_peer_local(rule, "egress", {"finapp-kafka"})
+	ports_within(rule, {["TCP", 9092]})
+}
+
+egress_flow(rule, "providers") if {
+	every_peer_an_address(rule)
+	ports_within(rule, {["TCP", 443]})
+}
+
+ingress_flow(rule, "edge") if {
+	every_peer_selects(rule, "ingress", "finapp-edge", "finapp/role", "ingress-controller")
+	ports_within(rule, {["TCP", 8080]})
+}
+
+ingress_flow(rule, "scrape") if {
+	every_peer_selects(rule, "ingress", "finapp-observability", "finapp/role", "metrics-scraper")
+	ports_within(rule, {["TCP", 8081]})
+}
+
+ingress_flow(rule, "postgresql-clients") if {
+	data.overlay == "kind"
+	every_peer_local(rule, "ingress", {"finapp-app", "finapp-migrator"})
+	ports_within(rule, {["TCP", 5432]})
+}
+
+ingress_flow(rule, "kafka-clients") if {
+	data.overlay == "kind"
+	every_peer_local(rule, "ingress", {"finapp-app"})
+	ports_within(rule, {["TCP", 9092]})
+}
+
+egress_flow_names := {"dns", "collector", "postgresql", "kafka", "providers"}
+
+ingress_flow_names := {"edge", "scrape", "postgresql-clients", "kafka-clients"}
+
+flows_of(rule, "egress") := {flow | some flow in egress_flow_names; egress_flow(rule, flow)}
+
+flows_of(rule, "ingress") := {flow | some flow in ingress_flow_names; ingress_flow(rule, flow)}
+
+# What each workload may do. Anything not listed may do nothing.
+flows_allowed := {
+	"egress": {
+		"finapp-app": {"dns", "collector", "postgresql", "kafka", "providers"},
+		"finapp-migrator": {"dns", "postgresql"},
+		"finapp-kafka": {"dns"},
+	},
+	"ingress": {
+		"finapp-app": {"edge", "scrape"},
+		"finapp-postgres": {"postgresql-clients"},
+		"finapp-kafka": {"kafka-clients"},
+	},
+}
+
+# Default-deny breaks whatever is forgotten, so what each workload needs is held too.
+flows_required := {
+	"egress": {
+		"finapp-app": {"dns", "collector", "postgresql", "kafka", "providers"},
+		"finapp-migrator": {"dns", "postgresql"},
+		"finapp-kafka": {"dns"},
+	},
+	"ingress": {
+		"finapp-app": {"edge", "scrape"},
+		"finapp-postgres": {"postgresql-clients"},
+		"finapp-kafka": {"kafka-clients"},
+	},
+}
+
+workload_labels(doc) := section(section(doc, "metadata"), "labels") if {
+	doc.kind == "Pod"
+} else := section(section(section(section(doc, "spec"), "template"), "metadata"), "labels")
+
+workload_name(doc) := object.get(workload_labels(doc), "app.kubernetes.io/name", "unlabelled")
+
+policy_applies(policy, labels) if {
+	selector := section(policy_spec(policy), "podSelector")
+	selector_is_simple(selector)
+	every key, value in section(selector, "matchLabels") {
+		labels[key] == value
+	}
+}
+
+# `policyTypes` decides whether a direction's rules count at all: one left out is ignored by the API, whatever is written.
+direction_type := {"ingress": "Ingress", "egress": "Egress"}
+
+workload_rules contains [doc, direction, policy, rule] if {
+	some [policy, direction, rule] in all_rules
+	some [doc, _] in workloads
+	namespace_of(policy) == namespace_of(doc)
+	policy_applies(policy, workload_labels(doc))
+}
+
+workload_has_flow(doc, direction, flow) if {
+	some [candidate, direction_seen, policy, rule] in workload_rules
+	candidate == doc
+	direction_seen == direction
+	direction_type[direction] in policy_types(policy)
+	flow in flows_of(rule, direction)
+}
+
+deny contains msg if {
+	some [doc, "egress", policy, rule] in workload_rules
+	count(flows_of(rule, "egress") & object.get(flows_allowed.egress, workload_name(doc), set())) == 0
+	msg := sprintf("[netpol-egress-closed] %s opens to %s an egress no flow of PHASE_15_PLAN.md section 6 allows: %v", [label(policy), workload_name(doc), rule])
+}
+
+deny contains msg if {
+	some [doc, "ingress", policy, rule] in workload_rules
+	count(flows_of(rule, "ingress") & object.get(flows_allowed.ingress, workload_name(doc), set())) == 0
+	msg := sprintf("[netpol-ingress-closed] %s admits to %s what no flow of PHASE_15_PLAN.md section 6 allows: %v", [label(policy), workload_name(doc), rule])
+}
+
+deny contains msg if {
+	some [doc, _] in workloads
+	some direction, _ in direction_peer
+	some flow in object.get(flows_required[direction], workload_name(doc), set())
+	not workload_has_flow(doc, direction, flow)
+	msg := sprintf("[netpol-flow-missing] %s has no %s rule for %s, and default-deny refuses it", [label(doc), direction, flow])
+}
+
+resolver_open(doc, protocol) if {
+	some [candidate, "egress", policy, rule] in workload_rules
+	candidate == doc
+	"Egress" in policy_types(policy)
+	egress_flow(rule, "dns")
+	some port in list_of(rule, "ports")
+	object.get(port, "protocol", "TCP") == protocol
+}
+
+# UDP alone fails only for an answer too long for a datagram, which is the worst way to find out.
+deny contains msg if {
+	some [doc, _] in workloads
+	"dns" in object.get(flows_required.egress, workload_name(doc), set())
+	some protocol in {"UDP", "TCP"}
+	not resolver_open(doc, protocol)
+	msg := sprintf("[netpol-dns] %s cannot reach the cluster's resolver over %s", [label(doc), protocol])
+}
+
+# ------------------------------------------------------------------------------------- RBAC (P15-TSK-010)
+#
+# WHOSE ROLE IS IT is read from the bindings, failing closed: a role is a controller's only if some binding names a
+# ServiceAccount on the list below and no binding names anything else. Everything else, an unbound role included, is held to
+# the human rules. So a listed controller's role that writes Secrets is left alone, and the same role bound to a person is
+# refused. A ServiceAccount is a credential a pod holds, so a binding to one not on the list is refused whatever it grants:
+# a role given to the wrong account reaches exactly as far as one given to a person.
+
+# THE CONTROLLER ACCOUNTS, one per line: adding a controller is adding its line, and nothing else.
+controller_accounts := [
+]
+
+# Accepted in the kind overlay alone, so a plant can show a controller's role is left alone while no real overlay trusts it.
+test_only_controller_accounts := [{"namespace": "finapp", "name": "finapp-test-only-controller"}]
+
+account_listed(account) if {
+	account in controller_accounts
+}
+
+account_listed(account) if {
+	data.overlay == "kind"
+	account in test_only_controller_accounts
+}
+
+rbac_roles := of_kind("Role") | of_kind("ClusterRole")
+
+rbac_bindings := of_kind("RoleBinding") | of_kind("ClusterRoleBinding")
+
+binds(binding, role) if {
+	section(binding, "roleRef").kind == role.kind
+	section(binding, "roleRef").name == role.metadata.name
+	binding_reaches(binding, role)
+}
+
+# A RoleBinding names a Role of its own namespace: a same-named Role elsewhere is another role, and must not borrow this
+# one's standing as a controller's.
+binding_reaches(_, role) if {
+	role.kind == "ClusterRole"
+}
+
+binding_reaches(binding, role) if {
+	role.kind == "Role"
+	namespace_of(binding) == namespace_of(role)
+}
+
+is_service_account(subject) if {
+	subject.kind == "ServiceAccount"
+}
+
+is_listed_controller(subject) if {
+	is_service_account(subject)
+	account_listed({"namespace": object.get(subject, "namespace", "absent"), "name": subject.name})
+}
+
+held_by_other_than_a_controller(role) if {
+	some binding in rbac_bindings
+	binds(binding, role)
+	some subject in list_of(binding, "subjects")
+	not is_listed_controller(subject)
+}
+
+controller_role(role) if {
+	some binding in rbac_bindings
+	binds(binding, role)
+	some subject in list_of(binding, "subjects")
+	is_listed_controller(subject)
+	not held_by_other_than_a_controller(role)
+}
+
+human_roles := {role | some role in rbac_roles; not controller_role(role)}
+
+human_rules contains [role, rule] if {
+	some role in human_roles
+	some rule in list_of(role, "rules")
+}
+
+break_glass_role := "finapp-break-glass"
+
+read_verbs := {"get", "list", "watch"}
+
+# Each group is the one role's alone. A person arrives through the identity layer: nobody is named here.
+human_groups := {"finapp-read-only": "finapp-read-only", "finapp-break-glass": "finapp-break-glass"}
+
+human_role_bound(name) if {
+	some role in of_kind("Role")
+	role.metadata.name == name
+	some binding in of_kind("RoleBinding")
+	binds(binding, role)
+	some subject in list_of(binding, "subjects")
+	subject.kind == "Group"
+	subject.name == name
+}
+
+deny contains msg if {
+	some name, _ in human_groups
+	not human_role_bound(name)
+	msg := sprintf("[rbac-present] role %s is not rendered and bound to its group: the rules below would hold nothing", [name])
+}
+
+# get, list and watch each return the data. Refused in any verb, by name or not.
+deny contains msg if {
+	some [role, rule] in human_rules
+	some resource in list_of(rule, "resources")
+	resource_is_secrets(resource)
+	msg := sprintf("[rbac-human-secrets] %s, a role a person could hold, names %s", [label(role), resource])
+}
+
+resource_is_secrets(resource) if {
+	resource == "secrets"
+}
+
+resource_is_secrets(resource) if {
+	startswith(resource, "secrets/")
+}
+
+# `*` on a verb or a resource includes everything above, and RBAC reads `*/exec` as every resource's exec.
+deny contains msg if {
+	some [role, rule] in human_rules
+	some field in ["verbs", "resources", "apiGroups", "nonResourceURLs"]
+	some entry in list_of(rule, field)
+	contains(entry, "*")
+	msg := sprintf("[rbac-human-wildcard] %s has a wildcard in %s: %s", [label(role), field, entry])
+}
+
+# Ways inside a pod or into another identity, refused in any verb: a WebSocket upgrade makes `get` enough for some.
+reaches_inside := {
+	"pods/exec",
+	"pods/attach",
+	"pods/portforward",
+	"pods/ephemeralcontainers",
+	"pods/proxy",
+	"services/proxy",
+	"nodes/proxy",
+	"serviceaccounts/token",
+}
+
+deny contains msg if {
+	some [role, rule] in human_rules
+	some resource in list_of(rule, "resources")
+	resource in reaches_inside
+	msg := sprintf("[rbac-human-subresource] %s names %s", [label(role), resource])
+}
+
+deny contains msg if {
+	some [role, rule] in human_rules
+	some verb in list_of(rule, "verbs")
+	verb in {"impersonate", "escalate", "bind"}
+	msg := sprintf("[rbac-human-privilege] %s holds %s", [label(role), verb])
+}
+
+deny contains msg if {
+	some [role, rule] in human_rules
+	role.metadata.name != break_glass_role
+	some verb in list_of(rule, "verbs")
+	not verb in read_verbs
+	msg := sprintf("[rbac-human-verbs] %s holds %s: a person's standing role is read-only", [label(role), verb])
+}
+
+# An aggregated role's rules are filled in by the cluster, so what is rendered here is not what it would grant.
+deny contains msg if {
+	some role in human_roles
+	stated(role, "aggregationRule")
+	msg := sprintf("[rbac-human-aggregated] %s is aggregated, so nothing here can read what it grants", [label(role)])
+}
+
+# Stopping a pod and changing a replica count cannot read a Secret. Creating a pod or patching a template can.
+break_glass_writes := {
+	["delete", "pods"],
+	["create", "pods/eviction"],
+	["patch", "deployments/scale"],
+	["update", "deployments/scale"],
+}
+
+deny contains msg if {
+	some [role, rule] in human_rules
+	role.metadata.name == break_glass_role
+	some verb in list_of(rule, "verbs")
+	not verb in read_verbs
+	some resource in list_of(rule, "resources")
+	not [verb, resource] in break_glass_writes
+	msg := sprintf("[rbac-break-glass-writes] %s may %s %s: its writes are a closed list", [label(role), verb, resource])
+}
+
+subject_is_the_roles_group(binding, subject) if {
+	subject.kind == "Group"
+	human_groups[subject.name] == section(binding, "roleRef").name
+}
+
+deny contains msg if {
+	some binding in rbac_bindings
+	some subject in list_of(binding, "subjects")
+	not is_service_account(subject)
+	not subject_is_the_roles_group(binding, subject)
+	msg := sprintf("[rbac-human-subject] %s binds %v: only a role's own group may hold it", [label(binding), subject])
+}
+
+role_rendered(binding) if {
+	some role in rbac_roles
+	binds(binding, role)
+}
+
+# cluster-admin, admin, edit and view are not in the stream: a role nothing here can read is a role nothing here can hold,
+# for a person or an account.
+deny contains msg if {
+	some binding in rbac_bindings
+	not role_rendered(binding)
+	msg := sprintf("[rbac-binding-rendered] %s gives %v, which this stream does not render", [label(binding), section(binding, "roleRef")])
+}
+
+deny contains msg if {
+	some binding in rbac_bindings
+	some subject in list_of(binding, "subjects")
+	is_service_account(subject)
+	not is_listed_controller(subject)
+	msg := sprintf("[rbac-account-unlisted] %s binds ServiceAccount %v/%v, which is not on the list of controller accounts", [label(binding), object.get(subject, "namespace", "with no namespace"), object.get(subject, "name", "with no name")])
+}
+
+# The cluster merges a role carrying one of these labels into view, edit or admin, which is every person holding those.
+deny contains msg if {
+	some role in of_kind("ClusterRole")
+	some key, _ in section(section(role, "metadata"), "labels")
+	startswith(key, "rbac.authorization.k8s.io/aggregate-to-")
+	msg := sprintf("[rbac-aggregate-label] %s carries %s, so the cluster would merge it into a built-in role", [label(role), key])
+}
+
+# A person's access is this namespace's. A Role and binding of the same names elsewhere would pass every rule above there.
+deny contains msg if {
+	some binding in rbac_bindings
+	some subject in list_of(binding, "subjects")
+	not is_service_account(subject)
+	namespace_of(binding) != "finapp"
+	msg := sprintf("[rbac-human-namespace] %s gives a person access in namespace %v", [label(binding), namespace_of(binding)])
+}
+
+deny contains msg if {
+	some binding in of_kind("ClusterRoleBinding")
+	some subject in list_of(binding, "subjects")
+	not is_service_account(subject)
+	msg := sprintf("[rbac-human-cluster-wide] %s reaches every namespace: a person's access is one namespace's", [label(binding)])
+}
+
+workload_accounts := {"finapp-app", "finapp-migrator"}
+
+deny contains msg if {
+	some binding in rbac_bindings
+	some subject in list_of(binding, "subjects")
+	is_service_account(subject)
+	subject.name in workload_accounts
+	msg := sprintf("[rbac-workload-none] %s gives %s RBAC: neither workload calls the Kubernetes API", [label(binding), subject.name])
+}
+
+# ------------------------------------------------------------------------------------- quota and limits (P15-TSK-010)
+
+resource_quota_rendered if {
+	some doc in of_kind("ResourceQuota")
+	doc.metadata.name == "finapp"
+	namespace_of(doc) == "finapp"
+}
+
+quota_hard := hard if {
+	some doc in of_kind("ResourceQuota")
+	doc.metadata.name == "finapp"
+	hard := section(section(doc, "spec"), "hard")
+}
+
+deny contains msg if {
+	app
+	not resource_quota_rendered
+	msg := "[quota-present] no ResourceQuota in namespace finapp: a pod with no requests would be admitted"
+}
+
+# Two refusals, in admission's order. A pod stating nothing meets the LimitRange's Pod item first ("No request is specified").
+# A pod where one container states everything and another nothing passes that item, whose per-pod sum exists, and meets this
+# quota, which checks each container and only for the keys it states ("must specify"). So every key is needed.
+deny contains msg if {
+	resource_quota_rendered
+	some key in {"pods", "requests.cpu", "requests.memory", "limits.cpu", "limits.memory"}
+	not stated(quota_hard, key)
+	msg := sprintf("[quota-requires] the quota does not state %s", [key])
+}
+
+# A scoped quota covers only the pods its scope names, and BestEffort is precisely the pods with no requests.
+deny contains msg if {
+	some doc in of_kind("ResourceQuota")
+	some field in {"scopes", "scopeSelector"}
+	stated(section(doc, "spec"), field)
+	msg := sprintf("[quota-scoped] %s has %s, so some pods go unmeasured", [label(doc), field])
+}
+
+quantity(value) := units.parse(sprintf("%v", [value]))
+
+# Held equal, in both directions: a quota above the worst moment bounds nothing. Rounded to milli-units, the finest a quantity has.
+milli(value) := round(value * 1000)
+
+# A pod inside its grace is still charged, so the worst moment is the budget's: PHASE_15_PLAN.md section 6.1.
+app_peak_pods := autoscaler.spec.maxReplicas + (2 * rolling_field("maxSurge")) + 1
+
+workload_peak(doc) := app_peak_pods if {
+	doc.kind == "Deployment"
+	doc.metadata.name == "finapp-app"
+} else := object.get(doc.spec, "parallelism", 1) if {
+	doc.kind == "Job"
+} else := object.get(doc.spec, "replicas", 1) if {
+	doc.kind in {"StatefulSet", "ReplicaSet", "ReplicationController", "Deployment"}
+} else := 1
+
+finapp_workloads := {[doc, spec] | some [doc, spec] in workloads; namespace_of(doc) == "finapp"}
+
+pods_required := sum([workload_peak(doc) | some [doc, _] in finapp_workloads])
+
+deny contains msg if {
+	milli(quantity(quota_hard.pods)) != milli(pods_required)
+	msg := sprintf("[quota-pods] the quota states %v pods and the worst moment of a rollout is %d: maxReplicas + 2 x maxSurge + 1, the migrator and anything else rendered. Below it a rollout stalls on its own quota; above it the quota bounds nothing", [quota_hard.pods, pods_required])
+}
+
+# One pod's share: the sum of its containers, or its largest init container, whichever is greater.
+pod_total(spec, bound, resource) := max(array.concat([sum(main)], init)) if {
+	main := [quantity(section(section(container, "resources"), bound)[resource]) | some container in list_of(spec, "containers")]
+	init := [quantity(section(section(container, "resources"), bound)[resource]) | some container in list_of(spec, "initContainers")]
+}
+
+compute_required(bound, resource) := sum([share |
+	some [doc, spec] in finapp_workloads
+	share := workload_peak(doc) * pod_total(spec, bound, resource)
+])
+
+deny contains msg if {
+	some bound in {"requests", "limits"}
+	some resource in {"cpu", "memory"}
+	key := sprintf("%s.%s", [bound, resource])
+	milli(quantity(quota_hard[key])) != milli(compute_required(bound, resource))
+	msg := sprintf("[quota-compute] the quota's %s is %v, and the worst moment of a rollout needs %v exactly", [key, quota_hard[key], compute_required(bound, resource)])
+}
+
+limit_items contains [doc, item] if {
+	some doc in of_kind("LimitRange")
+	some item in list_of(section(doc, "spec"), "limits")
+}
+
+pod_limit_items := {item | some [_, item] in limit_items; object.get(item, "type", "absent") == "Pod"}
+
+# Both bounds and both resources: an item with a null or missing bound refuses nothing for that resource.
+limit_item_states_its_bounds(item) if {
+	every bound in ["min", "max"] {
+		every resource in ["cpu", "memory"] {
+			stated(section(item, bound), resource)
+		}
+	}
+}
+
+complete_pod_limit_items := {item | some item in pod_limit_items; limit_item_states_its_bounds(item)}
+
+deny contains msg if {
+	app
+	count(complete_pod_limit_items) == 0
+	msg := "[limitrange-present] no LimitRange of type Pod states min and max for cpu and memory: nothing bounds one pod, and nothing refuses one with no request by its own rule"
+}
+
+# The API server writes a Container item's default from its max, and its defaultRequest from that, even when neither is
+# stated, so a Container item with only min or max injects what a pod left out: the pod is admitted rather than refused.
+deny contains msg if {
+	some [doc, item] in limit_items
+	not object.get(item, "type", "absent") == "Pod"
+	msg := sprintf("[limitrange-injects] %s has an item of type %v: only type Pod is left undefaulted by the API server", [label(doc), object.get(item, "type", "absent")])
+}
+
+deny contains msg if {
+	some [doc, item] in limit_items
+	some field in {"default", "defaultRequest"}
+	stated(item, field)
+	msg := sprintf("[limitrange-injects] %s states %s, which would admit a pod that states no requests", [label(doc), field])
+}
+
+# The max is the largest pod rendered, exactly. Below it that pod is refused at admission, so a rollout could never start;
+# above it the bound holds nothing back. The min is a floor, and only a floor above a pod can do harm.
+largest_pod(resource) := max([total | some [_, spec] in finapp_workloads; total := pod_total(spec, "limits", resource)])
+
+deny contains msg if {
+	some item in pod_limit_items
+	some resource, value in section(item, "max")
+	milli(quantity(value)) != milli(largest_pod(resource))
+	msg := sprintf("[limitrange-admits] the LimitRange's max %s is %v and the largest pod rendered limits it to %v", [resource, value, largest_pod(resource)])
+}
+
+deny contains msg if {
+	some item in pod_limit_items
+	some [doc, spec] in finapp_workloads
+	some resource, value in section(item, "min")
+	pod_total(spec, "requests", resource) < quantity(value)
+	msg := sprintf("[limitrange-admits] %s requests %s below the LimitRange's min %v", [label(doc), resource, value])
+}
+
 # ------------------------------------------------------------------------------------- secret delivery (P15-TSK-018)
 
 # An unnamed object must not make a rule's message undefined, which would pass it: label() walks into metadata.name.

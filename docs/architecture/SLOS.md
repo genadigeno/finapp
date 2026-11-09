@@ -90,6 +90,8 @@ Prometheus holds: a gauge answers its last off-scrape read (ADR-0124 decision 7)
 | `PositionProofFailing` | The reconciled position proof | reconciliation |
 | `CashProofFailing` | The cash proof | reconciliation |
 | `AccountingReportDiverged` | A `FINAL` report that does not reproduce | accounting |
+| `JournalEntryUnsourced` | A journal entry with no domain record behind it, or whose record's amounts differ from its lines (the source-join census, `THREAT_MODEL.md` T15) | accounting |
+| `GaugesStaleAcrossTheFleet` | Every instance's gauge canary stale at once: every fleet-wide `max()` rule on a gauge is blind (waits 5 minutes by the owner's ruling of 2026-11-09, the one row here with a `for`) | platform |
 
 A correctness gauge that cannot be read is NaN, never a comforting zero. `CorrectnessGaugesUnreadable` names the instance (a ticket), and
 `CorrectnessUnverifiable` tickets when no instance holds a number at all. A rule that reads a gauge carries an `x != x` rule beside it, and

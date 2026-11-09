@@ -1,0 +1,25 @@
+# The migrator reaches PostgreSQL (each overlay's address) and the resolver that finds it, and nothing else: no Kafka, no
+# provider, no collector, and nothing reaches it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-migrator-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-migrator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

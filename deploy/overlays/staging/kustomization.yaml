@@ -7,6 +7,7 @@ namespace: finapp
 resources:
   - ../../base
   - secret-store.yaml
+  - networkpolicy-data-tier.yaml
 
 # Endpoints and credentials, read from the store by the two ExternalSecrets.
 components:
@@ -35,3 +36,23 @@ patches:
       - op: replace
         path: /spec/maxReplicas
         value: 4
+  # The quota follows the maximum: 7 app pods (4 + 2 x 1 + 1) and the migrator (deploy/base/resourcequota.yaml).
+  - target:
+      kind: ResourceQuota
+      name: finapp
+    patch: |-
+      - op: replace
+        path: /spec/hard/pods
+        value: "8"
+      - op: replace
+        path: /spec/hard/requests.cpu
+        value: 3750m
+      - op: replace
+        path: /spec/hard/requests.memory
+        value: 14848Mi
+      - op: replace
+        path: /spec/hard/limits.cpu
+        value: "15"
+      - op: replace
+        path: /spec/hard/limits.memory
+        value: 14848Mi

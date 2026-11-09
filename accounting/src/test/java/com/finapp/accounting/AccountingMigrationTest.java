@@ -121,7 +121,7 @@ class AccountingMigrationTest {
                 "flyway_schema_history", "gl_account", "gl_mapping_rule", "gl_mapping_version",
                 "gl_mapping_version_event", "period_close", "period_close_check", "period_event", "period_reopen", "period_unlock_end", "prior_period_adjustment", "regulatory_obligation",
                 "regulatory_provider_answer", "regulatory_submission", "regulatory_submission_event", "regulatory_submission_line", "regulatory_submission_source", "report_run",
-                "valuation_rate", "valuation_rate_set");
+                "source_census_finding", "source_census_head", "valuation_rate", "valuation_rate_set");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
         assertThat(column("SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
                 + " WHERE n.nspname = '" + SCHEMA + "' ORDER BY p.proname")).containsExactly(
@@ -148,6 +148,8 @@ class AccountingMigrationTest {
                 "regulatory_submission_source_is_a_final_run",
                 "report_run_content_is_frozen", "report_run_is_never_truncated",
                 "report_run_permits_only_machine_edges",
+                // P15-TSK-035's V015.
+                "source_census_finding_is_append_only", "source_census_head_only_moves_forward", "source_census_is_never_truncated",
                 // P14-TSK-014's V005.
                 "valuation_rate_is_born_with_its_set", "valuation_rate_set_commits_whole",
                 "valuation_rate_set_is_never_truncated", "valuation_rate_set_permits_only_machine_edges",

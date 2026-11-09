@@ -1860,12 +1860,14 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.7 Rotation and revocation per secret class; a key compromise | `-018`…`-020` | `-020` |
 | 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `P15-TSK-024` (instance down, stale gauges: written below, 2026-11-08), `P15-TSK-025` (burn rate and certificates: written below, 2026-11-08) | `-032` |
 | 11.9 A failing scan *(written 2026-11-08, below)*; a refused image | `P15-TSK-006` (the failing scan), `-007` (the refused image) | `-007` |
-| 11.10 Edge, abuse and break-glass | `-010`, `-011`, `-022` | `-032` |
+| 11.10 Edge and abuse *(the break-glass half is §11.25, since 2026-11-09; this row read "Edge, abuse and break-glass" until then)* | `-011`, `-022` | `-032` |
 | 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
 | 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |
 | 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) |
 | 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads *(written 2026-11-08, below)* | `-009` | `-009` (the check runs on Docker, each plant refused) |
 | 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below)* | `-029` | `-032` |
+| 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` |
+| 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -1879,6 +1881,8 @@ row.)*
 *(Added 2026-11-08 by `P15-TSK-025`: §11.8's burn-rate and certificate parts, §11.6's consumer signals and §§11.20 to 11.24, a section for every alert of this phase and for the settlement, reconciliation and FX alerts that had none. Every alert is now routed by `infra/alertmanager/alertmanager.yml` to a placeholder receiver, and `AlertCatalogueTest` holds that each alert's section exists and names it. The paragraph above holds for every row still planned.)*
 
 *(Added 2026-11-08 by `P15-TSK-027`: §11.1.1 below is written, the handler-set steps of rows 11.1 and 11.3; not yet rehearsed.)*
+
+*(Added 2026-11-09 by `P15-TSK-035`: §11.27 below is written, from the census's code and its rules in `infra/prometheus/rules/correctness.yml`; not yet rehearsed.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
@@ -2311,6 +2315,99 @@ No amount appears in any of them: the audited operator reports answer the figure
 | `CrossBorderCancellationSpike` | Cancellations rising | Read by corridor; a provider or a rate is the usual cause |
 | `FxGaugesUnreadable` | An FX gauge cannot be read | §11.8 |
 
+### 11.25 Break-glass (`P15-TSK-010`)
+
+*Not rehearsed: `-032` does. No cluster, cloud account or person exists to hold this role; the procedure is written for the
+environment that will.*
+
+**What it is for.** An incident that cannot wait for a reviewed change, where the normal path, a pull request and the GitOps
+sync, is too slow or is the thing that broke. Nothing else. A change you would like to make is a pull request.
+
+**What bounds it in time, plainly.** Kubernetes RBAC has no expiring binding, so nothing in the cluster ends this. The binding
+in `deploy/base/rbac-humans.yaml` names the group `finapp-break-glass`, which has no members. In a real environment a person
+reaches it only through a cloud role that carries that group, and **that session's lifetime is the bound** (`-016` builds the
+access entry; no account exists, so it has never run). **Until that exists the bound is a procedure**: the steps below, kept by
+people, enforced by nothing.
+
+**What it can do.** Everything `finapp-read-only` reads, except the RBAC, network and ExternalSecret objects, and exactly four writes: delete a
+pod, evict a pod, read and change a Deployment's scale.
+
+**What it cannot do, deliberately.** Read a Secret in any verb. Exec, attach, port-forward, add an ephemeral container or proxy into
+a pod. Create a pod or change a template, because a template can mount every Secret in the namespace, and that would be reading
+them. Change RBAC. If an incident needs one of those, it needs the reviewed path, or the cluster administrator's own access,
+which is the identity layer's and leaves its own record.
+
+**Open.**
+
+1. Declare the incident and open its record: the reason, the person, the approver (a second person, never the holder), the
+   time, and the **end time, at most one hour ahead**.
+2. The approver grants it through the identity layer. Nobody edits the binding: it names only the group.
+3. Note the session's start in the incident record.
+
+**Use.** One pod at a time: each terminating pod keeps its whole connection pool open through its grace, and the budget allows one
+beyond a rollout (`PHASE_15_PLAN.md` §6.1).
+
+- Stop one pod, prefer an eviction, which respects the disruption budget. Delete only a pod eviction refuses and that is
+  genuinely stuck.
+- **Stop the fleet** (a defect moving money the wrong way, say): scale the Deployment to zero. The autoscaler treats zero as
+  disabled and leaves it. It does not drain anything you did not ask for, and pending work stays in PostgreSQL. To restart, scale to the
+  autoscaler's `minReplicas` (3) and it resumes.
+- Don't scale above the autoscaler's maximum: the connection budget counts on it.
+
+**Close.** Before the end time, however the incident stands:
+
+1. End the session and confirm it is gone (a request with the old credential is refused).
+2. Record the end time in the incident record, and every pod deleted and every scale change, read from the API audit log rather
+   than from memory.
+3. Restore what you changed: `kubectl get deployment finapp-app` shows the HPA's count, and the GitOps sync shows no drift.
+
+**Afterwards.** The second person reviews the audit log against the incident record, within one working day. Anything in the log that
+the record doesn't explain is a security event of its own.
+
+**Verify it holds** (from a principal in the group):
+
+```bash
+kubectl auth can-i get secrets -n finapp                    # no
+kubectl auth can-i list secrets -n finapp                   # no
+kubectl auth can-i create pods/exec -n finapp               # no
+kubectl auth can-i patch deployments -n finapp              # no
+kubectl auth can-i delete pods -n finapp                    # yes
+```
+
+**The audit.** Every call is in the cluster's API audit log, which `modules/kubernetes` turns on (asserted over a plan, never applied).
+That is the record of what was done; the incident record is why. Application logs are neither.
+
+### 11.27 A source-join break, the census behind or unreadable, the fleet blind - `JournalEntryUnsourced`, `SourceCensusFindingsRecent`, `SourceCensusLagging`, `SourceCensusStalled`, `GaugesStaleAcrossTheFleet`
+
+*(Written by `P15-TSK-035`, 2026-11-09, from the census (`accounting`'s `SourceCensus`, the per-module `*JournalSources` read ports) and `infra/prometheus/rules/correctness.yml`. **Not yet rehearsed** (`P15-TSK-032`).)*
+
+**What it means.** The census reads every journal entry against the domain record that caused it, namespace by namespace (the join and what it compares are stated on each module's `*JournalSources`). `JournalEntryUnsourced` is its page, on the first non-zero sample of `finapp.accounting.source.census.breaks{kind}`: `UNSOURCED`, no record behind the entry (or a namespace no join answers for), or `MISMATCHED`, a record whose figures differ from the entry's lines. It is a detective control on the books no proof reads (`THREAT_MODEL.md` T15). It does not detect an entry whose domain record was written first (`PI-016`), nor a forged entry matching an open record's amounts and currency to another account, and it compares amounts and currency, not accounts.
+
+**Reading the findings.** In a read-only session (`START TRANSACTION READ ONLY`); neither table ever holds an amount:
+
+```sql
+SELECT entry_id, kind, door, namespace, evidence, found_at FROM accounting.source_census_finding ORDER BY found_at DESC LIMIT 50;
+SELECT position, entries_judged, last_success_at, last_failure_at, last_failure_class FROM accounting.source_census_head;
+```
+
+**Triage, in this order.** Treat `UNSOURCED` as a possible unauthorised posting until shown otherwise, and escalate as an incident (section 11.12). (1) Read the finding: its namespace and kind. (2) Read the entry in that same read-only session, from `ledger.journal_entry` and `ledger.journal_line` by its id: its door, its lines and who it attributes. (3) For `UNSOURCED`: is there really no record of that namespace's type with that id? For `MISMATCHED`: the evidence names the side, currency and purposes that disagree; read the record and the entry's lines side by side. (4) **Never correct a figure to clear the page.** Financial history is immutable; a correction is a reversal or a compensating entry through the existing doors (section 11.20), reviewed as an incident. **A finding stands in the gauge for 24 hours** (`finapp.accounting.source-census.standing`) and stays in `accounting.source_census_finding` for good: the page ends on its own, and no count of open findings exists. Nothing closes or dismisses a finding yet; see the owner's item on it (`CURRENT_STATE.md`).
+
+**The first run on a journal that predates the census.** The head starts at the floor, so the first walk judges everything the journal already holds: anything unsourced in it is counted and pages for 24 hours from the moment it is found, however old it is. On a fresh journal this is nothing; on one with history, expect it and treat each finding the same way.
+
+**A false page, if it ever comes.** A namespace was added and its join points at the wrong record, or a poster now writes its record after its entry in a later transaction. `SourceJoinCoverageTest` holds every registered namespace to a join; it cannot hold a join to its poster. Compare the poster with the join's stated comparison and fix the join, never the entry.
+
+**`SourceCensusLagging` (ticket, 15 minutes) and `SourceCensusStalled` (page, one hour).** Something is waiting for the census and has been for that long, measured from when the head last moved. The walk reads only transactions that have finished, so a transaction holding an xid and staying open holds it back: look for one (`SELECT pid, state, xact_start, query_start FROM pg_stat_activity WHERE backend_xid IS NOT NULL ORDER BY xact_start LIMIT 10`, as a role that can see them) and end it the ordinary way. A session holding the head row itself stalls it too: it shows as a `FOR UPDATE` lock on `accounting.source_census_head`, and the census reports only that it is busy. Otherwise a batch keeps failing: `source_census_head.last_failure_class` names the class, and the instance's log (`The source-join census failed a batch: <class>`) the rest; the batch is retried each tick. A stall loses nothing: the head does not move and the entries wait. The hour is the bound past which a stopped census must not go unnoticed: it is longer than any healthy transaction or catch-up, and the page exists because this is exactly how T15's detective control stops with nothing in the journal to say so. Expected once: the first run on a journal that predates the census takes as long as walking it, at 20 batches of 200 per minute at the defaults; while the head moves, the time since it moved stays short.
+
+**`SourceCensusFindingsRecent` (ticket, 30 days).** A finding stands in the page for 24 hours and in this ticket's count for 30 days (`finapp.accounting.source-census.recent`), so the page's end is not the end of anyone being told. Nothing closes a finding: the ticket ages out; `accounting.source_census_finding` keeps the record for good.
+
+**`CorrectnessGaugesUnreadable`/`CorrectnessUnverifiable` (tickets) naming the census gauges.** A census that could not read a source, that has not run within 15 minutes, or whose last run failed publishes no value rather than a zero: its gauges are NaN, these tickets fire, and `JournalEntryUnsourced` cannot speak until they clear.
+
+**Stopping it.** `finapp.accounting.source-census.enabled=false` stops the census on an instance; it moves no money and writes only its own records, so rolling a release back removes it cleanly. Stopped on every instance, its gauges read no value past `.stale-after` (the unreadable tickets, section 11.20), by design.
+
+**A logical restore.** Transaction ids are not portable: a dump restored into a new cluster restarts the counter below the restored rows' `txid`. A census whose head is ahead of the database's counter refuses to walk (a stamped failure, the head unmoved) rather than skip silently, and it needs a reviewed migration to reset the head at the floor: the head's own trigger refuses a move backward from any other path. A physical restore carries the counter with it and needs nothing.
+
+**`GaugesStaleAcrossTheFleet` (page, 5 minutes).** Every instance that is up has a stale gauge canary (`finapp_gauges_refreshed` NaN): each instance's own `GaugesStale` is a ticket, but while the whole fleet's refreshers are stale, every fleet-wide `max()` rule on a gauge reads NaN and every correctness page on a gauge is blind. One stale instance never pages this way. Check the database first (the gauge reads block on the pool and database timeouts), then the refresher on one instance (section 11.8). Do not restart the fleet at once; the page is about reading, not about money.
+
 ### 11.9 A failing scan
 
 **When.** CI's `image`, `migrator-image` or `sast` job is red, or `./infra/scripts/image-scan.sh` or `./infra/scripts/sast.sh` exits
@@ -2458,14 +2555,15 @@ backend (the `object-storage` README) and the brokers come up in three stages (t
 
 **The layout.** `deploy/base` is the application's desired state and is never rendered alone: only an overlay names an
 image digest. One Deployment, one Service (8080 only), a hash-named ConfigMap, two ServiceAccounts with no token, a
-PodDisruptionBudget, a HorizontalPodAutoscaler that alone owns the replica count (the Deployment states none), and the
-migrator Job.
+PodDisruptionBudget, a HorizontalPodAutoscaler that alone owns the replica count (the Deployment states none), the
+migrator Job and, since 2026-11-09, the default-deny, the application's and migrator's NetworkPolicies, the two human Roles,
+the quota and the `LimitRange`.
 
 | Overlay | For | `maxReplicas` | `FINAPP_DB_INSTANCES` | Difference from the base |
 |---|---|---|---|---|
-| `kind` | The rehearsal, test-only | 3 | 6, the formula exactly | Single-node PostgreSQL and Kafka, ephemeral, labelled `finapp/test-only`; 1 GiB; the zone spread relaxed, since `kind`'s nodes carry no zone label |
-| `staging` | Reference values | 4 | 7 | The maximum, and its budget |
-| `production` | Reference values | 7 | 10 | Its own statement of the same numbers |
+| `kind` | The rehearsal, test-only | 3 | 6, the formula exactly | Single-node PostgreSQL and Kafka, ephemeral, labelled `finapp/test-only`; 1 GiB; the zone spread relaxed, since `kind`'s nodes carry no zone label; NetworkPolicies selecting those copies; a quota of 9 pods |
+| `staging` | Reference values | 4 | 7 | The maximum, its budget and a quota of 8 pods; placeholder data-tier and provider addresses |
+| `production` | Reference values | 7 | 10 | Its own statement of the same numbers; the base's quota of 11 pods; placeholder data-tier and provider addresses |
 
 **Nothing real is committed.** No secret, no hostname, no endpoint. An image is `finapp-app@sha256:` and sixty-four
 zeros until a promotion replaces it, which no registry serves, so an unpromoted overlay cannot start a pod, and with
@@ -2507,8 +2605,18 @@ eight minutes for three replicas, longer at the maximum. That is the price of ne
 `KUBERNETES_VERSION` in `infra/scanner-pins.sh`, whose minor `KubernetesManifestsTest` holds equal to each environment's
 `kubernetes_version` in Terraform: raise the two together.
 
-**What this does not cover.** A cluster's own refusal (Pod Security Admission, NetworkPolicy, quotas: `-010`), a real
-rollout and the measured connection peak (`-012`), and delivery (`-017`).
+**Change the fleet and the quota follows.** Each overlay's `ResourceQuota` must equal `maxReplicas + 2 × maxSurge + 1`
+application pods, the migrator and anything test-only, in pods, CPU and memory: a pod inside its grace is still charged. The
+policy reads each number from the rendered stream and refuses a quota above or below it (`deploy/base/resourcequota.yaml` shows
+the sum), and the `LimitRange`'s `max` must equal the largest pod rendered. A controller that needs RBAC goes on
+`controller_accounts` in `finapp.rego`, one line: a binding to any other ServiceAccount is refused. A new egress or a new client of the application is refused until a flow is added to `finapp.rego` beside its
+NetworkPolicy: the allowed flows are the decision, written once there and once in the policy.
+
+**`deploy/namespaces` is rendered separately.** An overlay's `namespace: finapp` renames every Namespace it renders, so the three
+namespaces are a root of their own, appended to each overlay's stream by this check and applied before an overlay.
+
+**What this does not cover.** A cluster's own refusal (no admission controller or network plugin runs here: `-012`), a real
+rollout and the measured connection peak (`-012`), and delivery (`-017`). *(Read "(Pod Security Admission, NetworkPolicy, quotas: `-010`)" until 2026-11-09.)*
 
 ### 11.15 Retention sweeps - `finapp.retention.swept`, `finapp.retention.sweep.failed`
 

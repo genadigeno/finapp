@@ -77,6 +77,14 @@ and park value in suspense; a GL-side discrepancy has neither.
    append-only releases - `app`'s `ProductReconciliationDisclosure`, the `RECONCILIATION_DISCLOSURE` check `DISCLOSED` when
    anything stands; `PHASE_14_PLAN.md` §13.5's note.)*
    *(`P14-TSK-012`, 2026-11-03: a month's run judged by the check on the owner's rule, and narrowed to the floored, `PHASE_14_PLAN.md` §13.5's note.)*
+5. *(Dated note, 2026-11-09, `P15-TSK-035`: the source-join census is a new reader of this decision's register, not a new
+   decision.* It joins every journal entry to the domain record that caused it, namespace by namespace, from
+   `PostingRuleRegister.CURRENT`: decision 2's "the judges read only" and its port-and-compose shape, kept. `accounting`
+   owns the census's comparison and its own records (`V015`); each posting module owns one `*JournalSources` read port over
+   its own tables only, on `platform`'s `sourcejoin` contract; `app` alone composes them (`SourceCensusComposition`),
+   exactly as `ProductSourceProofs` composes the proofs. No new cross-module edge: a module reads no other module's
+   tables, `SourceJoinCoverageTest` holds it, and no ADR-0131 was opened. *Findings are a detective control and never a
+   break of this register's kind, so a finding has no lifecycle here. The walk's position is `(txid, id)` in the ledger's own terms (ledger `V034`, this task's fix round; ADR-0014's rule that no correctness argument depends on clock skew): the column and its stamping trigger change no poster and no judgement.)*
 
 ## Alternatives Considered
 
