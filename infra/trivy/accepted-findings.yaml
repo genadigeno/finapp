@@ -4,8 +4,8 @@
 #
 #   - THE THREAT MODEL ACCEPTS, THIS FILE ONLY APPLIES. Each id below is listed with its date in
 #     docs/architecture/THREAT_MODEL.md section 6 item 12, and SecurityScansAreWiredTest fails the build if the two
-#     disagree. Only the owner accepts a risk (the register's section 1.4). Until the owner decides item 12 these are
-#     proposed acceptances, and the job is green only because of them; the owner refusing one removes it here.
+#     disagree. Only the owner accepts a risk (the register's section 1.4). The owner accepted these on 2026-11-09, and
+#     the job is green only because of them; the owner withdrawing one removes it here.
 #   - EVERY ENTRY HAS A REASON AND AN EXPIRY. Trivy honours expired_at itself: past that date the entry stops applying and
 #     the finding fails the job again, so nothing is carried forever by being forgotten.
 #   - A FINDING IS REMOVED HERE WHEN ITS FIX ARRIVES. Keep this file to what is actually carried: a fixed finding's

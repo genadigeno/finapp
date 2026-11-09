@@ -428,7 +428,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T5 | One CycloneDX SBOM for each of the two images, kept with its job's run, the build failing if it does not list the image's operating-system packages and every third-party jar in the image by path, or lists a test-scope library | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#everySbomDescribesItsImage`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#ciScansBothImagesAndKeepsTheirSboms`; `infra/scripts/image-scan.sh` `contains: omits third-party jars the image holds` |
 | T5 | Each image's last build rescanned weekly against a fresh database: the workflow's schedule runs both image jobs, each of which rebuilds the last commit and refuses two builds of one commit that differ; the databases are never cached between runs | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#ciScansBothImagesAndKeepsTheirSboms`; `infra/scripts/image-scan.sh` `contains: --download-db-only` |
 | T5 | Static analysis of every module's production source in CI: Semgrep pinned by digest with no network, rules vendored, a finding needing a baseline row with a reason and an expiry, the scanner required to have read every Java file, the rules' own tests and the plants run in the same job | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theStaticAnalysisRunsOverTheVendoredRulesOffline`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theBaselineIsSmallAndReasoned`; `infra/scripts/sast.sh` `contains: --network none` |
-| T5 | The findings the image and dependency scans carry today (18 HIGH, 0 CRITICAL: ten in the distroless base's packages, which both images share, eight in the application's libraries), each with a reason and an expiry, applied by `infra/trivy/accepted-findings.yaml`; not one is accepted until the owner decides | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
+| T5 | The findings the image and dependency scans carry today (18 HIGH, 0 CRITICAL: ten in the distroless base's packages, which both images share, eight in the application's libraries), each with a reason and an expiry, applied by `infra/trivy/accepted-findings.yaml`; accepted by the owner on 2026-11-09, each until its date in §6 item 12 | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
 | T5 | Signatures and provenance, with admission refusing an unsigned image | PLANNED | `P15-TSK-007` |
 | T6 | No credential literal in committed configuration except the one marked local default | EXISTS | `app/src/test/java/com/finapp/app/security/CommittedConfigurationHoldsNoSecretTest.java#noCommittedConfigurationHoldsACredentialLiteral` |
 | T6 | The whole of git history scanned for secrets in CI, with the pinned scanner | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theHistoryIsScannedForSecrets` |
@@ -509,7 +509,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T13 | The lock's grace and the submissions' orderings judged on the database's clock | REMEDIATION | `P14-REM-009` |
 | T13 | Five stores still comparing a stored bound with a caller's instant (recovery tokens, contact-channel verification, checkout expiry, the card fee version in force, payout-destination cooling-off), each judged and stamped on the database's clock | PLANNED | `P15-TSK-038` |
 | T13 | Lending's functions, the helpers its triggers call for the business date included, read the database's clock whatever a role's `search_path` holds: every clock call names `pg_catalog` | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#noFunctionReadsTheClockThroughTheSearchPath`; `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#theRuleReadsCodeNotText`; `infra/scripts/migrator-verify.sh` `contains: a shadowing schema first in the path` |
-| T13 | 108 functions in eleven other schemas (accounting, bnpl, checkout, credit, crossborder, fx, ledger, merchant, payments, risk, settlement) still read a clock through a mutable `search_path`, each named by the same guard | GAP | `owner item 11`; owner: the owner, since 2026-11-08 |
+| T13 | 108 functions in eleven other schemas (accounting, bnpl, checkout, credit, crossborder, fx, ledger, merchant, payments, risk, settlement) still read a clock through a mutable `search_path`, each named by the same guard | PLANNED | `P15-TSK-040` |
 | T13 | Single-row reads that pick "the latest" by a database stamp outside accounting, lending and bnpl (ten by `grep`, `ORDER BY <stamp> DESC ... LIMIT 1`: risk three, kyc two, payments two, fx, reconciliation and `app`'s lending reports one each) not yet judged for whether the row they pick decides anything; and risk `V002`'s policy retirement, stamped like the terms retirement was, latent because nothing reads a policy version by an instant | PLANNED | `P15-TSK-037` |
 | T14 | The connection budget is a startup guard against the **declared** instance count (`finapp.database.instances`): a fleet whose pools exceed the database's available connections refuses to start, naming the fix; a declared fleet scaled out past the limit no longer fits; reserved connections count; the guard is wired. A replica count that outgrows its declaration (an HPA) is not caught here | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#scalingOutIsCaught`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#reservedConnectionsAreLoadBearing`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired` |
 | T14 | Requests and limits on every container, memory equal; and the fleet bounded before anything is deployed: `maxReplicas + 2 × maxSurge + 1` within an overlay's declared instances, those instances' two pools (production's file read for their size) within its database connections less the reserved, and scale-down one pod per period no shorter than the grace. CI's manifest check holds each on every rendered overlay, each refusal proven by a planted violation in the same run. A declaration, as the guard's is: nothing reads a live server | EXISTS | `app/src/test/java/com/finapp/app/architecture/KubernetesManifestsTest.java#requestsAndLimitsAreSet`; `app/src/test/java/com/finapp/app/architecture/KubernetesManifestsTest.java#everyOverlaysFleetFitsTheBudget`; `app/src/test/java/com/finapp/app/architecture/KubernetesManifestsTest.java#scaleDownCannotStackTerminatingPods`; `infra/scripts/manifest-check.sh` `contains: refused budget-max-replicas budget-instances` `contains: refused budget-surge budget-instances` `contains: refused budget-fleet budget-fleet` `contains: refused hpa-scale-down-period hpa-scale-down` `contains: refused memory-overcommit resources-memory` `contains: refused null-resources resources-present` `contains: refused budget-one-source-canonical budget-one-source` |
@@ -620,7 +620,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T33 | The migrator's egress reaches PostgreSQL alone | PLANNED | `P15-TSK-010` |
 | T33 | The migrator's identity reads only its own secret | PLANNED | `P15-TSK-016` |
 | T33 | Every reconciliation and settlement table refuses `TRUNCATE` to every role, the migrator and the owner included, by a statement trigger of its own, as its row triggers refuse `DELETE`; a guard over every module's migrations finds any other table that refuses `DELETE` and not `TRUNCATE` | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#everyTableThatRefusesDeleteRefusesTruncate`; `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#theGuardReadTheChain`; `infra/scripts/migrator-verify.sh` `contains: was not refused by its own trigger` |
-| T33 | 51 tables in eight other schemas that refuse `DELETE` by trigger do not refuse `TRUNCATE`, the journal's two (`ledger.journal_entry`, `ledger.journal_line`) among them, each named by the same guard | GAP | `owner item 11`; owner: the owner, since 2026-11-08 |
+| T33 | 51 tables in eight other schemas that refuse `DELETE` by trigger do not refuse `TRUNCATE`, the journal's two (`ledger.journal_entry`, `ledger.journal_line`) among them, each named by the same guard | PLANNED | `P15-TSK-040` |
 | T34 | The payment-evidence and KYC-document ciphers' tests show the stamped key version on a ciphertext; the other six ciphers stamp it by construction, untested here | EXISTS | `payments/src/test/java/com/finapp/payments/EvidenceCipherTest.java#roundTrips`; `kyc/src/test/java/com/finapp/kyc/DocumentCipherTest.java#roundTrips` |
 | T34 | Another key never decrypts an MFA secret, a KYC document or payment evidence | EXISTS | `identity/src/test/java/com/finapp/identity/SecretCipherTest.java#anotherKeyCannotDecrypt`; `kyc/src/test/java/com/finapp/kyc/DocumentCipherTest.java#wrongKeyIsRefused`; `payments/src/test/java/com/finapp/payments/EvidenceCipherTest.java#tamperingAndWrongKeyRefuse` |
 | T34 | Data keys wrapped by KMS keys with deletion waiting periods | PLANNED | `P15-TSK-016` |
@@ -656,12 +656,12 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T43 | The regulatory filing adapter: a malformed or oversized answer decides nothing | EXISTS | `accounting/src/test/java/com/finapp/accounting/RegulatoryFormTest.java#aMalformedAnswerDecidesNothing`; `accounting/src/test/java/com/finapp/accounting/RegulatoryFormTest.java#anOversizedAnswerDecidesNothing` |
 | T43 | Static analysis over every module's production source, the adapters included, in CI's `sast` job | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theStaticAnalysisRunsOverTheVendoredRulesOffline`; `infra/scripts/sast.sh` `contains: /repo/*/src/main` |
 | T43 | Static analysis flags a provider's answer read with no bound (a body handler reading it whole, or `readAllBytes`), with a planted case refused by name in every run | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theUnboundedBodyRuleIsVendoredAndPlanted`; `infra/semgrep/rules/provider-body.yml` `contains: finapp-provider-body-unbounded`; `infra/scripts/sast.sh` `contains: refuses unbounded-body finapp-provider-body-unbounded` |
-| T43 | The sixteen reads of a provider's answer the rule found, each read whole and then checked against a size bound, carried in `infra/semgrep/baseline.tsv` with a reason and an expiry; a read bounded before it allocates is for the first real provider integration, and none of them is accepted until the owner decides | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
+| T43 | The sixteen reads of a provider's answer the rule found, each read whole and then checked against a size bound, carried in `infra/semgrep/baseline.tsv` with a reason and an expiry; a read bounded before it allocates is for the first real provider integration; accepted by the owner on 2026-11-09, until 2027-06-30 | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
 | T44 | Report generation reaches no writer, and no write path, by any route the build can see (`INV-ACC-14`) | EXISTS | `app/src/test/java/com/finapp/app/architecture/ReportingNeverWritesTest.java` |
 | T44 | Report generation's snapshots open connections from the reporting pool alone, as `finapp_reporting`; with the pool unreachable no content is produced, no run completes and the application's pool is never asked | EXISTS | `app/src/test/java/com/finapp/app/accounting/ReportGenerationReadsAsTheReportingRoleTest.java#aRunsGenerationFailsClosedAtTheReportingPool`; `app/src/test/java/com/finapp/app/accounting/ReportGenerationReadsAsTheReportingRoleTest.java#aRegenerationReadsAsTheReportingRole` |
 | T44 | The reporting role holds `SELECT` on the report run's tables and nothing else | EXISTS | `app/src/test/java/com/finapp/app/architecture/ReportingRoleIsSelectOnlyTest.java#theRoleReadsTheRegisterAndNothingElse`; `app/src/test/java/com/finapp/app/architecture/ReportingRoleIsSelectOnlyTest.java#theRuleCanFail` |
 | T45 | CI's `sast` job refuses a statement whose text is built from anything but constants, in every module's production source: a parameter, a local given a call's result, a field, a loop or lambda variable, a builder, a call, each proven by an annotated line in the rule's own test, and a planted concatenation and a helper handed a built string refused by name in every run. Constant composition (text blocks, `static final` parts, ternaries of them, a private helper given only constants) passes. | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theStatementRuleIsVendoredAndPlanted`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theBaselineIsSmallAndReasoned`; `infra/semgrep/rules/sql.yml` `contains: finapp-sql-text-not-constant` `contains: finapp-sql-helper-given-non-constant`; `infra/scripts/sast.sh` `contains: refuses sql-concatenation finapp-sql-text-not-constant` |
-| T45 | The statements the rule cannot prove constant, each with a reason and an expiry in `infra/semgrep/baseline.tsv`; each stays a finding the owner has yet to accept | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
+| T45 | The statements the rule cannot prove constant, each with a reason and an expiry in `infra/semgrep/baseline.tsv`; accepted by the owner on 2026-11-09, until 2027-06-30 | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
 | T46 | A field or accessor named for a secret must be held in `Sensitive`, and only the correlation context writes the logging context (the build rules) | EXISTS | `app/src/test/java/com/finapp/app/architecture/NoUnwrappedSecretRulesTest.java#secretsAreWrapped`; `app/src/test/java/com/finapp/app/architecture/NoUnwrappedSecretRulesTest.java#onlyCorrelationContextWritesTheMdc` |
 | T46 | A `Sensitive` value is masked on every rendering path and on both appenders | EXISTS | `app/src/test/java/com/finapp/app/observability/LogRedactionTest.java#everyRenderingPathIsMasked`; `app/src/test/java/com/finapp/app/observability/RedactionAcrossAppendersTest.java#redactionHoldsOnBothAppenders` |
 | T46 | No meter carries a tag whose value a request could influence | EXISTS | `app/src/test/java/com/finapp/app/telemetry/MetricConventionTest.java#tagsCannotCarryUnboundedValues` |
@@ -826,7 +826,7 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 - **T13 and T33, the owner's reach outside lending, reconciliation and settlement.** A guard over every module's migrations
   found the same two holes elsewhere: 51 tables refuse `DELETE` by trigger and not `TRUNCATE`, and 108 functions read a clock
   through a mutable `search_path`. Nothing has happened to them; they are the migrator's or an owner's reach, not a production
-  role's. Each is named in that guard and held by **owner item 11**.
+  role's. Each is named in that guard, and `P15-TSK-040` closes them (owner item 11, decided 2026-11-09).
 - **T13.** Time sync on nodes is a property of the managed cluster. No task asserts it, and the register does not
   claim it, though `InstanceClockOffset` now shows an instance that has drifted. The platform's answer is to decide financial instants on the database's clock. The database's clock steps
   too: a stamp it wrote never decides which of two facts came first, and a stamp follows the facts it must follow.
@@ -841,8 +841,9 @@ accepting each recommendation** ("accept recommendations", after `P15-TSK-001`'s
 its options. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
 work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)* **Items 7 to 10 were added on 2026-11-08, and the owner decided them the same day, accepting each recommendation**
 ("accept recommendations", at the end of wave B); each item's decision follows its options. *(This paragraph read
-"Item 7 ... awaits the owner" and "Items 9 and 10 ... are open" until then.)* **Item 11 was added on 2026-11-08 and awaits the
-owner.**
+"Item 7 ... awaits the owner" and "Items 9 and 10 ... are open" until then.)* **Items 11, 12, 17 and 18 were added on 2026-11-08, and the owner decided them on
+2026-11-09, accepting each recommendation** ("accept recommendations", at the end of wave C); each item's decision follows its
+options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)*
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -943,7 +944,7 @@ owner.**
    access task, before the phase's database pass. **Decided 2026-11-08**: as recommended, all four parts in
    `P15-TSK-039`, which also builds (c); T38's row is `PLANNED` on it.
 11. **T33's and T13's remainder: the owner's reach outside reconciliation, settlement and lending** *(added 2026-11-08 by the
-   task that built the migrator; undecided)*. The two debt rows named those three schemas; the guard over every module's
+   task that built the migrator)*. The two debt rows named those three schemas; the guard over every module's
    migrations that the same task wrote found the same two holes in others. **`TRUNCATE`**: 51 tables refuse `DELETE` by trigger
    and not `TRUNCATE`, in ledger (4, `journal_entry` and `journal_line` among them), payments (11), fx (19), crossborder (8),
    merchant (6), checkout (1), kyc (1) and risk (1), so the owner of the journal can still empty it in one statement. **The
@@ -955,13 +956,15 @@ owner.**
    Phase 15 item before the database pass, one forward migration per schema, the same way, with the guard's lists emptied as it
    goes; (b) `TRUNCATE` for the ledger alone now, the rest after the phases; (c) accept. *Recommendation*: **(a)**, because the
    journal is the financial record and the migrator exists now; the remaining clock calls could follow in the same item or a
-   second one, and the guard already names every one of them.
+   second one, and the guard already names every one of them. **Decided 2026-11-09**: (a), as `P15-TSK-040`, before the database
+   pass, with the clock calls in the same item; T13's and T33's rows are `PLANNED` on it.
 12. **The findings the image and dependency scans and the static analysis carry** *(added 2026-11-08 by the scan task's
-    gate; **awaiting the owner's decision**)*. `PHASE_GATES.md` §5 Phase 15 criterion 2 allows a remaining HIGH or CRITICAL
+    gate; **decided 2026-11-09**)*. `PHASE_GATES.md` §5 Phase 15 criterion 2 allows a remaining HIGH or CRITICAL
     finding only as an accepted risk in this register with an expiry, and §1.4 lets only the owner accept one. So the
-    following are **proposed, not accepted**: the jobs are green only because `infra/trivy/accepted-findings.yaml` and
+    following were proposed, and the owner **accepted them on 2026-11-09**: the jobs are green only because `infra/trivy/accepted-findings.yaml` and
     `infra/semgrep/baseline.tsv` apply them, each with a reason and an expiry, and `SecurityScansAreWiredTest` holds this
-    list and those files equal. An entry the owner refuses is removed from its file and the job goes red.
+    list and those files equal. An entry the owner withdraws is removed from its file and the job goes red. *(Read "are
+    **proposed, not accepted**" and "An entry the owner refuses" until the owner's decision.)*
 
     **(a) Eighteen HIGH findings on the application image and its libraries, no CRITICAL, no secret, no misconfiguration**
     (Trivy 0.76.2, 2026-11-08). The migrator image carries the first ten, the same base packages at the same versions, and
@@ -1006,8 +1009,8 @@ owner.**
     fifty-six until 2027-06-30; a statement that changes loses its row by construction, and the baseline's date and
     row count are held by `SecurityScansAreWiredTest`.
 
-    **Deciding this item**: accept (a) and (b) as recommended and add the one dependency item, or refuse any entry and
-    remove it from its file, in which case the job goes red until the finding is fixed.
+    **Decided 2026-11-09**: (a) and (b) accepted as recommended, with the dates above, and the one dependency item added
+    as `P15-TSK-041`. (a)'s last eight expire on 2026-12-31, so that item must land first.
 18. **T10's and T37's residual: the tables the retention sweeps leave alone** *(added 2026-11-08 by the retention task's
    gate; numbered for the tasks that ran beside it)*. The audit archival is designed (`DATA_RETENTION.md` §3) and not
    built, so the audit table grows and no archive copy exists. Idempotency records and session rows are not swept: a sweep
@@ -1015,7 +1018,8 @@ owner.**
    keeps the `DELETE` on the idempotency record that nothing uses. **What already holds**: no audit record can be deleted by
    the application, no production statement deletes an idempotency record, and growth here costs storage and vacuum only.
    *Recommendation*: schedule all three, with the revoke of that unused grant, into Phase 16's partitioning and archival of
-   high-volume tables, as the carried items' ruling re-dated them; decide nothing before then.
+   high-volume tables, as the carried items' ruling re-dated them; decide nothing before then. **Decided 2026-11-09**: as
+   recommended; T10's and T37's rows stay `GAP`s held by this item until Phase 16.
 
 ---
 
@@ -1027,7 +1031,8 @@ owner.**
    then a recorded gap, recovered from the owning domain's records, which is a loud and bounded failure, where a second
    financial effect would be neither. *The alternative*: let a retry past the window proceed on a second person's approval,
    the operator attesting from the broker's and the consumers' records that the first attempt was not delivered. It restores
-   the event without a gap, at the price of a judgement the platform cannot check, and it needs a new four-eyes door.
+   the event without a gap, at the price of a judgement the platform cannot check, and it needs a new four-eyes door. **Decided 2026-11-09**: keep the
+   refusal.
 
 ## 7. Decided against
 
