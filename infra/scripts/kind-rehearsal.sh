@@ -38,8 +38,9 @@ PROBE=${REHEARSAL_PROBE:-}
 STOP_AFTER=${REHEARSAL_STOP_AFTER:-}
 KEEP=${REHEARSAL_KEEP:-}
 POLICY_ENGINE=${REHEARSAL_POLICY_ENGINE:-kindnet}
-# A machine whose Docker cannot verify a registry from inside a container (a TLS-intercepting antivirus) names a bundle it trusts. CI never does.
-HELM_CA_BUNDLE=${REHEARSAL_HELM_CA_BUNDLE:-}
+# A machine whose Docker cannot verify a registry from inside a container (a TLS-intercepting antivirus) names a bundle it trusts: Helm's pull and the node's
+# own pull of cert-manager both use it. CI never does.
+CA_BUNDLE=${REHEARSAL_CA_BUNDLE:-}
 ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 
 KIND_NODE_IMAGE="$KIND_NODE_REPOSITORY:$KIND_NODE_VERSION@$KIND_NODE_DIGEST"
@@ -163,8 +164,8 @@ normalized() {
     esac
 }
 
-# load_tagged <repository> <tag> [digest]: pulled on the host and imported into the node, so the node never pulls and a digest-pinned
-# manifest finds its image by the digest it names.
+# load_tagged <repository> <tag> [digest]: pulled on the host and imported into the node, so that a digest-pinned manifest finds its
+# image by the digest it names without the node reaching a registry.
 load_tagged() {
     source_ref="$1:$2"
     if ! dock image inspect "$source_ref" >/dev/null 2>&1; then
@@ -376,6 +377,11 @@ ref_of_built() {
     case $digest in sha256:*) printf '%s@%s' "${1%:*}" "$digest" ;; *) cannot "no digest for $1 in the node" ;; esac
 }
 
+if [ -z "$REUSING" ] && [ -n "$CA_BUNDLE" ]; then
+    dock cp "$(dpath "$CA_BUNDLE")" "$NODE:/etc/ssl/certs/ca-certificates.crt" || cannot "the CA bundle could not be copied into the node"
+    dock exec "$NODE" systemctl restart containerd || cannot "the node's containerd could not be restarted"
+fi
+
 step images-loaded
 if [ -n "$REUSING" ]; then
     IMAGE_APP_N=$(ref_of_built finapp-app:rehearsal-n)
@@ -498,7 +504,9 @@ psql_query() {
 }
 
 kafka_admin() {
-    kube -n finapp exec -i finapp-kafka-0 -c kafka -- "/opt/kafka/bin/$1" --bootstrap-server localhost:9094 "$@"
+    tool=$1
+    shift
+    kube -n finapp exec -i finapp-kafka-0 -c kafka -- "/opt/kafka/bin/$tool" --bootstrap-server localhost:9094 "$@"
 }
 
 step topics-and-acls
@@ -563,8 +571,8 @@ step cert-manager
 HELM_IMAGE="$HELM_REPOSITORY:$HELM_VERSION@$HELM_DIGEST"
 chart="$WORK/chart"
 mkdir -p "$chart"
-if [ -n "$HELM_CA_BUNDLE" ]; then
-    set -- -v "$(dpath "$HELM_CA_BUNDLE"):/etc/ssl/certs/ca-certificates.crt:ro"
+if [ -n "$CA_BUNDLE" ]; then
+    set -- -v "$(dpath "$CA_BUNDLE"):/etc/ssl/certs/ca-certificates.crt:ro"
 else
     set --
 fi
@@ -575,8 +583,10 @@ dock run --rm -v "$(dpath "$chart"):/chart" "$HELM_IMAGE" template cert-manager 
     --namespace cert-manager --set crds.enabled=true --set startupapicheck.enabled=false > "$WORK/cert-manager.yaml" 2>> "$ART/helm-pull.log" \
     || cannot "the cert-manager chart could not be rendered: see helm-pull.log"
 kube create namespace cert-manager >> "$ART/apply.log" 2>&1 || cannot "could not create cert-manager's namespace"
+# The node pulls these three itself, as it would from any registry: `docker save` of a Docker-schema image from a containerd store here writes only its manifest.
 for component in cert-manager-controller cert-manager-webhook cert-manager-cainjector; do
-    load_tagged "quay.io/jetstack/$component" "$CERT_MANAGER_VERSION"
+    dock exec "$NODE" crictl pull "quay.io/jetstack/$component:$CERT_MANAGER_VERSION" >> "$ART/images.log" 2>&1 \
+        || cannot "the node could not pull $component: see images.log"
 done
 kube apply --server-side -f - < "$WORK/cert-manager.yaml" >> "$ART/apply.log" 2>&1 || cannot "could not apply cert-manager: see apply.log"
 for deployment in cert-manager cert-manager-webhook cert-manager-cainjector; do
