@@ -25,6 +25,7 @@ http:
         || (Method(`POST`) && Path(`/v1/me/credential`))
         || (Method(`POST`) && Path(`/v1/me/mfa`))
         || (Method(`POST`) && Path(`/v1/me/mfa/confirmation`))
+        || (Method(`GET`) && Path(`/v1/operator/access-review/factorless-holdings`))
         || (Method(`GET`) && Path(`/v1/operator/accounting/breaks`))
         || (Method(`GET`) && PathRegexp(`^/v1/operator/accounting/breaks/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
         || (Method(`POST`) && PathRegexp(`^/v1/operator/accounting/breaks/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/acknowledgement-approval$`))
