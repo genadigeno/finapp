@@ -171,7 +171,16 @@ class StoredBoundsAreTheDatabasesTest {
                         "JdbcReportReadings#resolved_at",
                         "JdbcReportReadings#status_changed_at",
                         "JdbcRiskProofReads#disposed_at",
-                        "JdbcRiskProofReads#retired_at")) {
+                        "JdbcRiskProofReads#retired_at",
+                        // The velocity proof's own window start: reconciling what was counted, not a deadline.
+                        "JdbcVelocityEvidence#posted_at",
+                        "JdbcRiskAssessmentStore#velocity_cut_at",
+                        // An operator's replay window over first publication; a window's or as-of's own stated limit.
+                        "JdbcDeadLetterStore#first_published_at",
+                        "JdbcDeadLetterStore#published_at",
+                        "JdbcDisputeStore#opened_at",
+                        "LendingFundedAsOfCutoffReads#opened_at",
+                        "LendingReports#occurred_at")) {
             census.put(asked, Kind.ASKED_ABOUT);
         }
         for (String databases :
@@ -183,10 +192,7 @@ class StoredBoundsAreTheDatabasesTest {
                         "JdbcPaymentAttemptStore#last_dispatched_at",
                         "JdbcRefundStore#last_dispatched_at",
                         "JdbcWithdrawalStore#last_dispatched_at",
-                        "JdbcDisputeResponseStore#send_permit",
-                        // A posting's recorded instant and the assessment's own cut, the watermark's, not a clock read here.
-                        "JdbcVelocityEvidence#posted_at",
-                        "JdbcRiskAssessmentStore#velocity_cut_at")) {
+                        "JdbcDisputeResponseStore#send_permit")) {
             census.put(databases, Kind.THE_DATABASES);
         }
         for (String pacing :
@@ -583,8 +589,13 @@ class StoredBoundsAreTheDatabasesTest {
     }
 
     private static boolean isMigration(Path path) {
-        String text = path.toString().replace('\\', '/');
+        String text = relativeToTheRepository(path);
         return text.contains("/src/main/resources/db/migration/") && text.endsWith(".sql") && !isBuildOutput(text);
+    }
+
+    /** Relative to the repository root, with a leading slash: the checkout itself may live under a {@code .claude} worktree. */
+    private static String relativeToTheRepository(Path path) {
+        return "/" + repositoryRoot().relativize(path).toString().replace('\\', '/');
     }
 
     private static boolean isBuildOutput(String text) {
@@ -598,7 +609,7 @@ class StoredBoundsAreTheDatabasesTest {
     private static void forEveryProductionSource(SourceVisitor visitor) {
         try (Stream<Path> files = Files.walk(repositoryRoot())) {
             files.filter(path -> {
-                        String text = path.toString().replace('\\', '/');
+                        String text = relativeToTheRepository(path);
                         return text.contains("/src/main/java/") && text.endsWith(".java") && !isBuildOutput(text);
                     })
                     .sorted()

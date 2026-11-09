@@ -15,7 +15,6 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
@@ -35,7 +34,7 @@ class PayoutDestinationEffectuationClockTest {
     private static final Duration COOLING_OFF = Duration.ofHours(72);
     private static final Instant DEADLINE = T0.plus(COOLING_OFF);
     private static final IdGenerator IDS = new IdGenerator(Clock.fixed(T0, ZoneOffset.UTC), new SecureRandom());
-    private static final MerchantId MERCHANT = MerchantId.of(UUID.randomUUID());
+    private static final MerchantId MERCHANT = MerchantId.next(IDS);
 
     private final List<String> events = new ArrayList<>();
     private final List<PayoutDestination> moves = new ArrayList<>();
