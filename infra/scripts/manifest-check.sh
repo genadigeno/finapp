@@ -505,7 +505,7 @@ YAML
     human_rule rbac-pods-portforward '""' pods/portforward get
     human_rule rbac-pods-ephemeral '""' pods/ephemeralcontainers get
     human_rule rbac-pods-proxy '""' pods/proxy get
-    human_rule rbac-account-token '""' serviceaccounts/token create
+    human_rule rbac-mint-for-an-account '""' serviceaccounts/token create
     human_rule rbac-impersonate '""' users impersonate
     human_rule rbac-escalate rbac.authorization.k8s.io roles escalate
     human_rule rbac-bind rbac.authorization.k8s.io roles bind
@@ -1046,7 +1046,7 @@ refused rbac-pods-attach rbac-human-subresource
 refused rbac-pods-portforward rbac-human-subresource
 refused rbac-pods-ephemeral rbac-human-subresource
 refused rbac-pods-proxy rbac-human-subresource
-refused rbac-account-token rbac-human-subresource
+refused rbac-mint-for-an-account rbac-human-subresource
 refused rbac-impersonate rbac-human-privilege
 refused rbac-escalate rbac-human-privilege
 refused rbac-bind rbac-human-privilege
