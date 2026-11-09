@@ -73,6 +73,12 @@ class SloRulesResolveTest {
             assertThat(lines).as("%s is published", series).isNotEmpty();
             Matcher label = Pattern.compile("([a-z_]+)=\"([^\"]*)\"").matcher(selectors);
             while (label.find()) {
+                if ("job".equals(label.group(1))) {
+                    // Prometheus attaches job when it scrapes: it is in the scrape configuration, never in the application's own exposition.
+                    assertThat(RepositoryPaths.read("infra/prometheus/prometheus.yml")).as("%s selects a scrape job that exists", series)
+                            .contains("job_name: " + label.group(2));
+                    continue;
+                }
                 String pair = label.group(1) + "=\"" + label.group(2) + "\"";
                 assertThat(lines).as("%s has a series with %s", series, pair).anySatisfy(line -> assertThat(line).contains(pair));
             }

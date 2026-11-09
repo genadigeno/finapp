@@ -8,6 +8,7 @@ import com.finapp.platform.sourcejoin.Keys;
 import com.finapp.platform.sourcejoin.SourceFigures;
 import com.finapp.platform.sourcejoin.SourceJoin;
 import com.finapp.platform.sourcejoin.SqlSourceJoin;
+import java.math.BigInteger;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
@@ -52,8 +53,9 @@ public final class ReconciliationJournalSources implements JournalSources {
         if (row.wasNull()) {
             return SourceFigures.noFigure();
         }
-        long amount = "PARK".equals(row.getString("kind")) ? row.getLong("parked")
-                : row.getLong("released") > 0 ? row.getLong("released") : row.getLong("reposted");
+        // Sums, read as decimals: a sum may exceed a bigint, and that is this record's mismatch, never a failed batch.
+        BigInteger amount = ("PARK".equals(row.getString("kind")) ? row.getBigDecimal("parked")
+                : row.getBigDecimal("released").signum() > 0 ? row.getBigDecimal("released") : row.getBigDecimal("reposted")).toBigIntegerExact();
         return SourceFigures.total(row.getString("currency").trim(), scale, amount);
     }
 }

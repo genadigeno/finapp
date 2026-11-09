@@ -22,8 +22,8 @@ public final class BnplJournalSources implements JournalSources {
 
     private static final Predicate<String> APPLICATION = Keys.uuidOnly().or(Keys.uuidThenCatchUp());
 
-    static final String FINANCING = "SELECT purchase_id::text AS key_text, gross_minor + fee_minor AS amount_minor, currency, scale FROM bnpl.merchant_financing WHERE purchase_id = ANY (?)";
-    static final String BILLING = "SELECT instalment_id::text AS key_text, principal_minor + interest_minor AS amount_minor, currency, scale FROM bnpl.bnpl_billing WHERE instalment_id = ANY (?)";
+    static final String FINANCING = "SELECT purchase_id::text AS key_text, gross_minor::numeric + fee_minor AS amount_minor, currency, scale FROM bnpl.merchant_financing WHERE purchase_id = ANY (?)";
+    static final String BILLING = "SELECT instalment_id::text AS key_text, principal_minor::numeric + interest_minor AS amount_minor, currency, scale FROM bnpl.bnpl_billing WHERE instalment_id = ANY (?)";
     static final String ACCRUAL = "SELECT k.v AS key_text, a.posted_minor AS amount_minor, a.currency, a.scale FROM unnest(?::text[]) k(v)"
             + " JOIN bnpl.bnpl_interest_accrual a ON a.obligation_id = split_part(k.v, ':', 1)::uuid AND a.accrual_date = split_part(k.v, ':', 2)::date";
     static final String REPAYMENT = "SELECT id::text AS key_text, amount_minor, currency, scale FROM bnpl.bnpl_repayment WHERE id = ANY (?)";
@@ -33,13 +33,13 @@ public final class BnplJournalSources implements JournalSources {
     static final String CLOSURE = "SELECT obligation_id::text AS key_text, refund_minor AS amount_minor, currency, scale FROM bnpl.bnpl_obligation_closure WHERE obligation_id = ANY (?)";
     static final String FEE = "SELECT k.v AS key_text, f.amount_minor, f.currency, f.scale FROM unnest(?::text[]) k(v)"
             + " JOIN bnpl.bnpl_fee_assessment f ON f.instalment_id = split_part(k.v, ':', 1)::uuid AND f.kind = split_part(k.v, ':', 2)";
-    static final String REFUND = "SELECT id::text AS key_text, amount_minor + fee_returned_minor + interest_accrued_released_minor + interest_due_released_minor + late_fee_released_minor AS amount_minor,"
+    static final String REFUND = "SELECT id::text AS key_text, amount_minor::numeric + fee_returned_minor + interest_accrued_released_minor + interest_due_released_minor + late_fee_released_minor AS amount_minor,"
             + " currency, scale FROM bnpl.bnpl_refund WHERE id = ANY (?)";
     static final String WAIVER = "SELECT id::text AS key_text, amount_minor, currency, scale FROM bnpl.bnpl_waiver WHERE id = ANY (?)";
     static final String REPAYMENT_REVERSAL = "SELECT r.id::text AS key_text, p.amount_minor, p.currency, p.scale FROM bnpl.bnpl_repayment_reversal r"
             + " JOIN bnpl.bnpl_repayment p ON p.id = r.repayment_id WHERE r.id = ANY (?)";
     static final String FEE_RELEASE = "SELECT reversal_id::text AS key_text, sum(amount_minor) AS amount_minor, currency, scale FROM bnpl.bnpl_reversal_fee_release WHERE reversal_id = ANY (?) GROUP BY reversal_id, currency, scale";
-    static final String WRITE_OFF = "SELECT obligation_id::text AS key_text, principal_minor + principal_due_minor + interest_accrued_minor + interest_due_minor + fees_due_minor AS amount_minor,"
+    static final String WRITE_OFF = "SELECT obligation_id::text AS key_text, principal_minor::numeric + principal_due_minor + interest_accrued_minor + interest_due_minor + fees_due_minor AS amount_minor,"
             + " currency, scale FROM bnpl.bnpl_write_off WHERE obligation_id = ANY (?)";
 
     private static final List<SourceJoin> JOINS = List.of(
@@ -70,7 +70,8 @@ public final class BnplJournalSources implements JournalSources {
         return new SqlSourceJoin(door, namespace, statement, sql, key, BnplJournalSources::total);
     }
 
+    /** Read as a decimal: a sum of {@code bigint} columns may exceed one, and that must be this record's mismatch, not a failed batch. */
     private static SourceFigures total(ResultSet row) throws SQLException {
-        return SourceFigures.total(row.getString("currency").trim(), row.getInt("scale"), row.getLong("amount_minor"));
+        return SourceFigures.total(row.getString("currency").trim(), row.getInt("scale"), row.getBigDecimal("amount_minor").toBigIntegerExact());
     }
 }

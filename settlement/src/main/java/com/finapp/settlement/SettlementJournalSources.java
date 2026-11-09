@@ -11,6 +11,7 @@ import com.finapp.platform.sourcejoin.Keys;
 import com.finapp.platform.sourcejoin.SourceFigures;
 import com.finapp.platform.sourcejoin.SourceJoin;
 import com.finapp.platform.sourcejoin.SqlSourceJoin;
+import java.math.BigInteger;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
@@ -55,10 +56,11 @@ public final class SettlementJournalSources implements JournalSources {
         String currency = row.getString("currency");
         int scale = row.getInt("net_scale");
         boolean statement = STATEMENT_FORMAT.equals(row.getString("format_id"));
-        long signed = statement ? row.getLong("net_minor") : row.getLong("fee_fold");
+        // A decimal: the fold is a SUM, which may exceed a bigint, and a sign flips here without overflow.
+        BigInteger signed = (statement ? row.getBigDecimal("net_minor") : row.getBigDecimal("fee_fold")).toBigIntegerExact();
         Set<String> purpose = statement ? CASH : COSTS;
-        long debit = Math.max(mirrored ? -signed : signed, 0);
-        long credit = Math.max(mirrored ? signed : -signed, 0);
+        BigInteger debit = (mirrored ? signed.negate() : signed).max(BigInteger.ZERO);
+        BigInteger credit = (mirrored ? signed : signed.negate()).max(BigInteger.ZERO);
         return SourceFigures.of(ExpectedLeg.exactOn(DEBIT, purpose, currency, scale, debit), ExpectedLeg.exactOn(CREDIT, purpose, currency, scale, credit));
     }
 }

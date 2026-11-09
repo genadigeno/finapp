@@ -9,7 +9,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,31 +22,29 @@ import java.util.function.Function;
  * The source-join census (`P15-TSK-035`; {@code THREAT_MODEL.md} T15, section 5): every journal entry, read against the domain record
  * that caused it. One {@link #sweepBatch batch} at a time, one replica at a time across every instance.
  *
- * <p><strong>The walk's horizon is a fence, not a window.</strong> A journal position is not commit order: an id minted before another
- * can commit after it, so a cursor at the head skips the slower transaction for ever and a census with a hole reads as clean. The
- * fence is the start of the oldest transaction this role can see open, minus a margin for instance clock skew: a transaction that
- * could still commit an earlier id is, by definition, open, so nothing is judged until it is not. It is read <strong>before</strong>
- * the batch's own transaction, or a transaction that commits in between would be behind the fence and outside the snapshot.
- * Compared with a re-scan window, a fence cannot be overrun by an unusually long posting; its failure is a stall, which the lag gauge
- * tickets. Stated as an inequality: a margin smaller than the real skew could hide a transaction whose instance's clock is behind by
- * more than the margin - the one residual, named in the runbook.
+ * <p><strong>The walk's position is (txid, id).</strong> A UUIDv7 id is minted on an instance's clock and a holder of the application's
+ * credential can choose any, so an id-ordered cursor can be passed by an entry behind it and never read it. {@code txid} is stamped by
+ * the database from the inserting transaction (ledger {@code V034}). The page reads only {@code txid < xmin} of its own statement's
+ * snapshot: every such transaction is finished, so nothing can later land behind the position. No clock, no margin. A transaction holding
+ * an xid holds the walk back; it can never make it skip, and the lag gauge pages if it stays.
  *
  * <p><strong>One batch, one transaction, one walker.</strong> The batch holds the head row {@code FOR UPDATE SKIP LOCKED}: a replica
  * that finds it held does nothing this tick; a replica that dies mid-batch has its transaction rolled back and the next one resumes
  * from the committed position. Findings are unique per entry, so re-judging what was not committed converges.
  *
- * <p><strong>A read that fails fails the batch.</strong> A source that cannot be read is not an absent record: the batch rolls back
- * whole, the head stays, the failure is stamped in a transaction of its own and the gauge reads no value. Never a zero.
+ * <p><strong>A read that fails fails the batch</strong>: the batch rolls back whole, the head stays, the failure is stamped in a
+ * transaction of its own. <strong>An entry or a record that cannot be judged does not fail it</strong>: a key with no namespace, a
+ * malformed suffix and a record outside what a figure can hold are each counted and the walk goes on, or one row would stop the census.
+ *
+ * <p><strong>A logical restore</strong> restarts the transaction counter below the restored rows: a head ahead of the database refuses
+ * the batch rather than walking a position that can no longer be compared (OPERATIONS_RUNBOOK.md 11.27).
  */
 public final class SourceCensus {
 
-    /** The transaction seams: a port because {@code accounting} has no Spring. */
+    /** The transaction seam: a port because {@code accounting} has no Spring. */
     public interface Units {
         /** {@code work} in one transaction on one connection; a thrown failure rolls it back. */
         <R> R inTransaction(Function<Connection, R> work);
-
-        /** {@code work} on a connection outside any transaction: read and released before the batch begins. */
-        <R> R outsideTransaction(Function<Connection, R> work);
     }
 
     /** What one batch did. */
@@ -66,25 +63,19 @@ public final class SourceCensus {
     private final SourceCensusStore store;
     private final JournalCensusWalk walk;
     private final SourceJoinCatalogue catalogue;
-    private final Duration margin;
     private final int batchSize;
     private final Duration statementTimeout;
 
     /**
-     * @param margin subtracted from the fence: must exceed the instances' clock skew; a position minted past it is not yet judged
      * @param batchSize entries per batch, at most {@link JournalCensusWalk#MAX_LIMIT}
      * @param statementTimeout each statement of a batch, armed once per batch
      */
-    public SourceCensus(Units units, SourceCensusStore store, JournalCensusWalk walk, SourceJoinCatalogue catalogue, Duration margin,
+    public SourceCensus(Units units, SourceCensusStore store, JournalCensusWalk walk, SourceJoinCatalogue catalogue,
             int batchSize, Duration statementTimeout) {
         this.units = Objects.requireNonNull(units, "units");
         this.store = Objects.requireNonNull(store, "store");
         this.walk = Objects.requireNonNull(walk, "walk");
         this.catalogue = Objects.requireNonNull(catalogue, "catalogue");
-        this.margin = Objects.requireNonNull(margin, "margin");
-        if (margin.isNegative()) {
-            throw new IllegalArgumentException("a margin is not negative");
-        }
         if (batchSize < 1 || batchSize > JournalCensusWalk.MAX_LIMIT) {
             throw new IllegalArgumentException("a batch holds 1 to " + JournalCensusWalk.MAX_LIMIT + " entries");
         }
@@ -103,10 +94,7 @@ public final class SourceCensus {
      */
     public Batch sweepBatch() {
         try {
-            // The fence FIRST and outside the batch: a transaction open now cannot commit behind what the batch will read.
-            Instant fence = units.outsideTransaction(store::fence);
-            Instant mintedBefore = fence.minus(margin);
-            return units.inTransaction(connection -> judge(connection, mintedBefore));
+            return units.inTransaction(this::judge);
         } catch (RuntimeException failure) {
             stampFailure(failure);
             throw failure;
@@ -126,14 +114,18 @@ public final class SourceCensus {
         }
     }
 
-    private Batch judge(Connection connection, Instant mintedBefore) {
+    private Batch judge(Connection connection) {
         arm(connection);
         Optional<SourceCensusStore.Head> claimed = store.claimHead(connection);
         if (claimed.isEmpty()) {
             return Batch.busy();
         }
         SourceCensusStore.Head head = claimed.get();
-        List<JournalCensusWalk.CensusEntry> page = walk.page(connection, head.position(), mintedBefore, batchSize);
+        if (head.aheadOfTheDatabase()) {
+            throw new AccountingStorageException(
+                    "the census's head is ahead of this database's transaction counter: its position is from another xid space (a logical restore; OPERATIONS_RUNBOOK.md 11.27)");
+        }
+        List<JournalCensusWalk.CensusEntry> page = walk.page(connection, head.position(), batchSize);
         if (page.isEmpty()) {
             store.touch(connection);
             return Batch.idle();
@@ -143,8 +135,7 @@ public final class SourceCensus {
             findings.addAll(judgeGroup(connection, group.getKey(), group.getValue()));
         }
         store.insertFindings(connection, findings);
-        UUID last = page.get(page.size() - 1).id();
-        store.advance(connection, last, page.size());
+        store.advance(connection, page.get(page.size() - 1).position(), page.size());
         return new Batch(true, page.size(),
                 (int) findings.stream().filter(finding -> finding.kind() == SourceFindingKind.UNSOURCED).count(),
                 (int) findings.stream().filter(finding -> finding.kind() == SourceFindingKind.MISMATCHED).count());
@@ -159,12 +150,15 @@ public final class SourceCensus {
         }
     }
 
-    /** Groups a page by the join that judges it; an entry with no namespace groups under {@code EMPTY_KEY} and is unsourced. */
+    /**
+     * Groups a page by the join that judges it. An entry whose key yields no namespace, or a blank one (a key of spaces passes the ledger's
+     * bounds), groups under {@link #UNNAMED} and is counted: it never reaches a namespace that would refuse it and fail the batch.
+     */
     private static Map<SourceNamespace, List<JournalCensusWalk.CensusEntry>> groupedByNamespace(List<JournalCensusWalk.CensusEntry> page) {
         Map<SourceNamespace, List<JournalCensusWalk.CensusEntry>> groups = new LinkedHashMap<>();
         for (JournalCensusWalk.CensusEntry entry : page) {
             SourceDoor door = doorOf(entry.door());
-            String namespace = entry.namespace().orElse(UNNAMED);
+            String namespace = entry.namespace().filter(name -> !name.isBlank()).orElse(UNNAMED);
             groups.computeIfAbsent(new SourceNamespace(door, namespace), key -> new ArrayList<>()).add(entry);
         }
         return groups;

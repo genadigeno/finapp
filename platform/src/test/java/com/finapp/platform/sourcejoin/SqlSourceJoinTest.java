@@ -58,6 +58,17 @@ class SqlSourceJoinTest {
         assertThat(figures.legs()).extracting(ExpectedLeg::currency).containsExactly("USD", "USD", "EUR", "EUR");
     }
 
+    @Test
+    @DisplayName("a row that cannot be read into figures counts as this record's no-figure and the walk goes on: one row never stops the census")
+    void anUnreadableRowIsNoFigure() throws SQLException {
+        UUID entry = UUID.randomUUID();
+        Fake fake = new Fake(rows(row(REAL.toString(), "not-a-currency", 2, 100)));
+        SourceJoin join = new SqlSourceJoin(SourceDoor.POSTING, "transfer:", "fake.table by id", "SELECT", Keys.suffixUuid(),
+                row -> SourceFigures.total(row.getString("currency"), row.getInt("scale"), row.getLong("minor")));
+
+        assertThat(join.read(fake.connection(), List.of(new EntryRef(entry, REAL.toString(), "r"))).get(entry).missingFigure()).isTrue();
+    }
+
     private static Object[] row(String key, String currency, int scale, long minor) {
         return new Object[] {key, currency, scale, minor};
     }

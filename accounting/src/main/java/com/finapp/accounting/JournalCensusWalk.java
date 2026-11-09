@@ -9,47 +9,62 @@ import java.util.UUID;
 
 /**
  * The journal as the source-join census walks it (`P15-TSK-035`) - a port {@code app} implements over the ledger's own tables, beside
- * {@link JournalShapes}, because {@code accounting} has no ledger edge: entries after a position, in id order, each with its door,
- * namespace, key suffix, reference and lines. UUIDv7 ids sort by minting millisecond (ADR-0013), so a keyset over them appends; the
- * ledger mints an entry's id inside its transaction, so an id cannot predate the transaction that wrote it by more than the
- * instances' clock skew.
+ * {@link JournalShapes}, because {@code accounting} has no ledger edge: entries after a position, in commit-horizon order, each with its
+ * door, namespace, key suffix, reference and lines.
  *
- * <p><strong>A position is not commit order.</strong> {@link #page} reads only entries minted before {@code mintedBefore}, which
- * {@code SourceCensus} derives from the oldest open transaction: every transaction that could still commit an earlier-minted entry
- * has started by then and is excluded by the fence. {@code SELECT} only.
+ * <p><strong>The position is (txid, id), not the id.</strong> An entry's id is a UUIDv7 minted on an instance's clock, and a holder of
+ * the application's credential can insert any id at all, so the id says nothing about commit order: a cursor over ids can be passed by
+ * an entry minted behind it, and that entry is then never read. {@code txid} is stamped by ledger {@code V034} from the inserting
+ * transaction, for every writer. {@link #page} reads only {@code txid < pg_snapshot_xmin(pg_current_snapshot())}, every one of which is
+ * finished: nothing can later commit behind the position, and no clock or margin enters the argument. {@code SELECT} only.
  */
 public interface JournalCensusWalk {
 
     /** The largest page. */
     int MAX_LIMIT = 500;
 
-    /**
-     * Entries with id greater than {@code after}, minted before {@code mintedBefore}, at most {@code limit}, ascending by id, each
-     * with all its lines.
-     */
-    List<CensusEntry> page(Connection connection, UUID after, Instant mintedBefore, int limit);
+    /** A place in the walk: the inserting transaction, then the entry. Ordered by the database, in that order. */
+    record Position(long txid, UUID id) {
 
-    /** The minting instant of the first entry after {@code position}, or empty when the journal holds none: what the lag gauge reads. */
-    Optional<Instant> oldestAfter(Connection connection, UUID position);
+        public Position {
+            Objects.requireNonNull(id, "id");
+        }
+    }
+
+    /**
+     * Entries after {@code after} whose inserting transaction is finished, at most {@code limit}, in {@code (txid, id)} order, each with
+     * all its lines. The bound is read in the page's own statement, so its snapshot is the snapshot the page reads.
+     */
+    List<CensusEntry> page(Connection connection, Position after, int limit);
+
+    /** The minting instant of the first entry after {@code position}, or empty when none waits: what the lag gauge reads. */
+    Optional<Instant> oldestAfter(Connection connection, Position position);
 
     /**
      * One journal entry as the census judges it.
      *
+     * @param position where it stands in the walk
      * @param door the ledger door that wrote it
      * @param namespace for a posting or reversal, its command key's namespace; for an adjustment its proposal's origin - empty when
      *     the ledger names none
      * @param suffix the command key past its namespace; for an adjustment the proposal id
      * @param reference the entry's {@code reference} column
      */
-    record CensusEntry(UUID id, EntryType door, Optional<String> namespace, String suffix, String reference, List<JournalShapes.ShapeLine> lines) {
+    record CensusEntry(Position position, EntryType door, Optional<String> namespace, String suffix, String reference,
+            List<JournalShapes.ShapeLine> lines) {
 
         public CensusEntry {
-            Objects.requireNonNull(id, "id");
+            Objects.requireNonNull(position, "position");
             Objects.requireNonNull(door, "door");
             Objects.requireNonNull(namespace, "namespace");
             Objects.requireNonNull(suffix, "suffix");
             Objects.requireNonNull(reference, "reference");
             lines = List.copyOf(lines);
+        }
+
+        /** The entry's id. */
+        public UUID id() {
+            return position.id();
         }
     }
 }

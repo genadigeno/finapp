@@ -15,8 +15,13 @@ import java.util.UUID;
  */
 public interface SourceCensusStore {
 
-    /** The walk's head: the position it has judged through, and how many entries it has judged. */
-    record Head(UUID position, long entriesJudged) {
+    /**
+     * The walk's head.
+     *
+     * @param aheadOfTheDatabase the head's transaction is at or past the database's oldest running one, which cannot arise in normal
+     *     running (a position is only ever taken below that bound): the transaction counter has gone backwards, as a logical restore does
+     */
+    record Head(JournalCensusWalk.Position position, long entriesJudged, boolean aheadOfTheDatabase) {
         public Head {
             Objects.requireNonNull(position, "position");
         }
@@ -33,20 +38,25 @@ public interface SourceCensusStore {
         }
     }
 
-    /** What the gauges read: standing findings per kind, whether the census may be believed at all, where its head stands and the database's now. */
-    record Reading(Map<SourceFindingKind, Long> standing, boolean healthy, Optional<UUID> position, Instant asOf) {
+    /**
+     * What the gauges read.
+     *
+     * @param standing findings within the page's window, per kind
+     * @param recent findings within the ticket's longer window, however many of them have left the page's
+     * @param healthy whether the census's last run read everything and is recent
+     * @param position where the head stands
+     * @param asOf the database's clock at the read
+     * @param advancedAt when the head last moved, on the database's clock
+     */
+    record Reading(Map<SourceFindingKind, Long> standing, long recent, boolean healthy, Optional<JournalCensusWalk.Position> position,
+            Instant asOf, Instant advancedAt) {
         public Reading {
             standing = Map.copyOf(standing);
             Objects.requireNonNull(position, "position");
             Objects.requireNonNull(asOf, "asOf");
+            Objects.requireNonNull(advancedAt, "advancedAt");
         }
     }
-
-    /**
-     * The fence: the database's now, or the start of the oldest open transaction this role can see if that is earlier.
-     * <strong>Read before the walk's own transaction starts</strong>, or a transaction that commits between the two is on neither side.
-     */
-    Instant fence(Connection connection);
 
     /** The head, locked for this transaction, or empty when another walker holds it (one walker at a time across every instance). */
     Optional<Head> claimHead(Connection connection);
@@ -55,7 +65,7 @@ public interface SourceCensusStore {
     void insertFindings(Connection connection, List<Finding> findings);
 
     /** Moves the head to {@code position} and stamps success. */
-    void advance(Connection connection, UUID position, long entriesJudged);
+    void advance(Connection connection, JournalCensusWalk.Position position, long entriesJudged);
 
     /** Stamps success with nothing to advance. */
     void touch(Connection connection);
@@ -64,5 +74,5 @@ public interface SourceCensusStore {
     void markFailure(Connection connection, String failureClass);
 
     /** The gauges' reading of the records, on a read-only snapshot. */
-    Reading read(Connection connection, Duration standing, Duration staleAfter);
+    Reading read(Connection connection, Duration standing, Duration recent, Duration staleAfter);
 }

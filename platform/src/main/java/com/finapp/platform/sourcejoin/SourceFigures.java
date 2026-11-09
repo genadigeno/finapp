@@ -3,10 +3,12 @@ package com.finapp.platform.sourcejoin;
 import static com.finapp.platform.sourcejoin.ExpectedLeg.Side.CREDIT;
 import static com.finapp.platform.sourcejoin.ExpectedLeg.Side.DEBIT;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * What a record found behind an entry states about that entry's lines: its legs, or - for a namespace whose record states no
@@ -45,6 +47,12 @@ public record SourceFigures(List<ExpectedLeg> legs, Optional<String> presenceOnl
     /** Debits and credits both total {@code minor} in {@code currency}: the common shape, the whole of the entry's two sides. */
     public static SourceFigures total(String currency, int scale, long minor) {
         return of(ExpectedLeg.exact(DEBIT, currency, scale, minor), ExpectedLeg.exact(CREDIT, currency, scale, minor));
+    }
+
+    /** As {@link #total(String, int, long)}, for a figure a row sums: a sum may exceed a {@code bigint}. */
+    public static SourceFigures total(String currency, int scale, BigInteger minor) {
+        return of(new ExpectedLeg(DEBIT, Set.of(), currency, scale, minor, ExpectedLeg.Bound.EXACT),
+                new ExpectedLeg(CREDIT, Set.of(), currency, scale, minor, ExpectedLeg.Bound.EXACT));
     }
 
     /** No figure for this namespace, by design: the row's existence is the join, for {@code reason}. */

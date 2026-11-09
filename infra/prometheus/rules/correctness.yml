@@ -92,7 +92,7 @@ groups:
           description: "{{ $value }} journal entries found {{ $labels.kind }} by the source-join census. Never correct it from here. See OPERATIONS_RUNBOOK.md section 11.27."
       - alert: SourceCensusLagging
         # Aggregation: max() - every instance reads the same head; a NaN instance is ignored
-        # The census's walk is behind by more than fifteen minutes: a batch keeps failing, or the fence is held by a long-open transaction. A ticket, not a page: a stall loses nothing, and a late commit is still counted when the fence clears.
+        # The walk is more than fifteen minutes behind: a batch keeps failing, or a transaction holding an xid has stayed open (the walk reads only finished transactions). A ticket, not a page: a stall loses nothing, and the entries wait. SourceCensusStalled pages if it stays.
         expr: max(finapp_accounting_source_census_lag_seconds) > 900
         for: 5m
         labels:
@@ -101,11 +101,33 @@ groups:
         annotations:
           summary: "The source-join census is behind"
           description: "The census's walk is {{ $value }} seconds behind the journal: a long-open transaction is holding its fence, or a batch keeps failing. See OPERATIONS_RUNBOOK.md section 11.27."
+      - alert: SourceCensusStalled
+        # Aggregation: max() - every instance reads the same head; a NaN instance is ignored
+        # An hour behind: longer than a slow transaction or a day's catch-up batch, short enough that a held row or a held transaction does not stop the census unseen. A page because this is the case that stops T15's detective control with nothing in the journal to say so, including a session holding the head row (the same credential can take that lock). The gauge is published while the census is unhealthy, so a walk that cannot run can still page.
+        expr: max(finapp_accounting_source_census_lag_seconds) > 3600
+        for: 5m
+        labels:
+          severity: page
+          owner: accounting
+        annotations:
+          summary: "The source-join census has stopped reading the journal"
+          description: "The census has been {{ $value }} seconds behind the journal, past its hour's bound: entries are waiting and none are being judged. See OPERATIONS_RUNBOOK.md section 11.27."
+      - alert: SourceCensusFindingsRecent
+        # Aggregation: max() - every instance reads the same findings; a NaN instance is ignored
+        # A finding stands in the page for 24 hours; this ticket counts them for 30 days (finapp.accounting.source-census.recent), so the page's end is not the end of anyone being told. A finding has no door to close it: this is a ticket that ages out, not one a person resolves.
+        expr: max(finapp_accounting_source_census_findings) > 0
+        for: 0s
+        labels:
+          severity: ticket
+          owner: accounting
+        annotations:
+          summary: "The source-join census has recent findings"
+          description: "{{ $value }} journal entries were counted by the source-join census within its ticket window. See OPERATIONS_RUNBOOK.md section 11.27."
       - alert: GaugesStaleAcrossTheFleet
         # Aggregation: count() - the fleet-wide question, every instance's canary at once, never one instance's
         # The count of instances whose gauge canary is stale equals the count that are up, for five minutes: each instance's own GaugesStale is a ticket, but when the whole fleet's refreshers are stale, every fleet-wide max() on a gauge reads NaN and every correctness page on a gauge is blind. The owner's ruling of 2026-11-09 (P15-TSK-025's owner item).
         # One stale instance is not this rule: the others still answer, and GaugesStale tickets it.
-        expr: count(finapp_gauges_refreshed != finapp_gauges_refreshed) == count(up{job="finapp"} == 1)
+        expr: count(finapp_gauges_refreshed{job="finapp"} != finapp_gauges_refreshed{job="finapp"}) == count(up{job="finapp"} == 1)
         for: 5m
         labels:
           severity: page
@@ -116,7 +138,7 @@ groups:
       - alert: CorrectnessGaugesUnreadable
         # Aggregation: per instance by (job, instance) - x != x holds for NaN alone, and one instance unable to read is that instance's fault
         # While a correctness gauge is NaN it answers nothing: max() still reads the instances that can, but this names the one that cannot.
-        expr: label_replace(max by (job, instance) (finapp_ledger_trial_balance != finapp_ledger_trial_balance), "gauge", "finapp_ledger_trial_balance", "", "") or label_replace(max by (job, instance) (finapp_ledger_projection_drift != finapp_ledger_projection_drift), "gauge", "finapp_ledger_projection_drift", "", "") or label_replace(max by (job, instance) (finapp_outbox_deadlettered != finapp_outbox_deadlettered), "gauge", "finapp_outbox_deadlettered", "", "") or label_replace(max by (job, instance) (finapp_deadletter_parked != finapp_deadletter_parked), "gauge", "finapp_deadletter_parked", "", "") or label_replace(max by (job, instance) (finapp_accounting_source_census_breaks != finapp_accounting_source_census_breaks), "gauge", "finapp_accounting_source_census_breaks", "", "") or label_replace(max by (job, instance) (finapp_accounting_source_census_lag_seconds != finapp_accounting_source_census_lag_seconds), "gauge", "finapp_accounting_source_census_lag_seconds", "", "")
+        expr: label_replace(max by (job, instance) (finapp_ledger_trial_balance != finapp_ledger_trial_balance), "gauge", "finapp_ledger_trial_balance", "", "") or label_replace(max by (job, instance) (finapp_ledger_projection_drift != finapp_ledger_projection_drift), "gauge", "finapp_ledger_projection_drift", "", "") or label_replace(max by (job, instance) (finapp_outbox_deadlettered != finapp_outbox_deadlettered), "gauge", "finapp_outbox_deadlettered", "", "") or label_replace(max by (job, instance) (finapp_deadletter_parked != finapp_deadletter_parked), "gauge", "finapp_deadletter_parked", "", "") or label_replace(max by (job, instance) (finapp_accounting_source_census_breaks != finapp_accounting_source_census_breaks), "gauge", "finapp_accounting_source_census_breaks", "", "") or label_replace(max by (job, instance) (finapp_accounting_source_census_lag_seconds != finapp_accounting_source_census_lag_seconds), "gauge", "finapp_accounting_source_census_lag_seconds", "", "") or label_replace(max by (job, instance) (finapp_accounting_source_census_findings != finapp_accounting_source_census_findings), "gauge", "finapp_accounting_source_census_findings", "", "")
         for: 15m
         labels:
           severity: ticket
@@ -127,7 +149,7 @@ groups:
       - alert: CorrectnessUnverifiable
         # Aggregation: none - absent(x == x) is true when no instance holds a number, which is the fleet-wide question
         # A rule that cannot evaluate fires its absent-series alert: no instance publishing a number means every rule above is silent for the wrong reason.
-        expr: absent(finapp_ledger_trial_balance == finapp_ledger_trial_balance) or absent(finapp_ledger_projection_drift == finapp_ledger_projection_drift) or absent(finapp_outbox_deadlettered == finapp_outbox_deadlettered) or absent(finapp_accounting_source_census_breaks == finapp_accounting_source_census_breaks) or absent(finapp_accounting_source_census_lag_seconds == finapp_accounting_source_census_lag_seconds)
+        expr: absent(finapp_ledger_trial_balance == finapp_ledger_trial_balance) or absent(finapp_ledger_projection_drift == finapp_ledger_projection_drift) or absent(finapp_outbox_deadlettered == finapp_outbox_deadlettered) or absent(finapp_accounting_source_census_breaks == finapp_accounting_source_census_breaks) or absent(finapp_accounting_source_census_lag_seconds == finapp_accounting_source_census_lag_seconds) or absent(finapp_accounting_source_census_findings == finapp_accounting_source_census_findings)
         for: 15m
         labels:
           severity: ticket

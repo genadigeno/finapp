@@ -56,6 +56,11 @@ public record ExpectedLeg(Side side, Set<String> purposes, String currency, int 
         return new ExpectedLeg(side, purposes, currency, scale, BigInteger.valueOf(minor), Bound.EXACT);
     }
 
+    /** As {@link #exactOn(Side, Set, String, int, long)}, for a figure a row sums: a sum may exceed a {@code bigint}. */
+    public static ExpectedLeg exactOn(Side side, Set<String> purposes, String currency, int scale, BigInteger minor) {
+        return new ExpectedLeg(side, purposes, currency, scale, minor, Bound.EXACT);
+    }
+
     /** At most {@code minor} on {@code side}: a figure the row can only state a ceiling for. */
     public static ExpectedLeg atMost(Side side, String currency, int scale, long minor) {
         return new ExpectedLeg(side, Set.of(), currency, scale, BigInteger.valueOf(minor), Bound.AT_MOST);

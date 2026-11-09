@@ -37,6 +37,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -53,9 +54,9 @@ import org.junit.jupiter.api.Test;
 /**
  * The source-join census against the real schema and journal (`P15-TSK-035`; {@code THREAT_MODEL.md} T15, section 5). <strong>Written
  * and owed to {@code P15-TST-002}</strong> (C14: the database tiers are skipped per task): the entry's two planted entries counted,
- * a legitimate posting not counted, the amount mismatch counted, a late commit counted after its transaction commits (the fence
- * proved on the real {@code pg_stat_activity}), ten walkers judging every entry once, and <strong>every join's statement run once
- * against the real tables</strong>, which proves their columns and casts.
+ * a legitimate posting not counted, the amount mismatch counted, an entry whose id sorts below the head still judged (a forged id and a
+ * skewed instance's), a late commit counted after its transaction commits, a walk held behind a running transaction, ten walkers judging
+ * every entry once, and <strong>every join's statement run once against the real tables</strong>, which proves their columns and casts.
  *
  * <p><strong>The journal is shared by every suite</strong>, so each case plants its entries and judges only those; the walk runs from
  * wherever the shared head stands until it has passed what was planted. Other suites' raw journal fixtures are findings that do not
@@ -99,16 +100,7 @@ class SourceCensusDatabaseTest {
                 throw new IllegalStateException(failure);
             }
         }
-
-        @Override
-        public <R> R outsideTransaction(Function<Connection, R> work) {
-            try (Connection connection = DatabaseRoles.application()) {
-                return work.apply(connection);
-            } catch (SQLException failure) {
-                throw new IllegalStateException(failure);
-            }
-        }
-    }, store, walk, new SourceJoinCatalogue(sources), Duration.ZERO, 500, Duration.ofSeconds(30));
+    }, store, walk, new SourceJoinCatalogue(sources), 500, Duration.ofSeconds(30));
 
     @Test
     @DisplayName("every source join's statement runs against the real tables: its columns and casts are the schema's")
@@ -169,7 +161,52 @@ class SourceCensusDatabaseTest {
     }
 
     @Test
-    @DisplayName("a late commit is still counted: the walk does not pass a transaction that could still commit an earlier id (the probe's database half)")
+    @DisplayName("an entry whose id sorts below the head is still judged: a forged id costs the forger nothing the walk needs")
+    void anEntryMintedBelowTheHeadIsStillJudged() throws Exception {
+        UUID head = post("transfer:" + IDS.next(), wallet(), wallet());
+        walkPast(head);
+
+        UUID forged = post("transfer:" + IDS.next(), wallet(), wallet(), new IdGenerator(Clock.fixed(Instant.parse("2001-01-01T00:00:00Z"), ZoneOffset.UTC), new SecureRandom()));
+        assertThat(column("SELECT '" + forged + "'::uuid < '" + head + "'::uuid")).as("the plant really sorts below the head").isEqualTo("t");
+
+        walkPast(forged);
+        assertThat(findingKindOf(forged)).as("judged, for all its id").isEqualTo("UNSOURCED");
+    }
+
+    @Test
+    @DisplayName("a skewed instance's entry is still judged: its id's clock runs behind the head's and the position does not read it")
+    void aSkewedInstancesEntryIsStillJudged() throws Exception {
+        UUID head = post("transfer:" + IDS.next(), wallet(), wallet());
+        walkPast(head);
+
+        Clock behind = Clock.offset(CLOCK, Duration.ofMinutes(-90));
+        UUID skewed = post("transfer:" + IDS.next(), wallet(), wallet(), new IdGenerator(behind, new SecureRandom()));
+        assertThat(column("SELECT '" + skewed + "'::uuid < '" + head + "'::uuid")).as("minted behind the head by the skew").isEqualTo("t");
+
+        walkPast(skewed);
+        assertThat(findingKindOf(skewed)).isEqualTo("UNSOURCED");
+    }
+
+    @Test
+    @DisplayName("a raw insert cannot choose its transaction: the stamp is the database's")
+    void aRawInsertCannotChooseItsTransaction() throws Exception {
+        UUID id = IDS.next();
+        try (Connection app = DatabaseRoles.application(); Statement statement = app.createStatement()) {
+            app.setAutoCommit(false);
+            // Named outright, as a raw writer would: the deferred balance and line-count checks never run, because this rolls back.
+            statement.executeUpdate("INSERT INTO ledger.journal_entry (id, posting_date, value_date, entry_type, reference, actor_id, correlation_id, causation_id,"
+                    + " idempotency_scope, created_at, txid) VALUES ('" + id + "', current_date, current_date, 'POSTING', 'p15-035', 'SYSTEM', 'p15-035', 'p15-035',"
+                    + " 'ledger.post:p15-035:chosen', statement_timestamp(), '7')");
+            try (ResultSet row = statement.executeQuery("SELECT txid::text, pg_current_xact_id()::text FROM ledger.journal_entry WHERE id = '" + id + "'")) {
+                row.next();
+                assertThat(row.getString(1)).as("the trigger overrules the writer").isEqualTo(row.getString(2)).isNotEqualTo("7");
+            }
+            app.rollback();
+        }
+    }
+
+    @Test
+    @DisplayName("a walk stops behind a running transaction and counts its entry once it commits")
     void aLateCommitIsCounted() throws Exception {
         LedgerAccount from = wallet();
         LedgerAccount to = wallet();
@@ -178,16 +215,13 @@ class SourceCensusDatabaseTest {
         UUID late;
         try (SecurityContext.Scope actor = SecurityContext.enterSystem();
                 CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
-            // Holding the transaction open pins the fence at its start; the later entry commits past it.
-            late = posting().post(holding, command("transfer:" + IDS.next(), from, to)).entryId().value();
+            // Holding the transaction open keeps its xid at or below xmin, so nothing with a later xid is judged.
+            late = posting(IDS).post(holding, command("transfer:" + IDS.next(), from, to)).entryId().value();
         }
         try {
             UUID later = post("transfer:" + IDS.next(), wallet(), wallet());
-            // The walk runs as far as it can; the fence, held by the open transaction, stops it short of the late id however many batches run.
             walkUntilIdle(Duration.ofSeconds(60));
-            assertThat(positionAtOrAfter(late)).as("the walk is short of the open transaction's entry").isFalse();
-            assertThat(findingKindOf(late)).isNull();
-            assertThat(findingKindOf(later)).as("nor has it passed the later, committed one").isNull();
+            assertThat(findingKindOf(later)).as("nothing past the open transaction is judged").isNull();
 
             holding.commit();
 
@@ -221,19 +255,19 @@ class SourceCensusDatabaseTest {
         assertThat(scalar("SELECT count(*) FROM accounting.source_census_finding WHERE entry_id = '" + planted + "'")).isEqualTo(1L);
     }
 
-    /** Sweeps until the head has reached {@code entry} (the database's own uuid order), bounded. */
+    /** Sweeps until the head has reached {@code entry}, in the walk's own order, bounded. */
     private void walkPast(UUID entry) throws Exception {
         long deadline = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
-        while (System.currentTimeMillis() < deadline && !positionAtOrAfter(entry)) {
+        while (System.currentTimeMillis() < deadline && !headHasPassed(entry)) {
             SourceCensus.Batch batch = census.sweepBatch();
             if (batch.judged() == 0) {
                 Thread.sleep(50);
             }
         }
-        assertThat(positionAtOrAfter(entry)).as("the walk reached the planted entry").isTrue();
+        assertThat(headHasPassed(entry)).as("the walk reached the planted entry").isTrue();
     }
 
-    /** Sweeps until a batch finds nothing to judge: as far as the fence allows. */
+    /** Sweeps until a batch finds nothing to judge: as far as the oldest running transaction allows. */
     private void walkUntilIdle(Duration bound) throws Exception {
         long deadline = System.currentTimeMillis() + bound.toMillis();
         while (System.currentTimeMillis() < deadline) {
@@ -247,8 +281,10 @@ class SourceCensusDatabaseTest {
         }
     }
 
-    private boolean positionAtOrAfter(UUID entry) throws SQLException {
-        return "t".equals(column("SELECT position >= '" + entry + "'::uuid FROM accounting.source_census_head"));
+    /** Whether the head stands at or past this entry's (txid, id), in the database's order. */
+    private boolean headHasPassed(UUID entry) throws SQLException {
+        return "t".equals(column("SELECT (h.position_txid, h.position_id) >= (e.txid, e.id) FROM accounting.source_census_head h"
+                + " JOIN ledger.journal_entry e ON e.id = '" + entry + "'"));
     }
 
     private String findingKindOf(UUID entry) throws SQLException {
@@ -287,11 +323,16 @@ class SourceCensusDatabaseTest {
     }
 
     private UUID post(String key, LedgerAccount debit, LedgerAccount credit) throws SQLException {
+        return post(key, debit, credit, IDS);
+    }
+
+    /** Through the ledger's own door, the entry's id minted by {@code generator}: a forged or skewed id is simply one from another clock. */
+    private UUID post(String key, LedgerAccount debit, LedgerAccount credit, IdGenerator generator) throws SQLException {
         try (Connection app = DatabaseRoles.application();
                 SecurityContext.Scope actor = SecurityContext.enterSystem();
                 CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
             app.setAutoCommit(false);
-            UUID entry = posting().post(app, command(key, debit, credit)).entryId().value();
+            UUID entry = posting(generator).post(app, command(key, debit, credit)).entryId().value();
             app.commit();
             return entry;
         }
@@ -304,9 +345,9 @@ class SourceCensusDatabaseTest {
                 new JournalLine(credit.id(), Direction.CREDIT, Money.ofMinorUnits(1234, EUR))));
     }
 
-    private static PostingService posting() {
+    private static PostingService posting(IdGenerator entries) {
         return new PostingService(new IdempotentExecutor(new JdbcIdempotencyRecordStore(), CLOCK, Duration.ofDays(1), Duration.ofMinutes(5)),
-                new JdbcJournalEntryStore(IDS), new JdbcAuditWriter(), new JdbcOutboxWriter(), new JdbcBalanceProjection(), IDS, CLOCK, PostingObserver.NONE);
+                new JdbcJournalEntryStore(entries), new JdbcAuditWriter(), new JdbcOutboxWriter(), new JdbcBalanceProjection(), entries, CLOCK, PostingObserver.NONE);
     }
 
     private static Long scalar(String sql) throws SQLException {

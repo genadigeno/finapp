@@ -84,7 +84,7 @@ and park value in suspense; a GL-side discrepancy has neither.
    its own tables only, on `platform`'s `sourcejoin` contract; `app` alone composes them (`SourceCensusComposition`),
    exactly as `ProductSourceProofs` composes the proofs. No new cross-module edge: a module reads no other module's
    tables, `SourceJoinCoverageTest` holds it, and no ADR-0131 was opened. *Findings are a detective control and never a
-   break of this register's kind, so a finding has no lifecycle here.)*
+   break of this register's kind, so a finding has no lifecycle here. The walk's position is `(txid, id)` in the ledger's own terms (ledger `V034`, this task's fix round; ADR-0014's rule that no correctness argument depends on clock skew): the column and its stamping trigger change no poster and no judgement.)*
 
 ## Alternatives Considered
 

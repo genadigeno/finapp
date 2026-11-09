@@ -10,15 +10,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The census's journal read (`P15-TSK-035`): read-only statements, bounded both ways by a keyset and the fence, a posting's and a
- * reversal's namespace and key suffix read from the ledger's own scope prefix, an adjustment's namespace from its proposal's origin.
- * Its behaviour against the journal is {@code SourceCensusDatabaseTest}'s (owed).
+ * The census's journal read (`P15-TSK-035`): read-only statements; the walk by the ledger's {@code (txid, id)}, bounded in its own
+ * statement by the oldest transaction still running; a posting's and a reversal's namespace and key suffix read from the ledger's own
+ * scope prefix, an adjustment's namespace from its proposal's origin. Its behaviour against the journal is
+ * {@code SourceCensusDatabaseTest}'s (owed).
  */
 @DisplayName("the census's walk of the journal (P15-TSK-035)")
 class LedgerJournalCensusWalkTest {
 
     @Test
-    @DisplayName("every statement is a SELECT that writes and locks nothing; the page is bounded by the keyset and the fence")
+    @DisplayName("every statement is a SELECT that writes and locks nothing")
     void everyStatementOnlyReads() {
         for (String sql : List.of(LedgerJournalCensusWalk.PAGE, LedgerJournalCensusWalk.LINES, LedgerJournalCensusWalk.OLDEST_AFTER)) {
             String upper = sql.toUpperCase(Locale.ROOT);
@@ -27,7 +28,20 @@ class LedgerJournalCensusWalkTest {
                 assertThat(upper).as(forbidden).doesNotContain(forbidden);
             }
         }
-        assertThat(LedgerJournalCensusWalk.PAGE).contains("entry.id > ?").contains("entry.id <").contains("ORDER BY entry.id LIMIT ?");
+    }
+
+    @Test
+    @DisplayName("the position is the transaction, then the id: an id the inserter chose can never sort behind the head")
+    void thePositionIsTheTransactionThenTheId() {
+        assertThat(LedgerJournalCensusWalk.PAGE).contains("(entry.txid, entry.id) > (?::xid8, ?)").contains("ORDER BY entry.txid, entry.id LIMIT ?");
+        assertThat(LedgerJournalCensusWalk.PAGE).as("no comparison on the id alone").doesNotContain("entry.id > ?");
+        assertThat(LedgerJournalCensusWalk.OLDEST_AFTER).contains("(txid, id) > (?::xid8, ?)").contains("ORDER BY txid, id LIMIT 1");
+    }
+
+    @Test
+    @DisplayName("the bound is the oldest transaction still running, in the page's own statement: every txid below it is finished")
+    void theBoundIsTheOldestRunningTransactionOfThePagesOwnSnapshot() {
+        assertThat(LedgerJournalCensusWalk.PAGE).contains("entry.txid < pg_snapshot_xmin(pg_current_snapshot())");
     }
 
     @Test

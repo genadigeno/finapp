@@ -37,6 +37,7 @@ class KeysTest {
     void uuidThenDateIsARealDate() {
         assertThat(Keys.uuidThenDate().test(REAL + ":2026-11-09")).isTrue();
         assertThat(Keys.uuidThenDate().test(REAL + ":0000-01-01")).as("PostgreSQL refuses year 0").isFalse();
+        assertThat(Keys.uuidThenDate().test(REAL + ":+12345-01-01")).as("LocalDate reads it; ::date does not (the review's plant)").isFalse();
         assertThat(Keys.uuidThenDate().test(REAL + ":2026-13-01")).isFalse();
         assertThat(Keys.uuidThenDate().test("garbage:2026-11-09")).isFalse();
         assertThat(Keys.uuidThenDate().test(REAL)).isFalse();

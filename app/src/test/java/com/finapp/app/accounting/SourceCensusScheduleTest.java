@@ -27,24 +27,18 @@ import org.junit.jupiter.api.Test;
 @DisplayName("the census's schedule (P15-TSK-035)")
 class SourceCensusScheduleTest {
 
-    private int batchesRemaining;
+    private static final Connection CONNECTION = connection();
+
     private int calls;
     private boolean claimed = true;
     private boolean failing;
-
-    private static final Connection CONNECTION = connection();
 
     private final SourceCensus census = new SourceCensus(new SourceCensus.Units() {
         @Override
         public <R> R inTransaction(Function<Connection, R> work) {
             return work.apply(CONNECTION);
         }
-
-        @Override
-        public <R> R outsideTransaction(Function<Connection, R> work) {
-            return work.apply(CONNECTION);
-        }
-    }, new FakeStore(), new EmptyWalk(), new SourceJoinCatalogue(List.of()), Duration.ZERO, 10, Duration.ofSeconds(1));
+    }, new FakeStore(), new EmptyWalk(), new SourceJoinCatalogue(List.of()), 10, Duration.ofSeconds(1));
 
     /** A connection whose only job is the census's statement timeout. */
     private static Connection connection() {
@@ -56,9 +50,17 @@ class SourceCensusScheduleTest {
     }
 
     @Test
-    @DisplayName("a tick stops at the first idle batch, and at the first batch another walker holds")
+    @DisplayName("a tick stops at the first idle batch")
     void aTickStopsWhenThereIsNothingToDo() {
         // The empty walk answers idle: one batch, one claim.
+        new SourceCensusSchedule(census, Duration.ofMinutes(1)).sweepOnce();
+        assertThat(calls).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a tick stops at the first batch another walker holds")
+    void aTickStopsWhenTheHeadIsTaken() {
+        claimed = false;
         new SourceCensusSchedule(census, Duration.ofMinutes(1)).sweepOnce();
         assertThat(calls).isEqualTo(1);
     }
@@ -84,17 +86,12 @@ class SourceCensusScheduleTest {
 
     private final class FakeStore implements SourceCensusStore {
         @Override
-        public Instant fence(Connection connection) {
+        public Optional<Head> claimHead(Connection connection) {
             calls++;
             if (failing) {
-                throw new IllegalStateException("the fence read failed");
+                throw new IllegalStateException("the claim failed");
             }
-            return Instant.EPOCH;
-        }
-
-        @Override
-        public Optional<Head> claimHead(Connection connection) {
-            return claimed ? Optional.of(new Head(new UUID(0, 0), 0)) : Optional.empty();
+            return claimed ? Optional.of(new Head(new JournalCensusWalk.Position(0, new UUID(0, 0)), 0, false)) : Optional.empty();
         }
 
         @Override
@@ -102,7 +99,7 @@ class SourceCensusScheduleTest {
         }
 
         @Override
-        public void advance(Connection connection, UUID position, long entriesJudged) {
+        public void advance(Connection connection, JournalCensusWalk.Position position, long entriesJudged) {
         }
 
         @Override
@@ -114,19 +111,19 @@ class SourceCensusScheduleTest {
         }
 
         @Override
-        public Reading read(Connection connection, Duration standing, Duration staleAfter) {
+        public Reading read(Connection connection, Duration standing, Duration recent, Duration staleAfter) {
             throw new UnsupportedOperationException();
         }
     }
 
     private static final class EmptyWalk implements JournalCensusWalk {
         @Override
-        public List<CensusEntry> page(Connection connection, UUID after, Instant mintedBefore, int limit) {
+        public List<CensusEntry> page(Connection connection, Position after, int limit) {
             return List.of();
         }
 
         @Override
-        public Optional<Instant> oldestAfter(Connection connection, UUID position) {
+        public Optional<Instant> oldestAfter(Connection connection, Position position) {
             return Optional.empty();
         }
     }

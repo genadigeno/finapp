@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,38 +29,32 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The census's walk against stand-in stores (`P15-TSK-035`; the entry's multi-instance and failure lines): one batch, one
- * transaction; a namespace with no join, a key with no record and a differing figure counted; the head advancing past exactly what
- * was judged; <strong>the fence holding an open transaction's position back so a late commit is still counted</strong>; a walker
- * that finds the head taken does nothing; a source that cannot be read fails the batch whole, moves nothing, and stamps its failure.
- * The real journal and the real fence are {@code SourceCensusDatabaseTest}'s (written, owed to {@code P15-TST-002}).
+ * The census's batch against stand-in stores (`P15-TSK-035`): one batch, one transaction; a namespace with no join, a key with no record
+ * and a differing figure counted; the head moved to the last entry's whole position; a walker that finds the head taken does nothing; a
+ * head ahead of the database refused; a source that cannot be read failing the batch whole; a key that cannot be judged counted instead.
+ * <strong>The position's meaning is not here</strong> (a stand-in journal can only obey it): that is {@code LedgerJournalCensusWalkTest}'s
+ * statement and {@code SourceCensusDatabaseTest}'s cases (written, owed to {@code P15-TST-002}).
  */
-@DisplayName("the source-join census walks the journal behind a fence (P15-TSK-035)")
+@DisplayName("the source-join census's batch (P15-TSK-035)")
 class SourceCensusTest {
 
     private static final String TRANSFER = "transfer:";
 
-    /** UUIDv7-shaped ids: the high 48 bits are the minting millisecond, as ADR-0013's generator writes them. */
-    private static UUID mintedAt(long millis, long counter) {
-        return new UUID((millis << 16) | 0x7000L, 0x8000000000000000L | counter);
-    }
-
-    private static Instant millis(long millis) {
-        return Instant.ofEpochMilli(millis);
+    private static UUID id(long low) {
+        return new UUID(0x0190_0000_0000_7000L, 0x8000_0000_0000_0000L | low);
     }
 
     private final FakeJournal journal = new FakeJournal();
     private final FakeStore store = new FakeStore();
 
     @Test
-    @DisplayName("an entry with no record is unsourced, a differing record is mismatched, a matching one is neither, and the head passes them all")
+    @DisplayName("an entry with no record is unsourced, a differing record is mismatched, a matching one is neither")
     void judgesEachEntry() {
-        UUID matched = journal.post(mintedAt(1_000, 1), TRANSFER, "transfers-ok", "USD", 2, 100);
-        UUID unsourced = journal.post(mintedAt(1_001, 2), TRANSFER, "no-such-record", "USD", 2, 100);
-        UUID mismatched = journal.post(mintedAt(1_002, 3), TRANSFER, "transfers-short", "USD", 2, 100);
+        UUID matched = journal.post(10, id(1), TRANSFER, "transfers-ok", "USD", 2, 100);
+        UUID unsourced = journal.post(11, id(2), TRANSFER, "no-such-record", "USD", 2, 100);
+        UUID mismatched = journal.post(12, id(3), TRANSFER, "transfers-short", "USD", 2, 100);
         SourceCensus census = census(Map.of("transfers-ok", SourceFigures.total("USD", 2, 100),
                 "transfers-short", SourceFigures.total("USD", 2, 99)));
-        store.fence = millis(9_999);
 
         SourceCensus.Batch done = census.sweepBatch();
 
@@ -69,51 +64,37 @@ class SourceCensusTest {
         assertThat(store.findingsOf(mismatched)).singleElement().satisfies(finding ->
                 assertThat(finding.kind()).isEqualTo(SourceFindingKind.MISMATCHED));
         assertThat(store.findingsOf(matched)).isEmpty();
-        assertThat(store.head.position()).isEqualTo(mismatched);
-        assertThat(store.head.entriesJudged()).isEqualTo(3);
     }
 
     @Test
-    @DisplayName("the fence holds a late-committing entry's position: it is not passed while open, and is counted once committed (the probe)")
-    void aLateCommitIsStillCounted() {
-        // Transaction A opens at 950 and mints entry 1000 at t=1000, uncommitted. Transaction B mints entry 1001 at t=1001 and commits.
-        UUID late = journal.postUncommitted(mintedAt(1_000, 1), TRANSFER, "late-commit", "USD", 2, 500);
-        UUID later = journal.post(mintedAt(1_001, 2), TRANSFER, "no-such-record-either", "USD", 2, 7);
-        SourceCensus census = census(Map.of("no-such-record-either", SourceFigures.total("USD", 2, 7)));
+    @DisplayName("the head moves to the last entry's whole position: its transaction and its id, never the id alone")
+    void theHeadMovesToTheLastEntrysWholePosition() {
+        journal.post(10, id(9), TRANSFER, "a", "USD", 2, 1);
+        journal.post(11, id(1), TRANSFER, "b", "USD", 2, 1);
 
-        // A is open: the fence is its start, 950, so nothing minted at or after 950 is yet walked.
-        store.fence = millis(950);
-        census.sweepBatch();
-        assertThat(store.head.position()).as("nothing passed while the transaction is open").isEqualTo(store.floor());
-        assertThat(store.findingsOf(later)).isEmpty();
+        census(Map.of()).sweepBatch();
 
-        // A commits; the fence moves on.
-        journal.commit(late);
-        store.fence = millis(9_999);
-        census.sweepBatch();
-
-        assertThat(store.findingsOf(late)).as("the late commit is counted, not skipped")
-                .singleElement().satisfies(finding -> assertThat(finding.kind()).isEqualTo(SourceFindingKind.UNSOURCED));
-        assertThat(store.head.position()).isEqualTo(later);
+        assertThat(store.head.position()).isEqualTo(new JournalCensusWalk.Position(11, id(1)));
+        assertThat(store.head.entriesJudged()).isEqualTo(2);
     }
 
     @Test
-    @DisplayName("the fence is read before the batch's transaction begins: a transaction that commits between them is neither side's")
-    void theFenceIsReadBeforeTheBatch() {
-        journal.post(mintedAt(1_000, 1), TRANSFER, "x", "USD", 2, 1);
-        List<String> order = new ArrayList<>();
-        store.onFence = () -> order.add("fence");
-        store.onClaim = () -> order.add("claim");
-        census(Map.of("x", SourceFigures.total("USD", 2, 1))).sweepBatch();
-        assertThat(order).containsExactly("fence", "claim");
+    @DisplayName("a head ahead of the database refuses the batch, stamped: a logical restore cannot walk on, or skip, silently")
+    void aHeadAheadOfTheDatabaseRefusesTheBatch() {
+        journal.post(10, id(1), TRANSFER, "a", "USD", 2, 1);
+        store.ahead = true;
+
+        assertThatThrownBy(census(Map.of())::sweepBatch).isInstanceOf(AccountingStorageException.class).hasMessageContaining("restore");
+        assertThat(store.head.position()).as("nothing moved").isEqualTo(store.floor());
+        assertThat(store.findings).isEmpty();
+        assertThat(store.failureClasses).containsExactly("AccountingStorageException");
     }
 
     @Test
-    @DisplayName("a namespace no join answers for is counted, and so is an entry that names no namespace: no namespace passes silently")
+    @DisplayName("a namespace no join answers for is counted, and so is an entry that names none: no namespace passes silently")
     void noJoinIsCounted() {
-        UUID unknown = journal.postRaw(mintedAt(1_000, 1), EntryType.POSTING, Optional.of("not-registered:"), "whatever", "whatever", "USD", 2, 5);
-        UUID unnamed = journal.postRaw(mintedAt(1_001, 2), EntryType.POSTING, Optional.empty(), "", "whatever", "USD", 2, 5);
-        store.fence = millis(9_999);
+        UUID unknown = journal.postRaw(10, id(1), EntryType.POSTING, Optional.of("not-registered:"), "whatever", "whatever", "USD", 2, 5);
+        UUID unnamed = journal.postRaw(11, id(2), EntryType.POSTING, Optional.empty(), "", "whatever", "USD", 2, 5);
         census(Map.of()).sweepBatch();
 
         assertThat(store.findingsOf(unknown)).singleElement().satisfies(finding -> {
@@ -125,11 +106,26 @@ class SourceCensusTest {
     }
 
     @Test
+    @DisplayName("a blank key is counted, not thrown: one row must not stop the census (the review's plant)")
+    void aBlankKeyIsCountedNotThrown() {
+        UUID blank = journal.postRaw(10, id(1), EntryType.POSTING, Optional.of(" "), "whatever", "whatever", "USD", 2, 5);
+        UUID after = journal.post(11, id(2), TRANSFER, "no-such", "USD", 2, 5);
+
+        census(Map.of()).sweepBatch();
+
+        assertThat(store.findingsOf(blank)).singleElement().satisfies(finding -> {
+            assertThat(finding.kind()).isEqualTo(SourceFindingKind.UNSOURCED);
+            assertThat(finding.namespace()).isEqualTo(SourceCensus.UNNAMED);
+        });
+        assertThat(store.findingsOf(after)).as("and the batch went on past it").hasSize(1);
+        assertThat(store.head.entriesJudged()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("an oversized namespace is cut to the column's bound: a forged key cannot fail the batch by its length")
     void anOversizedNamespaceIsBounded() {
         String longNamespace = "x".repeat(150) + ":";
-        UUID entry = journal.postRaw(mintedAt(1_000, 1), EntryType.POSTING, Optional.of(longNamespace), "whatever", "whatever", "USD", 2, 5);
-        store.fence = millis(9_999);
+        UUID entry = journal.postRaw(10, id(1), EntryType.POSTING, Optional.of(longNamespace), "whatever", "whatever", "USD", 2, 5);
         census(Map.of()).sweepBatch();
         assertThat(store.findingsOf(entry)).singleElement().satisfies(finding ->
                 assertThat(finding.namespace()).hasSize(SourceCensus.MAX_NAMESPACE));
@@ -138,9 +134,8 @@ class SourceCensusTest {
     @Test
     @DisplayName("a walker that finds the head taken does nothing, and judges nothing twice")
     void aTakenHeadDoesNothing() {
-        journal.post(mintedAt(1_000, 1), TRANSFER, "x", "USD", 2, 1);
+        journal.post(10, id(1), TRANSFER, "x", "USD", 2, 1);
         store.held = true;
-        store.fence = millis(9_999);
         SourceCensus.Batch done = census(Map.of("x", SourceFigures.total("USD", 2, 1))).sweepBatch();
         assertThat(done.claimed()).isFalse();
         assertThat(store.head.position()).isEqualTo(store.floor());
@@ -148,9 +143,8 @@ class SourceCensusTest {
     }
 
     @Test
-    @DisplayName("a page the fence leaves empty moves nothing and stamps success: an idle journal is healthy")
+    @DisplayName("an empty page moves nothing and stamps success: an idle journal is healthy")
     void anEmptyPageStampsSuccess() {
-        store.fence = millis(9_999);
         SourceCensus.Batch done = census(Map.of()).sweepBatch();
         assertThat(done.claimed()).isTrue();
         assertThat(done.judged()).isZero();
@@ -160,8 +154,7 @@ class SourceCensusTest {
     @Test
     @DisplayName("a source that cannot be read fails the batch whole: no finding, the head where it was, the failure stamped")
     void anUnreadableSourceFailsTheBatch() {
-        journal.post(mintedAt(1_000, 1), TRANSFER, "x", "USD", 2, 1);
-        store.fence = millis(9_999);
+        journal.post(10, id(1), TRANSFER, "x", "USD", 2, 1);
         SourceCensus census = censusOver(List.of(new JournalSources() {
             @Override
             public String module() {
@@ -223,13 +216,8 @@ class SourceCensusTest {
             public <R> R inTransaction(Function<Connection, R> work) {
                 return work.apply(connection);
             }
-
-            @Override
-            public <R> R outsideTransaction(Function<Connection, R> work) {
-                return work.apply(connection);
-            }
         };
-        return new SourceCensus(units, store, journal, new SourceJoinCatalogue(sources), Duration.ZERO, 100, Duration.ofSeconds(5));
+        return new SourceCensus(units, store, journal, new SourceJoinCatalogue(sources), 100, Duration.ofSeconds(5));
     }
 
     /** A connection whose only job is to answer the statement timeout's {@code set_config}. */
@@ -270,54 +258,34 @@ class SourceCensusTest {
         }
     }
 
-    /** A journal that knows what is committed. */
+    /** A journal in (txid, id) order: just enough to feed a page. */
     private static final class FakeJournal implements JournalCensusWalk {
 
         private final List<CensusEntry> entries = new ArrayList<>();
-        private final List<UUID> uncommitted = new ArrayList<>();
 
-        UUID post(UUID id, String namespace, String suffix, String currency, int scale, long minor) {
-            entries.add(entry(id, EntryType.POSTING, Optional.of(namespace), suffix, suffix, currency, scale, minor));
-            return id;
+        UUID post(long txid, UUID id, String namespace, String suffix, String currency, int scale, long minor) {
+            return postRaw(txid, id, EntryType.POSTING, Optional.of(namespace), suffix, suffix, currency, scale, minor);
         }
 
-        UUID postUncommitted(UUID id, String namespace, String suffix, String currency, int scale, long minor) {
-            post(id, namespace, suffix, currency, scale, minor);
-            uncommitted.add(id);
-            return id;
-        }
-
-        UUID postRaw(UUID id, EntryType door, Optional<String> namespace, String suffix, String reference, String currency, int scale, long minor) {
-            entries.add(entry(id, door, namespace, suffix, reference, currency, scale, minor));
-            return id;
-        }
-
-        void commit(UUID id) {
-            uncommitted.remove(id);
-        }
-
-        private static CensusEntry entry(UUID id, EntryType door, Optional<String> namespace, String suffix, String reference, String currency, int scale, long minor) {
-            return new CensusEntry(id, door, namespace, suffix, reference, List.of(
+        UUID postRaw(long txid, UUID id, EntryType door, Optional<String> namespace, String suffix, String reference, String currency, int scale, long minor) {
+            entries.add(new CensusEntry(new Position(txid, id), door, namespace, suffix, reference, List.of(
                     new JournalShapes.ShapeLine(1, "CUSTOMER_WALLET", Side.DEBIT, currency, scale, BigInteger.valueOf(minor)),
-                    new JournalShapes.ShapeLine(2, "CUSTOMER_WALLET", Side.CREDIT, currency, scale, BigInteger.valueOf(minor))));
+                    new JournalShapes.ShapeLine(2, "CUSTOMER_WALLET", Side.CREDIT, currency, scale, BigInteger.valueOf(minor)))));
+            return id;
         }
 
         @Override
-        public List<CensusEntry> page(Connection connection, UUID after, Instant mintedBefore, int limit) {
-            // Sorted ascending by id bytes (the keyset), only what is committed and minted before the bound.
-            long afterTime = after.getMostSignificantBits() >>> 16;
-            long boundTime = mintedBefore.toEpochMilli();
+        public List<CensusEntry> page(Connection connection, Position after, int limit) {
             return entries.stream()
-                    .filter(entry -> !uncommitted.contains(entry.id()))
-                    .filter(entry -> (entry.id().getMostSignificantBits() >>> 16) < boundTime)
-                    .filter(entry -> (entry.id().getMostSignificantBits() >>> 16) > afterTime || entry.id().compareTo(after) > 0)
-                    .sorted(java.util.Comparator.comparing(CensusEntry::id))
+                    .filter(entry -> entry.position().txid() > after.txid()
+                            || (entry.position().txid() == after.txid() && entry.id().compareTo(after.id()) > 0))
+                    .sorted(Comparator.comparingLong((CensusEntry entry) -> entry.position().txid()).thenComparing(CensusEntry::id))
                     .limit(limit)
                     .toList();
         }
 
         @Override
-        public Optional<Instant> oldestAfter(Connection connection, UUID position) {
+        public Optional<Instant> oldestAfter(Connection connection, Position position) {
             return Optional.empty();
         }
     }
@@ -325,17 +293,15 @@ class SourceCensusTest {
     /** The head, the findings, the failures - in memory. */
     private static final class FakeStore implements SourceCensusStore {
 
-        Head head = new Head(mintedAt(0, 0), 0);
+        Head head = new Head(new JournalCensusWalk.Position(0, new UUID(0, 0)), 0, false);
         final List<Finding> findings = new ArrayList<>();
         final List<String> failureClasses = new ArrayList<>();
         int touched;
         boolean held;
-        Instant fence = Instant.ofEpochMilli(0);
-        Runnable onFence = () -> {};
-        Runnable onClaim = () -> {};
+        boolean ahead;
 
-        UUID floor() {
-            return mintedAt(0, 0);
+        JournalCensusWalk.Position floor() {
+            return new JournalCensusWalk.Position(0, new UUID(0, 0));
         }
 
         List<Finding> findingsOf(UUID entry) {
@@ -343,15 +309,8 @@ class SourceCensusTest {
         }
 
         @Override
-        public Instant fence(Connection connection) {
-            onFence.run();
-            return fence;
-        }
-
-        @Override
         public Optional<Head> claimHead(Connection connection) {
-            onClaim.run();
-            return held ? Optional.empty() : Optional.of(head);
+            return held ? Optional.empty() : Optional.of(new Head(head.position(), head.entriesJudged(), ahead));
         }
 
         @Override
@@ -364,8 +323,8 @@ class SourceCensusTest {
         }
 
         @Override
-        public void advance(Connection connection, UUID position, long entriesJudged) {
-            head = new Head(position, head.entriesJudged() + entriesJudged);
+        public void advance(Connection connection, JournalCensusWalk.Position position, long entriesJudged) {
+            head = new Head(position, head.entriesJudged() + entriesJudged, false);
         }
 
         @Override
@@ -379,7 +338,7 @@ class SourceCensusTest {
         }
 
         @Override
-        public Reading read(Connection connection, Duration standing, Duration staleAfter) {
+        public Reading read(Connection connection, Duration standing, Duration recent, Duration staleAfter) {
             throw new UnsupportedOperationException("the gauges are SourceCensusMetricsTest's");
         }
     }

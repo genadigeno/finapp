@@ -89,12 +89,24 @@ public final class SqlSourceJoin implements SourceJoin {
                     if (named == null) {
                         continue;
                     }
-                    SourceFigures read = figures.read(row);
+                    SourceFigures read = figuresOf(row);
                     named.forEach(entry -> found.merge(entry, read, SqlSourceJoin::combined));
                 }
             }
         }
         return found;
+    }
+
+    /**
+     * A row that cannot be read into figures (a value outside what a figure may hold) is this one record's trouble, not the batch's: it
+     * reads as a record with no comparable figure, counted, and the walk goes on. A failure of the read itself still throws.
+     */
+    private SourceFigures figuresOf(ResultSet row) throws SQLException {
+        try {
+            return figures.read(row);
+        } catch (RuntimeException unreadable) {
+            return SourceFigures.noFigure();
+        }
     }
 
     /** Several rows for one key: the legs of each. */

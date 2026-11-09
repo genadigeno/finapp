@@ -430,6 +430,8 @@ tests:
         values: '0x20'
       - series: 'finapp_accounting_source_census_lag_seconds{job="finapp", instance="a:8081"}'
         values: '0x20'
+      - series: 'finapp_accounting_source_census_findings{job="finapp", instance="a:8081"}'
+        values: '0x20'
     alert_rule_test:
       - eval_time: 16m
         alertname: CorrectnessUnverifiable
@@ -652,3 +654,51 @@ tests:
             exp_annotations:
               summary: "No instance can verify the books"
               description: "No instance has published a number for a correctness gauge for 15 minutes, so the correctness pages are silent for the wrong reason. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # SourceCensusStalled: an hour behind and past it: pages after its 5 minutes, and a shorter stall does not.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_accounting_source_census_lag_seconds{job="finapp", instance="a:8081"}'
+        values: '3601x40'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SourceCensusStalled
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: SourceCensusStalled
+        exp_alerts:
+          - exp_labels:
+              owner: accounting
+              severity: page
+            exp_annotations:
+              summary: "The source-join census has stopped reading the journal"
+              description: "The census has been 3601 seconds behind the journal, past its hour's bound: entries are waiting and none are being judged. See OPERATIONS_RUNBOOK.md section 11.27."
+
+  # SourceCensusStalled: past the ticket's fifteen minutes and under the hour: no page.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_accounting_source_census_lag_seconds{job="finapp", instance="a:8081"}'
+        values: '1800x40'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SourceCensusStalled
+        exp_alerts: []
+
+  # SourceCensusFindingsRecent: a finding within the ticket's window tickets; none is silent; the page's window is another rule's.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_accounting_source_census_findings{job="finapp", instance="a:8081"}'
+        values: '0 0 2 2 2 2'
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: SourceCensusFindingsRecent
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: SourceCensusFindingsRecent
+        exp_alerts:
+          - exp_labels:
+              owner: accounting
+              severity: ticket
+            exp_annotations:
+              summary: "The source-join census has recent findings"
+              description: "2 journal entries were counted by the source-join census within its ticket window. See OPERATIONS_RUNBOOK.md section 11.27."

@@ -7,7 +7,6 @@ import com.finapp.platform.sourcejoin.SourceDoor;
 import com.finapp.platform.sourcejoin.SourceFigures;
 import com.finapp.platform.sourcejoin.SourceJoin;
 import com.finapp.platform.sourcejoin.SqlSourceJoin;
-import java.math.BigInteger;
 import java.util.List;
 import java.util.Set;
 
@@ -29,7 +28,7 @@ public final class LedgerJournalSources implements JournalSources {
                     MANUAL_PROPOSAL, Keys.suffixUuid(), row -> {
                         ExpectedLeg.Side side = "DEBIT".equals(row.getString("direction")) ? ExpectedLeg.Side.DEBIT : ExpectedLeg.Side.CREDIT;
                         return SourceFigures.of(new ExpectedLeg(side, Set.of(), row.getString("currency").trim(), row.getInt("scale"),
-                                BigInteger.valueOf(row.getLong("amount_minor")), ExpectedLeg.Bound.EXACT));
+                                row.getBigDecimal("amount_minor").toBigIntegerExact(), ExpectedLeg.Bound.EXACT));
                     }));
 
     @Override

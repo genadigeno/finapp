@@ -118,8 +118,12 @@ public final class Keys {
             if (parts.size() != 2 || uuid(parts.get(0)).isEmpty()) {
                 return false;
             }
+            // Strictly yyyy-mm-dd: LocalDate also reads "+12345-01-01", which PostgreSQL's ::date refuses. And year 0, which it refuses
+            // too. A forger's key joins nothing; it must never reach a cast that fails the batch.
+            if (!parts.get(1).matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
+                return false;
+            }
             try {
-                // Year 0 is a date LocalDate reads and PostgreSQL refuses: a forger's key must join nothing, never fail the batch.
                 return LocalDate.parse(parts.get(1)).getYear() >= 1;
             } catch (DateTimeParseException notADate) {
                 return false;

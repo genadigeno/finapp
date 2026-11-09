@@ -419,6 +419,7 @@ sentence lands.
 | `journal_entry` | `idempotency_scope` | `INTERNAL` | As `idempotency_record.scope` |
 | `journal_entry` | `reverses_entry_id` | `INTERNAL` | *(added by `P3-TSK-016`)* The original a `REVERSAL` compensates (`INV-REV-01`) — a platform-minted entry identifier, the `journal_line.ledger_account_id` reasoning: it must appear in the joins that make a correction investigable, and what it resolves to carries its own levels |
 | `journal_entry` | `created_at` | `CONFIDENTIAL` | System time of a posting still dates financial activity |
+| `journal_entry` | `txid` | `INTERNAL` | *(added by `P15-TSK-035`)* The inserting transaction, stamped by the database (`ledger V034`): a number with no meaning outside this database, not a person's or a value's |
 | `journal_line` | `id` | `INTERNAL` | A generated identifier |
 | `journal_line` | `entry_id` | `INTERNAL` | An identifier of a thing |
 | `journal_line` | `ledger_account_id` | `INTERNAL` | The `kyc_case.customer_id` reasoning: it must appear in the queries and audit trails that make a posting investigable; what it resolves to carries its own levels |
@@ -5061,6 +5062,32 @@ are unchanged.)*
 | `accounting.break_event` | `reason` | `RESTRICTED-PII` | Person-written - the proposal's row carries the disclosure, which is `CONFIDENTIAL` on the break's row and kept at the ceiling here; never served from the case file |
 | `accounting.break_event` | `occurred_at` | `INTERNAL` | The database's stamp |
 | `accounting.break_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+
+### `accounting.source_census_head` and `source_census_finding` - the source-join census - *added by `P15-TSK-035`*
+
+`accounting V015`: one head row - the journal position the walk has judged through, as `(position_txid, position_id)`, and its health - and one
+finding per entry the census counted. **No money.** Findings hold closed codes, the entry's own identifier and a reason built from fixed
+strings, a side, a currency and purposes: never an amount, a line or a free-text reference. `entry_id` and `namespace` follow
+`accounting_break`'s `CONFIDENTIAL`: which entry the books cannot explain is an operator-only fact, and a forged key's text can reach `namespace`.
+Kept (`DATA_RETENTION.md`): nothing deletes a finding.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `source_census_head` | `id` | `INTERNAL` | Always true: the one-row constraint |
+| `source_census_head` | `position_txid` | `INTERNAL` | The inserting transaction of the last entry judged, a database transaction id |
+| `source_census_head` | `position_id` | `INTERNAL` | The last entry judged, an identifier of a thing (`journal_line.ledger_account_id`'s reasoning) |
+| `source_census_head` | `entries_judged` | `INTERNAL` | A count |
+| `source_census_head` | `advanced_at` | `INTERNAL` | When the head last moved, on the database's clock |
+| `source_census_head` | `last_success_at` | `INTERNAL` | When a batch last ran to its end |
+| `source_census_head` | `last_failure_at` | `INTERNAL` | When a batch last failed |
+| `source_census_head` | `last_failure_class` | `INTERNAL` | A Java class name, set from a closed set of exception types, never a message |
+| `source_census_head` | `updated_at` | `INTERNAL` | When this row last changed |
+| `source_census_finding` | `entry_id` | `CONFIDENTIAL` | Which entry the census could not explain (`accounting_break`'s finding, the same reasoning) |
+| `source_census_finding` | `kind` | `INTERNAL` | A closed `SourceFindingKind` |
+| `source_census_finding` | `door` | `INTERNAL` | A closed `EntryType` |
+| `source_census_finding` | `namespace` | `CONFIDENTIAL` | The entry's own key text up to its first `:`, cut to its bound: a forged key's text can reach it |
+| `source_census_finding` | `evidence` | `CONFIDENTIAL` | A reason from fixed strings, a side, a currency and purposes of this entry: never an amount |
+| `source_census_finding` | `found_at` | `INTERNAL` | The database's stamp, by trigger |
 
 ### `accounting.valuation_rate_set` and `valuation_rate` - the valuation rate set - *added by `P14-TSK-014`*
 

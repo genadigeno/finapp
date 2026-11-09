@@ -29,10 +29,10 @@ public final class LendingJournalSources implements JournalSources {
     static final String DRAW = "SELECT id::text AS key_text, amount_minor, currency, scale FROM lending.credit_line_draw WHERE id = ANY (?)";
     static final String ACCRUAL = "SELECT k.v AS key_text, a.posted_minor, a.currency, a.scale FROM unnest(?::text[]) k(v)"
             + " JOIN lending.interest_accrual a ON a.loan_id = split_part(k.v, ':', 1)::uuid AND a.accrual_date = split_part(k.v, ':', 2)::date";
-    static final String BILLED = "SELECT k.v AS key_text, b.interest_due_minor + b.principal_due_minor AS amount_minor, b.currency, b.scale FROM unnest(?::text[]) k(v)"
+    static final String BILLED = "SELECT k.v AS key_text, b.interest_due_minor::numeric + b.principal_due_minor AS amount_minor, b.currency, b.scale FROM unnest(?::text[]) k(v)"
             + " JOIN lending.instalment_billing b ON b.instalment_id = CASE WHEN k.v !~ ':' THEN k.v::uuid END"
             + " OR (b.loan_id = CASE WHEN k.v ~ ':' THEN split_part(k.v, ':', 1)::uuid END AND b.due_date = CASE WHEN k.v ~ ':' THEN split_part(k.v, ':', 2)::date END)";
-    static final String STATEMENT = "SELECT k.v AS key_text, s.interest_billed_minor + s.principal_billed_minor AS amount_minor, s.currency, s.scale FROM unnest(?::text[]) k(v)"
+    static final String STATEMENT = "SELECT k.v AS key_text, s.interest_billed_minor::numeric + s.principal_billed_minor AS amount_minor, s.currency, s.scale FROM unnest(?::text[]) k(v)"
             + " JOIN lending.credit_line_statement s ON s.loan_id = split_part(k.v, ':', 1)::uuid AND s.cycle_end = split_part(k.v, ':', 2)::date";
     static final String FEE = "SELECT k.v AS key_text, f.amount_minor, f.currency, f.scale FROM unnest(?::text[]) k(v)"
             + " JOIN lending.fee_assessment f ON f.due_item_id = split_part(k.v, ':', 1)::uuid AND f.kind = split_part(k.v, ':', 2)";
@@ -46,7 +46,7 @@ public final class LendingJournalSources implements JournalSources {
             + " JOIN lending.repayment p ON p.id = r.repayment_id WHERE r.id = ANY (?)";
     static final String AMENDMENT = "SELECT amendment_id::text AS key_text, sum(principal_minor) AS principal_minor, currency, scale"
             + " FROM lending.loan_amendment_rescheduling WHERE amendment_id = ANY (?) GROUP BY amendment_id, currency, scale";
-    static final String WRITE_OFF = "SELECT loan_id::text AS key_text, principal_minor + principal_due_minor + interest_accrued_minor + interest_due_minor + fees_due_minor AS amount_minor,"
+    static final String WRITE_OFF = "SELECT loan_id::text AS key_text, principal_minor::numeric + principal_due_minor + interest_accrued_minor + interest_due_minor + fees_due_minor AS amount_minor,"
             + " currency, scale FROM lending.loan_write_off WHERE loan_id = ANY (?)";
 
     private static final List<SourceJoin> JOINS = List.of(
@@ -80,7 +80,8 @@ public final class LendingJournalSources implements JournalSources {
         return new SqlSourceJoin(door, namespace, statement, sql, key, row -> total(row, minor));
     }
 
+    /** Read as a decimal: a sum of {@code bigint} columns may exceed one, and that must be this record's mismatch, not a failed batch. */
     private static SourceFigures total(ResultSet row, String minor) throws SQLException {
-        return SourceFigures.total(row.getString("currency").trim(), row.getInt("scale"), row.getLong(minor));
+        return SourceFigures.total(row.getString("currency").trim(), row.getInt("scale"), row.getBigDecimal(minor).toBigIntegerExact());
     }
 }
