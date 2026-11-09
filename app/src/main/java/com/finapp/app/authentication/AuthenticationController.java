@@ -85,6 +85,7 @@ class AuthenticationController {
      * reaches the published contract - the defect {@code P1-TSK-006} found when springdoc published
      * {@code "200": "OK"} for an endpoint that has never returned 200.
      */
+    @com.finapp.app.abuse.SourceLimited(com.finapp.app.abuse.Door.AUTHENTICATION)
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     AuthenticatedSession authenticate(

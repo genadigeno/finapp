@@ -424,6 +424,8 @@ tasks.named<Test>("databaseTest") {
 // TestTaxonomyTest holds this list equal to the tagged set.
 extra["ownContainerSuites"] =
     listOf(
+        // P15-TSK-022: three contexts of its own, for the storms' reason: they would otherwise add up on the tier's shared JVM.
+        "com.finapp.app.abuse.SourceLimitClusterDatabaseTest",
         // P14-TST-002: it opens the year 2001 as the database's first periods and closes all twelve for good, activates two
         // mapping versions and commits some 22,000 journal lines on operational accounts no expectation names.
         "com.finapp.app.accounting.AccountingBatteryTest",

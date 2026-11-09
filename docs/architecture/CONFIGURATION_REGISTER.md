@@ -68,6 +68,24 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 
 | Property | Variable | Class | Default | local | test | ci | staging | production | A mixed fleet |
 |---|---|---|---|---|---|---|---|---|---|
+| `finapp.abuse.channel-verification.limit` | `FINAPP_ABUSE_CHANNEL_VERIFICATION_LIMIT` | OPERATIONAL | `20` | default | overlay | default | default | default | - |
+| `finapp.abuse.channel-verification.window` | `FINAPP_ABUSE_CHANNEL_VERIFICATION_WINDOW` | OPERATIONAL | `PT1H` | default | default | default | default | default | - |
+| `finapp.abuse.max-concurrent-counts` | `FINAPP_ABUSE_MAX_CONCURRENT_COUNTS` | OPERATIONAL | `3` | default | overlay | default | default | default | - |
+| `finapp.abuse.permit-wait` | `FINAPP_ABUSE_PERMIT_WAIT` | OPERATIONAL | `PT0.1S` | default | default | default | default | default | - |
+| `finapp.abuse.recovery-completion.limit` | `FINAPP_ABUSE_RECOVERY_COMPLETION_LIMIT` | OPERATIONAL | `20` | default | overlay | default | default | default | - |
+| `finapp.abuse.recovery-completion.window` | `FINAPP_ABUSE_RECOVERY_COMPLETION_WINDOW` | OPERATIONAL | `PT1H` | default | default | default | default | default | - |
+| `finapp.abuse.recovery.limit` | `FINAPP_ABUSE_RECOVERY_LIMIT` | OPERATIONAL | `10` | default | overlay | default | default | default | - |
+| `finapp.abuse.recovery.site-limit` | `FINAPP_ABUSE_RECOVERY_SITE_LIMIT` | OPERATIONAL | `100` | default | overlay | default | default | default | - |
+| `finapp.abuse.recovery.window` | `FINAPP_ABUSE_RECOVERY_WINDOW` | OPERATIONAL | `PT1H` | default | default | default | default | default | - |
+| `finapp.abuse.registration.limit` | `FINAPP_ABUSE_REGISTRATION_LIMIT` | OPERATIONAL | `10` | default | overlay | default | default | default | - |
+| `finapp.abuse.registration.site-limit` | `FINAPP_ABUSE_REGISTRATION_SITE_LIMIT` | OPERATIONAL | `100` | default | overlay | default | default | default | - |
+| `finapp.abuse.registration.window` | `FINAPP_ABUSE_REGISTRATION_WINDOW` | OPERATIONAL | `PT1H` | default | default | default | default | default | - |
+| `finapp.abuse.sign-in.limit` | `FINAPP_ABUSE_SIGN_IN_LIMIT` | OPERATIONAL | `100` | default | overlay | default | default | default | - |
+| `finapp.abuse.sign-in.site-limit` | `FINAPP_ABUSE_SIGN_IN_SITE_LIMIT` | OPERATIONAL | `1000` | default | overlay | default | default | default | - |
+| `finapp.abuse.sign-in.window` | `FINAPP_ABUSE_SIGN_IN_WINDOW` | OPERATIONAL | `PT15M` | default | default | default | default | default | - |
+| `finapp.abuse.sweep.batch-size` | `FINAPP_ABUSE_SWEEP_BATCHSIZE` | OPERATIONAL | `1000` | default | default | default | default | default | - |
+| `finapp.abuse.sweep.grace` | `FINAPP_ABUSE_SWEEP_GRACE` | OPERATIONAL | `PT1M` | default | default | default | default | default | - |
+| `finapp.abuse.sweep.interval` | `FINAPP_ABUSE_SWEEP_INTERVAL` | OPERATIONAL | `PT1M` | default | default | default | default | default | - |
 | `finapp.accounting.adjustment.standing-after` | `FINAPP_ACCOUNTING_ADJUSTMENT_STANDINGAFTER` | OPERATIONAL | `P7D` | default | default | default | default | default | - |
 | `finapp.accounting.break.aged-after` | `FINAPP_ACCOUNTING_BREAK_AGEDAFTER` | OPERATIONAL | `P7D` | default | default | default | default | default | - |
 | `finapp.accounting.checks.statement-timeout` | `FINAPP_ACCOUNTING_CHECKS_STATEMENTTIMEOUT` | OPERATIONAL | `PT30S` | default | default | default | default | default | - |

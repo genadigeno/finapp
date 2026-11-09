@@ -73,4 +73,4 @@ answering ours.
 - Webhooks **to** merchants (the platform signing outbound event notifications) reuse the
   `SIGNED_CALLBACK` vocabulary in reverse and are a backlog concern, not a new decision:
   the platform signs with a per-merchant secret exactly as it verifies provider signatures.
-- Rate limiting per key remains Phase 15 with the standing per-source limitation row.
+- Rate limiting per key remains Phase 15 with the standing per-source limitation row. *(2026-11-09, `P15-TSK-022`: the per-source limits on the public doors are built; a limit per key is not, because the task excluded merchant quotas. It stands as `THREAT_MODEL.md` T38's `GAP`, section 6 item 33.)*

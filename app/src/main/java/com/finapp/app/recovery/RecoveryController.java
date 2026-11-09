@@ -51,6 +51,7 @@ public class RecoveryController {
     @NonNull private final RecoveryApplicationService recoveries;
 
     /** Begins recovery. Always 202. */
+    @com.finapp.app.abuse.SourceLimited(com.finapp.app.abuse.Door.RECOVERY)
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
     public void initiateRecovery(@Valid @RequestBody RecoveryInitiationRequest request) {
@@ -63,6 +64,7 @@ public class RecoveryController {
      * <p>A malformed identifier is refused exactly as a wrong token is: telling a caller their
      * identifier was at least well-formed is a free bit for anybody probing.
      */
+    @com.finapp.app.abuse.SourceLimited(com.finapp.app.abuse.Door.RECOVERY_COMPLETION)
     @PostMapping("/{id}/completion")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void completeRecovery(

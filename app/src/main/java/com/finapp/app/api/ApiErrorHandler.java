@@ -103,6 +103,25 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * A door refused a request before serving it (`P15-TSK-022`): {@code 429} with {@code Retry-After}, or {@code 503} when it could
+     * not count. <strong>No log line</strong>: this is the path a flood takes, and the meter already counted it. Nothing in the
+     * response depends on the request's body, so the answer is the same whatever identifier was sent.
+     */
+    @ExceptionHandler(com.finapp.app.abuse.SourceLimitRefused.class)
+    public ResponseEntity<ProblemDetailBody> handleSourceLimitRefused(
+            com.finapp.app.abuse.SourceLimitRefused refused, HttpServletRequest request) {
+        ResponseEntity<ProblemDetailBody> rendered = render(ProblemDetail.of(refused.errorCode(), request.getRequestURI()));
+        java.util.OptionalLong retryAfter = refused.retryAfterSeconds();
+        if (retryAfter.isEmpty()) {
+            return rendered;
+        }
+        return ResponseEntity.status(rendered.getStatusCode())
+                .headers(rendered.getHeaders())
+                .header(org.springframework.http.HttpHeaders.RETRY_AFTER, Long.toString(retryAfter.getAsLong()))
+                .body(rendered.getBody());
+    }
+
+    /**
      * Records a refused step-up an operation answered itself (`P15-TSK-021`), once per request: the interceptor's own
      * refusals are recorded and marked before they reach here.
      *

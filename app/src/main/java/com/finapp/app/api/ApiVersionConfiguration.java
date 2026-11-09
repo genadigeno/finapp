@@ -37,6 +37,7 @@ class ApiVersionConfiguration implements WebMvcConfigurer {
 
     @NonNull private final SessionAuthenticationInterceptor sessionAuthentication;
     @NonNull private final com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor merchantKey;
+    @NonNull private final com.finapp.app.abuse.SourceLimitInterceptor sourceLimit;
 
     /**
      * Only handlers in this package tree are versioned.
@@ -88,5 +89,10 @@ class ApiVersionConfiguration implements WebMvcConfigurer {
         // them: the decision lives in the declaration, and a path list here would be a second
         // copy of it that goes stale (the reasoning above, verbatim).
         registry.addInterceptor(merchantKey);
+
+        // Last, deliberately (`P15-TSK-022`): every check above is free of a database write on the routes it refuses, and the
+        // per-source count is not, so a request one of them refuses never costs a row. Registered for every path for the same
+        // reason as those: it decides from the handler's own @SourceLimited declaration.
+        registry.addInterceptor(sourceLimit);
     }
 }
