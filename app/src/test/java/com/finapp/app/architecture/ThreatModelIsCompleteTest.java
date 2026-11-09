@@ -514,7 +514,9 @@ class ThreatModelIsCompleteTest {
                 problems.put(task, "has an entry whose status cannot be read");
             }
         }
-        assertThat(named).as("the model's task ids were read, short and long").hasSizeGreaterThan(30);
+        // Was a count (more than 30), and a count decays by design: an id leaves this document when its task finishes, so
+        // the floor fell to 30 at P15-TSK-039's gate. What cannot leave is the register's author, §1.5's one exception.
+        assertThat(named).as("the model's task ids were read, short and long").contains("P15-TSK-001");
         assertThat(problems).as("task ids in %s", MODEL).isEmpty();
     }
 
