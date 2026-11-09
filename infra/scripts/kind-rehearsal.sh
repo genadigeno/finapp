@@ -652,6 +652,10 @@ census() {
         printf 'INFO|simulator\n%s\n' "$sim"
         printf 'INFO|connections|%s\n' "$(psql_query -c "SELECT count(*), count(*) FILTER (WHERE s.ssl) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.application_name = 'finapp'" | tr '|' ' ')"
     } >> "$ART/census-$label.txt"
+    # GL = ledger, the application's own judgement of the month: readable only because a mapping version is active.
+    gl=$(client gl-check 2>&1 | tail -1) || true
+    printf '%s\n' "$gl" >> "$ART/census-$label.txt"
+    case $gl in PASS*) ;; *) fail "census $label: GL = ledger: $(printf '%s' "$gl" | cut -c1-400)" ;; esac
     if grep -q '^FAIL' "$ART/census-$label.txt"; then
         fail "census $label: $(grep '^FAIL' "$ART/census-$label.txt" | tr '\n' ';' | cut -c1-600)"
     fi
@@ -666,6 +670,8 @@ client prepare >> "$ART/client.log" 2>&1 || fail "the smoke's participants could
 psql_query -f - < "$CLIENT/seed-1.sql" >> "$ART/seed.log" 2>&1 || fail "the seed failed: see seed.log"
 client onboard >> "$ART/client.log" 2>&1 || fail "the onboarding failed: see client.log"
 psql_query -f - < "$CLIENT/seed-2.sql" >> "$ART/seed.log" 2>&1 || fail "the destination seed failed: see seed.log"
+# The first GL mapping of a deployment, two persons (runbook 10.12): without one the General Ledger cannot be read.
+client map-gl >> "$ART/client.log" 2>&1 || fail "the GL mapping could not be activated: see client.log"
 smoke() {
     client smoke "$1" >> "$ART/client.log" 2>&1 || fail "the smoke ($1) failed: see client.log"
     SMOKE_TRANSFERS=$((SMOKE_TRANSFERS + 1))
@@ -909,6 +915,22 @@ grep -q 'edge operator-route-on-public status=404' "$ART/edge.txt" \
 grep -Eq 'edge operator-route-on-operator status=401 ' "$ART/edge.txt" \
     && pass "a /v1/operator route reaches the application on the operator host" \
     || fail "the operator route on the operator host: $(grep 'operator-route-on-operator' "$ART/edge.txt")"
+# (3) A forged X-Forwarded-For does not become the address the application records. What it records is request.getRemoteAddr(), and Tomcat's access
+# log (FINAPP's kind overlay, SERVER_TOMCAT_ACCESSLOG_*) writes that same value after the RemoteIpValve: the header's forged value against the connection's own address.
+marker=$(sed -n 's/^edge forged marker=\([^ ]*\) client=\([^ ]*\).*/\1/p' "$ART/edge.txt")
+client_address=$(sed -n 's/^edge forged marker=\([^ ]*\) client=\([^ ]*\).*/\2/p' "$ART/edge.txt")
+[ -n "$marker" ] && [ -n "$client_address" ] || fail "the forged-header request did not run: see edge.txt"
+sleep 3
+kube -n finapp logs -l app.kubernetes.io/name=finapp-app --tail=-1 --prefix=false 2>/dev/null | grep "^finapp-access .*forged=$marker" > "$ART/edge-forged.txt" || true
+if ! [ -s "$ART/edge-forged.txt" ]; then
+    fail "no access-log line for the forged request: the address the application saw was not read"
+elif grep -q '198\.51\.100\.77' "$ART/edge-forged.txt"; then
+    fail "a forged X-Forwarded-For became the address the application saw: $(cat "$ART/edge-forged.txt")"
+elif grep -qF "finapp-access $client_address " "$ART/edge-forged.txt"; then
+    pass "a forged X-Forwarded-For does not become the address the application saw: it recorded the controller's view, $client_address"
+else
+    fail "the application saw neither the forged address nor the client's: $(cat "$ART/edge-forged.txt")"
+fi
 grep -q 'edge actuator-on-public status=404' "$ART/edge.txt" \
     && pass "the actuator is not on the public host" \
     || fail "the actuator on the public host: $(grep 'actuator-on-public' "$ART/edge.txt")"

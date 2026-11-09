@@ -616,5 +616,8 @@ public final class Rehearsal {
         System.out.println("edge operator-route-on-operator status=" + operator.status() + " body=" + operator.body().replaceAll("\\s+", " "));
         Answer actuator = get(publicBase, "/actuator/health", null);
         System.out.println("edge actuator-on-public status=" + actuator.status());
+        String marker = UUID.randomUUID().toString();
+        call("GET", publicBase + "/v1/me?forged=" + marker, null, Map.of("X-Forwarded-For", "198.51.100.77"));
+        System.out.println("edge forged marker=" + marker + " client=" + java.net.InetAddress.getLocalHost().getHostAddress());
     }
 }
