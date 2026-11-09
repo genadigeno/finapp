@@ -33,8 +33,14 @@ configMapGenerator:
       - FINAPP_KAFKA_SECURITYPROTOCOL=SASL_SSL
       - FINAPP_KAFKA_SSL_TRUSTSTORELOCATION=/etc/finapp-local-ca/ca.crt
       - JDK_JAVA_OPTIONS=-Djavax.net.ssl.trustStore=/etc/finapp-local-ca/truststore.jks -Djavax.net.ssl.trustStoreType=JKS
-      # The API port's access log on the pod's stdout, in the kind overlay alone: its %a is request.getRemoteAddr() after the RemoteIpValve,
-      # the value an offer acceptance records, so the rehearsal can read what the application saw through the real edge.
+      # The simulators are one small test-only JVM behind a TLS handshake every replica pays once: the defaults (2 s) are a provider's, on a
+      # machine that is not running a kind cluster and six other builds.
+      - FINAPP_PAYMENTS_PROVIDER_TIMEOUT=PT15S
+      - FINAPP_PAYMENTMETHODS_TOKENISATION_TIMEOUT=PT15S
+      - FINAPP_MERCHANT_PAYOUT_PROVIDER_TIMEOUT=PT15S
+      # The API port's access log on the pod's stdout, in the kind overlay alone: its %a, with request attributes enabled, is request.getRemoteAddr()
+      # after the RemoteIpValve, the value an offer acceptance records, so the rehearsal can read what the application saw through the real edge.
+      - SERVER_TOMCAT_ACCESSLOG_REQUESTATTRIBUTESENABLED=true
       - SERVER_TOMCAT_ACCESSLOG_ENABLED=true
       - SERVER_TOMCAT_ACCESSLOG_DIRECTORY=/dev
       - SERVER_TOMCAT_ACCESSLOG_PREFIX=stdout

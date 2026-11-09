@@ -3,7 +3,9 @@
 # surge pod and every Job retry, and whatever is added later.
 #
 # A policy is only as true as the network plugin enforcing it: EKS's agent is turned on by modules/kubernetes, and kind's
-# kindnetd enforces from kind v0.24.0. No test here proves either; the rehearsal does.
+# kindnetd enforces from kind v0.24.0, on a kernel with nftables' queue statement. No test here proves either; the rehearsal
+# does on kind, and its record names the plugin that answered: on a kernel without that statement, kindnetd cannot, and the
+# rehearsal brings kube-router in its place (OPERATIONS_RUNBOOK.md section 11.28). A real cluster's agent has been measured by nothing.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
