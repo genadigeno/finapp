@@ -36,17 +36,4 @@ public record RecoveryRequest(
             throw new IllegalArgumentException("a recovery request cannot expire before it begins");
         }
     }
-
-    /**
-     * Whether this request can still be spent.
-     *
-     * <p>The <strong>definition</strong> of liveness, and the SQL that consumes a token is an
-     * implementation of it. Kept even though the store re-checks both clauses, for
-     * {@code P1-TSK-013}'s reason: without it the rule would live only in a {@code WHERE} clause,
-     * where no reader and no architecture rule would ever find it.
-     */
-    public boolean isLiveAt(Instant at) {
-        Objects.requireNonNull(at, "at must not be null");
-        return status == RecoveryStatus.INITIATED && at.isBefore(expiresAt);
-    }
 }

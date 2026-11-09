@@ -18,11 +18,14 @@ import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -51,9 +54,35 @@ final class AccountingPeriodFixture {
 
     private AccountingPeriodFixture() {}
 
-    /** The machine judged on {@code clock} - the grace, the open - over the ledger's own cutoff API on the real clock. */
+    /**
+     * The machine as of {@code clock}, over the ledger's own cutoff API on the real clock. The machine reads today from its store (`P14-REM-009`), so the store's date is {@link #datedBy this clock's}: how a suite opens and locks the months of 1999
+     * on a database whose clock reads the present. {@link #periods()} is the real date, and {@code PeriodDatesAreTheDatabasesDatabaseTest} proves the store's own reading.
+     */
     static AccountingPeriods periods(Clock clock) {
-        return new AccountingPeriods(STORE, new JdbcGlMappingStore(), new LedgerPostingCutoff(new PostingCutoffs(IDS, NOW)),
+        return machine(datedBy(clock), clock);
+    }
+
+    /** The machine reading its date from the database, this instance's clock on {@code clock}: the database's date and this instance's held apart. */
+    static AccountingPeriods onInstanceClock(Clock clock) {
+        return machine(STORE, clock);
+    }
+
+    /** The real store, its {@code today} answered by {@code clock} and every other call the store's: a test double, in one place. */
+    static AccountingPeriodStore datedBy(Clock clock) {
+        return (AccountingPeriodStore) Proxy.newProxyInstance(AccountingPeriodStore.class.getClassLoader(), new Class<?>[] {AccountingPeriodStore.class}, (proxy, method, arguments) -> {
+            if (method.getName().equals("today")) {
+                return LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
+            }
+            try {
+                return method.invoke(STORE, arguments);
+            } catch (InvocationTargetException failure) {
+                throw failure.getCause();
+            }
+        });
+    }
+
+    private static AccountingPeriods machine(AccountingPeriodStore store, Clock clock) {
+        return new AccountingPeriods(store, new JdbcGlMappingStore(), new LedgerPostingCutoff(new PostingCutoffs(IDS, NOW)),
                 LockGrace.standard(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, clock,
                 // P14-TSK-008: the unlock supersedes the period's FINAL report runs (accounting V004 refuses it otherwise).
                 (unitOfWork, period, actor, correlation) -> new com.finapp.accounting.JdbcReportRunStore()
@@ -61,7 +90,7 @@ final class AccountingPeriodFixture {
     }
 
     static AccountingPeriods periods() {
-        return periods(NOW);
+        return onInstanceClock(NOW);
     }
 
     static Clock on(String day) {

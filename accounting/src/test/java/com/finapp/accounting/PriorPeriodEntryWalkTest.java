@@ -85,7 +85,7 @@ class PriorPeriodEntryWalkTest {
         Connection uow = SNAPSHOT;
         CorrelationId flow = CorrelationId.of("flow-1");
         Actor accountant = new Actor("accountant-1", ActorType.CUSTOMER);
-        InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore();
+        InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore(Clock.fixed(LANDS_ON.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC));
         for (YearMonth month : List.of(JANUARY, JANUARY.plusMonths(1), MARCH)) {
             periods.insertIfAbsent(uow, new AccountingPeriodStore.NewPeriod(AccountingPeriodId.next(IDS), month, flow));
         }

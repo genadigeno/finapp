@@ -103,6 +103,8 @@ inquiry leg of `AccountingCloseSchedule`. Security impact: `REGULATORY_REPORTER`
 
 `INV-ACC-04`, `-13`; `INV-AUD-01`, `-04`; `INV-HIST-02` (the provider's answers retained verbatim).
 
+*(As built, `P14-REM-009`, 2026-11-09, accounting `V014`: what stands is paged, and the newest answers chosen, by `recorded_order`, an insertion sequence, in place of `prepared_at` and `received_at`, which a backward step of the database's clock can reorder. The stamps stay, and stay what a person is told. The cursor is still the last row's id.)*
+
 *(As built, `P14-TSK-020`, 2026-11-05: the alerts `-018` left. On an outcome's `increase`: `rejected`, `contrary`, `run_bytes_differ`, `send_withheld_month_moved`, `not_resent_month_moved`, `answer_anomaly`. On a level a person's door clears: `resends_exhausted`, `stale_unsent`. On the growth of a level that can hold for good: `overtaken`, the owner's ruling, `PI-010`, and `overdue`, this task's reading of the same reason, since a return `UNKNOWN` for good stays overdue for good with no door (`PI-008`). `RegulatoryAttentionMetrics` reads through `AccountingGaugeRead` and has a statement timeout. Nothing is claimed of a real channel: every alert here has only ever been evaluated by `RuleEvaluator`.)*
 
 

@@ -65,7 +65,7 @@ class CheckoutConfirmEndpointTest {
             + " a 500 for the missing intent; a session a capture completed still converges")
     void aFinancedSessionIsNotConfirmable() {
         CheckoutSession open = CheckoutSession.open(
-                IDS, CLOCK, UUID.randomUUID(), Money.ofMinorUnits(50_00L, CurrencyCode.of("EUR")), "A lamp",
+                IDS, Instant.now(CLOCK), UUID.randomUUID(), Money.ofMinorUnits(50_00L, CurrencyCode.of("EUR")), "A lamp",
                 UUID.randomUUID(), CheckoutSessionToken.issue(new SecureRandom()), Instant.now(CLOCK).plusSeconds(1800));
         CheckoutSession financed = open.completeByFinancing(Instant.now(CLOCK), UUID.randomUUID());
 
@@ -73,7 +73,7 @@ class CheckoutConfirmEndpointTest {
                 .isInstanceOfSatisfying(CheckoutSessionNotOpenException.class,
                         refused -> assertThat(refused.status()).isEqualTo(CheckoutSessionStatus.COMPLETED));
 
-        CheckoutSession pending = open.confirm(CLOCK, UUID.randomUUID());
+        CheckoutSession pending = open.confirm(Instant.now(CLOCK), UUID.randomUUID());
         assertThatCode(() -> CheckoutService.refuseAFinancedSession(pending.complete(CLOCK)))
                 .as("a captured session is the paid branch's to converge on").doesNotThrowAnyException();
         assertThatCode(() -> CheckoutService.refuseAFinancedSession(open)).doesNotThrowAnyException();

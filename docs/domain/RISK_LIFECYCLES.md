@@ -219,7 +219,7 @@ force answers `409 risk.PolicyStale` (superseded) and is rejected or left, so th
 and on a superseded proposal; `risk.PolicyNotActive` `409` on the in-force read with none active (the register's
 planned status kept). **The effective-from arithmetic**: credit `V014`'s rule confirmed for this table — the
 retirement's `effective_to` is `GREATEST(clock_timestamp(), transaction_timestamp(), effective_from + 1 µs)` and the
-successor's `effective_from` `GREATEST(transaction_timestamp(), max(effective_to))`, so the periods meet. The content
+successor's `effective_from` `GREATEST(transaction_timestamp(), max(effective_to))`, so the periods meet *(until `P15-TSK-037`, risk `V020`, 2026-11-09, by the terms' rule: the end is also never before one microsecond after the latest assessment pinned to the version, the successor starts exactly at its predecessor's end - the highest-numbered `RETIRED` version's, chosen by version number, never `max(effective_to)` - and an assessment is never dated before its version's start)*. The content
 is six tables, not two: the machine row, `risk_policy` (the knobs), `risk_rule`, `risk_rule_parameter` (one typed row
 per declared parameter), `risk_policy_band` and the history; `CREDIT_SIGNAL` carries no policy — refused at the door.)*
 

@@ -84,7 +84,7 @@ public interface CheckStore<T> {
      * Per screening type - {@code SANCTIONS}, {@code PEP} - the case's decided check
      * ({@code CLEAR} or {@code HIT}) asked last, onboarding or rescreen alike: at most one row per
      * type (`P13-TSK-022`'s review). Risk's screening-hit reading on T-eval's hot path reads this -
-     * one index probe per type on {@code kyc V011}'s {@code verification_check_decided_latest},
+     * one index probe per type on {@code kyc V012}'s {@code verification_check_decided_latest_by_order},
      * never every check of a case, whose rescreens accumulate with every list update.
      */
     List<VerificationCheck> latestDecidedScreenings(T unitOfWork, KycCaseId caseId);

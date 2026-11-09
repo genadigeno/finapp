@@ -18,6 +18,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Objects;
 import java.util.Optional;
 import lombok.NonNull;
@@ -73,7 +74,6 @@ public final class RecoveryService {
     @NonNull private final SessionStore<Connection> sessions;
     @NonNull private final PasswordDeriver deriver;
     @NonNull private final IdGenerator ids;
-    @NonNull private final Clock clock;
     @NonNull private final SecureRandom randomness;
     @NonNull private final AuditWriter<Connection> auditWriter;
     @NonNull private final OutboxWriter<Connection> outboxWriter;
@@ -89,8 +89,6 @@ public final class RecoveryService {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(login, "login must not be null");
 
-        Instant at = Instant.now(clock);
-
         // Cancel first, so a second initiation kills the first token. Without it an attacker who
         // initiated once keeps a live token while the customer initiates again and believes they
         // have fixed their account - two valid ways in, which is one more than recovery may have.
@@ -98,7 +96,7 @@ public final class RecoveryService {
         // This runs before the cooling-off check rather than after, and the order matters: the
         // NOT EXISTS below counts requests of EVERY status, so a request cancelled here still
         // enforces cooling-off. Cancelling did not buy the caller a fresh attempt.
-        requests.cancelLiveFor(unitOfWork, login, at);
+        requests.cancelLiveFor(unitOfWork, login);
 
         SingleUseToken token = SingleUseToken.issue(randomness);
         Optional<RecoveryRequest> created =
@@ -107,12 +105,14 @@ public final class RecoveryService {
                         login,
                         ContactChannelKind.EMAIL,
                         token,
-                        at,
-                        at.plus(TOKEN_LIFETIME),
-                        at.minus(COOLING_OFF));
+                        TOKEN_LIFETIME,
+                        COOLING_OFF);
 
+        // THE RECORD CARRIES THE ROW'S INSTANT (P15-TSK-038): the database stamped initiated_at, so
+        // the audit record and the event beside it say the same, never this instance's clock.
         return created.map(
                 request -> {
+                    Instant at = request.initiatedAt();
                     audit(
                             unitOfWork,
                             at,
@@ -151,21 +151,24 @@ public final class RecoveryService {
         Objects.requireNonNull(presentedToken, "presentedToken must not be null");
         Objects.requireNonNull(replacement, "replacement must not be null");
 
-        Instant at = Instant.now(clock);
-        Optional<RecoveryRequest> consumed =
-                requests.consume(unitOfWork, id, SingleUseToken.of(presentedToken), at);
+        Optional<RecoveryRequestStore.Consumed> consumed =
+                requests.consume(unitOfWork, id, SingleUseToken.of(presentedToken));
         if (consumed.isEmpty()) {
             return false;
         }
 
-        RecoveryRequest request = consumed.get();
+        // ONE READING FOR THE WHOLE COMPLETION (P15-TSK-038, ADR-0014): the database judged the token
+        // and stamped completed_at, so the supersession, the new credential, the revocations, the
+        // audit record and the event carry that instant, never a second clock in one operation.
+        RecoveryRequest request = consumed.get().request();
+        Instant at = consumed.get().completedAt();
         request.credentialId()
                 .ifPresent(previous -> credentials.supersede(unitOfWork, previous, at));
         credentials.insert(
                 unitOfWork,
                 Credential.forPassword(
                         ids,
-                        clock,
+                        Clock.fixed(at, ZoneOffset.UTC),
                         request.identityId(),
                         CredentialType.PASSWORD,
                         deriver,

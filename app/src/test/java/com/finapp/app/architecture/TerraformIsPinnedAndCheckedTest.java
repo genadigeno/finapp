@@ -35,8 +35,12 @@ import org.junit.jupiter.api.Test;
  *
  * <p>It reads HCL with a small reader of its own (blocks, attributes, strings, templates, heredocs, comments) that fails
  * on what it cannot read rather than skipping it. {@link #theRulesRefuseTheirPlants} runs every rule over a planted
- * violation, so a rule that reads nothing cannot pass: today no guarded or secret-writing resource exists (the modules
- * of {@code P15-TSK-015} and {@code -016} add the first ones), and those two rules hold over the empty set until then.
+ * violation, so a rule that reads nothing cannot pass.
+ *
+ * <p>The data tier ({@code P15-TSK-015}) reads its topics, its ACLs and its brokers' posture from {@code infra/kafka/}.
+ * {@code terraform test} proves that with a fixture catalogue; {@link #theCatalogueHasNoCopyUnderTerraform} refuses a
+ * byte-identical copy, which a value comparison cannot see, and {@link #anOpenDecisionHasNoDefault} holds the audit
+ * archive's lock to a period nobody has chosen.
  */
 @Tag("architecture")
 @DisplayName("the Terraform is pinned, locked and checked without a credential or a backend (P15-TSK-013)")
@@ -78,7 +82,17 @@ class TerraformIsPinnedAndCheckedTest {
 
     /** An argument that is a credential, refused in a backend and in a provider block. */
     static final Set<String> CREDENTIAL_ARGUMENTS = Set.of(
-            "access_key", "secret_key", "token", "profile", "shared_credentials_files", "shared_config_files");
+            "access_key", "secret_key", "token", "profile", "shared_credentials_files", "shared_config_files",
+            "sasl_username", "sasl_password", "client_key", "client_key_file", "client_key_passphrase",
+            "sasl_aws_access_key", "sasl_aws_secret_key", "sasl_aws_token");
+
+    /** Variables whose value is a decision nobody has taken yet: a default would take it silently. */
+    private static final Set<String> OPEN_DECISIONS =
+            Set.of("audit_archive_lock", "kafka_provisioning_stage", "provisioning_stage");
+
+    private static final String KAFKA = "infra/kafka";
+
+    private static final Pattern CATALOGUED_TOPIC = Pattern.compile("(?m)^  (finapp\\.[a-z]+):\\s");
 
     /** Terraform subcommands that touch a backend, a state or an account; the check script may run none. */
     private static final Pattern FORBIDDEN_SUBCOMMAND = Pattern.compile(
@@ -230,7 +244,21 @@ class TerraformIsPinnedAndCheckedTest {
                 .containsEntry("no-flow-logs", "terraform")
                 .containsEntry("no-audit-log", "terraform")
                 .containsEntry("no-etcd-encryption", "terraform")
-                .containsEntry("two-zones", "terraform");
+                .containsEntry("two-zones", "terraform")
+                .containsEntry("multi-az-off", "terraform")
+                .containsEntry("force-ssl-off", "terraform")
+                .containsEntry("database-public", "terraform")
+                .containsEntry("backup-key-shared", "terraform")
+                .containsEntry("max-connections-restated", "terraform")
+                .containsEntry("unclean-election-on", "terraform")
+                .containsEntry("auto-create-on", "terraform")
+                .containsEntry("min-insync-one", "terraform")
+                .containsEntry("brokers-plaintext", "terraform")
+                .containsEntry("brokers-unauthenticated", "terraform")
+                .containsEntry("scram-unprefixed", "terraform")
+                .containsEntry("topics-from-a-copy", "terraform")
+                .containsEntry("public-archive", "terraform")
+                .containsEntry("no-object-lock", "terraform");
     }
 
     @Test
@@ -300,6 +328,46 @@ class TerraformIsPinnedAndCheckedTest {
             }
         });
         assertThat(violations).as("a secret value in Terraform state").isEmpty();
+    }
+
+    @Test
+    @DisplayName("nothing under infra/terraform copies the topic catalogue or the brokers' posture: no such file, and no"
+            + " .tf naming a catalogued topic")
+    void theCatalogueHasNoCopyUnderTerraform() {
+        Set<String> topics = cataloguedTopics(EvidenceCitations.read(root.resolve(KAFKA + "/topics.yaml")));
+        assertThat(topics).as("the catalogue's topics were read").hasSizeGreaterThanOrEqualTo(10);
+        Set<String> fileNames = new TreeSet<>();
+        try (Stream<Path> walk = Files.walk(root.resolve(TERRAFORM))) {
+            walk.filter(Files::isRegularFile).forEach(path -> fileNames.add(path.getFileName().toString()));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        Map<String, String> tf = new TreeMap<>();
+        files.forEach((path, text) -> {
+            if (path.endsWith(".tf")) {
+                tf.put(path, text);
+            }
+        });
+        assertThat(copyViolations(fileNames, tf, topics))
+                .as("a second truth nothing holds to the code, which TopicCatalogueTest reads infra/kafka for")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("a variable holding a decision nobody has taken has no default, in every root and module that declares it")
+    void anOpenDecisionHasNoDefault() {
+        List<String> violations = new ArrayList<>();
+        int read = 0;
+        for (Map.Entry<String, String> file : files.entrySet()) {
+            if (file.getKey().endsWith(".tf")) {
+                read += (int) blocksOfType(file.getValue(), "variable").stream()
+                        .filter(variable -> OPEN_DECISIONS.contains(variable.labels().get(0)))
+                        .count();
+                violations.addAll(defaultViolations(file.getKey(), file.getValue()));
+            }
+        }
+        assertThat(read).as("the two roots and two modules declaring these were read").isGreaterThanOrEqualTo(6);
+        assertThat(violations).as("a default that takes a decision no one has taken").isEmpty();
     }
 
     @Test
@@ -486,9 +554,100 @@ class TerraformIsPinnedAndCheckedTest {
                 """)).as("the reader keeps every block whatever its strings, heredocs and comments hold")
                 .extracting(Block::type)
                 .containsExactly("locals", "output");
+
+        assertThat(credentialViolations("plant.tf", """
+                provider "kafka" {
+                  bootstrap_servers = ["broker:9096"]
+                  sasl_password     = "planted"
+                }
+                """)).as("a Kafka credential in a provider block").hasSize(1);
+
+        assertThat(conventionViolations("plant", "production", Map.of("main.tf", """
+                module "conventions" {
+                  source      = "../../modules/conventions"
+                  environment = "production"
+                }
+                provider "kafka" {
+                  tls_enabled = true
+                }
+                """))).as("a provider with no tags or accounts to carry is no violation of the AWS rules").isEmpty();
+
+        assertThat(scriptViolations(List.of(
+                "terraform -chdir=x init -backend=false",
+                "MSYS_NO_PATHCONV=1 docker run --rm -v \"$REPO/deploy:/repo/deploy\" image")))
+                .as("any repository directory mounted writable")
+                .hasSize(1);
+
+        assertThat(cataloguedTopics("topics:\n  finapp.ledger: domain-events\n  finapp.risk: domain-events\n"))
+                .containsExactly("finapp.ledger", "finapp.risk");
+        assertThat(copyViolations(
+                Set.of("topics.yaml", "broker.properties", "fixture-topics.yaml", "main.tf"),
+                Map.of("main.tf", "locals {\n  topics = [\"finapp.ledger\"]\n}\n"),
+                Set.of("finapp.ledger")))
+                .as("two copied files and a .tf naming a catalogued topic, and not the fixture")
+                .hasSize(3);
+        assertThat(copyViolations(
+                Set.of(),
+                Map.of("main.tf", "locals {\n  topics = <<-EOT\n    finapp.ledger\n  EOT\n  other = \"finapp.ledgers\"\n}\n"),
+                Set.of("finapp.ledger")))
+                .as("a copy in a heredoc is caught, and a longer name is not mistaken for it")
+                .hasSize(1);
+
+        assertThat(defaultViolations("plant.tf", """
+                variable "audit_archive_lock" {
+                  type    = object({ mode = string, days = number })
+                  default = { mode = "GOVERNANCE", days = 2555 }
+                }
+                variable "provisioning_stage" {
+                  type = string
+                }
+                variable "unrelated" {
+                  type    = number
+                  default = 3
+                }
+                """)).as("the decision given a default, and neither the one without nor an ordinary variable")
+                .hasSize(1)
+                .allSatisfy(violation -> assertThat(violation).contains("audit_archive_lock"));
     }
 
     // --- the rules, each over text so theRulesRefuseTheirPlants can run it on a plant -----------------------------
+
+    /** The topic names in the catalogue's text: its two-space keys, which the catalogue's scheme starts {@code finapp.}. */
+    static Set<String> cataloguedTopics(String catalogue) {
+        Set<String> topics = new TreeSet<>();
+        Matcher topic = CATALOGUED_TOPIC.matcher(catalogue);
+        while (topic.find()) {
+            topics.add(topic.group(1));
+        }
+        return topics;
+    }
+
+    static List<String> copyViolations(Set<String> fileNames, Map<String, String> tf, Set<String> topics) {
+        List<String> violations = new ArrayList<>();
+        for (String name : List.of("topics.yaml", "broker.properties")) {
+            if (fileNames.contains(name)) {
+                violations.add("a file named " + name + " under the Terraform tree is a copy of " + KAFKA + "/" + name);
+            }
+        }
+        // Any mention, not only a quoted one: a copy can sit in a heredoc as readily as in a list.
+        tf.forEach((path, text) -> topics.stream()
+                .filter(topic -> Pattern.compile("(?<![\\w.-])" + Pattern.quote(topic) + "(?![\\w.-])")
+                        .matcher(text)
+                        .find())
+                .forEach(topic -> violations.add(path + " names the catalogued topic " + topic)));
+        return violations;
+    }
+
+    static List<String> defaultViolations(String path, String text) {
+        List<String> violations = new ArrayList<>();
+        for (Block variable : blocksOfType(text, "variable")) {
+            if (OPEN_DECISIONS.contains(variable.labels().get(0)) && attributes(variable.body()).containsKey("default")) {
+                violations.add(path + ": variable " + variable.labels().get(0)
+                        + " has a default, so a plan would take a decision nobody has taken");
+            }
+        }
+        return violations;
+    }
 
     static List<String> pinViolations(String directory, Map<String, String> tf, String terraformVersion) {
         List<String> violations = new ArrayList<>();
@@ -659,7 +818,7 @@ class TerraformIsPinnedAndCheckedTest {
                     violations.add("a container handed the host's environment: " + line.trim());
                 }
             }
-            if (line.contains(":/repo/infra") && !line.contains(":/repo/infra:ro")) {
+            if (Pattern.compile(":/repo/\\w+(?!\\w|:ro)").matcher(line).find()) {
                 violations.add("the tree mounted writable: " + line.trim());
             }
         }
@@ -704,6 +863,10 @@ class TerraformIsPinnedAndCheckedTest {
                 }
             }
             for (Block provider : blocksOfType(text, "provider")) {
+                // Tags and an account are what the AWS provider has; the Kafka provider has neither.
+                if (!provider.labels().equals(List.of("aws"))) {
+                    continue;
+                }
                 boolean tagged = blocks(provider.body()).stream()
                         .filter(block -> block.type().equals("default_tags"))
                         .anyMatch(block -> "module.conventions.tags".equals(attributes(block.body()).get("tags")));

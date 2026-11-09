@@ -11,7 +11,6 @@ import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
-import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -50,7 +49,6 @@ public final class PayoutDestinationEffectuation {
     private final PayoutDestinationStore<Connection> destinations;
     private final AuditWriter<Connection> audit;
     private final IdGenerator ids;
-    private final Clock clock;
     private final int batchSize;
 
     public PayoutDestinationEffectuation(
@@ -58,13 +56,11 @@ public final class PayoutDestinationEffectuation {
             PayoutDestinationStore<Connection> destinations,
             AuditWriter<Connection> audit,
             IdGenerator ids,
-            Clock clock,
             int batchSize) {
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.destinations = Objects.requireNonNull(destinations, "destinations must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
         if (batchSize <= 0) {
             throw new IllegalArgumentException("batchSize must be positive: " + batchSize);
         }
@@ -81,9 +77,11 @@ public final class PayoutDestinationEffectuation {
     /** One sweep: bounded candidates, one transaction per row. */
     @SuppressWarnings("try") // The Scope is used for its close side effect (the established idiom).
     public SweepResult sweep() {
-        Instant now = Instant.now(clock);
+        // NO CLOCK HERE AT ALL (P15-TSK-038, ADR-0014): the list is the statement's on the
+        // database's now(), and each row is re-judged and stamped on the database's clock read
+        // under its lock. An instance's skew can neither shorten nor extend a cooling-off.
         List<PayoutDestination> candidates =
-                transactions.inTransaction(uow -> destinations.findDue(uow, now, batchSize));
+                transactions.inTransaction(uow -> destinations.findDue(uow, batchSize));
 
         int effected = 0;
         int skipped = 0;
@@ -133,9 +131,11 @@ public final class PayoutDestinationEffectuation {
                         return false;
                     }
                     PayoutDestination approved = found.get();
-                    // RE-JUDGED AGAINST THE CLOCK on the locked row, never trusted from the
-                    // list: withdrawn during the cooling-off, or effected by a sibling, since.
-                    if (!approved.isDue(Instant.now(clock))) {
+                    // RE-JUDGED AGAINST THE DATABASE'S CLOCK, READ AFTER THE LOCK (P15-TSK-038),
+                    // never trusted from the list: withdrawn during the cooling-off, or effected
+                    // by a sibling, since.
+                    Instant databaseNow = destinations.databaseNow(uow);
+                    if (!approved.isDue(databaseNow)) {
                         return false;
                     }
 
@@ -145,10 +145,10 @@ public final class PayoutDestinationEffectuation {
                     Optional<PayoutDestination> previous =
                             destinations.findEffectiveForUpdate(uow, approved.merchantId());
                     if (previous.isPresent()) {
-                        PayoutDestination replaced = previous.get().supersede(clock);
+                        PayoutDestination replaced = previous.get().supersede(databaseNow);
                         requireLanded(uow, previous.get(), replaced);
                     }
-                    PayoutDestination effective = approved.effect(clock);
+                    PayoutDestination effective = approved.effect(databaseNow);
                     // A throw, never a false: returning here would commit the supersession
                     // without its replacement and leave the merchant with no destination.
                     requireLanded(uow, approved, effective);
@@ -159,7 +159,7 @@ public final class PayoutDestinationEffectuation {
                             new AuditRecord(
                                     AuditId.next(ids),
                                     platform,
-                                    Instant.now(clock),
+                                    databaseNow,
                                     MerchantAuditAction.PAYOUT_DESTINATION_EFFECTIVE,
                                     PayoutDestinations.TARGET_TYPE,
                                     effective.id().value().toString(),

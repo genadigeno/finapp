@@ -81,7 +81,6 @@ public class RecoveryBeans {
             SessionStore<Connection> sessionStore,
             PasswordDeriver passwordDeriver,
             IdGenerator idGenerator,
-            Clock clock,
             SecureRandom recoveryRandomness,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter) {
@@ -91,7 +90,6 @@ public class RecoveryBeans {
                 sessionStore,
                 passwordDeriver,
                 idGenerator,
-                clock,
                 recoveryRandomness,
                 auditWriter,
                 outboxWriter);

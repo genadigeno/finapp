@@ -19,10 +19,11 @@ import com.finapp.payments.PaymentParticipants;
 import com.finapp.platform.api.ApiException;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
-import java.time.Clock;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * The checkout confirmation door's step-up check, before the confirmation writes anything (`P13-TSK-010`;
@@ -86,7 +87,7 @@ final class CheckoutDoorStepUp {
     private final PaymentParticipants<Connection> participants;
     private final CustomerAccountStore<Connection> products;
     private final MfaEnrolmentStore<Connection> enrolments;
-    private final Clock clock;
+    private final Function<Connection, Instant> databaseNow;
 
     CheckoutDoorStepUp(
             CheckoutStepUpAdvice advice,
@@ -95,14 +96,14 @@ final class CheckoutDoorStepUp {
             PaymentParticipants<Connection> participants,
             CustomerAccountStore<Connection> products,
             MfaEnrolmentStore<Connection> enrolments,
-            Clock clock) {
+            Function<Connection, Instant> databaseNow) {
         this.advice = Objects.requireNonNull(advice, "advice");
         this.sessions = Objects.requireNonNull(sessions, "sessions");
         this.intents = Objects.requireNonNull(intents, "intents");
         this.participants = Objects.requireNonNull(participants, "participants");
         this.products = Objects.requireNonNull(products, "products");
         this.enrolments = Objects.requireNonNull(enrolments, "enrolments");
-        this.clock = Objects.requireNonNull(clock, "clock");
+        this.databaseNow = Objects.requireNonNull(databaseNow, "databaseNow");
     }
 
     /**
@@ -122,7 +123,9 @@ final class CheckoutDoorStepUp {
             return Answer.PROCEED;
         }
         CheckoutSession session = found.get();
-        if (session.financedByRef().isPresent() || session.hasExpired(clock)) {
+        // The offer's deadline on the database's clock (P15-TSK-038), as the confirmation that follows
+        // judges it: a door reading its own instance's clock could answer PROCEED for a live offer.
+        if (session.financedByRef().isPresent() || session.hasExpired(databaseNow.apply(unitOfWork))) {
             return Answer.PROCEED;
         }
         Optional<Instrument> instrument;

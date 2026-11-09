@@ -110,6 +110,11 @@ class CheckoutFinancingDatabaseTest {
     private final CheckoutSessionStore<Connection> sessions = new JdbcCheckoutSessionStore();
 
     @BeforeAll
+    static void installTheMovedClock() {
+        com.finapp.platform.testing.database.DatabaseClockFrame.install();
+    }
+
+    @BeforeAll
     static void startProvider() {
         if (provider == null) {
             provider = SimulatedProvider.start();
@@ -237,8 +242,8 @@ class CheckoutFinancingDatabaseTest {
     }
 
     @Test
-    @DisplayName("a financing and the expiry sweeper at the deadline, the sweeper's clock 5 s either side of the"
-            + " database's: EXACTLY ONE of COMPLETED and EXPIRED, never both - and never COMPLETED at or after the"
+    @DisplayName("a financing and the expiry sweeper at the deadline, the sweeper's reading of the database's clock moved"
+            + " 5 s either side: EXACTLY ONE of COMPLETED and EXPIRED, never both - and never COMPLETED at or after the"
             + " deadline on the database clock")
     void financingAndExpiryLeaveExactlyOne() throws Exception {
         for (Duration skew : List.of(Duration.ofSeconds(-5), Duration.ofSeconds(5))) {
@@ -256,7 +261,7 @@ class CheckoutFinancingDatabaseTest {
                     Future<CheckoutExpirySweeper.SweepResult> sweep = pool.submit(() -> {
                         start.await();
                         untilAbout(deadline);
-                        return sweeper(Clock.offset(CLOCK, skew)).sweep();
+                        return sweeper(skew).sweep();
                     });
                     start.countDown();
                     BnplCheckoutSessions.Completion answer = financing.get(60, TimeUnit.SECONDS);
@@ -284,7 +289,7 @@ class CheckoutFinancingDatabaseTest {
                     pool.shutdownNow();
                 }
                 // Whatever the race left OPEN is the sweeper's in the end - never a financing's after the deadline.
-                sweeper(Clock.offset(CLOCK, Duration.ofSeconds(10))).sweep();
+                sweeper(Duration.ofSeconds(10)).sweep();
                 try (Connection app = DatabaseRoles.application()) {
                     assertThat(one(app, "SELECT status FROM checkout.checkout_session WHERE id = ?",
                             session.id().value())).isIn("COMPLETED", "EXPIRED");
@@ -300,13 +305,13 @@ class CheckoutFinancingDatabaseTest {
             + " refused at B3 at once, and nothing is written")
     void aSessionNotOpenIsRefusedAtOnce() throws Exception {
         CheckoutSession pending = insertOpen(Duration.ofMinutes(30));
-        transition(pending, pending.confirm(CLOCK, IDS.next()));
+        transition(pending, pending.confirm(Instant.now(CLOCK), IDS.next()));
         CheckoutSession captured = insertOpen(Duration.ofMinutes(30));
-        CheckoutSession capturedPending = captured.confirm(CLOCK, IDS.next());
+        CheckoutSession capturedPending = captured.confirm(Instant.now(CLOCK), IDS.next());
         transition(captured, capturedPending);
         transition(capturedPending, capturedPending.complete(CLOCK));
         CheckoutSession expired = insertOpen(Duration.ofMinutes(30));
-        transition(expired, expired.expire(CLOCK));
+        transition(expired, expired.expire(Instant.now(CLOCK)));
         CheckoutSession abandoned = insertOpen(Duration.ofMinutes(30));
         transition(abandoned, abandoned.abandon(CLOCK));
 
@@ -400,7 +405,7 @@ class CheckoutFinancingDatabaseTest {
                     .hasMessageContaining("checkout_session_one_session_per_financing");
 
             CheckoutSession pending = insertOpen(Duration.ofMinutes(30));
-            transition(pending, pending.confirm(CLOCK, IDS.next()));
+            transition(pending, pending.confirm(Instant.now(CLOCK), IDS.next()));
             assertThatThrownBy(() -> execute(migrator,
                     "UPDATE checkout.checkout_session SET status = 'COMPLETED', status_changed_at = GREATEST(now(), created_at),"
                             + " financed_by_ref = ? WHERE id = ?", IDS.next(), pending.id().value()))
@@ -490,7 +495,7 @@ class CheckoutFinancingDatabaseTest {
         CheckoutSession financed = insertOpen(Duration.ofMinutes(30));
         finance(financed.id().value(), BnplPurchaseId.next(IDS), JournalEntryId.of(IDS.next()));
         CheckoutSession expired = insertOpen(Duration.ofMinutes(30));
-        transition(expired, expired.expire(CLOCK));
+        transition(expired, expired.expire(Instant.now(CLOCK)));
 
         assertThat(finance(expired.id().value(), BnplPurchaseId.next(IDS), JournalEntryId.of(IDS.next())))
                 .isEqualTo(new BnplCheckoutSessions.NotPayable(BnplCheckoutSessions.Reason.NOT_OPEN));
@@ -598,7 +603,7 @@ class CheckoutFinancingDatabaseTest {
      * database pass, `P12-TSK-028`).
      */
     private CheckoutSession insertOpen(Duration window) throws Exception {
-        CheckoutSession session = CheckoutSession.open(IDS, CLOCK, IDS.next(),
+        CheckoutSession session = CheckoutSession.open(IDS, Instant.now(CLOCK), IDS.next(),
                 Money.ofMinorUnits(AMOUNT_MINOR, CurrencyCode.of("EUR")), "A bicycle", IDS.next(),
                 CheckoutSessionToken.issue(new SecureRandom()), Instant.now(CLOCK).plus(window));
         asCustomer(() -> inTransaction(uow -> {
@@ -627,19 +632,16 @@ class CheckoutFinancingDatabaseTest {
         }
     }
 
-    private CheckoutExpirySweeper sweeper(Clock clock) {
+    /** The sweeper on the database clock moved by {@code frame} (the clock it judges on, `P15-TSK-038`). */
+    private CheckoutExpirySweeper sweeper(Duration frame) {
         return new CheckoutExpirySweeper(
                 new CheckoutTransactionRunner() {
                     @Override
                     public <R> R inTransaction(Function<Connection, R> work) {
-                        try {
-                            return CheckoutFinancingDatabaseTest.inTransaction(work);
-                        } catch (SQLException failure) {
-                            throw new IllegalStateException(failure);
-                        }
+                        return com.finapp.platform.testing.database.DatabaseClockFrame.inOneTransaction(frame, work);
                     }
                 },
-                sessions, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, clock, Duration.ofMinutes(10), 50,
+                sessions, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, Duration.ofMinutes(10), 50,
                 com.finapp.checkout.UndispatchedPayments.none());
     }
 

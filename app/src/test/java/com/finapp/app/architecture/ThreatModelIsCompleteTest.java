@@ -514,7 +514,9 @@ class ThreatModelIsCompleteTest {
                 problems.put(task, "has an entry whose status cannot be read");
             }
         }
-        assertThat(named).as("the model's task ids were read, short and long").hasSizeGreaterThan(30);
+        // Not a count: every gate takes its own citations out of the model, so a floor on how many remain goes red as the
+        // phase finishes. The register's author is the one id that is cited for good (see the exception in section 1.5).
+        assertThat(named).as("the model's task ids were read: its author is always among them").contains("P15-TSK-001");
         assertThat(problems).as("task ids in %s", MODEL).isEmpty();
     }
 

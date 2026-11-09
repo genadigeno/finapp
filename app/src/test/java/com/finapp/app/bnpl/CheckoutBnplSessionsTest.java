@@ -98,7 +98,7 @@ class CheckoutBnplSessionsTest {
         actor = SecurityContext.enter(new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER));
         token = CheckoutSessionToken.issue(new SecureRandom());
         session = CheckoutSession.open(
-                IDS, INSTANCE, UUID.randomUUID(), GROSS, "A bicycle", UUID.randomUUID(), token, DEADLINE);
+                IDS, INSTANCE.instant(), UUID.randomUUID(), GROSS, "A bicycle", UUID.randomUUID(), token, DEADLINE);
         rows.put(session.id(), session);
         port = new CheckoutBnplSessions(checkoutSessions());
     }
@@ -138,7 +138,7 @@ class CheckoutBnplSessionsTest {
     @Test
     @DisplayName("a session NOT OPEN - a card or wallet confirmation won first - is NotPayable at once, nothing written")
     void aSessionNotOpenIsRefusedAtOnce() {
-        rows.put(session.id(), session.confirm(INSTANCE, UUID.randomUUID()));
+        rows.put(session.id(), session.confirm(INSTANCE.instant(), UUID.randomUUID()));
         assertThat(port.lockForPurchase(bnplsConnection, session.id().value()))
                 .isEqualTo(new BnplCheckoutSessions.NotPayable(BnplCheckoutSessions.Reason.NOT_OPEN));
         assertThat(port.completeByFinancing(bnplsConnection, session.id().value(), purchase(), entry(), correlation()))
@@ -156,7 +156,7 @@ class CheckoutBnplSessionsTest {
         databaseClock = DEADLINE;
         assertThat(port.lockForPurchase(bnplsConnection, session.id().value()))
                 .isEqualTo(new BnplCheckoutSessions.NotPayable(BnplCheckoutSessions.Reason.EXPIRED));
-        assertThat(session.hasExpired(INSTANCE)).as("the instance's clock says the offer is alive").isFalse();
+        assertThat(session.hasExpired(INSTANCE.instant())).as("the instance's clock says the offer is alive").isFalse();
 
         databaseClock = DEADLINE.minusNanos(1_000);
         assertThat(port.lockForPurchase(bnplsConnection, session.id().value()))
@@ -274,7 +274,7 @@ class CheckoutBnplSessionsTest {
         BnplCheckoutSessions.Session read = port.read(bnplsConnection, token.presentedOnce()).orElseThrow();
         assertThat(read.expired()).isTrue();
         assertThat(read.open()).as("still OPEN by its row - the sweeper has not arrived").isTrue();
-        assertThat(session.hasExpired(INSTANCE)).isFalse();
+        assertThat(session.hasExpired(INSTANCE.instant())).isFalse();
         assertThat(events).endsWith("clock@bnpl's transaction");
     }
 

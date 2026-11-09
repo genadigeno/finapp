@@ -418,6 +418,8 @@ extra["ownContainerSuites"] =
         "com.finapp.app.accounting.GlReadModelDatabaseTest",
         "com.finapp.app.accounting.OperationalReportsDatabaseTest",
         "com.finapp.app.accounting.PeriodCloseDatabaseTest",
+        // P14-REM-009: it locks January 1999 and opens the months after February on a shadowed database clock, as the suites of 1999 do.
+        "com.finapp.app.accounting.PeriodDatesAreTheDatabasesDatabaseTest",
         "com.finapp.app.accounting.PeriodReopenDatabaseTest",
         "com.finapp.app.accounting.PriorPeriodAdjustmentDatabaseTest",
         "com.finapp.app.accounting.QuietMonthDatabaseTest",
