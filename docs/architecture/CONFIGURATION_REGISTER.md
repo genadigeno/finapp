@@ -175,7 +175,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.inbox.park-after-attempts` | `FINAPP_INBOX_PARKAFTERATTEMPTS` | OPERATIONAL | `5` | default | default | default | default | default | - |
 | `finapp.inbox.park-after-failing-for` | `FINAPP_INBOX_PARKAFTERFAILINGFOR` | OPERATIONAL | `PT2M` | default | default | default | default | default | - |
 | `finapp.inbox.poll-timeout` | `FINAPP_INBOX_POLLTIMEOUT` | OPERATIONAL | `PT1S` | default | default | default | default | default | - |
-| `finapp.inbox.retention` | `FINAPP_INBOX_RETENTION` | OPERATIONAL | `P14D` | default | default | default | default | default | - |
+| `finapp.inbox.retention` | `FINAPP_INBOX_RETENTION` | FINANCIAL | `P14D` | default | default | default | default | default | Stamped on each dedupe row when it is written, and refused at start at or below the oldest record the brokers can redeliver (`RetentionSweep`), so every running value is above the redelivery horizon. Two replicas' rows expire at different times, each still later than any redelivery, so no redelivery outlives its record and no value of a fleet admits a second effect. |
 | `finapp.kafka.ack-timeout` | `FINAPP_KAFKA_ACKTIMEOUT` | OPERATIONAL | `PT10S` | default | default | default | default | default | - |
 | `finapp.kafka.bootstrap-servers` | `FINAPP_KAFKA_BOOTSTRAPSERVERS` | OPERATIONAL | (loopback) | default | default | generated | store | store | - |
 | `finapp.kafka.sasl.username` | `FINAPP_KAFKA_SASL_USERNAME` | OPERATIONAL | (blank) | default | default | generated | store | store | - |

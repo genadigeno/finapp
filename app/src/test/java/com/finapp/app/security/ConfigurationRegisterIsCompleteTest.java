@@ -80,7 +80,7 @@ class ConfigurationRegisterIsCompleteTest {
     private static final String NOT_APPLICABLE = "-";
 
     /** A call naming its property through a variable: the literals of such a class are the names it reads. */
-    private static final Pattern INDIRECT_READ = Pattern.compile("(?:[eE]nvironment\\.(?:getProperty|getRequiredProperty|containsProperty)|Binder\\.get\\([a-zA-Z]+\\)\\s*\\.bind)\\(\\s*[A-Za-z_]");
+    private static final Pattern INDIRECT_READ = Pattern.compile("(?:\\b[a-zA-Z]*[eE]nv(?:ironment)?\\.(?:getProperty|getRequiredProperty|containsProperty)|Binder\\.get\\([a-zA-Z]+\\)\\s*\\.bind)\\(\\s*[A-Za-z_]");
 
     private static final Pattern PROPERTY_LITERAL = Pattern.compile("\"(finapp\\.[a-zA-Z0-9._-]+)\"");
 
@@ -210,6 +210,7 @@ class ConfigurationRegisterIsCompleteTest {
     @DisplayName("the net catches a name given to Environment as a variable, in the class where the constant is")
     @ValueSource(strings = {
         "static final String X = \"finapp.x.y\"; Object o = environment.getProperty(X);",
+        "static final String X = \"finapp.x.y\"; Object o = env.getProperty(X);",
         "for (String p : List.of(\"finapp.x.y\")) environment.getProperty(p);",
         "Binder.get(environment).bind(X, String.class); String X = \"finapp.x.y\";"
     })

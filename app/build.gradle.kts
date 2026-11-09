@@ -336,7 +336,7 @@ tasks.processResources {
 //
 // finapp.config.fingerprint is a hash over the effective values of the register's FINANCIAL rows, so the running application
 // has to read those rows, and a second list kept beside them is the defect the register exists to prevent. The document is
-// the one list; ConfigurationRegisterEmbeddedTest holds these bytes equal to it. A register the build cannot read refuses to
+// the one list; ConfigurationFingerprintTest holds these bytes equal to it. A register the build cannot read refuses to
 // start at the fingerprint's bean. The image's context is the boot jar alone, so nothing else reaches the docs tree.
 // ---------------------------------------------------------------------------
 tasks.processResources {

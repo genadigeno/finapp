@@ -13,7 +13,7 @@ import java.util.Optional;
  * The configuration register, read as the application reads it (`P15-TSK-031`, ADR-0125 decision 3): {@code
  * docs/architecture/CONFIGURATION_REGISTER.md}, embedded in this build by {@code processResources} exactly as it stands in the
  * repository. One list, so the fingerprint's inputs are the rows a person reviewed rather than a copy of them that can fall behind;
- * {@code ConfigurationRegisterEmbeddedTest} holds the embedded bytes equal to the document.
+ * {@code ConfigurationFingerprintTest} holds the embedded bytes equal to the document.
  *
  * <p>A build whose register is missing or cannot be read refuses to start: a fingerprint over nothing would agree across the whole
  * fleet and say nothing.
