@@ -211,6 +211,9 @@ class NamespaceSecurityManifestsTest {
         Map<String, Object> readOnly = role(everything, "finapp-read-only");
         for (Map<String, Object> rule : list(readOnly, "rules")) {
             assertThat(READ_VERBS).as("%s", rule).containsAll(strings(rule.get("verbs")));
+            if (strings(rule.get("apiGroups")).contains("external-secrets.io")) {
+                assertThat(strings(rule.get("resources"))).as("an ExternalSecret names a value and never holds one; a SecretStore is not needed").containsExactly("externalsecrets");
+            }
         }
         for (Map<String, Object> binding : bindings(everything)) {
             for (Map<String, Object> subject : list(binding, "subjects")) {

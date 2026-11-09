@@ -512,6 +512,7 @@ YAML
     human_rule rbac-escalate rbac.authorization.k8s.io roles escalate
     human_rule rbac-bind rbac.authorization.k8s.io roles bind
     human_rule rbac-read-role-writes '""' configmaps patch
+    human_rule rbac-externalsecrets-write external-secrets.io externalsecrets patch
     break_glass_rule rbac-break-glass-patches-template apps deployments patch
     break_glass_rule rbac-break-glass-creates-pods '""' pods create
     break_glass_rule rbac-break-glass-secrets '""' secrets get
@@ -1253,6 +1254,7 @@ refused rbac-impersonate rbac-human-privilege
 refused rbac-escalate rbac-human-privilege
 refused rbac-bind rbac-human-privilege
 refused rbac-read-role-writes rbac-human-verbs
+refused rbac-externalsecrets-write rbac-human-verbs
 refused rbac-break-glass-patches-template rbac-break-glass-writes
 refused rbac-break-glass-creates-pods rbac-break-glass-writes
 refused rbac-break-glass-secrets rbac-human-secrets

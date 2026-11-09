@@ -2326,7 +2326,7 @@ reaches it only through a cloud role that carries that group, and **that session
 access entry; no account exists, so it has never run). **Until that exists the bound is a procedure**: the steps below, kept by
 people, enforced by nothing.
 
-**What it can do.** Everything `finapp-read-only` reads, except the RBAC and network objects, and exactly four writes: delete a
+**What it can do.** Everything `finapp-read-only` reads, except the RBAC, network and ExternalSecret objects, and exactly four writes: delete a
 pod, evict a pod, read and change a Deployment's scale.
 
 **What it cannot do, deliberately.** Read a Secret in any verb. Exec, attach, port-forward, add an ephemeral container or proxy into
