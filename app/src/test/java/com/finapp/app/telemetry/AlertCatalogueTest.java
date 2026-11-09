@@ -200,7 +200,8 @@ class AlertCatalogueTest {
             Alert alert = byName.get(name);
             assertThat(alert).as("%s is a rule", name).isNotNull();
             assertThat(alert.labels().get("severity")).as("%s pages", name).isEqualTo("page");
-            assertThat(alert.waitsFor()).as("%s waits for nothing", name).isEqualTo("0s");
+            // The one exception by the owner's ruling of 2026-11-09: the fleet-blindness rule waits five minutes, not nothing.
+            assertThat(alert.waitsFor()).as("%s waits for nothing", name).isEqualTo("GaugesStaleAcrossTheFleet".equals(name) ? "5m" : "0s");
             assertThat(alert.file()).as("%s is not budgeted", name).isNotEqualTo("slo.yml");
         }
         Pattern proofLike = Pattern.compile(".*(ProofFailing|Diverged|Unexplained|CensusFailing).*");

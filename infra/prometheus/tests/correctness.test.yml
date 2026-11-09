@@ -426,6 +426,10 @@ tests:
         values: '0x20'
       - series: 'finapp_outbox_deadlettered{job="finapp", instance="b:8081"}'
         values: '0x20'
+      - series: 'finapp_accounting_source_census_breaks{job="finapp", instance="a:8081", kind="UNSOURCED"}'
+        values: '0x20'
+      - series: 'finapp_accounting_source_census_lag_seconds{job="finapp", instance="a:8081"}'
+        values: '0x20'
     alert_rule_test:
       - eval_time: 16m
         alertname: CorrectnessUnverifiable
@@ -490,3 +494,161 @@ tests:
         alertname: PaymentWebhookUnmappable
         exp_alerts: []
 
+
+  # JournalEntryUnsourced: an unsourced finding on instance a with instance b NaN: it pages on the first non-zero sample, by kind, and the NaN neither hides nor fakes it.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_accounting_source_census_breaks{job="finapp", instance="a:8081", kind="UNSOURCED"}'
+        values: '0 0 2 2 2 2'
+      - series: 'finapp_accounting_source_census_breaks{job="finapp", instance="b:8081", kind="UNSOURCED"}'
+        values: 'NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: JournalEntryUnsourced
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: JournalEntryUnsourced
+        exp_alerts:
+          - exp_labels:
+              kind: UNSOURCED
+              owner: accounting
+              severity: page
+            exp_annotations:
+              summary: "A journal entry is UNSOURCED"
+              description: "2 journal entries found UNSOURCED by the source-join census. Never correct it from here. See OPERATIONS_RUNBOOK.md section 11.27."
+
+  # JournalEntryUnsourced: healthy, and zero on every instance: silent.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_accounting_source_census_breaks{job="finapp", instance="a:8081", kind="UNSOURCED"}'
+        values: '0x8'
+      - series: 'finapp_accounting_source_census_breaks{job="finapp", instance="a:8081", kind="MISMATCHED"}'
+        values: '0x8'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: JournalEntryUnsourced
+        exp_alerts: []
+
+  # SourceCensusLagging: fifteen minutes behind for five: a ticket.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_accounting_source_census_lag_seconds{job="finapp", instance="a:8081"}'
+        values: '901x40'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SourceCensusLagging
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: SourceCensusLagging
+        exp_alerts:
+          - exp_labels:
+              owner: accounting
+              severity: ticket
+            exp_annotations:
+              summary: "The source-join census is behind"
+              description: "The census's walk is 901 seconds behind the journal: a long-open transaction is holding its fence, or a batch keeps failing. See OPERATIONS_RUNBOOK.md section 11.27."
+
+  # GaugesStaleAcrossTheFleet: one stale instance of two is not this rule: no page.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="a:8081"}'
+        values: '1x40'
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'up{job="finapp", instance="a:8081"}'
+        values: '1x40'
+      - series: 'up{job="finapp", instance="b:8081"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: GaugesStaleAcrossTheFleet
+        exp_alerts: []
+
+  # GaugesStaleAcrossTheFleet: both stale for five minutes: it pages; before five minutes it does not.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="a:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_gauges_refreshed{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'up{job="finapp", instance="a:8081"}'
+        values: '1x40'
+      - series: 'up{job="finapp", instance="b:8081"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: GaugesStaleAcrossTheFleet
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: GaugesStaleAcrossTheFleet
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "Every finapp instance's gauges are stale"
+              description: "2 instances are up and every one's gauge canary is stale: every correctness page on a gauge is blind. See OPERATIONS_RUNBOOK.md section 11.27."
+
+  # The source-join census's gauges: NaN on one instance tickets that instance; the books are verified by the other.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_accounting_source_census_breaks{job="finapp", instance="a:8081", kind="UNSOURCED"}'
+        values: '0x20'
+      - series: 'finapp_accounting_source_census_lag_seconds{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_accounting_source_census_breaks{job="finapp", instance="b:8081", kind="UNSOURCED"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_accounting_source_census_lag_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: CorrectnessGaugesUnreadable
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: CorrectnessGaugesUnreadable
+        exp_alerts:
+          - exp_labels:
+              gauge: finapp_accounting_source_census_breaks
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A correctness gauge cannot be read on b:8081"
+              description: "finapp_accounting_source_census_breaks is NaN on b:8081 for 15 minutes: its read is failing or the instance's gauge refresher is behind. See OPERATIONS_RUNBOOK.md section 11.20."
+          - exp_labels:
+              gauge: finapp_accounting_source_census_lag_seconds
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A correctness gauge cannot be read on b:8081"
+              description: "finapp_accounting_source_census_lag_seconds is NaN on b:8081 for 15 minutes: its read is failing or the instance's gauge refresher is behind. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # CorrectnessUnverifiable: every instance's census gauge NaN (the census cannot be read, or has not run): it fires.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_accounting_source_census_breaks{job="finapp", instance="a:8081", kind="UNSOURCED"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_accounting_source_census_lag_seconds{job="finapp", instance="a:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="a:8081", currency="USD"}'
+        values: '0x20'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="a:8081"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: CorrectnessUnverifiable
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: CorrectnessUnverifiable
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "No instance can verify the books"
+              description: "No instance has published a number for a correctness gauge for 15 minutes, so the correctness pages are silent for the wrong reason. See OPERATIONS_RUNBOOK.md section 11.20."

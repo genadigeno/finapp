@@ -33,11 +33,12 @@ public interface SourceCensusStore {
         }
     }
 
-    /** What the gauges read: standing findings per kind, and whether the census may be believed at all. */
-    record Reading(Map<SourceFindingKind, Long> standing, boolean healthy, Optional<UUID> position) {
+    /** What the gauges read: standing findings per kind, whether the census may be believed at all, where its head stands and the database's now. */
+    record Reading(Map<SourceFindingKind, Long> standing, boolean healthy, Optional<UUID> position, Instant asOf) {
         public Reading {
             standing = Map.copyOf(standing);
             Objects.requireNonNull(position, "position");
+            Objects.requireNonNull(asOf, "asOf");
         }
     }
 

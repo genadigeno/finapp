@@ -204,8 +204,13 @@ public final class SourceCensus {
         return entries.stream().map(entry -> new EntryRef(entry.id(), entry.suffix(), entry.reference())).toList();
     }
 
+    /** A namespace is bounded: a forged key's namespace is not ours to store unbounded, and an oversized value must not fail the batch. */
+    static final int MAX_NAMESPACE = 100;
+
     private static SourceCensusStore.Finding finding(JournalCensusWalk.CensusEntry entry, SourceFindingKind kind, SourceNamespace namespace, String evidence) {
-        return new SourceCensusStore.Finding(entry.id(), kind, entry.door(), namespace.namespace(), evidence);
+        String stated = namespace.namespace();
+        return new SourceCensusStore.Finding(entry.id(), kind, entry.door(),
+                stated.length() > MAX_NAMESPACE ? stated.substring(0, MAX_NAMESPACE) : stated, evidence);
     }
 
     /** The accounting door as the shared contract names it: the two enums are the same three names, by {@code EntryType}'s own rule. */

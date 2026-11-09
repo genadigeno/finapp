@@ -1866,6 +1866,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) |
 | 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads *(written 2026-11-08, below)* | `-009` | `-009` (the check runs on Docker, each plant refused) |
 | 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below)* | `-029` | `-032` |
+| 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -1879,6 +1880,8 @@ row.)*
 *(Added 2026-11-08 by `P15-TSK-025`: §11.8's burn-rate and certificate parts, §11.6's consumer signals and §§11.20 to 11.24, a section for every alert of this phase and for the settlement, reconciliation and FX alerts that had none. Every alert is now routed by `infra/alertmanager/alertmanager.yml` to a placeholder receiver, and `AlertCatalogueTest` holds that each alert's section exists and names it. The paragraph above holds for every row still planned.)*
 
 *(Added 2026-11-08 by `P15-TSK-027`: §11.1.1 below is written, the handler-set steps of rows 11.1 and 11.3; not yet rehearsed.)*
+
+*(Added 2026-11-09 by `P15-TSK-035`: §11.27 below is written, from the census's code and its rules in `infra/prometheus/rules/correctness.yml`; not yet rehearsed.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
@@ -2306,6 +2309,33 @@ No amount appears in any of them: the audited operator reports answer the figure
 | `CounterpartyReviewAged` | A counterparty review past a day | Work the queue |
 | `CrossBorderCancellationSpike` | Cancellations rising | Read by corridor; a provider or a rate is the usual cause |
 | `FxGaugesUnreadable` | An FX gauge cannot be read | §11.8 |
+
+### 11.27 A source-join break, the census behind or unreadable, the fleet blind - `JournalEntryUnsourced`, `SourceCensusLagging`, `GaugesStaleAcrossTheFleet`
+
+*(Written by `P15-TSK-035`, 2026-11-09, from the census (`accounting`'s `SourceCensus`, the per-module `*JournalSources` read ports) and `infra/prometheus/rules/correctness.yml`. **Not yet rehearsed** (`P15-TSK-032`).)*
+
+**What it means.** The census reads every journal entry against the domain record that caused it, namespace by namespace (the join and what it compares are stated on each module's `*JournalSources`). `JournalEntryUnsourced` is its page, on the first non-zero sample of `finapp.accounting.source.census.breaks{kind}`: `UNSOURCED`, no record behind the entry (or a namespace no join answers for), or `MISMATCHED`, a record whose figures differ from the entry's lines. It is a detective control on the books no proof reads (`THREAT_MODEL.md` T15). It does not detect an entry whose domain record was written first (`PI-016`), nor a forged entry matching an open record's amounts and currency to another account, and it compares amounts and currency, not accounts.
+
+**Reading the findings.** In a read-only session (`START TRANSACTION READ ONLY`); neither table ever holds an amount:
+
+```sql
+SELECT entry_id, kind, door, namespace, evidence, found_at FROM accounting.source_census_finding ORDER BY found_at DESC LIMIT 50;
+SELECT position, entries_judged, last_success_at, last_failure_at, last_failure_class FROM accounting.source_census_head;
+```
+
+**Triage, in this order.** Treat `UNSOURCED` as a possible unauthorised posting until shown otherwise, and escalate as an incident (section 11.12). (1) Read the finding: its namespace and kind. (2) Read the entry through the operator's journal view by its id: its door, its lines, who it attributes. (3) For `UNSOURCED`: is there really no record of that namespace's type with that id? For `MISMATCHED`: the evidence names the side, currency and purposes that disagree; read the record and the entry's lines side by side. (4) **Never correct a figure to clear the page.** Financial history is immutable; a correction is a reversal or a compensating entry through the existing doors (section 11.20), reviewed as an incident. **A finding stands in the gauge for 24 hours** (`finapp.accounting.source-census.standing`) and stays in `accounting.source_census_finding` for good: the page ends on its own, and no count of open findings exists. Nothing closes or dismisses a finding yet; see the owner's item on it (`CURRENT_STATE.md`).
+
+**A false page, if it ever comes.** A namespace was added and its join points at the wrong record, or a poster now writes its record after its entry in a later transaction. `SourceJoinCoverageTest` holds every registered namespace to a join; it cannot hold a join to its poster. Compare the poster with the join's stated comparison and fix the join, never the entry.
+
+**`SourceCensusLagging` (ticket).** The walk has been more than 15 minutes behind the journal for 5 minutes. The walk stops at the oldest open transaction this role can see, so a long-open transaction holds it back: look for one (`SELECT pid, state, xact_start, query_start FROM pg_stat_activity WHERE xact_start IS NOT NULL ORDER BY xact_start LIMIT 10`, as the application role) and end it the ordinary way, knowing the batch keeps it open only as long as it has work. Otherwise a batch is failing: `source_census_head.last_failure_class` names the class, and the instance's log (`The source-join census failed a batch: <class>`) the rest; the batch is retried each tick. A stall loses nothing: the head does not move and the entries wait.
+
+**`CorrectnessGaugesUnreadable`/`CorrectnessUnverifiable` (tickets) naming the census gauges.** A census that could not read a source, that has not run within 15 minutes, or whose last run failed publishes no value rather than a zero: its gauges are NaN, these tickets fire, and `JournalEntryUnsourced` cannot speak until they clear.
+
+**Stopping it.** `finapp.accounting.source-census.enabled=false` stops the census on an instance; it moves no money and writes only its own records, so rolling a release back removes it cleanly. Stopped on every instance, its gauges read no value past `.stale-after` (the unreadable tickets, section 11.20), by design.
+
+**What is still a residual.** The fence depends on the instances' clocks agreeing within the margin (`finapp.accounting.source-census.margin`, 60 seconds): an entry minted by an instance whose clock runs behind by more than the margin could be judged before its transaction's start is visible. Keep instance clocks within the margin (`InstanceClockOffset`, §11.21).
+
+**`GaugesStaleAcrossTheFleet` (page, 5 minutes).** Every instance that is up has a stale gauge canary (`finapp_gauges_refreshed` NaN): each instance's own `GaugesStale` is a ticket, but while the whole fleet's refreshers are stale, every fleet-wide `max()` rule on a gauge reads NaN and every correctness page on a gauge is blind. One stale instance never pages this way. Check the database first (the gauge reads block on the pool and database timeouts), then the refresher on one instance (section 11.8). Do not restart the fleet at once; the page is about reading, not about money.
 
 ### 11.9 A failing scan
 

@@ -25,7 +25,7 @@ public final class FxJournalSources implements JournalSources {
 
     private static final Set<String> WALLET = Set.of("CUSTOMER_WALLET");
     private static final Set<String> POSITION = Set.of("FX_POSITION");
-    private static final Set<String> CLEARINGS = Set.of("FX_PROVIDER_CLEARING", "CORRIDOR_CLEARING");
+    private static final Set<String> PROVIDER_CLEARING = Set.of("FX_PROVIDER_CLEARING");
 
     static final String TRADE = "SELECT id::text AS key_text, source_currency, destination_currency, source_scale, destination_scale,"
             + " customer_source_minor, customer_destination_minor, position_source_minor, position_destination_minor"
@@ -77,8 +77,8 @@ public final class FxJournalSources implements JournalSources {
         int boughtScale = row.getInt("bought_scale");
         return SourceFigures.of(
                 ExpectedLeg.exactOn(DEBIT, POSITION, sold, soldScale, row.getLong("plan_sold_minor")),
-                ExpectedLeg.exactOn(CREDIT, CLEARINGS, sold, soldScale, row.getLong("sold_minor")),
-                ExpectedLeg.exactOn(DEBIT, CLEARINGS, bought, boughtScale, row.getLong("bought_minor")),
+                ExpectedLeg.exactOn(CREDIT, PROVIDER_CLEARING, sold, soldScale, row.getLong("sold_minor")),
+                ExpectedLeg.exactOn(DEBIT, PROVIDER_CLEARING, bought, boughtScale, row.getLong("bought_minor")),
                 ExpectedLeg.exactOn(CREDIT, POSITION, bought, boughtScale, row.getLong("plan_bought_minor")));
     }
 }

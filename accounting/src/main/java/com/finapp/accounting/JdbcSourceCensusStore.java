@@ -46,7 +46,7 @@ public final class JdbcSourceCensusStore implements SourceCensusStore {
     static final String STANDING = "SELECT kind, count(*) AS standing FROM accounting.source_census_finding"
             + " WHERE found_at > clock_timestamp() - ? * interval '1 millisecond' GROUP BY kind";
 
-    static final String HEALTH = "SELECT position, last_success_at, last_failure_at,"
+    static final String HEALTH = "SELECT position, clock_timestamp() AS as_of, last_success_at, last_failure_at,"
             + " (last_success_at IS NOT NULL AND (last_failure_at IS NULL OR last_failure_at <= last_success_at)"
             + " AND last_success_at > clock_timestamp() - ? * interval '1 millisecond') AS healthy"
             + " FROM accounting.source_census_head WHERE id";
@@ -136,12 +136,14 @@ public final class JdbcSourceCensusStore implements SourceCensusStore {
         Objects.requireNonNull(staleAfter, "staleAfter");
         boolean healthy;
         UUID position;
+        Instant asOf;
         try (PreparedStatement select = connection.prepareStatement(HEALTH)) {
             select.setLong(1, staleAfter.toMillis());
             try (ResultSet row = select.executeQuery()) {
                 row.next();
                 healthy = row.getBoolean("healthy");
                 position = row.getObject("position", UUID.class);
+                asOf = row.getTimestamp("as_of").toInstant();
             }
         } catch (SQLException failure) {
             throw failed("reading the census's health", failure);
@@ -157,7 +159,7 @@ public final class JdbcSourceCensusStore implements SourceCensusStore {
         } catch (SQLException failure) {
             throw failed("counting standing census findings", failure);
         }
-        return new Reading(counts, healthy, Optional.of(position));
+        return new Reading(counts, healthy, Optional.of(position), asOf);
     }
 
     private static void requireOne(int updated, String what) {

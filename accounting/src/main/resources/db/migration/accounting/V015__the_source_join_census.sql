@@ -14,8 +14,8 @@
 -- NO FINANCIAL COLUMN, NO FOREIGN KEY TO THE LEDGER (ADR-0029: schema-per-module, identifiers by value). No DELETE or UPDATE on the
 -- findings for any application role; the head is updated, never deleted, by this module's code alone.
 --
--- finapp_reporting READS BOTH: an operator investigating a page reads them through the reporting role
--- (OPERATIONS_RUNBOOK.md section 11.27), never through the application's.
+-- An operator investigating a page reads both in a read-only session (OPERATIONS_RUNBOOK.md section 11.27). The reporting
+-- role's grants are report generation's closed register (P15-TSK-021), and this is not a report run's table.
 
 CREATE TABLE accounting.source_census_head (
     id                 boolean     PRIMARY KEY DEFAULT true,
@@ -56,5 +56,3 @@ COMMENT ON TABLE accounting.source_census_finding IS
 
 GRANT SELECT, UPDATE ON accounting.source_census_head TO finapp_app;
 GRANT SELECT, INSERT ON accounting.source_census_finding TO finapp_app;
-GRANT SELECT ON accounting.source_census_head TO finapp_reporting;
-GRANT SELECT ON accounting.source_census_finding TO finapp_reporting;

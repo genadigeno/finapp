@@ -28,9 +28,8 @@ public final class PaymentJournalSources implements JournalSources {
     private static final Set<String> WALLET_OR_PAYABLE = Set.of("CUSTOMER_WALLET", "MERCHANT_PAYABLE");
     private static final Set<String> REFUND_CREDITS = Set.of("SETTLEMENT_CLEARING", "INSTANT_CLEARING", "CUSTOMER_WALLET");
     private static final Set<String> WALLET = Set.of("CUSTOMER_WALLET");
-    /** The counterparty clearings a rail declares (ADR-0065, ADR-0078): which one is the rail's, and this names them all. */
-    static final Set<String> CLEARINGS = Set.of("SETTLEMENT_CLEARING", "INSTANT_CLEARING", "PAYOUT_CLEARING",
-            "FX_PROVIDER_CLEARING", "CORRIDOR_CLEARING");
+    /** A corridor rail's clearing position, as the register's rules name it. */
+    private static final Set<String> CORRIDOR = Set.of("CORRIDOR_CLEARING");
 
     static final String CAPTURE = "SELECT id::text AS key_text, captured_amount_minor, captured_currency, captured_scale"
             + " FROM payments.payment_attempt WHERE id = ANY (?)";
@@ -83,7 +82,7 @@ public final class PaymentJournalSources implements JournalSources {
             new SqlSourceJoin(POSTING, "outbound-credit:", "payments.outbound_credit by the credit id: the held amount on the wallet debit and the instructed amount on the clearing credit, each in its own currency",
                     CREDIT_ROW, Keys.suffixUuid(), PaymentJournalSources::outboundCredit),
             new SqlSourceJoin(POSTING, "crossborder-return:", "payments.outbound_credit_return by the credit id: its amount on the clearing debit and the wallet credit, in the returned currency; the fee refund is lines in the source currency",
-                    CREDIT_RETURN, Keys.suffixUuid(), row -> onBoth(row, "amount_minor", "amount_currency", "amount_scale", CLEARINGS, WALLET)));
+                    CREDIT_RETURN, Keys.suffixUuid(), row -> onBoth(row, "amount_minor", "amount_currency", "amount_scale", CORRIDOR, WALLET)));
 
     @Override
     public String module() {
@@ -102,7 +101,7 @@ public final class PaymentJournalSources implements JournalSources {
     private static SourceFigures outboundCredit(ResultSet row) throws SQLException {
         return SourceFigures.of(
                 ExpectedLeg.exactOn(DEBIT, WALLET, row.getString("held_currency"), row.getInt("held_scale"), row.getLong("held_minor")),
-                ExpectedLeg.exactOn(CREDIT, CLEARINGS, row.getString("amount_currency"), row.getInt("amount_scale"), row.getLong("amount_minor")));
+                ExpectedLeg.exactOn(CREDIT, CORRIDOR, row.getString("amount_currency"), row.getInt("amount_scale"), row.getLong("amount_minor")));
     }
 
     private static SourceFigures total(ResultSet row, String minor, String currency, String scale) throws SQLException {

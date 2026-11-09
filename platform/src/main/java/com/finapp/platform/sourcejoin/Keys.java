@@ -119,8 +119,8 @@ public final class Keys {
                 return false;
             }
             try {
-                LocalDate.parse(parts.get(1));
-                return true;
+                // Year 0 is a date LocalDate reads and PostgreSQL refuses: a forger's key must join nothing, never fail the batch.
+                return LocalDate.parse(parts.get(1)).getYear() >= 1;
             } catch (DateTimeParseException notADate) {
                 return false;
             }

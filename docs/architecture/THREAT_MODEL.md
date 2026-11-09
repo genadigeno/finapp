@@ -527,7 +527,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T15 | The database reachable only from the application's and the migrator's pods | PLANNED | `P15-TSK-010` |
 | T15 | The database in private subnets | PLANNED | `P15-TSK-015` |
 | T15 | As written in the rule files, the product proofs and projection drift page on their first breach, with no budget and no `for`, routed to a placeholder receiver until an on-call tool exists (the test reads each rule's text; only projection drift and the other new correctness rules have `promtool` cases): detection for the books those proofs cover (§5), and nothing for a balanced shift between accounts no proof covers | EXISTS | `app/src/test/java/com/finapp/app/telemetry/AlertCatalogueTest.java#theCorrectnessSignalsPageOnTheirFirstSample` |
-| T15 | The source-join census: every journal entry joined by its `reference` and `idempotency_scope` to the domain record that caused it, with equal amounts, on every book (the ten accounts no proof reads among them), paging on its first break; it detects an entry with no domain record behind it, not one whose domain record was written first | PLANNED | `P15-TSK-035` |
+| T15 | The source-join census, a detective control on every book (the ten accounts no proof reads among them): every registered posting namespace has a join, through its own module's read port, from each entry to the domain record that names it, and its amounts and currency compared in minor units, per currency; a balanced entry between two customer wallets and one from fee revenue to a merchant payable, each with no record behind it, are counted on a real database (written, owed to the phase's database pass); a first breach pages. It detects an entry with no domain record behind it, or whose record's figures differ from its lines; it does not detect an entry whose domain record was written first, nor compare which accounts an entry touched | EXISTS | `app/src/test/java/com/finapp/app/accounting/SourceJoinCoverageTest.java#everyRegisteredNamespaceHasASourceJoin`, `accounting/src/test/java/com/finapp/accounting/SourceJoinComparisonTest.java#theCurrencyIsTheComparison`, `accounting/src/test/java/com/finapp/accounting/SourceCensusTest.java#aLateCommitIsStillCounted`, `app/src/test/java/com/finapp/app/accounting/SourceCensusDatabaseTest.java#aWalletToWalletEntryWithNoTransferIsCounted`, `app/src/test/java/com/finapp/app/telemetry/AlertCatalogueTest.java#theCorrectnessSignalsPageOnTheirFirstSample` |
 | T15 | Refusal of a balanced, rule-shaped entry inserted by a holder of the application's credential (a definer-rights posting path as the journal's only `INSERT`, the projection's `UPDATE` revoked, a role per module), and detection of one whose domain record was written first | GAP | `PI-016`; owner: the owner, since 2026-11-08 |
 | T16 | Ten instances submitting one key produce exactly one transfer (`INV-IDEM-01`) | EXISTS | `app/src/test/java/com/finapp/app/transfers/TransferExecutionDatabaseTest.java#tenConcurrentIdenticalKeysProduceOneTransfer` |
 | T16 | A key reused with a different request is refused as a distinct conflict, never replayed (`INV-IDEM-03`) | EXISTS | `platform/src/test/java/com/finapp/platform/idempotency/IdempotentExecutorTest.java#differingFingerprintIsRejected` |
@@ -720,8 +720,9 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
     legitimate withdrawal or payout, and the trial balance stays zero.
   Phase 15's controls lower the likelihood: the credential reaches only the application's pods (`-018`), and the
   database only those pods (`-010`, `-015`). They do not change the impact. **Owner item 2, decided 2026-11-08**: the
-  source-join census (`P15-TSK-035`) reads every book, the ten above among them, and detects an entry with no domain
-  record behind it; the preventive fix is postponed to before production use (`PI-016`). An entry whose domain record
+  source-join census reads every book, the ten above among them, and detects an entry with no domain
+  record behind it, or whose record's amounts differ from its lines (written and held by its guard; its database cases owed to the
+  phase's pass); the preventive fix is postponed to before production use (`PI-016`). An entry whose domain record
   was written first stays neither refused nor detected until `PI-016` lands.
 - **T45, injection through hand-written JDBC.** Every statement is hand-written. The codebase's idiom is constant SQL
   with bind parameters, and the statements read for this register were constant. Some concatenate constants
@@ -874,8 +875,8 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
      15, which leaves every posting path as Phases 3–14 built it (`PHASE_15_PLAN.md` §1). Add **(a)** now, as the
      source-join census rather than the wallet proof, as a new Phase 15 item after the correctness pages, so that something reads
      the uncovered books until (b) lands. With (a) and (b) both declined, the residual stays a `GAP` and must be
-     accepted by the owner before production use. **Decided 2026-11-08**: (a) is `P15-TSK-035`, the source-join census,
-     after the correctness pages; (b) is `PI-016`, postponed by the owner and required before production use.
+     accepted by the owner before production use. **Decided 2026-11-08**: (a) is the source-join census, built after
+     the correctness pages; (b) is `PI-016`, postponed by the owner and required before production use.
 3. **T29's residual.** No task builds the human identity controls of a real cloud account. *Recommendation*: widen
    `P15-TSK-016` with a human IAM baseline in the `security` module (MFA required by policy, no long-lived human access
    keys, permission boundaries), asserted by `terraform test` with mock providers like the rest of the module.
@@ -910,7 +911,7 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
    The options: (a) a census item inside Phase 15, before the database pass: each read classified as deciding or
    displaying, every deciding one ranked by the rows or named by identity, with a clock-step case, and risk `V002`
    given the terms' rule; (b) postpone it, required before production use; (c) accept the residual. *Recommendation*:
-   **(a)**, sized like `P15-TSK-035`, after `P15-TST-002`'s dependencies are settled, so its database cases run in the
+   **(a)**, sized like the source-join census, after `P15-TST-002`'s dependencies are settled, so its database cases run in the
    pass; if Phase 15 must shrink, (b), never (c), since PI-013 shows one such read can stop a month's close.
    **Decided 2026-11-08**: (a), as `P15-TSK-037`, before the database pass.
 9. **T18's residual: one identity may hold both roles of a propose/approve pair** *(added 2026-11-08 by the privileged

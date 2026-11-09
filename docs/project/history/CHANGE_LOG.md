@@ -13,6 +13,8 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
 
+**2026-11-09 - `P15-TSK-035`: the source-join census.** Every journal entry joined to the domain record that caused it, on every book, through each posting module's own read port (54 joins, one per registered namespace; a namespace without one is red in `SourceJoinCoverageTest`); compared per currency in minor units; a fence over the oldest open transaction so a late commit is still counted; one walker per batch under `SKIP LOCKED`; findings never hold an amount. `finapp.accounting.source.census.breaks{kind}` and `JournalEntryUnsourced` pages on its first non-zero sample; a failed or stale census reads no value, never a zero. `GaugesStaleAcrossTheFleet` pages when every instance's gauge canary is stale (the owner's ruling, 2026-11-09). Accounting `V015`; `THREAT_MODEL.md` T15's row `EXISTS`, its residual to `PI-016`. Database cases owed to `P15-TST-002`. `FRESH_COUNTS_PLACEHOLDER`.
+
 ## Change Log
 
 | Date | Change |
