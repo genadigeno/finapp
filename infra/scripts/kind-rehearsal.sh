@@ -355,6 +355,9 @@ step build-images
 if [ -z "${REHEARSAL_SKIP_BUILD:-}" ]; then
     build_tree "$ROOT" n
     [ -n "${REHEARSAL_REUSE_NMINUS1:-}" ] || build_nminus1
+elif [ -n "${REHEARSAL_NMINUS1_REF:-}" ]; then
+    # A reused build still has to say which tree N - 1 was: the hold step reads it, and without it reports itself not exercised.
+    printf '%s\n' "$REHEARSAL_NMINUS1_REF" > "$ART/nminus1.ref"
 fi
 
 step cluster
