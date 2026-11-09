@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -25,7 +24,7 @@ class JdbcAppliedSchemaVersionsTest {
 
     private final List<String> calls = new ArrayList<>();
 
-    private DataSource returning(String[]... rows) {
+    private JdbcAppliedSchemaVersions.Connections returning(String[]... rows) {
         Deque<String[]> left = new ArrayDeque<>(List.of(rows));
         ResultSet[] holder = new ResultSet[1];
         String[][] current = new String[1][];
@@ -49,7 +48,7 @@ class JdbcAppliedSchemaVersionsTest {
             }
             return null;
         });
-        return proxy(DataSource.class, (method, args) -> "getConnection".equals(method) ? connection : null);
+        return () -> connection;
     }
 
     private interface Answer {

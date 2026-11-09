@@ -5,11 +5,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.Executor;
 import javax.sql.DataSource;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 
 /**
  * One statement, on one pooled connection, for every schema together: platform's {@code applied_migration_versions()},
@@ -18,8 +17,14 @@ import lombok.RequiredArgsConstructor;
  * <p>The highest version is chosen here and compared as a version. The function returns every successful row because the
  * largest of the text is the wrong one.
  */
-@RequiredArgsConstructor
 public final class JdbcAppliedSchemaVersions implements AppliedSchemaVersions {
+
+    /** Where a connection comes from: the application's pool, or a suite's double that needs no database. */
+    @FunctionalInterface
+    interface Connections {
+        Connection open() throws SQLException;
+    }
+
 
     /** Named so that a test can hold it against the migration that defines it. */
     static final String READ = "SELECT schema_name, version FROM platform.applied_migration_versions()";
@@ -33,12 +38,20 @@ public final class JdbcAppliedSchemaVersions implements AppliedSchemaVersions {
 
     private static final Executor ON_THE_CALLERS_THREAD = Runnable::run;
 
-    @NonNull private final DataSource dataSource;
+    private final Connections connections;
+
+    public JdbcAppliedSchemaVersions(DataSource dataSource) {
+        this(dataSource::getConnection);
+    }
+
+    JdbcAppliedSchemaVersions(Connections connections) {
+        this.connections = Objects.requireNonNull(connections, "connections");
+    }
 
     @Override
     public Map<String, SchemaVersion> read() throws SQLException {
         Map<String, SchemaVersion> highest = new TreeMap<>();
-        try (Connection connection = dataSource.getConnection()) {
+        try (Connection connection = connections.open()) {
             connection.setNetworkTimeout(ON_THE_CALLERS_THREAD, NETWORK_TIMEOUT_MILLIS);
             try (PreparedStatement statement = connection.prepareStatement(READ);
                     ResultSet rows = statement.executeQuery()) {
