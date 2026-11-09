@@ -54,6 +54,7 @@ public final class Rehearsal {
     private final HttpClient http;
     private final String publicBase;
     private final String operatorBase;
+    private final AtomicLong unresolved = new AtomicLong();
 
     private Rehearsal(Path work) throws Exception {
         this.work = work;
@@ -329,10 +330,15 @@ public final class Rehearsal {
                 "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\",\"paymentMethodId\":\"" + state.getProperty("customer." + customer + ".card") + "\"}",
                 token, key), 200, 201);
         String id = field(created.body(), "id");
-        Answer confirmed = expect("top-up confirm", post(publicBase, "/v1/payments/" + id + "/confirmation", null, token, null), 200);
-        String status = field(confirmed.body(), "status");
-        if (!"CAPTURED".equals(status) && !"SUCCEEDED".equals(status)) {
-            throw new IllegalStateException("the top-up ended " + status + ": " + confirmed.body());
+        Answer confirmed = expect("top-up confirm", post(publicBase, "/v1/payments/" + id + "/confirmation", null, token, null), 200, 409);
+        String status = confirmed.status() == 200 ? field(confirmed.body(), "status") : null;
+        // A retried request can find the payment already confirmed, or find it still resolving: what counts is where it ends.
+        for (int polls = 0; polls < 15 && !"SUCCEEDED".equals(status) && !"FAILED".equals(status); polls++) {
+            pause(1000);
+            status = field(expect("top-up read", get(publicBase, "/v1/payments/" + id, token), 200).body(), "status");
+        }
+        if (!"SUCCEEDED".equals(status)) {
+            throw new IllegalStateException("the top-up ended " + status);
         }
         return id;
     }
@@ -344,11 +350,19 @@ public final class Rehearsal {
 
     /** A customer pays the merchant by card through a checkout session: authorize and capture, chained. */
     private void checkout(int customer, long amountMinor) throws IOException, InterruptedException {
+        checkout(customer, amountMinor, new String[1]);
+    }
+
+    /** {@code held[0]} keeps the session token across a retry: a replayed create shows no token, and a repeated confirmation must name the same session. */
+    private void checkout(int customer, long amountMinor, String[] held) throws IOException, InterruptedException {
         String merchantKey = state.getProperty("merchant.key");
-        Answer session = expect("checkout create", post(publicBase, "/v1/checkout/sessions",
-                "{\"amountMinor\":" + amountMinor + ",\"currency\":\"EUR\",\"lineSummary\":\"The rehearsal's order\"}", merchantKey, key()), 201);
+        if (held[0] == null) {
+            Answer session = expect("checkout create", post(publicBase, "/v1/checkout/sessions",
+                    "{\"amountMinor\":" + amountMinor + ",\"currency\":\"EUR\",\"lineSummary\":\"The rehearsal's order\"}", merchantKey, key()), 201);
+            held[0] = field(session.body(), "sessionToken");
+        }
         Answer confirmed = expect("checkout confirm", post(publicBase, "/v1/checkout/sessions/confirmation",
-                "{\"sessionToken\":\"" + field(session.body(), "sessionToken") + "\",\"paymentMethodId\":\""
+                "{\"sessionToken\":\"" + held[0] + "\",\"paymentMethodId\":\""
                         + state.getProperty("customer." + customer + ".card") + "\"}", customerToken(customer), null), 200);
         String status = field(confirmed.body(), "status");
         if (!"COMPLETED".equals(status)) {
@@ -428,7 +442,7 @@ public final class Rehearsal {
             thread.join();
         }
         watcher.join(2000);
-        String line = "workload " + label + " ok=" + succeeded.get() + " failed=" + failed.get() + " " + byFlow;
+        String line = "workload " + label + " ok=" + succeeded.get() + " failed=" + failed.get() + " unresolved=" + unresolved.get() + " " + byFlow;
         System.out.println(line);
         Files.writeString(work.resolve("workload-" + label + ".summary"), line + "\n");
     }
@@ -437,17 +451,29 @@ public final class Rehearsal {
         void run() throws Exception;
     }
 
+    /** Every failed attempt counts, even one a retry then heals. Under {@code WORKLOAD_RETRY=retry} (the pod kill) a logical request is retried with the same key until it resolves or the bound runs out. */
     private void counted(String flow, String key, java.util.function.BiConsumer<String, String> note, AtomicLong failed, AtomicLong ok,
             Map<String, AtomicLong> byFlow, Flow body) {
-        try {
-            body.run();
-            ok.incrementAndGet();
-            byFlow.computeIfAbsent(flow + ".ok", ignored -> new AtomicLong()).incrementAndGet();
-            note.accept(flow, key + "\tok");
-        } catch (Exception thrown) {
-            failed.incrementAndGet();
-            byFlow.computeIfAbsent(flow + ".failed", ignored -> new AtomicLong()).incrementAndGet();
-            note.accept(flow, key + "\tFAILED " + String.valueOf(thrown.getMessage()).replaceAll("\\s+", " "));
+        boolean retry = "retry".equals(System.getenv("WORKLOAD_RETRY"));
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(240));
+        while (true) {
+            try {
+                body.run();
+                ok.incrementAndGet();
+                byFlow.computeIfAbsent(flow + ".ok", ignored -> new AtomicLong()).incrementAndGet();
+                note.accept(flow, key + "\tok");
+                return;
+            } catch (Exception thrown) {
+                failed.incrementAndGet();
+                byFlow.computeIfAbsent(flow + ".failed", ignored -> new AtomicLong()).incrementAndGet();
+                note.accept(flow, key + "\tATTEMPT-FAILED " + String.valueOf(thrown.getMessage()).replaceAll("\\s+", " "));
+                if (!retry || Instant.now().isAfter(deadline)) {
+                    unresolved.incrementAndGet();
+                    note.accept(flow, key + "\tUNRESOLVED");
+                    return;
+                }
+                pause(3000);
+            }
         }
     }
 
@@ -469,7 +495,7 @@ public final class Rehearsal {
             String reference = "wl-" + label + "-" + UUID.randomUUID();
             String flow = "transfer";
             counted(flow, key + "\t" + reference, note, failed, ok, byFlow, () -> {
-                Answer first = expect("transfer", transfer(from, to, "0.01", key, reference), 201);
+                Answer first = expect("transfer", transfer(from, to, "0.01", key, reference), 200, 201);
                 if (!"COMPLETED".equals(field(first.body(), "status"))) {
                     throw new IllegalStateException("the transfer ended " + first.body());
                 }
@@ -505,7 +531,8 @@ public final class Rehearsal {
             int customer = i % CUSTOMERS;
             counted("register", "fresh", note, failed, ok, byFlow, () -> expect("register", register(someLogin("wl")), 201));
             counted("authenticate", "existing", note, failed, ok, byFlow, () -> authenticate(state.getProperty("customer." + customer + ".login")));
-            counted("checkout", "fresh", note, failed, ok, byFlow, () -> checkout(customer, 2_00L));
+            String[] held = new String[1];
+            counted("checkout", "fresh", note, failed, ok, byFlow, () -> checkout(customer, 2_00L, held));
             String payoutKey = "wl-" + label + "-p" + i + "-" + key();
             counted("payout", payoutKey, note, failed, ok, byFlow, () -> payout("0.10", payoutKey));
             i++;
