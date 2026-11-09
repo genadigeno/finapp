@@ -1,0 +1,107 @@
+# What a person may do in this namespace (P15-TSK-010). No human holds standing write access: the GitOps controller
+# applies. Neither workload holds any RBAC at all.
+#
+# NOT `secrets` IN ANY VERB. get, list and watch each return a Secret's data, and a wildcard is all three. Nor exec, attach,
+# portforward, ephemeral containers or the proxy subresources: each is a way inside a pod whose environment holds the
+# credentials, and a WebSocket upgrade means `get` is enough for some of them.
+#
+# A person reaches a Group through the identity layer, never by a name written here. finapp.rego holds all of this for
+# every role a person could be bound to.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: finapp-read-only
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, endpoints, events, configmaps, resourcequotas, limitranges]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies, ingresses]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
+    verbs: [get, list, watch]
+  # So an operator can follow a rotation: an ExternalSecret names where a value lives and whether it synced, never the
+  # value. Nothing else from this group.
+  - apiGroups: [external-secrets.io]
+    resources: [externalsecrets]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-read-only
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-read-only
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-read-only
+---
+# Incident response, and only the part that cannot wait for a reviewed change (OPERATIONS_RUNBOOK.md section 11.25).
+#
+# TIME-BOUND BY WHAT. Kubernetes RBAC has no expiring binding, and nothing here expires. This binding names a Group that has
+# no members until the identity layer puts a session in it, so the bound is that session's lifetime in a real environment
+# and a written procedure until one exists.
+#
+# ITS WRITES ARE THESE AND NO OTHERS. Creating a pod, or patching a Deployment's template, is an indirect read of every
+# Secret the namespace holds: a template can mount them. Stopping a pod and changing a replica count cannot.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: finapp-break-glass
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, endpoints, events, configmaps, resourcequotas, limitranges]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    verbs: [get, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-break-glass
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-break-glass
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-break-glass

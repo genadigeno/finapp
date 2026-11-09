@@ -126,6 +126,14 @@ surge. `INV-HIST-01`: no rollback rewrites history. A schema is only ever moved 
 Phase 16 covers the role split, PgBouncer, an in-cluster database operator and multi-AZ/region topology, each by
 measurement. `P15-TSK-003`, `-004`, `-008`…`-012` build this ADR. `P15-DOC-001` reads it against them.
 
+*As built for decision 6's NetworkPolicy, `P15-TSK-010` (2026-11-09); no decision changes.* Default-deny in both directions in
+`finapp`, and the flows of `PHASE_15_PLAN.md` §6 by label and port; the namespaces a root of their own, because an overlay's
+`namespace:` renames every Namespace it renders. Three facts, each read from the source rather than assumed, narrow what the
+decision's words can mean: a NetworkPolicy cannot refuse a pod's resident node, so "the kubelet and Prometheus alone" is really
+"Prometheus's label, and whatever runs on that node"; a `LimitRange` item of `type: Container` is defaulted from its own `max` by
+the API server, so it would admit the pod it exists to refuse, and the item is `type: Pod`; Kubernetes RBAC has no expiring binding,
+so break-glass's time limit belongs to the identity layer. Stated and checked; nothing has enforced them on a cluster yet.
+
 *As built for decisions 2 to 5's manifests, `P15-TSK-009` (2026-11-08); no decision changes.* `deploy/`, a Kustomize base and
 the overlays `kind`, `staging`, `production`. The HorizontalPodAutoscaler alone owns the replica count: the Deployment
 states no `replicas`, because a manifest that does resets the HPA at every apply, and a reset from seven to three is four

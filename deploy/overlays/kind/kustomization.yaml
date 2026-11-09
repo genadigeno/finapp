@@ -10,6 +10,7 @@ resources:
   - ../../base
   - postgres.yaml
   - kafka.yaml
+  - networkpolicy-test-only.yaml
 
 images:
   - name: finapp-app
@@ -49,3 +50,31 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: 1Gi
+  # The largest pod here is 1 GiB, and the LimitRange's max is held equal to the largest pod.
+  - target:
+      kind: LimitRange
+      name: finapp
+    patch: |-
+      - op: replace
+        path: /spec/limits/0/max/memory
+        value: 1Gi
+  # The quota follows the maximum: 6 app pods at 1 GiB (3 + 2 x 1 + 1), the migrator, and the two test-only copies.
+  - target:
+      kind: ResourceQuota
+      name: finapp
+    patch: |-
+      - op: replace
+        path: /spec/hard/pods
+        value: "9"
+      - op: replace
+        path: /spec/hard/requests.cpu
+        value: 3750m
+      - op: replace
+        path: /spec/hard/requests.memory
+        value: 8192Mi
+      - op: replace
+        path: /spec/hard/limits.cpu
+        value: "15"
+      - op: replace
+        path: /spec/hard/limits.memory
+        value: 8192Mi

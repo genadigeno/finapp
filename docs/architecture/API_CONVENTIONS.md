@@ -294,9 +294,9 @@ application, because those are how a path allow-list is walked around.
 **What the edge answers itself.** These are the proxy's plain responses, not the error contract's problem documents, because the
 application was never reached: `404` for a method and path not on the list (or the other surface's route); `400` or `404` for a
 path with a refused encoded character; `413` for a body far over the application's own limit; `429` for a coarse per-source limit;
-`403` for the operator host from outside the internal ranges. The application's own `api.PayloadTooLarge` and validation
+`403` for the operator host from outside the internal ranges; `500` for a body past 64 KiB while the edge's spool is full, or a response over the edge's cap. Those the application could have answered carry HSTS and the security headers; a `404` or `400` no route matched does not, because no route's headers ran. The application's own `api.PayloadTooLarge` and validation
 answers are unchanged, and the edge's body cap sits above them, so a request at the application's limit still gets the application's
-answer. The per-source limit is coarse and per controller replica; the limits that count are the application's.
+answer. The per-source limits are coarse: one bucket for each source across each tier's routes (the sign-in and registration doors, a session's routes, a merchant's, a provider's), per controller replica. The limits that count are the application's.
 
 **The client's address** the application records is the one the edge set from the connection. A client-supplied forwarded header
 never becomes it (`ForwardedAddressTest`).

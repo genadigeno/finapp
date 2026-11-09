@@ -126,6 +126,9 @@ class AlertCatalogueTest {
                 assertThat(expr).as(alert.name()).contains("min by");
             } else if (stated.startsWith("per instance")) {
                 assertThat(expr.replace("by (job, instance)", "")).as(alert.name()).doesNotContainPattern("(max|sum|min)( by|\\()");
+            } else if (stated.startsWith("count")) {
+                // The fleet-blindness rule: a count of instances is the question it asks, never a max (the owner's ruling, 2026-11-09).
+                assertThat(expr).as(alert.name()).contains("count(");
             } else {
                 assertThat(stated).as(alert.name()).startsWith("none");
                 assertThat(expr).as(alert.name()).contains("absent(");
@@ -200,7 +203,8 @@ class AlertCatalogueTest {
             Alert alert = byName.get(name);
             assertThat(alert).as("%s is a rule", name).isNotNull();
             assertThat(alert.labels().get("severity")).as("%s pages", name).isEqualTo("page");
-            assertThat(alert.waitsFor()).as("%s waits for nothing", name).isEqualTo("0s");
+            // The one exception by the owner's ruling of 2026-11-09: the fleet-blindness rule waits five minutes, not nothing.
+            assertThat(alert.waitsFor()).as("%s waits for nothing", name).isEqualTo("GaugesStaleAcrossTheFleet".equals(name) ? "5m" : "0s");
             assertThat(alert.file()).as("%s is not budgeted", name).isNotEqualTo("slo.yml");
         }
         Pattern proofLike = Pattern.compile(".*(ProofFailing|Diverged|Unexplained|CensusFailing).*");

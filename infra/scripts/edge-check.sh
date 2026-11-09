@@ -508,14 +508,16 @@ for line in 'strict-transport-security' 'x-frame-options'; do
     fi
 done
 
-echo "==   an encoded spelling of a public path is routed as that path, and the backend receives what was sent"
-for spelling in '/v1/p%61yments/abc-123' '/v1/payments/a%2eb'; do
+echo "==   an encoded spelling of a public path is routed as that path, and the backend receives it decoded"
+for pair in '/v1/p%61yments/abc-123 /v1/payments/abc-123' '/v1/payments/a%2eb /v1/payments/a.b'; do
+    spelling=${pair% *}
+    decoded=${pair#* }
     answer=$(client curl -sk --path-as-is --max-time 15 "$PUBLIC$spelling" | tr -d '\r')
-    if printf '%s\n' "$answer" | grep -qxF "GET $spelling HTTP/1.1"; then
-        echo "ok   served, and received as sent: $spelling"
+    if printf '%s\n' "$answer" | grep -qxF "GET $decoded HTTP/1.1"; then
+        echo "ok   $spelling reached the backend as $decoded"
     else
         printf '%s\n' "$answer" | head -12
-        echo "!!   $spelling was not received as sent"
+        echo "!!   $spelling did not reach the backend as $decoded"
         status=1
     fi
 done
@@ -596,7 +598,7 @@ else
 fi
 
 echo "==   the size limits and the per-source limit"
-got=$(client curl -sk --max-time 30 -X POST --data-binary @/tmp/one-mib -H 'Content-Type: application/json' "$PUBLIC/v1/providers/payments/webhooks" -w '\n%{http_code}' | tr -d '\r')
+got=$(client curl -sk --max-time 30 -X POST --data-binary @/tmp/one-mib -H 'Content-Type: application/json' "$PUBLIC/v1/providers/payments/webhooks" -w '\n%{http_code}' | tr -d '\000\r')
 if printf '%s\n' "$got" | tail -1 | grep -qx 200 && printf '%s\n' "$got" | grep -qx 'Content-Length: 1048576'; then
     echo "ok   a provider callback at the application's limit arrives whole"
 else
@@ -629,7 +631,16 @@ else
     status=1
 fi
 
-edge_answers_with_headers "the per-source limit's own answer" 429 -X POST "$PUBLIC/v1/authentications"
+# The bucket refills between separate docker execs, so the requests for this one run inside a single one.
+answer=$(client sh -c "i=0; while [ \$i -lt 150 ]; do curl -sk --max-time 5 -D - -o /dev/null -X POST $PUBLIC/v1/authentications > /tmp/limited; head -1 /tmp/limited | grep -q ' 429' && break; i=\$((i + 1)); done; cat /tmp/limited" | tr -d '\r')
+if printf '%s\n' "$answer" | head -1 | grep -q ' 429' && printf '%s\n' "$answer" | grep -qi '^strict-transport-security: max-age=31536000' \
+    && printf '%s\n' "$answer" | grep -qi '^x-content-type-options: nosniff'; then
+    echo "ok   the per-source limit's own answer: 429, with the headers"
+else
+    printf '%s\n' "$answer" | head -12
+    echo "!!   the per-source limit's own answer was not a 429 with HSTS and nosniff"
+    status=1
+fi
 edge_answers_with_headers "the body cap's own answer" 413 -X POST --data-binary @/tmp/three-mib -H 'Content-Type: application/json' "$PUBLIC/v1/providers/payments/webhooks"
 
 echo "==   a tier's limit is one bucket across all its routes"
