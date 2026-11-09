@@ -47,8 +47,10 @@ ride out one scrape's noise.
   denominator, so nobody outside can spend the budget. `finapp.payments.webhook{outcome="refused"}` has its own ticket instead.
 - **"Within the route's documented objective"** in `PHASE_15_PLAN.md` §11.1 had no documented figure for authentication. This table is
   it: 95% within 1 s, the credential hash's cost included.
-- **Latency buckets.** `http.server.requests` publishes no buckets by default. `SloLatencyBuckets` adds one boundary, 1 s, to the routes
-  named above and to no other, so the other routes' cardinality is unchanged.
+- **Latency buckets.** `http.server.requests` publishes no buckets by default. `SloLatencyBuckets` adds one boundary, 1 s, to every route of
+  `http.server.requests` *(widened 2026-11-09 by the kind rehearsal, `P15-TSK-012`: to the routes named above alone, the timer without buckets beside the
+  timer with them made one metric family both a histogram and a summary, and every scrape answered 500 once an instance had served both)*. One extra bucket
+  series per route and status, where before the routes named above carried two.
 - **Event freshness is time-based**, not per row. A row counted when it is published cannot report a relay that has stopped, which is
   the failure this objective exists for. It reads `finapp.outbox.oldest.publishable`, which leaves out a row that is itself dead-lettered: a
   dead letter pages on its own (section 3), and would otherwise spend this budget for as long as it stood.

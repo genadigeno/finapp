@@ -7,12 +7,14 @@ import java.time.Duration;
 import java.util.Set;
 
 /**
- * One latency boundary on the routes that carry a latency objective (`P15-TSK-025`; {@code docs/architecture/SLOS.md}).
+ * One latency boundary on every {@code http.server.requests} timer (`P15-TSK-025`, widened by `P15-TSK-012`; {@code docs/architecture/SLOS.md}).
  *
- * <p>{@code http.server.requests} publishes no buckets by default, so "99% within a second" could not be asked of it. A
- * property would add them to all 397 routes; this adds one boundary to the routes the objectives name, and leaves every
- * other route's cardinality alone. {@code slo-recording.yml} names the same routes, and {@code SloRulesResolveTest} holds the
- * two equal and each route mapped.
+ * <p>{@code http.server.requests} publishes no buckets by default, so "99% within a second" could not be asked of it.
+ * The boundary covers the whole meter name, not the routes the objectives name: under Prometheus one metric family has
+ * one type, and a timer with buckets (a histogram) beside a timer without them (a summary) under the same name made
+ * every scrape answer 500 with a {@code ClassCastException} on the first instance serving both kinds of route, which is
+ * what a rehearsal under traffic found. {@link #ROUTES} are the routes {@code slo-recording.yml} reads, held equal to
+ * it by {@code SloRulesResolveTest}.
  */
 final class SloLatencyBuckets implements MeterFilter {
 
@@ -21,7 +23,7 @@ final class SloLatencyBuckets implements MeterFilter {
 
     private static final String HTTP_SERVER_REQUESTS = "http.server.requests";
 
-    /** The authentication and session routes, and the transfer command's. */
+    /** The routes the latency objectives read: the authentication and session routes, and the transfer command's. */
     static final Set<String> ROUTES = Set.of(
             "/v1/authentications",
             "/v1/authentications/mfa",
@@ -32,7 +34,7 @@ final class SloLatencyBuckets implements MeterFilter {
 
     @Override
     public DistributionStatisticConfig configure(Meter.Id id, DistributionStatisticConfig config) {
-        if (!HTTP_SERVER_REQUESTS.equals(id.getName()) || !ROUTES.contains(id.getTag("uri"))) {
+        if (!HTTP_SERVER_REQUESTS.equals(id.getName())) {
             return config;
         }
         return DistributionStatisticConfig.builder()

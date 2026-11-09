@@ -52,7 +52,7 @@ class TelemetryConfiguration {
         return new ClockOffsetMetrics(dataSource::getConnection, clock, registry);
     }
 
-    /** The one latency boundary the SLO routes need, on those routes alone (`P15-TSK-025`). */
+    /** The one latency boundary the SLO routes need, on every {@code http.server.requests} timer so the meter keeps one Prometheus type (`P15-TSK-025`, `P15-TSK-012`). */
     @Bean
     SloLatencyBuckets sloLatencyBuckets() {
         return new SloLatencyBuckets();

@@ -9,8 +9,8 @@ import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** The 1 s boundary, on the routes that carry a latency objective and on no other (`P15-TSK-025`). */
-@DisplayName("the SLO routes publish a 1 s bucket, and no other route publishes any (P15-TSK-025)")
+/** The 1 s boundary on {@code http.server.requests}, one Prometheus type for the whole name (`P15-TSK-025`, widened by `P15-TSK-012`). */
+@DisplayName("every http.server.requests timer publishes the 1 s bucket, so one scrape never mixes a histogram and a summary (P15-TSK-025, P15-TSK-012)")
 class SloLatencyBucketsTest {
 
     @Test
@@ -25,12 +25,14 @@ class SloLatencyBucketsTest {
     }
 
     @Test
-    @DisplayName("any other route publishes no bucket, so the other routes' cardinality is untouched")
-    void anyOtherRouteHasNone() {
+    @DisplayName("a route with no objective and a route with one, recorded together: the scrape stands, each with the boundary")
+    void oneScrapeMixesNoTypes() {
         PrometheusMeterRegistry registry = registry();
+        timer(registry, "/v1/transfers").record(Duration.ofMillis(200));
         timer(registry, "/v1/me/consents").record(Duration.ofMillis(200));
 
-        assertThat(registry.scrape()).doesNotContain("http_server_requests_seconds_bucket");
+        assertThat(registry.scrape()).containsPattern("http_server_requests_seconds_bucket\\{[^}]*uri=\"/v1/transfers\"[^}]*} ?")
+                .containsPattern("http_server_requests_seconds_bucket\\{[^}]*uri=\"/v1/me/consents\"[^}]*} ?");
     }
 
     private static PrometheusMeterRegistry registry() {

@@ -340,7 +340,7 @@ wait_job() {
         esac
         sleep 2
     done
-    kube -n "$1" logs "job/$2" --all-containers > "$ART/$4.log" 2>&1 || true
+    kube -n "$1" logs -l "job-name=$2" --all-containers --prefix --tail=-1 > "$ART/$4.log" 2>&1 || true
     case $state in
         *Complete*) return 0 ;;
     esac
@@ -476,6 +476,28 @@ step data-tier
 render_overlay app overlays/kind
 A="$WORK/render/app"
 sed -i "s#finapp-app@sha256:0\{64\}#$IMAGE_APP_NM1#; s#finapp-migrator@sha256:0\{64\}#$IMAGE_MIGRATOR_NM1#" "$A/all.yaml" "$A/Deployment.finapp-app.yaml" "$A/Job.finapp-migrator.yaml"
+# Only under kube-router, which programs a new pod asynchronously (see kube-router.yaml): a Job pod's first connection, a JVM's start after it is created, can be
+# refused before its policy exists, and the migrator is built to fail fast on that and leave retries to its Job. A wait in front of it keeps that failure out of this
+# run's record; the Job itself is the base's, unchanged, and kindnetd needs none of this.
+if [ "$POLICY_ENGINE" = kube-router ]; then
+    cat > "$WORK/job-wait.yaml" <<YAML
+      initContainers:
+      - name: wait-for-postgres
+        image: $CURL_IMAGE
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c", "until nc -z -w 3 finapp-postgres.finapp.svc.cluster.local 5432; do sleep 1; done"]
+        resources:
+          limits: {cpu: 100m, memory: 128Mi}
+          requests: {cpu: 100m, memory: 128Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {drop: ["ALL"]}
+          privileged: false
+          readOnlyRootFilesystem: true
+YAML
+    awk -v wait="$WORK/job-wait.yaml" '/^      containers:$/ {while ((getline line < wait) > 0) print line} {print}' "$A/Job.finapp-migrator.yaml" > "$WORK/job.tmp"
+    mv "$WORK/job.tmp" "$A/Job.finapp-migrator.yaml"
+fi
 # Everything but what a release orders: the Deployment, its autoscaler and the Job.
 for file in "$A"/*.yaml; do
     case $(basename "$file") in
@@ -565,7 +587,7 @@ log "bootstrap said: $(grep -c . "$ART/role-bootstrap.log") lines; $(tr '\n' ';'
 step migrator-nminus1
 apply_files "$A/Job.finapp-migrator.yaml"
 wait_job finapp finapp-migrator 900 migrator-nminus1
-log "migrator (N-1): $(tail -1 "$ART/migrator-nminus1.log" | cut -c1-200)"
+log "migrator (N-1): $(grep -h 'result=APPLIED' "$ART/migrator-nminus1.log" | tail -1 | cut -c1-200)"
 
 step app-nminus1
 apply_files "$A/Deployment.finapp-app.yaml" "$A/HorizontalPodAutoscaler.finapp-app.yaml"
@@ -1241,7 +1263,7 @@ sed -i "s#$IMAGE_MIGRATOR_NM1#$IMAGE_MIGRATOR_N#" "$A/Job.finapp-migrator.yaml"
 kube -n finapp delete job finapp-migrator --wait=true >> "$ART/apply.log" 2>&1 || cannot "the N - 1 Job could not be removed"
 apply_files "$A/Job.finapp-migrator.yaml"
 wait_job finapp finapp-migrator 900 migrator-n
-log "migrator (N): $(tail -1 "$ART/migrator-n.log" | cut -c1-200)"
+log "migrator (N): $(grep -h 'result=APPLIED' "$ART/migrator-n.log" | tail -1 | cut -c1-200)"
 
 step nminus1-on-n-schema
 sleep 20
@@ -1339,6 +1361,10 @@ rollout reroll "$IMAGE_APP_N" "$IMAGE_APP_NM1" no
 assert_floor reroll
 REROLL_TO=$ROLLOUT_TO
 census reroll
+SCRAPE_POD=$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{.items[0].status.podIP}')
+scrape_status=$(kube -n finapp-observability exec np-scraper -c probe -- curl -s -o /dev/null -w '%{http_code}' --max-time 15 "http://$SCRAPE_POD:8081/actuator/prometheus" 2>/dev/null)
+[ "$scrape_status" = 200 ] || fail "a replica's scrape answered $scrape_status after traffic, every other assertion here depends on metrics being readable"
+pass "a replica of N answers the scrape 200 after real traffic"
 
 step handler-window-rollback
 counts=$(window_counts "$ROLLBACK_REF_FROM" "$REROLL_TO")
