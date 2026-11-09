@@ -38,6 +38,11 @@ output "workload_identity_issuer" {
   value       = aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
 
+output "cluster_role_arn" {
+  description = "The control plane's IAM role, the principal the etcd key's policy admits."
+  value       = aws_iam_role.cluster.arn
+}
+
 output "node_role_arn" {
   description = "The nodes' IAM role."
   value       = aws_iam_role.node.arn
@@ -46,4 +51,9 @@ output "node_role_arn" {
 output "node_security_group_id" {
   description = "The security group EKS attaches to the managed nodes, the source the data tier admits. Every pod on a node shares it, so it does not name a workload: the namespace's NetworkPolicy does."
   value       = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+}
+
+output "log_group_kms_key_arn" {
+  description = "The key of the control-plane log group, read from the plan."
+  value       = aws_cloudwatch_log_group.control_plane.kms_key_id
 }

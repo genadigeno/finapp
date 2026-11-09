@@ -67,3 +67,13 @@ variable "flow_log_retention_days" {
     error_message = "The flow logs expire after one of the periods CloudWatch Logs accepts."
   }
 }
+
+variable "flow_log_kms_key_arn" {
+  description = "The customer-managed key the flow logs are encrypted under: the security module's logs key."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:kms:[a-z]{2}(-[a-z]+)+-[0-9]:[0-9]{12}:key/([0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}|mrk-[0-9a-f]{32})$", var.flow_log_kms_key_arn))
+    error_message = "The logs key is a KMS key's ARN, never an alias: an alias can be repointed."
+  }
+}

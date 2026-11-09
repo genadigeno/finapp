@@ -208,6 +208,7 @@ resource "aws_vpc_endpoint" "s3" {
 resource "aws_cloudwatch_log_group" "flow_logs" {
   name                        = local.flow_log_group_name
   retention_in_days           = var.flow_log_retention_days
+  kms_key_id                  = var.flow_log_kms_key_arn
   deletion_protection_enabled = true
 }
 

@@ -12,3 +12,8 @@ output "public_subnet_ids_by_zone" {
   description = "The edge tier's subnets, by zone: NAT gateways and the public ingress's load balancer, never a workload."
   value       = { for zone, subnet in aws_subnet.public : zone => subnet.id }
 }
+
+output "log_group_kms_key_arn" {
+  description = "The key of the flow log group, read from the plan."
+  value       = aws_cloudwatch_log_group.flow_logs.kms_key_id
+}

@@ -50,6 +50,7 @@ variables {
   node_root_volume_gib             = 50
   nodes_per_zone                   = { min = 1, desired = 1, max = 2 }
   control_plane_log_retention_days = 0
+  control_plane_log_kms_key_arn    = "arn:aws:kms:eu-central-1:111111111111:key/99999999-9999-9999-9999-999999999999"
 }
 
 run "the_api_endpoint_is_private" {
@@ -116,6 +117,11 @@ run "the_control_plane_audit_log_is_on" {
   assert {
     condition     = aws_cloudwatch_log_group.control_plane.retention_in_days == 0 && aws_cloudwatch_log_group.control_plane.deletion_protection_enabled == true
     error_message = "The control plane's log group does not keep its logs as declared, or can be deleted."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.control_plane.kms_key_id == var.control_plane_log_kms_key_arn
+    error_message = "The control plane's log group is not under the key this module is given."
   }
 }
 
