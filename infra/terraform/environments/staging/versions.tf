@@ -12,5 +12,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "6.72.0"
     }
+
+    kafka = {
+      source  = "mongey/kafka"
+      version = "0.13.2"
+    }
   }
 }

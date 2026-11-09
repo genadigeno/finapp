@@ -2030,8 +2030,12 @@ never reads the broker.
 
 1. **Leave the application alone.** Do not restart or scale replicas: the relay already backs off per event and holds each
    aggregate's order, and a restart only adds a rebalance of every group to the broker's return.
-2. **Diagnose the broker where it lives**: the managed service's own health (`P15-TSK-015`'s module), or the broker pod on
-   the `kind` rehearsal.
+2. **Diagnose the broker where it lives**, which on the `kind` rehearsal is the broker pod. On the managed service (`infra/terraform/modules/kafka`; unrehearsed, no cluster has existed):
+   - **Is the cluster there?** `aws kafka describe-cluster-v2` for its state: `ACTIVE`, `MAINTENANCE` (a patch or a configuration change rolling brokers, one at a time, the writes continuing if two brokers stay in sync) or `HEALING`.
+   - **Can a client get in?** A failing poll that is a refusal is the section below, not this one. A timeout that names the brokers' addresses is the network: the brokers' security group admits port 9096 from the cluster's nodes and nothing else.
+   - **Is it a replication problem?** CloudWatch's `UnderReplicatedPartitions`, and `OfflinePartitionsCount` above zero. A topic holds three copies and demands two in sync, so one broker lost keeps every write; two lost refuses them (`NotEnoughReplicas`), and the relay retries with the outbox holding the events. **Never turn on `unclean.leader.election.enable` to get writes moving**: it silently discards acknowledged records (`infra/kafka/broker.properties`).
+   - **The brokers' own logs** are the log group `/finapp/<environment>/msk-brokers`.
+   - **A broker lost for good** is replaced by the service. Nothing here needs a person to re-create a topic: they are declared, and `prevent_destroy` stops a plan from removing one.
 3. **When it returns**, the relay drains the backlog in per-aggregate order and `finapp.outbox.oldest` falls; the
    consumers resume from their committed offsets. A short rise of `finapp.inbox.consumption{outcome="duplicate"}` is the
    inbox absorbing redeliveries, and is expected.
@@ -2050,7 +2054,7 @@ naming the same classes. A broker that refuses is reachable: this is configurati
    credential or its principal lacks a permission. Roll back by digest (§11.3), then fix the release's secret or the grant.
 2. **Every replica went unready at once**: the credential was revoked or rotated out of order. Restore the previous
    credential first, then roll. Rotation is add, roll, remove (ADR-0123 decision 5; §11.7), never remove first.
-3. **A permission missing**: the grants are `infra/kafka/topics.yaml`'s principals, as `P15-TSK-015` applies them; the
+3. **A permission missing**: the grants are `infra/kafka/topics.yaml`'s principals, as `infra/terraform/modules/kafka` plans them; the
    application's principal needs read, write and describe on every catalogued topic and read on the groups
    `finapp.<module>`, and nothing more.
 
@@ -2385,12 +2389,13 @@ published yet. A statement built from a constant that another file declares and 
 ./infra/scripts/terraform-check.sh
 ```
 
-It runs `terraform fmt -check`, `tflint`, `trivy config` (HIGH and CRITICAL fail), and then, in every directory that
+It fetches the providers once into a mirror, verified against the lock file, so a run makes one network fetch and not
+one per directory. It then runs `terraform fmt -check`, `tflint`, `trivy config` (HIGH and CRITICAL fail), and, in every directory that
 holds a `.tf` file, `terraform init -backend=false -lockfile=readonly`, `terraform validate` and `terraform test`.
-Each test only plans; the roots' tests and the concern modules' tests plan against a mock AWS provider, and the
-conventions module uses no provider. It then plants thirteen defects in copies of the tree (six over the checks
-themselves, seven over the network and cluster modules' named properties) and requires each check to refuse its
-plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
+Each test only plans; the roots' tests and the concern modules' tests plan against mock providers (AWS, and Kafka for the
+brokers' topics and ACLs), and the conventions module uses no provider. It then plants twenty-seven defects in copies of the
+tree (six over the checks themselves, seven over the network and cluster modules' named properties, fourteen over the
+data tier's) and requires each check to refuse its plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
 reason`, and the exit status is 0. A line starting `!!` names what failed:
 
 - **a check failed** on the tree: fix the code. For a formatting failure, `terraform fmt -recursive infra/terraform`
@@ -2400,7 +2405,8 @@ reason`, and the exit status is 0. A line starting `!!` names what failed:
 - **a plant was not planted**: a change moved the line its mutation edits. Update the mutation in the script so that
   it still plants the same defect.
 
-The script never writes the tree: it mounts `infra/` read-only and works in a Docker volume it removes at exit.
+The script never writes the tree: it mounts `infra/` and `deploy/` read-only (the roots read each overlay's
+`FINAPP_DB_SERVER_MAX_CONNECTIONS` from `deploy/`) and works in a Docker volume it removes at exit.
 On a machine whose TLS is intercepted (a corporate proxy, or an antivirus's HTTPS scanning), `terraform init` in the
 container cannot reach the provider registry. In that case, build a local image `FROM` the pinned Terraform digest with
 that machine's root certificate added, and set `TERRAFORM_IMAGE` to it for the run. The Terraform binary stays the
@@ -2416,26 +2422,33 @@ pinned one, and the providers are still verified against the committed lock file
 | Names start `finapp-<environment>` and every resource carries `Project`, `Environment` and `ManagedBy`, from `modules/conventions` through the AWS provider's `default_tags` | `terraform test` (the conventions module and each root); `TerraformIsPinnedAndCheckedTest` (each root's provider takes the tags, each root calls the module as itself). Each concern module's tests assert the prefix on the resources they name; a new resource's use of it is a review point |
 | `prevent_destroy = true` on the database, its backups and every KMS key | `TerraformIsPinnedAndCheckedTest` |
 | No resource or data source that writes a secret value into state, and no database given its password (use `manage_master_user_password`) | `TerraformIsPinnedAndCheckedTest` |
+| The topic catalogue and the brokers' posture are read from `infra/kafka/`, never copied under `infra/terraform/`; a variable holding an open decision has no default | `TerraformIsPinnedAndCheckedTest`; each root's `terraform test` |
 | Every test file mocks every provider its directory requires, and configures no real one | `TerraformIsPinnedAndCheckedTest` |
 
 **Change a provider pin.** Use the same version in every root's `versions.tf`. Then regenerate each root's lock file
 with the pinned Terraform, for the platforms the checks run on:
 `terraform providers lock -platform=linux_amd64 -platform=linux_arm64`, run in each root after an
-`init -backend=false`. Then copy a root's lock file over each concern module's `.terraform.lock.hcl`, setting its
+`init -backend=false`. A root that calls concern modules gets a combined `constraints` line (`">= 6.72.0, 6.72.0"`); set it
+back to the root's own exact pin, which is what `TerraformIsPinnedAndCheckedTest` reads (Terraform itself ignores that line
+when it verifies a lock). Then copy a root's lock file over each concern module's `.terraform.lock.hcl`, setting its
 `constraints` line to the module's own constraint (`versions.tf`). Review the lock files' diff and run the checks. A
 Dependabot pull request that moves one root and not the other, or the roots and not the modules, fails
 `TerraformIsPinnedAndCheckedTest` until they agree.
 
 **The modules.** What each concern module holds, what asserts it and how to operate it is in its own README:
-[`network`](../../infra/terraform/modules/network/README.md) and
-[`kubernetes`](../../infra/terraform/modules/kubernetes/README.md).
+[`network`](../../infra/terraform/modules/network/README.md),
+[`kubernetes`](../../infra/terraform/modules/kubernetes/README.md),
+[`postgres`](../../infra/terraform/modules/postgres/README.md),
+[`kafka`](../../infra/terraform/modules/kafka/README.md) and
+[`object-storage`](../../infra/terraform/modules/object-storage/README.md).
 
 **Change the Terraform or `tflint` version.** Bump `VERSION` in `infra/scanner-pins.sh` and re-resolve `DIGEST` with
 `docker buildx imagetools inspect <repository>:<version>`, as for the scanners. For Terraform, set every root's
 `required_version` to the same version. The build refuses a mismatch.
 
-**What this does not cover.** An apply, a plan against an account, and a drift check. Each needs a real account, which
-Phase 15 does not have (`THREAT_MODEL.md` §6 item 7).
+**What this does not cover.** An apply, a plan against an account, a drift check, and a managed restore (the `postgres` module's README says what one must re-attach; the local rehearsal is §11.5's). Each needs a real account, which
+Phase 15 does not have (`THREAT_MODEL.md` §6 items 7 and 23). A first apply is not one step: the state bucket comes before its own
+backend (the `object-storage` README) and the brokers come up in three stages (the `kafka` README).
 
 ### 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads
 
@@ -2482,6 +2495,10 @@ certificate added, and set `KUBECONFORM_IMAGE` to it for the run. CI never sets 
   grace passes it.
 - **The pool's `connection-timeout`**: the readiness probe's `timeoutSeconds` must outlast it, or a lost database reads as a
   probe timeout rather than a `503`.
+- **`FINAPP_DB_SERVER_MAX_CONNECTIONS`**: on a managed database the same line of the same overlay sets the server, so it is
+  one change and two deliveries, in an order: `max_connections` is static on the engine, and a plan shows nothing while it
+  waits for a reboot. To raise it, apply and reboot first, then roll the application; to lower it, the application first. Never
+  the other way round: the guard reads the declaration and cannot see the server. The `postgres` module's README has the steps.
 
 **What a rollout costs.** `minReadySeconds` is the grace, 115 s, so each step takes a new pod's startup plus 115 s: about
 eight minutes for three replicas, longer at the maximum. That is the price of never stacking terminating pods.

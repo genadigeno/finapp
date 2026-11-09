@@ -50,9 +50,14 @@ public interface FeeScheduleStore<T> {
      * race costs one statement rather than the whole transaction — the audit record written
      * beside the version survives it.
      *
-     * @return {@code true} if the row landed; {@code false} if the number was taken
+     * <p>The row can start later than {@code version} asked: the insert floors every new
+     * version's {@code effective_from} at the latest immediately-effective lower-numbered
+     * version's of the schedule (`P15-TSK-037`). So the answer is the version <em>as stored</em>,
+     * and the caller's audit and answer are built from it.
+     *
+     * @return the version as stored; empty if the number was taken
      */
-    boolean insertVersionIfNumberIsFree(T unitOfWork, FeeScheduleVersion version);
+    Optional<FeeScheduleVersion> insertVersionIfNumberIsFree(T unitOfWork, FeeScheduleVersion version);
 
     /**
      * The next version number for this schedule — {@link FeeScheduleVersion#FIRST_VERSION}
@@ -80,7 +85,13 @@ public interface FeeScheduleStore<T> {
      * clock: an instance running ahead of the database would otherwise leave the version it has
      * just created out of force until the database's clock caught up. A scheduled version
      * ({@code effective_from > created_at}) is judged on {@code instant} alone - the case A3-M1
-     * is about. BNPL's resolution only; the card side's is {@link #findEffectiveVersionFor}.
+     * is about. <strong>A version the insert floored (`P15-TSK-037`) is not "immediate" by that
+     * test</strong> (its {@code effective_from} is above its {@code created_at}), so "in force from
+     * its commit" does not hold for it: until the clock reaches the floor, bounded by the skew or
+     * step that made the floor necessary, the version it supersedes keeps answering here and merchant
+     * {@code V013}'s pin treats it as scheduled; the card side's read and routing's can answer an
+     * older version, or none, for that span. BNPL's resolution only; the card side's is
+     * {@link #findEffectiveVersionFor}.
      *
      * <p>No lock. The rows are immutable, so there is nothing to serialize against; a version
      * committed concurrently with {@code effective_from = instant} may or may not be seen, and

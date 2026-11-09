@@ -42,3 +42,8 @@ output "node_role_arn" {
   description = "The nodes' IAM role."
   value       = aws_iam_role.node.arn
 }
+
+output "node_security_group_id" {
+  description = "The security group EKS attaches to the managed nodes, the source the data tier admits. Every pod on a node shares it, so it does not name a workload: the namespace's NetworkPolicy does."
+  value       = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+}

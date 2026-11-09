@@ -101,11 +101,18 @@ public final class JdbcRiskSignalStore implements RiskSignalStore {
         }
     }
 
+    /**
+     * The subject's latest signal of a kind: ordered by the source event's own instant, by rule ({@code INV-EVT-04}: a delayed
+     * event records its own fact and must not overtake a later one - an arrival sequence would), not by {@code recorded_at},
+     * the database's clock (P15-TSK-037: it read {@code observed_at DESC, recorded_at DESC}; {@code id} now breaks an exact tie,
+     * as {@code AccountTakeover.Anchors.later} does).
+     */
+    static final String LATEST = "SELECT " + COLUMNS + " FROM risk.risk_signal WHERE subject_kind = ? AND subject_ref = ?"
+            + " AND kind = ? ORDER BY observed_at DESC, id DESC LIMIT 1";
+
     @Override
     public Optional<RiskSignal> latest(Connection unitOfWork, SignalSubject subject, SignalKind kind) {
-        try (PreparedStatement latest = unitOfWork.prepareStatement(
-                "SELECT " + COLUMNS + " FROM risk.risk_signal WHERE subject_kind = ? AND subject_ref = ? AND kind = ?"
-                        + " ORDER BY observed_at DESC, recorded_at DESC LIMIT 1")) {
+        try (PreparedStatement latest = unitOfWork.prepareStatement(LATEST)) {
             bindSubject(latest, subject, kind);
             try (ResultSet row = latest.executeQuery()) {
                 return row.next() ? Optional.of(read(row)) : Optional.empty();
