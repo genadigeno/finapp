@@ -99,6 +99,49 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 // ---------------------------------------------------------------------------
+// Security floors on libraries that arrive through something else (P15-TSK-041).
+//
+// Jackson through the Spring Boot BOM, lz4-java and snappy-java through the Kafka clients. The image
+// scan named HIGH findings in the versions those bring; the catalog's note says which release fixes them.
+//
+// CONSTRAINTS, for the reasons app/build.gradle.kts gives for Tomcat: a floor that loses to anything
+// newer, so a future Spring Boot or Kafka client is never silently held back the way `force` would, and
+// no dependency that no module uses directly. A constraint alone puts nothing on a classpath, so a
+// module that resolves none of the three gains nothing here: its lockfile does not change.
+//
+// HERE AND NOT IN `app`, unlike Tomcat. The codecs are on the runtime classpath of every module above
+// `platform`, each with its own lockfile and its own test JVM. A floor in `app` alone would move the
+// image and leave every other module's tests running the vulnerable jars, and a test fixture's classpath
+// is a third case, because `testFixturesImplementation` extends neither of the others.
+//
+// jackson-bom, not jackson-core and jackson-databind by name: the BOM is what Spring Boot's BOM imports,
+// so raising it raises every Jackson 3 module together, and they are released as one.
+//
+// WHAT PROTECTS THIS is what protects Tomcat's: the scan, not the lock. Deleting these and regenerating
+// the locks moves the versions back in a diff anyone can read, and the image scan then fails on HIGH.
+// ---------------------------------------------------------------------------
+val libraryFloors = listOf("jackson-bom", "lz4-java", "snappy-java").map { alias ->
+    extensions.getByType<VersionCatalogsExtension>()
+        .named("libs")
+        .findLibrary(alias)
+        .orElseThrow { GradleException("Version catalog is missing library '$alias'") }
+}
+
+dependencies {
+    constraints {
+        libraryFloors.forEach { "implementation"(it) }
+    }
+}
+
+plugins.withId("java-test-fixtures") {
+    dependencies {
+        constraints {
+            libraryFloors.forEach { "testFixturesImplementation"(it) }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Dependency locking (P0-TSK-039).
 //
 // WHAT THIS ADDS OVER gradle/verification-metadata.xml, which already refuses any artefact

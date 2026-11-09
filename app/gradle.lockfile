@@ -3,7 +3,7 @@
 # This file is expected to be part of source control.
 # To regenerate this file, run: ./gradlew :app:dependencies --write-locks
 aopalliance:aopalliance:1.0=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-at.yawk.lz4:lz4-java:1.10.1=productionRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
+at.yawk.lz4:lz4-java:1.11.4=productionRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
 biz.aQute.bnd:biz.aQute.bnd.annotation:7.1.0=compileClasspath,testCompileClasspath
 ch.qos.logback:logback-classic:1.5.38=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 ch.qos.logback:logback-core:1.5.38=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
@@ -167,10 +167,10 @@ org.testcontainers:testcontainers-kafka:2.0.5=testRuntimeClasspath
 org.testcontainers:testcontainers-postgresql:2.0.5=testRuntimeClasspath
 org.testcontainers:testcontainers:2.0.5=testRuntimeClasspath
 org.wiremock:wiremock-standalone:3.13.2=testRuntimeClasspath
-org.xerial.snappy:snappy-java:1.1.10.7=productionRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
+org.xerial.snappy:snappy-java:1.1.10.9=productionRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
 org.xmlunit:xmlunit-core:2.11.0=testCompileClasspath,testRuntimeClasspath
 org.yaml:snakeyaml:2.6=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-tools.jackson.core:jackson-core:3.1.5=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-tools.jackson.core:jackson-databind:3.1.5=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-tools.jackson:jackson-bom:3.1.5=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+tools.jackson.core:jackson-core:3.1.8=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+tools.jackson.core:jackson-databind:3.1.8=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+tools.jackson:jackson-bom:3.1.8=compileClasspath,productionRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 empty=cyclonedxBom,developmentOnly,testAndDevelopmentOnly
