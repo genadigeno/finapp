@@ -86,6 +86,8 @@ Financial impact: none. No financial record is rewritten.
 There are no production secrets in source control. `INV-HIST-01`: evidence is never re-encrypted in place. Every
 decryption uses the stamped version.
 
+*Dated note (`P15-TSK-016`, 2026-11-09), on points 1 and 3, from what was built:* each key purpose of point 1 is a KMS key of `modules/security`, and two more exist: `field_keys` is the field-level purpose's own, and `logs` serves the CloudWatch log groups and the telemetry buckets. Point 3's cloud identity is one reader role per workload, trusted by that workload's reader ServiceAccount, naming each entry it may read. Break-glass, the only human reach to a secret, reads what the one-time bootstrap step reads. Every one of these is plan-only: no account exists.
+
 ## Follow-up
 
 `P15-TSK-016`, `-018`, `-019` and `-020` build this ADR. `P15-TSK-001` corrects the two stale documents. The purge by

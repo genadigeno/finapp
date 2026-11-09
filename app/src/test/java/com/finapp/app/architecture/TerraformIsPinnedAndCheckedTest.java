@@ -41,6 +41,11 @@ import org.junit.jupiter.api.Test;
  * {@code terraform test} proves that with a fixture catalogue; {@link #theCatalogueHasNoCopyUnderTerraform} refuses a
  * byte-identical copy, which a value comparison cannot see, and {@link #anOpenDecisionHasNoDefault} holds the audit
  * archive's lock to a period nobody has chosen.
+ *
+ * <p>The security modules ({@code P15-TSK-016}) read their secret entries from {@code SECRET_MANAGEMENT.md}; {@code terraform
+ * test} proves that with the real inventory in each root, and {@link #theInventoryHasNoCopyUnderTerraform} refuses a second list
+ * of it. {@link #noPolicyHoldsAWildcardActionOnASecretOrAKey} and {@link #nothingGrantsClusterAccessOrRotatesOnASchedule} read the
+ * whole tree, where a module's own test reads only that module's policies.
  */
 @Tag("architecture")
 @DisplayName("the Terraform is pinned, locked and checked without a credential or a backend (P15-TSK-013)")
@@ -88,7 +93,26 @@ class TerraformIsPinnedAndCheckedTest {
 
     /** Variables whose value is a decision nobody has taken yet: a default would take it silently. */
     private static final Set<String> OPEN_DECISIONS =
-            Set.of("audit_archive_lock", "kafka_provisioning_stage", "provisioning_stage");
+            Set.of("audit_archive_lock", "kafka_provisioning_stage", "provisioning_stage", "human_users");
+
+    private static final String INVENTORY = "docs/architecture/SECRET_MANAGEMENT.md";
+
+    /** A row of the inventory's tables: the variable in the first cell. */
+    private static final Pattern INVENTORIED_VARIABLE = Pattern.compile("(?m)^\\| `(FINAPP_[A-Z0-9_]+)` \\|");
+
+    /** A quoted action on a secret or a key that names more than one action. */
+    private static final Pattern WILDCARD_ON_A_SECRET_OR_KEY = Pattern.compile("\"((?:secretsmanager|kms):[^\"]*\\*[^\"]*)\"");
+
+    /** A policy statement whose action is the bare wildcard, alone or in a list. */
+    private static final Pattern BARE_WILDCARD_ACTION = Pattern.compile("\\bAction\\s*=\\s*\\[?\\s*\"\\*\"");
+
+    /** Resource types refused anywhere under infra/terraform, with the reason. */
+    static final Map<String, String> REFUSED_RESOURCES = Map.of(
+            "aws_eks_access_policy_association", "an access policy grants what the manifests' RBAC cannot see",
+            "aws_secretsmanager_secret_rotation", "a rotation is a deliberate act the fleet follows (SECRET_MANAGEMENT.md 5.2), never a schedule");
+
+    /** Who may reach the account or the cluster: one module, so that every person is under its baseline. */
+    static final Set<String> CONFINED_TO_THE_SECURITY_MODULE = Set.of("aws_iam_user", "aws_iam_group", "aws_eks_access_entry");
 
     private static final String KAFKA = "infra/kafka";
 
@@ -258,7 +282,22 @@ class TerraformIsPinnedAndCheckedTest {
                 .containsEntry("scram-unprefixed", "terraform")
                 .containsEntry("topics-from-a-copy", "terraform")
                 .containsEntry("public-archive", "terraform")
-                .containsEntry("no-object-lock", "terraform");
+                .containsEntry("no-object-lock", "terraform")
+                .containsEntry("reader-wildcard", "terraform")
+                .containsEntry("reader-reads-the-other", "terraform")
+                .containsEntry("reader-reads-the-master", "terraform")
+                .containsEntry("reader-any-account", "terraform")
+                .containsEntry("break-glass-no-mfa", "terraform")
+                .containsEntry("break-glass-long-session", "terraform")
+                .containsEntry("human-role-no-boundary", "terraform")
+                .containsEntry("human-no-mfa-policy", "terraform")
+                .containsEntry("person-holds-a-key", "terraform")
+                .containsEntry("key-no-rotation", "terraform")
+                .containsEntry("key-lock-out", "terraform")
+                .containsEntry("key-account-uses-it", "terraform")
+                .containsEntry("inventory-row-no-entry", "terraform")
+                .containsEntry("registry-mutable", "terraform")
+                .containsEntry("registry-no-scan", "terraform");
     }
 
     @Test
@@ -328,6 +367,33 @@ class TerraformIsPinnedAndCheckedTest {
             }
         });
         assertThat(violations).as("a secret value in Terraform state").isEmpty();
+    }
+
+    @Test
+    @DisplayName("nothing under infra/terraform lists an inventoried secret: the entries are read from the inventory")
+    void theInventoryHasNoCopyUnderTerraform() {
+        Set<String> inventoried = inventoriedVariables(EvidenceCitations.read(root.resolve(INVENTORY)));
+        assertThat(inventoried).as("the inventory's rows were read").hasSizeGreaterThan(30);
+        assertThat(inventoryCopyViolations(tfFiles(), inventoried))
+                .as("a second list of the secrets, which SecretInventoryIsCompleteTest cannot hold to the code")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("no policy under infra/terraform holds a wildcard action on a secret or a key, or a bare wildcard action")
+    void noPolicyHoldsAWildcardActionOnASecretOrAKey() {
+        List<String> violations = new ArrayList<>();
+        tfFiles().forEach((path, text) -> violations.addAll(wildcardViolations(path, text)));
+        assertThat(violations).as("a policy reaching every secret, every key or everything").isEmpty();
+    }
+
+    @Test
+    @DisplayName("no access policy is associated with the cluster, no secret rotates on a schedule, and only the security"
+            + " module creates a person or an access entry")
+    void nothingGrantsClusterAccessOrRotatesOnASchedule() {
+        List<String> violations = new ArrayList<>();
+        tfFiles().forEach((path, text) -> violations.addAll(accessViolations(path, text)));
+        assertThat(violations).as("a way into the account or the cluster outside the security module's baseline").isEmpty();
     }
 
     @Test
@@ -608,9 +674,102 @@ class TerraformIsPinnedAndCheckedTest {
                 """)).as("the decision given a default, and neither the one without nor an ordinary variable")
                 .hasSize(1)
                 .allSatisfy(violation -> assertThat(violation).contains("audit_archive_lock"));
+
+        assertThat(inventoriedVariables("| `FINAPP_A_KEY` | x | y |\n| FINAPP_NOT_A_ROW | x |\ntext `FINAPP_B_KEY` here\n"))
+                .as("only a row's first cell is an inventoried name")
+                .containsExactly("FINAPP_A_KEY");
+        assertThat(inventoryCopyViolations(
+                Map.of("main.tf", "locals {\n  names = <<-EOT\n    FINAPP_A_KEY\n  EOT\n  other = \"FINAPP_A_KEYS\"\n}\n"),
+                Set.of("FINAPP_A_KEY")))
+                .as("a copy in a heredoc is caught, and a longer name is not mistaken for it")
+                .hasSize(1);
+
+        assertThat(wildcardViolations("plant.tf", """
+                resource "aws_iam_role_policy" "plant" {
+                  policy = jsonencode({
+                    Statement = [
+                      { Action = ["secretsmanager:*"], Resource = "*" },
+                      { Action = ["kms:Get*"], Resource = "*" },
+                      { Action = "*", Resource = "*" },
+                    ]
+                  })
+                }
+                # a comment naming "kms:*" is no policy
+                """)).as("a wildcard on a secret, one on a key and a bare one, and not a comment").hasSize(3);
+        assertThat(wildcardViolations("plant.tf", """
+                locals {
+                  deny = { Principal = "*", Action = ["secretsmanager:GetSecretValue", "s3:*"], Resource = "*" }
+                }
+                """)).as("a named action, a wildcard principal and another service's wildcard").isEmpty();
+
+        assertThat(accessViolations(TERRAFORM + "/modules/other/main.tf", """
+                resource "aws_eks_access_policy_association" "admin" {}
+                resource "aws_secretsmanager_secret_rotation" "clock" {}
+                resource "aws_iam_user" "someone" {}
+                resource "aws_iam_group" "others" {}
+                resource "aws_eks_access_entry" "side_door" {}
+                resource "aws_iam_role" "fine" {}
+                """)).as("an access policy, a schedule, and a person, group and entry outside the module").hasSize(5);
+        assertThat(accessViolations(TERRAFORM + "/modules/security/main.tf", """
+                resource "aws_iam_user" "human" {}
+                resource "aws_eks_access_entry" "human" {}
+                """)).as("a person and an entry where they belong").isEmpty();
+        assertThat(accessViolations(TERRAFORM + "/modules/security/main.tf", """
+                resource "aws_eks_access_policy_association" "admin" {}
+                """)).as("an access policy is refused even in the security module").hasSize(1);
     }
 
     // --- the rules, each over text so theRulesRefuseTheirPlants can run it on a plant -----------------------------
+
+    /** The variables named in the first cell of an inventory table's row. */
+    static Set<String> inventoriedVariables(String document) {
+        Set<String> variables = new TreeSet<>();
+        Matcher row = INVENTORIED_VARIABLE.matcher(document);
+        while (row.find()) {
+            variables.add(row.group(1));
+        }
+        return variables;
+    }
+
+    static List<String> inventoryCopyViolations(Map<String, String> tf, Set<String> variables) {
+        List<String> violations = new ArrayList<>();
+        // Any mention, not only a quoted one: a list can sit in a heredoc as readily as in a set.
+        tf.forEach((path, text) -> variables.stream()
+                .filter(variable -> Pattern.compile("(?<![\\w])" + Pattern.quote(variable) + "(?![\\w])").matcher(text).find())
+                .forEach(variable -> violations.add(path + " names the inventoried secret " + variable)));
+        return violations;
+    }
+
+    static List<String> wildcardViolations(String path, String text) {
+        List<String> violations = new ArrayList<>();
+        for (String line : text.split("\\n")) {
+            if (line.trim().startsWith("#") || line.trim().startsWith("//")) {
+                continue;
+            }
+            Matcher action = WILDCARD_ON_A_SECRET_OR_KEY.matcher(line);
+            while (action.find()) {
+                violations.add(path + " grants the wildcard action " + action.group(1));
+            }
+            if (BARE_WILDCARD_ACTION.matcher(line).find()) {
+                violations.add(path + " grants every action: " + line.trim());
+            }
+        }
+        return violations;
+    }
+
+    static List<String> accessViolations(String path, String text) {
+        List<String> violations = new ArrayList<>();
+        for (Block resource : blocksOfType(text, "resource")) {
+            String type = resource.labels().get(0);
+            if (REFUSED_RESOURCES.containsKey(type)) {
+                violations.add(path + ": resource " + type + " is refused: " + REFUSED_RESOURCES.get(type));
+            }
+            if (CONFINED_TO_THE_SECURITY_MODULE.contains(type) && !path.startsWith(TERRAFORM + "/modules/security/")) {
+                violations.add(path + ": resource " + type + " belongs to modules/security, where every person is under its baseline");
+            }
+        }
+        return violations;
+    }
 
     /** The topic names in the catalogue's text: its two-space keys, which the catalogue's scheme starts {@code finapp.}. */
     static Set<String> cataloguedTopics(String catalogue) {
@@ -925,6 +1084,16 @@ class TerraformIsPinnedAndCheckedTest {
     }
 
     // --- the tree -------------------------------------------------------------------------------------------------
+
+    private static Map<String, String> tfFiles() {
+        Map<String, String> tf = new TreeMap<>();
+        files.forEach((path, text) -> {
+            if (path.endsWith(".tf")) {
+                tf.put(path, text);
+            }
+        });
+        return tf;
+    }
 
     private static Set<String> roots() {
         try (Stream<Path> list = Files.list(root.resolve(ENVIRONMENTS))) {

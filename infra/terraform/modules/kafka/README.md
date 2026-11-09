@@ -14,7 +14,7 @@ Kafka carries hints and never truth (`INV-EVT-02`). The outbox in PostgreSQL is 
 | Three brokers on three of the given workload subnets, no public access; a fourth zone moves nothing | `the_brokers_span_three_zones_on_the_given_subnets`, `a_fourth_zone_leaves_the_brokers_on_the_first_three` |
 | TLS from clients and between brokers; SCRAM the only mechanism; no unauthenticated access; its own security group, port 9096 from one given security group | `only_tls_and_scram_reach_the_brokers` |
 | Volumes encrypted under the given customer-managed key | `the_volumes_are_encrypted_under_the_given_key` |
-| The cluster runs this configuration's latest revision; broker logs on, into a group with deletion protection | `the_cluster_uses_this_configuration_and_keeps_its_logs` |
+| The cluster runs this configuration's latest revision; broker logs on, into a group with deletion protection under the key it is given | `the_cluster_uses_this_configuration_and_keeps_its_logs` |
 | `min.insync.replicas=2`, unclean election off, auto-create off, ACLs refused by default | `the_posture_the_clients_rely_on_is_the_clusters_configuration` |
 | The configuration is exactly `infra/kafka/broker.properties`, less what the service sets itself | `every_broker_setting_is_sent_except_what_the_service_sets_itself` |
 | Every catalogued topic and only those, each with its class's configuration, partitions and replication | `every_catalogued_topic_is_planned_with_its_class_configuration` |
@@ -72,7 +72,7 @@ on any broker. Removing one is a break-glass act.
 ## Inputs and outputs
 
 Inputs: `name_prefix`, `vpc_id`, `private_subnet_ids_by_zone`, `client_security_group_id`, `topic_catalogue_path`,
-`broker_properties_path`, `broker_instance_type`, `broker_volume_gib`, `broker_log_retention_days`, `at_rest_kms_key_arn`,
+`broker_properties_path`, `broker_instance_type`, `broker_volume_gib`, `broker_log_retention_days`, `broker_log_kms_key_arn`, `at_rest_kms_key_arn`,
 `scram_kms_key_arn`, `provisioning_stage`. See `variables.tf` and `outputs.tf`.
 
 ## Operating it

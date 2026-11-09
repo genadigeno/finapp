@@ -109,6 +109,7 @@ variables {
   availability_zones      = ["eu-central-1a", "eu-central-1b", "eu-central-1c"]
   cidr_block              = "10.20.0.0/16"
   flow_log_retention_days = 90
+  flow_log_kms_key_arn    = "arn:aws:kms:eu-central-1:111111111111:key/99999999-9999-9999-9999-999999999999"
 }
 
 run "no_workload_subnet_is_public" {
@@ -237,6 +238,11 @@ run "the_vpc_flow_log_covers_all_traffic" {
   assert {
     condition     = aws_cloudwatch_log_group.flow_logs.name == "/finapp/finapp-staging/vpc-flow-logs" && aws_cloudwatch_log_group.flow_logs.retention_in_days == 90 && aws_cloudwatch_log_group.flow_logs.deletion_protection_enabled == true
     error_message = "The flow log group's name, retention or deletion protection is not as declared."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.flow_logs.kms_key_id == var.flow_log_kms_key_arn
+    error_message = "The flow log group is not under the key this module is given."
   }
 
   assert {

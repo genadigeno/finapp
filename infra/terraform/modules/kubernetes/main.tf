@@ -37,6 +37,7 @@ locals {
 resource "aws_cloudwatch_log_group" "control_plane" {
   name                        = local.control_plane_log_group_name
   retention_in_days           = var.control_plane_log_retention_days
+  kms_key_id                  = var.control_plane_log_kms_key_arn
   deletion_protection_enabled = true
 }
 

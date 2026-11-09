@@ -55,6 +55,7 @@ variables {
   broker_instance_type       = "kafka.m7g.large"
   broker_volume_gib          = 500
   broker_log_retention_days  = 90
+  broker_log_kms_key_arn     = "arn:aws:kms:eu-central-1:111111111111:key/99999999-9999-9999-9999-999999999999"
   at_rest_kms_key_arn        = "arn:aws:kms:eu-central-1:111111111111:key/11111111-1111-1111-1111-111111111111"
   scram_kms_key_arn          = "arn:aws:kms:eu-central-1:111111111111:key/22222222-2222-2222-2222-222222222222"
   provisioning_stage         = "enforced"
@@ -151,6 +152,11 @@ run "the_cluster_uses_this_configuration_and_keeps_its_logs" {
   assert {
     condition     = aws_msk_cluster.this.logging_info[0].broker_logs[0].cloudwatch_logs[0].enabled == true && aws_cloudwatch_log_group.brokers.deletion_protection_enabled == true
     error_message = "The brokers' own logs are off, or their group can be deleted."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.brokers.kms_key_id == var.broker_log_kms_key_arn
+    error_message = "The brokers' log group is not under the key this module is given."
   }
 }
 

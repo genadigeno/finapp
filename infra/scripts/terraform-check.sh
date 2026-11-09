@@ -51,10 +51,28 @@
 #   public-archive            one of a bucket's public blocks off       the object-storage test
 #   no-object-lock            the audit archive created without a lock  the object-storage test
 #
+# And one per named property of the security modules:
+#
+#   reader-wildcard            the application's reader given every secret action  the security module's test
+#   reader-reads-the-other     each reader allowed the other's entries             the security module's test
+#   reader-reads-the-master    the application's reader given the master entry     the security module's test
+#   reader-any-account         a reader's trust made a pattern                     the security module's test
+#   break-glass-no-mfa         the factor dropped from a human role's trust        the security module's test
+#   break-glass-long-session   break-glass's session raised past an hour           the security module's test
+#   human-role-no-boundary     a human role's permission boundary dropped          the security module's test
+#   human-no-mfa-policy        the group's refusal without a factor removed        the security module's test
+#   person-holds-a-key         the plan's refusal of a person's access key removed the security module's test
+#   key-no-rotation            a key's rotation turned off                         the security module's test
+#   key-lock-out               the account's PutKeyPolicy removed                  the security module's test
+#   key-account-uses-it        the account's administration given Decrypt          the security module's test
+#   inventory-row-no-entry     an inventory row no ExternalSecret reads            production's test
+#   registry-mutable           a repository's tags made mutable                    the registry module's test
+#   registry-no-scan           scan on push turned off                             the registry module's test
+#
 # WHAT IT NEVER DOES. It initialises no backend (every init is -backend=false) and holds no credential:
-# no container is given a variable or a file from the host beyond the infra and deploy directories,
-# mounted read-only (deploy holds the overlays, whose max_connections the database reads), and a
-# scratch volume of its own, removed at exit. terraform test keeps its state in memory, and every test
+# no container is given a variable or a file from the host beyond the infra, deploy and docs directories,
+# mounted read-only (deploy holds the overlays, whose max_connections the database reads; docs holds the
+# secret inventory, whose rows the security module's entries are), and a scratch volume of its own, removed at exit. terraform test keeps its state in memory, and every test
 # file mocks every provider its root requires (TerraformIsPinnedAndCheckedTest).
 # Nothing here can change the tree, the lock files or any cloud account.
 #
@@ -86,6 +104,8 @@ plant() {
     cp -R "$TREE" "/scratch/plants/$1/infra/terraform"
     cp -R /repo/infra/kafka "/scratch/plants/$1/infra/kafka"
     cp -R /repo/deploy "/scratch/plants/$1/deploy"
+    mkdir -p "/scratch/plants/$1/docs/architecture"
+    cp /repo/docs/architecture/SECRET_MANAGEMENT.md "/scratch/plants/$1/docs/architecture/SECRET_MANAGEMENT.md"
 }
 
 planted() {
@@ -246,6 +266,83 @@ HCL
     sed -i 's/object_lock_enabled = each\.key == "audit-archive"/object_lock_enabled = false/' \
         /scratch/plants/no-object-lock/infra/terraform/modules/object-storage/main.tf
     planted no-object-lock modules/object-storage/main.tf
+
+    plant reader-wildcard
+    sed -i 's/Action   = \["secretsmanager:GetSecretValue"\]/Action   = ["secretsmanager:*"]/' \
+        /scratch/plants/reader-wildcard/infra/terraform/modules/security/main.tf
+    planted reader-wildcard modules/security/main.tf
+
+    plant reader-reads-the-other
+    sed -i 's/workload => toset(\[for item in local\.delivered_entries : item\.name if item\.workload == workload\])/workload => toset([for item in local.delivered_entries : item.name])/' \
+        /scratch/plants/reader-reads-the-other/infra/terraform/modules/security/main.tf
+    planted reader-reads-the-other modules/security/main.tf
+
+    plant reader-reads-the-master
+    sed -i 's/Resource = \[for name in sort(tolist(local\.reads\[each\.key\])) : format(local\.entry_arn, name)\]/Resource = concat([for name in sort(tolist(local.reads[each.key])) : format(local.entry_arn, name)], [var.master_user_secret_arn])/' \
+        /scratch/plants/reader-reads-the-master/infra/terraform/modules/security/main.tf
+    planted reader-reads-the-master modules/security/main.tf
+
+    plant reader-any-account
+    sed -i '/^resource "aws_iam_role" "secret_reader"/,/^}/ s/StringEquals = {/StringLike = {/' \
+        /scratch/plants/reader-any-account/infra/terraform/modules/security/main.tf
+    planted reader-any-account modules/security/main.tf
+
+    plant break-glass-no-mfa
+    sed -i '/Bool            = { "aws:MultiFactorAuthPresent" = "true" }/d' \
+        /scratch/plants/break-glass-no-mfa/infra/terraform/modules/security/main.tf
+    planted break-glass-no-mfa modules/security/main.tf
+
+    plant break-glass-long-session
+    sed -i 's/kubernetes_group = "finapp-break-glass", session_seconds = 3600/kubernetes_group = "finapp-break-glass", session_seconds = 43200/' \
+        /scratch/plants/break-glass-long-session/infra/terraform/modules/security/main.tf
+    planted break-glass-long-session modules/security/main.tf
+
+    plant human-role-no-boundary
+    sed -i '/permissions_boundary = aws_iam_policy\.human_boundary\.arn/d' \
+        /scratch/plants/human-role-no-boundary/infra/terraform/modules/security/main.tf
+    planted human-role-no-boundary modules/security/main.tf
+
+    plant human-no-mfa-policy
+    sed -i 's/BoolIfExists = { "aws:MultiFactorAuthPresent" = "false" }/BoolIfExists = { "aws:SecureTransport" = "false" }/' \
+        /scratch/plants/human-no-mfa-policy/infra/terraform/modules/security/main.tf
+    planted human-no-mfa-policy modules/security/main.tf
+
+    plant person-holds-a-key
+    sed -i 's/condition     = length(self\.access_keys) == 0/condition     = length(self.access_keys) >= 0/' \
+        /scratch/plants/person-holds-a-key/infra/terraform/modules/security/main.tf
+    planted person-holds-a-key modules/security/main.tf
+
+    plant key-no-rotation
+    sed -i 's/enable_key_rotation                = true/enable_key_rotation                = false/' \
+        /scratch/plants/key-no-rotation/infra/terraform/modules/security/main.tf
+    planted key-no-rotation modules/security/main.tf
+
+    plant key-lock-out
+    sed -i '/^    "kms:PutKeyPolicy",$/d' /scratch/plants/key-lock-out/infra/terraform/modules/security/main.tf
+    planted key-lock-out modules/security/main.tf
+
+    plant key-account-uses-it
+    sed -i 's/^    "kms:PutKeyPolicy",$/    "kms:Decrypt",\n    "kms:PutKeyPolicy",/' \
+        /scratch/plants/key-account-uses-it/infra/terraform/modules/security/main.tf
+    planted key-account-uses-it modules/security/main.tf
+
+    plant inventory-row-no-entry
+    sed -i '/^| `FINAPP_MFA_KEY` /a | `FINAPP_PLANTED_KEY` | none | webhook-hmac | `payments` | two-valid-window | `finapp-app` | `finapp-app-secrets` |' \
+        /scratch/plants/inventory-row-no-entry/docs/architecture/SECRET_MANAGEMENT.md
+    if cmp -s /repo/docs/architecture/SECRET_MANAGEMENT.md /scratch/plants/inventory-row-no-entry/docs/architecture/SECRET_MANAGEMENT.md; then
+        echo "!!   plant inventory-row-no-entry was not planted: the inventory is unchanged" >&2
+        exit 1
+    fi
+
+    plant registry-mutable
+    sed -i 's/image_tag_mutability = "IMMUTABLE"/image_tag_mutability = "MUTABLE"/' \
+        /scratch/plants/registry-mutable/infra/terraform/modules/registry/main.tf
+    planted registry-mutable modules/registry/main.tf
+
+    plant registry-no-scan
+    sed -i 's/scan_on_push = true/scan_on_push = false/' \
+        /scratch/plants/registry-no-scan/infra/terraform/modules/registry/main.tf
+    planted registry-no-scan modules/registry/main.tf
 }
 
 # Every directory holding a .tf file, found rather than listed, so a module added later is checked
@@ -350,7 +447,7 @@ REPO=$(CDPATH= cd -- "$DIR/.." && pwd)
 
 in_terraform() {
     MSYS_NO_PATHCONV=1 docker run --rm --entrypoint /bin/sh \
-        -v "$DIR:/repo/infra:ro" -v "$REPO/deploy:/repo/deploy:ro" -v "$VOLUME:/scratch" \
+        -v "$DIR:/repo/infra:ro" -v "$REPO/deploy:/repo/deploy:ro" -v "$REPO/docs:/repo/docs:ro" -v "$VOLUME:/scratch" \
         "$TERRAFORM_IMAGE" /repo/infra/scripts/terraform-check.sh --in-container "$@"
 }
 
@@ -364,13 +461,13 @@ terraform_on() {
 
 tflint_on() {
     MSYS_NO_PATHCONV=1 docker run --rm \
-        -v "$DIR:/repo/infra:ro" -v "$REPO/deploy:/repo/deploy:ro" -v "$VOLUME:/scratch:ro" \
+        -v "$DIR:/repo/infra:ro" -v "$REPO/deploy:/repo/deploy:ro" -v "$REPO/docs:/repo/docs:ro" -v "$VOLUME:/scratch:ro" \
         "$TFLINT_IMAGE" --recursive --chdir="$1" --config="$1/.tflint.hcl" --no-color
 }
 
 trivy_on() {
     MSYS_NO_PATHCONV=1 docker run --rm \
-        -v "$DIR:/repo/infra:ro" -v "$REPO/deploy:/repo/deploy:ro" -v "$VOLUME:/scratch:ro" \
+        -v "$DIR:/repo/infra:ro" -v "$REPO/deploy:/repo/deploy:ro" -v "$REPO/docs:/repo/docs:ro" -v "$VOLUME:/scratch:ro" \
         "$TRIVY_IMAGE" config --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --quiet "$1"
 }
 
@@ -443,6 +540,21 @@ refuses scram-unprefixed "does not start with AmazonMSK_" terraform_on "$PLANTS/
 refuses topics-from-a-copy "topics are not the catalogue's" terraform_on "$PLANTS/topics-from-a-copy/infra/terraform" environments/production
 refuses public-archive "A bucket admits public access" terraform_on "$PLANTS/public-archive/infra/terraform" modules/object-storage
 refuses no-object-lock "Object Lock is not on at the audit archive" terraform_on "$PLANTS/no-object-lock/infra/terraform" modules/object-storage
+refuses reader-wildcard "A reader may do more to a secret than read it" terraform_on "$PLANTS/reader-wildcard/infra/terraform" modules/security
+refuses reader-reads-the-other "The application's reader can read the migrator's entries" terraform_on "$PLANTS/reader-reads-the-other/infra/terraform" modules/security
+refuses reader-reads-the-master "has a wildcard resource, or reaches" terraform_on "$PLANTS/reader-reads-the-master/infra/terraform" modules/security
+refuses reader-any-account "does not name exactly its ServiceAccount" terraform_on "$PLANTS/reader-any-account/infra/terraform" modules/security
+refuses break-glass-no-mfa "A human role can be assumed without MFA" terraform_on "$PLANTS/break-glass-no-mfa/infra/terraform" modules/security
+refuses break-glass-long-session "no one-hour session limit" terraform_on "$PLANTS/break-glass-long-session/infra/terraform" modules/security
+refuses human-role-no-boundary "A human role has no permission boundary" terraform_on "$PLANTS/human-role-no-boundary/infra/terraform" modules/security
+refuses human-no-mfa-policy "does not refuse everything without a factor" terraform_on "$PLANTS/human-no-mfa-policy/infra/terraform" modules/security
+refuses person-holds-a-key "data.aws_iam_access_keys.human" terraform_on "$PLANTS/person-holds-a-key/infra/terraform" modules/security
+refuses key-no-rotation "A key does not rotate" terraform_on "$PLANTS/key-no-rotation/infra/terraform" modules/security
+refuses key-lock-out "has no statement letting the account repair it" terraform_on "$PLANTS/key-lock-out/infra/terraform" modules/security
+refuses key-account-uses-it "lets the account use the key" terraform_on "$PLANTS/key-account-uses-it/infra/terraform" modules/security
+refuses inventory-row-no-entry "An inventory row has no entry" terraform_on "$PLANTS/inventory-row-no-entry/infra/terraform" environments/production
+refuses registry-mutable "tags are not immutable" terraform_on "$PLANTS/registry-mutable/infra/terraform" modules/registry
+refuses registry-no-scan "does not scan on push" terraform_on "$PLANTS/registry-no-scan/infra/terraform" modules/registry
 
 if [ "$status" -eq 0 ]; then
     echo "ok   every check green, every plant refused for its reason"

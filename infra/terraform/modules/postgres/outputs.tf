@@ -32,3 +32,13 @@ output "backup_vault_kms_key_arn" {
   description = "The backup vault's key, read from the planned vault."
   value       = aws_backup_vault.database.kms_key_arn
 }
+
+output "master_user_secret_arn" {
+  description = "The master credential's entry, which RDS names and keeps: only the security module's break-glass role reads it."
+  value       = aws_db_instance.this.master_user_secret[0].secret_arn
+}
+
+output "endpoint" {
+  description = "The database's address, for the store's URL entries at first fill and the bootstrap step (OPERATIONS_RUNBOOK.md section 11.7)."
+  value       = aws_db_instance.this.endpoint
+}

@@ -47,3 +47,8 @@ output "acls_enforced" {
   description = "Whether the brokers refuse a principal on a resource no ACL names: true only at stage enforced."
   value       = local.acl_enforced
 }
+
+output "log_group_kms_key_arn" {
+  description = "The key of the broker log group, read from the plan."
+  value       = aws_cloudwatch_log_group.brokers.kms_key_id
+}

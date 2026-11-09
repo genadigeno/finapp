@@ -16,6 +16,7 @@ module "network" {
   account_id              = var.account_id
   availability_zones      = var.availability_zones
   cidr_block              = "10.10.0.0/16"
+  flow_log_kms_key_arn    = module.security.kms_key_arns["logs"]
   flow_log_retention_days = 365
 }
 
@@ -26,13 +27,14 @@ module "kubernetes" {
   tags                       = module.conventions.tags
   kubernetes_version         = "1.34"
   private_subnet_ids_by_zone = module.network.private_subnet_ids_by_zone
-  etcd_kms_key_arn           = var.etcd_kms_key_arn
+  etcd_kms_key_arn           = module.security.kms_key_arns["etcd"]
   node_instance_types        = ["m7i.xlarge"]
   node_root_volume_gib       = 100
   nodes_per_zone             = { min = 2, desired = 2, max = 4 }
 
   # Kept with no expiry: the audit class's period is a jurisdiction's (PHASE_15_PLAN.md C12), and none is invented here.
   control_plane_log_retention_days = 0
+  control_plane_log_kms_key_arn    = module.security.kms_key_arns["logs"]
 }
 
 # THE ONE DECLARATION of the server's max_connections is this environment's overlay, the same literal the
@@ -41,8 +43,10 @@ module "kubernetes" {
 # stops the plan. It is static on the engine, so a change needs a reboot and an order: the postgres
 # module's README.
 locals {
+  overlay = yamldecode(file("${path.module}/../../../../deploy/overlays/production/kustomization.yaml"))
+
   application_literals = flatten([
-    for generator in yamldecode(file("${path.module}/../../../../deploy/overlays/production/kustomization.yaml")).configMapGenerator :
+    for generator in local.overlay.configMapGenerator :
     generator.literals if generator.name == "finapp-app-config"
   ])
 
@@ -67,9 +71,9 @@ module "postgres" {
   max_allocated_storage_gib = 4000
   max_connections           = local.server_max_connections
 
-  storage_kms_key_arn   = var.data_tier_kms_key_arns.database
-  backup_kms_key_arn    = var.data_tier_kms_key_arns.database_backup
-  secrets_kms_key_arn   = var.data_tier_kms_key_arns.secrets
+  storage_kms_key_arn   = module.security.kms_key_arns["database"]
+  backup_kms_key_arn    = module.security.kms_key_arns["database_backup"]
+  secrets_kms_key_arn   = module.security.kms_key_arns["secrets"]
   backup_copy_vault_arn = var.database_backup_copy_vault_arn
 
   backup_retention_days   = 35
@@ -91,9 +95,10 @@ module "kafka" {
   broker_volume_gib         = 1000
   broker_log_retention_days = 365
 
-  at_rest_kms_key_arn = var.data_tier_kms_key_arns.brokers
-  scram_kms_key_arn   = var.data_tier_kms_key_arns.secrets
-  provisioning_stage  = var.kafka_provisioning_stage
+  at_rest_kms_key_arn    = module.security.kms_key_arns["brokers"]
+  scram_kms_key_arn      = module.security.kms_key_arns["secrets"]
+  broker_log_kms_key_arn = module.security.kms_key_arns["logs"]
+  provisioning_stage     = var.kafka_provisioning_stage
 }
 
 module "object_storage" {
@@ -101,8 +106,51 @@ module "object_storage" {
 
   name_prefix             = module.conventions.name_prefix
   account_id              = var.account_id
-  state_kms_key_arn       = var.data_tier_kms_key_arns.state
-  archive_kms_key_arn     = var.data_tier_kms_key_arns.archive
+  state_kms_key_arn       = module.security.kms_key_arns["state"]
+  archive_kms_key_arn     = module.security.kms_key_arns["archive"]
   audit_archive_lock      = var.audit_archive_lock
   archive_transition_days = 90
+}
+
+# The keys every module above is given, the entries the operator reads, the two readers, and how a person reaches the
+# cluster. The secret names are read from the inventory and the manifests below and appear nowhere else under
+# infra/terraform (TerraformIsPinnedAndCheckedTest).
+module "security" {
+  source = "../../modules/security"
+
+  name_prefix           = module.conventions.name_prefix
+  region                = var.region
+  account_id            = var.account_id
+  secret_inventory_path = "${path.module}/../../../../docs/architecture/SECRET_MANAGEMENT.md"
+  external_secret_manifest_paths = {
+    app      = "${path.module}/../../../../deploy/components/secret-delivery/externalsecret-app.yaml"
+    migrator = "${path.module}/../../../../deploy/components/secret-delivery/externalsecret-migrator.yaml"
+  }
+  secret_store_manifest_path = "${path.module}/../../../../deploy/overlays/production/secret-store.yaml"
+  workload_namespace         = local.overlay.namespace
+
+  cluster_name                   = module.kubernetes.cluster_name
+  cluster_role_arn               = module.kubernetes.cluster_role_arn
+  workload_identity_provider_arn = module.kubernetes.workload_identity_provider_arn
+  workload_identity_issuer       = module.kubernetes.workload_identity_issuer
+  master_user_secret_arn         = module.postgres.master_user_secret_arn
+  database_backup_copy_vault_arn = var.database_backup_copy_vault_arn
+  human_users                    = var.human_users
+}
+
+module "registry" {
+  source = "../../modules/registry"
+
+  name_prefix = module.conventions.name_prefix
+  images      = toset([for image in local.overlay.images : image.name])
+}
+
+module "observability" {
+  source = "../../modules/observability"
+
+  name_prefix          = module.conventions.name_prefix
+  account_id           = var.account_id
+  kms_key_arn          = module.security.kms_key_arns["logs"]
+  log_retention_days   = 90
+  trace_retention_days = 30
 }
