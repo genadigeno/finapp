@@ -1874,6 +1874,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` |
 | 11.26 The edge: two controllers, the generated route lists, a renewed certificate *(written 2026-11-09, below)* | `-011` | `-012`, `-020` |
 | 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` |
+| 11.28 The `kind` rehearsal: running it, reading it, the last record *(written 2026-11-09, below)* | `P15-TSK-012` | `P15-TSK-012` |
 | 11.30 Abuse limits: the doors' per-source limits, a door that refuses everyone, a store that cannot count, raising a limit, rotating the bucket key *(written 2026-11-09, below)* | `P15-TSK-022` | `-032` |
 | 11.29 Key rotation and key compromise: the field-level key rings and the callback window *(written 2026-11-09, below)* | `P15-TSK-019` | `-020` |
 | 11.31 Changing configuration: which class, which way, and `ConfigFingerprintDisagrees` *(written 2026-11-09, below)* | `P15-TSK-031` | `-032` |
@@ -1895,14 +1896,14 @@ row.)*
 
 *(Added 2026-11-09 by `P15-TSK-005`: §11.1c below is written, the schema-compatibility steps of rows 11.1 and 11.3, and §11.4's compatibility half; not yet rehearsed.)*
 *(Added 2026-11-09 by `P15-TSK-035`: §11.27 below is written, from the census's code and its rules in `infra/prometheus/rules/correctness.yml`; not yet rehearsed.)*
+*(Added 2026-11-09 by `P15-TSK-012`: §11.28 below records the `kind` rehearsal. §11.1, §11.1.1's handler-window case, §11.1b, §11.1c and §11.26's `kind` half have now run on one cluster on one machine; §11.28 says what that does and does not mean.)*
 *(Added 2026-11-09 by `P15-TSK-019`: §11.29 below is written, from the ring's code and the two-step's checks; rotation has not run on a cluster or against a store, and `-020` rehearses it.)*
 
 *(Added 2026-11-09 by `P15-TSK-031`: §11.31 below is written, from the register, the overlays and `infra/prometheus/rules/platform.yml`; not yet rehearsed.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
-*(Written by `P15-TSK-008`, 2026-11-08, from the code and its tests; **not yet rehearsed** - `P15-TSK-012` rehearses it
-on `kind`. The `preStop` pause and the grace period are `P15-TSK-009`'s manifest; the rest of §11.1 is the other tasks'
+*(Written by `P15-TSK-008`, 2026-11-08, from the code and its tests; **rehearsed on `kind`** by `P15-TSK-012`, 2026-11-09, §11.28. The `preStop` pause and the grace period are `P15-TSK-009`'s manifest; the rest of §11.1 is the other tasks'
 the table names.)*
 
 A pod is stopped by every rollout step, scale-down, eviction and node drain. **Nothing an operator does is needed for
@@ -1929,8 +1930,7 @@ is killed - the same as any kill, and as correct.
 
 ### 11.1.1 A release that changes the handler set, or an event's contract (`P15-TSK-027`)
 
-*(Written by `P15-TSK-027`, 2026-11-08, from the tests; **not yet rehearsed** - `P15-TSK-012` rehearses the handler-window
-case on `kind`. The audited replay it names is `P15-TSK-028`'s door.)*
+*(Written by `P15-TSK-027`, 2026-11-08, from the tests; **the handler-window case rehearsed on `kind`** by `P15-TSK-012`, 2026-11-09, §11.28. The audited replay it names is `P15-TSK-028`'s door.)*
 
 The build refuses a release whose events a consumer of the last release cannot read, and a release that changes who
 handles what with no recorded way through (`EVENT_ARCHITECTURE.md` §Schema evolution and §Adding a handler). What it
@@ -1973,8 +1973,8 @@ version is being written.
 
 ### 11.1b Deploy — the bootstrap step and the migration Job (`P15-TSK-004`)
 
-*(Written by `P15-TSK-004`, 2026-11-08, from the image and its acceptance run; **not yet rehearsed on a cluster** -
-`P15-TSK-012` does that, with this task's Job contract in `DATA_MIGRATIONS.md` §2.1, and `-017` orders it before the rollout.
+*(Written by `P15-TSK-004`, 2026-11-08, from the image and its acceptance run; **rehearsed on a cluster** by `P15-TSK-012`, 2026-11-09, §11.28,
+with this task's Job contract in `DATA_MIGRATIONS.md` §2.1; `-017` orders it before the rollout.
 The commands here are the image's own; the manifest is `P15-TSK-009`'s.)*
 
 **Before the first release to a database, and again only when a release adds a role or changes a role's setting**, run the one-time bootstrap step
@@ -1997,8 +1997,8 @@ with no `command` of its own. One line per schema and a result line:
 
 ### 11.1c Deploy — schema compatibility across the rollout, and the way back (`P15-TSK-005`)
 
-*(Written by `P15-TSK-005`, 2026-11-09, from the code and its tests; **not yet rehearsed** - `P15-TSK-012` runs release N − 1 on
-release N's schema on `kind`. Promotion and its refusal are `P15-TSK-017`'s.)*
+*(Written by `P15-TSK-005`, 2026-11-09, from the code and its tests; **rehearsed on `kind`** by `P15-TSK-012`, 2026-11-09, §11.28, release N − 1 run on
+release N's schema. Promotion and its refusal are `P15-TSK-017`'s.)*
 
 **A replica that will not go ready.** Readiness answers `503` with `{"status":"OUT_OF_SERVICE"}` while any schema is older
 than the build expects, and until a read has first shown otherwise. So the rollout pauses at `maxUnavailable: 0`, and the old
@@ -2778,9 +2778,8 @@ message a second effect (`INV-IDEM-04`). The application role cannot, and an ope
 
 ### 11.26 The edge: two controllers, the generated route lists, a renewed certificate (`P15-TSK-011`)
 
-*(Written by `P15-TSK-011`, 2026-11-09, from the manifests and their checks. **Not yet rehearsed on a cluster** - `P15-TSK-012` runs the
-`kind` half. What is proven today is what `infra/scripts/edge-check.sh` proves: the pinned proxy, with the committed files, against a
-stand-in backend.)*
+*(Written by `P15-TSK-011`, 2026-11-09, from the manifests and their checks. **Its `kind` half rehearsed on a cluster** by `P15-TSK-012`, 2026-11-09, §11.28. What
+`infra/scripts/edge-check.sh` proves is the pinned proxy, with the committed files, against a stand-in backend.)*
 
 **What is there.** Two Deployments in `finapp-edge`, `finapp-edge-public` and `finapp-edge-operator`, each Traefik by digest (`deploy/edge/base/controllers.yaml`,
 held equal to `infra/scanner-pins.sh`), on the file provider. Neither calls the Kubernetes API or holds a token. Routes reach a controller only through
@@ -2845,6 +2844,54 @@ the controller pods do not start.
 **After a failover.** The table is unlogged, so a crash or failover empties it: every source has a fresh window, once per crash or failover. That is the cost of a counter that puts no row in the WAL. Nothing needs doing.
 
 **Size.** At most 65,537 rows per count per window, measured at about 14 MB per count-window including both indexes; a door counted per /48 as well has two counts. `finapp.retention.sweep.failed{type="window_counter"}` rising means ended windows are not leaving; the doors keep working and the table grows by at most that bound each window. See §11.15 for a failing sweep.
+
+### 11.28 The kind rehearsal: running it, reading it, the last record (`P15-TSK-012`)
+
+*(Written by `P15-TSK-012`, 2026-11-09. This is a record of a rehearsal, not a procedure for a deployed environment: nothing here has run anywhere but one `kind` cluster on one machine. Numbers are from the run named below, on a loaded development machine, and are not a capacity statement.)*
+
+**What it is.** `infra/scripts/kind-rehearsal.sh` deploys the platform as the `kind` overlay describes it onto one real API server (node image `KIND_NODE_VERSION` in `infra/scanner-pins.sh`, the minor the clusters declare) and walks a release through: the role bootstrap Job, the migrator Job, release N − 1 on its own schema, smoke, the network-policy, admission and edge acceptance suites, a replica of N started ahead of its Job (the hold), N's migrator, N − 1 on N's schema, a rolling update to N under a scripted workload, a pod killed mid-workload, a rollback by digest with one eviction mid-way, a re-roll. After each step it reads the financial census from PostgreSQL. It exits `0` when every assertion held, `1` when one failed, `2` when a step could not run.
+
+**What is generated, per run, and removed at exit.** A local CA and everything it signs (PostgreSQL's server certificate, the broker's keystore, the simulator's keystore), the application's truststore, every value of the four Secrets `infra/scripts/kind-secrets.sh` writes, and the SCRAM user. Nothing of it is ever under the repository, and `CommittedConfigurationHoldsNoSecretTest` holds the committed side.
+
+**N − 1 and N, until a release is cut.** No release exists (`docs/migrations/released-schema-floor.yaml`: `none`), so N is the tree under test and N − 1 is the newest first-parent commit before the last migration landed, older code on a genuinely older schema; `REHEARSAL_NMINUS1_REF` names another. N − 1 is further built without one handler, so that "a handler added in release N" is a real case rather than an assertion: this is the rehearsal's stand-in, and the first real release moves both definitions.
+
+**Run it.** Docker, `kind` (`KIND`, default `kind`), a JDK for Gradle, `openssl`, `git`. On a Docker Desktop machine whose Linux kernel has no `CONFIG_NFT_QUEUE`, kindnetd cannot enforce NetworkPolicy; set `REHEARSAL_POLICY_ENGINE=kube-router`, and the record will say which engine answered. On a machine whose TLS is intercepted, `REHEARSAL_CA_BUNDLE` names a bundle Helm and the node trust. `REHEARSAL_KEEP=1` leaves the cluster; the artefacts go to `build/rehearsal` (`REHEARSAL_ARTEFACTS`). CI's `rehearsal` job runs it on `master`, nightly and on a change to `deploy/` or the harness.
+
+**A red run.** `assertions.tsv` holds every assertion's verdict, `rehearsal.log` the timeline. A red census names the failing clause in `census-<step>.txt`; a red rollout keeps `pods-at-failure-<step>.txt`.
+
+| Step | What it asserts |
+|---|---|
+| bootstrap, migrator | The roles created over `verify-full`; every migration applied to an empty database; `result=APPLIED` |
+| smoke | Register, authenticate, a card top-up (authorize and capture through the simulated provider), a transfer, a checkout to the merchant, a payout: every step checked, through the real edge |
+| network policy | A pod in the rehearsal's own namespace reaches neither port of a replica; the scrape reaches 8081 only and the edge's controller 8080 only; from a replica's own network namespace an unlisted address and listener time out while PostgreSQL and DNS (UDP and TCP) answer; the migrator reaches PostgreSQL and not Kafka; a pod no other policy selects is held by `default-deny` |
+| admission | A pod stating no requests refused by the LimitRange (`No request is specified`), a second container stating nothing by the quota (`must specify`), a complete pod admitted, a pod breaking only `restricted` refused by Pod Security |
+| edge | A customer route over TLS with HSTS, the client trusting the edge's local CA alone; an operator route `404` on the public host and answered on the operator host; cert-manager's expiry series scraped |
+| hold | A replica of N ahead of its Job: not ready, its log saying why, no consumer-group membership, nothing parked, its relay publishing nothing while a smoke runs through the fleet |
+| census (each step) | Trial balance zero per currency and per entry; one transfer per reference and one entry per transfer; one captured intent per key the client was told succeeded; one payout per key; the outbox drained, nothing dead-lettered, nothing parked; no expired idempotency lease; every balance explained by the journal; GL = ledger (the application's own `agrees` for the month, with the reference chart activated by two persons); the fleet on TLS |
+| rollout | Zero failed requests across it; ready replicas never below three; the peak of `pg_stat_activity` for the fleet at most `instances x pool`; an operator admitted at the peak |
+| handler window | The records of the added handler's event that N − 1 committed unseen, counted; the audited replay over the window; every event of the window then applied exactly once |
+| forged address | Five requests at the recovery door, each forging a different `X-Forwarded-For`, counted in one per-source bucket; a second real client at another address in a second: the key is the address the controller saw, and the door's count is read from `platform.window_counter` |
+| pod kill | Requests retried with the same key until they resolve, each counted; another replica holding every partition; no lag, read from the broker's own offsets |
+
+**The last record.** 2026-11-09, a fresh cluster on one development machine: `kind` v0.33.0, node `v1.34.11`, kube-router as the policy engine (this machine's kernel has no nft queue), release N the merged tree `ca81d222`, N − 1 `740c87bf` built without the capture hint. Every assertion held; each step's census was green.
+
+| Step | Measured |
+|---|---|
+| Migrator | N − 1: `result=APPLIED schemas=21 applied=329`, on an empty database. N: `applied=13`, on N − 1's schema; a surge replica of N stayed held until it had run |
+| Rolling update, N − 1 to N | 389 s; 892 requests succeeded, 0 failed, none unresolved; peak 29 connections of the budget 48; an operator admitted at the peak; three replicas ready throughout |
+| Handler window | 161 of 329 `payments.PaymentCaptured` records committed unseen by N − 1; after the audited replay each applied exactly once |
+| Forged address | Five forged `X-Forwarded-For` values at the recovery door: one bucket, counted five times; a second real client: a second bucket |
+| Pod kill, force and no grace | 120 requests succeeded, 0 attempts failed and were retried with the same key, none unresolved; peak 21; every partition owned, no lag |
+| Rollback by digest, an eviction mid-way | 389 s; 857 requests succeeded, 0 failed; peak 35 |
+| Re-roll to N | 390 s; 882 succeeded, 0 failed; peak 28; a replica answers the scrape after traffic; the rollback window's 357 of 672 records each applied exactly once |
+
+**Two defects it found, both fixed.** The first scrape under traffic answered `500`: the SLO filter gave one route's timer a histogram and another's a summary under one name, which the Prometheus registry cannot hold (`SloLatencyBuckets` now gives every `http.server.requests` timer the boundary). After the pod kill one partition stayed one record behind for as long as no record arrived: an offset commit refused during a rebalance was not retried (`KafkaEventReceiver` now sends it after the next poll, for a partition this member still holds). Neither moved money: a record whose offset was never acknowledged is redelivered into the dedupe.
+
+**What a kill can catch.** Whether the kill finds a request in flight is chance. An earlier run on the same two images did: one payout in flight on the killed replica answered `502`, then `IdempotencyInProgress` for 18 attempts while the dead replica's claim stood, then succeeded with the same key, one effect, the census green.
+
+**Three things read from it rather than asserted.** Pods reaching Ready under `default-deny` with no rule naming the kubelet is this environment's evidence that node traffic is admitted. The zero failed requests through the edge across each rollout are what measure `maxIdleConnsPerHost: -1`, a new connection through the Service per request. And each replica held seven connections at the peak, the reporting pool's eighth opening only on a pod's first report and no report running here, so a peak well inside 48 is not slack in the formula: six pods is the formula's own maximum.
+
+**What this does not mean.** One node, one machine, three replicas plus a surge: load, chaos and ten instances are the storm's (`P15-TST-001`, postponed by the owner). The broker and the database are test-only copies. kindnetd has not answered yet; `THREAT_MODEL.md` section 6 item 30. No Prometheus runs in the cluster: cert-manager's series and a replica's scrape are read once by the rehearsal's own pod. The cooperative assignor's moving only what changes hands is counted by a database-tier test owed to `P15-TST-002`, and a refused broker credential failing readiness was not exercised. T40's acceptance rows were not created, because an offer needs the origination chain the rehearsal does not build: the forged address is measured on the per-source key, the same `request.getRemoteAddr()`. The numbers are from a loaded development machine.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

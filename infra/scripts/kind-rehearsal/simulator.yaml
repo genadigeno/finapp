@@ -41,7 +41,7 @@ spec:
         - name: simulator
           image: JDK_IMAGE
           imagePullPolicy: IfNotPresent
-          command: ["java", "-XX:MaxRAMPercentage=60.0", "--source", "21", "/simulator/Simulator.java", "/tls/keystore.p12", "/tls/password"]
+          command: ["java", "-XX:MaxRAMPercentage=60.0", "--source", "21", "/simulator/Simulator.java", "/tls/keystore.p12", "/tls/store-phrase"]
           ports:
             - name: https
               containerPort: 8443

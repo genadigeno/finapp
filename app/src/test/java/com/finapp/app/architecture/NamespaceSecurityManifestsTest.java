@@ -530,13 +530,18 @@ class NamespaceSecurityManifestsTest {
 
     @SuppressWarnings("unchecked")
     private static void apply(Map<String, Object> doc, Map<?, ?> operation) {
-        assertThat(operation.get("op")).as("this test applies replace alone").isEqualTo("replace");
+        assertThat(operation.get("op")).as("this test applies replace, and add at the end of a list").isIn("replace", "add");
         String[] steps = String.valueOf(operation.get("path")).substring(1).split("/");
         Object current = doc;
         for (int index = 0; index < steps.length - 1; index++) {
             current = current instanceof List<?> items ? items.get(Integer.parseInt(steps[index])) : ((Map<String, Object>) current).get(steps[index]);
         }
         String last = steps[steps.length - 1];
+        if ("add".equals(operation.get("op"))) {
+            assertThat(last).as("%s: only an append to a list", operation.get("path")).isEqualTo("-");
+            ((List<Object>) current).add(operation.get("value"));
+            return;
+        }
         assertThat(((Map<String, Object>) current)).as("%s exists to be replaced", operation.get("path")).containsKey(last);
         ((Map<String, Object>) current).put(last, operation.get("value"));
     }

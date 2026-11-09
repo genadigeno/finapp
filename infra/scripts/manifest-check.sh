@@ -300,7 +300,7 @@ YAML
 
     plant_on inline-env-value "$DEPLOYMENT" 's/^          env:$/          env:\n            - name: FINAPP_DB_APP_PASSWORD\n              value: this-is-a-plant/'
     plant_on inline-config-value "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_KAFKA_JAAS_CONFIG=this-is-a-plant/'
-    plant_on inline-config-tokenisation "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_PAYMENTMETHODS_TOKENISATION_TOKEN=this-is-a-plant/'
+    plant_on inline-config-tokenisation "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_PAYMENTMETHODS_TOKENISATION_TOKEN=${plant}/'
     plant_on no-endpoint-url "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_CALLBACK=https:\/\/provider.invalid\/hook/'
     plant_on no-endpoint-key "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_DB_URL=placeholder/'
     plant_on no-endpoint-broker "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_BROKERS=broker-1:9092/'

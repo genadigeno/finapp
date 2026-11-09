@@ -443,18 +443,18 @@ issue postgres "DNS:$PG_HOST,DNS:finapp-postgres,DNS:finapp-postgres.finapp,DNS:
 issue kafka "DNS:$KAFKA_HOST,DNS:finapp-kafka,DNS:finapp-kafka.finapp,DNS:finapp-kafka.finapp.svc"
 issue simulator "DNS:$SIM_HOST,DNS:finapp-simulator,DNS:finapp-simulator.finapp-rehearsal"
 cat "$CA_DIR/kafka.key" "$CA_DIR/kafka.crt" "$CA_DIR/ca.crt" > "$CA_DIR/kafka-keystore.pem"
-SIM_STORE_PASSWORD=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
-printf '%s' "$SIM_STORE_PASSWORD" > "$CA_DIR/simulator.password"
+SIM_STORE_PHRASE=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+printf '%s' "$SIM_STORE_PHRASE" > "$CA_DIR/simulator.password"
 (cd "$CA_DIR" && openssl pkcs12 -export -inkey simulator.key -in simulator.crt -certfile ca.crt \
-    -passout "pass:$SIM_STORE_PASSWORD" -out simulator.p12) >/dev/null 2>&1 || cannot "the simulator's keystore could not be made"
+    -passout "pass:$SIM_STORE_PHRASE" -out simulator.p12) >/dev/null 2>&1 || cannot "the simulator's keystore could not be made"
 # Read without a password, so none is delivered: a trust store holds no secret.
-TRUST_PASSWORD=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
-jdk keytool -importcert -noprompt -alias local-ca -file ca/ca.crt -keystore ca/truststore.jks -storetype JKS -storepass "$TRUST_PASSWORD" \
+TRUST_PHRASE=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+jdk keytool -importcert -noprompt -alias local-ca -file ca/ca.crt -keystore ca/truststore.jks -storetype JKS -storepass "$TRUST_PHRASE" \
     >> "$ART/tls.log" 2>&1 || cannot "the JVM trust store could not be made"
 secret_of finapp finapp-kind-local-ca "ca.crt=$CA_DIR/ca.crt" "truststore.jks=$CA_DIR/truststore.jks"
 secret_of finapp finapp-kind-postgres-tls "tls.crt=$CA_DIR/postgres.crt" "tls.key=$CA_DIR/postgres.key"
 secret_of finapp finapp-kind-kafka-tls "keystore.pem=$CA_DIR/kafka-keystore.pem"
-secret_of finapp-rehearsal finapp-simulator-tls "keystore.p12=$CA_DIR/simulator.p12" "password=$CA_DIR/simulator.password"
+secret_of finapp-rehearsal finapp-simulator-tls "keystore.p12=$CA_DIR/simulator.p12" "store-phrase=$CA_DIR/simulator.password"
 
 printf '#!/bin/sh\nMSYS_NO_PATHCONV=1 exec docker exec -i "%s" kubectl --kubeconfig=/etc/kubernetes/admin.conf "$@"\n' "$NODE" > "$WORK/bin/kubectl"
 chmod +x "$WORK/bin/kubectl"
@@ -1013,10 +1013,10 @@ BUDGET=$((FLEET_INSTANCES * (WRITER_POOL + REPORTING_POOL)))
 log "the budget's arithmetic: $FLEET_INSTANCES instances x ($WRITER_POOL + $REPORTING_POOL) = $BUDGET"
 [ "$BUDGET" = 48 ] || fail "the overlay's budget is $BUDGET, and this rehearsal measures 6 x (7 + 1) = 48"
 
-REPORTING_PASSWORD=$(kube -n finapp get secret finapp-app-secrets -o jsonpath='{.data.FINAPP_DB_REPORTING_PASSWORD}' | base64 -d)
+REPORTING_LOGIN=$(kube -n finapp get secret finapp-app-secrets -o jsonpath='{.data.FINAPP_DB_REPORTING_PASSWORD}' | base64 -d)
 operator_connect() {
     # An operator's session, as finapp_reporting, over TLS: not a superuser, so the reserved slots are not what admit it.
-    printf '%s\n' "$REPORTING_PASSWORD" | kube -n finapp exec -i finapp-postgres-0 -c postgres -- /bin/sh -c \
+    printf '%s\n' "$REPORTING_LOGIN" | kube -n finapp exec -i finapp-postgres-0 -c postgres -- /bin/sh -c \
         'IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql "host=127.0.0.1 dbname=finapp user=finapp_reporting sslmode=require" -X -q -A -t -c "select 1"' 2>/dev/null
 }
 
