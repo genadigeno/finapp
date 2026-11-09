@@ -708,7 +708,8 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
     is not seen. Also detected: merchant payable lines under a `bnpl.` key (the three-way proof's merchant leg), an
     entry whose namespace no rule registers or whose shape no rule allows (rule conformance, at the month's close),
     and a projection row left stale (the projection check).
-  - **Undetected:** a balanced entry of a registered shape, both projection rows co-updated in the same transaction,
+  - **Undetected by any proof** (the source-join census below reads these books too):
+    a balanced entry of a registered shape, both projection rows co-updated in the same transaction,
     between accounts no proof reads (**10**): **customer wallets**; **merchant payables** apart from `bnpl.`-keyed
     lines (their check sums the payable's own breakdown, which equals its position by construction, so a balanced
     entry cannot fail it); the platform's **fee revenue**; **loan interest income, BNPL interest income and BNPL
@@ -716,7 +717,7 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
     undetected: a line on loan fee income or BNPL merchant fee income that no row names, and any book above once the
     product's row is forged first. Two examples: one customer's wallet debited and another's credited, then a
     legitimate withdrawal; or fee revenue debited and the payable of a merchant the attacker controls credited, then
-    an ordinary payout. Neither raises anything: no proof reads those accounts, reconciliation sees only the
+    an ordinary payout. Neither is raised by a proof: no proof reads those accounts, reconciliation sees only the
     legitimate withdrawal or payout, and the trial balance stays zero.
   Phase 15's controls lower the likelihood: the credential reaches only the application's pods (`-018`), and the
   database only those pods (`-010`, `-015`). They do not change the impact. **Owner item 2, decided 2026-11-08**: the

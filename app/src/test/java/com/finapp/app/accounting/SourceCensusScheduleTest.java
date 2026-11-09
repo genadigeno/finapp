@@ -8,7 +8,9 @@ import com.finapp.accounting.SourceCensus;
 import com.finapp.accounting.SourceCensusStore;
 import com.finapp.accounting.SourceJoinCatalogue;
 import com.finapp.app.lifecycle.ShutdownOrder;
+import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -30,17 +32,28 @@ class SourceCensusScheduleTest {
     private boolean claimed = true;
     private boolean failing;
 
+    private static final Connection CONNECTION = connection();
+
     private final SourceCensus census = new SourceCensus(new SourceCensus.Units() {
         @Override
         public <R> R inTransaction(Function<Connection, R> work) {
-            return work.apply(null);
+            return work.apply(CONNECTION);
         }
 
         @Override
         public <R> R outsideTransaction(Function<Connection, R> work) {
-            return work.apply(null);
+            return work.apply(CONNECTION);
         }
-    }, new FakeStore(), new EmptyWalk(), new SourceJoinCatalogue(List.of()), Duration.ZERO, 10, Duration.ofSeconds(1)) ;
+    }, new FakeStore(), new EmptyWalk(), new SourceJoinCatalogue(List.of()), Duration.ZERO, 10, Duration.ofSeconds(1));
+
+    /** A connection whose only job is the census's statement timeout. */
+    private static Connection connection() {
+        return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[] {Connection.class}, (proxy, method, args) ->
+                method.getName().equals("prepareStatement")
+                        ? Proxy.newProxyInstance(PreparedStatement.class.getClassLoader(), new Class<?>[] {PreparedStatement.class},
+                                (p, m, a) -> m.getName().equals("execute") ? Boolean.TRUE : null)
+                        : null);
+    }
 
     @Test
     @DisplayName("a tick stops at the first idle batch, and at the first batch another walker holds")

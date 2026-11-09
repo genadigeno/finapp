@@ -126,6 +126,9 @@ class AlertCatalogueTest {
                 assertThat(expr).as(alert.name()).contains("min by");
             } else if (stated.startsWith("per instance")) {
                 assertThat(expr.replace("by (job, instance)", "")).as(alert.name()).doesNotContainPattern("(max|sum|min)( by|\\()");
+            } else if (stated.startsWith("count")) {
+                // The fleet-blindness rule: a count of instances is the question it asks, never a max (the owner's ruling, 2026-11-09).
+                assertThat(expr).as(alert.name()).contains("count(");
             } else {
                 assertThat(stated).as(alert.name()).startsWith("none");
                 assertThat(expr).as(alert.name()).contains("absent(");

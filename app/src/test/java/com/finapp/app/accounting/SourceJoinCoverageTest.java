@@ -79,7 +79,7 @@ class SourceJoinCoverageTest {
         Set<SourceNamespace> presenceOnly = CATALOGUE.joins().stream()
                 .filter(join -> join.statement().contains("presence only"))
                 .map(SourceJoin::namespace)
-                .collect(Collectors.toCollection(TreeSet::new));
+                .collect(Collectors.toSet());
         assertThat(presenceOnly).as("a presence-only join is a decision, named here, not a default")
                 .containsExactly(new SourceNamespace(SourceDoor.ADJUSTMENT, "ACCOUNTING"));
         // Text: SourceFigures.presenceOnly is not reachable without a row; but a port saying "presence" in code and not in its statement is what this checks.

@@ -62,7 +62,7 @@ class AccountingGaugeWiringTest {
         List<Meter> gauges = registry.getMeters().stream().filter(Gauge.class::isInstance)
                 .filter(meter -> meter.getId().getName().startsWith("finapp.accounting."))
                 .filter(meter -> !meter.getId().getName().equals("finapp.accounting.sweeper.enabled")).toList();
-        assertThat(gauges.stream().map(meter -> meter.getId().getName()).distinct().toList()).as("the census: nine gauges").hasSize(9);
+        assertThat(gauges.stream().map(meter -> meter.getId().getName()).distinct().toList()).as("the census: eleven gauges (P15-TSK-035's two census gauges with them)").hasSize(11);
 
         SOURCE.callerIs(Thread.currentThread());
         for (Meter meter : gauges) {

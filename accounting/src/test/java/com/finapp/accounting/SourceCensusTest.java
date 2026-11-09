@@ -125,6 +125,17 @@ class SourceCensusTest {
     }
 
     @Test
+    @DisplayName("an oversized namespace is cut to the column's bound: a forged key cannot fail the batch by its length")
+    void anOversizedNamespaceIsBounded() {
+        String longNamespace = "x".repeat(150) + ":";
+        UUID entry = journal.postRaw(mintedAt(1_000, 1), EntryType.POSTING, Optional.of(longNamespace), "whatever", "whatever", "USD", 2, 5);
+        store.fence = millis(9_999);
+        census(Map.of()).sweepBatch();
+        assertThat(store.findingsOf(entry)).singleElement().satisfies(finding ->
+                assertThat(finding.namespace()).hasSize(SourceCensus.MAX_NAMESPACE));
+    }
+
+    @Test
     @DisplayName("a walker that finds the head taken does nothing, and judges nothing twice")
     void aTakenHeadDoesNothing() {
         journal.post(mintedAt(1_000, 1), TRANSFER, "x", "USD", 2, 1);
