@@ -73,10 +73,10 @@ class ShutdownOrderTest {
 
     private static final String PROBE_PATH = "/__drain-probe";
 
-    /** The platform's lifecycle components: thirty-six schedules (`P15-TSK-035`'s census the latest), the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`). */
-    private static final int COMPONENTS = 38;
+    /** The platform's lifecycle components: thirty-seven schedules (`P15-TSK-022`'s window-counter sweep the latest), the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`). */
+    private static final int COMPONENTS = 39;
 
-    private static final int SCHEDULES = 36;
+    private static final int SCHEDULES = 37;
 
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
 

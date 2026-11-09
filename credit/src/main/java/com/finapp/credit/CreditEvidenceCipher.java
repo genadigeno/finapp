@@ -1,12 +1,12 @@
 package com.finapp.credit;
 
+import com.finapp.platform.security.KeyRing;
 import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Objects;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * AES-256-GCM for credit evidence (`P10-TSK-006`; ADR-0085 point 3, ADR-0066's envelope) - settlement's
@@ -29,8 +29,7 @@ public final class CreditEvidenceCipher {
 
     public static final int KEY_BYTES = 32;
 
-    private final SecretKeySpec key;
-    private final int version;
+    private final KeyRing ring;
     private final SecureRandom randomness;
 
     /**
@@ -38,20 +37,32 @@ public final class CreditEvidenceCipher {
      * @param version recorded on every ciphertext, so a rotation can tell which key wrote which
      */
     public CreditEvidenceCipher(byte[] key, int version, SecureRandom randomness) {
-        Objects.requireNonNull(key, "key");
+        this(ringOfOne(key, version), randomness);
+    }
+
+    /**
+     * A cipher over a {@link KeyRing}: encrypts under the ring's active version, decrypts under each row's stamped version
+     * (`P15-TSK-019`, ADR-0123 point 4).
+     */
+    public CreditEvidenceCipher(KeyRing ring, SecureRandom randomness) {
+        this.ring = Objects.requireNonNull(ring, "ring must not be null");
+        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+    }
+
+    private static KeyRing ringOfOne(byte[] key, int version) {
+        Objects.requireNonNull(key, "key must not be null");
         if (key.length != KEY_BYTES) {
+            // The message never states the length seen: it is a fact about the key material.
             throw new IllegalArgumentException("The credit evidence key must be exactly " + KEY_BYTES + " bytes");
         }
         if (version < 1) {
             throw new IllegalArgumentException("key version must be positive");
         }
-        this.key = new SecretKeySpec(key, "AES");
-        this.version = version;
-        this.randomness = Objects.requireNonNull(randomness, "randomness");
+        return KeyRing.single("credit evidence key", key, version);
     }
 
     public int version() {
-        return version;
+        return ring.activeVersion();
     }
 
     /** Encrypts {@code plaintext} for evidence row {@code id} - a fresh nonce, the id bound as associated data. */
@@ -62,9 +73,9 @@ public final class CreditEvidenceCipher {
         randomness.nextBytes(nonce);
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, nonce));
+            cipher.init(Cipher.ENCRYPT_MODE, ring.activeKey(), new GCMParameterSpec(TAG_BITS, nonce));
             cipher.updateAAD(associatedData(id));
-            return new Encrypted(cipher.doFinal(plaintext), nonce, version);
+            return new Encrypted(cipher.doFinal(plaintext), nonce, ring.activeVersion());
         } catch (GeneralSecurityException e) {
             // Never the cause: a provider exception can carry key-material context.
             throw new IllegalStateException("Could not encrypt credit evidence");
@@ -75,6 +86,7 @@ public final class CreditEvidenceCipher {
     public byte[] decrypt(CreditEvidenceId id, Encrypted encrypted) {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(encrypted, "encrypted");
+        javax.crypto.SecretKey key = ring.keyFor(encrypted.keyVersion(), "Could not decrypt credit evidence");
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, encrypted.nonce()));

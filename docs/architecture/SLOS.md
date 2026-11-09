@@ -99,6 +99,8 @@ A correctness gauge that cannot be read is NaN, never a comforting zero. `Correc
 `CorrectnessUnverifiable` tickets when no instance holds a number at all. A rule that reads a gauge carries an `x != x` rule beside it, and
 `PlatformAlertRulesTest#everyGaugeAnAlertReadsCanBeSeenUnreadable` holds that across every rule file.
 
+`ConfigFingerprintDisagrees` pages and is neither an objective nor a first-sample correctness signal, so it has no row here. Replicas disagree during every rollout by design, so a first sample means nothing and no budget measures it: only a disagreement that outlives the longest rollout an overlay allows is a fault, which is why it carries a `for`.
+
 ## 4. The error-budget policy
 
 The budget is spent over a rolling 30 days. It is read from the burn-rate panels of the Grafana dashboard `finapp-slo`.
@@ -122,5 +124,5 @@ module, on the rule or on its group, and one runbook section that names it (`Ale
 `infra/scripts/alert-rules-check.sh` is the one way to check all of it, on a laptop and in CI's `alerts` job.
 
 **What a deployed environment must keep.** The rules select `job="finapp"`, so a deployed scrape configuration keeps that job name. A deployed
-scrape also labels its targets with no `env="local"`, which is how `CertificateExpirySeriesAbsent` tells a deployment from compose. cert-manager's
-`certmanager_certificate_expiration_timestamp_seconds` has to be scraped for the certificate alerts to read anything. Those three are recorded on the tasks that build the deployment.
+scrape also labels its targets with no `env="local"`, which is how `CertificateExpirySeriesAbsent` tells a deployment from compose, and with an `env` naming its environment, because `ConfigFingerprintDisagrees` counts per `env` and two environments on one Prometheus without it would count as one fleet. cert-manager's
+`certmanager_certificate_expiration_timestamp_seconds` has to be scraped for the certificate alerts to read anything. Each is recorded on the tasks that build the deployment.

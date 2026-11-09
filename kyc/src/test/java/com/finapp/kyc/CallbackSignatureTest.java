@@ -166,4 +166,45 @@ class CallbackSignatureTest {
                     StandardCharsets.ISO_8859_1);
         }
     }
+
+    // -----------------------------------------------------------------
+    // The rotation window (P15-TSK-019)
+
+    private static final byte[] PREVIOUS_KEY = "the-previous-signing-key-for-tests".getBytes(StandardCharsets.UTF_8);
+    private static final java.time.Instant NOW = java.time.Instant.parse("2026-11-09T12:00:00Z");
+
+    private static CallbackSignature withWindow(java.time.Instant windowEnds, java.time.Clock clock) {
+        return new CallbackSignature(
+                KEY, com.finapp.platform.security.PreviousKeyWindow.of(PREVIOUS_KEY, windowEnds, NOW), clock);
+    }
+
+    @Test
+    @DisplayName("during a rotation window, the current key and the previous key both verify")
+    void bothKeysVerifyDuringTheWindow() {
+        byte[] body = "{\"event\":\"a\"}".getBytes(StandardCharsets.UTF_8);
+        java.time.Clock atNow = java.time.Clock.fixed(NOW, java.time.ZoneOffset.UTC);
+        CallbackSignature rotating = withWindow(NOW.plus(java.time.Duration.ofHours(1)), atNow);
+
+        assertThat(rotating.matches(body, new CallbackSignature(KEY).sign(body))).isTrue();
+        assertThat(rotating.matches(body, new CallbackSignature(PREVIOUS_KEY).sign(body))).isTrue();
+    }
+
+    @Test
+    @DisplayName("the previous key is refused once its window has closed, with nothing restarted; the current key is unaffected")
+    void thePreviousKeyIsRefusedOnceTheWindowHasClosed() {
+        byte[] body = "{\"event\":\"b\"}".getBytes(StandardCharsets.UTF_8);
+        java.time.Instant windowEnds = NOW.plus(java.time.Duration.ofHours(1));
+        java.time.Clock afterTheWindow = java.time.Clock.fixed(windowEnds.plusSeconds(1), java.time.ZoneOffset.UTC);
+        CallbackSignature rotating = withWindow(windowEnds, afterTheWindow);
+
+        assertThat(rotating.matches(body, new CallbackSignature(PREVIOUS_KEY).sign(body))).isFalse();
+        assertThat(rotating.matches(body, new CallbackSignature(KEY).sign(body))).isTrue();
+    }
+
+    @Test
+    @DisplayName("with no window configured, the previous key is simply any other key")
+    void withNoWindowOnlyTheCurrentKeyVerifies() {
+        byte[] body = "{\"event\":\"c\"}".getBytes(StandardCharsets.UTF_8);
+        assertThat(new CallbackSignature(KEY).matches(body, new CallbackSignature(PREVIOUS_KEY).sign(body))).isFalse();
+    }
 }

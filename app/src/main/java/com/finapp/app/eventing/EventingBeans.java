@@ -165,7 +165,7 @@ public class EventingBeans {
     /** Eager either way, as the consumers' counters are: the two tables' series exist on an instance whose sweeps are off. */
     @Bean
     RetentionSweepMeters retentionSweepMeters(MeterRegistry registry) {
-        return new RetentionSweepMeters(registry, List.of("outbox_event", "inbox_message"));
+        return new RetentionSweepMeters(registry, List.of("outbox_event", "inbox_message", "window_counter"));
     }
 
     // The relay schedule's gate, for its reason: a background worker deleting rows would race the suites' assertions.

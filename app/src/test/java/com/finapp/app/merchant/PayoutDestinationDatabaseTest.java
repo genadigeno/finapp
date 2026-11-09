@@ -46,6 +46,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -558,6 +559,11 @@ class PayoutDestinationDatabaseTest {
     @BeforeAll
     static void installTheMovedClock() {
         com.finapp.platform.testing.database.DatabaseClockFrame.install();
+    }
+
+    @AfterAll
+    static void putTheClockBack() {
+        com.finapp.platform.testing.database.DatabaseClockFrame.uninstall();
     }
 
     /** The database's clock, as its own statement: what a deadline is read against. */

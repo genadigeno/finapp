@@ -1,11 +1,11 @@
 package com.finapp.merchant;
 
+import com.finapp.platform.security.KeyRing;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Objects;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * AES-256-GCM for the payout provider's retained answers (`P6-TSK-012`, ADR-0057 §9) —
@@ -42,8 +42,7 @@ public final class PayoutEvidenceCipher {
 
     public static final int KEY_BYTES = 32;
 
-    private final SecretKeySpec key;
-    private final int version;
+    private final KeyRing ring;
     private final SecureRandom randomness;
 
     /**
@@ -51,22 +50,32 @@ public final class PayoutEvidenceCipher {
      * @param version recorded on every ciphertext, so a rotation can tell which key wrote which
      */
     public PayoutEvidenceCipher(byte[] key, int version, SecureRandom randomness) {
+        this(ringOfOne(key, version), randomness);
+    }
+
+    /**
+     * A cipher over a {@link KeyRing}: encrypts under the ring's active version, decrypts under each row's stamped version
+     * (`P15-TSK-019`, ADR-0123 point 4).
+     */
+    public PayoutEvidenceCipher(KeyRing ring, SecureRandom randomness) {
+        this.ring = Objects.requireNonNull(ring, "ring must not be null");
+        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+    }
+
+    private static KeyRing ringOfOne(byte[] key, int version) {
         Objects.requireNonNull(key, "key must not be null");
         if (key.length != KEY_BYTES) {
-            // Never the length seen: it is a fact about the key material.
-            throw new IllegalArgumentException(
-                    "The payout evidence encryption key must be exactly " + KEY_BYTES + " bytes");
+            // The message never states the length seen: it is a fact about the key material.
+            throw new IllegalArgumentException("The payout evidence encryption key must be exactly " + KEY_BYTES + " bytes");
         }
         if (version < 1) {
             throw new IllegalArgumentException("key version must be positive");
         }
-        this.key = new SecretKeySpec(key, "AES");
-        this.version = version;
-        this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+        return KeyRing.single("payout evidence encryption key", key, version);
     }
 
     public int version() {
-        return version;
+        return ring.activeVersion();
     }
 
     /** Encrypts with a fresh nonce per call, derived from nothing: a reused GCM nonce is fatal. */
@@ -76,8 +85,8 @@ public final class PayoutEvidenceCipher {
         randomness.nextBytes(nonce);
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, nonce));
-            return new Encrypted(cipher.doFinal(plaintext), nonce, version);
+            cipher.init(Cipher.ENCRYPT_MODE, ring.activeKey(), new GCMParameterSpec(TAG_BITS, nonce));
+            return new Encrypted(cipher.doFinal(plaintext), nonce, ring.activeVersion());
         } catch (GeneralSecurityException e) {
             // Never the cause: a provider exception can carry key-material context, and this
             // message reaches a log line (INV-AUD-02).
@@ -93,6 +102,7 @@ public final class PayoutEvidenceCipher {
      */
     public byte[] decrypt(Encrypted encrypted) {
         Objects.requireNonNull(encrypted, "encrypted must not be null");
+        javax.crypto.SecretKey key = ring.keyFor(encrypted.keyVersion(), "Could not decrypt payout evidence");
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(

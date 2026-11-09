@@ -50,8 +50,8 @@ import lombok.RequiredArgsConstructor;
  * <p>A login identifier nobody registered has no identity to key on. Keying on the attempted string
  * instead would build a caller-controlled table of things people typed — {@code CONFIDENTIAL} by
  * classification, attacker-fillable by construction, and an enumeration artefact by accident. What
- * bounds that traffic is a per-source limit, recorded as debt because it needs a trusted-proxy
- * decision this phase cannot take.
+ * bounds that traffic is the door's per-source limit ({@code P15-TSK-022}), which counts sources and
+ * never what was typed.
  *
  * <p>So the counter is keyed off the <strong>login identifier</strong>, resolved to an identity by a
  * subselect <em>inside the same statement</em>. That is not a stylistic choice. The obvious

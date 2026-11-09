@@ -1874,6 +1874,9 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` |
 | 11.26 The edge: two controllers, the generated route lists, a renewed certificate *(written 2026-11-09, below)* | `-011` | `-012`, `-020` |
 | 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` |
+| 11.30 Abuse limits: the doors' per-source limits, a door that refuses everyone, a store that cannot count, raising a limit, rotating the bucket key *(written 2026-11-09, below)* | `P15-TSK-022` | `-032` |
+| 11.29 Key rotation and key compromise: the field-level key rings and the callback window *(written 2026-11-09, below)* | `P15-TSK-019` | `-020` |
+| 11.31 Changing configuration: which class, which way, and `ConfigFingerprintDisagrees` *(written 2026-11-09, below)* | `P15-TSK-031` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -1892,6 +1895,9 @@ row.)*
 
 *(Added 2026-11-09 by `P15-TSK-005`: §11.1c below is written, the schema-compatibility steps of rows 11.1 and 11.3, and §11.4's compatibility half; not yet rehearsed.)*
 *(Added 2026-11-09 by `P15-TSK-035`: §11.27 below is written, from the census's code and its rules in `infra/prometheus/rules/correctness.yml`; not yet rehearsed.)*
+*(Added 2026-11-09 by `P15-TSK-019`: §11.29 below is written, from the ring's code and the two-step's checks; rotation has not run on a cluster or against a store, and `-020` rehearses it.)*
+
+*(Added 2026-11-09 by `P15-TSK-031`: §11.31 below is written, from the register, the overlays and `infra/prometheus/rules/platform.yml`; not yet rehearsed.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
@@ -1971,10 +1977,10 @@ version is being written.
 `P15-TSK-012` does that, with this task's Job contract in `DATA_MIGRATIONS.md` §2.1, and `-017` orders it before the rollout.
 The commands here are the image's own; the manifest is `P15-TSK-009`'s.)*
 
-**Before the first release to a database, and again only when a release adds a role**, run the one-time bootstrap step
+**Before the first release to a database, and again only when a release adds a role or changes a role's setting**, run the one-time bootstrap step
 (`DATA_MIGRATIONS.md` §2.2): the migrator image with its `command` overridden to `RoleBootstrapMain`, handed the master
 credential and the three roles' passwords from the secret store. It is the only thing that ever holds the master credential.
-Read its output: one line per role saying `created` or `present, unprivileged, unchanged`. Exit `12` naming a role means a role
+Read its output: one line per role saying `created` or `present, unprivileged, unchanged`, then one naming the setting it applied. Exit `12` naming a role means a role
 already holds a right it must not: stop and find out how. Never give the migration Job the master credential to get past it.
 
 **Then, for every release, the migration Job, and only then the rollout.** It runs the release's `finapp-migrator` by digest,
@@ -2455,6 +2461,67 @@ SELECT position, entries_judged, last_success_at, last_failure_at, last_failure_
 
 **`GaugesStaleAcrossTheFleet` (page, 5 minutes).** Every instance that is up has a stale gauge canary (`finapp_gauges_refreshed` NaN): each instance's own `GaugesStale` is a ticket, but while the whole fleet's refreshers are stale, every fleet-wide `max()` rule on a gauge reads NaN and every correctness page on a gauge is blind. One stale instance never pages this way. Check the database first (the gauge reads block on the pool and database timeouts), then the refresher on one instance (section 11.8). Do not restart the fleet at once; the page is about reading, not about money.
 
+### 11.29 Key rotation and key compromise: the field-level key rings and the callback window (`P15-TSK-019`, ADR-0123)
+
+Eight field-encryption keys, each a **ring**: an active version that writes, retained versions that read only the rows stamped with them. Five callback doors, each with a current signing key and, during a rotation, a previous one. **Nothing is re-encrypted, ever**: a row keeps the version that wrote it for as long as it exists. Every step below is a change to an overlay or to a store entry; none has been rehearsed on a real cluster (that is `P15-TSK-020`'s).
+
+**What a ring is configured from.** The non-secret half, in the overlay's `configMapGenerator` literals, per key: `FINAPP_<KEY>_RING_VERSIONS` (the versions a replica holds, default the base key's version alone), `FINAPP_<KEY>_RING_ACTIVEVERSION` (the pointer, default the base key's version), `FINAPP_<KEY>_RING_RETIREDVERSIONS` (default none). `<KEY>` is the variable's stem without `_KEY`: `FINAPP_DOC` for `FINAPP_DOC_KEY`, `FINAPP_PAYMENTS_DISPUTE_EVIDENCE` for that key. The secret half is the base key's entry (`FINAPP_DOC_KEY`, with the version `…_KEY_VERSION` names) and one entry per further version (`FINAPP_DOC_V2_KEY`, `FINAPP_DOC_V3_KEY`), each already an entry of the `ExternalSecret` and each already holding a generated value, because a sync fails on an entry with no value. **Never write a new value to a version's entry once that version has been listed**: a row written under it would be unreadable by any replica holding a different value, and nothing can tell the two apart except a row failing its authentication tag. New material always goes to a new version.
+
+**Rotate a key (the two-step). Step 1, known.** Add to the overlay `FINAPP_<KEY>_RING_VERSIONS=1,2` (keeping every version already listed) and commit. The ConfigMap's hash changes, so the fleet rolls; a replica that cannot hold every listed version refuses to start, so the rollout stalls rather than half-completes. Wait for `kubectl rollout status deployment/finapp-app -n finapp` to finish: **that** is what makes every running replica a holder of version 2, and it is the one thing no automated check here can see. **Step 2, active.** In a later change, set `FINAPP_<KEY>_RING_ACTIVEVERSION=2` and commit; `key-ring-activation-check.sh` refuses, in CI, a change that activates a version its base commit did not list. The fleet rolls; while it does, some replicas write version 1 and some version 2, and every replica reads both.
+
+**Roll a rotation back.** Move `FINAPP_<KEY>_RING_ACTIVEVERSION` back to the previous version and roll. Keep the version listed in `RING_VERSIONS`: every row written while it was active stays readable only while it is held. **Do not roll the image back behind the release that first ran rings once the active version differs from the base.** The older image holds one key and ignores the pointer, so it cannot read a single row written under any other version, and nothing makes those rows readable to it. Move the pointer back, keep the image and keep the version listed.
+
+**A version's last rows are stranded by anything that drops it from the list.** A `git revert` of a rotation's commits, or a `kubectl rollout undo` to before the listing, returns a configuration without the newest version: every replica starts, and every row written while it was active is refused. The hole check cannot see this: a version missing from the top leaves no hole. `key-ring-activation-check.sh` refuses the revert in CI (every version its base lists must still be held or retired), but a `kubectl rollout undo` never passes through CI, so **do not use `rollout undo` for a ring change, and do not revert a listing: to go back, move the pointer and keep the version listed.**
+
+**When a replica will not start.** `is not held by this instance`: the active version is not among those listed or has no key. `is still the published local default` naming a `FINAPP_…_V2_KEY`: a listed version's entry is missing or empty off loopback. `has a hole at key version` or `neither held nor retired`: a version was dropped from `RING_VERSIONS`; put it back, or retire it properly. `is named twice`: a base key's `key-version` was set to a number a further version also uses.
+
+**Rotate a callback secret.** Order matters, because a replica started between the store write and the roll would otherwise read the new current key with no window. **First**, in the overlay, set `FINAPP_<DOOR>_PREVIOUS_VALIDUNTIL` to an instant at most seven days ahead of the replicas' starts (a replica started with it further ahead refuses to start), commit and roll: the window is open and the previous key is still the slot's generated value, which verifies nothing. **Then** the provider issues a second secret (a real provider's process; for a simulated provider, generate both values). Store the new secret as `FINAPP_<DOOR>_KEY`, the old value as `FINAPP_<DOOR>_PREVIOUS_KEY`, sync and roll (`SECRET_MANAGEMENT.md` §5.2). Only when the fleet has rolled does the provider start signing with the new secret; both verify meanwhile. **The window closes itself at that instant**, on every replica, with nothing restarted; the previous key is then simply any other key. Afterwards remove the `VALIDUNTIL` literal: housekeeping, not what closes it. Leave `…_PREVIOUS_KEY` in the store holding a generated value (a sync fails on an empty entry): a replica ignores it with no instant set, and only an instant with no key refuses. The window's variable has the name Spring derives from the property: `finapp.kyc.callback.previous.valid-until` reads `FINAPP_KYC_CALLBACK_PREVIOUS_VALIDUNTIL`, and likewise for the other four doors, `FINAPP_PAYMENTS_WEBHOOK_…`, `FINAPP_PAYMENTS_INSTANT_WEBHOOK_…`, `FINAPP_FX_WEBHOOK_…`, `FINAPP_CORRIDOR_WEBHOOK_…`.
+
+**A key compromise: a field-level key.** Decide what the compromised key can read, from the rows carrying its version. **Whatever reached this key reached its neighbours**: `V2` and `V3` are pre-generated and live in the same store path, the same Secret and every pod's environment, so a compromise of any of those exposes them too, and activating an already-delivered slot would activate a key the same compromise holds. So: generate fresh material and write it to the next *unlisted* slot (allowed, because no row can stand under a version never listed; never a slot already listed), sync it (`SECRET_MANAGEMENT.md` §5.2 step 2), read `Ready=True`, and only then commit the listing of that slot, then the activation, as above. The two-step's first half can be shortened only as far as a rollout's own speed allows. The compromised version **stays retained**: it is the only key that can read the rows under it, and those rows cannot be re-encrypted. Then re-key what the domain allows (an MFA enrolment can be replaced by re-enrolment, for instance, so its rows stop mattering), and record what stays under the compromised version with the reason it stays, as an incident note (section 11.12). No re-encryption, no rows touched, and the retained version's key never leaves the ring while rows need it.
+
+**A key compromise: a callback key.** If the *previous* key is the compromised one, close the window now: set the instant to the past and roll (a replica started after it refuses nothing and accepts only the current key). If the *current* key is the compromised one, a window does not help you: rotate it (a fresh current, the compromised one must not become previous) and let callbacks signed with the old one be refused; the provider re-signs.
+
+**Retire a version.** Only a version with no row under it can be retired, and evidence never stops having rows, so in Phase 15 this is theoretical (C12 defers the purge that would make it real). Add the number to `FINAPP_<KEY>_RING_RETIREDVERSIONS`, remove it from `…_RING_VERSIONS`, destroy its store entry's value (leave a generated placeholder, since the entry must still sync) and roll. **`KeyRingRetirementGuard` reads the real tables on every replica's start and refuses if any row stands under a retired version**, and it refuses too if it cannot find out (a database unreachable, or a statement over its time limit, ten seconds per column, a full scan because no column is indexed, kept so that every column fits inside the 180-second startup probe; a table too large to answer inside that refuses the retirement). Credit's ring cannot be retired from this code at all: the application's role cannot read that table's version column. Crypto-shredding, destroying a version *with* rows under it on purpose, is not done (C12); it would have to change this rule deliberately.
+
+**A base `key-version` other than 1.** Rows may stand under every lower number, so a replica configured with `FINAPP_<KEY>_KEYVERSION=4` refuses to start until versions 1 to 3 are listed or declared retired.
+
+**Adding a third further version.** Past `V3` a version has no configured place, and listing `4` refuses to start. Adding one is a reviewed change: a constant and a slot in the key class, a row in `SECRET_MANAGEMENT.md` section 3.2 and an `ExternalSecret` entry, then the store's entry with a generated value (`SecretInventoryIsCompleteTest` holds the three together).
+
+**What is not proved here.** That a rollout finished before the pointer moved is a person's reading of `rollout status`; the delivery order between the two commits is `P15-TSK-017`'s to enforce once a GitOps controller applies them. Rotation has not run on a cluster or against a store.
+
+### 11.31 Changing configuration - `ConfigFingerprintDisagrees`, `ConfigFingerprintAbsent` (`P15-TSK-031`)
+
+*(Written by `P15-TSK-031`, 2026-11-09, from [`CONFIGURATION_REGISTER.md`](CONFIGURATION_REGISTER.md), the overlays and `infra/prometheus/rules/platform.yml`. **Not yet rehearsed**, and no real environment exists to change.)*
+
+**Find the property first.** The register names its class and where each environment gets it.
+
+| Class | How it changes |
+|---|---|
+| `OPERATIONAL` in an overlay | A pull request against the ConfigMap literals of `deploy/overlays/<environment>/kustomization.yaml`. The ConfigMap's name carries a hash of its contents, so the change rolls the Deployment under the usual strategy (§11.14) |
+| `OPERATIONAL` not set in an overlay | Add it to the overlay's literals, and set that environment's cell in the register from `default` to `overlay`: `ConfigurationRegisterIsCompleteTest` fails until both agree |
+| `FINANCIAL`, not a URL | As `OPERATIONAL`, or by changing the code's default and the row's `Default` cell together, which `everyDefaultIsTheCodes` forces. **A second person on it is not built**: ADR-0122's decision, delivered by `P15-TSK-017`'s `CODEOWNERS` and the owner's branch rules. Read the row's "A mixed fleet" sentence before changing it: it says which direction is safe and which a reviewer must refuse without a measurement |
+| `FINANCIAL`, a provider or report URL | Never an overlay literal: the manifest policy refuses a `_URL` key. A real provider's URL becomes an entry of `deploy/components/secret-delivery/externalsecret-app.yaml` and a row of `SECRET_MANAGEMENT.md` section 3.3, and the register's cell becomes `store`. After that the value changes in the store, outside any pull request |
+| `SECRET` | Never here: `SECRET_MANAGEMENT.md` section 5 |
+
+A property the code gains is one new row in the register, or the build fails. A value that decides money and turns out not to be safe while replicas hold two values goes into versioned database data instead (register section 4), and that is a change to its module.
+
+**During a rollout, a disagreement is expected and is not an incident.** `finapp_config_fingerprint` carries the digest of each replica's effective `FINANCIAL` configuration in its `fingerprint` label, so the fleet's disagreement is visible at once and nothing pages for its length.
+
+**`ConfigFingerprintDisagrees` (page): the fleet has disagreed for longer than any rollout takes.**
+
+1. `count by (fingerprint) (finapp_config_fingerprint)` shows the groups, and `finapp_config_fingerprint` the replicas in each. The digest says only that they differ: compare the two replicas' ConfigMaps and the Deployment's revisions to see what.
+2. A rollout that has stopped: `kubectl rollout status deployment/finapp-app` and `kubectl get replicasets`. A replica on the old revision with the new one failing readiness is the usual cause, and §11.1 is the way forward. Rolling back is §11.3.
+3. A replica no revision explains: someone changed a pod or a ConfigMap by hand. Treat it as a security event, restore the desired state from the overlay and record who did it.
+4. Do **not** restart replicas to make the alert stop: it clears the signal and not the cause, and a restart that picks up a mis-set ConfigMap makes the wrong value universal.
+
+**What it cannot see.** A replica on the odd configuration that stays unscraped for more than five minutes at a time, a crash loop for instance, drops out of the count, so the wait restarts and this alert can stay pending for as long as that goes on. `InstanceDown` and the rollout's own status show that case.
+
+Each `FINANCIAL` row is safe mixed for about a rollout's length. Past that, nothing promises that the fleet's two values were meant.
+
+**`ConfigFingerprintAbsent` (ticket).** No replica publishes the digest, so the alert above is blind: usually a release without the meter or a scrape that lost the job. `FinappTargetsAbsent` pages if the whole fleet is gone.
+
+**The role's idle-in-transaction timeout** (register section 5) is set by the bootstrap step (§11.1b), which has to run again when this value changes, and reaches each session at its next connection. If it fires, the application logs a broken connection and the caller's retry succeeds; a repeating one is a transaction held open by something it should not be, and the session's last statement in `pg_stat_activity` is where to start.
+
 ### 11.9 A failing scan
 
 **When.** CI's `image`, `migrator-image` or `sast` job is red, or `./infra/scripts/image-scan.sh` or `./infra/scripts/sast.sh` exits
@@ -2746,6 +2813,38 @@ proves that swap on the pinned image. A real cluster's is `P15-TSK-020`'s rehear
 the controller pods do not start.
 
 **Failure and rollback.** An edge outage is refused traffic and nothing more: the application stays ready, and its schedules and consumers do not notice. Revert by the previous manifest digest; every route and limit is in the ConfigMap's hash, so a revert restores them together.
+
+### 11.30 Abuse limits - `finapp.abuse.requests`, `PublicDoorsRefusingMost` (`P15-TSK-022`)
+
+*(Written by `P15-TSK-022`, 2026-11-09, from the code and its tests. The counted case across real instances is owed to `P15-TST-002`; it has run on a scratch PostgreSQL by hand and on no cluster.)*
+
+**What is there.** The five routes that need no session and no signature (registration, sign-in, recovery, recovery completion, channel verification) are each counted per source and fixed window in the unlogged table `platform.window_counter`, across every replica. The numbers are `finapp.abuse.*` in `application.yaml`, reference values calibrated by Phase 16. The edge's limits (§11.26) are a first, coarse layer, per controller; these are the ones that count. A provider's callback is not counted: its signature is checked first and a forged one writes nothing.
+
+**What a source is.** The connection's address as the edge set it (`FINAPP_EDGE_PROXIES`, §11.26): an IPv4 address whole, an IPv6 address by its /64, hashed under `FINAPP_ABUSE_BUCKET_KEY` to one of 65,536 buckets, and the table holds no address. Registration, sign-in and the recovery request are counted per IPv6 /48 as well, after the /64 (a /48 holds 65,536 /64s, and each of those doors does work a holder of many /64s would multiply). So a carrier's NAT is one source, a host's whole /64 is one source, and two unlucky sources can share a bucket.
+
+**`PublicDoorsRefusingMost` (ticket).** Over half of the last 15 minutes' requests at the doors refused, at least 50 of them. A real flood at a door looks like this, and so does a wrong address: if `FINAPP_EDGE_PROXIES` is wrong, or the load balancer's client-address preservation is off, the edge's own address becomes every client's source and the doors refuse almost everyone. Check those two first when `outcome="refused"` rises across every door at once. **A shared address is not a fault**: behind a carrier's NAT or an office, one device can spend sign-in's budget for everyone there, because a successful sign-in counts too, and the 11th new customer from an address in an hour waits for the window. `THREAT_MODEL.md` section 6 item 33 (b).
+
+**Reading it.** `finapp.abuse.requests{type,outcome}`: `type` is the door, and `outcome` is `admitted`, `refused`, or one of the three reasons for a `503` below. **This meter is the whole record of a refused request**: a refusal writes no audit row and no log line per request, by design, because either would let a flood write the table or fill the log. A rise in `refused` on one door is somebody at that door; the rows (`SELECT scope, count(*), sum(admitted) FROM platform.window_counter GROUP BY 1`) say how many buckets are in use and how many requests were admitted, and never who.
+
+**A door answers `503 api.TemporarilyUnavailable`.** It could not count the request, and no door fails open: they all need the same database next, and a limit that lifted itself when the database was in trouble would be the attacker's best moment. Which of three:
+
+| `outcome` | Meaning | First steps |
+|---|---|---|
+| `at_capacity` | This instance is running `finapp.abuse.max-concurrent-counts` (3) counts already and no place came free in `finapp.abuse.permit-wait` (100 ms). A count holds its place while it waits on the pool, so a saturated pool shows up here | §11.21: the pool, then who is holding it. Raise the cap only with the pool, keeping counting to at most half of it |
+| `store_unreachable` | The connection, the pool's 5 s wait, or the server: a timeout, a dropped connection, too many connections, the server going down. A read the server never answers ends at the 2 s network timeout and gives its place back, so a failover's old primary cannot hold the doors shut after the pool has moved on | The database's own health. The doors recover by themselves |
+| `store_error` | PostgreSQL answered and refused the statement: a schema this release was not built against, or a broken constraint | The deploy in progress (§11.1c), then the table's DDL against platform `V014` |
+
+**Fixed windows.** A window has a fixed start and end, the same on every replica, so a source can be admitted twice its limit across a window's end. That is a burst bound, accepted; a limit a source hits repeatedly is hit at the same rate in every window.
+
+**A retry counts.** A count runs after the `Idempotency-Key` header's shape is checked and before the idempotency record is read. So a same-key retry costs a count, and past the limit it is answered `429` where the stored `201` would have been replayed; the stored answer comes back once the window has ended.
+
+**Raising a limit.** Set `FINAPP_ABUSE_<DOOR>_LIMIT` (and `_WINDOW`, and `_SITE_LIMIT` where the door has one) in the overlay and roll. There is no switch that turns a limit off, deliberately: a door without a limit is registration without a bound, and `THREAT_MODEL.md` T47's acceptance rests on it. A window below a minute is refused at start, and so is any set of windows one instance's sweep could not keep up with at the worst the key space allows. A changed window applies to new windows; the row for the old one ages out.
+
+**Rotating `FINAPP_ABUSE_BUCKET_KEY`.** Change the store, sync, roll (`SECRET_MANAGEMENT.md` §5.1). The buckets reshuffle: each source starts a fresh window in a new bucket, and while a rollout has both keys on the fleet a source can count once per key. Nothing is signed or encrypted with it, so the cost is at most one window's budget. Keep the key secret: it is what stops an attacker computing an address of their own that shares a named victim's bucket.
+
+**After a failover.** The table is unlogged, so a crash or failover empties it: every source has a fresh window, once per crash or failover. That is the cost of a counter that puts no row in the WAL. Nothing needs doing.
+
+**Size.** At most 65,537 rows per count per window, measured at about 14 MB per count-window including both indexes; a door counted per /48 as well has two counts. `finapp.retention.sweep.failed{type="window_counter"}` rising means ended windows are not leaving; the doors keep working and the table grows by at most that bound each window. See §11.15 for a failing sweep.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

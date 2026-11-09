@@ -331,6 +331,21 @@ tasks.processResources {
     from(expectedSchemaVersions) { into("com/finapp/app/database") }
 }
 
+// ---------------------------------------------------------------------------
+// The configuration register (P15-TSK-031; ADR-0125 decision 3), embedded as it stands in the repository.
+//
+// finapp.config.fingerprint is a hash over the effective values of the register's FINANCIAL rows, so the running application
+// has to read those rows, and a second list kept beside them is the defect the register exists to prevent. The document is
+// the one list; ConfigurationFingerprintTest holds these bytes equal to it. A register the build cannot read refuses to
+// start at the fingerprint's bean. The image's context is the boot jar alone, so nothing else reaches the docs tree.
+// ---------------------------------------------------------------------------
+tasks.processResources {
+    from(rootProject.file("docs/architecture/CONFIGURATION_REGISTER.md")) {
+        into("com/finapp/app/telemetry")
+        rename { "configuration-register.md" }
+    }
+}
+
 tasks.bootJar {
     manifest.attributes.remove("Sbom-Format")
     manifest.attributes.remove("Sbom-Location")
@@ -409,6 +424,8 @@ tasks.named<Test>("databaseTest") {
 // TestTaxonomyTest holds this list equal to the tagged set.
 extra["ownContainerSuites"] =
     listOf(
+        // P15-TSK-022: three contexts of its own, for the storms' reason: they would otherwise add up on the tier's shared JVM.
+        "com.finapp.app.abuse.SourceLimitClusterDatabaseTest",
         // P14-TST-002: it opens the year 2001 as the database's first periods and closes all twelve for good, activates two
         // mapping versions and commits some 22,000 journal lines on operational accounts no expectation names.
         "com.finapp.app.accounting.AccountingBatteryTest",

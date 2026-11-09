@@ -36,6 +36,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -369,6 +370,11 @@ class CheckoutExpiryDatabaseTest {
     @BeforeAll
     static void installTheMovedClock() {
         com.finapp.platform.testing.database.DatabaseClockFrame.install();
+    }
+
+    @AfterAll
+    static void putTheClockBack() {
+        com.finapp.platform.testing.database.DatabaseClockFrame.uninstall();
     }
 
     // ----------------------------------------------------------------- reads

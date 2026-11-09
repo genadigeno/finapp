@@ -8,7 +8,7 @@ import java.util.Objects;
 /**
  * {@code finapp.retention.swept{type}} and {@code finapp.retention.sweep.failed{type}}, eager on every instance whether or not
  * its sweeps run (`P15-TSK-029`; {@code InboxConsumptionMeters}' reason): a counter that only exists where the schedule does
- * gives an alert no series on an instance with it off. {@code type} is one of the two tables the sweeps delete from.
+ * gives an alert no series on an instance with it off. {@code type} is one of the tables the sweeps delete from, a closed set.
  */
 public final class RetentionSweepMeters {
 

@@ -8,7 +8,7 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * Deletes one batch of rows past their retention bound (`P15-TSK-029`, C12).
+ * Deletes one batch of rows past their retention bound (`P15-TSK-029`, C12; the window counter's, `P15-TSK-022`).
  *
  * <p><strong>The predicate is the database's, not this class's.</strong> Each sweep is one call of a {@code SECURITY DEFINER}
  * function in platform {@code V012}, the only path by which the application can delete from these tables, and that function
@@ -40,6 +40,8 @@ public final class RetentionSweep {
     private static final String SWEEP_OUTBOX_SQL = "SELECT platform.sweep_published_outbox_events(?, ?)";
 
     private static final String SWEEP_INBOX_SQL = "SELECT platform.sweep_expired_inbox_messages(?, ?)";
+
+    private static final String SWEEP_WINDOW_COUNTER_SQL = "SELECT platform.sweep_expired_window_counters(?, ?)";
 
     private final RetentionConnectionSource connections;
     private final String table;
@@ -87,6 +89,16 @@ public final class RetentionSweep {
             RetentionConnectionSource connections, Duration dedupeWindow, int batchSize) {
         requireBeyondRedelivery(dedupeWindow);
         return new RetentionSweep(connections, "inbox_message", SWEEP_INBOX_SQL, dedupeWindow, batchSize);
+    }
+
+    /**
+     * The windows of {@code platform.window_counter} that have ended (`P15-TSK-022`). Each row is selected on its own end, so no
+     * setting of this sweep can delete a live window.
+     *
+     * @param grace how long after a window's end its row stays
+     */
+    public static RetentionSweep ofExpiredWindowCounters(RetentionConnectionSource connections, Duration grace, int batchSize) {
+        return new RetentionSweep(connections, "window_counter", SWEEP_WINDOW_COUNTER_SQL, grace, batchSize);
     }
 
     private static void requireBeyondRedelivery(Duration dedupeWindow) {
@@ -144,7 +156,7 @@ public final class RetentionSweep {
         }
     }
 
-    /** The table this sweep deletes from: a closed set of two, safe as a metric tag. */
+    /** The table this sweep deletes from: a closed set, safe as a metric tag. */
     public String table() {
         return table;
     }

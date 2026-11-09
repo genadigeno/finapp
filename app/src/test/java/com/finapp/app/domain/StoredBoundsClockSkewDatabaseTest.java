@@ -62,6 +62,7 @@ import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -108,6 +109,11 @@ class StoredBoundsClockSkewDatabaseTest {
     @BeforeAll
     static void installTheMovedClock() {
         DatabaseClockFrame.install();
+    }
+
+    @AfterAll
+    static void putTheClockBack() {
+        DatabaseClockFrame.uninstall();
     }
 
     // ----------------------------------------------------------------- recovery

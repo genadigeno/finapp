@@ -78,6 +78,7 @@ class RegistrationController {
      * because a retried registration that creates a second Party is a duplicate person, which is
      * expensive in a different way and unpickable later for the same reason ADR-0029 gives.
      */
+    @com.finapp.app.abuse.SourceLimited(com.finapp.app.abuse.Door.REGISTRATION)
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @RequiresIdempotencyKey

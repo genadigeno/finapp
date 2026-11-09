@@ -3,6 +3,10 @@ package com.finapp.app.mfa;
 import com.finapp.app.security.ConfinedCredential;
 import com.finapp.app.security.ConfinedCredential.KeyLength;
 import com.finapp.app.security.ConfinedCredential.KeySpec;
+import com.finapp.app.security.ConfinedKeyRing;
+import com.finapp.platform.security.KeyRing;
+import java.util.Map;
+import org.springframework.core.env.Environment;
 
 /**
  * Where the MFA encryption key comes from (`P1-TSK-017`, ADR-0020, {@code INV-IDN-08}).
@@ -63,5 +67,35 @@ public final class MfaKey {
      */
     public static byte[] decode(String configured, boolean localDefaultPermitted) {
         return SPEC.decode(configured, localDefaultPermitted);
+    }
+
+    /**
+     * This key's further versions and its ring's non-secret state (`P15-TSK-019`): each named here so the secret inventory's
+     * net reads it, and read by {@link ConfinedKeyRing}.
+     */
+    private static final String V2_KEY_PROPERTY = "finapp.mfa.v2.key";
+
+    private static final String V3_KEY_PROPERTY = "finapp.mfa.v3.key";
+
+    private static final String RING_VERSIONS_PROPERTY = "finapp.mfa.ring.versions";
+
+    private static final String RING_ACTIVE_VERSION_PROPERTY = "finapp.mfa.ring.active-version";
+
+    private static final String RING_RETIRED_VERSIONS_PROPERTY = "finapp.mfa.ring.retired-versions";
+
+    private static final ConfinedKeyRing.RingProperties RING =
+            new ConfinedKeyRing.RingProperties(
+                    RING_VERSIONS_PROPERTY,
+                    RING_ACTIVE_VERSION_PROPERTY,
+                    RING_RETIRED_VERSIONS_PROPERTY,
+                    Map.of(2, V2_KEY_PROPERTY, 3, V3_KEY_PROPERTY));
+
+    /**
+     * This key's ring: the base key at {@code baseVersion}, the further versions the environment lists, the active one
+     * where the environment points. Absent ring configuration, one version: the base key alone, exactly as it always was.
+     */
+    public static KeyRing ring(
+            String configuredBase, int baseVersion, Environment environment, boolean localDefaultPermitted) {
+        return ConfinedKeyRing.read(SPEC, RING, configuredBase, baseVersion, environment, localDefaultPermitted);
     }
 }

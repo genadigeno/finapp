@@ -321,6 +321,27 @@ class StoredBoundsAreTheDatabasesTest {
     }
 
     @Test
+    @DisplayName("the window counter's window and Retry-After are the database's: the statement binds no instant and the class holds no clock (P15-TSK-022)")
+    void theWindowCounterIsTheDatabases() {
+        String source = readSourceOf("com.finapp.platform.abuse.WindowCounter");
+        String literals = literalsIn(source);
+
+        assertThat(literals)
+                .as("the window is a bin of the database's own now(), and the Retry-After comes from the same reading")
+                .contains("date_bin(w.stride, now(), TIMESTAMPTZ 'epoch')")
+                .contains("now() AS read_at")
+                .contains("b.window_start + b.stride - b.read_at");
+        assertThat(literals.chars().filter(character -> character == '?').count())
+                .as("what is bound is the stride, the scope, the key and the limit, once for the read-only path and once for the update, and no instant")
+                .isEqualTo(5);
+        assertThat(literals).doesNotContain("window_start < ?").doesNotContain("= ?::timestamptz").doesNotContain("?::timestamp");
+        assertThat(source).as("an instance's clock is not this class's to read").doesNotContain("Clock").doesNotContain("Instant");
+        for (Method method : com.finapp.platform.abuse.WindowCounter.class.getDeclaredMethods()) {
+            assertThat(temporalParametersOf(method)).as(method.getName()).isEmpty();
+        }
+    }
+
+    @Test
     @DisplayName("each judging or stamping statement reads the database's clock in the statement")
     void eachStatementReadsTheDatabasesClock() {
         statement("com.finapp.identity.JdbcRecoveryRequestStore", "consume")

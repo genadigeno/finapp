@@ -6,6 +6,20 @@
 # No amount, no party, no identifier anywhere: counts, ages and outcomes only (ADR-0072, INV-AUD-02).
 
 groups:
+  - name: abuse
+    labels:
+      owner: platform
+    rules:
+      - alert: PublicDoorsRefusingMost
+        # Aggregation: sum() - counters are per instance, and a door's requests spread across them
+        # A wrong FINAPP_EDGE_PROXIES or client-address preservation makes every client one source, and the doors then refuse nearly everyone.
+        expr: sum(increase(finapp_abuse_requests_total{outcome="refused"}[15m])) > 50 and sum(increase(finapp_abuse_requests_total{outcome="refused"}[15m])) / clamp_min(sum(increase(finapp_abuse_requests_total[15m])), 1) > 0.5
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Most requests at the public doors are being refused"
+          description: "Over half of the last 15 minutes' requests at the public doors were refused per source, at least 50 of them. See OPERATIONS_RUNBOOK.md section 11.30."
   - name: identity
     labels:
       owner: identity

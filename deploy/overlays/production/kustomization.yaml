@@ -29,3 +29,6 @@ configMapGenerator:
       - FINAPP_DB_SERVER_MAX_CONNECTIONS=100
       - FINAPP_DB_RESERVED_CONNECTIONS=12
       - FINAPP_EDGE_PROXIES=10.10.0.0/16
+      # Without it KafkaTransportGuard refuses every pod off loopback. The JVM's trust store stays in charge: a managed broker's
+      # certificate chains to a public root, so finapp.kafka.ssl.truststore-location is left unset (CONFIGURATION_REGISTER.md).
+      - FINAPP_KAFKA_SECURITYPROTOCOL=SASL_SSL

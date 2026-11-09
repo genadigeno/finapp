@@ -70,7 +70,9 @@ Failures of the *protocol*, raised before any business module is reached.
 | `api.UnsupportedMediaType` | 415 | The body's media type is not read here. |
 | `api.ValidationFailed` | 422 | Well-formed, and not valid. |
 | `api.IdempotencyKeyRequired` | 422 | An operation requiring `Idempotency-Key` was called without one. |
+| `api.TooManyRequests` | 429 | A door's per-source limit was reached; retry after the `Retry-After` it carries. |
 | `api.InternalError` | 500 | Something failed that the client cannot act on. |
+| `api.TemporarilyUnavailable` | 503 | The door could not count the request, so it did not serve it; try again shortly. |
 
 ### `deadletter` — `DeadLetterErrorCode` *(`P15-TSK-028`)*
 
@@ -1707,6 +1709,14 @@ against that, and the 500 tells the caller our side failed for something only th
 **Rejected values are never echoed.** A validation detail names the field and the constraint,
 both of which are ours. The value is the caller's, and reflecting untrusted bytes into a response
 is how an error message becomes a vector (`INV-AUD-02`).
+
+**A per-source limit is decided before anything about the request is looked at** (`P15-TSK-022`). The five doors that need no session
+and no signature are counted against the connection's address, before the body is read: `api.TooManyRequests` (429) with a
+`Retry-After` of whole seconds, read from the database's clock in the statement that counted, and at least 1. The answer is the
+same for a taken identifier and a free one, because no identifier has been read, and the door does no derivation and writes
+nothing else (`INV-IDN-07`). When the count cannot be taken the door answers
+`api.TemporarilyUnavailable` (503) and does not serve the request: it never fails open, and it carries no `Retry-After` because nothing
+knows one. A signed provider callback is not counted (`THREAT_MODEL.md` T1).
 
 ### Correlation at the boundary
 

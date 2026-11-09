@@ -1,6 +1,14 @@
 {
   "components": {
     "headers": {
+      "Retry-After": {
+        "description": "Whole seconds until this source's window ends on the server's clock. Retry after that; retrying sooner is refused and does not move the window.",
+        "required": true,
+        "schema": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
       "X-Client-Correlation-Id": {
         "description": "The value supplied in the request's X-Correlation-Id header, returned unchanged. It is never adopted as the flow's identifier (ADR-0034) and reaches no log, span or stored record; it exists so a caller that no longer holds the connection can match a response to a request. Present only when a well-formed value was supplied.",
         "required": false,
@@ -1969,6 +1977,79 @@
         },
         "description": "[413] The request was too large.",
         "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.TemporarilyUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.TemporarilyUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.TemporarilyUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] Temporarily unavailable; try again shortly.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "api.TooManyRequests": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.TooManyRequests"
+                    },
+                    "status": {
+                      "const": 429
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.TooManyRequests"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[429] Too many requests.",
+        "headers": {
+          "Retry-After": {
+            "$ref": "#/components/headers/Retry-After"
+          },
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
           },

@@ -57,6 +57,12 @@ public final class EvidenceContentReads<T> {
          */
         record Corrupt(SettlementFileStore.FileRow file) implements Outcome {}
 
+        /**
+         * This instance's key ring does not hold the version the file is stamped with (`P15-TSK-019`): nothing read,
+         * the {@code FAILED} audit record written, naming the version. Not corruption: the file is not in question.
+         */
+        record KeyVersionNotHeld(SettlementFileStore.FileRow file, int keyVersion) implements Outcome {}
+
         /** No such file: nothing written, nothing audited — a guessed id records nothing. */
         record Unknown() implements Outcome {}
     }
@@ -87,6 +93,11 @@ public final class EvidenceContentReads<T> {
             appendReadRecord(unitOfWork, file, reader, reason, correlation,
                     AuditOutcome.SUCCEEDED, "served");
             return new Outcome.Served(file, content);
+        } catch (SettlementKeyVersionNotHeldException notHeld) {
+            // Caught before the storage failure it extends: nothing here failed verification.
+            appendReadRecord(unitOfWork, file, reader, reason, correlation,
+                    AuditOutcome.FAILED, "key version " + notHeld.keyVersion() + " not held by this instance; nothing served");
+            return new Outcome.KeyVersionNotHeld(file, notHeld.keyVersion());
         } catch (SettlementStorageException corrupt) {
             // The failure class only - never chunk bytes, never the message's storage detail.
             appendReadRecord(unitOfWork, file, reader, reason, correlation,

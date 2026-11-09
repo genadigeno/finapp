@@ -42,6 +42,9 @@ import lombok.RequiredArgsConstructor;
  *   <li>{@link Verdict#CORRUPT} — the stored bytes failed their authenticated decryption or
  *       checksum: nothing compared, and the access is on the record as {@code FAILED}
  *       ({@code EvidenceContentReads}' rule — an exception would roll that record back).
+ *   <li>{@link Verdict#KEY_VERSION_NOT_HELD} — this instance's key ring does not hold the version
+ *       the file is stamped with (`P15-TSK-019`): nothing compared and no bytes read, so the
+ *       file's integrity is not in question. {@code FAILED} on the record, naming the version.
  * </ul>
  *
  * <h2>Why it is audited</h2>
@@ -74,7 +77,8 @@ public final class FileVerification {
         FORMAT_VERSION_UNAVAILABLE,
         MATCHES,
         DIFFERS,
-        CORRUPT
+        CORRUPT,
+        KEY_VERSION_NOT_HELD
     }
 
     /**
@@ -85,13 +89,19 @@ public final class FileVerification {
      *     {@code MATCHES}, up to and including the first differing one for {@code DIFFERS}
      * @param firstDifferingLine present exactly for {@code DIFFERS}: a line number, or
      *     {@code -1} when the counts differ
+     * @param keyVersionNotHeld present exactly for {@code KEY_VERSION_NOT_HELD}: the version the
+     *     file is stamped with, a number and never key material
      */
     public record Verified(
-            String verdict, int linesCompared, Optional<Integer> firstDifferingLine) {
+            String verdict, int linesCompared, Optional<Integer> firstDifferingLine, Optional<Integer> keyVersionNotHeld) {
 
         public Verified {
             Objects.requireNonNull(verdict, "verdict must not be null");
             Objects.requireNonNull(firstDifferingLine, "firstDifferingLine must not be null");
+            Objects.requireNonNull(keyVersionNotHeld, "keyVersionNotHeld must not be null");
+            if (keyVersionNotHeld.isPresent() != Verdict.KEY_VERSION_NOT_HELD.name().equals(verdict)) {
+                throw new IllegalArgumentException("a version not held is named exactly for KEY_VERSION_NOT_HELD");
+            }
             if (linesCompared < 0) {
                 throw new IllegalArgumentException("linesCompared is never negative");
             }
@@ -132,6 +142,7 @@ public final class FileVerification {
                         fileId.toString(),
                         Optional.of(reason),
                         Verdict.CORRUPT.name().equals(verified.verdict())
+                                        || Verdict.KEY_VERSION_NOT_HELD.name().equals(verified.verdict())
                                 ? AuditOutcome.FAILED
                                 : AuditOutcome.SUCCEEDED,
                         correlation.correlationId(),
@@ -144,6 +155,9 @@ public final class FileVerification {
                                         + ", linesCompared=" + verified.linesCompared()
                                         + verified.firstDifferingLine()
                                                 .map(line -> ", firstDifferingLine=" + line)
+                                                .orElse("")
+                                        + verified.keyVersionNotHeld()
+                                                .map(version -> ", keyVersionNotHeld=" + version)
                                                 .orElse(""))));
         return verified;
     }
@@ -159,6 +173,10 @@ public final class FileVerification {
         byte[] content;
         try {
             content = files.readContent(unitOfWork, file.id());
+        } catch (SettlementKeyVersionNotHeldException notHeld) {
+            // Not tampering: no byte was read, and the file is as good as it was. A wrong activation order leaves this
+            // on the record until the replica holds the version, which is what the verdict says.
+            return new Verified(Verdict.KEY_VERSION_NOT_HELD.name(), 0, Optional.empty(), Optional.of(notHeld.keyVersion()));
         } catch (SettlementStorageException corrupt) {
             // Tampering, a transplanted chunk, truncation: nothing compared, nothing served.
             return verdict(Verdict.CORRUPT, 0, Optional.empty());
@@ -190,6 +208,6 @@ public final class FileVerification {
 
     private static Verified verdict(
             Verdict verdict, int linesCompared, Optional<Integer> firstDifferingLine) {
-        return new Verified(verdict.name(), linesCompared, firstDifferingLine);
+        return new Verified(verdict.name(), linesCompared, firstDifferingLine, Optional.empty());
     }
 }
