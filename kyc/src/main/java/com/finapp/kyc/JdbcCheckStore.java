@@ -267,15 +267,27 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
 
     /**
      * One index probe per screening type (`P13-TSK-022`'s review): the lateral's {@code LIMIT 1}
-     * walks {@code verification_check_decided_latest} in its own order, so the read is two rows
-     * however many rescreens a case has accumulated.
+     * walks {@code verification_check_decided_latest_by_order} in its own order, so the read is two
+     * rows however many rescreens a case has accumulated. Ranked by {@code check_order}, a sequence
+     * drawn at the insert (kyc {@code V012}, `P15-TSK-037`), never by a stamp a stepped database
+     * clock wrote; a row from before that migration has no order and ranks below every row that
+     * does, by its stamps, as before.
      */
-    private static final String LATEST_DECIDED_SCREENINGS =
+    static final String LATEST_DECIDED_SCREENINGS =
             "SELECT latest.* FROM (VALUES ('SANCTIONS'), ('PEP')) AS screening (screened_type)"
                     + " CROSS JOIN LATERAL (SELECT " + COLUMNS + " FROM " + TABLE
                     + " WHERE case_id = ? AND check_type = screening.screened_type"
                     + " AND status IN ('CLEAR', 'HIT')"
-                    + " ORDER BY requested_at DESC, status_changed_at DESC, id DESC LIMIT 1) AS latest";
+                    + " ORDER BY check_order DESC NULLS LAST, requested_at DESC, status_changed_at DESC, id DESC"
+                    + " LIMIT 1) AS latest";
+
+    /**
+     * The newest check of a type: ranked by {@code check_order} (kyc {@code V012}, `P15-TSK-037`), a sequence drawn at the
+     * insert, and a successor's insert starts after its predecessor's: the run inserts one only once it has read the
+     * predecessor terminal, and the one-in-flight index refuses any overlap. So never by {@code requested_at}, an instance's clock
+     * for an onboarding check; a pre-{@code V012} row has no order and ranks below every row that does, by its stamps, as before.
+     */
+    static final String NEWEST_ORDER = " ORDER BY check_order DESC NULLS LAST, requested_at DESC, id DESC LIMIT 1";
 
     @Override
     public List<VerificationCheck> latestDecidedScreenings(
@@ -445,7 +457,7 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
                                 + " FROM " + TABLE
                                 + " WHERE case_id = ? AND check_type = ?"
                                 + " AND purpose = 'ONBOARDING'"
-                                + " ORDER BY requested_at DESC, id DESC LIMIT 1")) {
+                                + NEWEST_ORDER)) {
             select.setObject(1, caseId.value());
             select.setString(2, type.name());
             try (ResultSet rows = select.executeQuery()) {

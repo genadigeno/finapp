@@ -68,9 +68,14 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
     static final String FIRST_TRANSFER = "SELECT coalesce(velocity_cut_at, assessed_at) AS judged_at"
             + " FROM risk.risk_assessment WHERE operation = 'TRANSFER' ORDER BY id LIMIT 1";
 
+    /**
+     * The party and merchant a payment was judged for (P15-TSK-037): at most two rows, one per operation on {@code
+     * risk_assessment_command_once}, and both name the intent's own party and merchant - so which of the two answers
+     * decides nothing, and the order names the row, not a stamp: {@code assessed_at} is a database clock's.
+     */
     static final String JUDGED_PAYMENT ="SELECT party_id, merchant_subject_id FROM risk.risk_assessment"
             + " WHERE operation IN ('CARD_PAYMENT', 'WALLET_PAYMENT') AND command_ref = ?"
-            + " AND merchant_subject_id IS NOT NULL ORDER BY assessed_at DESC, id DESC LIMIT 1";
+            + " AND merchant_subject_id IS NOT NULL ORDER BY operation LIMIT 1";
 
     @Override
     public Optional<RiskAssessment> find(Connection unitOfWork, RiskOperation operation, CommandRef commandRef) {

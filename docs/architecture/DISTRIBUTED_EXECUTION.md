@@ -369,8 +369,42 @@ moved; and the offering instant never before its version's start, without which 
 would leave the successor's first offer before its version began. The midnight-framed origination of
 `BackwardClockDatabaseTest` now rolls back, so no offer dated tomorrow is left in the shared tier for a later activation
 to follow. Regression cases: `LoanTermsDatabaseTest` and `BnplTermsDatabaseTest`. Risk `V002`'s retirement has the same
-stamp; nothing reads a risk policy version by an instant, so it is latent, recorded and not changed. The rule above is
-unchanged; it now holds for both.)*
+stamp; nothing reads a risk policy version by an instant, so it is latent, recorded and not changed *(until `P15-TSK-037`,
+2026-11-09: risk `V020`, by the terms' rule)*. The rule above is unchanged; it now holds for both.)*
+
+*(`P15-TSK-037`, 2026-11-09: **the census outside the close and the terms.** `StampOrderedReadsAreJudgedTest` reads every
+module's production SQL, Java statements and text blocks with their constants inlined and every function's and view's
+latest definition in the chain, and holds every single-row read or value picked by a stamp: `ORDER BY <stamp>` (either
+direction, in any position of the sort keys) with `LIMIT 1` or `FETCH FIRST`, `DISTINCT ON`, a window ranking, an ordered
+aggregate, `SELECT ... INTO` in a function body with no limit, `min`/`max(<stamp>)`, and a UUIDv7 `id` first in a
+single-row ordering (its high bits are an instance's clock). A stamp is a column the migrations declare `timestamp` or
+`timestamptz`, or a name ending `_at`; a `date` is the domain's. **Each read is judged**: it decides, ranked by the rows or
+named by identity (`RANKED`, `NAMED`), or on the fact's own instant as its source stamped it, never by arrival (`FACT_TIME`, a
+provider's observation or an in-platform producer's event: a stepped producer clock can misorder two facts within one step), or
+on an age or bound, never on which of two facts came first (`BOUNDED`); or it decides nothing (`DISPLAYS`, `SCHEDULES`); accounting,
+lending and bnpl stay `P15-TSK-033`'s (`ELSEWHERE`), named so a new read there is still red. **What ranks instead**:
+`kyc.verification_check.check_order` and `kyc_case.case_order` and `payments.payment_attempt.attempt_order` (`NO CYCLE`
+sequences, kyc `V012` and payments `V038`, drawn at the insert; a successor's insert starts after its predecessor's, the arbiter
+(one-in-flight, one-open-per-customer, the intent's conditional transition) refusing any overlap, so a fact that lands later draws
+a later number and no commit timing can invert it; a rescreen, keyed per list version, is an independent ask, and either order of two concurrent
+asks is an order of asking; a pre-migration row stays NULL and ranks below every numbered row, by its stamp as before; an
+insert from the previous release draws the default); the chain's tail for a case's predecessor (`risk_case.predecessor_case_id`;
+a repudiation's continued break prefers the tail the same way, but only a repudiation sets `follows_break_id`, so that read is a
+trace link, `DISPLAYS`); `refund_one_row_per_dispatch_key`
+and `routing_decision_one_chosen_per_*` for the refund and the routing decision; and, for the two version-in-force reads, a
+floor at the write, by version number: every new version's start, a scheduled one included, is never before the latest
+immediately-effective lower-numbered version's, so it cannot be shadowed by one (`JdbcRoutingStore.INSERT_VERSION`,
+`JdbcFeeScheduleStore.INSERT_VERSION`). The insert returns the stored start, and where it differs from the start asked for the
+audit says both, so `ORDER BY effective_from DESC, version DESC` is left to mean what it means. A floored version no longer reads
+as immediate: until the clock reaches its floor, bounded by the skew or step, the version it supersedes keeps answering. fx's `observed_at` is
+the source's own instant, `FACT_TIME`. Risk's retirement is on the terms' rule (risk `V020`: an end after the latest
+assessment, a successor starting exactly there by version number, an assessment never before its version's start).
+**What the guard cannot read**, each walked by hand on 2026-11-09 and found to decide nothing or to be a page: a bound
+`LIMIT ?`, Java that takes the first row of an unbounded ordering or sorts in memory (`ChecksAssessment.NEWEST` names only
+which of two same-typed checks a reviewer starts from; `KycScreeningClearances.clearanceOf` compares a type's one decided check
+with another type's), a stamp an alias renames, a positional sort key (`ORDER BY 1`, used only by grouped reports). Clock-step regression cases: `RiskStampOrderDatabaseTest`,
+`StampRanksDatabaseTest` (written and owed to `P15-TST-002`; `JUDGED_PAYMENT` has no such case: no clock can change its answer,
+both its possible rows naming one party and merchant).)*
 
 ### Why the Phase 12 → 13 transition added rows for components that do not exist yet
 

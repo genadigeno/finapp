@@ -350,6 +350,7 @@ adding "just the user agent", which is why the ceiling is set before anything po
 | `kyc_case` | `opened_at` | `CONFIDENTIAL` | As `customer.opened_at` — it dates onboarding |
 | `kyc_case` | `status_changed_at` | `CONFIDENTIAL` | Dates a review event, which is more disclosive than the status alone — `customer.status_changed_at`'s reasoning |
 | `kyc_case` | `case_kind` | `INTERNAL` | *Added by `P2-TSK-015`.* As `party.kind` — an enumeration of two values, saying no more about the customer than the party row already says |
+| `kyc_case` | `case_order` | `INTERNAL` | *Added by `P15-TSK-037` (kyc `V012`).* The case's place in its customer's order of cases, a sequence drawn at insert - no fact about the customer, a rank that holds no clock. NULL for a case written before `V012` |
 
 ### `party.organisation_registrant` — *added by `P2-TSK-016`*
 
@@ -722,6 +723,7 @@ them are classified at the ceiling regardless.
 | `payment_attempt` | `scheme_reference` | `CONFIDENTIAL` | The scheme's transaction reference (`P7-TSK-009`) — the `withdrawal.scheme_reference` / `acquirer_reference` class: Phase 8's match key |
 | `payment_attempt` | `settlement_cycle` | `INTERNAL` | The scheme's cycle identifier — a bucket name, not an identifier of anyone (`P7-TSK-009`) |
 | `payment_attempt` | `last_dispatched_at` | `INTERNAL` | The initiation permit (`P7-TSK-009`, ADR-0062 §3 adapted) — the `withdrawal.last_dispatched_at` reasoning |
+| `payment_attempt` | `attempt_order` | `INTERNAL` | *Added by `P15-TSK-037` (payments `V038`).* The attempt's place in the order attempts of an intent were made, a sequence drawn at insert after the intent's row lock - a rank that holds no clock. NULL for an attempt written before `V038` |
 | `unmatched_confirmation` | `id` | `INTERNAL` | A record identifier (`P7-TSK-009`) |
 | `unmatched_confirmation` | `rail` | `INTERNAL` | The rail the statement arrived on — the `payment_attempt.rail` reasoning |
 | `unmatched_confirmation` | `scheme_reference` | `CONFIDENTIAL` | The scheme's transaction reference for money with no commercial home (`INV-REC-05`) — the `acquirer_reference` class, and the parking's arbiter |
@@ -2022,6 +2024,7 @@ door.
 | `verification_check` | `check_type` | `CONFIDENTIAL` | *Which questions were asked about a person* is a fact about them: a SANCTIONS row existing at all says the platform screened this customer, and the set of types narrows what kind of customer they are. `kyc_case.status`'s tipping-off reasoning, one table down |
 | `verification_check` | `status` | `CONFIDENTIAL` | **The sharper tipping-off column.** `HIT` on a SANCTIONS check is precisely the disclosure that is an offence in some regimes; `INDETERMINATE` says a review is unresolved. The case's status is shaped to hide exactly this, so the underlying value gets at least the case's level |
 | `verification_check` | `requested_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
+| `verification_check` | `check_order` | `INTERNAL` | *Added by `P15-TSK-037` (kyc `V012`).* The check's place in the order it was asked, a sequence drawn at insert - a rank that holds no clock. NULL for a check written before `V012` |
 | `verification_check` | `status_changed_at` | `CONFIDENTIAL` | Dates the outcome, which with the status says *when* a hit landed — `kyc_case.status_changed_at`'s reasoning |
 | `verification_check` | `purpose` | `CONFIDENTIAL` | *(`P13-TSK-022`, kyc `V011`)* `ONBOARDING` or `RESCREEN`: a `RESCREEN` row says a list update screened this person again - with the status beside it, *that a list changed and found them*. `check_type`'s and `status`'s tipping-off reasoning; never on a customer surface - the reviewer's case file shows it to a `KYC_REVIEW` holder (`ReviewController.CheckView.purpose`, audited `kyc.CaseRead`), an undecided case's assessment and decision read it (`P13-TSK-022`'s review: its `HIT` needs a person) and risk's screening-hit reading takes its decided answer by reference; the customer's own surfaces read neither |
 | `verification_check` | `rescreen_key` | `INTERNAL` | *(`P13-TSK-022`, kyc `V011`)* risk's permit key and its retry ordinal (`risk.rescreen:<permit id>#n`) - an identifier of a question, nothing about the person; unique |
