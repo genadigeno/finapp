@@ -1,0 +1,19 @@
+# type: Pod, deliberately, and never type: Container. The API server fills a Container item's default from its max and its
+# defaultRequest from that, even when neither is written (SetDefaults_LimitRangeItem), and the LimitRanger then injects
+# them: a pod with no requests would be mutated and admitted, the opposite of what this object is for. A Pod item is not
+# defaulted, and refuses a pod whose containers state no request (min) or no limit (max).
+#
+# min and max bound one pod, the largest of ours at max; finapp.rego holds every rendered workload within them.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: finapp
+spec:
+  limits:
+    - type: Pod
+      min:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "2"
+        memory: 2Gi

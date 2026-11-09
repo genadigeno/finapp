@@ -1,0 +1,9 @@
+# The cluster's three namespaces (P15-TSK-010). A root of its own, rendered and applied beside an overlay and before it,
+# because an overlay's `namespace: finapp` renames every Namespace object it renders to finapp: two of them are refused
+# as one ID, and one would silently become the other. infra/scripts/manifest-check.sh appends this root to each overlay's
+# stream, so the policies read the namespaces and what runs in them together.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespaces.yaml

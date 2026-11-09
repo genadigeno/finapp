@@ -1,0 +1,55 @@
+# Production's data tier and providers, which live outside the cluster (C3), so a pod selector cannot name them and an
+# address is what a NetworkPolicy has. NOTHING REAL IS COMMITTED: each cidr is an RFC 5737 documentation range, routed
+# nowhere, the same idea as the sixty-four zeros of an unpromoted digest. An unpromoted overlay reaches nothing.
+#
+# NetworkPolicy cannot name a host, so a provider's rule is only as good as a stable address for it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-app-data-tier
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes:
+    - Egress
+  egress:
+    # PostgreSQL.
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.0/24
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Kafka, SASL_SSL with SCRAM: the managed brokers' port for that listener.
+    - to:
+        - ipBlock:
+            cidr: 198.51.100.0/24
+      ports:
+        - protocol: TCP
+          port: 9096
+    # The provider egress list. 443 alone: the settlement collector speaks HTTP and no adapter opens SFTP.
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.0/24
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-migrator-data-tier
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-migrator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.0/24
+      ports:
+        - protocol: TCP
+          port: 5432

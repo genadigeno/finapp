@@ -1,0 +1,44 @@
+# Pod Security Admission at `restricted` in all three modes, the version pinned to the cluster's minor so that an
+# upgrade cannot change what is refused without a commit saying so. NamespaceSecurityManifestsTest holds the version
+# equal to KUBERNETES_VERSION in infra/scanner-pins.sh.
+#
+# On all three, wider than the plan's "on finapp", and for a reason: no pod of ours can then use host networking, and a
+# host-network pod shares its node's address, which a NetworkPolicy cannot refuse (a pod cannot block its resident node).
+#
+# NetworkPolicies select these by kubernetes.io/metadata.name, which the API server sets itself: a label someone could
+# add to another namespace would be a way in.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: finapp
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.34
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.34
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: v1.34
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: finapp-edge
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.34
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.34
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: v1.34
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: finapp-observability
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.34
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.34
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: v1.34
