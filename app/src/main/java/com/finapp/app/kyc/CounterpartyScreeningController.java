@@ -1,6 +1,7 @@
 package com.finapp.app.kyc;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
  * nothing here tells a customer a counterparty was screened (tipping-off).
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/kyc/counterparty-screenings", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class CounterpartyScreeningController {

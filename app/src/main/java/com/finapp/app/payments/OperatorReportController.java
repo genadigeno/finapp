@@ -1,5 +1,6 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import lombok.NonNull;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code operationId} rule, {@code OpenApiContractTest}).
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/reports", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class OperatorReportController {

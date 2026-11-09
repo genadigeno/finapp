@@ -1,0 +1,66 @@
+# External Secrets Operator's Helm values (P15-TSK-018, ADR-0123, C2: Helm only to install pinned third-party components).
+# Installed into its own namespace, external-secrets, by the delivery the GitOps task builds; the chart is version
+# ESO_VERSION of infra/scanner-pins.sh without its leading v, and the image below is that pin's digest
+# (SecretInventoryIsCompleteTest holds the two equal, and the weekly pin job watches the tag).
+#
+# THE ONE NON-HUMAN PRINCIPAL THAT WRITES A SECRET, and only in one namespace. scopedRBAC makes every rule below a Role in
+# finapp rather than a ClusterRole; the webhook and the certificate controller, which need cluster-wide rights to manage
+# their configuration, are off, and with them the conversion webhook, which no API version here needs. The aggregation
+# into the cluster's view, edit and admin roles is off too: it would hand a person who holds edit the right to rewrite an
+# ExternalSecret, which is to say to point a pod at another value. This chart rendered with these values was read once,
+# by hand, against the version pinned (SECRET_MANAGEMENT.md section 3.5 says what was seen); nothing has run on a cluster.
+fullnameOverride: external-secrets
+
+image:
+  repository: ghcr.io/external-secrets/external-secrets
+  tag: v2.14.0@sha256:10608eb53e636e744903d5f3657a4d9c44e28d9d9c181b73e07bc7dd2e6884dc
+
+# Two replicas, one reconciling at a time. A Secret is written through the API server's optimistic concurrency, so the
+# election decides who does the work and nothing depends on it for correctness; the second replica is for availability.
+replicaCount: 2
+leaderElect: true
+
+scopedNamespace: finapp
+scopedRBAC: true
+
+# Nothing cluster-wide, and nothing that writes to the store: this platform reads from it.
+processClusterExternalSecret: false
+processClusterPushSecret: false
+processClusterStore: false
+processClusterGenerator: false
+processPushSecret: false
+
+genericTargets:
+  enabled: false
+
+installCRDs: true
+crds:
+  createClusterExternalSecret: false
+  createClusterSecretStore: false
+  createClusterGenerator: false
+  createClusterPushSecret: false
+  createPushSecret: false
+  conversion:
+    enabled: false
+
+webhook:
+  create: false
+
+certController:
+  create: false
+
+rbac:
+  servicebindings:
+    create: false
+  aggregateToView: false
+  aggregateToEdit: false
+  aggregateToAdmin: false
+
+# Reference figures, as in deploy/base: memory request = limit.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

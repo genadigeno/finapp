@@ -250,8 +250,17 @@ public final class UnderwritingCases {
         }
         record(unitOfWork, actor, CreditAuditAction.REVIEW_CASES_READ, QUEUE_TARGET,
                 status.map(Enum::name).orElse("ALL"), Optional.empty(), AuditOutcome.SUCCEEDED, correlation,
-                "review queue read: " + queued.size() + " case(s), status " + status.map(Enum::name).orElse("any"));
+                queueSummary(queued.stream().map(served -> served.reviewCase().id()).toList(), status));
         return queued;
+    }
+
+    /**
+     * What a queue read's record says (`P15-TSK-039`): how many, of which status, and which ones - each case's id, at most
+     * {@link #QUEUE_LIMIT} of them, so an investigator can say who read which case and when. No applicant, no figure.
+     */
+    static String queueSummary(List<UnderwritingCaseId> served, Optional<UnderwritingCaseStatus> status) {
+        return "review queue read: " + served.size() + " case(s), status " + status.map(Enum::name).orElse("any")
+                + ", served " + served.stream().map(id -> id.value().toString()).toList();
     }
 
     // ------------------------------------------------------------------ assign and release

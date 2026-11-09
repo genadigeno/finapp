@@ -103,6 +103,13 @@ final class DisputeActs {
         }
     }
 
+    /** What an audit summary adds for the actor's key: the merchant's API key by its public id, or nothing. */
+    static String keyNote(DisputeActor actor) {
+        return actor instanceof DisputeActor.Counterparty counterparty
+                ? counterparty.keyId().map(key -> ", apiKey=" + key).orElse("")
+                : "";
+    }
+
     /** An operator's act carries its reason ({@code INV-AUD-03}) — the boundary validates it too. */
     static java.util.Optional<String> reasonOf(DisputeActor actor) {
         return switch (actor) {

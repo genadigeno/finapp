@@ -310,7 +310,8 @@ class CorridorAdministrationEndpointDatabaseTest {
         }
         HttpResponse<String> session = post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, someKey());
-        return field(session.body(), "sessionToken");
+        String token = field(session.body(), "sessionToken");
+        return role == null ? token : com.finapp.app.session.OperatorStepUp.elevated(token, this::post);
     }
 
     private HttpResponse<String> get(String path, String bearer) throws Exception {
@@ -325,7 +326,7 @@ class CorridorAdministrationEndpointDatabaseTest {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body));
+                .POST(body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (bearer != null) {
             request.header("Authorization", "Bearer " + bearer);
         }

@@ -177,7 +177,7 @@ class ConfinedCredentialVariablesTest {
     }
 
     /** Every {@code @Value} expression on a field, constructor or method parameter in {@code app}. */
-    private static List<String> valueExpressions() {
+    static List<String> valueExpressions() {
         List<String> expressions = new ArrayList<>();
         for (Class<?> type : applicationClasses()) {
             for (Field field : type.getDeclaredFields()) {
@@ -206,7 +206,7 @@ class ConfinedCredentialVariablesTest {
      * source, so a test's own example spec is not mistaken for a credential - loaded and never
      * initialised, because a test class's static initialiser may start a container.
      */
-    private static List<Class<?>> applicationClasses() {
+    static List<Class<?>> applicationClasses() {
         ClassPathScanningCandidateComponentProvider scanner =
                 new ClassPathScanningCandidateComponentProvider(false);
         scanner.addIncludeFilter((reader, factory) -> true);

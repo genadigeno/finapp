@@ -1,6 +1,7 @@
 package com.finapp.app.credit;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code CREDIT_POLICY_OFFICER}, and every act keyed per principal.
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/credit/scorecards", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class ScorecardAdministrationController {

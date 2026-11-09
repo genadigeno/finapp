@@ -1,10 +1,8 @@
 package com.finapp.app.lending;
 
-import com.finapp.identity.AssuranceLevel;
-import com.finapp.identity.IdentityErrorCode;
+import com.finapp.identity.ConditionalStepUp;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
-import com.finapp.identity.MfaFactorType;
 import com.finapp.identity.Session;
 import com.finapp.lending.LendingErrorCode;
 import com.finapp.lending.LoanOffer;
@@ -200,11 +198,8 @@ public final class LoanOfferDesk {
 
     /** A decline's assurance: the platform's conditional step-up. */
     private void requireConditionalAssurance(Connection unitOfWork, Session current) {
-        boolean hasFactor = enrolments.findActive(unitOfWork, current.identityId(), MfaFactorType.TOTP).isPresent();
-        if (hasFactor && !current.assurance().atLeast(AssuranceLevel.MULTI_FACTOR)) {
-            throw new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED,
-                    "A loan offer decline from an MFA-enrolled identity requires a MULTI_FACTOR session");
-        }
+        ConditionalStepUp.require(enrolments, unitOfWork, current,
+                "A loan offer decline from an MFA-enrolled identity requires a MULTI_FACTOR session");
     }
 
     private static LoanOfferId offerId(String raw) {

@@ -1,10 +1,10 @@
 package com.finapp.app.lending;
 
 import com.finapp.identity.AssuranceLevel;
+import com.finapp.identity.ConditionalStepUp;
 import com.finapp.identity.IdentityErrorCode;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
-import com.finapp.identity.MfaFactorType;
 import com.finapp.identity.Session;
 import com.finapp.lending.AllocationAnomaly;
 import com.finapp.lending.LendingErrorCode;
@@ -269,11 +269,8 @@ public final class LoanPayoffDesk {
 
     /** The platform's conditional step-up (A19): an enrolled customer quotes from a {@code MULTI_FACTOR} session. */
     private void requireConditionalAssurance(Connection unitOfWork, Session current) {
-        boolean hasFactor = enrolments.findActive(unitOfWork, current.identityId(), MfaFactorType.TOTP).isPresent();
-        if (hasFactor && !current.assurance().atLeast(AssuranceLevel.MULTI_FACTOR)) {
-            throw new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED,
-                    "A payoff quote from an MFA-enrolled identity requires a MULTI_FACTOR session");
-        }
+        ConditionalStepUp.require(enrolments, unitOfWork, current,
+                "A payoff quote from an MFA-enrolled identity requires a MULTI_FACTOR session");
     }
 
     /** A payoff's assurance (A19): a {@code MULTI_FACTOR} session, always - enrolled or not. */

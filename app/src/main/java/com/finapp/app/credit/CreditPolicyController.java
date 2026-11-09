@@ -1,6 +1,7 @@
 package com.finapp.app.credit;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -32,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code CONFIDENTIAL} and leave the platform only here, on the operator surface.
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/credit/policies", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class CreditPolicyController {

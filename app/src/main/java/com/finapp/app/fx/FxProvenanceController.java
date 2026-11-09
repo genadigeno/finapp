@@ -1,5 +1,6 @@
 package com.finapp.app.fx;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import lombok.NonNull;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
  * serving; nothing here moves a value.
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/fx", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class FxProvenanceController {

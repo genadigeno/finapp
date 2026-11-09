@@ -184,6 +184,7 @@ class IdentityAdministrationDatabaseTest {
     void aLedgerOperatorIsRefusedByBothAdministrativeEndpoints() throws Exception {
         IdentityId admin = givenAnAdministrator();
         IdentityId operator = givenAnIdentity();
+        givenAConfirmedFactorFor(operator); // LEDGER_OPERATOR can pay a merchant out: it needs one (P15-TSK-039).
 
         // Granted through the REAL endpoint (the P2-TSK-004 reviewer precedent), so the whole
         // path is exercised: the request enum admits the new value at the boundary, V014's
@@ -643,6 +644,106 @@ class IdentityAdministrationDatabaseTest {
         return "/identities/" + subject.value() + "/roles";
     }
 
+    @Test
+    @DisplayName("a role that can redirect a merchant's money is refused 409 without a factor, nothing granted, the refusal"
+            + " on the record; granted once a factor is confirmed (P15-TSK-039)")
+    void aMoneyRedirectingRoleNeedsAFactor() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        IdentityId subject = givenAnIdentity();
+        String session = givenASessionFor(admin);
+
+        HttpResponse<String> refused = post(rolesOf(subject), session, ledgerOperatorRole());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("identity.FactorRequiredForRole");
+        assertThat(liveHoldingsOf(subject)).isZero();
+        assertThat(auditOf("identity.RoleAssigned", subject, admin)).as("no grant was recorded").isEmpty();
+        assertThat(doorRecordsOf(admin, "identity.FactorRequiredForRole"))
+                .as("the refused grant is on the record, in its own transaction")
+                .isEqualTo(1);
+
+        givenAConfirmedFactorFor(subject);
+        assertThat(post(rolesOf(subject), session, ledgerOperatorRole()).statusCode()).isEqualTo(204);
+        assertThat(liveHoldingsOf(subject)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the check names a standing holding with no factor, and stops naming it once the holder enrols (P15-TSK-039)")
+    void theCheckNamesStandingHoldings() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        IdentityId standing = givenAnIdentity();
+        grantBypassingTheRule(standing, admin, RoleName.LEDGER_OPERATOR);
+        IdentityId notNamed = givenAnIdentity();
+        grantBypassingTheRule(notNamed, admin, RoleName.KYC_REVIEWER);
+        String session = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
+
+        assertThat(get("/operator/access-review/factorless-holdings", givenASessionFor(admin)).statusCode())
+                .as("a list of money-role holders with no second factor is not served on a password alone")
+                .isEqualTo(403);
+        String before = get("/operator/access-review/factorless-holdings", session).body();
+        assertThat(before).contains(standing.value().toString()).contains("LEDGER_OPERATOR");
+        assertThat(before).doesNotContain(notNamed.value().toString());
+
+        givenAConfirmedFactorFor(standing);
+        assertThat(get("/operator/access-review/factorless-holdings", session).body())
+                .doesNotContain(standing.value().toString());
+    }
+
+    private static long liveHoldingsOf(IdentityId subject) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count = app.prepareStatement(
+                        "SELECT count(*) FROM identity.role_assignment WHERE identity_id = ? AND revoked_at IS NULL")) {
+            count.setObject(1, subject.value());
+            try (ResultSet rows = count.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        }
+    }
+
+    private static long doorRecordsOf(IdentityId actor, String code) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count = app.prepareStatement(
+                        "SELECT count(*) FROM platform.audit_record WHERE operation = 'door.ActRefused' AND actor_id = ?"
+                                + " AND outcome = 'DENIED' AND change_summary LIKE ?")) {
+            count.setString(1, actor.value().toString());
+            count.setString(2, "code=" + code + ",%");
+            try (ResultSet rows = count.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        }
+    }
+
+    /** A holding that predates the rule: written around the door, as every such row was. */
+    private void grantBypassingTheRule(IdentityId subject, IdentityId grantor, RoleName role) throws SQLException {
+        CorrelationContext.Scope correlation =
+                CorrelationContext.enter(Correlation.startingWith(CorrelationId.of(UUID.randomUUID().toString())));
+        SecurityContext.Scope actor = SecurityContext.enterSystem();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            authorization.assign(app, subject, role, grantor, "standing since before the rule");
+            app.commit();
+        } finally {
+            actor.close();
+            correlation.close();
+        }
+    }
+
+    /** A confirmed factor, written directly: this suite is about the grant, not enrolment. */
+    private static void givenAConfirmedFactorFor(IdentityId identity) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement insert = app.prepareStatement(
+                        "INSERT INTO identity.mfa_enrolment (id, identity_id, type, secret_ciphertext, secret_nonce, key_version,"
+                                + " algorithm, digits, period_seconds, status, created_at, confirmed_at)"
+                                + " VALUES (?, ?, 'TOTP', ?, ?, 1, 'SHA1', 6, 30, 'ACTIVE', now(), now())")) {
+            insert.setObject(1, IDS.next());
+            insert.setObject(2, identity.value());
+            insert.setBytes(3, new byte[32]); // never decrypted: V008 sizes it, 16 to 1024
+            insert.setBytes(4, new byte[12]); // a 96-bit nonce, per V008
+            insert.executeUpdate();
+        }
+    }
+
     private static String adminRole() {
         return "{\"role\":\"ADMINISTRATOR\",\"reason\":\"offboarding, ticket OPS-4417\"}";
     }
@@ -833,6 +934,10 @@ class IdentityAdministrationDatabaseTest {
     }
 
     private String givenASessionFor(IdentityId identity) throws SQLException {
+        return givenASessionAt(identity, AssuranceLevel.PASSWORD);
+    }
+
+    private String givenASessionAt(IdentityId identity, AssuranceLevel assurance) throws SQLException {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
         String plaintext = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
@@ -842,7 +947,7 @@ class IdentityAdministrationDatabaseTest {
                         CLOCK,
                         identity,
                         SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD,
+                        assurance,
                         SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);

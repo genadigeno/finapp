@@ -109,7 +109,10 @@ public final class DisputeResponseOutcomes {
                         RESPONSE_TARGET_TYPE,
                         applied.id().value().toString(),
                         Optional.empty(),
-                        AuditOutcome.SUCCEEDED,
+                        // The PSP's refusal of the response is a failed act, and says so (`P15-TSK-039`).
+                        applied.status() == DisputeResponseStatus.FAILED
+                                ? AuditOutcome.FAILED
+                                : AuditOutcome.SUCCEEDED,
                         correlation.correlationId(),
                         Optional.of(
                                 "dispute=" + applied.dispute()

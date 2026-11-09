@@ -1,5 +1,6 @@
 package com.finapp.app.fx;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import lombok.NonNull;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
  * serving, each holding {@code FX_INVESTIGATE}. Handler names are distinctive (the springdoc {@code operationId} rule).
  */
 @RestController
+@RecordsRefusals
 @RequiredArgsConstructor
 public class Phase9ReportController {
 

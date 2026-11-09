@@ -352,7 +352,8 @@ public final class DisputeResponses {
                                         + ", response=" + response.id()
                                         + ", kind=" + kind
                                         + ", documents=" + carried.size()
-                                        + ", reference=" + response.reference().value())));
+                                        + ", reference=" + response.reference().value()
+                                        + DisputeActs.keyNote(actor))));
         outcomes.transmitted(uow, response, correlation);
         // The birth permit, as the database stored it: the value a refused connection on this
         // first send is later judged against.

@@ -7,11 +7,9 @@ import com.finapp.crossborder.BeneficiaryVocabulary;
 import com.finapp.crossborder.CorridorDirectory;
 import com.finapp.crossborder.CrossborderErrorCode;
 import com.finapp.crossborder.TransactionRunner;
-import com.finapp.identity.AssuranceLevel;
-import com.finapp.identity.IdentityErrorCode;
+import com.finapp.identity.ConditionalStepUp;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
-import com.finapp.identity.MfaFactorType;
 import com.finapp.identity.Session;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
@@ -229,11 +227,8 @@ public final class CrossBorderBeneficiaryDesk {
 
     /** {@code MULTI_FACTOR} exactly of an identity with a factor - {@code BeneficiaryService}'s structural rule. */
     private void requireConditionalAssurance(Connection unitOfWork, Session current) {
-        boolean hasFactor = enrolments.findActive(unitOfWork, current.identityId(), MfaFactorType.TOTP).isPresent();
-        if (hasFactor && !current.assurance().atLeast(AssuranceLevel.MULTI_FACTOR)) {
-            throw new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED,
-                    "A beneficiary registration from an MFA-enrolled identity requires a MULTI_FACTOR session");
-        }
+        ConditionalStepUp.require(enrolments, unitOfWork, current,
+                "A beneficiary registration from an MFA-enrolled identity requires a MULTI_FACTOR session");
     }
 
     private CrossBorderBeneficiaryView replayed(Session current, StoredResponse response) {

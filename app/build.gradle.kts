@@ -730,7 +730,7 @@ tasks.withType<Test>().configureEach {
     inputs.files(
         rootProject.fileTree(rootProject.layout.projectDirectory) {
             include("infra/**", "deploy/**", ".github/**", "**/Dockerfile*", "*/build.gradle.kts", "settings.gradle.kts",
-                "migrator/src/main/resources/**")
+                "migrator/src/main/resources/**", "migrator/src/main/java/**")
             exclude("**/build/**", "**/.gradle/**", ".git/**", ".claude/**", "**/node_modules/**")
         }
     )

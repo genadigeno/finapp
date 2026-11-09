@@ -1,5 +1,6 @@
 package com.finapp.app.reconciliation;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.audit.AuditId;
@@ -38,6 +39,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code operationId} rule).
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(
         path = "/operator/reports/reconciliation",
         produces = MediaType.APPLICATION_JSON_VALUE)

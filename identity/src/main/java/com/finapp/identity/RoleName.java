@@ -401,6 +401,17 @@ public enum RoleName {
         return permissions;
     }
 
+    /**
+     * Whether this role can redirect a merchant's money, so may not be granted to an identity with no enrolled factor
+     * (`P15-TSK-039`; {@code PRIVILEGED_ACCESS_REVIEW.md} §6). Decided from what the role grants, so a permission moved to
+     * another role takes the rule with it: proposing a payout destination, approving one, paying out.
+     */
+    public boolean requiresEnrolledFactor() {
+        return permissions.contains(PermissionName.MERCHANT_ADMINISTER)
+                || permissions.contains(PermissionName.PAYOUT_DESTINATION_APPROVE)
+                || permissions.contains(PermissionName.MERCHANT_PAYOUT);
+    }
+
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

@@ -4,6 +4,7 @@ import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
+import com.finapp.merchant.AuthenticatedMerchant;
 import com.finapp.merchant.MerchantId;
 import com.finapp.payments.Dispute;
 import com.finapp.payments.DisputeActor;
@@ -325,7 +326,7 @@ public class DisputeOperations {
 
     /** The merchant attaches a document to one of its disputes. */
     public EvidenceView uploadAsMerchant(
-            MerchantId merchant, String rawDisputeId, DisputeEvidenceUploadRequest body) {
+            AuthenticatedMerchant merchant, String rawDisputeId, DisputeEvidenceUploadRequest body) {
         DisputeId id = parsedDisputeOrAbsent(rawDisputeId);
         return upload(counterparty(merchant), id, body.kind(), body.contentType(), body.content());
     }
@@ -344,7 +345,7 @@ public class DisputeOperations {
 
     /** One of the merchant's documents with its content — on the record. */
     public EvidenceContentView readEvidenceAsMerchant(
-            MerchantId merchant, String rawDisputeId, String rawEvidenceId) {
+            AuthenticatedMerchant merchant, String rawDisputeId, String rawEvidenceId) {
         return readEvidence(counterparty(merchant), rawDisputeId, rawEvidenceId);
     }
 
@@ -358,7 +359,7 @@ public class DisputeOperations {
 
     /** The merchant answers one of its disputes — keyed per merchant. */
     public ResponseAnswer respondAsMerchant(
-            MerchantId merchant,
+            AuthenticatedMerchant merchant,
             String rawDisputeId,
             DisputeResponseKind kind,
             String idempotencyKey) {
@@ -450,9 +451,11 @@ public class DisputeOperations {
 
     // -----------------------------------------------------------------
 
-    private DisputeActor.Counterparty counterparty(MerchantId merchant) {
+    /** The acting merchant over its key: its payables, and which key - by public id - for the record (`P15-TSK-039`). */
+    private DisputeActor.Counterparty counterparty(AuthenticatedMerchant merchant) {
         return new DisputeActor.Counterparty(
-                inOneTransaction(unitOfWork -> payablesOf(unitOfWork, merchant)));
+                inOneTransaction(unitOfWork -> payablesOf(unitOfWork, merchant.merchantId())),
+                Optional.of(merchant.keyId().value().toString()));
     }
 
     /**

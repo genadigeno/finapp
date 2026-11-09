@@ -1,6 +1,7 @@
 package com.finapp.app.credit;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  * attributes and the rules - never raw evidence, and every serving is audited.
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/credit/review-cases", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class UnderwritingCaseController {

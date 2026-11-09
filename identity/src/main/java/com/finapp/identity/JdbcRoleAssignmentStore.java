@@ -48,6 +48,34 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
     }
 
     @Override
+    public java.util.List<FactorlessHolding> holdingsWithoutFactor(Connection unitOfWork, Set<RoleName> roles, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(roles, "roles must not be null");
+        String sql =
+                "SELECT holding.identity_id, holding.role_name, holding.assigned_at FROM " + TABLE + " holding"
+                        + " WHERE holding.revoked_at IS NULL AND holding.role_name = ANY (?)"
+                        + " AND NOT EXISTS (SELECT 1 FROM identity.mfa_enrolment factor"
+                        + " WHERE factor.identity_id = holding.identity_id AND factor.status = 'ACTIVE')"
+                        + " ORDER BY holding.assigned_at, holding.identity_id, holding.role_name LIMIT ?";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setArray(1, unitOfWork.createArrayOf("text", roles.stream().map(RoleName::name).toArray()));
+            select.setInt(2, limit);
+            try (ResultSet rows = select.executeQuery()) {
+                java.util.List<FactorlessHolding> found = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    found.add(new FactorlessHolding(
+                            IdentityId.of(rows.getObject("identity_id", java.util.UUID.class)),
+                            RoleName.valueOf(rows.getString("role_name")),
+                            rows.getTimestamp("assigned_at").toInstant()));
+                }
+                return java.util.List.copyOf(found);
+            }
+        } catch (SQLException e) {
+            throw new IdentityStorageException(DatabaseFailure.describe("Could not read the factorless holdings", e));
+        }
+    }
+
+    @Override
     public boolean assign(
             Connection unitOfWork,
             IdentityId identityId,

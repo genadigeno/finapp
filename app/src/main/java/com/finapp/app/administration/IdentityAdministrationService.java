@@ -67,6 +67,11 @@ public class IdentityAdministrationService {
                 unitOfWork -> administration.assignRole(unitOfWork, subject, role, actor, reason));
     }
 
+    /** The check of standing holdings without a factor (`P15-TSK-039`), read and recorded in one transaction. */
+    public IdentityAdministration.FactorlessHoldings factorlessHoldings(int mostServed) {
+        return inOneTransaction(unitOfWork -> administration.factorlessHoldings(unitOfWork, mostServed));
+    }
+
     private <T> T inOneTransaction(Function<Connection, T> command) {
         return transactions.execute(
                 status -> {

@@ -12,6 +12,7 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -151,6 +152,15 @@ public final class Authorization {
                 AuditOutcome.FAILED,
                 "operation=" + operation,
                 Optional.empty());
+    }
+
+    /** The live holdings of a role that needs a factor whose holder has none (`P15-TSK-039`). */
+    public List<RoleAssignmentStore.FactorlessHolding> holdingsWithoutFactor(Connection unitOfWork, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Set<RoleName> needingAFactor = java.util.Arrays.stream(RoleName.values())
+                .filter(RoleName::requiresEnrolledFactor)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        return assignments.holdingsWithoutFactor(unitOfWork, needingAFactor, limit);
     }
 
     /**

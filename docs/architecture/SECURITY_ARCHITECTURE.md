@@ -169,7 +169,7 @@ boundary and never stored. Raw bank details are held at the provider (ADR-0056).
 | Concern | Position today | Owner |
 |---|---|---|
 | Key rotation | No key ring. One active key per instance, so a rotation would strand every earlier row | `P15-TSK-019`: key rings, one active version, retained versions decrypting by the stamped version |
-| Key management | Keys are environment values. There is no KMS, no wrapping and no managed store | `P15-TSK-016` (KMS keys per purpose), `-018` (delivery from the secret store), `-020` (rotation rehearsed) |
+| Key management | Keys are environment values. There is no KMS and no wrapping, and no store exists yet; their delivery from one is written as manifests, never run (`SECRET_MANAGEMENT.md` §3.5) | `P15-TSK-016` (KMS keys per purpose and the store's entries), `-020` (the operator and rotation rehearsed) |
 | Associated data | Three classes bind it. **Five bind none** (`SecretCipher`, `DocumentCipher`, `EvidenceCipher`, `PayoutEvidenceCipher`, `FxEvidenceCipher`), so a ciphertext moved to another row decrypts cleanly | `X-TSK-010`, which names the first four; the fifth is routed onto it |
 | Every other column | Plaintext in PostgreSQL. Restricted columns outside the table above rely on the database's at-rest protection: configured as a volume encrypted under a customer-managed KMS key (`infra/terraform/modules/postgres`, `P15-TSK-015`), never applied, so nothing protects them yet | The key itself is `P15-TSK-016`'s |
 | Backups | None exist. RDS encrypts its automated backups and snapshots with the volume's key and offers no other, so a backup under a separate key is only a copy crossing an account or region; the module requires that copy's destination and none exists (`P15-TSK-015`) | `THREAT_MODEL.md` §6 item 23; the local rehearsal `-030` |
@@ -337,7 +337,7 @@ this document silent on Phase 6.)*
   not theirs, whether it is open, mid-payment or paid (mid-payment since the Phase 6 → 7
   transition, which found the payments surface's own `404` wording leaking the state).
 - **A payout destination never enters as bank details.** The grant exchange keeps them at the
-  provider, and a change needs two operators, a step-up where a factor is enrolled, and a
+  provider, and a change needs two operators, each on a `MULTI_FACTOR` session, and a
   cooling-off before money follows it (ADR-0056, `INV-AUD-04`).
 
 A response that carries either credential renders it masked in `toString`: the exemptions in
