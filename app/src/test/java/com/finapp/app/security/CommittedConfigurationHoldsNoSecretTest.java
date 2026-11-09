@@ -277,14 +277,7 @@ class CommittedConfigurationHoldsNoSecretTest {
                 "p.properties | sasl.jaas.config=ScramLoginModule required username=finapp password=hunter2;",
                 "p.yaml | sasl.jaas.config: ScramLoginModule required username=finapp password=hunter2;",
                 // P15-TSK-009: the Kubernetes switch below is exempt for its two values and nothing else.
-                "p.yaml | automountServiceAccountToken: hunter2",
-                // P15-TSK-018: the operator's field names an environment variable, and nothing else is exempt.
-                "p.yaml | secretKey: hunter2",
-                "p.yaml | secretKey: finapp_mfa_key",
-                "p.yaml | createClusterSecretStore: hunter2",
-                // P15-TSK-018: the image scan's plant names are exempt beside their own rule alone.
-                "p.sh | refuses secret-in-layer \"hunter2\"",
-                "p.properties | provider.token=hunter2"
+                "p.yaml | automountServiceAccountToken: hunter2"
             })
     void credentialShapesAreRejected(String fileName, String content) {
         assertThat(offencesIn(content, fileName.endsWith(".kts")))
@@ -313,13 +306,6 @@ class CommittedConfigurationHoldsNoSecretTest {
                 "p.yaml | idempotencyKey: abc123",
                 // P15-TSK-009: Kubernetes' field names a token and holds a boolean.
                 "p.yaml | automountServiceAccountToken: false",
-                // P15-TSK-018: External Secrets Operator's field names the variable it writes.
-                "p.yaml | secretKey: FINAPP_MFA_KEY",
-                "p.yaml | - secretKey: FINAPP_DB_APP_PASSWORD",
-                "p.yaml | createClusterSecretStore: false",
-                "p.yaml | processPushSecret: false",
-                // P15-TSK-018: a plant of infra/scripts/image-scan.sh and the scanner rule that must refuse it.
-                "p.sh | refuses secret-in-layer \"github-pat\"",
                 // P15-TSK-026: the JAAS line with its credential externalised, and the username,
                 // which is not a credential.
                 "p.properties | sasl.jaas.config=ScramLoginModule required username=\"finapp\" password=\"${FINAPP_KAFKA_SASL_PASSWORD}\";",
@@ -327,6 +313,46 @@ class CommittedConfigurationHoldsNoSecretTest {
                 "p.properties | sasl.jaas.config=ScramLoginModule required username=finapp password=${FINAPP_KAFKA_SASL_PASSWORD};"
             })
     void innocentShapesAreAccepted(String fileName, String content) {
+        assertThat(offencesIn(content, fileName.endsWith(".kts")))
+                .as("this shape must NOT be reported: %s", content)
+                .isEmpty();
+    }
+
+    // Beside the two tables above, not in them: a parameterized test's table this long is at the edge of what
+    // ThreatModelIsCompleteTest will read as a test, and T9 cites the first of them.
+    @ParameterizedTest
+    @DisplayName("an exemption is for exactly what it names: a credential under the same key is still reported")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                // P15-TSK-018: the operator's field names an environment variable, and nothing else is exempt.
+                "p.yaml | secretKey: hunter2",
+                "p.yaml | secretKey: finapp_mfa_key",
+                "p.yaml | createClusterSecretStore: hunter2",
+                // P15-TSK-018: the image scan's plant names are exempt beside their own rule alone.
+                "p.sh | refuses secret-in-layer \"hunter2\"",
+                "p.properties | provider.token=hunter2"
+            })
+    void theExemptionsAreExact(String fileName, String content) {
+        assertThat(offencesIn(content, fileName.endsWith(".kts")))
+                .as("this shape must be reported: %s", content)
+                .isNotEmpty();
+    }
+
+    @ParameterizedTest
+    @DisplayName("what an exemption names is left alone")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                // P15-TSK-018: External Secrets Operator's field names the variable it writes.
+                "p.yaml | secretKey: FINAPP_MFA_KEY",
+                "p.yaml | - secretKey: FINAPP_DB_APP_PASSWORD",
+                "p.yaml | createClusterSecretStore: false",
+                "p.yaml | processPushSecret: false",
+                // P15-TSK-018: a plant of infra/scripts/image-scan.sh and the scanner rule that must refuse it.
+                "p.sh | refuses secret-in-layer \"github-pat\""
+            })
+    void whatAnExemptionNamesIsAccepted(String fileName, String content) {
         assertThat(offencesIn(content, fileName.endsWith(".kts")))
                 .as("this shape must NOT be reported: %s", content)
                 .isEmpty();
