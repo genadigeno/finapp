@@ -58,6 +58,20 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
     /** SQLState 23505. The arbiter's answer, not a failure. */
     private static final String UNIQUE_VIOLATION = "23505";
 
+    /**
+     * A version's birth, its start floored at the latest immediately-effective lower-numbered version's of the same schedule
+     * (P15-TSK-037; the routing version's rule): an immediate version is stamped by its creating instance's clock, so two minted
+     * within a step or skew of one another could read reversed and the later (the higher number) be shadowed by the earlier for
+     * good, a stale rate pricing every payment after it - in force is the greatest {@code effective_from}. The minting arbiter
+     * admits a number only after every lower number of the schedule committed, so this statement's snapshot sees them all. A
+     * scheduled version's start is a declaration and stands. The returned object carries the instant the caller asked for; the
+     * row carries the floor (never above the step), and the row is what is read back and pinned.
+     */
+    static final String INSERT_VERSION = "INSERT INTO merchant.fee_schedule_version (" + VERSION_COLUMNS + ")"
+            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GREATEST(CAST(? AS timestamptz),"
+            + " (SELECT max(v.effective_from) FROM merchant.fee_schedule_version v WHERE v.fee_schedule_id = ? AND v.version < ?"
+            + " AND v.effective_from = v.created_at)), ?, ?)";
+
     // ----------------------------------------------------------------- schedules
 
     @Override
@@ -116,10 +130,7 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
             throw new MerchantStorageException(
                     DatabaseFailure.describe("preparing a fee schedule version insert", failure));
         }
-        try (PreparedStatement insert =
-                unitOfWork.prepareStatement(
-                        "INSERT INTO merchant.fee_schedule_version (" + VERSION_COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+        try (PreparedStatement insert = unitOfWork.prepareStatement(INSERT_VERSION)) {
             insert.setObject(1, version.id().value());
             insert.setObject(2, version.scheduleId().value());
             insert.setInt(3, version.version());
@@ -130,8 +141,10 @@ public final class JdbcFeeScheduleStore implements FeeScheduleStore<Connection> 
             insert.setString(8, version.roundingPolicy().policyName());
             insert.setString(9, version.refundFeePolicy().name());
             insert.setTimestamp(10, Timestamp.from(version.effectiveFrom()));
-            insert.setTimestamp(11, Timestamp.from(version.createdAt()));
-            insert.setString(12, version.createdBy());
+            insert.setObject(11, version.scheduleId().value());
+            insert.setInt(12, version.version());
+            insert.setTimestamp(13, Timestamp.from(version.createdAt()));
+            insert.setString(14, version.createdBy());
             insert.executeUpdate();
             unitOfWork.releaseSavepoint(attempt);
             return true;

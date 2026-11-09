@@ -29,6 +29,15 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                     + " end_to_end_reference, authorization_handle, scheme_reference,"
                     + " settlement_cycle, last_dispatched_at";
 
+    /**
+     * The intent's attempt (P15-TSK-037): the newest by {@code attempt_order}, a sequence drawn at the insert (payments {@code
+     * V038}) - an attempt is inserted after the intent's conditional transition, so draws a number after the previous
+     * attempt of that intent committed. Today one attempt per intent ever exists (the intent's one-way machine); the schema
+     * admits more, and a row from before {@code V038} has no order and ranks below every row that does, by its stamp as before.
+     */
+    static final String FOR_INTENT = "SELECT " + COLUMNS + " FROM payments.payment_attempt"
+            + " WHERE intent_id = ? ORDER BY attempt_order DESC NULLS LAST, created_at DESC, id DESC LIMIT 1";
+
     /** {@link #COLUMNS}, each qualified as {@code a.<column>} — for the joined reads. */
     private static String qualified() {
         return java.util.Arrays.stream(COLUMNS.split(", "))
@@ -116,9 +125,7 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         Objects.requireNonNull(intent, "intent must not be null");
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT " + COLUMNS + " FROM payments.payment_attempt"
-                                + " WHERE intent_id = ?"
-                                + " ORDER BY created_at DESC, id DESC LIMIT 1")) {
+                        FOR_INTENT)) {
             read.setObject(1, intent.value());
             try (ResultSet row = read.executeQuery()) {
                 return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();

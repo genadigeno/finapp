@@ -46,6 +46,25 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
             "decision_id, step_index, rail, verdict, rejection, rail_available,"
                     + " descriptor_version";
 
+    /**
+     * A version's birth, its start floored at the latest immediately-effective lower-numbered version's (P15-TSK-037): an
+     * immediate version is stamped by its creating instance's clock, so two minted within a step or skew of one another
+     * could read reversed and the later (the higher number) be shadowed by the earlier for good - in force is the greatest
+     * {@code effective_from}. The minting arbiter admits a number only after every lower number committed, so this statement's
+     * snapshot sees them all. A scheduled version's start is a declaration and stands. The returned object carries the instant
+     * the caller asked for; the row carries the floor (never above the step), and the row is what is read back.
+     */
+    static final String INSERT_VERSION = "INSERT INTO payments.routing_policy_version (" + VERSION_COLUMNS + ")"
+            + " VALUES (?, ?, GREATEST(CAST(? AS timestamptz), (SELECT max(v.effective_from) FROM payments.routing_policy_version v"
+            + " WHERE v.version < ? AND v.effective_from = v.created_at)), ?, ?, ?)";
+
+    /**
+     * The decision a payment was routed by: the chosen one first, named by {@code routing_decision_one_chosen_per_*}
+     * (P15-TSK-037). The refused decisions that can accumulate before it are ordered by the stamp only for an operator's
+     * explanation ({@code RoutingAdministration.explain}), which branches on nothing.
+     */
+    static final String LATEST_DECISION_ORDER = " ORDER BY (chosen_rail IS NOT NULL) DESC, created_at DESC, id DESC LIMIT 1";
+
     // ----------------------------------------------------------------- policy versions
 
     @Override
@@ -75,16 +94,14 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                             "preparing a routing policy version insert", failure));
         }
         try {
-            try (PreparedStatement insert =
-                    unitOfWork.prepareStatement(
-                            "INSERT INTO payments.routing_policy_version (" + VERSION_COLUMNS
-                                    + ") VALUES (?, ?, ?, ?, ?, ?)")) {
+            try (PreparedStatement insert = unitOfWork.prepareStatement(INSERT_VERSION)) {
                 insert.setObject(1, version.id().value());
                 insert.setInt(2, version.version());
                 insert.setTimestamp(3, Timestamp.from(version.effectiveFrom()));
-                insert.setTimestamp(4, Timestamp.from(version.createdAt()));
-                insert.setString(5, version.createdBy());
-                insert.setString(6, version.reason());
+                insert.setInt(4, version.version());
+                insert.setTimestamp(5, Timestamp.from(version.createdAt()));
+                insert.setString(6, version.createdBy());
+                insert.setString(7, version.reason());
                 insert.executeUpdate();
             }
             insertRules(unitOfWork, version);
@@ -378,8 +395,7 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                 unitOfWork.prepareStatement(
                         "SELECT " + DECISION_COLUMNS + " FROM payments.routing_decision"
                                 + " WHERE " + subjectColumn + " = ?"
-                                + " ORDER BY created_at DESC, id DESC"
-                                + " LIMIT 1")) {
+                                + LATEST_DECISION_ORDER)) {
             read.setObject(1, subjectId);
             try (ResultSet row = read.executeQuery()) {
                 if (!row.next()) {
