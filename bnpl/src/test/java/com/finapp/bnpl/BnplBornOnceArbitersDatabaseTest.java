@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -144,5 +145,10 @@ class BnplBornOnceArbitersDatabaseTest {
         // P14-TSK-021: a proposal and its APPROVED decision with the entry it posted, by T-wof's real path - the row every V020
         // unique copies (the decision's three and the proposal's pinned target).
         new BnplWriteOffDatabaseTest().writtenOffWhole();
+    }
+
+    @AfterAll
+    static void putTheClockBack() {
+        BnplClockFrame.uninstall();
     }
 }
