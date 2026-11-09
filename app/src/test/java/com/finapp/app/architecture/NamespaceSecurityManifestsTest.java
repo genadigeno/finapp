@@ -126,11 +126,15 @@ class NamespaceSecurityManifestsTest {
     @DisplayName("of everything in finapp, only the application and the migrator hold an egress rule to the database's port")
     void onlyTheTwoWorkloadsHaveEgressToTheDatabase() {
         for (String overlay : OVERLAYS) {
+            List<Map<String, Object>> stream = rendered(overlay);
             Set<String> holders = new TreeSet<>();
-            for (Map<String, Object> policy : ofKind(rendered(overlay), "NetworkPolicy")) {
-                for (Map<String, Object> rule : list(map(policy, "spec"), "egress")) {
-                    if (list(rule, "ports").stream().anyMatch(port -> Integer.valueOf(5432).equals(port.get("port")))) {
-                        holders.add(String.valueOf(map(policy, "spec", "podSelector", "matchLabels").get(NAME_LABEL)));
+            for (String kind : List.of("Deployment", "Job", "StatefulSet")) {
+                for (Map<String, Object> workload : ofKind(stream, kind)) {
+                    String name = String.valueOf(map(workload, "spec", "template", "metadata", "labels").get(NAME_LABEL));
+                    for (Map<String, Object> rule : rules(stream, name, "egress")) {
+                        if (list(rule, "ports").stream().anyMatch(port -> Integer.valueOf(5432).equals(port.get("port")))) {
+                            holders.add(name);
+                        }
                     }
                 }
             }
@@ -214,8 +218,27 @@ class NamespaceSecurityManifestsTest {
                     assertThat(subject.get("kind")).as("%s", binding.get("metadata")).isEqualTo("Group");
                     assertThat(subject.get("name")).as("each group is its role's").isEqualTo(map(binding, "roleRef").get("name"));
                     assertThat(binding.get("kind")).as("a person's access is one namespace's").isEqualTo("RoleBinding");
+                    assertThat(namespaceOf(binding)).as("and this namespace's alone").isEqualTo("finapp");
                 }
             }
+        }
+    }
+
+    @Test
+    @DisplayName("every ServiceAccount a binding names is on the policy's list of controller accounts, and no ClusterRole asks to be merged into a built-in role")
+    void everyAccountBoundIsAListedController() {
+        List<Map<String, Object>> everything = everyCommittedDocument();
+        Set<String> listed = controllerAccounts();
+        for (Map<String, Object> binding : bindings(everything)) {
+            for (Map<String, Object> subject : list(binding, "subjects")) {
+                if ("ServiceAccount".equals(subject.get("kind"))) {
+                    assertThat(listed).as("%s", binding.get("metadata")).contains(subject.get("namespace") + "/" + subject.get("name"));
+                }
+            }
+        }
+        for (Map<String, Object> role : ofKind(everything, "ClusterRole")) {
+            Object labels = map(role, "metadata").get("labels");
+            assertThat(String.valueOf(labels)).as("%s", role.get("metadata")).doesNotContain("rbac.authorization.k8s.io/aggregate-to-");
         }
     }
 
@@ -251,7 +274,7 @@ class NamespaceSecurityManifestsTest {
     // ---------------------------------------------------------------------------------------------- quota and limits
 
     @Test
-    @DisplayName("each overlay's quota admits its worst moment: maxReplicas + 2 x maxSurge + 1 application pods, the migrator and anything test-only, in pods, CPU and memory")
+    @DisplayName("each overlay's quota is its worst moment, exactly: maxReplicas + 2 x maxSurge + 1 application pods, the migrator and anything test-only, in pods, CPU and memory")
     void theQuotaAdmitsTheWorstMomentOfARollout() {
         for (String overlay : OVERLAYS) {
             List<Map<String, Object>> stream = rendered(overlay);
@@ -273,9 +296,9 @@ class NamespaceSecurityManifestsTest {
                     }
                 }
             }
-            assertThat(quantity(hard.get("pods"))).as("%s: pods at the worst moment", overlay).isGreaterThanOrEqualTo(BigDecimal.valueOf(pods));
+            assertThat(quantity(hard.get("pods"))).as("%s: pods at the worst moment", overlay).isEqualByComparingTo(BigDecimal.valueOf(pods));
             assertThat(needed).as("%s: the four keys were computed", overlay).hasSize(4);
-            needed.forEach((key, value) -> assertThat(quantity(hard.get(key))).as("%s: %s", overlay, key).isGreaterThanOrEqualTo(value));
+            needed.forEach((key, value) -> assertThat(quantity(hard.get(key))).as("%s: %s", overlay, key).isEqualByComparingTo(value));
         }
     }
 
@@ -297,23 +320,25 @@ class NamespaceSecurityManifestsTest {
     }
 
     @Test
-    @DisplayName("every committed pod fits the LimitRange it will be judged by, so nothing is refused by its own namespace")
+    @DisplayName("every committed pod fits the LimitRange it will be judged by, whose max is the largest pod rendered, exactly, so the bound holds something back")
     void everyPodFitsTheLimitRange() {
         for (String overlay : OVERLAYS) {
             List<Map<String, Object>> stream = rendered(overlay);
             Map<String, Object> bounds = only(list(map(only(ofKind(stream, "LimitRange")), "spec"), "limits"));
+            Map<String, BigDecimal> largest = new LinkedHashMap<>();
             for (String kind : List.of("Deployment", "Job", "StatefulSet")) {
                 for (Map<String, Object> workload : ofKind(stream, kind)) {
                     for (Map<String, Object> container : list(map(workload, "spec", "template", "spec"), "containers")) {
                         for (String resource : List.of("cpu", "memory")) {
-                            assertThat(quantity(map(container, "resources", "limits").get(resource))).as("%s limit", resource)
-                                    .isLessThanOrEqualTo(quantity(map(bounds, "max").get(resource)));
-                            assertThat(quantity(map(container, "resources", "requests").get(resource))).as("%s request", resource)
+                            largest.merge(resource, quantity(map(container, "resources", "limits").get(resource)), BigDecimal::max);
+                            assertThat(quantity(map(container, "resources", "requests").get(resource))).as("%s: %s request", overlay, resource)
                                     .isGreaterThanOrEqualTo(quantity(map(bounds, "min").get(resource)));
                         }
                     }
                 }
             }
+            assertThat(largest).as("%s: both resources were read", overlay).hasSize(2);
+            largest.forEach((resource, value) -> assertThat(quantity(map(bounds, "max").get(resource))).as("%s: max %s", overlay, resource).isEqualByComparingTo(value));
         }
     }
 
@@ -344,18 +369,31 @@ class NamespaceSecurityManifestsTest {
         return flows;
     }
 
-    /** Every rule of the direction from every policy selecting the workload, the empty selector included. */
+    /** Every rule of the direction from every policy whose selector matches the workload's own pod labels, any label at all. */
     private static List<Map<String, Object>> rules(List<Map<String, Object>> stream, String workload, String direction) {
+        Map<String, Object> labels = podLabels(stream, workload);
         List<Map<String, Object>> rules = new ArrayList<>();
         for (Map<String, Object> policy : ofKind(stream, "NetworkPolicy")) {
             Map<String, Object> selector = map(policy, "spec", "podSelector");
-            boolean selects = selector.isEmpty() || workload.equals(map(selector, "matchLabels").get(NAME_LABEL));
-            assertThat(selects || selector.containsKey("matchLabels")).as("a selector this test can read").isTrue();
-            if (selects) {
+            assertThat(selector.keySet()).as("a selector this test can read").isSubsetOf("matchLabels");
+            Map<String, Object> wanted = selector.isEmpty() ? Map.of() : map(selector, "matchLabels");
+            if (labels.entrySet().containsAll(wanted.entrySet())) {
                 rules.addAll(list(map(policy, "spec"), direction));
             }
         }
         return rules;
+    }
+
+    private static Map<String, Object> podLabels(List<Map<String, Object>> stream, String workload) {
+        for (String kind : List.of("Deployment", "Job", "StatefulSet")) {
+            for (Map<String, Object> doc : ofKind(stream, kind)) {
+                Map<String, Object> labels = map(doc, "spec", "template", "metadata", "labels");
+                if (workload.equals(labels.get(NAME_LABEL))) {
+                    return labels;
+                }
+            }
+        }
+        throw new AssertionError("no workload named " + workload);
     }
 
     private static String protocolAndPort(Map<String, Object> port) {
@@ -375,24 +413,50 @@ class NamespaceSecurityManifestsTest {
         return map(peer, "namespaceSelector", "matchLabels").get(NAMESPACE_LABEL) + " " + label.getKey() + "=" + label.getValue();
     }
 
-    /** A role is a controller's only if some binding names a ServiceAccount and none names anything else; the rest are people's. */
+    /** A role is a controller's only if some binding names a listed ServiceAccount and none names anything else; the rest are people's. */
     private static List<Map<String, Object>> humanRoles(List<Map<String, Object>> stream) {
         List<Map<String, Object>> roles = new ArrayList<>(ofKind(stream, "Role"));
         roles.addAll(ofKind(stream, "ClusterRole"));
-        return roles.stream().filter(role -> !controllers(stream).contains(role.get("kind") + "/" + map(role, "metadata").get("name"))).toList();
+        Set<String> controllers = controllers(stream);
+        return roles.stream().filter(role -> !controllers.contains(roleKey(String.valueOf(role.get("kind")), namespaceOf(role), String.valueOf(map(role, "metadata").get("name"))))).toList();
     }
 
     private static Set<String> controllers(List<Map<String, Object>> stream) {
+        Set<String> listed = controllerAccounts();
         Set<String> serviceAccounts = new HashSet<>();
-        Set<String> people = new HashSet<>();
+        Set<String> others = new HashSet<>();
         for (Map<String, Object> binding : bindings(stream)) {
-            String role = map(binding, "roleRef").get("kind") + "/" + map(binding, "roleRef").get("name");
+            Map<String, Object> ref = map(binding, "roleRef");
+            String role = roleKey(String.valueOf(ref.get("kind")), namespaceOf(binding), String.valueOf(ref.get("name")));
             for (Map<String, Object> subject : list(binding, "subjects")) {
-                ("ServiceAccount".equals(subject.get("kind")) ? serviceAccounts : people).add(role);
+                boolean controller = "ServiceAccount".equals(subject.get("kind")) && listed.contains(subject.get("namespace") + "/" + subject.get("name"));
+                (controller ? serviceAccounts : others).add(role);
             }
         }
-        serviceAccounts.removeAll(people);
+        serviceAccounts.removeAll(others);
         return serviceAccounts;
+    }
+
+    /** A Role is its namespace's and a ClusterRole is nobody's, so a same-named Role elsewhere cannot borrow this one's standing. */
+    private static String roleKey(String kind, String namespace, String name) {
+        return "ClusterRole".equals(kind) ? "ClusterRole//" + name : kind + "/" + namespace + "/" + name;
+    }
+
+    /** A committed overlay resource states no namespace: the overlay's transformer sets it to finapp. */
+    private static String namespaceOf(Map<String, Object> doc) {
+        return String.valueOf(map(doc, "metadata").getOrDefault("namespace", "finapp"));
+    }
+
+    /** The real overlays' list, from the policy itself: namespace/name, one for each line of {@code controller_accounts}. */
+    private static Set<String> controllerAccounts() {
+        Matcher block = Pattern.compile("(?ms)^controller_accounts := \\[$(.*?)^]$").matcher(EvidenceCitations.read(root.resolve("infra/scripts/manifest-policy/finapp.rego")));
+        assertThat(block.find()).as("the policy's list was read").isTrue();
+        Set<String> accounts = new TreeSet<>();
+        Matcher account = Pattern.compile("\\{\"namespace\": \"([^\"]+)\", \"name\": \"([^\"]+)\"}").matcher(block.group(1));
+        while (account.find()) {
+            accounts.add(account.group(1) + "/" + account.group(2));
+        }
+        return accounts;
     }
 
     private static List<Map<String, Object>> bindings(List<Map<String, Object>> stream) {

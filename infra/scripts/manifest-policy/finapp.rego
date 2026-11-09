@@ -802,6 +802,15 @@ deny contains msg if {
 	msg := sprintf("[psa-version] namespace %s does not pin Pod Security's %s version to a minor", [doc.metadata.name, mode])
 }
 
+# A projected volume can mint a token whatever automountServiceAccountToken says.
+deny contains msg if {
+	some [doc, spec] in workloads
+	some volume in list_of(spec, "volumes")
+	some source in list_of(section(volume, "projected"), "sources")
+	stated(source, "serviceAccountToken")
+	msg := sprintf("[security-token] %s projects a service-account token into volume %v", [label(doc), object.get(volume, "name", "with no name")])
+}
+
 # ------------------------------------------------------------------------------------- network policy (P15-TSK-010)
 
 network_policies := of_kind("NetworkPolicy")
@@ -1116,8 +1125,26 @@ deny contains msg if {
 # ------------------------------------------------------------------------------------- RBAC (P15-TSK-010)
 #
 # WHOSE ROLE IS IT is read from the bindings, failing closed: a role is a controller's only if some binding names a
-# ServiceAccount and no binding names anything else. Everything else, an unbound role included, is held to the human rules.
-# So a controller's role that writes Secrets is left alone, and the same role bound to a person is refused.
+# ServiceAccount on the list below and no binding names anything else. Everything else, an unbound role included, is held to
+# the human rules. So a listed controller's role that writes Secrets is left alone, and the same role bound to a person is
+# refused. A ServiceAccount is a credential a pod holds, so a binding to one not on the list is refused whatever it grants:
+# a role given to the wrong account reaches exactly as far as one given to a person.
+
+# THE CONTROLLER ACCOUNTS, one per line: adding a controller is adding its line, and nothing else.
+controller_accounts := [
+]
+
+# Accepted in the kind overlay alone, so a plant can show a controller's role is left alone while no real overlay trusts it.
+test_only_controller_accounts := [{"namespace": "finapp", "name": "finapp-test-only-controller"}]
+
+account_listed(account) if {
+	account in controller_accounts
+}
+
+account_listed(account) if {
+	data.overlay == "kind"
+	account in test_only_controller_accounts
+}
 
 rbac_roles := of_kind("Role") | of_kind("ClusterRole")
 
@@ -1144,19 +1171,24 @@ is_service_account(subject) if {
 	subject.kind == "ServiceAccount"
 }
 
-bound_to_a_person(role) if {
+is_listed_controller(subject) if {
+	is_service_account(subject)
+	account_listed({"namespace": object.get(subject, "namespace", "absent"), "name": subject.name})
+}
+
+held_by_other_than_a_controller(role) if {
 	some binding in rbac_bindings
 	binds(binding, role)
 	some subject in list_of(binding, "subjects")
-	not is_service_account(subject)
+	not is_listed_controller(subject)
 }
 
 controller_role(role) if {
 	some binding in rbac_bindings
 	binds(binding, role)
 	some subject in list_of(binding, "subjects")
-	is_service_account(subject)
-	not bound_to_a_person(role)
+	is_listed_controller(subject)
+	not held_by_other_than_a_controller(role)
 }
 
 human_roles := {role | some role in rbac_roles; not controller_role(role)}
@@ -1291,13 +1323,37 @@ role_rendered(binding) if {
 	binds(binding, role)
 }
 
-# cluster-admin, admin, edit and view are not in the stream: a role nothing here can read is a role nothing here can hold.
+# cluster-admin, admin, edit and view are not in the stream: a role nothing here can read is a role nothing here can hold,
+# for a person or an account.
+deny contains msg if {
+	some binding in rbac_bindings
+	not role_rendered(binding)
+	msg := sprintf("[rbac-binding-rendered] %s gives %v, which this stream does not render", [label(binding), section(binding, "roleRef")])
+}
+
+deny contains msg if {
+	some binding in rbac_bindings
+	some subject in list_of(binding, "subjects")
+	is_service_account(subject)
+	not is_listed_controller(subject)
+	msg := sprintf("[rbac-account-unlisted] %s binds ServiceAccount %v/%v, which is not on the list of controller accounts", [label(binding), object.get(subject, "namespace", "with no namespace"), object.get(subject, "name", "with no name")])
+}
+
+# The cluster merges a role carrying one of these labels into view, edit or admin, which is every person holding those.
+deny contains msg if {
+	some role in of_kind("ClusterRole")
+	some key, _ in section(section(role, "metadata"), "labels")
+	startswith(key, "rbac.authorization.k8s.io/aggregate-to-")
+	msg := sprintf("[rbac-aggregate-label] %s carries %s, so the cluster would merge it into a built-in role", [label(role), key])
+}
+
+# A person's access is this namespace's. A Role and binding of the same names elsewhere would pass every rule above there.
 deny contains msg if {
 	some binding in rbac_bindings
 	some subject in list_of(binding, "subjects")
 	not is_service_account(subject)
-	not role_rendered(binding)
-	msg := sprintf("[rbac-binding-rendered] %s gives a person %v, which this stream does not render", [label(binding), section(binding, "roleRef")])
+	namespace_of(binding) != "finapp"
+	msg := sprintf("[rbac-human-namespace] %s gives a person access in namespace %v", [label(binding), namespace_of(binding)])
 }
 
 deny contains msg if {
@@ -1337,7 +1393,9 @@ deny contains msg if {
 	msg := "[quota-present] no ResourceQuota in namespace finapp: a pod with no requests would be admitted"
 }
 
-# The refusal of a pod with no requests or limits is the quota's, per container, and only for the keys it states.
+# Two refusals, in admission's order. A pod stating nothing meets the LimitRange's Pod item first ("No request is specified").
+# A pod where one container states everything and another nothing passes that item, whose per-pod sum exists, and meets this
+# quota, which checks each container and only for the keys it states ("must specify"). So every key is needed.
 deny contains msg if {
 	resource_quota_rendered
 	some key in {"pods", "requests.cpu", "requests.memory", "limits.cpu", "limits.memory"}
@@ -1354,6 +1412,9 @@ deny contains msg if {
 }
 
 quantity(value) := units.parse(sprintf("%v", [value]))
+
+# Held equal, in both directions: a quota above the worst moment bounds nothing. Rounded to milli-units, the finest a quantity has.
+milli(value) := round(value * 1000)
 
 # A pod inside its grace is still charged, so the worst moment is the budget's: PHASE_15_PLAN.md section 6.1.
 app_peak_pods := autoscaler.spec.maxReplicas + (2 * rolling_field("maxSurge")) + 1
@@ -1372,8 +1433,8 @@ finapp_workloads := {[doc, spec] | some [doc, spec] in workloads; namespace_of(d
 pods_required := sum([workload_peak(doc) | some [doc, _] in finapp_workloads])
 
 deny contains msg if {
-	quantity(quota_hard.pods) < pods_required
-	msg := sprintf("[quota-pods] the quota admits %v pods and the worst moment of a rollout is %d: maxReplicas + 2 x maxSurge + 1, the migrator and anything else rendered. The rollout would stall on its own quota", [quota_hard.pods, pods_required])
+	milli(quantity(quota_hard.pods)) != milli(pods_required)
+	msg := sprintf("[quota-pods] the quota states %v pods and the worst moment of a rollout is %d: maxReplicas + 2 x maxSurge + 1, the migrator and anything else rendered. Below it a rollout stalls on its own quota; above it the quota bounds nothing", [quota_hard.pods, pods_required])
 }
 
 # One pod's share: the sum of its containers, or its largest init container, whichever is greater.
@@ -1391,8 +1452,8 @@ deny contains msg if {
 	some bound in {"requests", "limits"}
 	some resource in {"cpu", "memory"}
 	key := sprintf("%s.%s", [bound, resource])
-	quantity(quota_hard[key]) < compute_required(bound, resource)
-	msg := sprintf("[quota-compute] the quota's %s is %v, below the %v the worst moment of a rollout needs", [key, quota_hard[key], compute_required(bound, resource)])
+	milli(quantity(quota_hard[key])) != milli(compute_required(bound, resource))
+	msg := sprintf("[quota-compute] the quota's %s is %v, and the worst moment of a rollout needs %v exactly", [key, quota_hard[key], compute_required(bound, resource)])
 }
 
 limit_items contains [doc, item] if {
@@ -1402,10 +1463,21 @@ limit_items contains [doc, item] if {
 
 pod_limit_items := {item | some [_, item] in limit_items; object.get(item, "type", "absent") == "Pod"}
 
+# Both bounds and both resources: an item with a null or missing bound refuses nothing for that resource.
+limit_item_states_its_bounds(item) if {
+	every bound in ["min", "max"] {
+		every resource in ["cpu", "memory"] {
+			stated(section(item, bound), resource)
+		}
+	}
+}
+
+complete_pod_limit_items := {item | some item in pod_limit_items; limit_item_states_its_bounds(item)}
+
 deny contains msg if {
 	app
-	count(pod_limit_items) == 0
-	msg := "[limitrange-present] no LimitRange of type Pod: nothing bounds one pod, and nothing refuses one with no request by its own rule"
+	count(complete_pod_limit_items) == 0
+	msg := "[limitrange-present] no LimitRange of type Pod states min and max for cpu and memory: nothing bounds one pod, and nothing refuses one with no request by its own rule"
 }
 
 # The API server writes a Container item's default from its max, and its defaultRequest from that, even when neither is
@@ -1423,13 +1495,15 @@ deny contains msg if {
 	msg := sprintf("[limitrange-injects] %s states %s, which would admit a pod that states no requests", [label(doc), field])
 }
 
-# A workload outside its own namespace's bounds is refused at admission, so a rollout could never start.
+# The max is the largest pod rendered, exactly. Below it that pod is refused at admission, so a rollout could never start;
+# above it the bound holds nothing back. The min is a floor, and only a floor above a pod can do harm.
+largest_pod(resource) := max([total | some [_, spec] in finapp_workloads; total := pod_total(spec, "limits", resource)])
+
 deny contains msg if {
 	some item in pod_limit_items
-	some [doc, spec] in finapp_workloads
 	some resource, value in section(item, "max")
-	pod_total(spec, "limits", resource) > quantity(value)
-	msg := sprintf("[limitrange-admits] %s limits %s above the LimitRange's max %v", [label(doc), resource, value])
+	milli(quantity(value)) != milli(largest_pod(resource))
+	msg := sprintf("[limitrange-admits] the LimitRange's max %s is %v and the largest pod rendered limits it to %v", [resource, value, largest_pod(resource)])
 }
 
 deny contains msg if {

@@ -49,6 +49,14 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: 1Gi
+  # The largest pod here is 1 GiB, and the LimitRange's max is held equal to the largest pod.
+  - target:
+      kind: LimitRange
+      name: finapp
+    patch: |-
+      - op: replace
+        path: /spec/limits/0/max/memory
+        value: 1Gi
   # The quota follows the maximum: 6 app pods at 1 GiB (3 + 2 x 1 + 1), the migrator, and the two test-only copies.
   - target:
       kind: ResourceQuota

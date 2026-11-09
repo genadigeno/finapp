@@ -284,6 +284,8 @@ plant_namespace_security() {
     RBAC=base/rbac-humans.yaml
     QUOTA=base/resourcequota.yaml
     LIMITS=base/limitrange.yaml
+    # Kubernetes' own field, named once for the reason SWITCH is above.
+    MINTED_SOURCE=serviceAccountToken
 
     # Namespaces and Pod Security.
     plant_on namespace-edge-absent "$NS" 's/^  name: finapp-edge$/  name: not-the-edge/'
@@ -614,7 +616,8 @@ subjects:
 YAML
 
     # A controller may write Secrets; that role in a person's hands may not. The first of these must pass, the second must not.
-    plant controller-writes-secrets
+    # Against the kind overlay, the one place the test-only controller account is listed.
+    plant controller-writes-secrets kind
     add_resource controller-writes-secrets controller.yaml <<'YAML'
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -635,10 +638,10 @@ roleRef:
   name: secret-delivery
 subjects:
   - kind: ServiceAccount
-    name: secret-delivery
+    name: finapp-test-only-controller
     namespace: finapp
 YAML
-    plant controller-role-held-by-a-person
+    plant controller-role-held-by-a-person kind
     add_resource controller-role-held-by-a-person controller.yaml <<'YAML'
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -659,7 +662,7 @@ roleRef:
   name: secret-delivery
 subjects:
   - kind: ServiceAccount
-    name: secret-delivery
+    name: finapp-test-only-controller
     namespace: finapp
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -674,6 +677,169 @@ subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: finapp-read-only
+YAML
+
+    # A ServiceAccount off the list is refused whatever it is granted: the namespace's default holding cluster-admin, the
+    # internet-facing controller's account reading this namespace's Secrets, an account with no namespace stated.
+    plant rbac-default-account-cluster-admin
+    add_resource rbac-default-account-cluster-admin binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: everything
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: finapp
+YAML
+    plant rbac-edge-account-reads-secrets
+    add_resource rbac-edge-account-reads-secrets binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reads
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reads
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: reads
+subjects:
+  - kind: ServiceAccount
+    name: ingress-controller
+    namespace: finapp-edge
+YAML
+    plant rbac-account-with-no-namespace
+    add_resource rbac-account-with-no-namespace binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: someone
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-read-only
+subjects:
+  - kind: ServiceAccount
+    name: finapp-test-only-controller
+YAML
+    plant rbac-test-only-account-in-production
+    add_resource rbac-test-only-account-in-production binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: someone
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-read-only
+subjects:
+  - kind: ServiceAccount
+    name: finapp-test-only-controller
+    namespace: finapp
+YAML
+    # On the list, and still refused a role this stream cannot read: the rule is no longer only about people.
+    plant rbac-listed-account-built-in-role kind
+    add_resource rbac-listed-account-built-in-role binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: built-in
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit
+subjects:
+  - kind: ServiceAccount
+    name: finapp-test-only-controller
+    namespace: finapp
+YAML
+    plant rbac-aggregated-into-view
+    add_resource rbac-aggregated-into-view role.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: merged-in
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get]
+YAML
+    # A second namespace, which an overlay's transformer would rewrite, so through the namespaces root. A same-named Role
+    # elsewhere must not borrow a controller's standing, and a person's binding is this namespace's alone.
+    plant rbac-same-name-elsewhere kind
+    add_resource rbac-same-name-elsewhere controller.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: shared-name
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shared-name
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: shared-name
+subjects:
+  - kind: ServiceAccount
+    name: finapp-test-only-controller
+    namespace: finapp
+YAML
+    add_to_namespaces rbac-same-name-elsewhere <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: shared-name
+  namespace: finapp-edge
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+YAML
+    plant rbac-person-bound-elsewhere
+    add_to_namespaces rbac-person-bound-elsewhere <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: finapp-break-glass
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-break-glass
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-break-glass
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-break-glass
 YAML
 
     # The quota: every key the refusal depends on, and its arithmetic read from the manifests.
@@ -695,6 +861,8 @@ YAML
     plant_on quota-follows-the-request "$DEPLOYMENT" 's/cpu: 500m/cpu: 600m/'
     plant_on quota-kind-short "$KIND" 's/value: "9"/value: "8"/' kind
     plant_on quota-staging-short overlays/staging/kustomization.yaml 's/value: "8"/value: "7"/' staging
+    plant_on quota-pods-widened "$QUOTA" 's/pods: "11"/pods: "1000"/'
+    plant_on quota-limits-memory-widened "$QUOTA" 's/limits.memory: 20992Mi/limits.memory: 40000Mi/'
 
     # The LimitRange: an injected default makes a pod without requests admitted, and a bound below a pod refuses the pod.
     plant no-limitrange
@@ -704,6 +872,40 @@ YAML
     plant_on limitrange-container-item "$LIMITS" 's/type: Pod/type: Container/'
     plant_on limitrange-max-below-a-pod "$LIMITS" 's/memory: 2Gi/memory: 1Gi/'
     plant_on limitrange-min-above-a-pod "$LIMITS" 's/cpu: 100m/cpu: 300m/'
+    plant_on limitrange-max-widened "$LIMITS" 's/memory: 2Gi/memory: 64Gi/'
+    plant_on limitrange-no-max "$LIMITS" '/^      max:$/,$d'
+    plant_on limitrange-null-max "$LIMITS" '/^        cpu: "2"$/d;/^        memory: 2Gi$/d'
+    plant_on limitrange-no-memory-bound "$LIMITS" '/^        memory: 128Mi$/d'
+
+    # Every kind branch of the flows reads the test-only copies by name, so a third workload's egress to the database is refused.
+    plant netpol-kafka-reaches-the-database kind
+    add_resource netpol-kafka-reaches-the-database wide.yaml <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wide
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-kafka
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+YAML
+
+    # A token can be mounted without the automount switch.
+    plant_on minted-volume "$DEPLOYMENT" "s/^      volumes:\$/      volumes:\n        - name: minted\n          projected:\n            sources:\n              - $MINTED_SOURCE:\n                  path: credential/"
+}
+
+# add_to_namespaces <plant>: stdin becomes more documents of the namespaces root, where no transformer rewrites a namespace.
+add_to_namespaces() {
+    { printf -- '---\n'; cat; } >> "$PLANTS/$1/deploy/namespaces/namespaces.yaml"
 }
 
 # human_rule <plant> <apiGroup> <resource> <verb>: one more rule on the standing read-only role.
@@ -1068,6 +1270,14 @@ refused rbac-workload-bound rbac-workload-none
 refused rbac-migrator-bound rbac-workload-none
 accepted controller-writes-secrets
 refused controller-role-held-by-a-person rbac-human-secrets
+refused rbac-default-account-cluster-admin rbac-account-unlisted
+refused rbac-edge-account-reads-secrets rbac-account-unlisted
+refused rbac-account-with-no-namespace rbac-account-unlisted
+refused rbac-test-only-account-in-production rbac-account-unlisted
+refused rbac-listed-account-built-in-role rbac-binding-rendered
+refused rbac-aggregated-into-view rbac-aggregate-label
+refused rbac-same-name-elsewhere rbac-human-secrets
+refused rbac-person-bound-elsewhere rbac-human-namespace
 
 refused no-quota quota-present
 refused quota-no-requests-cpu quota-requires
@@ -1086,6 +1296,8 @@ refused quota-follows-the-surge quota-pods
 refused quota-follows-the-request quota-compute
 refused quota-kind-short quota-pods
 refused quota-staging-short quota-pods
+refused quota-pods-widened quota-pods
+refused quota-limits-memory-widened quota-compute
 
 refused no-limitrange limitrange-present
 refused limitrange-default limitrange-injects
@@ -1093,6 +1305,13 @@ refused limitrange-default-request limitrange-injects
 refused limitrange-container-item limitrange-injects
 refused limitrange-max-below-a-pod limitrange-admits
 refused limitrange-min-above-a-pod limitrange-admits
+refused limitrange-max-widened limitrange-admits
+refused limitrange-no-max limitrange-present
+refused limitrange-null-max limitrange-present
+refused limitrange-no-memory-bound limitrange-present
+
+refused netpol-kafka-reaches-the-database netpol-egress-closed
+refused minted-volume security-token
 
 schema_refused schema-typo "revisionHistoryLimits"
 schema_refused schema-type "revisionHistoryLimit"

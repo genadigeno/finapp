@@ -2571,10 +2571,11 @@ eight minutes for three replicas, longer at the maximum. That is the price of ne
 `KUBERNETES_VERSION` in `infra/scanner-pins.sh`, whose minor `KubernetesManifestsTest` holds equal to each environment's
 `kubernetes_version` in Terraform: raise the two together.
 
-**Change the fleet and the quota follows.** Each overlay's `ResourceQuota` must admit `maxReplicas + 2 × maxSurge + 1`
+**Change the fleet and the quota follows.** Each overlay's `ResourceQuota` must equal `maxReplicas + 2 × maxSurge + 1`
 application pods, the migrator and anything test-only, in pods, CPU and memory: a pod inside its grace is still charged. The
-policy reads each number from the rendered stream and refuses a quota that falls short (`deploy/base/resourcequota.yaml` shows
-the sum). A new egress or a new client of the application is refused until a flow is added to `finapp.rego` beside its
+policy reads each number from the rendered stream and refuses a quota above or below it (`deploy/base/resourcequota.yaml` shows
+the sum), and the `LimitRange`'s `max` must equal the largest pod rendered. A controller that needs RBAC goes on
+`controller_accounts` in `finapp.rego`, one line: a binding to any other ServiceAccount is refused. A new egress or a new client of the application is refused until a flow is added to `finapp.rego` beside its
 NetworkPolicy: the allowed flows are the decision, written once there and once in the policy.
 
 **`deploy/namespaces` is rendered separately.** An overlay's `namespace: finapp` renames every Namespace it renders, so the three

@@ -3,7 +3,8 @@
 # them: a pod with no requests would be mutated and admitted, the opposite of what this object is for. A Pod item is not
 # defaulted, and refuses a pod whose containers state no request (min) or no limit (max).
 #
-# min and max bound one pod, the largest of ours at max; finapp.rego holds every rendered workload within them.
+# min and max bound one pod: max is the largest pod rendered, held equal by finapp.rego in every overlay, and min a floor under them all.
+# A pod with one container stating everything and another nothing passes this item, its sum existing; the quota refuses that one.
 apiVersion: v1
 kind: LimitRange
 metadata:
