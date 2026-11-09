@@ -162,9 +162,9 @@ finapp:
     # Ended windows. One instance's capacity per interval (batch-size x 20 batches) is held above the worst creation rate by
     # SourceLimitBudgetTest, reading these numbers.
     sweep:
-      interval: PT1M
-      batch-size: 1000
-      grace: PT1M
+      interval: ${FINAPP_ABUSE_SWEEP_INTERVAL:PT1M}
+      batch-size: ${FINAPP_ABUSE_SWEEP_BATCHSIZE:1000}
+      grace: ${FINAPP_ABUSE_SWEEP_GRACE:PT1M}
   database:
     # ADR-0014: N is never 1.
     instances: ${FINAPP_DB_INSTANCES:10}
