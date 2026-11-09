@@ -1147,15 +1147,15 @@ start_reporter() {
     REPORT_PERIOD=$(psql_query -c "SELECT id FROM accounting.accounting_period WHERE period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date" | tr -d '[:space:]')
     [ -n "$REPORT_PERIOD" ] || fail "$label: this month has no accounting period to report on"
     REPORT_BODY="{\"definition\":\"TRIAL_BALANCE\",\"periodId\":\"$REPORT_PERIOD\"}"
-    report_bearer=$(client report-token 2>/dev/null | sed -n 's/^token //p')
-    [ -n "$report_bearer" ] || fail "$label: no operator session for the reports"
+    report_login=$(client report-token 2>/dev/null | sed -n 's/^token //p')
+    [ -n "$report_login" ] || fail "$label: no operator session for the reports"
     : > "$WORK/reported-$label"
     : > "$ART/reports-$label.tsv"
     (
         while [ ! -f "$WORK/reporter-stop-$label" ]; do
             for ip in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}|{.status.conditions[?(@.type=="Ready")].status}|{.status.podIP}{"\n"}{end}' 2>/dev/null | awk -F'|' '$1=="" && $2=="True" {print $3}'); do
                 grep -qx "$ip" "$WORK/reported-$label" && continue
-                code=$(report_on "$ip" "$report_bearer" || true)
+                code=$(report_on "$ip" "$report_login" || true)
                 printf '%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$ip" "$code" >> "$ART/reports-$label.tsv"
                 case $code in 200|201) printf '%s\n' "$ip" >> "$WORK/reported-$label" ;; esac
                 sleep 2

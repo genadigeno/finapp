@@ -300,7 +300,7 @@ YAML
 
     plant_on inline-env-value "$DEPLOYMENT" 's/^          env:$/          env:\n            - name: FINAPP_DB_APP_PASSWORD\n              value: this-is-a-plant/'
     plant_on inline-config-value "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_KAFKA_JAAS_CONFIG=this-is-a-plant/'
-    plant_on inline-config-credential-named-timeout "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_DB_PASSWORD_TOKENISATION_TIMEOUT=${plant}/'
+    plant_on inline-config-named-timeout "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_DB_PASSWORD_TOKENISATION_TIMEOUT=${plant}/'
     plant_on inline-config-timeout-not-a-duration "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_PAYMENTMETHODS_TOKENISATION_TIMEOUT=not-a-duration/'
     plant_on inline-config-tokenisation "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_PAYMENTMETHODS_TOKENISATION_TOKEN=${plant}/'
     plant_on no-endpoint-url "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - FINAPP_CALLBACK=https:\/\/provider.invalid\/hook/'
@@ -1422,7 +1422,7 @@ refused generation-delivery-absent secret-generation
 refused inline-env-value no-secret-literal
 refused inline-config-value no-secret-literal
 refused inline-config-tokenisation no-secret-literal
-refused inline-config-credential-named-timeout no-secret-literal
+refused inline-config-named-timeout no-secret-literal
 refused inline-config-timeout-not-a-duration no-secret-literal
 refused no-endpoint-url no-endpoint
 refused no-endpoint-key no-endpoint
