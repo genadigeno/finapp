@@ -321,14 +321,16 @@ class StoredBoundsAreTheDatabasesTest {
     void eachStatementReadsTheDatabasesClock() {
         statement("com.finapp.identity.JdbcRecoveryRequestStore", "consume")
                 .literals(" AND expires_at > ", " SET status = 'COMPLETED', completed_at = ", " RETURNING ", ", completed_at")
-                .usesConstant("DATABASE_NOW", "GREATEST(clock_timestamp(), transaction_timestamp())");
+                .usesConstant("DATABASE_NOW", "GREATEST(clock_timestamp(), transaction_timestamp())")
+                .codeContains("\" AND expires_at > \" + DATABASE_NOW", "completed_at = \" + DATABASE_NOW");
         statement("com.finapp.identity.JdbcRecoveryRequestStore", "initiate")
                 .literals(", now(), now() + ", "AND r.initiated_at > now() - ");
         statement("com.finapp.identity.JdbcRecoveryRequestStore", "cancelLiveFor")
                 .literals("cancelled_at = now()");
         statement("com.finapp.identity.JdbcContactChannelStore", "verify")
                 .literals(" AND verification_expires_at > ", " SET verified_at = ")
-                .usesConstant("DATABASE_NOW", "GREATEST(clock_timestamp(), transaction_timestamp())");
+                .usesConstant("DATABASE_NOW", "GREATEST(clock_timestamp(), transaction_timestamp())")
+                .codeContains("\" AND verification_expires_at > \" + DATABASE_NOW", "\" SET verified_at = \" + DATABASE_NOW");
         statement("com.finapp.checkout.JdbcCheckoutSessionStore", "findExpirable")
                 .literals("status = 'OPEN' AND expires_at <= now()", "expires_at <= now() - (? * INTERVAL '1 millisecond')");
         statement("com.finapp.merchant.JdbcFeeScheduleStore", "findEffectiveVersionFor")
@@ -645,6 +647,12 @@ class StoredBoundsAreTheDatabasesTest {
         Statement literals(String... fragments) {
             String literals = literalsIn(body);
             assertThat(literals).as(where + " states its judgement in the statement").contains(fragments);
+            return this;
+        }
+
+        /** The statement's own text, where a constant follows the literal it completes. */
+        Statement codeContains(String... fragments) {
+            assertThat(body).as(where + ": the judgement and the stamp are the constant, not a bind").contains(fragments);
             return this;
         }
 
