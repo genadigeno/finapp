@@ -265,17 +265,17 @@ CA_DIR="$WORK/ca"
 
 make_ca() {
     mkdir -p "$CA_DIR"
-    openssl req -x509 -new -newkey rsa:2048 -nodes -days 2 -subj "/CN=finapp-rehearsal-local-ca" \
-        -keyout "$CA_DIR/ca.key" -out "$CA_DIR/ca.crt" >/dev/null 2>&1 || cannot "the local CA could not be generated"
+    (cd "$CA_DIR" && openssl req -x509 -new -newkey rsa:2048 -nodes -days 2 -subj "/CN=finapp-rehearsal-local-ca" \
+        -keyout ca.key -out ca.crt) >/dev/null 2>&1 || cannot "the local CA could not be generated"
 }
 
 # issue <name> <SAN list, comma-separated DNS:...>: <name>.key and <name>.crt, signed by the local CA, one day.
 issue() {
-    openssl req -new -newkey rsa:2048 -nodes -subj "/CN=$1" -keyout "$CA_DIR/$1.key" -out "$CA_DIR/$1.csr" >/dev/null 2>&1 \
+    (cd "$CA_DIR" && openssl req -new -newkey rsa:2048 -nodes -subj "/CN=$1" -keyout "$1.key" -out "$1.csr") >/dev/null 2>&1 \
         || cannot "a key for $1 could not be generated"
     printf 'subjectAltName=%s\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' "$2" > "$CA_DIR/$1.ext"
-    openssl x509 -req -in "$CA_DIR/$1.csr" -CA "$CA_DIR/ca.crt" -CAkey "$CA_DIR/ca.key" -CAcreateserial -days 1 -extfile "$CA_DIR/$1.ext" \
-        -out "$CA_DIR/$1.crt" >/dev/null 2>&1 || cannot "a certificate for $1 could not be issued"
+    (cd "$CA_DIR" && openssl x509 -req -in "$1.csr" -CA ca.crt -CAkey ca.key -CAcreateserial -days 1 -extfile "$1.ext" \
+        -out "$1.crt") >/dev/null 2>&1 || cannot "a certificate for $1 could not be issued"
 }
 
 # secret_of <namespace> <name> <key=file>...: applied through stdin, base64 from the host, never on a command line.
@@ -340,11 +340,23 @@ if [ -z "${REHEARSAL_SKIP_BUILD:-}" ]; then
 fi
 
 step cluster
+REUSING=""
+if [ -n "${REHEARSAL_REUSE_CLUSTER:-}" ] && "$KIND_BIN" get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
+    REUSING=1
+fi
+if [ -n "$REUSING" ]; then
+    # A development aid, for a run that is being debugged: the images stay loaded and only what the run deploys is thrown away.
+    CLUSTER_UP=1
+    log "reusing the cluster $CLUSTER: its namespaces are removed first"
+    kube delete namespace finapp finapp-edge finapp-observability finapp-rehearsal cert-manager --ignore-not-found --wait=true --timeout=300s >> "$ART/cluster.log" 2>&1 \
+        || cannot "the cluster's namespaces could not be removed"
+else
 dock pull --quiet "$KIND_NODE_IMAGE" >/dev/null || cannot "could not pull the node image"
 "$KIND_BIN" delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true
 "$KIND_BIN" create cluster --name "$CLUSTER" --image "$KIND_NODE_IMAGE" --config "$(dpath "$DIR/kind-cluster.yaml")" \
     --kubeconfig "$(dpath "$WORK/kubeconfig")" --wait 180s >> "$ART/cluster.log" 2>&1 || cannot "the cluster did not come up: see cluster.log"
 CLUSTER_UP=1
+fi
 SERVER_VERSION=$(kube version -o json | sed -n 's/.*"gitVersion": *"\(v[^"]*\)".*/\1/p' | tail -1)
 log "cluster up: Kubernetes $SERVER_VERSION, node image $KIND_NODE_VERSION, kind $("$KIND_BIN" version)"
 printf '%s\n' "$SERVER_VERSION" > "$ART/server-version.txt"
@@ -359,7 +371,18 @@ else
     printf 'kindnetd\n' > "$ART/policy-engine.txt"
 fi
 
+ref_of_built() {
+    digest=$(imported_digest "$1")
+    case $digest in sha256:*) printf '%s@%s' "${1%:*}" "$digest" ;; *) cannot "no digest for $1 in the node" ;; esac
+}
+
 step images-loaded
+if [ -n "$REUSING" ]; then
+    IMAGE_APP_N=$(ref_of_built finapp-app:rehearsal-n)
+    IMAGE_MIGRATOR_N=$(ref_of_built finapp-migrator:rehearsal-n)
+    IMAGE_APP_NM1=$(ref_of_built finapp-app:rehearsal-nminus1)
+    IMAGE_MIGRATOR_NM1=$(ref_of_built finapp-migrator:rehearsal-nminus1)
+else
 if [ "$POLICY_ENGINE" = kube-router ]; then
     load_tagged "$KUBE_ROUTER_REPOSITORY" "$KUBE_ROUTER_VERSION" "$KUBE_ROUTER_DIGEST"
     sed "s#KUBE_ROUTER_IMAGE#$KUBE_ROUTER_REPOSITORY@$KUBE_ROUTER_DIGEST#" "$DIR/kube-router.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "kube-router could not be applied"
@@ -373,6 +396,7 @@ IMAGE_APP_N=$(load_built finapp-app:rehearsal-n)
 IMAGE_MIGRATOR_N=$(load_built finapp-migrator:rehearsal-n)
 IMAGE_APP_NM1=$(load_built finapp-app:rehearsal-nminus1)
 IMAGE_MIGRATOR_NM1=$(load_built finapp-migrator:rehearsal-nminus1)
+fi
 log "N-1 $IMAGE_APP_NM1 / $IMAGE_MIGRATOR_NM1"
 log "N   $IMAGE_APP_N / $IMAGE_MIGRATOR_N"
 {
@@ -395,8 +419,8 @@ issue simulator "DNS:$SIM_HOST,DNS:finapp-simulator,DNS:finapp-simulator.finapp-
 cat "$CA_DIR/kafka.key" "$CA_DIR/kafka.crt" "$CA_DIR/ca.crt" > "$CA_DIR/kafka-keystore.pem"
 SIM_STORE_PASSWORD=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 printf '%s' "$SIM_STORE_PASSWORD" > "$CA_DIR/simulator.password"
-openssl pkcs12 -export -inkey "$CA_DIR/simulator.key" -in "$CA_DIR/simulator.crt" -certfile "$CA_DIR/ca.crt" \
-    -passout "pass:$SIM_STORE_PASSWORD" -out "$CA_DIR/simulator.p12" >/dev/null 2>&1 || cannot "the simulator's keystore could not be made"
+(cd "$CA_DIR" && openssl pkcs12 -export -inkey simulator.key -in simulator.crt -certfile ca.crt \
+    -passout "pass:$SIM_STORE_PASSWORD" -out simulator.p12) >/dev/null 2>&1 || cannot "the simulator's keystore could not be made"
 # Read without a password, so none is delivered: a trust store holds no secret.
 TRUST_PASSWORD=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 jdk keytool -importcert -noprompt -alias local-ca -file ca/ca.crt -keystore ca/truststore.jks -storetype JKS -storepass "$TRUST_PASSWORD" \

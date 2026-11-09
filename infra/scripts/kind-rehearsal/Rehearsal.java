@@ -82,6 +82,8 @@ public final class Rehearsal {
             case "workload" -> rehearsal.workload(args[2]);
             case "replay" -> rehearsal.replay(args[2], args[3], args[4], args[5]);
             case "edge" -> rehearsal.edge();
+            case "map-gl" -> rehearsal.mapGl();
+            case "gl-check" -> rehearsal.glCheck();
             default -> throw new IllegalArgumentException("unknown step " + args[1]);
         }
     }
@@ -205,6 +207,10 @@ public final class Rehearsal {
         String operator = someLogin("op");
         expect("register operator", register(operator), 201);
         state.setProperty("operator.login", operator);
+        // The second person of four-eyes: the GL mapping's activation is refused to whoever proposed it.
+        String controller = someLogin("ctl");
+        expect("register controller", register(controller), 201);
+        state.setProperty("controller.login", controller);
         String party = UUID.randomUUID().toString();
         state.setProperty("merchant.party", party);
         save();
@@ -214,8 +220,11 @@ public final class Rehearsal {
                 + String.join(",", customers) + "));\n"
                 + "INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at)\n"
                 + " SELECT gen_random_uuid(), i.id, r, i.id, now()\n"
-                + "   FROM identity.identity i, unnest(ARRAY['MERCHANT_ADMINISTRATOR','EVENT_OPERATOR']) r\n"
+                + "   FROM identity.identity i, unnest(ARRAY['MERCHANT_ADMINISTRATOR','EVENT_OPERATOR','ACCOUNTANT']) r\n"
                 + "  WHERE i.login_identifier = '" + operator + "';\n"
+                + "INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at)\n"
+                + " SELECT gen_random_uuid(), i.id, 'FINANCIAL_CONTROLLER', i.id, now()\n"
+                + "   FROM identity.identity i WHERE i.login_identifier = '" + controller + "';\n"
                 + "INSERT INTO party.party (id, kind, display_name, registered_at) VALUES\n"
                 + " ('" + party + "', 'ORGANISATION', 'Rehearsal Holdings', now());\n"
                 + "INSERT INTO party.customer (id, party_id, status, opened_at, status_changed_at) VALUES\n"
@@ -226,15 +235,8 @@ public final class Rehearsal {
 
     /** The operator's factor, the merchant, its pricing, its key; then the SQL for its destination. */
     private void onboard() throws Exception {
-        String operatorLogin = state.getProperty("operator.login");
-        String session = authenticate(operatorLogin);
-        String secret = secretFrom(expect("mfa enrolment", post(publicBase, "/v1/me/mfa", null, session, null), 201).body());
-        long step = currentStep();
-        expect("mfa confirmation", post(publicBase, "/v1/me/mfa/confirmation", "{\"code\":\"" + totp(secret, step - 1) + "\"}", session, null), 204);
-        Answer elevated = expect("elevation", post(publicBase, "/v1/authentications/mfa", "{\"code\":\"" + totp(secret, step) + "\"}", session, null), 200);
-        String operator = field(elevated.body(), "sessionToken");
-        state.setProperty("operator.token", operator);
-        state.setProperty("operator.totp", secret);
+        String operator = enrol("operator");
+        enrol("controller");
 
         String party = state.getProperty("merchant.party");
         Answer merchant = expect("onboard merchant", post(operatorBase, "/v1/operator/merchants",
@@ -273,6 +275,17 @@ public final class Rehearsal {
                 + " (gen_random_uuid(), '" + merchantId + "', '" + reference + "', '3000', 'EFFECTIVE', 'rehearsal-a', now() - interval '4 days',\n"
                 + "  'the rehearsal fixture', 'rehearsal-b', now() - interval '4 days', now() - interval '1 day', now() - interval '1 hour');\n");
         System.out.println("onboarded merchant, " + CUSTOMERS + " customers with wallets and cards");
+    }
+
+    /** Enrols a TOTP factor for {@code who} and answers an elevated session; the factor's secret stays in this run's state. */
+    private String enrol(String who) throws Exception {
+        String session = authenticate(state.getProperty(who + ".login"));
+        String secret = secretFrom(expect("mfa enrolment of " + who, post(publicBase, "/v1/me/mfa", null, session, null), 201).body());
+        long step = currentStep();
+        expect("mfa confirmation of " + who, post(publicBase, "/v1/me/mfa/confirmation", "{\"code\":\"" + totp(secret, step - 1) + "\"}", session, null), 204);
+        Answer elevated = expect("elevation of " + who, post(publicBase, "/v1/authentications/mfa", "{\"code\":\"" + totp(secret, step) + "\"}", session, null), 200);
+        state.setProperty(who + ".totp", secret);
+        return field(elevated.body(), "sessionToken");
     }
 
     private static long currentStep() {
@@ -552,11 +565,43 @@ public final class Rehearsal {
 
     /** A new elevated session: the rehearsal runs for longer than a session is meant to stay open. */
     private String freshOperator() throws Exception {
-        String session = authenticate(state.getProperty("operator.login"));
-        String secret = state.getProperty("operator.totp");
+        return fresh("operator");
+    }
+
+    private String fresh(String who) throws Exception {
+        String session = authenticate(state.getProperty(who + ".login"));
+        String secret = state.getProperty(who + ".totp");
         Answer elevated = expect("elevation", post(publicBase, "/v1/authentications/mfa",
                 "{\"code\":\"" + totp(secret, currentStep()) + "\"}", session, null), 200);
         return field(elevated.body(), "sessionToken");
+    }
+
+    // ---------------------------------------------------------------------------------------------- GL = ledger
+
+    private static String period() {
+        return java.time.YearMonth.now(java.time.ZoneOffset.UTC).toString();
+    }
+
+    /** The first GL mapping of a deployment (runbook 10.12): one person proposes the reference chart, another activates it. */
+    private void mapGl() throws Exception {
+        String chart = Files.readString(Path.of("/src/gl-mapping.json"));
+        String body = "{\"effectiveFromPeriod\":\"" + period() + "\",\"reason\":\"the rehearsal's reference chart\","
+                + chart.strip().substring(1);
+        Answer proposed = expect("mapping proposal", post(operatorBase, "/v1/operator/accounting/mapping-versions", body, fresh("operator"), key()), 201);
+        String id = field(proposed.body(), "id");
+        expect("mapping activation", post(operatorBase, "/v1/operator/accounting/mapping-versions/" + id + "/activation",
+                "{\"reason\":\"the second person's review\"}", fresh("controller"), key()), 200);
+        System.out.println("gl mapping activated: " + proposed.body());
+    }
+
+    /** The General Ledger's own judgement of itself against the journal, for this month in EUR: the application's arithmetic, not a copy of it. */
+    private void glCheck() throws Exception {
+        Answer answer = expect("gl balances", get(operatorBase, "/v1/operator/accounting/gl/balances?period=" + period() + "&currency=EUR", fresh("operator")), 200);
+        boolean agrees = answer.body().contains("\"agrees\":true");
+        System.out.println((agrees ? "PASS" : "FAIL") + "|GL equals ledger|" + period() + " EUR agrees=" + agrees + " " + answer.body().replaceAll("\\s+", " "));
+        if (!agrees) {
+            throw new IllegalStateException("the General Ledger does not agree with the journal");
+        }
     }
 
     // ---------------------------------------------------------------------------------------------- the edge
