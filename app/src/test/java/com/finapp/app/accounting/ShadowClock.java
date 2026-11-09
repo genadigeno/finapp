@@ -6,6 +6,7 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.platform.testing.database.ReopenedClock;
 import com.finapp.sharedkernel.correlation.Correlation;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -20,6 +21,7 @@ import java.util.function.Function;
  * The database's clock read behind, on demand, on one session (`P15-TSK-033`, shared by `P14-REM-009`; lending's {@code ClockStep} and {@code MerchantBnplEnablementDatabaseTest}'s shadow, which this package's suites cannot reach): the four
  * clock functions shadowed in a schema of the bootstrap superuser's, {@code closeclock} - its own name, so no other suite's install or drop meets it - which a session opts into by putting it before {@code pg_catalog} on its {@code search_path}.
  * Accounting's triggers are invoker's rights with no path of their own, and {@code JdbcAccountingPeriodStore.TODAY_SQL} names its clock unqualified, so the production code and the production triggers run unchanged on the shadowed clock.
+ * Since {@code P15-TSK-040} those triggers name {@code pg_catalog} themselves, so {@link #install} opens them again in this test database only ({@code ReopenedClock}) and {@link #uninstall} closes them, every definition put back byte for byte.
  * {@code closeclock.back}, set for the session before its transaction begins, is taken from every reading - the transaction's start included - so the whole transaction stands where a clock stepped back by that much would put it. Only the
  * opted-in session sees it.
  */
@@ -44,9 +46,11 @@ final class ShadowClock {
                 + " AS $$ SELECT pg_catalog.statement_timestamp() - closeclock.back() $$;"
                 + " CREATE OR REPLACE FUNCTION closeclock.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS"
                 + " $$ SELECT pg_catalog.clock_timestamp() - closeclock.back() $$;");
+        ReopenedClock.reopen();
     }
 
     static void uninstall() throws SQLException {
+        ReopenedClock.restore();
         bootstrap("DROP SCHEMA IF EXISTS closeclock CASCADE");
     }
 

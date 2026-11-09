@@ -620,7 +620,8 @@ class MerchantBnplEnablementDatabaseTest {
      * the bootstrap superuser's, {@code clockstep}, which a session opts into by putting it before {@code pg_catalog} on
      * its {@code search_path}: merchant's pin trigger is invoker's rights with no path of its own, and the stores' SQL
      * names the clock unqualified, so the production code and the production trigger run unchanged on the shadowed
-     * clock. {@code clockstep.back}, {@code SET LOCAL} between two statements, is taken from every LATER
+     * clock. Since {@code P15-TSK-040} merchant's trigger names {@code pg_catalog} itself, so {@link #install} opens it again in this
+     * test database only ({@code ReopenedClock}) and {@link #uninstall} closes it. {@code clockstep.back}, {@code SET LOCAL} between two statements, is taken from every LATER
      * {@code clock_timestamp()} and {@code statement_timestamp()} - never from {@code transaction_timestamp()}, which
      * PostgreSQL fixed when the transaction began, exactly as a real step leaves it. Only the opted-in session sees it.
      */
@@ -644,9 +645,11 @@ class MerchantBnplEnablementDatabaseTest {
                     + " AS $$ SELECT pg_catalog.statement_timestamp() - clockstep.back() $$;"
                     + " CREATE OR REPLACE FUNCTION clockstep.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS"
                     + " $$ SELECT pg_catalog.clock_timestamp() - clockstep.back() $$;");
+            com.finapp.platform.testing.database.ReopenedClock.reopen();
         }
 
         static void uninstall() throws SQLException {
+            com.finapp.platform.testing.database.ReopenedClock.restore();
             bootstrap("DROP SCHEMA IF EXISTS clockstep CASCADE");
         }
 
