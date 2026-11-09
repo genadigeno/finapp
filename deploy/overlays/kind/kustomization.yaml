@@ -1,5 +1,5 @@
 # The kind rehearsal's values, test-only (PHASE_15_PLAN.md section 14). No endpoint or credential here either: the
-# rehearsal generates its Secrets per run. Three replicas, with the budget set to section 6.1's formula exactly, so
+# rehearsal generates its Secrets per run (infra/scripts/kind-secrets.sh). Three replicas, with the budget set to section 6.1's formula exactly, so
 # the rehearsal measures the rule rather than a margin: 3 + 2 x 1 + 1 = 6, and 6 x (7 + 1) + 12 = 60.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

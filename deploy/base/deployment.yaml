@@ -26,6 +26,13 @@ spec:
       app.kubernetes.io/name: finapp-app
   template:
     metadata:
+      annotations:
+        # THE ONE THING THAT CARRIES A ROTATED SECRET TO THE FLEET. A Secret read through envFrom reaches a process only at
+        # its next start, so a changed Secret alone restarts nothing. Changing this number, by a commit, changes the pod
+        # template and so rolls the Deployment under the strategy above. It is changed after the same number on the
+        # ExternalSecret has been synced, and the policy refuses this one running ahead of that one
+        # (SECRET_MANAGEMENT.md section 5).
+        finapp/rotation-generation: "0"
       labels:
         app.kubernetes.io/name: finapp-app
         app.kubernetes.io/part-of: finapp

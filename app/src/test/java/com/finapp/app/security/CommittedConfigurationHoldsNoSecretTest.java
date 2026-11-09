@@ -318,6 +318,41 @@ class CommittedConfigurationHoldsNoSecretTest {
                 .isEmpty();
     }
 
+    // Beside the two tables above, not in them: a parameterized test's table this long is at the edge of what
+    // ThreatModelIsCompleteTest will read as a test, and T9 cites the first of them.
+    @ParameterizedTest
+    @DisplayName("an exemption is for exactly what it names: a credential under the same key is still reported")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                // P15-TSK-018: the operator's field names an environment variable, and nothing else is exempt.
+                "p.yaml | secretKey: hunter2",
+                "p.yaml | secretKey: finapp_mfa_key",
+                "p.yaml | createClusterSecretStore: hunter2"
+            })
+    void theExemptionsAreExact(String fileName, String content) {
+        assertThat(offencesIn(content, fileName.endsWith(".kts")))
+                .as("this shape must be reported: %s", content)
+                .isNotEmpty();
+    }
+
+    @ParameterizedTest
+    @DisplayName("what an exemption names is left alone")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                // P15-TSK-018: External Secrets Operator's field names the variable it writes.
+                "p.yaml | secretKey: FINAPP_MFA_KEY",
+                "p.yaml | - secretKey: FINAPP_DB_APP_PASSWORD",
+                "p.yaml | createClusterSecretStore: false",
+                "p.yaml | processPushSecret: false"
+            })
+    void whatAnExemptionNamesIsAccepted(String fileName, String content) {
+        assertThat(offencesIn(content, fileName.endsWith(".kts")))
+                .as("this shape must NOT be reported: %s", content)
+                .isEmpty();
+    }
+
     @Test
     @DisplayName("the build declares as an input exactly the file types this rule scans")
     void theBuildInputMatchesWhatIsScanned() {
@@ -383,7 +418,9 @@ class CommittedConfigurationHoldsNoSecretTest {
                     }
                     for (String literal : literalsIn(assignment.group(2), buildScript)) {
                         if (!literal.equals(DatabaseCredentialGuard.MARKED_LOCAL_DEFAULT)
-                                && !isKubernetesTokenSwitch(key, literal)) {
+                                && !isKubernetesTokenSwitch(key, literal)
+                                && !isExternalSecretEntryName(key, literal)
+                                && !isOperatorChartSwitch(key, literal)) {
                             offences.add(
                                     "key '"
                                             + key
@@ -404,6 +441,32 @@ class CommittedConfigurationHoldsNoSecretTest {
     private static boolean isKubernetesTokenSwitch(String key, String literal) {
         return key.equals("automountServiceAccountToken") && (literal.equals("true") || literal.equals("false"));
     }
+
+    /**
+     * External Secrets Operator's own field names a key inside the Secret it writes, which here is the name of an environment
+     * variable (`P15-TSK-018`). Exactly this key with exactly that shape, so a credential under the same name is still reported.
+     */
+    private static boolean isExternalSecretEntryName(String key, String literal) {
+        return key.equals("secretKey") && literal.matches("FINAPP_[A-Z0-9_]+");
+    }
+
+    /**
+     * The operator's Helm chart names its object kinds in its switches, which hold a boolean (`P15-TSK-018`). Exactly these keys,
+     * with exactly these values.
+     */
+    private static boolean isOperatorChartSwitch(String key, String literal) {
+        return OPERATOR_CHART_SWITCHES.contains(key) && (literal.equals("true") || literal.equals("false"));
+    }
+
+    private static final Set<String> OPERATOR_CHART_SWITCHES =
+            Set.of(
+                    "createClusterExternalSecret",
+                    "createClusterSecretStore",
+                    "createClusterPushSecret",
+                    "createPushSecret",
+                    "processClusterExternalSecret",
+                    "processClusterPushSecret",
+                    "processPushSecret");
 
     /**
      * The literal parts of a value: the default inside each placeholder, or the whole value when

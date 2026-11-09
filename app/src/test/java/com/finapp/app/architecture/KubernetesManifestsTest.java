@@ -311,6 +311,11 @@ class KubernetesManifestsTest {
             refusedPlants.add(refused.group(1));
             refusedIds.add(refused.group(2));
         }
+        Matcher saying = Pattern.compile("(?m)^refused_saying (\\S+) \"\\[([a-z][a-z-]*)\\] ").matcher(script);
+        while (saying.find()) {
+            refusedPlants.add(saying.group(1));
+            refusedIds.add(saying.group(2));
+        }
         // `accepted` is a plant the policies must let through (a controller's role, P15-TSK-010): made, and answered for.
         Matcher other = Pattern.compile("(?m)^(?:schema_refused|render_refused|accepted) (\\S+)\\b").matcher(script);
         while (other.find()) {

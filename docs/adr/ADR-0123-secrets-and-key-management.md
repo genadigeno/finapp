@@ -53,6 +53,8 @@ that no keys exist *(corrected by `P15-TSK-001`, 2026-11-08)*.
 8. **JWT/JWKS is not applicable today.** The platform issues opaque sessions (ADR-0030). With workforce OIDC (C13), the
    identity provider will own the JWKS.
 
+*Dated note (`P15-TSK-018`, 2026-11-09), on point 2, from what was built and read:* **one `ExternalSecret` per workload**, with one named entry per secret, because the workloads read one Secret each through `envFrom` and one object writes its target in one operation; `P15-TSK-018`'s entry said one per secret, which would need `Merge` into one target. **`refreshPolicy: OnChange`, `refreshInterval: 0s`**: the operator does not poll, so a store write alone moves nothing; it still reads the store when the object's spec or metadata changes and when its Secret is missing or altered. **`creationPolicy: Owner`** (deleting the object removes its Secret) and **`deletionPolicy: Retain`** (a store that stops answering strips nothing). "Triggered by the secret's version" is, concretely, a commit changing `finapp/rotation-generation` on the pod template after the same number on the `ExternalSecret` has synced: nothing restarts the fleet by itself (`SECRET_MANAGEMENT.md` §5.2). A `SecretStore` and a reader ServiceAccount per workload, so that the workloads' own accounts carry no cloud identity, and one store more for the entry the managed brokers name, which the application reads rather than copies. Built as manifests and checked over them; no cluster or store has run them.
+
 ## Alternatives Considered
 
 ### HashiCorp Vault
