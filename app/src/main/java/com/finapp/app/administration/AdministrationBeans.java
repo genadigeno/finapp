@@ -44,7 +44,8 @@ class AdministrationBeans {
             Authorization authorization,
             SessionRevocation sessionRevocation,
             AuditWriter<Connection> auditWriter,
-            OutboxWriter<Connection> outboxWriter) {
+            OutboxWriter<Connection> outboxWriter,
+            com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore) {
         return new IdentityAdministration(
                 idGenerator,
                 clock,
@@ -52,7 +53,8 @@ class AdministrationBeans {
                 authorization,
                 sessionRevocation,
                 auditWriter,
-                outboxWriter);
+                outboxWriter,
+                mfaEnrolmentStore);
     }
 
     /**

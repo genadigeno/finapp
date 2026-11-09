@@ -169,6 +169,7 @@ public class IdentityAdministrationController {
     @PostMapping("/{id}/roles")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(PermissionName.ROLE_ASSIGN)
+    @com.finapp.app.session.RecordsRefusals
     public void assignRole(
             @PathVariable String id,
             @Valid @RequestBody RoleAssignmentRequest body,
@@ -192,6 +193,11 @@ public class IdentityAdministrationController {
             case NOT_FOUND ->
                     throw new ApiException(
                             PlatformErrorCode.NOT_FOUND, "No identity matched the given identifier");
+            case FACTOR_REQUIRED ->
+                    throw new ApiException(
+                            com.finapp.identity.IdentityErrorCode.FACTOR_REQUIRED_FOR_ROLE,
+                            "A role that can redirect a merchant's money was granted to an identity with no factor",
+                            "this role needs its holder to enrol a second factor first.");
         }
     }
 

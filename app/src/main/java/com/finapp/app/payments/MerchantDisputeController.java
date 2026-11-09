@@ -2,6 +2,7 @@ package com.finapp.app.payments;
 
 import com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor;
 import com.finapp.app.merchant.RequiresMerchantKey;
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.merchant.AuthenticatedMerchant;
 import com.finapp.payments.DisputeResponseKind;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -37,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
  * each {@code operationId} from them.
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/merchant/disputes", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class MerchantDisputeController {
@@ -77,7 +79,7 @@ public class MerchantDisputeController {
             @PathVariable("disputeId") String disputeId,
             @Valid @RequestBody DisputeEvidenceUploadRequest body) {
         AuthenticatedMerchant merchant = MerchantKeyAuthenticationInterceptor.require(request);
-        return disputes.uploadAsMerchant(merchant.merchantId(), disputeId, body);
+        return disputes.uploadAsMerchant(merchant, disputeId, body);
     }
 
     /** One of the merchant's documents with its content — every such read on the record. */
@@ -88,7 +90,7 @@ public class MerchantDisputeController {
             @PathVariable("disputeId") String disputeId,
             @PathVariable("evidenceId") String evidenceId) {
         AuthenticatedMerchant merchant = MerchantKeyAuthenticationInterceptor.require(request);
-        return disputes.readEvidenceAsMerchant(merchant.merchantId(), disputeId, evidenceId);
+        return disputes.readEvidenceAsMerchant(merchant, disputeId, evidenceId);
     }
 
     /**
@@ -107,7 +109,7 @@ public class MerchantDisputeController {
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
         AuthenticatedMerchant merchant = MerchantKeyAuthenticationInterceptor.require(request);
         return disputes.respondAsMerchant(
-                merchant.merchantId(), disputeId, DisputeResponseKind.REPRESENTMENT,
+                merchant, disputeId, DisputeResponseKind.REPRESENTMENT,
                 idempotencyKey);
     }
 
@@ -125,6 +127,6 @@ public class MerchantDisputeController {
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
         AuthenticatedMerchant merchant = MerchantKeyAuthenticationInterceptor.require(request);
         return disputes.respondAsMerchant(
-                merchant.merchantId(), disputeId, DisputeResponseKind.ACCEPTANCE, idempotencyKey);
+                merchant, disputeId, DisputeResponseKind.ACCEPTANCE, idempotencyKey);
     }
 }

@@ -44,7 +44,10 @@ was inaccurate, and is corrected with this ADR.
    permissions** — `P3-TSK-021`'s shape — so the approval statement refuses the proposer whatever
    roles they hold.
 
-3. **The step-up is `P4-TSK-007`'s conditional, on both sides.** The proposer and the approver
+3. *(Superseded on the point of the condition, 2026-11-09, `P15-TSK-039`; `PRIVILEGED_ACCESS_REVIEW.md` §6: the proposal
+   and the approval now declare `MULTI_FACTOR` unconditionally, and the role that can make either needs an enrolled factor
+   before it is granted. The rest of this decision stands.)*
+   3. **The step-up is `P4-TSK-007`'s conditional, on both sides.** The proposer and the approver
    each need a `MULTI_FACTOR` session exactly when they have an active factor, decided by an
    authoritative read in the writing transaction. Rejecting and withdrawing need none: stopping a
    change is the fail-safe direction.
@@ -129,7 +132,7 @@ Positive:
 Negative:
 - Two colluding operators can still redirect money after the cooling-off, as with adjustments.
   The pending gauge and the trail are the detection; the residual is recorded.
-- Operators without a factor act at `PASSWORD` — the conditional step-up's recorded limitation.
+- Operators without a factor act at `PASSWORD` — the conditional step-up's recorded limitation. *(Closed 2026-11-09, `P15-TSK-039`: both acts are `MULTI_FACTOR` unconditionally, and the role needs a factor before it is granted.)*
   Mandatory operator MFA is a policy decision for the owner.
 - The approver sees a masked suffix, not the account: verification against the merchant's
   documentation happens outside the platform.
@@ -156,6 +159,6 @@ Financial impact: none directly — nothing is posted. It decides where `P6-TSK-
 ## Follow-up
 
 - When merchant self-service users with MFA arrive, revisit decision 1.
-- Extract the conditional step-up once a fourth caller needs it.
+- Extract the conditional step-up once a fourth caller needs it. *(Done, `P15-TSK-039`, 2026-11-09: `ConditionalStepUp`.)*
 - ~~`P6-TSK-012`: the dispatch reads `effectiveFor`, refuses when none is effective, and records
   the destination id.~~ Done by `P6-TSK-012`, through `findEffectiveForShare` (§9).

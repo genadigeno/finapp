@@ -1,12 +1,11 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
-import com.finapp.app.session.SessionAuthenticationInterceptor;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
-import com.finapp.identity.Session;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -45,18 +44,19 @@ public class PayoutDestinationController {
     /**
      * Proposes a destination from a payout provider grant, or replays the recorded proposal for a
      * retried key ({@code INV-IDEM-01}); a reused key for a different request is the distinct
-     * {@code 409} ({@code INV-IDEM-03}). Step-up when the proposer has a factor.
+     * {@code 409} ({@code INV-IDEM-03}). A {@code MULTI_FACTOR} session, always: below it the interceptor refuses before
+     * anything runs ({@code PRIVILEGED_ACCESS_REVIEW.md} §6).
      */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @RequiresIdempotencyKey
     @ResponseStatus(HttpStatus.CREATED)
     public PayoutDestinationOperations.PayoutDestinationView proposePayoutDestination(
             @PathVariable("merchantId") String merchantId,
             @Valid @RequestBody ProposePayoutDestinationRequest body,
-            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
-            HttpServletRequest request) {
-        return destinations.propose(current(request), merchantId, body, idempotencyKey);
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
+        return destinations.propose(merchantId, body, idempotencyKey);
     }
 
     /** The effective destination and the open change, masked. Unknown merchant: one 404. */
@@ -69,16 +69,16 @@ public class PayoutDestinationController {
 
     /**
      * Approves as a second operator — never the proposer ({@code INV-AUD-04}: refused {@code 409}
-     * and audited {@code DENIED}). Step-up when the approver has a factor. The cooling-off starts.
+     * and audited {@code DENIED}). A {@code MULTI_FACTOR} session, always. The cooling-off starts.
      */
     @PostMapping(path = "/{destinationId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.PAYOUT_DESTINATION_APPROVE)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PayoutDestinationOperations.PayoutDestinationView approvePayoutDestination(
             @PathVariable("merchantId") String merchantId,
             @PathVariable("destinationId") String destinationId,
-            @Valid @RequestBody PayoutDestinationDecisionRequest body,
-            HttpServletRequest request) {
-        return destinations.approve(current(request), merchantId, destinationId, body);
+            @Valid @RequestBody PayoutDestinationDecisionRequest body) {
+        return destinations.approve(merchantId, destinationId, body);
     }
 
     /** Rejects a proposed destination, reasoned. Terminal. */
@@ -99,15 +99,5 @@ public class PayoutDestinationController {
             @PathVariable("destinationId") String destinationId,
             @Valid @RequestBody PayoutDestinationDecisionRequest body) {
         return destinations.withdraw(merchantId, destinationId, body);
-    }
-
-    private static Session current(HttpServletRequest request) {
-        Object session = request.getAttribute(SessionAuthenticationInterceptor.CURRENT_SESSION);
-        if (session instanceof Session authenticated) {
-            return authenticated;
-        }
-        throw new IllegalStateException(
-                "No authenticated session on the request: the payout destination routes are"
-                        + " reachable without SessionAuthenticationInterceptor having run");
     }
 }

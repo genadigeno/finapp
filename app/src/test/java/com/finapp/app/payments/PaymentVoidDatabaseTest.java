@@ -387,6 +387,14 @@ class PaymentVoidDatabaseTest {
             assertThat(intents.findById(app, holder.intent()).orElseThrow().status())
                     .isEqualTo(PaymentIntentStatus.FAILED);
             assertThat(entriesReferencing(app, attempt)).as("nothing was captured").isZero();
+            try (PreparedStatement read = app.prepareStatement("SELECT count(*) FROM platform.audit_record"
+                    + " WHERE operation = 'payments.PaymentVoidDispatched' AND target_id = ?")) {
+                read.setString(1, holder.intent().value().toString());
+                try (ResultSet row = read.executeQuery()) {
+                    row.next();
+                    assertThat(row.getLong(1)).as("the redirect wrote its dispatch record (P15-TSK-039)").isEqualTo(1);
+                }
+            }
         }
         assertThat(sends.get()).isEqualTo(1);
     }

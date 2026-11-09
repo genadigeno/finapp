@@ -72,6 +72,12 @@ class FxAdministrationEndpointDatabaseTest {
         HttpResponse<String> self = post(approval(id), decision("my own"), first, null);
         assertThat(self.statusCode()).isEqualTo(409);
         assertThat(self.body()).contains("fx.SelfApprovalRefused");
+        assertThat(doorRecords("DENIED", "fx.SelfApprovalRefused"))
+                .as("the refused four-eyes attempt is on the record, committed though the act rolled back (P15-TSK-039)")
+                .isEqualTo(1);
+        HttpResponse<String> unknown = post(approval(UUID.randomUUID().toString()), decision("nothing there"), first, null);
+        assertThat(unknown.statusCode()).isEqualTo(404);
+        assertThat(doorRecords("FAILED", "api.NotFound")).as("a lookup that found nothing, on the record").isEqualTo(1);
 
         HttpResponse<String> approved = post(approval(id), decision("checked against O7"), second, null);
         assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
@@ -200,6 +206,21 @@ class FxAdministrationEndpointDatabaseTest {
         return "{\"available\":" + available + ",\"reason\":\"" + reason + "\"}";
     }
 
+    /** This suite's door records with {@code outcome} and {@code code}: outcomes differ, so counting per outcome is exact. */
+    private static long doorRecords(String outcome, String code) throws Exception {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count = app.prepareStatement(
+                        "SELECT count(*) FROM platform.audit_record WHERE operation = 'door.ActRefused'"
+                                + " AND outcome = ? AND change_summary LIKE ?")) {
+            count.setString(1, outcome);
+            count.setString(2, "code=" + code + ",%");
+            try (ResultSet row = count.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
     private String sessionWith(RoleName role) throws Exception {
         String login = "fx." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations",
@@ -227,7 +248,7 @@ class FxAdministrationEndpointDatabaseTest {
         }
         HttpResponse<String> session = post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, someKey());
-        return field(session.body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(field(session.body(), "sessionToken"), this::post);
     }
 
     private HttpResponse<String> get(String path, String bearer) throws Exception {

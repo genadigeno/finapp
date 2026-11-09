@@ -1,7 +1,10 @@
 package com.finapp.app.fx;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -26,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  * only; the unwind cover it causes is sent asynchronously by the cover sweep.
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/fx/trades", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class FxTradeReversalController {
@@ -37,6 +41,7 @@ public class FxTradeReversalController {
     @RequiresPermission(PermissionName.FX_TRADE_REVERSE)
     @RequiresIdempotencyKey
     @ResponseStatus(HttpStatus.CREATED)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public FxTradeReversalDesk.ReversalReceipt proposeFxTradeReversal(
             @PathVariable("id") String id,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
@@ -47,6 +52,7 @@ public class FxTradeReversalController {
     /** Approves a pending reversal - a different person's act, executing it in one transaction. */
     @PostMapping(path = "/{id}/reversal/{rid}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FX_TRADE_REVERSE)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public FxTradeReversalDesk.ReversalReceipt approveFxTradeReversal(
             @PathVariable("id") String id, @PathVariable("rid") String rid, @Valid @RequestBody TradeReversalRequest body) {
         return desk.approve(id, rid, body.reason());

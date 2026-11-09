@@ -16,6 +16,7 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import lombok.NonNull;
@@ -82,6 +83,7 @@ public final class IdentityAdministration {
     @NonNull private final SessionRevocation sessions;
     @NonNull private final AuditWriter<Connection> auditWriter;
     @NonNull private final OutboxWriter<Connection> outboxWriter;
+    @NonNull private final MfaEnrolmentStore<Connection> enrolments;
 
     /**
      * Suspends an identity and ends every session it holds.
@@ -264,6 +266,12 @@ public final class IdentityAdministration {
      * assigned to an identifier that names nobody. Without it the assignment table would accept a
      * row referencing a party that does not exist — the foreign key would catch it, but as a
      * storage exception rendered {@code 500}, which is our fault reported for a caller's typo.
+     *
+     * <p><strong>A role that can redirect a merchant's money needs a factor first</strong> (`P15-TSK-039`;
+     * {@code PRIVILEGED_ACCESS_REVIEW.md} §6): read here, on the grant's own unit of work, per decision. No door removes a
+     * confirmed factor, so a factor seen here cannot be taken away between this read and the grant. A retried grant to
+     * someone already holding the role without a factor is refused too: the answer says what the holding lacks, where
+     * reporting success would tell the administrator the rule was satisfied.
      */
     public RoleGrant assignRole(
             Connection unitOfWork,
@@ -282,6 +290,10 @@ public final class IdentityAdministration {
         }
         if (identities.findById(unitOfWork, subject).isEmpty()) {
             return RoleGrant.NOT_FOUND;
+        }
+        if (role.requiresEnrolledFactor()
+                && enrolments.findActive(unitOfWork, subject, MfaFactorType.TOTP).isEmpty()) {
+            return RoleGrant.FACTOR_REQUIRED;
         }
         return authorization.assign(unitOfWork, subject, role, actor, reason)
                 ? RoleGrant.GRANTED
@@ -340,7 +352,33 @@ public final class IdentityAdministration {
         ALREADY_HELD,
         NOT_FOUND,
         /** The administrator named themselves. */
-        SELF
+        SELF,
+        /** The role can redirect a merchant's money and its holder has enrolled no factor. Nothing was granted. */
+        FACTOR_REQUIRED
+    }
+
+    /**
+     * The check of the holdings the factor rule found already standing (`P15-TSK-039`): who holds a role that needs a factor
+     * and has none, at most {@code limit}. It grants nothing and revokes nothing; the review (§5) resolves what it names.
+     * Recorded in this read's transaction.
+     */
+    public List<RoleAssignmentStore.FactorlessHolding> factorlessHoldings(Connection unitOfWork, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        List<RoleAssignmentStore.FactorlessHolding> holdings = authorization.holdingsWithoutFactor(unitOfWork, limit);
+        auditWriter.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        SecurityContext.require(),
+                        Instant.now(clock),
+                        IdentityAuditAction.FACTORLESS_HOLDINGS_READ,
+                        "identity.RoleAssignment",
+                        "factorless-holdings",
+                        Optional.empty(),
+                        AuditOutcome.SUCCEEDED,
+                        currentCorrelation().correlationId(),
+                        Optional.of("served=" + holdings.size())));
+        return holdings;
     }
 
     private void audit(

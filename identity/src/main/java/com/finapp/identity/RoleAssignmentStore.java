@@ -25,6 +25,15 @@ public interface RoleAssignmentStore<T> {
     Set<RoleName> liveRolesOf(T unitOfWork, IdentityId identityId);
 
     /**
+     * The live holdings of {@code roles} whose identity has no active factor, oldest first, at most {@code limit}
+     * (`P15-TSK-039`): one read of both tables, so no holding is judged against a factor read at another moment.
+     */
+    java.util.List<FactorlessHolding> holdingsWithoutFactor(T unitOfWork, Set<RoleName> roles, int limit);
+
+    /** One such holding: who, which role, since when. */
+    record FactorlessHolding(IdentityId identityId, RoleName role, Instant assignedAt) {}
+
+    /**
      * Grants a role.
      *
      * @param assignedBy the identity that granted it. Recorded on the row, not only in the audit

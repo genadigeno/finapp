@@ -1,6 +1,7 @@
 package com.finapp.app.credit;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.identity.PermissionName;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  * replay with a reason - each serving audited.
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/credit", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiresSession
 @RequiredArgsConstructor

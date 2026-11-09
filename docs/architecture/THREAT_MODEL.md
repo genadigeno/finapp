@@ -400,6 +400,10 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T3 | The period, rebuild and valuation-gap approvals are pinned at `MULTI_FACTOR` | EXISTS | `app/src/test/java/com/finapp/app/ledger/ApprovalAssuranceTest.java#thePeriodApprovalsArePinned`; `app/src/test/java/com/finapp/app/ledger/ApprovalAssuranceTest.java#theRebuildAndTheGapApprovalsStepUp` |
 | T3 | MFA cannot be bypassed: elevating one session elevates none of the identity's others, using a session never raises its assurance, and the only endpoint that issues a session demands a verified code (`INV-IDN-05`) | EXISTS | `app/src/test/java/com/finapp/app/domain/MfaCannotBeBypassedDatabaseTest.java#anOlderPasswordSessionIsNotElevated`; `app/src/test/java/com/finapp/app/domain/MfaCannotBeBypassedDatabaseTest.java#aRefreshDoesNotRaiseAssurance`; `app/src/test/java/com/finapp/app/domain/MfaCannotBeBypassedDatabaseTest.java#theSessionIssuingEndpointDemandsAFactor` |
 | T3 | No production path creates or elevates a session without being enumerated | EXISTS | `app/src/test/java/com/finapp/app/architecture/MfaBypassPathsAreEnumeratedTest.java#everyPathIsEnumerated` |
+| T3 | A payout destination's proposal and approval, and Phase 9's policy approvals, kill-switch restarts and trade reversals, refuse a session below `MULTI_FACTOR` at the real interceptor, before the permission is read, and each route is pinned in the register | EXISTS | `app/src/test/java/com/finapp/app/ledger/RuledDoorsStepUpTest.java#aPasswordSessionIsRefusedAtEach`; `app/src/test/java/com/finapp/app/ledger/RuledDoorsStepUpTest.java#theLevelIsJudgedBeforeThePermission`; `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#everyRuledRouteDeclaresMultiFactor` |
+| T3 | A role that can redirect a merchant's money cannot be granted to an identity with no enrolled factor, and no door removes a confirmed factor | EXISTS | `identity/src/test/java/com/finapp/identity/RoleGrantNeedsAFactorTest.java#aGrantWithNoFactorIsRefused`; `identity/src/test/java/com/finapp/identity/RoleGrantNeedsAFactorTest.java#aConfirmedFactorCannotBeRemoved`; `app/src/test/java/com/finapp/app/administration/RoleGrantDoorTest.java#aRefusedGrantAnswers` |
+| T3 | Holdings of those roles that predate the rule are named by a recorded read, and resolved by the access review's first performance | PLANNED | `P15-TSK-032` |
+| T3 | One conditional step-up body: every caller, found in the bytecode, answers the rule's truth table, and no copy of the rule remains | EXISTS | `app/src/test/java/com/finapp/app/architecture/ConditionalStepUpHasOneHomeTest.java#everyCallerAnswersTheTruthTable`; `app/src/test/java/com/finapp/app/architecture/ConditionalStepUpHasOneHomeTest.java#noCopyIsLeft`; `identity/src/test/java/com/finapp/identity/ConditionalStepUpTest.java#anEnrolledPasswordSessionIsRefused` |
 | T3 | Each role's permissions are code, and each role's exact grants are pinned | EXISTS | `identity/src/test/java/com/finapp/identity/RoleNameTest.java` |
 | T3 | Every permission-guarded route requires exactly the permission the register names | EXISTS | `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#everyGuardedRouteRequiresItsRegisteredPermission` |
 | T3 | A privileged endpoint refuses a session whose identity holds no role, and the denial is audited; a revoked role stops working on the next request | EXISTS | `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#negativeAuthorizationForPrivilegedEndpoints`; `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#aDenialIsAudited`; `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#roleRevocationIsImmediate` |
@@ -638,7 +642,16 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T38 | A permission denial is audited | EXISTS | `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#aDenialIsAudited` |
 | T38 | An operator act is recorded `EMPLOYEE`, decided per request from the server's record of roles and never from the client; a customer refused at an operator route `CUSTOMER` | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#anOperatorActIsTypedEmployee`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusalIsTypedByWhoTried`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRoleHolderOnACustomerRouteIsACustomer` |
 | T38 | A refused step-up is recorded once per refused request, committed on its own, naming the route pattern and no session, code or factor | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusedStepUpIsRecorded`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#anOperationsRefusalIsRecordedOnce` |
-| T38 | Refused and failed Phase 7 and Phase 8 acts (the refused four-eyes attempts among them) and failed or not-found Phase 9 and 10 operator reads recorded with their outcome, and a merchant's dispute act naming its API key (returned to the owner, 2026-11-08) | PLANNED | `P15-TSK-039` |
+| T38 | A refused or failed act at an operator's or a merchant's door of Phases 7 to 10 - a refused four-eyes attempt (a self-approval, a stale echo, a refused kind), a not-found lookup, a body the framework rejected, an accident - is recorded with its outcome, in a transaction of its own committed before the answer | EXISTS | `app/src/test/java/com/finapp/app/session/RefusedActsTest.java#aRefusedSelfApprovalIsRecorded`; `app/src/test/java/com/finapp/app/session/RefusedActsTest.java#aStaleEchoAndARefusedKindAreRecorded`; `app/src/test/java/com/finapp/app/session/RefusedActsTest.java#aNotFoundLookupIsRecorded`; `app/src/test/java/com/finapp/app/session/RefusedActsTest.java#aValidationFailureIsRecorded`; `app/src/test/java/com/finapp/app/session/RefusedActsTest.java#anAccidentIsRecorded` |
+| T38 | A refusal whose record cannot be written is answered as a failure, never as a refusal without its record | EXISTS | `app/src/test/java/com/finapp/app/session/RefusedActsTest.java#aRefusalWhoseRecordCannotBeWrittenIsAFailure` |
+| T38 | The build reads the controllers, and refuses an operator's or a merchant's door of Phases 7 to 10 that does not declare the record; a planted one is caught | EXISTS | `app/src/test/java/com/finapp/app/architecture/RefusedActsAreRecordedTest.java#everyDoorRecordsItsRefusals`; `app/src/test/java/com/finapp/app/architecture/RefusedActsAreRecordedTest.java#aPlantedDoorIsCaught` |
+| T38 | A door's record holds no secret, body, reason or caller's text: only a path value that is a UUID is written | EXISTS | `app/src/test/java/com/finapp/app/session/RefusedActsTest.java#aPathValueIsWrittenOnlyWhenItIsAnId`; `app/src/test/java/com/finapp/app/session/RefusedActsTest.java#aValidationFailureIsRecorded` |
+| T38 | A merchant's dispute act and a merchant's refused act name the API key that made them, by its public id | EXISTS | `payments/src/test/java/com/finapp/payments/DisputeActNamesItsApiKeyTest.java#aMerchantsEvidenceReadNamesItsKey`; `app/src/test/java/com/finapp/app/session/RefusedActsTest.java#aMerchantsRefusalNamesItsKey` |
+| T38 | A void redirected from a declined capture records its dispatch; a redirect that lost records nothing | EXISTS | `app/src/test/java/com/finapp/app/payments/RedirectVoidDispatchRecordTest.java#theActingRedirectRecordsTheDispatch`; `app/src/test/java/com/finapp/app/payments/RedirectVoidDispatchRecordTest.java#theLoserRecordsNothing` |
+| T38 | The credit policy read at an instant and the review queue's served cases are on the record, and an evidence read's reason is screened on the server for a minimum length | EXISTS | `credit/src/test/java/com/finapp/credit/OperatorReadRecordsTest.java#thePolicyReadIsRecorded`; `credit/src/test/java/com/finapp/credit/OperatorReadRecordsTest.java#theServedCasesAreNamed`; `app/src/test/java/com/finapp/app/credit/EvidenceReadReasonTest.java#aShortReasonIsRefusedFirst` |
+| T38 | On a real database: the door's record commits though the act rolled back, the refused grant and its record, the check of standing holdings, the read records (the fx administration, identity administration, policy, queue, void and dispute database suites, written and owed) | PLANNED | `P15-TST-002` |
+| T38 | The rows a merchant API key can add by repeating a refused request: no per-key limit exists | PLANNED | `P15-TSK-022` |
+| T38 | The rows an operator can add by repeating a refused request: bounded by who can reach the door and the named row, not by a rate | GAP | `owner item 28`; owner: the owner, since 2026-11-09 |
 | T39 | The operator door retries an abandoned event, recording who and why; a standing discard stops the retry | EXISTS | `platform/src/test/java/com/finapp/platform/deadletter/DeadLetterOperationsTest.java#aRetryReturnsTheEventToTheRelay`; `platform/src/test/java/com/finapp/platform/deadletter/DeadLetterOperationsTest.java#aRetryIsRefused` |
 | T39 | A discard, of an abandoned event or a parked record, needs a second person, judged by who they are and never by their type; the row stays, with the decision recorded | EXISTS | `platform/src/test/java/com/finapp/platform/deadletter/DeadLetterOperationsTest.java#aDiscardNeedsASecondPerson`; `platform/src/test/java/com/finapp/platform/deadletter/DeadLetterOperationsTest.java#theSamePersonIsTheSamePersonWhateverTheirType`; `platform/src/test/java/com/finapp/platform/deadletter/DeadLetterOperationsTest.java#aParkedRecordIsDiscardedByTwoPeople` |
 | T39 | Every dead-letter door is `EVENT_OPERATE`, and every act among them is keyed and on a `MULTI_FACTOR` session; a refused act is recorded `DENIED` in a transaction of its own | EXISTS | `app/src/test/java/com/finapp/app/eventing/DeadLetterDeskTest.java#theDoorsAreDeclared`; `app/src/test/java/com/finapp/app/eventing/DeadLetterDeskTest.java#aRefusalIsRecorded` |
@@ -793,11 +806,12 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   domain's `*_by_type` columns are frozen by trigger, so a report separating staff from customers reads the population
   from the record's date onward, and before it reconstructs it from `identity.role_assignment` and `identity.RoleAssigned`.
   The database cases (an operator act's row, a refused step-up's row) are written and wait for the exit database pass.
-  *(Added 2026-11-08 by the carried items' ruling, C15, and returned to the owner the same day:)* refused
-  and failed Phase 7 and 8 acts and failed or not-found Phase 9 and 10 operator reads leave no audit outcome;
-  the privileged-access task records every refused step-up and every denial, and returned this wider class to
-  the owner with the access review's two step-up questions and the conditional step-up's extraction
-  (owner item 10), now planned as `P15-TSK-039` (the owner, 2026-11-08).
+  *(Rewritten 2026-11-09: this read that refused and failed Phase 7 and 8 acts and failed or not-found Phase 9 and 10
+  operator reads leave no audit outcome.)* They do now: each is recorded at its door with its outcome, in a transaction
+  of its own, by the rule the build holds over the controllers. **What remains** is the volume a caller can make by
+  repeating a refusal: every row names who made it and holds nothing the caller wrote, a merchant key's limit is
+  planned, and an operator's is owner item 28. Customer doors of those phases are outside the wider class: a customer's
+  refused step-up has its record, and the rest of a customer's refusals were not a privileged act.
 - **T43.** No general bound on the size of a provider's answer exists across the adapters. The regulatory adapter is
   the one evidenced. The adapters call simulated providers in this programme. **Owner item 5, decided 2026-11-08**:
   static analysis flags an unbounded read of a provider's answer in an adapter, *built 2026-11-08*: the rule refuses a
@@ -941,8 +955,7 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
    `PRIVILEGED_ACCESS_REVIEW.md` §6 rules it - a factor required of every holder of `MERCHANT_ADMINISTRATOR`,
    `MERCHANT_PAYOUT`'s and `PAYOUT_DESTINATION_APPROVE`'s roles before the role is granted, and `MULTI_FACTOR` declared on
    Phase 9's approvals, restarts and reversals - and (a), (b) and (d) as **one follow-on M15.7 item** after the privileged
-   access task, before the phase's database pass. **Decided 2026-11-08**: as recommended, all four parts in
-   `P15-TSK-039`, which also builds (c); T38's row is `PLANNED` on it.
+   access task, before the phase's database pass. **Decided 2026-11-08**: as recommended, all four parts, and **built 2026-11-09**: T3's and T38's rows hold them. Item 28 carries what was left.
 11. **T33's and T13's remainder: the owner's reach outside reconciliation, settlement and lending** *(added 2026-11-08 by the
    task that built the migrator)*. The two debt rows named those three schemas; the guard over every module's
    migrations that the same task wrote found the same two holes in others. **`TRUNCATE`**: 51 tables refuse `DELETE` by trigger
@@ -1033,6 +1046,16 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
    the operator attesting from the broker's and the consumers' records that the first attempt was not delivered. It restores
    the event without a gap, at the price of a judgement the platform cannot check, and it needs a new four-eyes door. **Decided 2026-11-09**: keep the
    refusal.
+
+28. **T38's remainder: the rows a caller can add by being refused** *(added 2026-11-09 by the task that built the wider
+   audit class)*. A refused or failed act at a privileged door is one audit row per attempt, as a denial and a refused
+   step-up are, and a retry is a second attempt. Reaching the door takes an authenticated holder of its permission or an
+   active merchant key; the row names them and holds nothing they wrote, so a row costs the caller a request and tells on
+   them. Nothing per caller limits the rate. A merchant key's limit is already owed by the abuse-limits task (ADR-0052). The
+   options for an operator: (a) accept: a named, permissioned population; every row of a flood is its own evidence, and the
+   privileged access review reads them; (b) a per-identity limit on the same cluster-wide counter the abuse-limits task
+   builds, which a row at the limit would still record. *Recommendation*: (a), and (b) only if the review ever finds it
+   used. Held by a `GAP` row in §4.
 
 ## 7. Decided against
 

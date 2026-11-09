@@ -1,8 +1,5 @@
 package com.finapp.app.merchant;
 
-import com.finapp.identity.ConditionalStepUp;
-import com.finapp.identity.MfaEnrolmentStore;
-import com.finapp.identity.Session;
 import com.finapp.merchant.IllegalPayoutDestinationTransitionException;
 import com.finapp.merchant.MerchantClosedException;
 import com.finapp.merchant.MerchantErrorCode;
@@ -30,24 +27,23 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The operator surface over {@link PayoutDestinations} (`P6-TSK-011`, ADR-0056): the
- * transactions, the conditional step-up, the tokenisation exchange and the error mapping.
+ * transactions, the tokenisation exchange and the error mapping.
  *
  * <h2>The proposal is two transactions around a connectionless exchange</h2>
  *
  * <p>The {@code PaymentMethodService.attach} shape: the grant's shape is judged first (bank
  * details refused before anything else happens); a read-only transaction fails fast (the merchant
- * exists, the proposer's assurance suffices); the provider exchange runs holding <strong>no
- * database connection</strong> (the {@code P1-TSK-026} discipline — a slow provider must not
- * hold a pool slot); and the keyed proposal commits in a second transaction that re-decides the
- * step-up authoritatively at the write.
+ * exists); the provider exchange runs holding <strong>no database connection</strong> (the
+ * {@code P1-TSK-026} discipline — a slow provider must not hold a pool slot); and the keyed
+ * proposal commits in a second transaction.
  *
- * <h2>Step-up on both sides, conditionally</h2>
+ * <h2>Step-up on both sides, unconditionally</h2>
  *
- * <p>The proposer and the approver each need a {@code MULTI_FACTOR} session <em>exactly when</em>
- * they have an active factor — the {@code P4-TSK-007} conditional, restated here as the third
- * copy of a six-line method (recorded for extraction in the backlog rather than refactored under
- * two unrelated services in this task). Rejecting and withdrawing need none: stopping a change is
- * the fail-safe direction.
+ * <p>The proposer and the approver each need a {@code MULTI_FACTOR} session: the controller
+ * declares it ({@code PRIVILEGED_ACCESS_REVIEW.md} §6, `P15-TSK-039`), so the interceptor refuses
+ * a weaker session before anything here runs. It was the {@code P4-TSK-007} conditional until a
+ * money-redirecting role came to need a factor at all. Rejecting and withdrawing need none:
+ * stopping a change is the fail-safe direction.
  *
  * <h2>A self-approval commits its refusal</h2>
  *
@@ -73,19 +69,16 @@ public final class PayoutDestinationOperations {
 
     private final PayoutDestinations destinations;
     private final ObjectProvider<PayoutDestinationTokenisation> tokenisation;
-    private final MfaEnrolmentStore<Connection> enrolments;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
 
     public PayoutDestinationOperations(
             PayoutDestinations destinations,
             ObjectProvider<PayoutDestinationTokenisation> tokenisation,
-            MfaEnrolmentStore<Connection> enrolments,
             TransactionTemplate transactions,
             DataSource dataSource) {
         this.destinations = Objects.requireNonNull(destinations, "destinations must not be null");
         this.tokenisation = Objects.requireNonNull(tokenisation, "tokenisation must not be null");
-        this.enrolments = Objects.requireNonNull(enrolments, "enrolments must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
     }
@@ -95,11 +88,9 @@ public final class PayoutDestinationOperations {
      * retried key.
      */
     public PayoutDestinationView propose(
-            Session current,
             String rawMerchantId,
             ProposePayoutDestinationRequest body,
             String idempotencyKey) {
-        Objects.requireNonNull(current, "current must not be null");
         Objects.requireNonNull(body, "body must not be null");
         Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
         MerchantId merchant = merchantOrAbsent(rawMerchantId);
@@ -119,7 +110,6 @@ public final class PayoutDestinationOperations {
         // Tx1: fail fast, read-only - a refused caller costs no exchange and writes nothing.
         inOneTransaction(
                 unitOfWork -> {
-                    requireConditionalAssurance(unitOfWork, current, "proposal");
                     if (!destinations.merchantExists(unitOfWork, merchant)) {
                         throw notFound();
                     }
@@ -146,12 +136,11 @@ public final class PayoutDestinationOperations {
                                     "The destination exchange could not be completed");
                 };
 
-        // Tx2: the authoritative step-up decision at the write, then the keyed proposal. An
-        // ApiException aborts the transaction, so every refusal here commits nothing.
+        // Tx2: the keyed proposal. An ApiException aborts the transaction, so every refusal here
+        // commits nothing.
         try {
             return inOneTransaction(
                     unitOfWork -> {
-                        requireConditionalAssurance(unitOfWork, current, "proposal");
                         PayoutDestinationId proposed =
                                 destinations
                                         .propose(
@@ -211,11 +200,9 @@ public final class PayoutDestinationOperations {
      * self-approval's {@code DENIED} record commits before the {@code 409} is raised.
      */
     public PayoutDestinationView approve(
-            Session current,
             String rawMerchantId,
             String rawDestinationId,
             PayoutDestinationDecisionRequest body) {
-        Objects.requireNonNull(current, "current must not be null");
         Objects.requireNonNull(body, "body must not be null");
         MerchantId merchant = merchantOrAbsent(rawMerchantId);
         PayoutDestinationId id = destinationOrAbsent(rawDestinationId);
@@ -224,8 +211,6 @@ public final class PayoutDestinationOperations {
                         () ->
                                 inOneTransaction(
                                         unitOfWork -> {
-                                            requireConditionalAssurance(
-                                                    unitOfWork, current, "approval");
                                             return destinations.approve(
                                                     unitOfWork, merchant, id, body.reason());
                                         }));
@@ -283,16 +268,6 @@ public final class PayoutDestinationOperations {
                     MerchantErrorCode.DESTINATION_CHANGE_NOT_OPEN,
                     "A payout destination decision was refused by the machine");
         }
-    }
-
-    /**
-     * {@code MULTI_FACTOR} required exactly of an identity that has an active factor — the
-     * {@code P4-TSK-007} conditional verbatim: an authoritative read per decision, never a cache.
-     */
-    private void requireConditionalAssurance(
-            Connection unitOfWork, Session current, String act) {
-        ConditionalStepUp.require(enrolments, unitOfWork, current,
-                "A payout destination " + act + " from an MFA-enrolled identity requires a MULTI_FACTOR session");
     }
 
     private static PayoutDestinationView render(PayoutDestination destination) {

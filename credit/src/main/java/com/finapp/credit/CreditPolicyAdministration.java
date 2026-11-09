@@ -294,6 +294,29 @@ public final class CreditPolicyAdministration {
         return store.policy(unitOfWork, id).orElseThrow(PolicyNotFound::new);
     }
 
+    /**
+     * {@link #activeAt}, for an investigator's read through the operator door: recorded in the read's transaction, naming the
+     * version served, the product, and the instant asked for (`P15-TSK-039`).
+     *
+     * @throws PolicyNotFound when no version was (or is) active - recorded by the door as a refused read
+     */
+    public CreditPolicyStore.PolicyVersion readActiveAt(
+            Connection unitOfWork, CreditProduct product, Optional<Instant> at, Actor actor, CorrelationId correlation) {
+        CreditPolicyStore.PolicyVersion version = activeAt(unitOfWork, product, at);
+        audit.append(unitOfWork, new AuditRecord(
+                AuditId.next(ids),
+                actor,
+                clock.instant(),
+                CreditAuditAction.POLICY_READ,
+                TARGET_TYPE,
+                version.row().id().value().toString(),
+                Optional.empty(),
+                AuditOutcome.SUCCEEDED,
+                correlation,
+                Optional.of("the policy for " + product.name() + " at " + at.map(Instant::toString).orElse("now"))));
+        return version;
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private static String reasoned(String reason) {

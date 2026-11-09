@@ -133,7 +133,7 @@ class IdentityRiskActionsTest {
     private final IdentityAdministration administration = new IdentityAdministration(RiskEvaluationWorld.IDS,
             RiskEvaluationWorld.CLOCK, identities, new Authorization(roles, RiskEvaluationWorld.IDS,
                     RiskEvaluationWorld.CLOCK, (unitOfWork, record) -> audit.add(record)), revocation,
-            (unitOfWork, record) -> audit.add(record), outbox);
+            (unitOfWork, record) -> audit.add(record), outbox, noFactorIsRead());
     private final IdentityRiskActions doors = new IdentityRiskActions(administration, revocation, identities,
             new IdempotentExecutor(new Claims(), RiskEvaluationWorld.CLOCK, Duration.ofDays(1), Duration.ofMinutes(1)),
             new IdentityRiskActions.Transactions() {
@@ -307,5 +307,15 @@ class IdentityRiskActionsTest {
                 Instant now, Instant expiresAt, Duration lease) {
             return false;
         }
+    }
+
+    /** Risk's actions suspend and reinstate; only a role grant reads a factor (`P15-TSK-039`). */
+    @SuppressWarnings("unchecked")
+    private static com.finapp.identity.MfaEnrolmentStore<Connection> noFactorIsRead() {
+        return (com.finapp.identity.MfaEnrolmentStore<Connection>) java.lang.reflect.Proxy.newProxyInstance(
+                IdentityRiskActionsTest.class.getClassLoader(), new Class<?>[] {com.finapp.identity.MfaEnrolmentStore.class},
+                (proxy, method, args) -> {
+                    throw new AssertionError("no factor is read");
+                });
     }
 }

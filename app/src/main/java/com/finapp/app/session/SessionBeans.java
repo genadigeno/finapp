@@ -95,6 +95,20 @@ class SessionBeans {
         return new StepUpRefusals(sessionTransactions, dataSource, authorization);
     }
 
+    /**
+     * The error contract's recorder of a declared door's refused and failed acts (`P15-TSK-039`), on the session's
+     * {@code REQUIRES_NEW} template: the record commits whatever the handler's work did.
+     */
+    @Bean
+    RefusedActs refusedActs(
+            org.springframework.transaction.support.TransactionTemplate sessionTransactions,
+            javax.sql.DataSource dataSource,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new RefusedActs(sessionTransactions, dataSource, auditWriter, idGenerator, clock);
+    }
+
     @Bean
     com.finapp.identity.RoleAssignmentStore<Connection> roleAssignmentStore(IdGenerator idGenerator) {
         return new com.finapp.identity.JdbcRoleAssignmentStore(idGenerator);

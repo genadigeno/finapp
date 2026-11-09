@@ -51,6 +51,21 @@ final class InterceptorHarness {
                 }));
     }
 
+    /** The refused-act recorder over the same captures (`P15-TSK-039`). */
+    static RefusedActs refusedActs(List<String> events, List<AuditRecord> written, IdGenerator ids, Clock clock) {
+        return new RefusedActs(transactions(events), new OneConnection(), (uow, record) -> {
+            events.add("write:" + record.operation().code());
+            written.add(record);
+        }, ids, clock);
+    }
+
+    /** The refused-act recorder whose audit write fails: the record that cannot be written. */
+    static RefusedActs failingRefusedActs(IdGenerator ids, Clock clock) {
+        return new RefusedActs(transactions(new java.util.ArrayList<>()), new OneConnection(), (uow, record) -> {
+            throw new IllegalStateException("the audit store is unreachable");
+        }, ids, clock);
+    }
+
     private static Authorization authorization(Set<RoleName> roles, AtomicInteger roleReads, List<String> events,
             List<AuditRecord> written, IdGenerator ids, Clock clock) {
         return new Authorization(roles(roles, roleReads), ids, clock, (uow, record) -> {

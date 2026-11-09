@@ -165,3 +165,10 @@ operator act is always typed by the standing that permitted it. A permission's m
 key a person by `Actor.keyedType` (always `CUSTOMER` for a person), so the typing never splits one person's retries
 across two scopes. A refused step-up is now recorded beside a denial (`identity.StepUpRefused`). Who may hold which
 role is `PRIVILEGED_ACCESS_REVIEW.md`.
+
+**Dated note (2026-11-09, `P15-TSK-039`).** A role that can redirect a merchant's money - today `MERCHANT_ADMINISTRATOR` and
+`LEDGER_OPERATOR`, read from what each role grants - cannot be granted to an identity with no enrolled factor:
+`409 identity.FactorRequiredForRole` (`PRIVILEGED_ACCESS_REVIEW.md` §6). A permission still means what it meant, and is still
+resolved per request; what changed is who may be given the role. Holdings that stood before the rule are named by a
+recorded read and not revoked by a migration. Every refused or failed act at an operator's or a merchant's door of Phases 7 to 10
+is recorded (`door.ActRefused`), beside the denial and the refused step-up this ADR's boundary already records.

@@ -1,7 +1,10 @@
 package com.finapp.app.fx;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -34,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
  * them and whether money may move at all.
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/fx", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class FxAdministrationController {
@@ -61,6 +65,7 @@ public class FxAdministrationController {
     /** Activates a pending version - a different person's act; retires its predecessor. */
     @PostMapping(path = "/pricing-policies/{id}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FX_ADMINISTER)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public FxAdministrationDesk.PolicyReceipt approveFxPricingPolicy(
             @PathVariable("id") String id, @Valid @RequestBody FxDecisionRequest body) {
         return desk.approve(id, body.reason());
@@ -102,6 +107,7 @@ public class FxAdministrationController {
     /** Approves an enable request - a different person's act; appends the enabling fact. */
     @PostMapping(path = "/enable-requests/{rid}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FX_ADMINISTER)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public FxAdministrationDesk.EnableReceipt approveFxEnableRequest(
             @PathVariable("rid") String requestId, @Valid @RequestBody FxDecisionRequest body) {
         return desk.approveEnable(requestId, body.reason());

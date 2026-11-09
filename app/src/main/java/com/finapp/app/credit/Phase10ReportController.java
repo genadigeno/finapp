@@ -1,5 +1,6 @@
 package com.finapp.app.credit;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import lombok.NonNull;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code operationId} rule).
  */
 @RestController
+@RecordsRefusals
 @RequiredArgsConstructor
 public class Phase10ReportController {
 

@@ -1,5 +1,6 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.payments.DisputeResponseKind;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code OpenApiContractTest}).
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class OperatorDisputeController {

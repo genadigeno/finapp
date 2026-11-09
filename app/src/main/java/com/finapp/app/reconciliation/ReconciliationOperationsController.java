@@ -1,5 +1,6 @@
 package com.finapp.app.reconciliation;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  * rule, {@code OpenApiContractTest}).
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(
         path = "/operator/reconciliation",
         produces = MediaType.APPLICATION_JSON_VALUE)

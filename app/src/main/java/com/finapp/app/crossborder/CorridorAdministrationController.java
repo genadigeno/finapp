@@ -1,7 +1,10 @@
 package com.finapp.app.crossborder;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -30,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code CROSSBORDER_ADMINISTER}, held by {@code FX_CONTROLLER}.
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/cross-border", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class CorridorAdministrationController {
@@ -57,6 +61,7 @@ public class CorridorAdministrationController {
     /** Activates a pending version - a different person's act; retires its predecessor. */
     @PostMapping(path = "/corridor-policies/{id}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public CorridorAdministrationDesk.CorridorPolicyReceipt approveCorridorPolicy(
             @PathVariable("id") String id, @Valid @RequestBody CorridorDecisionRequest body) {
         return desk.approve(id, body.reason());
@@ -87,6 +92,7 @@ public class CorridorAdministrationController {
     /** Approves a corridor enable request - a different person's act; appends the enabling fact. */
     @PostMapping(path = "/corridor-enable-requests/{rid}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public CorridorAdministrationDesk.CorridorEnableReceipt approveCorridorEnableRequest(
             @PathVariable("rid") String requestId, @Valid @RequestBody CorridorDecisionRequest body) {
         return desk.approveEnable(requestId, body.reason());

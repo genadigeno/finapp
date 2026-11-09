@@ -97,7 +97,7 @@ public final class DisputeEvidenceAccess {
                     Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
                     Optional<DisputeEvidence> same = evidence.findByContent(uow, dispute, content);
                     if (same.isPresent()) {
-                        audited(uow, uploader, found.dispute(), same.get(), false, reason, now);
+                        audited(uow, uploader, actor, found.dispute(), same.get(), false, reason, now);
                         return new Uploaded(same.get(), false);
                     }
                     DisputeActs.requireRespondable(
@@ -119,7 +119,7 @@ public final class DisputeEvidenceAccess {
                                             uploader.type().name(),
                                             now),
                                     content);
-                    audited(uow, uploader, found.dispute(), stored.evidence(), stored.created(),
+                    audited(uow, uploader, actor, found.dispute(), stored.evidence(), stored.created(),
                             reason, now);
                     return new Uploaded(stored.evidence(), stored.created());
                 });
@@ -164,7 +164,7 @@ public final class DisputeEvidenceAccess {
                                                     AuditOutcome.SUCCEEDED,
                                                     PaymentCreation.resolvedCorrelation()
                                                             .correlationId(),
-                                                    Optional.of("dispute=" + dispute))));
+                                                    Optional.of("dispute=" + dispute + DisputeActs.keyNote(actor)))));
                     return content;
                 });
     }
@@ -172,6 +172,7 @@ public final class DisputeEvidenceAccess {
     private void audited(
             Connection unitOfWork,
             Actor uploader,
+            DisputeActor actor,
             Dispute dispute,
             DisputeEvidence document,
             boolean created,
@@ -196,6 +197,7 @@ public final class DisputeEvidenceAccess {
                                         + ", kind=" + document.kind()
                                         + ", contentType=" + document.contentType()
                                         + ", bytes=" + document.contentLength()
-                                        + ", created=" + created)));
+                                        + ", created=" + created
+                                        + DisputeActs.keyNote(actor))));
     }
 }

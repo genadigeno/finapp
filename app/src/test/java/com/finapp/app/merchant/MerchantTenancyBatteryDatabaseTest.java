@@ -1107,7 +1107,8 @@ class MerchantTenancyBatteryDatabaseTest {
                                     + "\"}",
                             null,
                             someKey());
-            operator = field(session.body(), "sessionToken");
+            // MULTI_FACTOR: the battery's operator reaches every door, the payout destination's approval among them.
+            operator = com.finapp.app.session.OperatorStepUp.elevated(field(session.body(), "sessionToken"), this::post);
         }
         return operator;
     }
