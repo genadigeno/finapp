@@ -1,6 +1,7 @@
 package com.finapp.bnpl;
 
 import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.platform.testing.database.ReopenedClock;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -14,7 +15,9 @@ import java.util.function.Function;
  * `P11-TSK-036`, in a schema of bnpl's own, {@code bnplclock}, so neither module's suite drops the other's). It shadows the
  * four clock functions; a session opts in by putting {@code bnplclock} before {@code pg_catalog} on its
  * {@code search_path} - bnpl's triggers are invoker's rights with no path of their own, so the production code and the
- * production triggers run unchanged and read the shadowed clock:
+ * production triggers run unchanged and read the shadowed clock. Since {@code P15-TSK-040} those triggers name {@code pg_catalog}
+ * themselves, so {@link #install} opens them again in this test database only ({@code ReopenedClock}) and {@link #uninstall}
+ * closes them, every definition put back byte for byte:
  *
  * <ul>
  *   <li><strong>the frame</strong> ({@code bnplclock.frame}, set for the session): an interval added to every reading, so a
@@ -46,6 +49,12 @@ final class BnplClockFrame {
                 + " $$ SELECT pg_catalog.statement_timestamp() + bnplclock.frame() - bnplclock.back() $$;"
                 + " CREATE OR REPLACE FUNCTION bnplclock.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS"
                 + " $$ SELECT pg_catalog.clock_timestamp() + bnplclock.frame() - bnplclock.back() $$;");
+        ReopenedClock.reopen();
+    }
+
+    /** Closes every production function again, as the migrations left it. The shadow schema stays; the next install replaces it. */
+    static void uninstall() {
+        ReopenedClock.restore();
     }
 
     /** A fresh session of {@code role} reading the shadowed clock in {@code frame}, its transaction not yet begun. */

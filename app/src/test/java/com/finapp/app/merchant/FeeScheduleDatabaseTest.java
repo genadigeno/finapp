@@ -76,6 +76,11 @@ class FeeScheduleDatabaseTest {
         com.finapp.platform.testing.database.DatabaseClockFrame.install();
     }
 
+    @org.junit.jupiter.api.AfterAll
+    static void putTheClockBack() {
+        com.finapp.platform.testing.database.DatabaseClockFrame.uninstall();
+    }
+
     @LocalServerPort private int port;
     @Autowired private Authorization authorization;
     @Autowired private FeeSchedules feeSchedules;

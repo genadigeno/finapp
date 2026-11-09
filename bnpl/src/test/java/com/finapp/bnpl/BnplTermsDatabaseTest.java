@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -52,6 +53,11 @@ import org.junit.jupiter.api.Test;
 @Tag("database")
 @DisplayName("BNPL terms as versioned data (P12-TSK-004)")
 class BnplTermsDatabaseTest {
+
+    @AfterAll
+    static void putTheClockBack() {
+        BnplClockFrame.uninstall();
+    }
 
     private static final Clock CLOCK = Clock.systemUTC();
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
