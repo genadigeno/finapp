@@ -25,9 +25,11 @@ import org.postgresql.util.PasswordUtil;
  * statements are logged, sampled and kept in {@code pg_stat_statements}. Each password is turned into its SCRAM verifier
  * <em>here</em>, in this process, which is what the server stores anyway.
  *
- * <p><strong>A role that exists is verified, never changed.</strong> The step can be re-run safely (a later task's role
- * joins the list) and it changes no password: rotation is a procedure of its own. A role found with a right it must not
- * hold stops the step rather than being repaired, because how it got that right is something a person has to look at.
+ * <p><strong>A role that exists is verified; its rights and its password are never changed.</strong> The step can be re-run
+ * safely (a later task's role joins the list) and it changes no password: rotation is a procedure of its own. A role found
+ * with a right it must not hold stops the step rather than being repaired, because how it got that right is something a
+ * person has to look at. <strong>A role's settings are the exception</strong>: applied on every run, so a release that changes
+ * one reaches a role that already exists when the step is run for it ({@code DATA_MIGRATIONS.md} section 2.2).
  */
 final class RoleBootstrap {
 

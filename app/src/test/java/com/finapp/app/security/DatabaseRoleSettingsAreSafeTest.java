@@ -18,13 +18,14 @@ import org.junit.jupiter.api.Test;
  * {@code idle_in_transaction_session_timeout} on {@code finapp_app} (`P15-TSK-031`, routed by `P15-TSK-035`): the register's row, the
  * two places a role is made and the bound the value has to sit between ({@code CONFIGURATION_REGISTER.md} section 5).
  *
- * <p>The bounds are read, never copied. The longest legitimate gap between two statements of one transaction on this role is a report
- * generation's whole budget, on the read-only snapshot it holds open while it folds; the outbox relay's wait for a broker
- * acknowledgement and a thread waiting on the pool for a second connection are shorter. The ceiling is the census's page, since the
- * setting exists to end the stall it pages on before it does.
+ * <p>The bounds are read, never copied, and the floor is <strong>the four waits named below, a hand list and not a census of every
+ * transaction</strong>: the read-only snapshot a desk or a close check holds on this role, armed at the report budget (report
+ * generation itself runs as {@code finapp_reporting}), an operational report's door, the outbox relay's wait for a broker
+ * acknowledgement, and a thread waiting on the pool for a second connection. The ceiling is the census's page, since the setting exists
+ * to end the stall it pages on before it does.
  */
 @Tag("architecture")
-@DisplayName("the role-level idle-in-transaction timeout is above every legitimate wait and below the census's stall page (P15-TSK-031)")
+@DisplayName("the role-level idle-in-transaction timeout is above the waits named here and below the census's stall page (P15-TSK-031)")
 class DatabaseRoleSettingsAreSafeTest {
 
     private static final String REGISTER = "docs/architecture/CONFIGURATION_REGISTER.md";
@@ -53,7 +54,11 @@ class DatabaseRoleSettingsAreSafeTest {
         String value = settings.get(0).get(2);
         String statement = "ALTER ROLE finapp_app SET " + SETTING + " = '" + value + "'";
         assertThat(SecretInventoryIsCompleteTest.read(LOCAL_ROLES)).as("a laptop's and every test database's role").contains(statement);
-        assertThat(SecretInventoryIsCompleteTest.read(BOOTSTRAP)).as("a deployed role").contains("\"" + value + "\"").contains("ALTER ROLE ");
+        // RoleBootstrapTest runs the step's statements; infra/scripts/migrator-verify.sh reads rolconfig off a real server.
+        assertThat(SecretInventoryIsCompleteTest.read(BOOTSTRAP)).as("a deployed role, the statement built and run")
+                .contains("APP_IDLE_IN_TRANSACTION_TIMEOUT = \"" + value + "\"")
+                .contains("\"ALTER ROLE finapp_app SET " + SETTING + " = '\" + APP_IDLE_IN_TRANSACTION_TIMEOUT")
+                .contains("statement.execute(APP_ROLE_SETTING);");
     }
 
     @Test
@@ -64,8 +69,8 @@ class DatabaseRoleSettingsAreSafeTest {
     }
 
     @Test
-    @DisplayName("the value exceeds every legitimate wait inside a finapp_app transaction, each read from the configuration, and no overlay moves one")
-    void theValueIsAboveEveryLegitimateWait() {
+    @DisplayName("the value exceeds each named wait inside a finapp_app transaction, each read from the configuration, and no overlay moves one")
+    void theValueIsAboveTheNamedWaits() {
         Duration value = value();
         for (String property : List.of("finapp.accounting.report.generation-timeout", "finapp.accounting.report.operational-timeout", "finapp.kafka.ack-timeout")) {
             ConfigurationRegister.Row row = rows.stream().filter(r -> r.property().equals(property)).findFirst().orElseThrow();

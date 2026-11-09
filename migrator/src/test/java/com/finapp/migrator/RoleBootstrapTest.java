@@ -10,13 +10,19 @@ import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.BiFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -107,12 +113,61 @@ class RoleBootstrapTest {
     }
 
     @Test
-    @DisplayName("finapp_app is given the server's own spelling of its idle-in-transaction timeout, and no other role is")
+    @DisplayName("finapp_app's idle-in-transaction timeout is in the server's own spelling, and the local script sets the same")
     void theApplicationRoleCarriesTheIdleTimeout() {
         assertThat(RoleBootstrap.APP_IDLE_IN_TRANSACTION_TIMEOUT).matches("\\d+min");
         assertThat(RepositoryFiles.read("infra/postgres/initdb/00-roles.sql"))
                 .as("the local script sets the same value")
                 .contains("ALTER ROLE finapp_app SET idle_in_transaction_session_timeout = '" + RoleBootstrap.APP_IDLE_IN_TRANSACTION_TIMEOUT + "'");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("every run sets the idle timeout on finapp_app and on no other role, before it commits, whether the roles are new or already exist")
+    void theBootstrapSetsTheTimeoutOnTheApplicationRoleAlone(boolean rolesExist) throws SQLException {
+        List<String> executed = new ArrayList<>();
+        RoleBootstrap.apply(recordingMaster(executed, rolesExist), RoleBootstrap.passwords(passwords()));
+        assertThat(executed).filteredOn(sql -> sql.startsWith("ALTER ROLE"))
+                .containsExactly("ALTER ROLE finapp_app SET idle_in_transaction_session_timeout = '" + RoleBootstrap.APP_IDLE_IN_TRANSACTION_TIMEOUT + "'");
+        assertThat(executed.get(executed.size() - 1)).as("inside the step's one transaction").isEqualTo("COMMIT");
+    }
+
+    /** A master connection recording what the step executes: every role found absent, or present and unprivileged. */
+    private static Connection recordingMaster(List<String> executed, boolean rolesExist) {
+        ResultSet formatted = fake(ResultSet.class, (name, args) -> switch (name) {
+            case "next" -> true;
+            case "getString" -> "GRANT";
+            default -> null;
+        });
+        ResultSet roleRow = fake(ResultSet.class, (name, args) -> switch (name) {
+            case "next" -> rolesExist;
+            case "getBoolean" -> (Integer) args[0] == 1;
+            case "getLong" -> 0L;
+            default -> null;
+        });
+        Statement statement = fake(Statement.class, (name, args) -> {
+            if (name.equals("execute")) {
+                executed.add((String) args[0]);
+                return false;
+            }
+            return name.equals("executeQuery") ? formatted : null;
+        });
+        PreparedStatement query = fake(PreparedStatement.class, (name, args) -> name.equals("executeQuery") ? roleRow : null);
+        return fake(Connection.class, (name, args) -> {
+            if (name.equals("commit")) {
+                executed.add("COMMIT");
+            }
+            return switch (name) {
+                case "createStatement" -> statement;
+                case "prepareStatement" -> query;
+                default -> null;
+            };
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T fake(Class<T> type, BiFunction<String, Object[], Object> answer) {
+        return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, (proxy, method, args) -> answer.apply(method.getName(), args));
     }
 
     @Test

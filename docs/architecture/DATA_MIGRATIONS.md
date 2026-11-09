@@ -151,7 +151,7 @@ forward, never `clean`: runbook §11.4.
 *(Added by `P15-TSK-004`, 2026-11-08.)* Roles are infrastructure, never Flyway (§6): the migrator is `NOCREATEROLE`, and the
 per-table grants stay in the migrations. So a deployed database gets its roles from a separate step, what
 `infra/postgres/initdb/00-roles.sql` does for a laptop, **run once per database, before the first migration Job, and again only
-when a release adds a role**. Never part of the Job: it is the migrator image with its `command` overridden, in a Job or a
+when a release adds a role or changes a role's setting**. Never part of the Job: it is the migrator image with its `command` overridden, in a Job or a
 session of its own:
 
 ```
@@ -168,7 +168,7 @@ It creates `finapp_migrator`, `finapp_app` and `finapp_reporting` with `LOGIN NO
 NOBYPASSRLS NOREPLICATION`, gives each its database rights (`CREATE, CONNECT` for the migrator, `CONNECT` for the others) and
 revokes `PUBLIC`'s, in one transaction under an advisory lock. It sends the SCRAM verifier, computed in the process, never the
 password, so the server, its log and `pg_stat_statements` never hold it in clear. A role that already exists is checked and left
-alone, password included (rotation is a procedure of its own); one holding a right it must not hold stops the step (exit `12`),
+alone, password included (rotation is a procedure of its own), except that its settings are applied again on every run (`CONFIGURATION_REGISTER.md` section 5); one holding a right it must not hold stops the step (exit `12`),
 because how it got that right is something a person has to look at. It must run before a migration that grants to a role it
 creates, or that migration fails with `role "..." does not exist`, never silently. The same exit codes apply.
 

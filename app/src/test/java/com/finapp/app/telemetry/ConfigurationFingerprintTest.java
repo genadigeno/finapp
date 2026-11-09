@@ -120,6 +120,14 @@ class ConfigurationFingerprintTest {
     }
 
     @Test
+    @DisplayName("a build whose jar does not hold the register refuses, rather than publishing a digest of nothing")
+    void aMissingRegisterIsRefused() {
+        assertThatThrownBy(() -> ConfigurationRegister.embedded("no-such-register.md"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("is not in this build");
+        assertThat(ConfigurationRegister.embedded()).as("and the one this build carries is read").isNotEmpty();
+    }
+
+    @Test
     @DisplayName("a register with no table, or a row short of a column, is refused rather than read as empty")
     void anUnreadableRegisterIsRefused() {
         assertThatThrownBy(() -> ConfigurationRegister.rows("no table here")).isInstanceOf(IllegalStateException.class).hasMessageContaining("no table");

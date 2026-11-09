@@ -1974,10 +1974,10 @@ version is being written.
 `P15-TSK-012` does that, with this task's Job contract in `DATA_MIGRATIONS.md` §2.1, and `-017` orders it before the rollout.
 The commands here are the image's own; the manifest is `P15-TSK-009`'s.)*
 
-**Before the first release to a database, and again only when a release adds a role**, run the one-time bootstrap step
+**Before the first release to a database, and again only when a release adds a role or changes a role's setting**, run the one-time bootstrap step
 (`DATA_MIGRATIONS.md` §2.2): the migrator image with its `command` overridden to `RoleBootstrapMain`, handed the master
 credential and the three roles' passwords from the secret store. It is the only thing that ever holds the master credential.
-Read its output: one line per role saying `created` or `present, unprivileged, unchanged`. Exit `12` naming a role means a role
+Read its output: one line per role saying `created` or `present, unprivileged, unchanged`, then one naming the setting it applied. Exit `12` naming a role means a role
 already holds a right it must not: stop and find out how. Never give the migration Job the master credential to get past it.
 
 **Then, for every release, the migration Job, and only then the rollout.** It runs the release's `finapp-migrator` by digest,
@@ -2468,7 +2468,8 @@ SELECT position, entries_judged, last_success_at, last_failure_at, last_failure_
 |---|---|
 | `OPERATIONAL` in an overlay | A pull request against the ConfigMap literals of `deploy/overlays/<environment>/kustomization.yaml`. The ConfigMap's name carries a hash of its contents, so the change rolls the Deployment under the usual strategy (§11.14) |
 | `OPERATIONAL` not set in an overlay | Add it to the overlay's literals, and set that environment's cell in the register from `default` to `overlay`: `ConfigurationRegisterIsCompleteTest` fails until both agree |
-| `FINANCIAL` | As `OPERATIONAL`, with two people on the production overlay (ADR-0122). Read the row's "A mixed fleet" sentence before changing it: it says which direction is safe and which a reviewer must refuse without a measurement |
+| `FINANCIAL`, not a URL | As `OPERATIONAL`, or by changing the code's default and the row's `Default` cell together, which `everyDefaultIsTheCodes` forces. **A second person on it is not built**: ADR-0122's decision, delivered by `P15-TSK-017`'s `CODEOWNERS` and the owner's branch rules. Read the row's "A mixed fleet" sentence before changing it: it says which direction is safe and which a reviewer must refuse without a measurement |
+| `FINANCIAL`, a provider or report URL | Never an overlay literal: the manifest policy refuses a `_URL` key. A real provider's URL becomes an entry of `deploy/components/secret-delivery/externalsecret-app.yaml` and a row of `SECRET_MANAGEMENT.md` section 3.3, and the register's cell becomes `store`. After that the value changes in the store, outside any pull request |
 | `SECRET` | Never here: `SECRET_MANAGEMENT.md` section 5 |
 
 A property the code gains is one new row in the register, or the build fails. A value that decides money and turns out not to be safe while replicas hold two values goes into versioned database data instead (register section 4), and that is a change to its module.
@@ -2482,11 +2483,13 @@ A property the code gains is one new row in the register, or the build fails. A 
 3. A replica no revision explains: someone changed a pod or a ConfigMap by hand. Treat it as a security event, restore the desired state from the overlay and record who did it.
 4. Do **not** restart replicas to make the alert stop: it clears the signal and not the cause, and a restart that picks up a mis-set ConfigMap makes the wrong value universal.
 
+**What it cannot see.** A replica on the odd configuration that stays unscraped for more than five minutes at a time, a crash loop for instance, drops out of the count, so the wait restarts and this alert can stay pending for as long as that goes on. `InstanceDown` and the rollout's own status show that case.
+
 Each `FINANCIAL` row is safe mixed for about a rollout's length. Past that, nothing promises that the fleet's two values were meant.
 
 **`ConfigFingerprintAbsent` (ticket).** No replica publishes the digest, so the alert above is blind: usually a release without the meter or a scrape that lost the job. `FinappTargetsAbsent` pages if the whole fleet is gone.
 
-**The role's idle-in-transaction timeout** (register section 5) is set by the bootstrap step (§11.1b) and reaches each session at its next connection. If it fires, the application logs a broken connection and the caller's retry succeeds; a repeating one is a transaction held open by something it should not be, and the session's last statement in `pg_stat_activity` is where to start.
+**The role's idle-in-transaction timeout** (register section 5) is set by the bootstrap step (§11.1b), which has to run again when this value changes, and reaches each session at its next connection. If it fires, the application logs a broken connection and the caller's retry succeeds; a repeating one is a transaction held open by something it should not be, and the session's last statement in `pg_stat_activity` is where to start.
 
 ### 11.9 A failing scan
 

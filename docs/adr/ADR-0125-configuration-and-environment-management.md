@@ -80,4 +80,6 @@ may not carry that class or name one of its properties. `finapp.config.fingerpri
 the build embeds the register so the running code reads the one list. The alert's `for` is the longest rollout an overlay allows taken at its
 `progressDeadlineSeconds`, not at the fast path of `startupProbe` and `minReadySeconds`, plus the last pod's grace and the rule's presence window: 80 minutes
 today. No property was moved into versioned data: each `FINANCIAL` row answers the mixed-fleet question for itself. No Spring profile exists, and a
-guard holds that. Decision 5's guards stand as they were.
+guard holds that. Decision 5's guards stand as they were. **Decision 4's second person is not built**: `P15-TSK-017` delivers it, and it has to cover the register as well
+as the production overlay, because a `FINANCIAL` default changes through the code and the register's default cell, and a URL row cannot be an overlay literal at all (register
+section 1.1).

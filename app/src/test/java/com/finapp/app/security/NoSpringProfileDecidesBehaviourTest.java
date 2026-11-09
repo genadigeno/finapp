@@ -37,7 +37,8 @@ class NoSpringProfileDecidesBehaviourTest {
     /** Every way this codebase's languages could choose or depend on a profile. */
     private static final Pattern PROFILE = Pattern.compile(
             "@Profile\\b|@ActiveProfiles\\b|org\\.springframework\\.context\\.annotation\\.Profile\\b"
-                    + "|\\b(?:getActiveProfiles|getDefaultProfiles|acceptsProfiles|setActiveProfiles|addActiveProfile|setDefaultProfiles)\\b"
+                    + "|\\b(?:getActiveProfiles|getDefaultProfiles|acceptsProfiles|setActiveProfiles|addActiveProfile|setDefaultProfiles|setAdditionalProfiles)\\b"
+                    + "|\\.profiles\\s*\\("
                     + "|spring\\.profiles\\b|spring\\.config\\.activate\\.on-profile|SPRING_PROFILES_(?:ACTIVE|DEFAULT|INCLUDE)\\b");
 
     private static final Set<String> TEXT_FILES = Set.of(".yaml", ".yml", ".properties", ".sh", ".kts", ".conf", ".env");
@@ -88,7 +89,9 @@ class NoSpringProfileDecidesBehaviourTest {
         "@ActiveProfiles(\"staging\")",
         "if (environment.acceptsProfiles(Profiles.of(\"production\"))) {}",
         "environment.getActiveProfiles()",
-        "application.setAdditionalProfiles(profile); environment.setActiveProfiles(profile);",
+        "application.setAdditionalProfiles(profile);",
+        "environment.setActiveProfiles(profile);",
+        "new SpringApplicationBuilder(Finapp.class).profiles(\"production\")",
         "spring.profiles.active=production",
         "spring.profiles.include: extra",
         "spring.config.activate.on-profile: production",

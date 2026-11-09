@@ -78,6 +78,7 @@ class ConfigurationRegisterIsCompleteTest {
     private static final String GENERATED = "generated";
     private static final String POD = "pod";
     private static final String NOT_APPLICABLE = "-";
+    private static final String INBOX_RETENTION = "FINAPP_INBOX_RETENTION";
 
     /** A call naming its property through a variable: the literals of such a class are the names it reads. */
     private static final Pattern INDIRECT_READ = Pattern.compile("(?:\\b[a-zA-Z]*[eE]nv(?:ironment)?\\.(?:getProperty|getRequiredProperty|containsProperty)|Binder\\.get\\([a-zA-Z]+\\)\\s*\\.bind)\\(\\s*[A-Za-z_]");
@@ -94,6 +95,7 @@ class ConfigurationRegisterIsCompleteTest {
     private static List<ConfigurationRegister.Row> rows;
     private static Map<String, ConfigurationRegister.Row> byProperty;
     private static Set<String> reads;
+    private static Set<String> codeReads;
     private static Map<String, Default> defaults;
     private static Map<String, String> yaml;
     private static Map<String, Set<String>> literalsPerEnvironment;
@@ -101,6 +103,9 @@ class ConfigurationRegisterIsCompleteTest {
     private static Set<String> deliveredVariables;
     private static Properties testOverlay;
     private static Set<String> secretProperties;
+
+    /** A variable set by a patch: a strategic merge's {@code env} or {@code envFrom} key, or a JSON patch at that path. */
+    private static final Pattern OVERLAY_ENVIRONMENT = Pattern.compile("(?m)^\\s*env(?:From)?:|path:\\s*/spec/template/spec/containers/\\d+/env");
 
     /** A default that is an address on this machine, in the forms the code writes one. */
     private static final Pattern LOOPBACK_DEFAULT = Pattern.compile("^(?:jdbc:postgresql://)?(?:127\\.0\\.0\\.1|localhost)(?:[:/].*)?$");
@@ -133,6 +138,7 @@ class ConfigurationRegisterIsCompleteTest {
                 .forEach(secretProperties::add);
 
         defaults = readDefaults();
+        codeReads = codeReads();
         reads = readProperties();
 
         literalsPerEnvironment = new LinkedHashMap<>();
@@ -167,13 +173,23 @@ class ConfigurationRegisterIsCompleteTest {
     }
 
     @Test
-    @DisplayName("every row names a property something reads")
+    @DisplayName("every row names a property something reads: for a finapp key the code, since application.yaml alone can declare a key nothing reads")
     void everyRowNamesARealProperty() {
-        Set<String> real = new TreeSet<>(reads);
-        real.addAll(yaml.keySet());
+        Set<String> real = new TreeSet<>(codeReads);
+        yaml.keySet().stream().filter(key -> !key.startsWith("finapp.")).forEach(real::add);
         Set<String> invented = new TreeSet<>(byProperty.keySet());
         invented.removeAll(real);
         assertThat(invented).as("a row with nothing reading it is an inventory of something that is not there").isEmpty();
+    }
+
+    @Test
+    @DisplayName("every finapp key of application.yaml is read by some code: a key the file declares and nothing reads is dead, whatever row it has")
+    void everyApplicationYamlKeyIsReadByTheCode() {
+        Set<String> declared = new TreeSet<>(yaml.keySet());
+        declared.removeIf(key -> !key.startsWith("finapp."));
+        assertThat(declared).as("not vacuous: application.yaml's finapp tree was read").hasSizeGreaterThan(4);
+        declared.removeAll(codeReads);
+        assertThat(declared).as("application.yaml declares these and no code reads them").isEmpty();
     }
 
     @Test
@@ -292,12 +308,51 @@ class ConfigurationRegisterIsCompleteTest {
     }
 
     @Test
-    @DisplayName("an overlay never patches an env list: the sources above read literals, and a patch would be a source they cannot see")
+    @DisplayName("no kustomization sets an env list, by any kind of patch: the sources above read literals, and a patch would be a source they cannot see")
     void noOverlayPatchesAnEnvironmentVariable() {
-        for (Map.Entry<String, String> overlay : OVERLAYS.entrySet()) {
-            assertThat(SecretInventoryIsCompleteTest.read(overlay.getValue()))
-                    .as(overlay.getKey()).doesNotContainPattern("path:\\s*/spec/template/spec/containers/\\d+/env");
+        List<String> files = new ArrayList<>(List.of(BASE_KUSTOMIZATION));
+        files.addAll(OVERLAYS.values());
+        for (String file : files) {
+            assertThat(setsAnEnvironmentVariable(SecretInventoryIsCompleteTest.read(file))).as(file).isFalse();
         }
+    }
+
+    @ParameterizedTest
+    @DisplayName("each way a kustomization could set a variable is refused: a strategic merge, a JSON patch, a patch kept in another file")
+    @ValueSource(strings = {
+        "patches:\n  - target:\n      kind: Deployment\n    patch: |-\n      spec:\n        template:\n          spec:\n            containers:\n              - name: app\n                env:\n                  - name: FINAPP_ACCOUNTING_VALUATION_MAXAGEHOURS\n                    value: \"9999\"\n",
+        "patches:\n  - target:\n      kind: Deployment\n    patch: |-\n      spec:\n        template:\n          spec:\n            containers:\n              - name: app\n                envFrom:\n                  - configMapRef:\n                      name: another\n",
+        "patches:\n  - target:\n      kind: Deployment\n    patch: |-\n      - op: add\n        path: /spec/template/spec/containers/0/env/-\n        value: {name: X, value: y}\n",
+        "patches:\n  - path: more-values.yaml\n",
+        "patchesStrategicMerge:\n  - more-values.yaml\n",
+        "patchesJson6902:\n  - path: more-values.yaml\n    target: {kind: Deployment, name: x, version: v1, group: apps}\n"
+    })
+    void aPatchThatSetsAVariableIsRefused(String kustomization) {
+        assertThat(setsAnEnvironmentVariable(kustomization)).as(kustomization).isTrue();
+    }
+
+    @Test
+    @DisplayName("a comment naming env, and a patch that touches something else, are not a variable set")
+    void aPatchThatSetsNoVariableIsLeftAlone() {
+        assertThat(setsAnEnvironmentVariable("# env: a word in a comment\npatches:\n  - target:\n      kind: Deployment\n    patch: |-\n      - op: replace\n        path: /spec/template/spec/containers/0/resources/limits/memory\n        value: 1Gi\n")).isFalse();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean setsAnEnvironmentVariable(String kustomization) {
+        if (OVERLAY_ENVIRONMENT.matcher(kustomization).find()) {
+            return true;
+        }
+        for (Map<String, Object> document : SecretInventoryIsCompleteTest.loadAll(kustomization)) {
+            if (document.containsKey("patchesStrategicMerge") || document.containsKey("patchesJson6902")) {
+                return true;
+            }
+            for (Object patch : (List<Object>) document.getOrDefault("patches", List.of())) {
+                if (((Map<String, Object>) patch).containsKey("path")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     // ---------------------------------------------------------------------------------------------- the classes
@@ -389,13 +444,26 @@ class ConfigurationRegisterIsCompleteTest {
     void theInboxRetentionIsAboveItsFloorEverywhere() {
         assertThat(Duration.parse(byProperty.get("finapp.inbox.retention").defaultCell()))
                 .as("the default").isGreaterThan(RetentionSweep.BROKER_REDELIVERY_HORIZON);
-        for (Map.Entry<String, String> overlay : OVERLAYS.entrySet()) {
-            String text = SecretInventoryIsCompleteTest.read(overlay.getValue());
-            Matcher found = Pattern.compile("(?m)^\\s+- FINAPP_INBOX_RETENTION=(\\S+)\\s*$").matcher(text);
-            while (found.find()) {
-                assertThat(aboveTheRedeliveryFloor(found.group(1))).as("%s's retention", overlay.getKey()).isTrue();
+        List<String> files = new ArrayList<>(List.of(BASE_KUSTOMIZATION));
+        files.addAll(OVERLAYS.values());
+        for (String file : files) {
+            String value = literalValues(SecretInventoryIsCompleteTest.read(file)).get(INBOX_RETENTION);
+            if (value != null) {
+                assertThat(aboveTheRedeliveryFloor(value)).as("%s's retention", file).isTrue();
             }
         }
+        assertThat(podVariables).as("the Deployment states no value this test would have to read").doesNotContain(INBOX_RETENTION);
+    }
+
+    @ParameterizedTest
+    @DisplayName("a retention below the floor is seen however the literal is written, because the literal is read as YAML")
+    @ValueSource(strings = {
+        "configMapGenerator:\n  - name: x\n    literals:\n      - FINAPP_INBOX_RETENTION=P8D\n",
+        "configMapGenerator:\n  - name: x\n    literals:\n      - \"FINAPP_INBOX_RETENTION=P8D\"\n",
+        "configMapGenerator:\n  - name: x\n    literals:\n      - 'FINAPP_INBOX_RETENTION=P8D'\n"
+    })
+    void aShortRetentionIsSeenHoweverItIsWritten(String kustomization) {
+        assertThat(aboveTheRedeliveryFloor(literalValues(kustomization).get(INBOX_RETENTION))).as(kustomization).isFalse();
     }
 
     @ParameterizedTest
@@ -421,9 +489,8 @@ class ConfigurationRegisterIsCompleteTest {
     void everyDeployedOverlayPassesTheBrokerGuard() {
         for (String overlay : List.of("staging", "production")) {
             String text = SecretInventoryIsCompleteTest.read(OVERLAYS.get(overlay));
-            Matcher found = Pattern.compile("(?m)^\\s+- FINAPP_KAFKA_SECURITYPROTOCOL=(\\S+)\\s*$").matcher(text);
-            assertThat(found.find()).as("%s declares the protocol, or the guard refuses every pod off loopback", overlay).isTrue();
-            String protocol = found.group(1);
+            String protocol = literalValues(text).get("FINAPP_KAFKA_SECURITYPROTOCOL");
+            assertThat(protocol).as("%s declares the protocol, or the guard refuses every pod off loopback", overlay).isNotNull();
             // The guard itself judges, with the real shape of an off-loopback bootstrap list: not a comparison with a string written here.
             new KafkaTransportGuard("broker-1.invalid:9096,broker-2.invalid:9096", protocol, "a-user", "not-the-marked-default");
             assertThat(text).as("%s leaves the JVM's trust store in charge: the managed brokers' certificate chains to a public root", overlay)
@@ -433,11 +500,24 @@ class ConfigurationRegisterIsCompleteTest {
 
     // ---------------------------------------------------------------------------------------------- reading
 
-    /** Every name read, in every form this codebase reads one. */
+    /** What some code reads: never application.yaml's own keys, which a file can declare with nothing reading them. */
+    private static Set<String> codeReads() {
+        Set<String> names = new TreeSet<>(defaults.keySet());
+        SecretInventoryIsCompleteTest.sources.values().forEach(source -> {
+            names.addAll(SecretInventoryIsCompleteTest.propertiesIn(source));
+            names.addAll(indirectLiterals(source));
+        });
+        return expanded(names);
+    }
+
+    /** Every name read, in every form this codebase reads one, application.yaml's {@code finapp} tree included. */
     private static Set<String> readProperties() {
         Set<String> names = new TreeSet<>(SecretInventoryIsCompleteTest.readProperties);
-        SecretInventoryIsCompleteTest.sources.values().forEach(source -> names.addAll(indirectLiterals(source)));
-        names.addAll(defaults.keySet());
+        names.addAll(codeReads);
+        return expanded(names);
+    }
+
+    private static Set<String> expanded(Set<String> names) {
         Set<String> expanded = new TreeSet<>();
         for (String name : names) {
             if (name.endsWith(".")) {
@@ -559,10 +639,14 @@ class ConfigurationRegisterIsCompleteTest {
         return names;
     }
 
-    /** The {@code KEY=value} literals of every {@code configMapGenerator} of one kustomization. */
-    @SuppressWarnings("unchecked")
     private static Set<String> literals(String kustomization) {
-        Set<String> names = new TreeSet<>();
+        return new TreeSet<>(literalValues(kustomization).keySet());
+    }
+
+    /** The {@code KEY=value} literals of every {@code configMapGenerator} of one kustomization, read as YAML, so a quoted one is the same literal. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> literalValues(String kustomization) {
+        Map<String, String> values = new TreeMap<>();
         for (Map<String, Object> document : SecretInventoryIsCompleteTest.loadAll(kustomization)) {
             for (Object generator : (List<Object>) document.getOrDefault("configMapGenerator", List.of())) {
                 // A generator's envs or files would be a source this reads nothing of: refused, so a new one has to be read here first.
@@ -571,11 +655,11 @@ class ConfigurationRegisterIsCompleteTest {
                     String text = String.valueOf(literal);
                     int equals = text.indexOf('=');
                     assertThat(equals).as("a literal is KEY=value: %s", text).isPositive();
-                    names.add(text.substring(0, equals));
+                    values.put(text.substring(0, equals), text.substring(equals + 1));
                 }
             }
         }
-        return names;
+        return values;
     }
 
     @SuppressWarnings("unchecked")

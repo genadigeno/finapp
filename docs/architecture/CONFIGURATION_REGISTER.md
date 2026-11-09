@@ -21,8 +21,8 @@ run against a real environment.
   (`infra/scripts/kind-secrets.sh`); the store through the two ExternalSecrets in staging and production.
 - **`FINANCIAL`**: it changes a financial outcome, limit, price, route or risk judgement. When in doubt a property is classed here,
   because over-classing costs a sentence and under-classing hides a decision from the fingerprint. Each row says why replicas holding
-  different values during a rollout is safe, read from how the value is used. It changes only through the production overlay's
-  two-person approval (ADR-0122).
+  different values during a rollout is safe, read from how the value is used. **Two people on every change is ADR-0122's decision and
+  is not built yet**: `P15-TSK-017` delivers it. What exists today is a pull request, and section 1.1 says which.
 - **`OPERATIONAL`**: anything else: pacing, batch sizes, timeouts, leases, switches, addresses that are not a route.
 
 A value that decides money and is **not** safe mixed belongs in versioned database data, not here (section 4).
@@ -31,6 +31,16 @@ A value that decides money and is **not** safe mixed belongs in versioned databa
 below where none is. Each replica publishes it as a label, so `ConfigFingerprintDisagrees` can count distinct configurations across the
 fleet. No value leaves the application. Changing the class of a row changes the digest's inputs, so it rolls out like a value does.
 `OPERATIONS_RUNBOOK.md` section 11.31 is how to change one.
+
+### 1.1 How a `FINANCIAL` value changes
+
+Three paths, none with its second person yet (`P15-TSK-017`'s `CODEOWNERS`; the branch rules are the owner's to apply).
+
+| Rows | Path | What a reviewer sees |
+|---|---|---|
+| Any that is not a URL, by an overlay | A literal in the environment's overlay, and that environment's cell here set to `overlay` | The overlay and this file |
+| Any that is not a URL, by its default | The code's default and this table's `Default` cell, in one pull request: `everyDefaultIsTheCodes` fails otherwise | The code and this file. A `CODEOWNERS` on the overlay alone would not see it, so it has to cover this file too |
+| The `.url` rows | Never an overlay literal: the manifest policy refuses a `_URL` key. A real provider's URL becomes an entry of `deploy/components/secret-delivery/externalsecret-app.yaml` and a row of `SECRET_MANAGEMENT.md` section 3.3, and this table's cell becomes `store` | That pull request. **The value itself then changes in the store**, outside every pull request, under the store's own access control and audit |
 
 ## 2. Reading a row
 
@@ -373,7 +383,7 @@ this row against both and the value between the bounds below.
 
 | Role | Setting | Value | Why this value |
 |---|---|---|---|
-| `finapp_app` | `idle_in_transaction_session_timeout` | `5min` | A transaction left idle holding an xid stops the source-join census's walk, and only a page an hour later says so. Above every legitimate gap between two statements of one transaction on this role: a report generation's whole four-minute budget on the read-only snapshot it holds open, the outbox relay's wait for a broker acknowledgement (10 s), a thread waiting on the pool for a second connection (5 s). Below the census's one-hour stall page, so the source ends before a person is woken for it. |
+| `finapp_app` | `idle_in_transaction_session_timeout` | `5min` | A transaction left idle holding an xid stops the source-join census's walk, and only a page an hour later says so. Above the waits `DatabaseRoleSettingsAreSafeTest` names inside one transaction on this role, a hand list and not a census of every transaction: the read-only snapshot a desk or a close check holds, armed at the report budget of four minutes (report generation itself runs as `finapp_reporting`), an operational report's door, the outbox relay's wait for a broker acknowledgement (10 s), a thread waiting on the pool for a second connection (5 s). Below the census's one-hour stall page, so the source ends before a person is woken for it. |
 
 `transaction_timeout` was decided against: it would bound every long legitimate transaction, and a value safe for all of them would be
 too long to bound the stall. `idle_in_transaction_session_timeout` reaches only a session that has stopped sending statements while a
@@ -381,7 +391,7 @@ transaction stands open. **A long-running statement is not bounded by this**, an
 ends such a session and its transaction rolls back whole, the pool discards the connection, and the caller fails and retries under
 its idempotency key: no partial effect. The migrator's role has its own lock timeout, and the reporting role reads only and can hold no
 xid, so neither carries this. On a role that already exists it takes effect at the next run of the bootstrap step and each session's next
-connection.
+connection, and the procedure requires that run when a setting changes (`DATA_MIGRATIONS.md` section 2.2).
 
 ## 6. Constants that behave like configuration
 
@@ -390,7 +400,8 @@ minutes idle and twelve hours absolute, so no overlay can change it and a fleet 
 such a release `touch` extends a live session by the idle timeout of the instance that touched it (`JdbcSessionStore.touch`). `GREATEST`
 keeps the extension monotonic and `LEAST` keeps it under the absolute bound copied at issue, which no touch can exceed. So a release that
 lengthens the idle timeout lengthens sessions already issued, up to that absolute bound, and ADR-0030's "a change never extends a session"
-holds for the absolute bound alone. No financial outcome or limit depends on it. Storing the idle bound on the session at issue would close
+holds for the absolute bound alone. A release that shortens it reaches sessions already issued within one old idle window: a touch
+cannot pull an expiry back, but it stops extending one past the new bound. No financial outcome or limit depends on it. Storing the idle bound on the session at issue would close
 it and needs an identity migration, which `THREAT_MODEL.md` section 6 item 34 puts to the owner.
 
 ## 7. What the test also holds

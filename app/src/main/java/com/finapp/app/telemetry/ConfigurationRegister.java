@@ -58,13 +58,18 @@ public final class ConfigurationRegister {
 
     /** Every row of the register embedded in this build. */
     static List<Row> embedded() {
-        try (InputStream resource = ConfigurationRegister.class.getResourceAsStream(RESOURCE)) {
+        return embedded(RESOURCE);
+    }
+
+    /** The register at {@code name} beside this class. A build without it refuses to start, rather than publish a digest of nothing. */
+    static List<Row> embedded(String name) {
+        try (InputStream resource = ConfigurationRegister.class.getResourceAsStream(name)) {
             if (resource == null) {
-                throw new IllegalStateException(RESOURCE + " is not in this build: the configuration fingerprint has nothing to read");
+                throw new IllegalStateException(name + " is not in this build: the configuration fingerprint has nothing to read");
             }
             return rows(new String(resource.readAllBytes(), StandardCharsets.UTF_8));
         } catch (IOException e) {
-            throw new UncheckedIOException("Could not read " + RESOURCE, e);
+            throw new UncheckedIOException("Could not read " + name, e);
         }
     }
 
