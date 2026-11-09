@@ -101,13 +101,17 @@ class NamespaceSecurityManifestsTest {
         for (String overlay : OVERLAYS) {
             String postgresql = REAL_OVERLAYS.contains(overlay) ? "TCP/5432 to 192.0.2.0/24" : "TCP/5432 to local finapp-postgres";
             String kafka = REAL_OVERLAYS.contains(overlay) ? "TCP/9096 to 198.51.100.0/24" : "TCP/9092 to local finapp-kafka";
-            assertThat(egress(overlay, APP)).as(overlay).containsExactlyInAnyOrder(
+            List<String> flows = new ArrayList<>(List.of(
                     "UDP/53 to kube-system k8s-app=kube-dns",
                     "TCP/53 to kube-system k8s-app=kube-dns",
                     "TCP/4318 to finapp-observability finapp/role=telemetry-collector",
                     postgresql,
                     kafka,
-                    "TCP/443 to 203.0.113.0/24");
+                    "TCP/443 to 203.0.113.0/24"));
+            if (!REAL_OVERLAYS.contains(overlay)) {
+                flows.add("TCP/8443 to finapp-rehearsal finapp/role=provider-simulator");
+            }
+            assertThat(egress(overlay, APP)).as(overlay).containsExactlyInAnyOrderElementsOf(flows);
         }
     }
 

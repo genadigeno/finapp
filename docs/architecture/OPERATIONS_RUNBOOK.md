@@ -2885,6 +2885,8 @@ the controller pods do not start.
 | Rollback by digest, an eviction mid-way | 389 s; 857 requests succeeded, 0 failed; peak 35 |
 | Re-roll to N | 390 s; 882 succeeded, 0 failed; peak 28; a replica answers the scrape after traffic; the rollback window's 357 of 672 records each applied exactly once |
 
+After that run three shell variables and one Secret key of the harness were renamed, because the committed-secret guard read them as literals; no value or behaviour changed, and a further run through the rolling update on a fresh cluster was green.
+
 **Two defects it found, both fixed.** The first scrape under traffic answered `500`: the SLO filter gave one route's timer a histogram and another's a summary under one name, which the Prometheus registry cannot hold (`SloLatencyBuckets` now gives every `http.server.requests` timer the boundary). After the pod kill one partition stayed one record behind for as long as no record arrived: an offset commit refused during a rebalance was not retried (`KafkaEventReceiver` now sends it after the next poll, for a partition this member still holds). Neither moved money: a record whose offset was never acknowledged is redelivered into the dedupe.
 
 **What a kill can catch.** Whether the kill finds a request in flight is chance. An earlier run on the same two images did: one payout in flight on the killed replica answered `502`, then `IdempotencyInProgress` for 18 attempts while the dead replica's claim stood, then succeeded with the same key, one effect, the census green.

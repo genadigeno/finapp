@@ -841,7 +841,7 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 - **T9.** Off loopback the clients require `SASL_SSL` with a SCRAM identity: `KafkaTransportGuard` refuses
   `SASL_PLAINTEXT`, `SSL`, an unknown protocol and the marked local password *(read "`KafkaTransportGuard` refuses only
   `PLAINTEXT` off loopback; `SASL_PLAINTEXT` is admitted today" until 2026-11-08)*. What remains: the ACLs and the SCRAM
-  users are planned from `infra/kafka/topics.yaml` and have never been applied to a broker (**owner item 23**), and no real
+  users are planned from `infra/kafka/topics.yaml` and have been applied only to the kind rehearsal's test-only broker (**owner item 23**), and no real
   TLS handshake ran before the kind rehearsal, which performs one against a test-only broker; nothing yet has against a managed one. A credential taken from a pod authenticates as the application, whose
   principal may read and write every catalogued topic, so the consumers' discipline is the remaining defence. Not every
   consumer is evidenced as a hint: the earliest consumers act on what an event names, with the platform as actor
