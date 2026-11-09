@@ -101,8 +101,9 @@ tasks.withType<JavaCompile>().configureEach {
 // ---------------------------------------------------------------------------
 // Security floors on libraries that arrive through something else (P15-TSK-041).
 //
-// Jackson through the Spring Boot BOM, lz4-java and snappy-java through the Kafka clients. The image
-// scan named HIGH findings in the versions those bring; the catalog's note says which release fixes them.
+// Jackson 3 through the Spring Boot BOM, lz4-java and snappy-java through the Kafka clients, and Jackson 2
+// through springdoc on the test classpath. The scans named HIGH findings in the versions those bring; the
+// catalog's note says which release fixes them.
 //
 // CONSTRAINTS, for the reasons app/build.gradle.kts gives for Tomcat: a floor that loses to anything
 // newer, so a future Spring Boot or Kafka client is never silently held back the way `force` would, and
@@ -114,13 +115,13 @@ tasks.withType<JavaCompile>().configureEach {
 // image and leave every other module's tests running the vulnerable jars, and a test fixture's classpath
 // is a third case, because `testFixturesImplementation` extends neither of the others.
 //
-// jackson-bom, not jackson-core and jackson-databind by name: the BOM is what Spring Boot's BOM imports,
-// so raising it raises every Jackson 3 module together, and they are released as one.
+// A BOM for each Jackson, not jackson-core and jackson-databind by name: the 3.x BOM is what Spring Boot's
+// BOM imports, and raising either BOM raises every module of that Jackson together: they are released as one.
 //
 // WHAT PROTECTS THIS is what protects Tomcat's: the scan, not the lock. Deleting these and regenerating
 // the locks moves the versions back in a diff anyone can read, and the image scan then fails on HIGH.
 // ---------------------------------------------------------------------------
-val libraryFloors = listOf("jackson-bom", "lz4-java", "snappy-java").map { alias ->
+val libraryFloors = listOf("jackson-bom", "jackson2-bom", "lz4-java", "snappy-java").map { alias ->
     extensions.getByType<VersionCatalogsExtension>()
         .named("libs")
         .findLibrary(alias)
