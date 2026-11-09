@@ -400,8 +400,10 @@ public final class Rehearsal {
             throw new IllegalStateException("no session token");
         }
         System.out.println("smoke " + label + " authenticate ok");
-        topUp(0, "20.00", key());
-        System.out.println("smoke " + label + " card top-up (authorize, capture) ok");
+        for (int customer = 0; customer < CUSTOMERS; customer++) {
+            topUp(customer, "5.00", key());
+        }
+        System.out.println("smoke " + label + " card top-up (authorize, capture) ok, " + CUSTOMERS + " customers funded");
         String reference = "smoke-" + label + "-" + UUID.randomUUID();
         Answer sent = expect("transfer", transfer(0, 1, "1.00", key(), reference), 201);
         if (!"COMPLETED".equals(field(sent.body(), "status"))) {

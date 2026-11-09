@@ -49,7 +49,7 @@ SELECT CASE WHEN count(*) = :expected_payouts THEN 'PASS' ELSE 'FAIL' END,
        'one payout per key',
        count(*) || ' payouts, client was told ' || :expected_payouts
   FROM merchant.merchant_payout
- WHERE status IN ('PAID', 'INITIATED', 'DISPATCHED', 'SENT');
+ WHERE status = 'COMPLETED';
 
 -- The outbox drained, and nothing stuck behind a dead letter.
 SELECT CASE WHEN count(*) FILTER (WHERE published_at IS NULL AND discarded_at IS NULL) = 0 THEN 'PASS' ELSE 'FAIL' END,
@@ -82,7 +82,7 @@ SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'balances explain the
                             sum(CASE direction WHEN 'CREDIT' THEN amount_minor ELSE -amount_minor END) AS net
                        FROM ledger.journal_line
                       GROUP BY ledger_account_id) l USING (ledger_account_id)
-         WHERE abs(coalesce(l.net, 0)) <> abs(b.balance_minor)) drift;
+         WHERE abs(coalesce(l.net, 0)) <> abs(b.posted_minor)) drift;
 
 -- TLS, as the server sees it: no application connection without it (the server refuses one anyway; this reads the fact).
 SELECT CASE WHEN count(*) FILTER (WHERE NOT s.ssl) = 0 AND count(*) > 0 THEN 'PASS' ELSE 'FAIL' END,

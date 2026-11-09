@@ -685,7 +685,8 @@ client map-gl >> "$ART/client.log" 2>&1 || fail "the GL mapping could not be act
 smoke() {
     client smoke "$1" >> "$ART/client.log" 2>&1 || fail "the smoke ($1) failed: see client.log"
     SMOKE_TRANSFERS=$((SMOKE_TRANSFERS + 1))
-    SMOKE_TOPUPS=$((SMOKE_TOPUPS + 1))
+    # Four: smoke funds every customer of the workload.
+    SMOKE_TOPUPS=$((SMOKE_TOPUPS + 4))
     SMOKE_CHECKOUTS=$((SMOKE_CHECKOUTS + 1))
     SMOKE_PAYOUTS=$((SMOKE_PAYOUTS + 1))
 }
@@ -779,16 +780,20 @@ probe_pod "$WORK/pod-scraper.yaml" finapp-observability np-scraper '{finapp/role
 # In finapp-edge, whose default-deny lets only the controllers out. Labelled as one, and never Ready, so it joins no Service.
 probe_pod "$WORK/pod-edge.yaml" finapp-edge np-edge '{finapp/role: ingress-controller, app.kubernetes.io/name: finapp-edge-public}' "$NEVER_READY"
 probe_pod "$WORK/pod-migrator.yaml" finapp np-migrator '{app.kubernetes.io/name: finapp-migrator}' ""
-apply_files "$WORK/pod-outsider.yaml" "$WORK/pod-scraper.yaml" "$WORK/pod-edge.yaml" "$WORK/pod-migrator.yaml"
+# No policy selects this one but the namespace's default-deny, which is what holds it.
+probe_pod "$WORK/pod-plain.yaml" finapp np-plain '{finapp/role: rehearsal-plain}' ""
+apply_files "$WORK/pod-outsider.yaml" "$WORK/pod-scraper.yaml" "$WORK/pod-edge.yaml" "$WORK/pod-migrator.yaml" "$WORK/pod-plain.yaml"
 kube -n finapp-rehearsal wait --for=condition=Ready pod/np-outsider --timeout=120s >> "$ART/apply.log" 2>&1 || fail "np-outsider did not start"
 kube -n finapp-observability wait --for=condition=Ready pod/np-scraper --timeout=120s >> "$ART/apply.log" 2>&1 || fail "np-scraper did not start"
 kube -n finapp wait --for=condition=Ready pod/np-migrator --timeout=120s >> "$ART/apply.log" 2>&1 || fail "np-migrator did not start"
+kube -n finapp wait --for=condition=Ready pod/np-plain --timeout=120s >> "$ART/apply.log" 2>&1 || fail "np-plain did not start"
 kube -n finapp-edge wait --for=jsonpath='{.status.containerStatuses[0].state.running}' pod/np-edge --timeout=120s >> "$ART/apply.log" 2>&1 || fail "np-edge did not start"
 
 if [ "$PROBE" = no-default-deny ]; then
-    # The probe: the namespace's default-deny removed, and the application's own policies with it, so nothing refuses what the rules do not name.
-    kube -n finapp delete networkpolicy default-deny finapp-app-ingress finapp-app-egress finapp-migrator-egress >> "$ART/apply.log" 2>&1 || cannot "the probe could not remove the policies"
-    log "PROBE no-default-deny: the namespace's default-deny and its policies removed"
+    # The probe: the namespace's default-deny removed, as the entry says. The application's and the migrator's own policies still select them, so what this
+    # takes away is the refusal of a pod no other policy selects: np-plain below.
+    kube -n finapp delete networkpolicy default-deny >> "$ART/apply.log" 2>&1 || cannot "the probe could not remove default-deny"
+    log "PROBE no-default-deny: the namespace's default-deny removed"
     sleep 8
 fi
 
@@ -812,6 +817,8 @@ DNS_IP=$(kube -n kube-system get pods -l k8s-app=kube-dns -o jsonpath='{.items[0
 must_reach "2 control" finapp "$TARGET_POD" np-debug "$PG_IP" 5432
 must_not_reach "2 egress" finapp "$TARGET_POD" np-debug "$OUTSIDER_IP" 8080
 must_not_reach "2 egress" finapp "$TARGET_POD" np-debug 1.1.1.1 443
+must_not_reach "default-deny" finapp np-plain probe "$OUTSIDER_IP" 8080
+must_not_reach "default-deny" finapp np-plain probe 1.1.1.1 443
 # A control on the targets themselves: they are reachable where no policy stands, so the refusals above are the policy's.
 must_reach "2 control" finapp-observability np-scraper probe "$OUTSIDER_IP" 8080
 must_reach "2 control" finapp-rehearsal np-outsider probe 1.1.1.1 443
@@ -913,6 +920,9 @@ fi
 if [ "$PROBE" = no-default-deny ]; then
     fail "PROBE no-default-deny: every denial still held with the policies removed, so the test cannot fail"
 fi
+
+# The namespace's quota equals the fleet's worst moment with nothing to spare, so the probes leave before anything rolls.
+kube -n finapp delete pod np-migrator np-plain --grace-period=0 --force >> "$ART/apply.log" 2>&1 || cannot "the probe pods could not be removed"
 
 step edge-acceptance
 client edge > "$ART/edge.txt" 2>&1 || fail "the edge check could not run: see edge.txt"

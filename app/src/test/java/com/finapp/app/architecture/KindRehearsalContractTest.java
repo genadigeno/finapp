@@ -2,14 +2,24 @@ package com.finapp.app.architecture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.accounting.GlMappingVersion;
+import com.finapp.accounting.testing.ReferenceGlMapping;
+import com.finapp.ledger.AccountPurpose;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
  * What the kind rehearsal holds about itself (`P15-TSK-012`, ADR-0120): the pins it runs on, the shape of the test-only overlay that
@@ -126,6 +136,27 @@ class KindRehearsalContractTest {
                 .contains("must_not_reach \"2 egress\" finapp \"$TARGET_POD\" np-debug 1.1.1.1 443")
                 .contains("must_reach \"2 control\" finapp-rehearsal np-outsider probe 1.1.1.1 443")
                 .contains("must_not_reach \"2 egress\" finapp np-migrator probe \"$KAFKA_IP\" 9092");
+    }
+
+    @Test
+    @DisplayName("the GL mapping the rehearsal activates is the reference chart, every purpose of the ledger mapped")
+    void theGlMappingIsTheReferenceChart() {
+        Map<String, Object> proposal = new Yaml(new SafeConstructor(new LoaderOptions())).load(read("infra/scripts/kind-rehearsal/gl-mapping.json"));
+        GlMappingVersion reference = ReferenceGlMapping.version();
+        Set<String> rules = new TreeSet<>();
+        for (Map<?, ?> rule : (List<Map<?, ?>>) proposal.get("rules")) {
+            rules.add(rule.get("purpose") + "|" + rule.get("ownerKind") + "|" + rule.get("glAccountCode"));
+        }
+        Set<String> expected = new TreeSet<>();
+        reference.rules().forEach(rule -> expected.add(rule.purpose() + "|" + rule.ownerKind() + "|" + rule.glAccountCode()));
+        assertThat(rules).as("the file the rehearsal proposes is the fixture's chart").isEqualTo(expected);
+        Set<String> purposes = new TreeSet<>();
+        for (AccountPurpose purpose : AccountPurpose.values()) {
+            purposes.add(purpose.name());
+        }
+        Set<String> mapped = new TreeSet<>();
+        reference.rules().forEach(rule -> mapped.add(rule.purpose()));
+        assertThat(mapped).as("an activation is refused unless the version is total over the ledger's purposes").isEqualTo(purposes);
     }
 
     @Test
