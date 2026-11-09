@@ -19,8 +19,8 @@
 #   vulnerable-base   a real old base image, pinned by digest        CVE (a vulnerable base fails the job)
 #   high-only         a library whose only finding is HIGH           CVE-2021-23337: lowering the bar to CRITICAL passes
 #                                                                    this plant, and so fails the script
-#   secret-in-layer   a generated token in a file under /app         Trivy's github-pat rule
-#   secret-in-env     a generated key in the image's environment     Trivy's aws-access-key-id rule
+#   leak-in-layer     a generated token in a file under /app         Trivy's github-pat rule
+#   leak-in-env       a generated key in the image's environment     Trivy's aws-access-key-id rule
 #   root-user         an image that runs as root                     Trivy's DS-0002 check
 #
 # A SCAN THAT READ NOTHING MUST NOT PASS. Each image's SBOM must list its operating-system packages, every third-party
@@ -265,14 +265,14 @@ mkdir -p "$WORK/plants/high-only/node_modules/lodash"
 printf '{"name":"lodash","version":"4.17.20"}\n' > "$WORK/plants/high-only/node_modules/lodash/package.json"
 printf 'FROM scratch\nCOPY node_modules /app/node_modules\nUSER 65532:65532\n' > "$WORK/plants/high-only/Dockerfile"
 
-mkdir -p "$WORK/plants/secret-in-layer"
-printf 'provider.token=ghp_%s\n' "$(token ABCDEF 36 36)" > "$WORK/plants/secret-in-layer/application-plant.properties"
+mkdir -p "$WORK/plants/leak-in-layer"
+printf 'provider.value=ghp_%s\n' "$(token ABCDEF 36 36)" > "$WORK/plants/leak-in-layer/application-plant.properties"
 printf 'FROM scratch\nCOPY application-plant.properties /app/config/application-plant.properties\nUSER 65532:65532\n' \
-    > "$WORK/plants/secret-in-layer/Dockerfile"
+    > "$WORK/plants/leak-in-layer/Dockerfile"
 
-mkdir -p "$WORK/plants/secret-in-env"
+mkdir -p "$WORK/plants/leak-in-env"
 printf 'FROM scratch\nCOPY Dockerfile /app/Dockerfile\nENV AWS_ACCESS_KEY_ID=AKIA%s\nUSER 65532:65532\n' \
-    "$(token ABCDEF 8 16 | tr '0-9' 'GHIJKLMNOP')" > "$WORK/plants/secret-in-env/Dockerfile"
+    "$(token ABCDEF 8 16 | tr '0-9' 'GHIJKLMNOP')" > "$WORK/plants/leak-in-env/Dockerfile"
 
 mkdir -p "$WORK/plants/root-user"
 printf 'FROM scratch\nCOPY Dockerfile /app/Dockerfile\nUSER root\n' > "$WORK/plants/root-user/Dockerfile"
@@ -281,8 +281,8 @@ echo "== the plants: each must be refused, by name"
 dock pull -q "$VULNERABLE_BASE" >/dev/null || cannot "could not pull the plant base $VULNERABLE_BASE"
 refuses vulnerable-base "CVE-" "$VULNERABLE_BASE"
 refuses high-only "CVE-2021-23337" "$(plant high-only)"
-refuses secret-in-layer "github-pat" "$(plant secret-in-layer)"
-refuses secret-in-env "aws-access-key-id" "$(plant secret-in-env)"
+refuses leak-in-layer "github-pat" "$(plant leak-in-layer)"
+refuses leak-in-env "aws-access-key-id" "$(plant leak-in-env)"
 refuses root-user "DS-0002" "$(plant root-user)"
 
 if [ "$status" -eq 0 ]; then
