@@ -143,7 +143,7 @@ class NamespaceSecurityManifestsTest {
     }
 
     @Test
-    @DisplayName("no address committed under deploy/ is real: every ipBlock is an RFC 5737 documentation range")
+    @DisplayName("no address committed under deploy/ is real: every ipBlock is an RFC 5737 documentation range, or on the operator edge a private class")
     void noCommittedAddressIsReal() {
         int blocks = 0;
         for (Map<String, Object> policy : ofKind(everyCommittedDocument(), "NetworkPolicy")) {
@@ -152,13 +152,22 @@ class NamespaceSecurityManifestsTest {
                     for (Map<String, Object> peer : list(rule, "ingress".equals(direction) ? "from" : "to")) {
                         if (peer.containsKey("ipBlock")) {
                             blocks++;
-                            assertThat(DOCUMENTATION_RANGES).as("%s", policy.get("metadata")).contains(String.valueOf(map(peer, "ipBlock").get("cidr")));
+                            assertThat(rangesAllowedOn(policy)).as("%s", policy.get("metadata")).contains(String.valueOf(map(peer, "ipBlock").get("cidr")));
                         }
                     }
                 }
             }
         }
         assertThat(blocks).as("the addresses were read").isGreaterThan(8);
+    }
+
+    /** The operator edge admits the internal network as a class, the three private ranges; no other policy may name one, and no policy a real address. */
+    private static Set<String> rangesAllowedOn(Map<String, Object> policy) {
+        Set<String> allowed = new TreeSet<>(DOCUMENTATION_RANGES);
+        if ("finapp-edge-operator".equals(map(policy, "metadata").get("name"))) {
+            allowed.addAll(Set.of("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"));
+        }
+        return allowed;
     }
 
     // ---------------------------------------------------------------------------------------------- Pod Security
