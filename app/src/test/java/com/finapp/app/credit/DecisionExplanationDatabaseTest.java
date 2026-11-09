@@ -292,7 +292,11 @@ class DecisionExplanationDatabaseTest {
         assertThat(client.get("/v1/operator/credit/decisions/" + CreditWorld.IDS.next() + "/explanation", officer)
                 .statusCode()).isEqualTo(404);
         assertThat(client.post("/v1/operator/credit/records/" + CreditWorld.IDS.next() + "/evidence-read",
-                "{\"reason\":\"x\"}", officer, null).statusCode()).isEqualTo(404);
+                "{\"reason\":\"an unknown record\"}", officer, null).statusCode()).isEqualTo(404);
+        assertThat(client.post("/v1/operator/credit/records/" + CreditWorld.IDS.next() + "/evidence-read",
+                "{\"reason\":\"x\"}", officer, null).statusCode())
+                .as("a reason of one character is refused before anything is read (P15-TSK-039)")
+                .isEqualTo(422);
     }
 
     // ------------------------------------------------------------------ plumbing

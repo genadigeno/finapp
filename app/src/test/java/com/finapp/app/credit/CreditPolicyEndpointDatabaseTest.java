@@ -105,6 +105,16 @@ class CreditPolicyEndpointDatabaseTest {
         HttpResponse<String> then = get(POLICIES + "?product=PERSONAL_LOAN&at=" + encode(v1From.toString()), second);
         assertThat(then.statusCode()).as(then.body()).isEqualTo(200);
         assertThat(field(then.body(), "id")).as("v1 was in force from its own start").isEqualTo(LOAN_SEED);
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement("SELECT count(*) FROM platform.audit_record"
+                        + " WHERE operation = 'credit.PolicyRead' AND target_id = ? AND change_summary LIKE ?")) {
+            read.setString(1, LOAN_SEED);
+            read.setString(2, "the policy for PERSONAL_LOAN at " + v1From + "%");
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                assertThat(row.getLong(1)).as("the read at an instant is on the record (P15-TSK-039)").isEqualTo(1);
+            }
+        }
         assertThat(field(then.body(), "status")).isEqualTo("RETIRED");
     }
 

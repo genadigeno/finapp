@@ -1,11 +1,9 @@
 package com.finapp.app.lending;
 
 import com.finapp.app.api.DecimalText;
-import com.finapp.identity.AssuranceLevel;
-import com.finapp.identity.IdentityErrorCode;
+import com.finapp.identity.ConditionalStepUp;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
-import com.finapp.identity.MfaFactorType;
 import com.finapp.identity.Session;
 import com.finapp.lending.AllocationAnomaly;
 import com.finapp.creditmath.AllocationLine;
@@ -255,11 +253,8 @@ public final class LoanRepaymentDesk {
 
     /** The platform's conditional step-up (A19): an enrolled customer repays from a {@code MULTI_FACTOR} session. */
     private void requireConditionalAssurance(Connection unitOfWork, Session current) {
-        boolean hasFactor = enrolments.findActive(unitOfWork, current.identityId(), MfaFactorType.TOTP).isPresent();
-        if (hasFactor && !current.assurance().atLeast(AssuranceLevel.MULTI_FACTOR)) {
-            throw new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED,
-                    "A repayment from an MFA-enrolled identity requires a MULTI_FACTOR session");
-        }
+        ConditionalStepUp.require(enrolments, unitOfWork, current,
+                "A repayment from an MFA-enrolled identity requires a MULTI_FACTOR session");
     }
 
     private static boolean refusedConservation(Throwable failure) {

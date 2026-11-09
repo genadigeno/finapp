@@ -116,39 +116,62 @@ who granted it, when and why. The review answers four questions:
 3. Does any identity hold `ADMINISTRATOR` beside another role? The administrator grants roles; holding one of the
    roles it grants is reviewed as a conflict and justified or revoked.
 4. Was every grant since the last review made by a different person than its holder, with a reason that names a need?
+5. Does any holder of a role that can redirect a merchant's money have no enrolled factor? `GET
+   /v1/operator/access-review/factorless-holdings`, on a `MULTI_FACTOR` session, names them, from the live rows of both tables: each is resolved by
+   the holder enrolling, or the role being revoked with a reason. The rule below refuses new ones; this finds the ones
+   that stood before it (§6).
 
 The review is a human procedure: the owner sets its cadence and its reviewer, and a leaver's roles are revoked on the
 day they leave. Its first performance is `P15-TSK-032`'s, with the runbook's break-glass and compromise procedures.
 
 ## 6. Step-up and refused attempts
 
-21 handlers declare `@RequiresAssurance(MULTI_FACTOR)`, every one on the method: Phase 13's risk doors and Phase 14's
-accounting, ledger and write-off approvals. About thirty operations demand the step-up themselves - a payout
-destination, a bank-account registration, a withdrawal, a wallet payment, the lending and BNPL doors - some only when
-the caller has a factor (`CURRENT_STATE.md`'s debt row on the conditional step-up). Not every four-eyes door steps up:
-a break's resolution and the mapping activation are `P14-REM-001`'s and `P14-REM-002`'s. **Every refused privileged
+36 handlers declare `@RequiresAssurance(MULTI_FACTOR)`, every one on the method: Phase 13's risk doors, Phase 14's
+accounting, ledger and write-off approvals, the dead-letter doors, the rulings below and §5's check. About thirty operations demand
+the step-up themselves - a bank-account registration, a withdrawal, a wallet payment, the lending and BNPL doors - some
+only when the caller has a factor, by one component (`ConditionalStepUp`). Not every four-eyes door steps up: a break's
+resolution and the mapping activation are `P14-REM-001`'s and `P14-REM-002`'s. **Every refused privileged
 attempt is recorded**: a missing permission as `identity.AuthorizationDenied`,
 a session below the level as `identity.StepUpRefused` - each committed in a transaction of its own before the refusal is
 answered, naming the actor, the identity and the operation's route pattern, never the session, the code or the factor
 (`OperatorActorTypingTest`, `StepUpRefusalsTest`; `DenyByDefaultDatabaseTest#aRefusedStepUpIsRecorded`, owed). A
 refusal whose record cannot be written is answered `500`, never without its record.
 
-**Two questions this review rules** (routed by the carried items' ruling, C15, 2026-11-08). Each is a recommendation;
-neither is built, and both are `THREAT_MODEL.md` §6 owner item 10, held by a `GAP` row (T38):
+**Two questions this review rules**, both decided by the owner on 2026-11-08 and built by `P15-TSK-039`:
 
 1. **May a role that can redirect a merchant's money be held without an enrolled factor?** *No.* Proposing a payout
-   destination (`MERCHANT_ADMINISTER`), approving one (`PAYOUT_DESTINATION_APPROVE`) and paying out
-   (`MERCHANT_PAYOUT`) move or redirect money that is not the operator's; today the destination's step-up is
-   conditional, so an operator with no factor acts on a password alone (`CURRENT_STATE.md`'s payout destination row).
-   The rule recommended: a factor enrolled before any of those roles is granted, and the destination's acts declared
-   `MULTI_FACTOR` unconditionally.
+   destination (`MERCHANT_ADMINISTER`), approving one (`PAYOUT_DESTINATION_APPROVE`) and paying out (`MERCHANT_PAYOUT`)
+   move or redirect money that is not the operator's. **Built:** a grant of a role holding any of those three is refused
+   `409 identity.FactorRequiredForRole` until the subject has a confirmed factor (`RoleGrantNeedsAFactorTest`), and the
+   destination's proposal and approval declare `MULTI_FACTOR` unconditionally. Today's roles are `MERCHANT_ADMINISTRATOR`
+   and `LEDGER_OPERATOR`; the rule reads the grants, so a permission moved to another role takes it along. A holding
+   from before the rule is **named, not revoked**: §5 question 5. Until it is resolved, such a holder still cannot act
+   on a destination (no factor, no `MULTI_FACTOR` session), and can still pay a merchant out on a password: the review
+   closes that, not a migration.
 2. **Do Phase 9's privileged acts require a multi-factor session?** *Yes*: the pricing and corridor policies' approvals,
-   a kill switch's restart and an FX trade's reversal and its approval change what customers are charged or reverse a
-   posted trade, the class every Phase 13 and 14 approval already steps up for.
+   a kill switch's restart (the approval of its enable request, the act that restarts it) and an FX trade's reversal and
+   its approval change what customers are charged or reverse a posted trade, the class every Phase 13 and 14 approval
+   already steps up for. **Built:** the six doors declare it. A kill switch's *stop*, and a proposal to restart, stay
+   one person's act on the session they hold: stopping is the fail-safe direction and a restart still needs a second
+   person, stepped up. An `FX_CONTROLLER` with no enrolled factor, who could approve on a password until now, is refused
+   `403 identity.AssuranceRequired` at these doors, and §5's check does not name that role: enrolment is self-service
+   (`POST /v1/me/mfa`). `RuledDoorsStepUpTest` holds the eight doors and §5's check; the permission register pins them
+   (`RoutePermissionRegisterTest#everyRuledRouteDeclaresMultiFactor`).
 
-The wider audit class routed with them - refused and failed Phase 7 and 8 acts, failed or not-found Phase 9 and 10
-operator reads - and the extraction of the conditional step-up's 17 copies return to the owner with them (owner item 10):
-every refused step-up is already recorded, the copies' included, without touching a copy.
+**Declared doors judge the level before the permission**, as every declared door does: at those nine, a caller on a
+password session is told to step up whether or not they hold the permission. It denies a stolen password a way to learn
+which roles the account holds. The conditional copies moved into `ConditionalStepUp` kept their call sites, so what a
+refused caller learns there, and which refusal is recorded first, did not change.
+
+**Removing a factor is the path around the rule, and it does not exist.** `MfaFactorStatus` has no state past `ACTIVE`,
+nothing writes one, and no door or store method reaches a confirmed row (`RoleGrantNeedsAFactorTest#aConfirmedFactorCannotBeRemoved`,
+which the task that builds removal must change). That task must refuse removal while a role needing a factor is held, or
+revoke the role in the same transaction. Whatever it does, a destination act still needs a `MULTI_FACTOR` session.
+
+**The wider class** is `door.ActRefused`: refused and failed Phase 7 and 8 acts and failed or not-found Phase 9 and 10
+operator reads, the doors read from the controllers by `RefusedActsAreRecordedTest`. `AUDITABLE_ACTIONS.md` names what it
+leaves out: a `401`, a key refused before an actor is proven, a filter's `413`, a customer's doors, and Phase 6's merchant
+operator doors, a payout destination's among them.
 
 ## 7. Break-glass
 
@@ -179,6 +202,6 @@ initialisation script creates it, and in a deployed database the one-time bootst
 
 ## 9. What this review does not claim
 
-It does not claim that the holding rule of §4 is enforced (owner item 9), that §6's two rulings are built (owner item 10), that the review of §5 has been performed (a
-human procedure, first performed by `P15-TSK-032`), that operator routes are off the public edge (`P15-TSK-011`), or
-any conformity with a standard.
+It does not claim that the holding rule of §4 is enforced (owner item 9), that the holdings §6's check names have been
+resolved or that the review of §5 has been performed (a human procedure, first performed by `P15-TSK-032`), that
+operator routes are off the public edge (`P15-TSK-011`), or any conformity with a standard.

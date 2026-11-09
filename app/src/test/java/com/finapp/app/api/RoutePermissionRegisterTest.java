@@ -63,6 +63,8 @@ class RoutePermissionRegisterTest {
                     entry("DELETE /v1/identities/{id}/suspension", PermissionName.IDENTITY_SUSPEND),
                     entry("POST /v1/identities/{id}/suspension", PermissionName.IDENTITY_SUSPEND),
                     entry("POST /v1/identities/{id}/roles", PermissionName.ROLE_ASSIGN),
+                    // P15-TSK-039: the check of the holdings the factor rule found standing: the administrator's.
+                    entry("GET /v1/operator/access-review/factorless-holdings", PermissionName.ROLE_ASSIGN),
                     // KYC review (Phase 2)
                     entry("GET /v1/kyc/cases/{id}", PermissionName.KYC_REVIEW),
                     entry("POST /v1/kyc/cases/{id}/decision", PermissionName.KYC_REVIEW),
@@ -667,6 +669,37 @@ class RoutePermissionRegisterTest {
                         PermissionName.CREDIT_INVESTIGATE,
                         PermissionName.CREDIT_UNDERWRITE,
                         PermissionName.RISK_OVERRIDE);
+    }
+
+    /**
+     * The routes the access review ruled {@code MULTI_FACTOR} (`P15-TSK-039`; {@code PRIVILEGED_ACCESS_REVIEW.md} section 6):
+     * a step-up is a reviewed decision as a permission is. Only these nine: every other declaration is its own task's.
+     * {@code RuledDoorsStepUpTest} holds what the declaration does at each.
+     */
+    private static final java.util.Set<String> RULED_MULTI_FACTOR_ROUTES = new java.util.TreeSet<>(java.util.Set.of(
+            // The access review's two rulings (PRIVILEGED_ACCESS_REVIEW.md section 6, P15-TSK-039).
+            "POST /v1/operator/merchants/{merchantId}/payout-destinations",
+            "POST /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}/approval",
+            "POST /v1/operator/fx/pricing-policies/{id}/approval",
+            "POST /v1/operator/fx/enable-requests/{rid}/approval",
+            "POST /v1/operator/cross-border/corridor-policies/{id}/approval",
+            "POST /v1/operator/cross-border/corridor-enable-requests/{rid}/approval",
+            "POST /v1/operator/fx/trades/{id}/reversal",
+            "POST /v1/operator/fx/trades/{id}/reversal/{rid}/approval",
+            // The list of money-role holders with no second factor: not on a password alone.
+            "GET /v1/operator/access-review/factorless-holdings"));
+
+    @Test
+    @DisplayName("the rulings' routes each declare MULTI_FACTOR, read from the handler that serves them (P15-TSK-039)")
+    void everyRuledRouteDeclaresMultiFactor() {
+        Map<String, HandlerMethod> served = served();
+        assertThat(served.keySet()).containsAll(RULED_MULTI_FACTOR_ROUTES);
+        for (String route : RULED_MULTI_FACTOR_ROUTES) {
+            com.finapp.app.session.RequiresAssurance declared =
+                    served.get(route).getMethodAnnotation(com.finapp.app.session.RequiresAssurance.class);
+            assertThat(declared).as(route).isNotNull();
+            assertThat(declared.value()).as(route).isEqualTo(com.finapp.identity.AssuranceLevel.MULTI_FACTOR);
+        }
     }
 
     /** The path prefix of the operator surface (C9's internal ingress). */

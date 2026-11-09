@@ -1,6 +1,5 @@
 package com.finapp.app.merchant;
 
-import com.finapp.identity.MfaEnrolmentStore;
 import com.finapp.merchant.JdbcMerchantStore;
 import com.finapp.merchant.JdbcPayoutDestinationStore;
 import com.finapp.merchant.PayoutDestinationEffectuation;
@@ -81,13 +80,11 @@ public class PayoutDestinationBeans {
     PayoutDestinationOperations payoutDestinationOperations(
             PayoutDestinations payoutDestinations,
             ObjectProvider<PayoutDestinationTokenisation> payoutDestinationTokenisation,
-            MfaEnrolmentStore<Connection> mfaEnrolmentStore,
             PlatformTransactionManager transactionManager,
             DataSource dataSource) {
         return new PayoutDestinationOperations(
                 payoutDestinations,
                 payoutDestinationTokenisation,
-                mfaEnrolmentStore,
                 new TransactionTemplate(transactionManager),
                 dataSource);
     }

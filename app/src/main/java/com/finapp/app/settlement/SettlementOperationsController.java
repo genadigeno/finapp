@@ -1,5 +1,6 @@
 package com.finapp.app.settlement;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -38,6 +39,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code OpenApiContractTest}).
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(path = "/operator/settlement", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class SettlementOperationsController {

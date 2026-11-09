@@ -238,6 +238,16 @@ public enum IdentityAuditAction implements AuditableAction {
             "A request was refused because its session had not stepped up to the assurance the operation requires.",
             false),
 
+    /**
+     * An administrator read which live holdings of a money-redirecting role have no enrolled factor (`P15-TSK-039`): the
+     * check of the holdings that existed before the rule, which grants no role and revokes none. Written in the read's
+     * own transaction. No reason: the read harms nobody and the review's procedure asks for it.
+     */
+    FACTORLESS_HOLDINGS_READ(
+            "identity.FactorlessHoldingsRead",
+            "An administrator read the live holdings of a money-redirecting role with no enrolled factor.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

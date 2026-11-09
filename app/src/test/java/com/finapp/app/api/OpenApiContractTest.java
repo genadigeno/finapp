@@ -1017,6 +1017,8 @@ class OpenApiContractTest {
                         // @RequiresPermission, and the only two the plan listed that nobody owned.
                         ApiVersion.CURRENT_PREFIX + "/identities/{id}/suspension",
                         ApiVersion.CURRENT_PREFIX + "/identities/{id}/roles",
+                        // P15-TSK-039: the check of the holdings the factor rule found standing.
+                        ApiVersion.CURRENT_PREFIX + "/operator/access-review/factorless-holdings",
                         // P1-TSK-030. Declared by the plan for the whole phase and owned by no
                         // task until the review found it.
                         ApiVersion.CURRENT_PREFIX + "/me",

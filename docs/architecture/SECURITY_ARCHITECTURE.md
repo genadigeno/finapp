@@ -335,7 +335,7 @@ this document silent on Phase 6.)*
   not theirs, whether it is open, mid-payment or paid (mid-payment since the Phase 6 → 7
   transition, which found the payments surface's own `404` wording leaking the state).
 - **A payout destination never enters as bank details.** The grant exchange keeps them at the
-  provider, and a change needs two operators, a step-up where a factor is enrolled, and a
+  provider, and a change needs two operators, each on a `MULTI_FACTOR` session, and a
   cooling-off before money follows it (ADR-0056, `INV-AUD-04`).
 
 A response that carries either credential renders it masked in `toString`: the exemptions in

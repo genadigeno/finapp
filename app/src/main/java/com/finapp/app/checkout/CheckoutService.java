@@ -761,21 +761,8 @@ public class CheckoutService {
      * {@code MULTI_FACTOR} session. Enrolment is the condition, not the request.
      */
     private void requireConditionalAssurance(Connection unitOfWork, Session current) {
-        boolean hasFactor =
-                enrolments
-                        .findActive(
-                                unitOfWork,
-                                current.identityId(),
-                                com.finapp.identity.MfaFactorType.TOTP)
-                        .isPresent();
-        if (hasFactor
-                && !current.assurance()
-                        .atLeast(com.finapp.identity.AssuranceLevel.MULTI_FACTOR)) {
-            throw new ApiException(
-                    com.finapp.identity.IdentityErrorCode.ASSURANCE_REQUIRED,
-                    "A wallet payment from an MFA-enrolled identity requires a MULTI_FACTOR"
-                            + " session");
-        }
+        com.finapp.identity.ConditionalStepUp.require(enrolments, unitOfWork, current,
+                "A wallet payment from an MFA-enrolled identity requires a MULTI_FACTOR session");
     }
 
     /** The intent a session past {@code OPEN} must carry; its absence is a broken database. */

@@ -128,7 +128,10 @@ public final class CreditPolicyDesk {
     public CreditPolicyView activeAt(String rawProduct, String rawAt) {
         CreditProduct product = product(rawProduct);
         Optional<Instant> at = instant(rawAt);
-        return guarded(() -> transactions.inTransaction(uow -> view(administration.activeAt(uow, product, at))));
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        return guarded(() -> transactions.inTransaction(
+                uow -> view(administration.readActiveAt(uow, product, at, actor, correlation))));
     }
 
     // ------------------------------------------------------------------ the policy in the domain's words

@@ -135,6 +135,7 @@ visible rather than quietly approximated.
 |---|---|---|
 | `identity.AuthenticationFailed` | 401 | Authentication failed. |
 | `identity.AssuranceRequired` | 403 | This operation requires a stronger authentication. |
+| `identity.FactorRequiredForRole` | 409 | This role cannot be granted until its holder has enrolled a second factor. |
 | `identity.VerifiedChannelAlreadyExists` | 409 | The account already has a verified contact channel of this kind. |
 
 **One code for every reason an authentication can fail** (`P1-TSK-010`, `INV-IDN-07`): unknown
@@ -149,6 +150,19 @@ answered only after `identity.StepUpRefused` has committed in a transaction of i
 at a declared step-up, by this renderer at an operation's own. Where the record cannot be written the request is
 answered `500 api.InternalError` instead, on both paths, as a permission denial is: refused either way, and the
 answer never claims a refusal the audit trail lacks.
+
+**So does a refusal at a declared door, where an actor is proven** (`P15-TSK-039`): at an operator's or a merchant's door
+of Phases 7 to 10, a problem this renderer answers for a proven actor has `door.ActRefused` committed first, or is answered
+`500 api.InternalError`. Three leave no row: a `401`, which has nobody to name; a missing or malformed idempotency key,
+refused by the first interceptor before any actor is proven; a `413` from `RequestSizeLimitFilter`, which never reaches this
+renderer. `409 api.IdempotencyInProgress` is the same request's retry, not a refusal, and is not recorded either
+(`AUDITABLE_ACTIONS.md`).
+
+**`identity.FactorRequiredForRole`** (`P15-TSK-039`; `PRIVILEGED_ACCESS_REVIEW.md` §6): `POST /v1/identities/{id}/roles` for
+a role that can redirect a merchant's money - today `MERCHANT_ADMINISTRATOR` and `LEDGER_OPERATOR`, read from what each
+role grants - while the subject has no confirmed factor. Nothing is granted; the subject enrols and the administrator
+retries. Only the administrator learns the subject has no factor, and `ROLE_ASSIGN` already answers whether the subject
+exists. A holding that predates the rule is named by `GET /v1/operator/access-review/factorless-holdings`, never revoked.
 
 **Not `api.Unauthenticated`, deliberately.** That code means *authentication is required* — a
 protected route reached with no credentials at all. Here credentials **were** presented and were not
@@ -1093,6 +1107,9 @@ request is `NotFound`, exactly as an unknown or malformed id. An MFA-enrolled id
 `identity.AssuranceRequired` (`403`) before any of these.
 
 The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/credit/profile` answer `NotFound` for another party's request exactly as for an unknown one, and carry no figure. The investigator's doors, behind `CREDIT_INVESTIGATE`: the explanation answers `NotFound` for an unknown decision; the evidence read refuses a blank reason `422 ReasonRequired` before anything is read, answers `NotFound` for an unknown record or one with no readable evidence, and `503 EvidenceUnreadable` when its key cannot decrypt it - the attempt recorded FAILED and nothing served.
+
+An evidence read's reason of under ten characters, spaces at either end aside, is `credit.ReasonRequired` (`422`,
+`P15-TSK-039`), judged before anything is read or recorded; the detail says what is short.
 
 ### `lending` — `LendingErrorCode`
 

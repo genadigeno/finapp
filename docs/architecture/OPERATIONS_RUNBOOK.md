@@ -100,7 +100,7 @@ tests (held to O7 by `PricingPolicyV1Test`, and proposed and activated end to en
    version's id (`PROPOSED`, version 1).
 3. **Approve** (person B — the proposer is refused `fx.SelfApprovalRefused`, at the domain and
    by the database's `CHECK`): `POST /v1/operator/fx/pricing-policies/{id}/approval` with a
-   reason. The version moves `PROPOSED → ACTIVE`; both acts are audited
+   reason, on a `MULTI_FACTOR` session (`403 identity.AssuranceRequired` below it, since 2026-11-09). The version moves `PROPOSED → ACTIVE`; both acts are audited
    (`fx.PricingPolicyProposed`, `fx.PricingPolicyActivated`) and `fx.PricingPolicyActivated` is
    published.
 
@@ -114,7 +114,10 @@ replaces it, and only new quotes see it.
 `POST /v1/operator/fx/pairs/{AAA-BBB}/availability` or `…/providers/{code}/availability` with
 `{"available": false, "reason": …}`. Restarting is two people: the same route with
 `"available": true` opens an enable request (`ENABLE_PROPOSED`), which a DIFFERENT controller
-approves at `POST /v1/operator/fx/enable-requests/{id}/approval`.
+approves at `POST /v1/operator/fx/enable-requests/{id}/approval`, on a `MULTI_FACTOR` session. **An `FX_CONTROLLER` with no
+enrolled factor is refused `403 identity.AssuranceRequired` at every approval and restart here and in §3b**, and
+`GET /v1/operator/access-review/factorless-holdings` does not name that role, so enrol controllers ahead of need: enrolment
+is self-service (`POST /v1/me/mfa`, then `POST /v1/authentications/mfa` to step up).
 
 ## 3. Activating the FX provider source's rule set v1 - before the first cover settles
 
@@ -191,12 +194,13 @@ its own and never nets with its sibling's.
    covering a corridor's destination, is `422 crossborder.RailNotDeclared`; a datum the platform does not
    hold is `422 crossborder.RequiredDataUnsatisfiable`.
 2. **Approve** (person B - the proposer is refused at the domain and by the database's `CHECK`):
-   `POST /v1/operator/cross-border/corridor-policies/{id}/approval`. The build is judged again; version 1
+   `POST /v1/operator/cross-border/corridor-policies/{id}/approval`, on a `MULTI_FACTOR` session. The build is judged again; version 1
    moves `PROPOSED -> ACTIVE`, retiring nothing; `crossborder.CorridorPolicyActivated` is published.
 
 **The kill switch.** `POST /v1/operator/cross-border/corridors/{S-D-CC}/availability` with
 `{"available": false, "reason": ...}` stops a corridor at once (one person); `{"available": true}`
-opens an enable request a different person approves at `…/corridor-enable-requests/{rid}/approval`.
+opens an enable request a different person approves at `…/corridor-enable-requests/{rid}/approval`, on a
+`MULTI_FACTOR` session.
 
 **Verify.** Discovery lists the four corridors with their fees, maxima and delivery estimates.
 
@@ -243,7 +247,8 @@ own stored inputs. Both are the platform's defect.
 **What a person does.** Nothing is repaired automatically and nothing may be adjusted by hand: the FX books are
 closed to free adjustment (`422 ledger.AdjustmentOnReconciledPosition`). Read the trade's provenance
 (`GET /v1/operator/fx/trades/{id}/provenance`, `FX_INVESTIGATE`) and the book's entries; open an incident; the
-only corrector of a booked conversion is the four-eyes trade reversal (`P9-TSK-025`).
+only corrector of a booked conversion is the four-eyes trade reversal (`P9-TSK-025`), proposed and approved on
+`MULTI_FACTOR` sessions.
 
 ## 6. Credit policy, scorecard and review operations (Phase 10)
 

@@ -8,11 +8,9 @@ import com.finapp.bnpl.BnplOfferId;
 import com.finapp.bnpl.BnplOffers;
 import com.finapp.bnpl.BnplOptions;
 import com.finapp.bnpl.BnplProduct;
-import com.finapp.identity.AssuranceLevel;
-import com.finapp.identity.IdentityErrorCode;
+import com.finapp.identity.ConditionalStepUp;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
-import com.finapp.identity.MfaFactorType;
 import com.finapp.identity.Session;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
@@ -232,11 +230,8 @@ public final class BnplOfferDesk {
 
     /** A decline's assurance: the platform's conditional step-up. */
     private void requireConditionalAssurance(Connection unitOfWork, Session current) {
-        boolean hasFactor = enrolments.findActive(unitOfWork, current.identityId(), MfaFactorType.TOTP).isPresent();
-        if (hasFactor && !current.assurance().atLeast(AssuranceLevel.MULTI_FACTOR)) {
-            throw new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED,
-                    "A BNPL offer decline from an MFA-enrolled identity requires a MULTI_FACTOR session");
-        }
+        ConditionalStepUp.require(enrolments, unitOfWork, current,
+                "A BNPL offer decline from an MFA-enrolled identity requires a MULTI_FACTOR session");
     }
 
     private static BnplOfferId offerId(String raw) {

@@ -77,6 +77,13 @@ public final class CreditInvestigations {
         record Unreadable() implements EvidenceRead {}
     }
 
+    /**
+     * The fewest characters an evidence read's reason may hold, spaces at either end aside (`P15-TSK-039`). Reading raw
+     * evidence is justified by this one sentence and nothing else; a character or two states no reason a reviewer can
+     * weigh. Screened here, on the server.
+     */
+    public static final int EVIDENCE_READ_MIN_REASON = 10;
+
     /** A blank reason for an evidence read ({@code credit.ReasonRequired}). */
     public static final class ReasonRequired extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
@@ -176,6 +183,9 @@ public final class CreditInvestigations {
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
         screened(reason);
+        if (reason.strip().length() < EVIDENCE_READ_MIN_REASON) {
+            throw new ReasonRequired("a reason of at least " + EVIDENCE_READ_MIN_REASON + " characters is required");
+        }
         Optional<CreditEvidenceId> evidence = reads.evidenceOf(unitOfWork, record);
         Optional<CreditEvidenceCipher.Encrypted> encrypted = evidence.flatMap(id -> reads.readEvidence(unitOfWork, id, reason));
         if (encrypted.isEmpty()) {

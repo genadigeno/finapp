@@ -18,11 +18,21 @@ public sealed interface DisputeActor {
      * The payment's counterparty — the merchant over its key: its tenancy is the accounts the
      * caller resolved from the authenticated merchant through the ledger's owner-scoped read, and
      * every statement carries them ({@code INV-MER-01}).
+     *
+     * <p>{@code keyId} is the public id of the API key that acted (`P15-TSK-039`), so a merchant's act on a dispute says
+     * which of the merchant's keys made it: a merchant has many keys and one actor id. An opaque text, never a secret;
+     * {@code payments} still does not learn what a merchant is. Empty for a value built without a key.
      */
-    record Counterparty(Set<LedgerAccountId> accounts) implements DisputeActor {
+    record Counterparty(Set<LedgerAccountId> accounts, Optional<String> keyId) implements DisputeActor {
 
         public Counterparty {
             accounts = Set.copyOf(Objects.requireNonNull(accounts, "accounts must not be null"));
+            Objects.requireNonNull(keyId, "keyId must not be null");
+        }
+
+        /** A counterparty with no key known - a value built without the door's authentication. */
+        public Counterparty(Set<LedgerAccountId> accounts) {
+            this(accounts, Optional.empty());
         }
     }
 

@@ -1188,6 +1188,10 @@ class UnderwritingCaseDatabaseTest {
         assertThat(queue.body()).as("never the raw evidence").doesNotContain("answer").doesNotContain("ciphertext");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'credit.ReviewCasesRead'"
                 + " AND target_id = 'OPEN'")).isGreaterThanOrEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'credit.ReviewCasesRead'"
+                + " AND target_id = 'OPEN' AND change_summary LIKE '%" + id.value() + "%'"))
+                .as("the record names the case the queue served (P15-TSK-039)")
+                .isGreaterThanOrEqualTo(1);
         assertThat(client.get("/v1/operator/credit/review-cases?status=SIDEWAYS", underwriter).statusCode()).isEqualTo(422);
 
         HttpResponse<String> missingKey = client.post(base + "/assignment", null, underwriter, null);

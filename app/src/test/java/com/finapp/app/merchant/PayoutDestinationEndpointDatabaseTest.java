@@ -158,7 +158,21 @@ class PayoutDestinationEndpointDatabaseTest {
     }
 
     @Test
-    @DisplayName("step-up on both sides: an enrolled operator on a PASSWORD session is refused, nothing written")
+    @DisplayName("an operator with no factor at all is refused too: the step-up is no longer conditional (P15-TSK-039)")
+    void noFactorIsRefused() throws Exception {
+        String merchant = merchant();
+        String noFactor = tokenFrom(authenticate(operatorLogin(RoleName.MERCHANT_ADMINISTRATOR)).body());
+
+        HttpResponse<String> refused = propose(merchant, noFactor, "pdg_nofactor1", someKey());
+
+        assertThat(refused.statusCode()).isEqualTo(403);
+        assertThat(refused.body()).contains("identity.AssuranceRequired");
+        assertThat(provider.requestCount(PATH)).as("no exchange for a refused caller").isZero();
+        assertThat(rowsOf(merchant)).isZero();
+    }
+
+    @Test
+    @DisplayName("step-up on both sides: an operator on a PASSWORD session is refused, nothing written")
     void stepUpOnBothSides() throws Exception {
         String merchant = merchant();
         providerTokenises("pdr_stepup-1");
@@ -338,8 +352,9 @@ class PayoutDestinationEndpointDatabaseTest {
         return id.toString();
     }
 
+    /** An operator on a {@code MULTI_FACTOR} session: the destination's acts need one, enrolled or not (P15-TSK-039). */
     private String sessionWith(RoleName role) throws Exception {
-        return tokenFrom(authenticate(operatorLogin(role)).body());
+        return com.finapp.app.session.OperatorStepUp.elevated(tokenFrom(authenticate(operatorLogin(role)).body()), this::post);
     }
 
     /** Registers an identity and grants it {@code role}; returns the login. */

@@ -115,6 +115,12 @@ public enum CreditAuditAction implements AuditableAction {
                     + " FAILED, nothing served.",
             true),
 
+    POLICY_READ(
+            "credit.PolicyRead",
+            "A holder of CREDIT_INVESTIGATE read the credit policy in force at an instant, or now (`P15-TSK-039`,"
+                    + " INV-AUD-01); written in the read's own transaction.",
+            false),
+
     REVIEW_CASES_READ(
             "credit.ReviewCasesRead",
             "A holder of CREDIT_UNDERWRITE read the review queue - each case's basis, its normalised attributes and the"

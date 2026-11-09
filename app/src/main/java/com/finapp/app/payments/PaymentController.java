@@ -1,5 +1,6 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.identity.PermissionName;
@@ -111,6 +112,7 @@ public class PaymentController {
      */
     @PostMapping(path = "/{id}/refund", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.PAYMENT_REFUND)
+    @RecordsRefusals
     @RequiresIdempotencyKey
     @ResponseStatus(HttpStatus.CREATED)
     public PaymentService.RefundView refundPayment(
@@ -132,6 +134,7 @@ public class PaymentController {
      */
     @PostMapping(path = "/{id}/void", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.PAYMENT_REFUND)
+    @RecordsRefusals
     public PaymentService.PaymentView voidPayment(
             @PathVariable("id") String id, @Valid @RequestBody VoidPaymentRequest body) {
         return payments.operatorVoid(parsedOrAbsent(id), body.reason());

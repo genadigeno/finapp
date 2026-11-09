@@ -15,6 +15,7 @@ import com.finapp.credit.ReasonCode;
 import com.finapp.credit.RequestOrigin;
 import com.finapp.credit.TransactionRunner;
 import com.finapp.identity.AssuranceLevel;
+import com.finapp.identity.ConditionalStepUp;
 import com.finapp.identity.IdentityErrorCode;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
@@ -248,11 +249,8 @@ public final class CreditDecisionRequestDesk {
     }
 
     private void requireConditionalAssurance(Connection unitOfWork, Session current) {
-        boolean hasFactor = enrolments.findActive(unitOfWork, current.identityId(), MfaFactorType.TOTP).isPresent();
-        if (hasFactor && !current.assurance().atLeast(AssuranceLevel.MULTI_FACTOR)) {
-            throw new ApiException(IdentityErrorCode.ASSURANCE_REQUIRED,
-                    "A credit decision request from an MFA-enrolled identity requires a MULTI_FACTOR session");
-        }
+        ConditionalStepUp.require(enrolments, unitOfWork, current,
+                "A credit decision request from an MFA-enrolled identity requires a MULTI_FACTOR session");
     }
 
     static CreditDecisionRequestView view(DecisionRequest request) {

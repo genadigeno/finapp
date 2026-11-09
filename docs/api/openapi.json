@@ -6632,6 +6632,41 @@
           }
         }
       },
+      "identity.FactorRequiredForRole": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "identity.FactorRequiredForRole"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/identity.FactorRequiredForRole"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This role cannot be granted until its holder has enrolled a second factor.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "identity.VerifiedChannelAlreadyExists": {
         "content": {
           "application/problem+json": {
@@ -20539,6 +20574,35 @@
               "$ref": "#/components/schemas/StepView"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "FactorlessHoldingView": {
+        "properties": {
+          "assignedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "identityId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FactorlessHoldingsView": {
+        "properties": {
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/FactorlessHoldingView"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -36273,6 +36337,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TransactionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/access-review/factorless-holdings": {
+      "get": {
+        "operationId": "listFactorlessHoldings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactorlessHoldingsView"
                 }
               }
             },

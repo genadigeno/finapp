@@ -807,7 +807,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // P14-TSK-013: the prior-period adjustment's bodies - ids, dates and decimal strings, and reasons screened by AccountingReasons.
                         "PriorPeriodAdjustmentRequest",
                         "PriorPeriodApprovalRequest",
-                        "PriorPeriodRejectionRequest");
+                        "PriorPeriodRejectionRequest",
+                        // P15-TSK-028's dead-letter doors: a reason, or a kind and an id; no credential. Named here by
+                        // P15-TSK-039, whose contract change is what ran this guard.
+                        "ReasonRequest",
+                        "DiscardRequest",
+                        "ReplayRequest");
     }
 
     @Test

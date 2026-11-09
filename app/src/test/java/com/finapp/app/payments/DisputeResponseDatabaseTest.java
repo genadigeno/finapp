@@ -261,6 +261,14 @@ class DisputeResponseDatabaseTest {
         assertThat(audits(dispute, "payments.DisputeResponseDispatched")).isEqualTo(1);
         assertThat(audits(response, "payments.DisputeEvidenceTransmitted")).isEqualTo(1);
         assertThat(audits(response, "payments.DisputeResponseOutcomeApplied")).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?"
+                        + " AND operation = 'payments.DisputeResponseDispatched' AND change_summary LIKE '%apiKey=%'", dispute.toString()))
+                .as("the merchant's act names the key that made it (P15-TSK-039)")
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?"
+                        + " AND operation = 'payments.DisputeEvidenceUploaded' AND change_summary LIKE '%apiKey=%'", dispute.toString()))
+                .as("so do its uploads (P15-TSK-039)")
+                .isEqualTo(2);
         assertThat(eventPayload(response, "payments.DisputeResponseSubmitted"))
                 .contains("\"kind\":\"REPRESENTMENT\"")
                 .contains("\"disputeId\":\"" + dispute + "\"")

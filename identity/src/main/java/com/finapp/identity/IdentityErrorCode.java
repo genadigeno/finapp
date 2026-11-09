@@ -53,6 +53,19 @@ public enum IdentityErrorCode implements ErrorCode {
             "This operation requires a stronger authentication."),
 
     /**
+     * A role that can redirect a merchant's money was granted to an identity with no enrolled factor (`P15-TSK-039`;
+     * {@code PRIVILEGED_ACCESS_REVIEW.md} §6).
+     *
+     * <p><strong>409</strong>: the request is well-formed and the administrator may make it; it conflicts with the
+     * subject's current state, and repeating it changes nothing until they enrol. Nothing was granted, and the factor's
+     * absence is told to the administrator alone: {@code ROLE_ASSIGN} already answers whether the subject exists.
+     */
+    FACTOR_REQUIRED_FOR_ROLE(
+            "identity.FactorRequiredForRole",
+            409,
+            "This role cannot be granted until its holder has enrolled a second factor."),
+
+    /**
      * A verification would give the identity a second verified contact channel of that kind
      * (`X-TSK-004`, {@code INV-IDN-06}).
      *

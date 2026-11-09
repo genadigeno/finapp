@@ -1,5 +1,6 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import com.finapp.app.session.RequiresPermission;
@@ -35,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code OpenApiContractTest}).
  */
 @RestController
+@RecordsRefusals
 @RequestMapping(produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class RoutingPolicyController {

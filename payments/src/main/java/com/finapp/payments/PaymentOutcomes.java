@@ -580,6 +580,26 @@ public final class PaymentOutcomes {
         if (acting) {
             attempts.recordTransition(
                     uow, attemptId, from, PaymentAttemptStatus.VOID_DISPATCHED, platform, now);
+            // The dispatch's own record, as the operator's and the customer's voids write one (`P15-TSK-039`): it
+            // commits with the row. The acting transition alone, so the redirect's loser writes none.
+            audit.append(
+                    uow,
+                    new AuditRecord(
+                            AuditId.next(ids),
+                            platform,
+                            now,
+                            PaymentsAuditAction.PAYMENT_VOID_DISPATCHED,
+                            PaymentCreation.TARGET_TYPE,
+                            intentId.value().toString(),
+                            Optional.empty(),
+                            AuditOutcome.SUCCEEDED,
+                            correlation.correlationId(),
+                            Optional.of(
+                                    "intent=" + intentId
+                                            + ", attempt=" + attemptId
+                                            + ", reference=" + voidReference.value()
+                                            + ", rail=" + railOf(uow, attemptId).value()
+                                            + ", cause=declined-capture-redirect")));
         }
         Applied redirected =
                 answered(uow, intentId, attemptId, verdict,
