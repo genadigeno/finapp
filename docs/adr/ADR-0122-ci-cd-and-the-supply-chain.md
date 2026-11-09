@@ -57,6 +57,14 @@ compatibility check between releases.
 
    *(Corrected by the transition's review, 2026-11-07, its M-2: tightening DDL was not counted, and a rollback was read
    as always safe.)*
+
+   *(As built by `P15-TSK-005`, 2026-11-09; `DATA_MIGRATIONS.md` §4.1 is the contract. "The last release" is a committed
+   per-module file, `docs/migrations/released-schema-floor.yaml`, because the repository has no release tag and CI clones
+   shallowly; it says `release: "none"` until one is cut. The lint is an allow-list of statement forms and reads no function
+   body, so a `CREATE OR REPLACE` of something a release holds is refused whatever it says and needs a marker: a person's
+   statement. A marker naming a release not yet out is refused, because release N − 1 is running. The guard reports
+   `OUT_OF_SERVICE` only on an older schema, reading each schema's history through one definer function, platform `V013`, since
+   the application role holds no access to those tables; it reads on a thread of its own, never the probe's.)*
 6. **Event compatibility is enforced at build time, for payloads and for handlers.**
    - A schema catalogue lists every event type and version. A test compares it with the last release's catalogue and
      allows only additive changes within a major version.

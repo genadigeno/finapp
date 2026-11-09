@@ -253,6 +253,9 @@ class ShutdownOrderTest {
             "--finapp.merchant.payout.provider.url=http://127.0.0.1:9",
             "--finapp.fx.reference.url=http://127.0.0.1:9",
             "--management.health.db.enabled=false",
+            // The schema-version guard (P15-TSK-005) would answer OUT_OF_SERVICE here with no database, before the stop as well
+            // as during it, and "readiness refuses" would then prove nothing about the stop: readiness stays readinessState alone.
+            "--management.endpoint.health.group.readiness.include=readinessState",
             "--management.endpoint.health.validate-group-membership=false",
             "--logging.level.com.finapp.app.lifecycle=DEBUG",
             "--logging.level.com.finapp.platform.metrics.GaugeRefresher=DEBUG"

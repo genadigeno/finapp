@@ -1880,6 +1880,8 @@ row.)*
 
 *(Added 2026-11-08 by `P15-TSK-027`: §11.1.1 below is written, the handler-set steps of rows 11.1 and 11.3; not yet rehearsed.)*
 
+*(Added 2026-11-09 by `P15-TSK-005`: §11.1c below is written, the schema-compatibility steps of rows 11.1 and 11.3, and §11.4's compatibility half; not yet rehearsed.)*
+
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
 *(Written by `P15-TSK-008`, 2026-11-08, from the code and its tests; **not yet rehearsed** - `P15-TSK-012` rehearses it
@@ -1976,12 +1978,41 @@ with no `command` of its own. One line per schema and a result line:
 
 **The rollout does not start until the Job has succeeded.** A Job that is still running is not a green light.
 
-### 11.4 A failed migration (forward fix only) (`P15-TSK-004`; `P15-TSK-005` adds the compatibility half)
+### 11.1c Deploy — schema compatibility across the rollout, and the way back (`P15-TSK-005`)
+
+*(Written by `P15-TSK-005`, 2026-11-09, from the code and its tests; **not yet rehearsed** - `P15-TSK-012` runs release N − 1 on
+release N's schema on `kind`. Promotion and its refusal are `P15-TSK-017`'s.)*
+
+**A replica that will not go ready.** Readiness answers `503` with `{"status":"OUT_OF_SERVICE"}` while any schema is older
+than the build expects. So the rollout pauses at `maxUnavailable: 0`, and the old replicas keep serving. That is the guard
+working. Read the replica's log for the one line it writes:
+
+| The log says | What it is | What to do |
+|---|---|---|
+| `This instance is out of service until the migration has run: [ledger is at 33, expected 34]` | This replica's build is newer than the schema. The migration Job has not run, or failed | §11.1b, §11.4. Do not touch the replicas. Once the Job succeeds they go ready at their next probe |
+| `The schema-version read failed: … (SQLState 42883)` | `platform.applied_migration_versions()` does not exist: platform's migrations have not reached this database at all | As above |
+| `The schema-version read failed: … (SQLState 42501)` | The connected role cannot execute it | The application is not connecting as `finapp_app`. Find out why; never grant it to something else to get past this |
+| `The schema-version read failed: … (SQLState 08…)` or no state | The database did not answer. A verdict already reached stands: a schema is not older for being unreachable, and `db` reports the outage | Treat it as the database's |
+
+**A replica that is on a newer schema stays ready.** Replicas of release N − 1 on release N's schema, in a rollout or after a
+rollback, are not a fault, and nothing here reports them.
+
+**Rolling back.** A schema is never rolled back; the image is. Before reverting the digest, read the migrations the release being
+left added, in the files themselves, for a line starting `-- finapp-contract:` (`DATA_MIGRATIONS.md` §4.1):
+
+- `first-conforming-release=ANY`, or no marker: the older release's code conforms. Roll back.
+- A named release, and the target is that release or newer: roll back.
+- A named release, and the target is older: **do not roll back.** That code does not fit this schema. The way back is a forward
+  fix. `P15-TSK-017`'s promotion script will refuse this; until it exists, this reading is the check.
+
+A rollback replica starts on a schema newer than the one it was built for, and goes ready: its guard looks only for older.
+
+### 11.4 A failed migration (forward fix only) (`P15-TSK-004`; the compatibility half `P15-TSK-005`)
 
 *(Written by `P15-TSK-004`, 2026-11-08; **not yet rehearsed** - `P15-TSK-032` rehearses it.)*
 
 A failed migration stops the release before any replica changes. The old release keeps serving on the schema it had: the
-rollout has not started, a release's migrations are expand-only (`P15-TSK-005`'s lint, once built, holds that), and the failed
+rollout has not started, a release's migrations are expand-only or carry a contract marker (the build holds that, `DATA_MIGRATIONS.md` §4.1), and the failed
 one has either not happened at all or, in the second case below, left the schema where a person must read it. **Never `clean`. Never edit an applied migration. Do not run
 `flywayRepair` to make the symptom go away** (`DATA_MIGRATIONS.md` §3.1).
 
@@ -2004,8 +2035,15 @@ none exists today. Its effect may be partial: for `CREATE INDEX CONCURRENTLY`, a
 first. Every later run refuses at validation until the row is dealt with, so this is the one case for `flywayRepair`, with the
 files known good and the reason recorded (`DATA_MIGRATIONS.md` §3.1).
 
-**Whichever it is**, the application release has not started. If a compatibility marker was passed, read `P15-TSK-005`'s part
-before rolling anything back. After a fix, run the Job again; it applies what is pending and nothing else.
+**The compatibility half: what the earlier migrations of the same release did.** Each migration commits on its own, so a Job that
+fails at its fourth has applied its first three, and they stay. Whichever failed, the schema is now part way to the new release.
+Replicas of the release in service are unaffected, because every one of those three is expand-only or carries a contract marker
+that names a release already out. Replicas of the new release, if any has started, stay unready: the failed migration's schema is
+older than their build expects. **There is nothing to roll back**: the old image is what is serving, so there is no digest to
+revert, and the forward fix is the only way.
+
+**Whichever it is**, the application release has not started. After a fix, run the Job again; it applies what is pending and nothing
+else.
 
 ### 11.6 Broker outage, consumer lag, a poison record, dead letters and replay
 

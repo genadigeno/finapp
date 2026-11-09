@@ -2,6 +2,7 @@ package com.finapp.app.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.database.SchemaVersionGuard;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -9,6 +10,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Locale;
 import javax.sql.DataSource;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -45,6 +47,16 @@ class HealthReadinessDatabaseTest {
     @Autowired private DataSource dataSource;
 
     @Autowired private org.springframework.context.ApplicationContext context;
+
+    /**
+     * The schema-version contributor (`P15-TSK-005`) answers from a read taken on a thread of its own, so a probe never
+     * waits on it, and the test overlay turns its read-at-start off: the first probe asks for the read and the next one
+     * carries its answer. Refreshed first, so this is one assertion about one answer.
+     */
+    @BeforeEach
+    void theSchemaHasBeenRead() {
+        context.getBean(SchemaVersionGuard.class).refreshNow();
+    }
 
     @Test
     @DisplayName("readiness is UP when PostgreSQL is reachable")

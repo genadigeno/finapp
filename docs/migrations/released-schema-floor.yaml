@@ -1,0 +1,27 @@
+# The schema of the last release, per module (ADR-0122 decision 5; DATA_MIGRATIONS.md section 4.1).
+# Generated: MigrationsAreExpandOnlyTest leaves the next one under app/build/schema-floor/. Never edit by hand
+# but for `release`, which the release procedure names. A migration above its module's floor is read by the
+# expand-only lint; `none` says no release has been cut, so there is no release N - 1 to break yet.
+release: "none"
+floors:
+  accounting: "13"
+  accounts: "2"
+  bnpl: "21"
+  checkout: "4"
+  consent: "3"
+  credit: "23"
+  crossborder: "6"
+  fx: "11"
+  identity: "26"
+  kyc: "11"
+  ledger: "33"
+  lending: "35"
+  merchant: "13"
+  party: "6"
+  paymentmethods: "3"
+  payments: "37"
+  platform: "13"
+  reconciliation: "24"
+  risk: "19"
+  settlement: "19"
+  transfers: "4"
