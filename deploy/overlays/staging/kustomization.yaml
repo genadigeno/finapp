@@ -6,6 +6,11 @@ namespace: finapp
 
 resources:
   - ../../base
+  - secret-store.yaml
+
+# Endpoints and credentials, read from the store by the two ExternalSecrets.
+components:
+  - ../../components/secret-delivery
 
 images:
   - name: finapp-app

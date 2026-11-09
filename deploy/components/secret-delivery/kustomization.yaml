@@ -1,0 +1,9 @@
+# Delivery from the secret store (P15-TSK-018, ADR-0123, C6), for the overlays that have one: staging and production. A
+# component and not part of the base, because the kind overlay has no store and no operator: the rehearsal generates its
+# Secrets per run (infra/scripts/kind-secrets.sh), and the manifest policy refuses an ExternalSecret rendered there.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - externalsecret-app.yaml
+  - externalsecret-migrator.yaml

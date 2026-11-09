@@ -167,7 +167,7 @@ boundary and never stored. Raw bank details are held at the provider (ADR-0056).
 | Concern | Position today | Owner |
 |---|---|---|
 | Key rotation | No key ring. One active key per instance, so a rotation would strand every earlier row | `P15-TSK-019`: key rings, one active version, retained versions decrypting by the stamped version |
-| Key management | Keys are environment values. There is no KMS, no wrapping and no managed store | `P15-TSK-016` (KMS keys per purpose), `-018` (delivery from the secret store), `-020` (rotation rehearsed) |
+| Key management | Keys are environment values. There is no KMS and no wrapping, and no store exists yet; their delivery from one is written as manifests, never run (`SECRET_MANAGEMENT.md` §3.5) | `P15-TSK-016` (KMS keys per purpose and the store's entries), `-020` (the operator and rotation rehearsed) |
 | Associated data | Three classes bind it. **Five bind none** (`SecretCipher`, `DocumentCipher`, `EvidenceCipher`, `PayoutEvidenceCipher`, `FxEvidenceCipher`), so a ciphertext moved to another row decrypts cleanly | `X-TSK-010`, which names the first four; the fifth is routed onto it |
 | Every other column | Plaintext in PostgreSQL. Restricted columns outside the table above rely on the database's at-rest protection, which does not yet exist | `P15-TSK-015`: managed volumes encrypted under KMS |
 | Backups | None exist. When they do, they are encrypted under a key separate from the volume's, because a backup is a copy of the ledger | `P15-TSK-015`, `-030` |

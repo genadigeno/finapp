@@ -277,7 +277,14 @@ class CommittedConfigurationHoldsNoSecretTest {
                 "p.properties | sasl.jaas.config=ScramLoginModule required username=finapp password=hunter2;",
                 "p.yaml | sasl.jaas.config: ScramLoginModule required username=finapp password=hunter2;",
                 // P15-TSK-009: the Kubernetes switch below is exempt for its two values and nothing else.
-                "p.yaml | automountServiceAccountToken: hunter2"
+                "p.yaml | automountServiceAccountToken: hunter2",
+                // P15-TSK-018: the operator's field names an environment variable, and nothing else is exempt.
+                "p.yaml | secretKey: hunter2",
+                "p.yaml | secretKey: finapp_mfa_key",
+                "p.yaml | createClusterSecretStore: hunter2",
+                // P15-TSK-018: the image scan's plant names are exempt beside their own rule alone.
+                "p.sh | refuses secret-in-layer \"hunter2\"",
+                "p.properties | provider.token=hunter2"
             })
     void credentialShapesAreRejected(String fileName, String content) {
         assertThat(offencesIn(content, fileName.endsWith(".kts")))
@@ -306,6 +313,13 @@ class CommittedConfigurationHoldsNoSecretTest {
                 "p.yaml | idempotencyKey: abc123",
                 // P15-TSK-009: Kubernetes' field names a token and holds a boolean.
                 "p.yaml | automountServiceAccountToken: false",
+                // P15-TSK-018: External Secrets Operator's field names the variable it writes.
+                "p.yaml | secretKey: FINAPP_MFA_KEY",
+                "p.yaml | - secretKey: FINAPP_DB_APP_PASSWORD",
+                "p.yaml | createClusterSecretStore: false",
+                "p.yaml | processPushSecret: false",
+                // P15-TSK-018: a plant of infra/scripts/image-scan.sh and the scanner rule that must refuse it.
+                "p.sh | refuses secret-in-layer \"github-pat\"",
                 // P15-TSK-026: the JAAS line with its credential externalised, and the username,
                 // which is not a credential.
                 "p.properties | sasl.jaas.config=ScramLoginModule required username=\"finapp\" password=\"${FINAPP_KAFKA_SASL_PASSWORD}\";",
@@ -383,7 +397,10 @@ class CommittedConfigurationHoldsNoSecretTest {
                     }
                     for (String literal : literalsIn(assignment.group(2), buildScript)) {
                         if (!literal.equals(DatabaseCredentialGuard.MARKED_LOCAL_DEFAULT)
-                                && !isKubernetesTokenSwitch(key, literal)) {
+                                && !isKubernetesTokenSwitch(key, literal)
+                                && !isExternalSecretEntryName(key, literal)
+                                && !isOperatorChartSwitch(key, literal)
+                                && !isImageScanPlant(key, literal)) {
                             offences.add(
                                     "key '"
                                             + key
@@ -404,6 +421,44 @@ class CommittedConfigurationHoldsNoSecretTest {
     private static boolean isKubernetesTokenSwitch(String key, String literal) {
         return key.equals("automountServiceAccountToken") && (literal.equals("true") || literal.equals("false"));
     }
+
+    /**
+     * External Secrets Operator's own field names a key inside the Secret it writes, which here is the name of an environment
+     * variable (`P15-TSK-018`). Exactly this key with exactly that shape, so a credential under the same name is still reported.
+     */
+    private static boolean isExternalSecretEntryName(String key, String literal) {
+        return key.equals("secretKey") && literal.matches("FINAPP_[A-Z0-9_]+");
+    }
+
+    /**
+     * The operator's Helm chart names its object kinds in its switches, which hold a boolean (`P15-TSK-018`). Exactly these keys,
+     * with exactly these values.
+     */
+    private static boolean isOperatorChartSwitch(String key, String literal) {
+        return OPERATOR_CHART_SWITCHES.contains(key) && (literal.equals("true") || literal.equals("false"));
+    }
+
+    /**
+     * {@code infra/scripts/image-scan.sh} plants a generated secret in a throwaway image and names the scanner rule that must
+     * refuse it (`P15-TSK-006`): a plant's name beside a rule's, and a format whose value is made at run time. Exactly these pairs.
+     * This class was not run by name after that task, so the three stood red on master until `P15-TSK-018` ran it.
+     */
+    private static boolean isImageScanPlant(String key, String literal) {
+        return IMAGE_SCAN_PLANTS.contains(key + " " + literal);
+    }
+
+    private static final Set<String> IMAGE_SCAN_PLANTS =
+            Set.of("secret-in-layer github-pat", "secret-in-env aws-access-key-id", "provider.token ghp_%s\\n'");
+
+    private static final Set<String> OPERATOR_CHART_SWITCHES =
+            Set.of(
+                    "createClusterExternalSecret",
+                    "createClusterSecretStore",
+                    "createClusterPushSecret",
+                    "createPushSecret",
+                    "processClusterExternalSecret",
+                    "processClusterPushSecret",
+                    "processPushSecret");
 
     /**
      * The literal parts of a value: the default inside each placeholder, or the whole value when

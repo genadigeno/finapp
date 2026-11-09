@@ -749,3 +749,276 @@ migrator_exists if {
 	some doc in of_kind("Job")
 	doc.metadata.name == "finapp-migrator"
 }
+
+# ------------------------------------------------------------------------------------- secret delivery (P15-TSK-018)
+
+# An unnamed object must not make a rule's message undefined, which would pass it: label() walks into metadata.name.
+name_of(doc) := object.get(section(doc, "metadata"), "name", "(unnamed)")
+
+# Refusing a Secret that carries data leaves one a rule above cannot read: a value of the wrong shape, or none at all under the
+# very name a workload reads, which an ExternalSecret would then have to fight. Nothing is rendered as a Secret in any overlay: in a
+# deployed environment the operator writes them, and on kind the rehearsal does. This reads the object, so a Secret
+# rendered by a Kustomize secretGenerator or inside a List is refused like any other.
+deny contains msg if {
+	some doc in of_kind("Secret")
+	msg := sprintf("[no-secret-manifest] Secret/%v is rendered: a Secret is written by the operator, or by the kind rehearsal, and never committed", [name_of(doc)])
+}
+
+secret_readers := {"finapp-app-secrets": "finapp-app", "finapp-migrator-secrets": "finapp-migrator"}
+
+external_secrets_for(target) := {doc |
+	some doc in of_kind("ExternalSecret")
+	section(section(doc, "spec"), "target").name == target
+}
+
+deny contains msg if {
+	data.overlay == "kind"
+	some wanted in {"ExternalSecret", "SecretStore"}
+	some doc in of_kind(wanted)
+	msg := sprintf("[secret-delivery] %s/%v in the kind overlay: there is no store on kind, the rehearsal generates its Secrets per run", [wanted, name_of(doc)])
+}
+
+deny contains msg if {
+	data.overlay != "kind"
+	some target, _ in secret_readers
+	count(external_secrets_for(target)) != 1
+	msg := sprintf("[secret-delivery] overlay %s needs exactly one ExternalSecret writing %s: the workload reading it does not start without it", [data.overlay, target])
+}
+
+deny contains msg if {
+	some doc in of_kind("ExternalSecret")
+	not writes_a_known_secret(doc)
+	msg := sprintf("[secret-delivery] ExternalSecret/%v writes a Secret no workload is known to read", [name_of(doc)])
+}
+
+writes_a_known_secret(doc) if {
+	object.get(secret_readers, section(section(doc, "spec"), "target").name, "") != ""
+}
+
+env_secret_names(spec) := {source.secretRef.name |
+	some container in containers(spec)
+	some source in list_of(container, "envFrom")
+}
+
+deny contains msg if {
+	some [doc, spec] in workloads
+	some name in env_secret_names(spec)
+	object.get(secret_readers, name, "") == ""
+	msg := sprintf("[secret-delivery] %s reads Secret %v through envFrom, which nothing delivers", [label(doc), name])
+}
+
+references(spec, name) if {
+	walk(spec, [_, value])
+	value == name
+}
+
+# Anywhere in a pod spec: envFrom, a secretKeyRef, a volume or a projection are all ways to read it.
+deny contains msg if {
+	some [doc, spec] in workloads
+	some target, reader in secret_readers
+	references(spec, target)
+	name_of(doc) != reader
+	msg := sprintf("[secret-separation] %s reads %s, which only %s may read", [label(doc), target, reader])
+}
+
+deny contains msg if {
+	some target, reader in secret_readers
+	some doc in documents
+	doc.kind in pod_template_kinds
+	name_of(doc) == reader
+	spec := doc.spec.template.spec
+	not references(spec, target)
+	msg := sprintf("[secret-separation] %s does not read %s", [label(doc), target])
+}
+
+entry_keys(doc) := {entry.secretKey | some entry in list_of(section(doc, "spec"), "data")}
+
+# The migrator's own, which the application must never hold, and the only entries the migrator's Secret may have.
+migrator_only := {"FINAPP_DB_MIGRATOR_USER", "FINAPP_DB_MIGRATOR_PASSWORD", "FINAPP_DB_MASTER_USER", "FINAPP_DB_MASTER_PASSWORD"}
+
+migrator_entries := {"FINAPP_DB_URL", "FINAPP_DB_MIGRATOR_USER", "FINAPP_DB_MIGRATOR_PASSWORD"}
+
+deny contains msg if {
+	some doc in external_secrets_for("finapp-app-secrets")
+	some key in entry_keys(doc)
+	key in migrator_only
+	msg := sprintf("[secret-separation] finapp-app-secrets carries %s, which is the migrator's", [key])
+}
+
+deny contains msg if {
+	some doc in external_secrets_for("finapp-migrator-secrets")
+	entry_keys(doc) != migrator_entries
+	msg := sprintf("[secret-separation] finapp-migrator-secrets carries %v: it is the URL, the migrator's user and its password, and nothing else", [entry_keys(doc)])
+}
+
+deny contains msg if {
+	some doc in of_kind("ExternalSecret")
+	not synced_on_change(doc)
+	msg := sprintf("[secret-sync] ExternalSecret/%v must be refreshPolicy OnChange with refreshInterval 0s: a value changing on the operator's clock reaches a restarted pod before anyone rolled the fleet", [name_of(doc)])
+}
+
+synced_on_change(doc) if {
+	doc.spec.refreshPolicy == "OnChange"
+	doc.spec.refreshInterval == "0s"
+}
+
+deny contains msg if {
+	some doc in of_kind("ExternalSecret")
+	not owns_its_target(doc)
+	msg := sprintf("[secret-sync] ExternalSecret/%v must be creationPolicy Owner and deletionPolicy Retain, with no template", [name_of(doc)])
+}
+
+owns_its_target(doc) if {
+	doc.spec.target.creationPolicy == "Owner"
+	doc.spec.target.deletionPolicy == "Retain"
+	not stated(section(section(doc, "spec"), "target"), "template")
+}
+
+deny contains msg if {
+	some doc in of_kind("ExternalSecret")
+	stated(section(doc, "spec"), "dataFrom")
+	msg := sprintf("[secret-entries] ExternalSecret/%v uses dataFrom: every entry is named, or a stray entry in the store would reach a pod", [name_of(doc)])
+}
+
+deny contains msg if {
+	some doc in of_kind("ExternalSecret")
+	count(list_of(section(doc, "spec"), "data")) == 0
+	msg := sprintf("[secret-entries] ExternalSecret/%v has no entries", [name_of(doc)])
+}
+
+deny contains msg if {
+	some doc in of_kind("ExternalSecret")
+	some entry in list_of(section(doc, "spec"), "data")
+	not entry_is_plain(entry)
+	msg := sprintf("[secret-entries] ExternalSecret/%v entry %v must name one environment variable and read the store entry of the same name", [name_of(doc), entry])
+}
+
+entry_is_plain(entry) if {
+	regex.match(`^FINAPP_[A-Z0-9_]+$`, entry.secretKey)
+	entry.remoteRef.key == entry.secretKey
+	count(object.keys(entry.remoteRef)) == 1
+	count(object.keys(entry)) == 2
+}
+
+# target, the store's path segment, the ServiceAccount the operator exchanges a token for.
+store_parts := {
+	"finapp-app-store": ["finapp-app-secrets", "app", "finapp-app-secret-reader"],
+	"finapp-migrator-store": ["finapp-migrator-secrets", "migrator", "finapp-migrator-secret-reader"],
+}
+
+deny contains msg if {
+	some forbidden in {"ClusterSecretStore", "ClusterExternalSecret", "PushSecret", "ClusterPushSecret"}
+	some doc in of_kind(forbidden)
+	msg := sprintf("[secret-store] %s/%v: a store is namespaced and read-only here", [forbidden, name_of(doc)])
+}
+
+deny contains msg if {
+	data.overlay != "kind"
+	some store, _ in store_parts
+	not store_rendered(store)
+	msg := sprintf("[secret-store] SecretStore %s is not rendered", [store])
+}
+
+store_rendered(store) if {
+	some doc in of_kind("SecretStore")
+	name_of(doc) == store
+}
+
+deny contains msg if {
+	some doc in of_kind("SecretStore")
+	not store_is_its_own(doc)
+	msg := sprintf("[secret-store] SecretStore/%v must be the store of one workload: AWS Secrets Manager under this overlay's own path, reached through that workload's reader ServiceAccount and nothing else", [name_of(doc)])
+}
+
+store_is_its_own(doc) if {
+	parts := store_parts[name_of(doc)]
+	count(object.keys(doc.spec.provider)) == 1
+	aws := doc.spec.provider.aws
+	aws.service == "SecretsManager"
+	aws.prefix == sprintf("finapp/%s/%s/", [data.overlay, parts[1]])
+	count(object.keys(aws.auth)) == 1
+	aws.auth.jwt.serviceAccountRef.name == parts[2]
+	not stated(aws, "role")
+	not stated(aws, "additionalRoles")
+}
+
+deny contains msg if {
+	some doc in of_kind("ExternalSecret")
+	not reads_its_own_store(doc)
+	msg := sprintf("[secret-store] ExternalSecret/%v must read the namespaced SecretStore of its own workload", [name_of(doc)])
+}
+
+reads_its_own_store(doc) if {
+	some store, parts in store_parts
+	parts[0] == doc.spec.target.name
+	doc.spec.secretStoreRef.name == store
+	doc.spec.secretStoreRef.kind == "SecretStore"
+}
+
+# Placeholders by the stated convention (SECRET_MANAGEMENT.md section 3.5), as the sixty-four zeros are for a digest.
+placeholder_region := "placeholder-region-0"
+
+placeholder_role := `^arn:aws:iam::000000000000:role/placeholder-[a-z0-9-]+$`
+
+deny contains msg if {
+	some doc in of_kind("SecretStore")
+	not region_is_the_placeholder(doc)
+	msg := sprintf("[secret-placeholder] SecretStore/%v names a region: a real one is the environment's, not this repository's", [name_of(doc)])
+}
+
+region_is_the_placeholder(doc) if {
+	doc.spec.provider.aws.region == placeholder_region
+}
+
+deny contains msg if {
+	data.overlay != "kind"
+	some _, parts in store_parts
+	not reader_is_the_placeholder(parts[2])
+	msg := sprintf("[secret-placeholder] ServiceAccount %s must exist and carry the placeholder role, not a real one", [parts[2]])
+}
+
+reader_is_the_placeholder(name) if {
+	some doc in of_kind("ServiceAccount")
+	name_of(doc) == name
+	regex.match(placeholder_role, doc.metadata.annotations["eks.amazonaws.com/role-arn"])
+}
+
+# Any field of anything rendered: an account number is real unless it is the placeholder.
+deny contains msg if {
+	some doc in documents
+	walk(doc, [_, value])
+	is_string(value)
+	some found in regex.find_all_string_submatch_n(`arn:aws[a-z-]*:[a-z0-9-]*:[a-z0-9-]*:([0-9]{12}):`, value, -1)
+	found[1] != "000000000000"
+	msg := sprintf("[secret-placeholder] %s/%v names an account: a real one is never committed", [object.get(doc, "kind", "?"), name_of(doc)])
+}
+
+generation_annotation := "finapp/rotation-generation"
+
+generation_of(template) := object.get(section(section(template, "metadata"), "annotations"), generation_annotation, "absent")
+
+is_a_generation(value) if {
+	is_string(value)
+	regex.match(`^[0-9]+$`, value)
+}
+
+deny contains msg if {
+	app
+	not is_a_generation(generation_of(app.spec.template))
+	msg := sprintf("[secret-generation] finapp-app's pod template has no %s: nothing could roll a rotated secret to the fleet", [generation_annotation])
+}
+
+deny contains msg if {
+	some doc in of_kind("ExternalSecret")
+	not is_a_generation(generation_of(doc))
+	msg := sprintf("[secret-generation] ExternalSecret/%v has no %s: a rotation could not make the operator read the store", [name_of(doc), generation_annotation])
+}
+
+# A rollout ahead of the sync would restart the fleet onto the value it already has, and report a rotation that never happened.
+deny contains msg if {
+	some doc in external_secrets_for("finapp-app-secrets")
+	is_a_generation(generation_of(doc))
+	is_a_generation(generation_of(app.spec.template))
+	to_number(generation_of(app.spec.template)) > to_number(generation_of(doc))
+	msg := sprintf("[secret-generation] finapp-app's pod template is at generation %v and its ExternalSecret at %v: sync first, then roll", [generation_of(app.spec.template), generation_of(doc)])
+}

@@ -64,6 +64,16 @@ CONFTEST_DIGEST=sha256:0e77cdf7c1fcde035f3c579e4aaa6664ee2a8be5777eaa9af9f520cdd
 KUBERNETES_VERSION=1.34.12
 KUBERNETES_SCHEMAS_COMMIT=c416d7b0da0751bd8ebe5be4fa4c8e8274e3bbe2
 
+# External Secrets Operator (P15-TSK-018, ADR-0123, C6): a controller in the cluster and not a tool, pinned here because this
+# is the list infra/scripts/check-pinned-images.sh holds to its tags. deploy/operators/external-secrets/values.yaml names the same
+# digest, which SecretInventoryIsCompleteTest holds equal, and the chart's version is this one without its leading v. The schemas
+# kubeconform reads for its two custom kinds are read at one commit of datreeio/CRDs-catalog: a git hash being its own digest,
+# as KUBERNETES_SCHEMAS_COMMIT above. ESO, because gitleaks reads a 40-character hash under a name saying SECRETS as a leak.
+ESO_REPOSITORY=ghcr.io/external-secrets/external-secrets
+ESO_VERSION=v2.14.0
+ESO_DIGEST=sha256:10608eb53e636e744903d5f3657a4d9c44e28d9d9c181b73e07bc7dd2e6884dc
+ESO_CRD_SCHEMAS_COMMIT=49729e49e8f062933e3716a26540d41b0cd0856c
+
 # The alert-rule tools (P15-TSK-025, ADR-0124): promtool and amtool, sourced by infra/scripts/alert-rules-check.sh. The Prometheus
 # version is the one compose.yaml runs, and so is Alertmanager's, so the tool that checks the rules is the server that loads them.
 PROMETHEUS_REPOSITORY=prom/prometheus
