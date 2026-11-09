@@ -9,7 +9,7 @@
 # Roles are fixed by docs/architecture/DATA_ARCHITECTURE.md and are not interchangeable:
 #   PostgreSQL - transactional source of truth; the ledger lives here
 #   Kafka      - durable integration/event transport. NEVER the accounting source of truth
-#   Redis      - cache, coordination, rate limits, ephemeral state. NEVER financial truth
+#   Redis      - local only: no code uses it and none is deployed (ADR-0030). NEVER financial truth
 #
 # SECURITY: everything here is local-development-only.
 #   - Ports bind to 127.0.0.1, never 0.0.0.0, so this stack is not reachable from the

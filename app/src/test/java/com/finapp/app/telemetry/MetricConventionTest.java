@@ -98,6 +98,15 @@ class MetricConventionTest {
     }
 
     @Test
+    @DisplayName("the fingerprint tag is the configuration fingerprint's alone: everywhere else the word is a digest of one request (P15-TSK-031)")
+    void theFingerprintTagIsTheConfigurationFingerprintsAlone() {
+        assertThat(registry.getMeters().stream()
+                        .filter(meter -> meter.getId().getTag(ConfigurationFingerprintBeans.TAG) != null)
+                        .map(meter -> meter.getId().getName()))
+                .containsExactly(ConfigurationFingerprintBeans.METER);
+    }
+
+    @Test
     @DisplayName("the outbox backlog is published, so the recorded debt is actually paid")
     void theOutboxBacklogIsPublished() {
         // ADR-0005 names outbox depth and age as first-class monitored metrics, and P0-TSK-020

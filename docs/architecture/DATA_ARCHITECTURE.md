@@ -8,8 +8,8 @@ Preferred roles:
 - PostgreSQL: transactional source of truth
 - Ledger tables: authoritative financial postings
 - Kafka: durable integration/event transport
-- Redis: cache, coordination, rate limits, ephemeral state
-- Object storage: documents, files, settlement files
+- Redis: **not used by the application** (ADR-0030); `compose.yaml` runs one for local development and none is deployed
+- Object storage: **not used by the application** (ADR-0036: documents and settlement files are held in PostgreSQL behind a store port); it serves infrastructure only
 - Search index: derived query model
 - Analytics warehouse/database: derived analytical model
 
