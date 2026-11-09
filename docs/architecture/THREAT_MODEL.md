@@ -412,7 +412,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T3 | An operator's read of a KYC document's content, and of a settlement file's raw content, is audited: who looked, and for the settlement file a required reason | EXISTS | `app/src/test/java/com/finapp/app/kyc/DocumentUploadDatabaseTest.java#theReadPathDecryptsVerifiesAndAudits`; `app/src/test/java/com/finapp/app/settlement/SettlementRoutesDatabaseTest.java#contentReadsAreReasonedAuditedAndByteIdentical` |
 | T3 | Operator routes served only on the internal ingress: by permission and by path, no operator route is on the public list and every one is on the operator list; the operator's Service is an internal load balancer, and its proxy refuses a source outside the private ranges | EXISTS | `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#noOperatorRouteIsOnThePublicList`; `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#everyOperatorRouteIsOnTheOperatorList`; `app/src/test/java/com/finapp/app/architecture/EdgeManifestsTest.java#theOperatorEdgeIsInternal` |
 | T3 | On a real cluster: an operator route refused on the public host and served on the operator host | PLANNED | `P15-TSK-012` |
-| T3 | The doors that issue a session stay public and nothing refuses a role-holding identity there, so a phished operator credential can sign in, elevate, enrol a factor or change the password from the internet, and any named operator can be locked out from it; using that session on an operator route still needs the internal network | GAP | `owner item 22`; owner: the owner, since 2026-11-09 |
+| T3 | A role-holding identity refused at the doors that issue a session on the public surface, so a phished operator credential cannot sign in, elevate, enrol a factor or change the password from the internet, and a named operator cannot be locked out from it (today those doors are public and refuse nobody; using such a session on an operator route still needs the internal network) | PLANNED | `P15-TSK-042` |
 | T3 | An operator act is recorded in the operator population (`EMPLOYEE`): the interceptor types the request from the identity's live roles, read once with the session, on a route declaring a permission; a customer refused at an operator route is recorded `CUSTOMER`, and a role holder on their own account acts as a customer | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#anOperatorActIsTypedEmployee`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusalIsTypedByWhoTried`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRoleHolderOnACustomerRouteIsACustomer` |
 | T3 | A refused step-up is recorded once, in a transaction of its own committed before the refusal is answered: the interceptor's at a declared step-up, the error contract's at an operation's own; on either path a record that cannot be written answers `500`, never a `403` without its record | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusedStepUpIsRecorded`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#anOperationsRefusalIsRecordedOnce`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#aRefusalWhoseRecordFailsIsAnsweredAsAFailure` |
 | T3 | The privileged access review's role register and propose/approve partition are the code's, role by role and pair by pair | EXISTS | `app/src/test/java/com/finapp/app/architecture/PrivilegedAccessReviewTest.java#theRoleRegisterIsTheCodes`; `app/src/test/java/com/finapp/app/architecture/PrivilegedAccessReviewTest.java#thePartitionIsTheCodes` |
@@ -425,7 +425,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T4 | Neither workload holds Kubernetes RBAC: neither ServiceAccount is the subject of any binding, each refusal proven by a planted violation in the same run | EXISTS | `app/src/test/java/com/finapp/app/architecture/NamespaceSecurityManifestsTest.java#neitherWorkloadHoldsAnyRbac`; `infra/scripts/manifest-check.sh` `contains: refused rbac-workload-bound rbac-workload-none` `contains: refused rbac-migrator-bound rbac-workload-none` |
 | T4 | The application refused an unlisted egress, and an unrestricted pod refused at admission, by a real API server and network plugin, on `kind` | PLANNED | `P15-TSK-012` |
 | T4 | The edge's namespace is default-deny in both directions, with the controllers' own flows named | EXISTS | `app/src/test/java/com/finapp/app/architecture/EdgeManifestsTest.java#theEdgeNamespaceIsDeniedByDefault` |
-| T4 | Pods in the telemetry pipeline's namespace are not confined by these policies, and on EKS a new pod is default-allow until its policies are programmed unless the agent runs in strict mode | GAP | `owner item 21`; owner: the owner, since 2026-11-09 |
+| T4 | Pods in the telemetry pipeline's namespace confined by a default-deny written with that pipeline's workloads | PLANNED | `P15-TSK-023` |
+| T4 | On EKS a new pod is default-allow until its policies are programmed, unless the agent runs in strict mode | GAP | `owner item 21`; owner: the owner, since 2026-11-09 |
 | T4 | A workload identity that reads only its own secrets | PLANNED | `P15-TSK-016` |
 | T4 | A pod cannot take its node's credentials: every node launches from a template requiring IMDSv2 with a hop limit of one, and no node accepts SSH. Asserted over a plan against a mock provider, never applied | EXISTS | `infra/terraform/modules/kubernetes/tests/kubernetes.tftest.hcl` `contains: A pod can reach the instance metadata service and so the node's credentials.` `contains: A node accepts SSH.`; `infra/terraform/modules/kubernetes/main.tf` `contains: http_put_response_hop_limit = 1` |
 | T4 | The cluster would enforce a NetworkPolicy: its VPC CNI add-on turns on the network policy agent, which is off by default. Asserted over a plan against a mock provider, never applied; the policies themselves are the default-deny row above | EXISTS | `infra/terraform/modules/kubernetes/tests/kubernetes.tftest.hcl` `contains: NetworkPolicy would be accepted and enforced by nothing`; `infra/terraform/modules/kubernetes/main.tf` `contains: enableNetworkPolicy = "true"` |
@@ -539,7 +540,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T13 | A new comparison of a timestamp column with a bind parameter, in any production source, fails the build until somebody has classified whose instant it is. Read from the migrations and the string literals: a `?` cannot say who read it, so the census is a person's reading per class and column | EXISTS | `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#everyStoreIsInTheCensus`; `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#theRuleSeesAPlantedComparison` |
 | T13 | The card fee version in force is resolved after the merchant's share lock, in a statement that takes no instant, and the card fee pin is stamped by its own insert on the database's clock with its version in force by that stamp | EXISTS | `app/src/test/java/com/finapp/app/checkout/CheckoutSessionsFeeVersionOrderTest.java#theVersionIsResolvedAfterTheShareLock`; `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#thePinIsBoundToTheDatabasesClock` |
 | T13 | The five stores' bounds run green on PostgreSQL with the instance's clock and the database's disagreeing, each case asserting that first (`StoredBoundsClockSkewDatabaseTest`, the rewritten expiry and cooling-off suites, written and owed) | PLANNED | `P15-TST-002` |
-| T13 | Instance clocks outside the five. In the SQL the census names: routing's version in force, which does judge a stored `effective_from` on the caller's clock (it chooses a rail, not a price), a sweep's `UNKNOWN` arm, settlement's backoff, a gauge's horizon and risk's look-back windows. In Java, which the census cannot see: the dispute door, judging a stored `respond_by` on the instance's clock | GAP | `owner item 27`; owner: the owner, since 2026-11-09 |
+| T13 | Instance clocks outside the five. In the SQL the census names: routing's version in force, which does judge a stored `effective_from` on the caller's clock (it chooses a rail, not a price), a sweep's `UNKNOWN` arm, settlement's backoff, a gauge's horizon and risk's look-back windows. In Java, which the census cannot see: the dispute door, judging a stored `respond_by` on the instance's clock | GAP | `PI-021`; owner: the owner, since 2026-11-09 |
 | T13 | Lending's functions, the helpers its triggers call for the business date included, read the database's clock whatever a role's `search_path` holds: every clock call names `pg_catalog` | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#noFunctionReadsTheClockThroughTheSearchPath`; `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#theRuleReadsCodeNotText`; `infra/scripts/migrator-verify.sh` `contains: a shadowing schema first in the path` |
 | T13 | 108 functions in eleven other schemas (accounting, bnpl, checkout, credit, crossborder, fx, ledger, merchant, payments, risk, settlement) still read a clock through a mutable `search_path`, each named by the same guard | PLANNED | `P15-TSK-040` |
 | T13 | Every single-row read or value picked by a stamp outside the close and the terms, in the shapes the guard reads from the code (Java statements and text blocks, constants inlined; every function's and view's latest definition), is named in its census with a recorded judgement and reason, held equal to the code: a new read in any such shape, or a named read gone, is red, and each shape is proved by a plant | EXISTS | `app/src/test/java/com/finapp/app/architecture/StampOrderedReadsAreJudgedTest.java#everyStampReadIsJudged`; `app/src/test/java/com/finapp/app/architecture/StampOrderedReadsAreJudgedTest.java#plantedShapesAreRecognised` |
@@ -561,7 +562,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T15 | The application role's `UPDATE (status)` on settlement sources revoked, or routed through a reviewed door | REMEDIATION | `P14-REM-007` |
 | T15 | The application's database credential is an entry of `finapp-app-secrets` alone, and only the `finapp-app` Deployment reads that Secret, read over every workload under `deploy/`. Asserted over the manifests: no cluster has run them | EXISTS | `app/src/test/java/com/finapp/app/security/SecretInventoryIsCompleteTest.java#theTwoSecretsCarryOnlyTheirOwn`; `app/src/test/java/com/finapp/app/security/SecretInventoryIsCompleteTest.java#onlyEachWorkloadReadsItsSecret`; `infra/scripts/manifest-policy/finapp.rego` `contains: [secret-separation]`; `infra/scripts/manifest-check.sh` `contains: refused_saying separation-reader` `contains: refused_saying separation-second-ref` |
 | T15 | Within the application's namespace, only the application and the migrator hold an egress rule to the database's port, in every overlay, each refusal proven by a planted violation in the same run. A policy here binds that namespace alone, so this is not "the database reachable only from those pods": what a pod elsewhere can reach is the `GAP` row below and the data tier's own network rules. What a cluster would be told, not what one enforced: `P15-TSK-012`'s test of T4 | EXISTS | `app/src/test/java/com/finapp/app/architecture/NamespaceSecurityManifestsTest.java#onlyTheTwoWorkloadsHaveEgressToTheDatabase`; `infra/scripts/manifest-check.sh` `contains: refused netpol-kafka-reaches-the-database netpol-egress-closed` `contains: refused netpol-migrator-kafka netpol-egress-closed` `contains: refused no-data-tier netpol-flow-missing` |
-| T15 | A pod in the telemetry pipeline's namespace is not refused the database by any policy of this platform | GAP | `owner item 21`; owner: the owner, since 2026-11-09 |
+| T15 | A pod in the telemetry pipeline's namespace refused the database by that namespace's default-deny | PLANNED | `P15-TSK-023` |
 | T15 | The database has no public address, sits on the workload subnets alone, and admits one security group on its port, the cluster's nodes, so the credential is no use from outside the cluster's network. Asserted over a plan against a mock provider, never applied. Every pod on a node shares that group, so it narrows who can reach the port and does nothing against a holder of the credential on a node | EXISTS | `infra/terraform/modules/postgres/tests/postgres.tftest.hcl` `contains: The database has a public address.` `contains: Something other than the given security group is admitted to the database.`; `infra/terraform/environments/production/tests/production.tftest.hcl` `contains: Production's database does not admit the cluster's nodes, and only them.` `contains: Production's database is not on exactly the workload subnets.` |
 | T15 | As written in the rule files, the product proofs and projection drift page on their first breach, with no budget and no `for`, routed to a placeholder receiver until an on-call tool exists (the test reads each rule's text; only projection drift and the other new correctness rules have `promtool` cases): detection for the books those proofs cover (§5), and nothing for a balanced shift between accounts no proof covers | EXISTS | `app/src/test/java/com/finapp/app/telemetry/AlertCatalogueTest.java#theCorrectnessSignalsPageOnTheirFirstSample` |
 | T15 | The source-join census, a detective control on every book (the ten accounts no proof reads among them): every registered posting namespace has a join, through its own module's read port, from each entry to the domain record that names it, amounts and currency compared per currency in minor units; the walk's position is the ledger's own `(txid, id)`, stamped by the database from the inserting transaction and bounded by the oldest transaction still running, so neither an id an inserter chooses nor a skewed instance's mint can be walked past (the position's database cases are written and owed to the phase's pass; the SQL was shown on a real PostgreSQL); a first non-zero sample pages, to a placeholder receiver until an on-call tool exists. It does not detect: an entry whose domain record was written first; a second entry under an existing key (the journal does not hold keys unique); extra balanced lines in a currency the record names no figure for. It does not compare which accounts an entry touched. The application's own credential can still jump the head forward (a trigger refuses backward and past any running transaction) or hold the head's row; the latter stalls the walk, which pages after an hour | EXISTS | `app/src/test/java/com/finapp/app/accounting/SourceJoinCoverageTest.java#everyRegisteredNamespaceHasASourceJoin`, `accounting/src/test/java/com/finapp/accounting/SourceJoinComparisonTest.java#theCurrencyIsTheComparison`, `app/src/test/java/com/finapp/app/accounting/LedgerJournalCensusWalkTest.java#thePositionIsTheTransactionThenTheId`, `app/src/test/java/com/finapp/app/accounting/SourceCensusDatabaseTest.java#anEntryMintedBelowTheHeadIsStillJudged`, `app/src/test/java/com/finapp/app/accounting/SourceCensusDatabaseTest.java#aWalletToWalletEntryWithNoTransferIsCounted`, `app/src/test/java/com/finapp/app/telemetry/AlertCatalogueTest.java#theCorrectnessSignalsPageOnTheirFirstSample` |
@@ -651,7 +652,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T31 | No handler is served without a declared rule, and every permission-guarded route requires exactly the permission the register names | EXISTS | `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#everyGuardedRouteRequiresItsRegisteredPermission`; `app/src/test/java/com/finapp/app/api/EveryEndpointDeclaresARuleTest.java#everyHandlerDeclaresSomething` |
 | T31 | The public allow-list generated from the handler mapping and the permission register, byte for byte, and read back from the committed file: no operator route on it by permission or by path, every public route on it. A hostile spelling of an operator path is admitted by no public rule, and a planted operator route declaring only a session stays off it | EXISTS | `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#theRouteFilesAreGenerated`; `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#noOperatorRouteIsOnThePublicList`; `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#everyPublicRouteIsListed`; `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#aHostileSpellingIsAdmittedByNoPublicRule`; `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#aSessionOnlyOperatorRouteIsStillOperator` |
 | T31 | The proxy's own behaviour on those spellings, in the pinned image with the committed files: an operator path in each form reaches no backend | EXISTS | `infra/scripts/edge-check.sh` `contains: an operator route in every spelling` |
-| T31 | The operator list keeps operator routes off the public host, and it does not keep operators off it: the doors that issue a session serve a role-holding identity from the internet (T3's residual) | GAP | `owner item 22`; owner: the owner, since 2026-11-09 |
+| T31 | The operator list keeps operator routes off the public host; keeping operators off it is T3's planned control, the doors that issue a session refusing a role-holding identity there (today they serve one) | PLANNED | `P15-TSK-042` |
 | T31 | Every route under `/v1/operator` declares a permission, read from the handler mapping that serves requests; a planted operator route declaring only a session is caught | EXISTS | `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#everyOperatorRouteIsPermissionGuarded`; `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#anUnguardedOperatorRouteIsCaught` |
 | T32 | Point-in-time recovery in every environment (7 to 35 days, anything else refused), automated backups kept when the instance is deleted, a final snapshot, deletion protection, `prevent_destroy` on the database and its vault, and a daily snapshot copied across an account or region boundary, where it takes the destination vault's key. Asserted over a plan against a mock provider, never applied: no backup has been taken or restored. What this does not give is the `GAP` row below | EXISTS | `infra/terraform/modules/postgres/tests/postgres.tftest.hcl` `contains: Point-in-time recovery does not reach back as far as the root asked.` `contains: Deleting the instance would delete its automated backups.` `contains: The database has no deletion protection.` `contains: The daily snapshot does not go to this vault and on to the destination across the boundary.` `contains: a_copy_vault_inside_this_account_and_region_is_refused`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyGuardedResourcePreventsItsDestruction` |
 | T32 | A backup under a key separate from the database's own. RDS gives no setting for it, and AWS Backup's vault key does not change an RDS recovery point inside one account and region, so a vault key that differs (asserted) does not by itself separate anything. Only the copy across the boundary does, at a daily recovery point, and its destination does not exist. A point-in-time backup under a separate key needs cross-region replication, Phase 16's | GAP | `owner item 23`; owner: the owner, since 2026-11-09 |
@@ -776,7 +777,7 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
     legitimate withdrawal or payout, and the trial balance stays zero.
   Phase 15's controls lower the likelihood: the manifests deliver the credential only to the application's pods, and the
   database only the cluster's nodes (a security group of its own), and within the application's namespace only those
-  pods hold an egress rule to it (a pod in another namespace is owner item 21). They do not change the impact. **Owner item 2, decided 2026-11-08**: the
+  pods hold an egress rule to it (a pod in the telemetry pipeline's namespace is `P15-TSK-023`'s, a default-deny written with its workloads). They do not change the impact. **Owner item 2, decided 2026-11-08**: the
   source-join census reads every book, the ten above among them, and detects an entry with no domain
   record behind it, or whose record's amounts differ from its lines (written and held by its guard; its database cases owed to the
   phase's pass); the preventive fix is postponed to before production use (`PI-016`). An entry whose domain record
@@ -910,7 +911,7 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
 ("accept recommendations", at the end of wave B); each item's decision follows its options. *(This paragraph read
 "Item 7 ... awaits the owner" and "Items 9 and 10 ... are open" until then.)* **Items 11, 12, 17 and 18 were added on 2026-11-08, and the owner decided them on
 2026-11-09, accepting each recommendation** ("accept recommendations", at the end of wave C); each item's decision follows its
-options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)* **Items 21, 27 and 28 were added on 2026-11-09 and await the owner**; item 27 is held by a `GAP` row of T13. **Item 22 was added on 2026-11-09 and awaits the owner**; it is held by `GAP` rows of T1, T3 and T31.
+options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)* **Items 21, 22, 23, 27 and 28 were added on 2026-11-09, and the owner decided them the same day, accepting each recommendation** ("accept recommendations", at the end of wave D); each item's decision follows its options. *(This paragraph read "Items 21, 27 and 28 ... await the owner" and "Item 22 ... awaits the owner" until then.)*
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -935,7 +936,7 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
      and a shape no rule allows, and it confines an injection or a defect in one module (T45) to that module's books.
      **It does not stop a holder who writes the domain record first**, and the modular monolith's pods hold every
      module's credential, so a compromised pod is narrowed, not stopped: there the defence is the database reachable
-     only from those pods (a security group admitting the cluster's nodes, and within the application's namespace a policy narrowing a node to them; owner item 21 for the rest) and the credential delivered only to them. It changes every
+     only from those pods (a security group admitting the cluster's nodes, and within the application's namespace a policy narrowing a node to them; `P15-TSK-023` for the telemetry pipeline's) and the credential delivered only to them. It changes every
      module's write path and must be measured on the posting hot path.
    - *Recommendation*: schedule **(b)** as a remediation entry with the horizon "before production use", after Phase
      15, which leaves every posting path as Phases 3–14 built it (`PHASE_15_PLAN.md` §1). Add **(a)** now, as the
@@ -1077,9 +1078,9 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
 
     **Decided 2026-11-09**: (a) and (b) accepted as recommended, with the dates above, and the one dependency item added
     as `P15-TSK-041`. (a)'s last eight expire on 2026-12-31, so that item must land first.
-    **One row has been added since, and awaits the owner** (2026-11-09, the static analysis on the tree with wave D merged): a
+    **One row has been added since, and the owner accepted it the same day, as recommended** (2026-11-09, the static analysis on the tree with wave D merged): a
     fifty-seventh in (b), a statement field of the source-join census's generic join, handed a `private static final` text by each
-    module. *Recommendation*: accept it until 2027-06-30, as the others.
+    module, until 2027-06-30, as the others.
 18. **T10's and T37's residual: the tables the retention sweeps leave alone** *(added 2026-11-08 by the retention task's
    gate; numbered for the tasks that ran beside it)*. The audit archival is designed (`DATA_RETENTION.md` §3) and not
    built, so the audit table grows and no archive copy exists. Idempotency records and session rows are not swept: a sweep
@@ -1110,12 +1111,13 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
      cluster. The options: **(i)** a default-deny in each of those namespaces, written with the workloads that land there;
      **(ii)** Security Groups for Pods on the data tier, so the database itself admits only those pods; **(iii)** both;
      **(iv)** accept it. *Recommendation*: **(i) now**, widening the edge's and the telemetry pipeline's tasks, because it
-     costs each a small policy and needs no real environment; (ii) when a real environment exists.
+     costs each a small policy and needs no real environment; (ii) when a real environment exists. **Decided 2026-11-09**: as
+     recommended; the telemetry half is `P15-TSK-023`'s, T4's and T15's rows `PLANNED` on it.
    - **(b) A pod's first moments on EKS.** The VPC CNI's agent defaults to `standard` mode, in which a new pod is default-allow
      until its policies are programmed. `strict` mode reverses that, for every pod in the cluster, so a pod with no policy has no
      network at all, kube-system's included. *Recommendation*: keep `standard` until a real environment can measure it: the window
      is seconds, at the start of a pod that has not yet served anything, and strict mode's failure is an outage. Revisit with the
-     first real cluster.
+     first real cluster. **Decided 2026-11-09**: as recommended; T4's row stays a `GAP` held by this item.
 27. **T13's residual: the instance clocks outside the five stores** *(added 2026-11-09)*. The stored-bounds rule reads every
    production source's SQL, and classifies each comparison of a timestamp column with a bind parameter; it cannot say whose
    instant a bind is, and it cannot see a bound judged in Java. Read by hand, two of what it surrounds do judge a stored
@@ -1131,7 +1133,8 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
    are; accept the look-backs as a count and not a bound; and move routing's read and the dispute door to the database's
    clock with their next change, before production use (one read each, as the card fee version's was). Routing selects a
    rail and prices nothing, and the door's window is the skew against a deadline the network set in days. *The alternative*:
-   schedule the two as their own task now.
+   schedule the two as their own task now. **Decided 2026-11-09**: as recommended; the two reads are `PI-021`, required before
+   production use, the cutoffs stay and the look-backs are accepted as a count.
 28. **T38's remainder: the rows a caller can add by being refused** *(added 2026-11-09 by the task that built the wider
    audit class)*. A refused or failed act at a privileged door is one audit row per attempt, as a denial and a refused
    step-up are, and a retry is a second attempt. Reaching the door takes an authenticated holder of its permission or an
@@ -1140,7 +1143,7 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
    options for an operator: (a) accept: a named, permissioned population; every row of a flood is its own evidence, and the
    privileged access review reads them; (b) a per-identity limit on the same cluster-wide counter the abuse-limits task
    builds, which a row at the limit would still record. *Recommendation*: (a), and (b) only if the review ever finds it
-   used. Held by a `GAP` row in §4.
+   used. Held by a `GAP` row in §4. **Decided 2026-11-09**: (a).
 23. **T7's, T9's, T10's and T32's residuals: what a plan of the data tier cannot settle** *(added 2026-11-09 by the data-tier
    modules' gate; numbered for the tasks that ran beside it)*. Three questions, none yet asked of a real account.
 
@@ -1152,22 +1155,24 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
    key and is Phase 16's multi-region work; or accepting that the backups share the volume's key. *Recommendation*: the
    dedicated backup account. It answers the threat that matters most, an attacker or a mistake inside the production account
    reaching the backups along with the database, and takes nothing from Phase 16. Add the cross-region replication there if
-   a recovery point under the separate key tighter than a day is required.
+   a recovery point under the separate key tighter than a day is required. **Decided 2026-11-09**: the dedicated backup account,
+   when an account exists.
 
    **(b) The audit archive's lock.** Its period is `OPEN` until a real jurisdiction is chosen, and its mode is the same
    kind of choice, so both are required inputs with no default. Neither root can be planned for real until someone chooses.
    *Recommendation*: when a jurisdiction is named, S3's `COMPLIANCE` mode in production, because it is the only mode nobody in
    the account can shorten, which is what "write-once" has to mean against an insider, and `GOVERNANCE` in staging, where a
    wrong period must stay correctable. A period set in the stronger mode cannot be undone for an object once written, so
-   decide it before Phase 16 writes the first one.
+   decide it before Phase 16 writes the first one. **Decided 2026-11-09**: as recommended, the period and the choice of
+   jurisdiction still open.
 
    **(c) The path that applies the ACLs.** They are declared as resources, so a plan shows them, and applying them needs
    what no apply here has needed: a runner inside the network holding the provisioner's credential, and three applies in
    order, the middle one with ACLs not yet enforced, because MSK has no super user who could write the first one.
    *Recommendation*: run it from the same pipeline role item 7 settled, from inside the cluster's network, and finish the
-   three stages in one sitting.
+   three stages in one sitting. **Decided 2026-11-09**: as recommended, when an account exists.
 
-22. **T3's, T31's and T1's residuals at the edge** *(added 2026-11-09 by the edge's review; awaits the owner)*. Two separate things.
+22. **T3's, T31's and T1's residuals at the edge** *(added 2026-11-09 by the edge's review)*. Two separate things.
 
     *(a) An operator's credentials on the public host.* The doors that issue a session are public, because a customer needs them, and
     nothing refuses a role-holding identity there. So an operator's password works from the internet; a phished password or session can
@@ -1179,12 +1184,14 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
     path. *Recommendation*: a task of its own in M15.7, not `P15-TSK-022`. `-022` counts unauthenticated traffic by source; this
     decides, by identity and surface, who may authenticate at all, with its own audit and negative tests, and on `-022` it would be buried
     in a different acceptance. It should follow `-022`, which it needs for the lockout arithmetic only.
+    **Decided 2026-11-09**: as recommended, as `P15-TSK-042`; T3's and T31's rows are `PLANNED` on it.
 
     *(b) The spool under more than one source.* One source cannot fill a controller's 256 MiB spool (130 MiB at the in-flight limits and
     the body cap), but several can, and an abandoned upload's spool is held until the proxy's next garbage collection (under two minutes
     measured on the pinned image). While the spool is full, a body past 64 KiB answers `500` and everything smaller is served; no pod is
     evicted or restarted. *Recommendation*: accept it for Phase 15 as a bounded degradation, and give a real environment a connection
-    limit or WAF in front of the edge, sized by Phase 16's load model.
+    limit or WAF in front of the edge, sized by Phase 16's load model. **Decided 2026-11-09**: accepted for Phase 15, as
+    recommended; T1's row stays a `GAP` held by this item.
 
 ## 7. Decided against
 

@@ -30,6 +30,7 @@ commit and the date; do not delete the entry.
 | PI-018 | `POSTPONED` | P15-TSK-002's ruling, by the owner (2026-11-08) | reconciliation - a raw writer can close a break with another break's approved resolution; required before production use |
 | PI-019 | `POSTPONED` | P15-TSK-002's ruling, by the owner (2026-11-08) | payments - a transfer can pre-empt an in-flight instant execution the platform cannot yet name; required before production use |
 | PI-020 | `POSTPONED` | the privileged access review, by the owner (2026-11-08) | identity - one identity may hold both roles of a propose/approve pair; required before production use |
+| PI-021 | `POSTPONED` | `P15-TSK-038`'s census, by the owner (2026-11-09) | payments - routing's version in force and the dispute door judged on an instance's clock; required before production use |
 
 ---
 
@@ -501,3 +502,13 @@ commit and the date; do not delete the entry.
 - **Consequence until fixed:** each such act still refuses its proposer by identity at the domain and at the database, so one person cannot propose and approve the same act; holding both roles narrows the population. The review of `PRIVILEGED_ACCESS_REVIEW.md` §5 finds such holdings.
 - **Fix:** refuse the holding at assignment (a new refusal on `POST /v1/identities/{id}/roles`, its answer in the contract, and a check of the holdings that already exist), ADR-0071 §10's rule among them.
 - **Owner of the fix:** the post-phase clean-up, before production use, or sooner if the owner schedules it.
+
+---
+
+## PI-021 — Routing's version in force and the dispute door judged on an instance's clock
+
+- **Status:** `POSTPONED` (owner, 2026-11-09, accepting `THREAT_MODEL.md` section 6 item 27's recommendation). **Required before production use.**
+- **What:** two stored bounds are still judged on an instance's clock. `findVersionInForce` is read with `Instant.now(clock)` at the payment confirmation and the withdrawal, so within the skew of a scheduled start a payment can be routed by the outgoing or the incoming version. `DisputeActs.requireRespondable`, from the response and the evidence upload, judges a stored `respond_by` in Java on the instance's clock, so within the skew of the deadline a response can be refused or admitted early or late.
+- **Consequence until fixed:** bounded by the skew. Routing selects a rail and prices nothing; the dispute deadline is set by the network in days.
+- **Fix:** move each read to the database's clock with its next change, one read each, as the card fee version's was (`P15-TSK-038`'s treatment).
+- **Owner of the fix:** the next change to either, and in any case before production use.
