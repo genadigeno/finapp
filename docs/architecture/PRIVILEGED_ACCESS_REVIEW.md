@@ -117,7 +117,7 @@ who granted it, when and why. The review answers four questions:
    roles it grants is reviewed as a conflict and justified or revoked.
 4. Was every grant since the last review made by a different person than its holder, with a reason that names a need?
 5. Does any holder of a role that can redirect a merchant's money have no enrolled factor? `GET
-   /v1/operator/access-review/factorless-holdings` names them, from the live rows of both tables: each is resolved by
+   /v1/operator/access-review/factorless-holdings`, on a `MULTI_FACTOR` session, names them, from the live rows of both tables: each is resolved by
    the holder enrolling, or the role being revoked with a reason. The rule below refuses new ones; this finds the ones
    that stood before it (§6).
 
@@ -126,8 +126,8 @@ day they leave. Its first performance is `P15-TSK-032`'s, with the runbook's bre
 
 ## 6. Step-up and refused attempts
 
-35 handlers declare `@RequiresAssurance(MULTI_FACTOR)`, every one on the method: Phase 13's risk doors, Phase 14's
-accounting, ledger and write-off approvals, the dead-letter doors, and the rulings below. About thirty operations demand
+36 handlers declare `@RequiresAssurance(MULTI_FACTOR)`, every one on the method: Phase 13's risk doors, Phase 14's
+accounting, ledger and write-off approvals, the dead-letter doors, the rulings below and §5's check. About thirty operations demand
 the step-up themselves - a bank-account registration, a withdrawal, a wallet payment, the lending and BNPL doors - some
 only when the caller has a factor, by one component (`ConditionalStepUp`). Not every four-eyes door steps up: a break's
 resolution and the mapping activation are `P14-REM-001`'s and `P14-REM-002`'s. **Every refused privileged
@@ -153,10 +153,12 @@ refusal whose record cannot be written is answered `500`, never without its reco
    its approval change what customers are charged or reverse a posted trade, the class every Phase 13 and 14 approval
    already steps up for. **Built:** the six doors declare it. A kill switch's *stop*, and a proposal to restart, stay
    one person's act on the session they hold: stopping is the fail-safe direction and a restart still needs a second
-   person, stepped up. `RuledDoorsStepUpTest` holds the eight doors; the permission register pins them
+   person, stepped up. An `FX_CONTROLLER` with no enrolled factor, who could approve on a password until now, is refused
+   `403 identity.AssuranceRequired` at these doors, and §5's check does not name that role: enrolment is self-service
+   (`POST /v1/me/mfa`). `RuledDoorsStepUpTest` holds the eight doors and §5's check; the permission register pins them
    (`RoutePermissionRegisterTest#everyRuledRouteDeclaresMultiFactor`).
 
-**Declared doors judge the level before the permission**, as every declared door does: at those eight, a caller on a
+**Declared doors judge the level before the permission**, as every declared door does: at those nine, a caller on a
 password session is told to step up whether or not they hold the permission. It denies a stolen password a way to learn
 which roles the account holds. The conditional copies moved into `ConditionalStepUp` kept their call sites, so what a
 refused caller learns there, and which refusal is recorded first, did not change.
@@ -167,7 +169,9 @@ which the task that builds removal must change). That task must refuse removal w
 revoke the role in the same transaction. Whatever it does, a destination act still needs a `MULTI_FACTOR` session.
 
 **The wider class** is `door.ActRefused`: refused and failed Phase 7 and 8 acts and failed or not-found Phase 9 and 10
-operator reads (`AUDITABLE_ACTIONS.md`), the doors read from the controllers by `RefusedActsAreRecordedTest`.
+operator reads, the doors read from the controllers by `RefusedActsAreRecordedTest`. `AUDITABLE_ACTIONS.md` names what it
+leaves out: a `401`, a key refused before an actor is proven, a filter's `413`, a customer's doors, and Phase 6's merchant
+operator doors, a payout destination's among them.
 
 ## 7. Break-glass
 

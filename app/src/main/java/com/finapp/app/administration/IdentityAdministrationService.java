@@ -68,8 +68,8 @@ public class IdentityAdministrationService {
     }
 
     /** The check of standing holdings without a factor (`P15-TSK-039`), read and recorded in one transaction. */
-    public java.util.List<com.finapp.identity.RoleAssignmentStore.FactorlessHolding> factorlessHoldings(int limit) {
-        return inOneTransaction(unitOfWork -> administration.factorlessHoldings(unitOfWork, limit));
+    public IdentityAdministration.FactorlessHoldings factorlessHoldings(int mostServed) {
+        return inOneTransaction(unitOfWork -> administration.factorlessHoldings(unitOfWork, mostServed));
     }
 
     private <T> T inOneTransaction(Function<Connection, T> command) {

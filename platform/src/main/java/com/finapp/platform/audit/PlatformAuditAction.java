@@ -100,10 +100,11 @@ public enum PlatformAuditAction implements AuditableAction {
     /**
      * A request at a door declaring {@code RecordsRefusals} was refused or failed (`P15-TSK-039`; {@code INV-AUD-03}).
      *
-     * <p>Its outcome says which: {@code DENIED} for a control refusing it, {@code FAILED} for what was attempted and did
-     * not complete, a lookup that found nothing among them. Its target is the door, by route pattern. Its summary is the
-     * answered code and status and the path's identifiers, never a body, a reason or anything else the caller sent. No
-     * reason is demanded: "did anyone try" must be answerable for a request that gave none.
+     * <p>Its outcome is what the door answered: {@code DENIED} for a control's refusal, {@code FAILED} for a failure or a
+     * lookup that found nothing. It says nothing of what became of the act: work an earlier transaction committed may still
+     * complete after a {@code FAILED}. Its target is the door, by route pattern. Its summary is the answered code and status
+     * and the path's identifiers, never a body, a reason or anything else the caller sent. No reason is demanded: "did anyone
+     * try" must be answerable for a request that gave none.
      */
     DOOR_ACT_REFUSED(
             "door.ActRefused",

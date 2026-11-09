@@ -51,6 +51,15 @@ final class InterceptorHarness {
                 }));
     }
 
+    /** The template and the recorder as the real wiring builds them, for the pin of {@code REQUIRES_NEW} (`P15-TSK-039`). */
+    static TransactionTemplate theSessionsTemplate() {
+        return new SessionBeans().sessionTransactions(new RecordingTransactions(new java.util.ArrayList<>()));
+    }
+
+    static RefusedActs wiredRefusedActs(TransactionTemplate template, IdGenerator ids, Clock clock) {
+        return new SessionBeans().refusedActs(template, new OneConnection(), (uow, record) -> { }, ids, clock);
+    }
+
     /** The refused-act recorder over the same captures (`P15-TSK-039`). */
     static RefusedActs refusedActs(List<String> events, List<AuditRecord> written, IdGenerator ids, Clock clock) {
         return new RefusedActs(transactions(events), new OneConnection(), (uow, record) -> {

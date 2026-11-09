@@ -326,7 +326,7 @@ class CorridorAdministrationEndpointDatabaseTest {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body));
+                .POST(body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (bearer != null) {
             request.header("Authorization", "Bearer " + bearer);
         }

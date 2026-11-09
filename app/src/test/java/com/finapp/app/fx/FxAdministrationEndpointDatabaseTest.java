@@ -69,15 +69,17 @@ class FxAdministrationEndpointDatabaseTest {
         assertThat(replayed.statusCode()).isEqualTo(201);
         assertThat(field(replayed.body(), "id")).as("the same key, the same proposal").isEqualTo(id);
 
+        long refusalsBefore = doorRecords("DENIED", "fx.SelfApprovalRefused");
         HttpResponse<String> self = post(approval(id), decision("my own"), first, null);
         assertThat(self.statusCode()).isEqualTo(409);
         assertThat(self.body()).contains("fx.SelfApprovalRefused");
-        assertThat(doorRecords("DENIED", "fx.SelfApprovalRefused"))
+        assertThat(doorRecords("DENIED", "fx.SelfApprovalRefused") - refusalsBefore)
                 .as("the refused four-eyes attempt is on the record, committed though the act rolled back (P15-TSK-039)")
                 .isEqualTo(1);
+        long lookupsBefore = doorRecords("FAILED", "api.NotFound");
         HttpResponse<String> unknown = post(approval(UUID.randomUUID().toString()), decision("nothing there"), first, null);
         assertThat(unknown.statusCode()).isEqualTo(404);
-        assertThat(doorRecords("FAILED", "api.NotFound")).as("a lookup that found nothing, on the record").isEqualTo(1);
+        assertThat(doorRecords("FAILED", "api.NotFound") - lookupsBefore).as("a lookup that found nothing, on the record").isEqualTo(1);
 
         HttpResponse<String> approved = post(approval(id), decision("checked against O7"), second, null);
         assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
@@ -265,7 +267,7 @@ class FxAdministrationEndpointDatabaseTest {
                 HttpRequest.newBuilder()
                         .uri(URI.create("http://localhost:" + port + path))
                         .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(body));
+                        .POST(body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (bearer != null) {
             request.header("Authorization", "Bearer " + bearer);
         }

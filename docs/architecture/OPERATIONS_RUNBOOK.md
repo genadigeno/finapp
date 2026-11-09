@@ -114,7 +114,10 @@ replaces it, and only new quotes see it.
 `POST /v1/operator/fx/pairs/{AAA-BBB}/availability` or `…/providers/{code}/availability` with
 `{"available": false, "reason": …}`. Restarting is two people: the same route with
 `"available": true` opens an enable request (`ENABLE_PROPOSED`), which a DIFFERENT controller
-approves at `POST /v1/operator/fx/enable-requests/{id}/approval`, on a `MULTI_FACTOR` session.
+approves at `POST /v1/operator/fx/enable-requests/{id}/approval`, on a `MULTI_FACTOR` session. **An `FX_CONTROLLER` with no
+enrolled factor is refused `403 identity.AssuranceRequired` at every approval and restart here and in §3b**, and
+`GET /v1/operator/access-review/factorless-holdings` does not name that role, so enrol controllers ahead of need: enrolment
+is self-service (`POST /v1/me/mfa`, then `POST /v1/authentications/mfa` to step up).
 
 ## 3. Activating the FX provider source's rule set v1 - before the first cover settles
 

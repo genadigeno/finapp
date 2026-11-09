@@ -27,8 +27,8 @@ import java.lang.annotation.Target;
  * `MULTI_FACTOR` - Phase 13's risk doors and Phase 14's accounting, ledger and write-off approvals.
  * (The plan's "25" was a text count that also matched comments and the interceptor's message.) The
  * conditional step-ups - `MULTI_FACTOR` exactly when the caller has a factor - are each operation's
- * own and do not use it. <strong>35</strong> since `P15-TSK-039`, with the dead-letter doors, a payout destination's
- * proposal and approval, and Phase 9's approvals, restarts and reversals.
+ * own and do not use it. <strong>36</strong> since `P15-TSK-039`, with the dead-letter doors, a payout destination's
+ * proposal and approval, Phase 9's approvals, restarts and reversals, and the check of factorless holdings.
  *
  * <h2>A refusal is recorded</h2>
  *

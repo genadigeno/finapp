@@ -50,13 +50,13 @@ class RoleGrantDoorTest {
         }
 
         @Override
-        public List<RoleAssignmentStore.FactorlessHolding> factorlessHoldings(int limit) {
+        public IdentityAdministration.FactorlessHoldings factorlessHoldings(int limit) {
             limits.add(limit);
             List<RoleAssignmentStore.FactorlessHolding> holdings = new ArrayList<>();
             for (int i = 0; i < Math.min(served, limit); i++) {
                 holdings.add(new RoleAssignmentStore.FactorlessHolding(IdentityId.next(IDS), RoleName.LEDGER_OPERATOR, AT));
             }
-            return holdings;
+            return new IdentityAdministration.FactorlessHoldings(holdings, served > limit);
         }
     };
 
@@ -97,7 +97,7 @@ class RoleGrantDoorTest {
         var many = door.listFactorlessHoldings();
         assertThat(many.holdings()).hasSize(200);
         assertThat(many.truncated()).isTrue();
-        assertThat(limits).allMatch(limit -> limit == 201);
+        assertThat(limits).as("the page the door serves, and not one row past it").allMatch(limit -> limit == 200);
     }
 
     @Test

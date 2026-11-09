@@ -28,6 +28,8 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
@@ -45,6 +47,8 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -196,6 +200,69 @@ class RefusedActsTest {
     }
 
     @Test
+    @DisplayName("a named code is written in its closed shape: a refused kill-switch act says which switch")
+    void aNamedCodeIsWrittenInItsClosedShape() throws Exception {
+        for (String[] door : List.of(
+                new String[] {"/switches/pairs/EUR-USD", "pair=EUR-USD"},
+                new String[] {"/switches/corridors/EUR-USD-US", "corridor=EUR-USD-US"},
+                new String[] {"/switches/providers/fx-sim-a", "code=fx-sim-a"})) {
+            written.clear();
+            door(recorder()).perform(post(door[0])).andReturn();
+            assertThat(written).singleElement().satisfies(record -> assertThat(record.changeSummary())
+                    .hasValueSatisfying(summary -> assertThat(summary).endsWith(door[1])));
+        }
+    }
+
+    @Test
+    @DisplayName("caller text outside a named code's shape does not reach the record")
+    void textOutsideACodesShapeIsNotWritten() throws Exception {
+        for (String[] door : List.of(
+                new String[] {"/switches/pairs/eur-usd", "eur-usd", "pair=(not an id)"},
+                new String[] {"/switches/pairs/4111111111111111", "4111111111111111", "pair=(not an id)"},
+                new String[] {"/switches/corridors/EUR-USD-USA", "EUR-USD-USA", "corridor=(not an id)"},
+                new String[] {"/switches/providers/" + "x4111111111111111", "x4111111111111111", "code=(not an id)"},
+                new String[] {"/switches/providers/Ada-Lovelace", "Ada-Lovelace", "code=(not an id)"},
+                new String[] {"/switches/providers/" + "a".repeat(33), "a".repeat(33), "code=(not an id)"})) {
+            written.clear();
+            door(recorder()).perform(post(door[0])).andReturn();
+            assertThat(written).singleElement().satisfies(record -> assertThat(record.changeSummary())
+                    .hasValueSatisfying(summary -> {
+                        assertThat(summary).endsWith(door[2]);
+                        assertThat(summary).doesNotContain(door[1]);
+                    }));
+        }
+    }
+
+    @Test
+    @DisplayName("the same request's retry while its first flight runs is no refusal, and leaves no row")
+    void anIdempotentRetryInProgressIsNotARefusal() throws Exception {
+        MockHttpServletResponse answered = approve("inprogress");
+
+        assertThat(answered.getStatus()).isEqualTo(409);
+        assertThat(answered.getContentAsString()).contains(PlatformErrorCode.IDEMPOTENCY_IN_PROGRESS.code());
+        assertThat(written).isEmpty();
+    }
+
+    @Test
+    @DisplayName("in the real wiring the record's transaction is its own: the session's template, REQUIRES_NEW, handed to the recorder")
+    void theRecordsTransactionIsItsOwn() throws Exception {
+        TransactionTemplate template = InterceptorHarness.theSessionsTemplate();
+        assertThat(template.getPropagationBehavior()).isEqualTo(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        Field transactions = RefusedActs.class.getDeclaredField("transactions");
+        transactions.setAccessible(true);
+        assertThat(transactions.get(InterceptorHarness.wiredRefusedActs(template, IDS, CLOCK))).isSameAs(template);
+
+        Method bean = java.util.Arrays.stream(SessionBeans.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("refusedActs"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(bean.getParameters()[0].getName())
+                .as("several templates exist; this name is what binds the bean to the session's")
+                .isEqualTo("sessionTransactions");
+    }
+
+    @Test
     @DisplayName("a merchant's refused act names the API key that made it, by its public id, and never the secret")
     void aMerchantsRefusalNamesItsKey() throws Exception {
         actor.close();
@@ -309,6 +376,24 @@ class RefusedActsTest {
             throw new ApiException(PlatformErrorCode.NOT_FOUND, "a merchant's unknown dispute");
         }
 
+        @PostMapping("/switches/pairs/{pair}")
+        @RecordsRefusals
+        public void pair(@PathVariable("pair") String pair) {
+            throw refusal("notfound");
+        }
+
+        @PostMapping("/switches/corridors/{corridor}")
+        @RecordsRefusals
+        public void corridor(@PathVariable("corridor") String corridor) {
+            throw refusal("notfound");
+        }
+
+        @PostMapping("/switches/providers/{code}")
+        @RecordsRefusals
+        public void provider(@PathVariable("code") String code) {
+            throw refusal("notfound");
+        }
+
         @PostMapping("/customer-doors")
         public void customer(@RequestHeader("X-Refuse") String kind) {
             throw refusal(kind);
@@ -321,6 +406,7 @@ class RefusedActsTest {
                 case "kind" -> api(ReconciliationErrorCode.RESOLUTION_KIND_NOT_ALLOWED);
                 case "notfound" -> api(PlatformErrorCode.NOT_FOUND);
                 case "stepup" -> api(IdentityErrorCode.ASSURANCE_REQUIRED);
+                case "inprogress" -> api(PlatformErrorCode.IDEMPOTENCY_IN_PROGRESS);
                 default -> new IllegalStateException("the database said 4111111111111111 was wrong");
             };
         }

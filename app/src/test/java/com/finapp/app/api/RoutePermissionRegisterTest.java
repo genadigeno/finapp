@@ -673,7 +673,7 @@ class RoutePermissionRegisterTest {
 
     /**
      * The routes the access review ruled {@code MULTI_FACTOR} (`P15-TSK-039`; {@code PRIVILEGED_ACCESS_REVIEW.md} section 6):
-     * a step-up is a reviewed decision as a permission is. Only these eight: every other declaration is its own task's.
+     * a step-up is a reviewed decision as a permission is. Only these nine: every other declaration is its own task's.
      * {@code RuledDoorsStepUpTest} holds what the declaration does at each.
      */
     private static final java.util.Set<String> RULED_MULTI_FACTOR_ROUTES = new java.util.TreeSet<>(java.util.Set.of(
@@ -685,7 +685,9 @@ class RoutePermissionRegisterTest {
             "POST /v1/operator/cross-border/corridor-policies/{id}/approval",
             "POST /v1/operator/cross-border/corridor-enable-requests/{rid}/approval",
             "POST /v1/operator/fx/trades/{id}/reversal",
-            "POST /v1/operator/fx/trades/{id}/reversal/{rid}/approval"));
+            "POST /v1/operator/fx/trades/{id}/reversal/{rid}/approval",
+            // The list of money-role holders with no second factor: not on a password alone.
+            "GET /v1/operator/access-review/factorless-holdings"));
 
     @Test
     @DisplayName("the rulings' routes each declare MULTI_FACTOR, read from the handler that serves them (P15-TSK-039)")

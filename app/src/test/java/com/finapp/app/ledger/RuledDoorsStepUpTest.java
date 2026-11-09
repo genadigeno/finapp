@@ -3,6 +3,7 @@ package com.finapp.app.ledger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.app.administration.AccessReviewController;
 import com.finapp.app.crossborder.CorridorAdministrationController;
 import com.finapp.app.fx.FxAdministrationController;
 import com.finapp.app.fx.FxTradeReversalController;
@@ -23,7 +24,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The access review's two step-up rulings, on the doors (`P15-TSK-039`; {@code PRIVILEGED_ACCESS_REVIEW.md} §6): a payout
- * destination's proposal and approval, and Phase 9's approvals, restarts and reversals, need {@code MULTI_FACTOR}. The real
+ * destination's proposal and approval, and Phase 9's approvals, restarts and reversals, need {@code MULTI_FACTOR}, as does the
+ * read that lists who holds a money role with no factor. The real
  * interceptor over each real handler, as {@code ApprovalAssuranceTest} does. A real session row at the real doors is the
  * endpoint database suites', owed.
  */
@@ -49,7 +51,8 @@ class RuledDoorsStepUpTest {
                 door(CorridorAdministrationController.class, "approveCorridorPolicy", RoleName.FX_CONTROLLER),
                 door(CorridorAdministrationController.class, "approveCorridorEnableRequest", RoleName.FX_CONTROLLER),
                 door(FxTradeReversalController.class, "proposeFxTradeReversal", RoleName.LEDGER_OPERATOR),
-                door(FxTradeReversalController.class, "approveFxTradeReversal", RoleName.LEDGER_OPERATOR));
+                door(FxTradeReversalController.class, "approveFxTradeReversal", RoleName.LEDGER_OPERATOR),
+                door(AccessReviewController.class, "listFactorlessHoldings", RoleName.ADMINISTRATOR));
     }
 
     @Test

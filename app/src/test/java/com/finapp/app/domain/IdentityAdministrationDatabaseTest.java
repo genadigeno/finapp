@@ -674,8 +674,11 @@ class IdentityAdministrationDatabaseTest {
         grantBypassingTheRule(standing, admin, RoleName.LEDGER_OPERATOR);
         IdentityId notNamed = givenAnIdentity();
         grantBypassingTheRule(notNamed, admin, RoleName.KYC_REVIEWER);
-        String session = givenASessionFor(admin);
+        String session = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
 
+        assertThat(get("/operator/access-review/factorless-holdings", givenASessionFor(admin)).statusCode())
+                .as("a list of money-role holders with no second factor is not served on a password alone")
+                .isEqualTo(403);
         String before = get("/operator/access-review/factorless-holdings", session).body();
         assertThat(before).contains(standing.value().toString()).contains("LEDGER_OPERATOR");
         assertThat(before).doesNotContain(notNamed.value().toString());
@@ -735,8 +738,8 @@ class IdentityAdministrationDatabaseTest {
                                 + " VALUES (?, ?, 'TOTP', ?, ?, 1, 'SHA1', 6, 30, 'ACTIVE', now(), now())")) {
             insert.setObject(1, IDS.next());
             insert.setObject(2, identity.value());
-            insert.setBytes(3, new byte[] {1});
-            insert.setBytes(4, new byte[] {2});
+            insert.setBytes(3, new byte[32]); // never decrypted: V008 sizes it, 16 to 1024
+            insert.setBytes(4, new byte[12]); // a 96-bit nonce, per V008
             insert.executeUpdate();
         }
     }
@@ -931,6 +934,10 @@ class IdentityAdministrationDatabaseTest {
     }
 
     private String givenASessionFor(IdentityId identity) throws SQLException {
+        return givenASessionAt(identity, AssuranceLevel.PASSWORD);
+    }
+
+    private String givenASessionAt(IdentityId identity, AssuranceLevel assurance) throws SQLException {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
         String plaintext = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
@@ -940,7 +947,7 @@ class IdentityAdministrationDatabaseTest {
                         CLOCK,
                         identity,
                         SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD,
+                        assurance,
                         SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);

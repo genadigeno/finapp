@@ -358,13 +358,15 @@ public final class IdentityAdministration {
     }
 
     /**
-     * The check of the holdings the factor rule found already standing (`P15-TSK-039`): who holds a role that needs a factor
-     * and has none, at most {@code limit}. It grants nothing and revokes nothing; the review (§5) resolves what it names.
-     * Recorded in this read's transaction.
+     * The check of the holdings the factor rule found standing (`P15-TSK-039`): who holds a role that needs a factor
+     * and has none, at most {@code mostServed}, and whether there were more. It grants nothing and revokes nothing; the
+     * review (§5) resolves what it names. Recorded in this read's transaction, with what was served.
      */
-    public List<RoleAssignmentStore.FactorlessHolding> factorlessHoldings(Connection unitOfWork, int limit) {
+    public FactorlessHoldings factorlessHoldings(Connection unitOfWork, int mostServed) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        List<RoleAssignmentStore.FactorlessHolding> holdings = authorization.holdingsWithoutFactor(unitOfWork, limit);
+        List<RoleAssignmentStore.FactorlessHolding> found = authorization.holdingsWithoutFactor(unitOfWork, mostServed + 1);
+        boolean truncated = found.size() > mostServed;
+        List<RoleAssignmentStore.FactorlessHolding> served = truncated ? found.subList(0, mostServed) : found;
         auditWriter.append(
                 unitOfWork,
                 new AuditRecord(
@@ -377,9 +379,12 @@ public final class IdentityAdministration {
                         Optional.empty(),
                         AuditOutcome.SUCCEEDED,
                         currentCorrelation().correlationId(),
-                        Optional.of("served=" + holdings.size())));
-        return holdings;
+                        Optional.of("served=" + served.size() + ", truncated=" + truncated)));
+        return new FactorlessHoldings(served, truncated);
     }
+
+    /** The holdings served and whether there were more than were. */
+    public record FactorlessHoldings(List<RoleAssignmentStore.FactorlessHolding> holdings, boolean truncated) {}
 
     private void audit(
             Connection unitOfWork,

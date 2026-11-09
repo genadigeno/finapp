@@ -598,6 +598,7 @@ public final class PaymentOutcomes {
                                     "intent=" + intentId
                                             + ", attempt=" + attemptId
                                             + ", reference=" + voidReference.value()
+                                            + ", rail=" + railOf(uow, attemptId).value()
                                             + ", cause=declined-capture-redirect")));
         }
         Applied redirected =

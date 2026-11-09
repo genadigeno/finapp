@@ -10,6 +10,7 @@ import com.finapp.payments.PaymentIntentId;
 import com.finapp.payments.PaymentIntentStore;
 import com.finapp.payments.PaymentOutcomes;
 import com.finapp.payments.PaymentsAuditAction;
+import com.finapp.payments.RailId;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
@@ -60,6 +61,7 @@ class RedirectVoidDispatchRecordTest {
             assertThat(record.changeSummary()).hasValueSatisfying(summary -> {
                 assertThat(summary).contains("attempt=" + attempt);
                 assertThat(summary).contains("reference=void-");
+                assertThat(summary).contains("rail=card");
                 assertThat(summary).contains("cause=declined-capture-redirect");
             });
         });
@@ -108,6 +110,7 @@ class RedirectVoidDispatchRecordTest {
     @SuppressWarnings("unchecked")
     private PaymentAttemptStore<Connection> attempts(boolean acting) {
         PaymentAttempt row = new SpringObjenesis().newInstance(PaymentAttempt.class);
+        setRail(row);
         return (PaymentAttemptStore<Connection>) Proxy.newProxyInstance(PaymentAttemptStore.class.getClassLoader(),
                 new Class<?>[] {PaymentAttemptStore.class}, (proxy, method, args) -> switch (method.getName()) {
                     case "dispatchVoid" -> acting;
@@ -115,6 +118,16 @@ class RedirectVoidDispatchRecordTest {
                     case "findById" -> Optional.of(row);
                     default -> throw new UnsupportedOperationException(method.getName());
                 });
+    }
+
+    private static void setRail(PaymentAttempt row) {
+        try {
+            Field rail = PaymentAttempt.class.getDeclaredField("rail");
+            rail.setAccessible(true);
+            rail.set(row, RailId.of("card"));
+        } catch (ReflectiveOperationException unreachable) {
+            throw new AssertionError(unreachable);
+        }
     }
 
     private static Object unanswering(Class<?> type) {

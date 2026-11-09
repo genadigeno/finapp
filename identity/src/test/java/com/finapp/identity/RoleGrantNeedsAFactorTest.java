@@ -47,6 +47,7 @@ class RoleGrantNeedsAFactorTest {
     private final AtomicInteger factorReads = new AtomicInteger();
     private final List<AuditRecord> written = new ArrayList<>();
     private boolean enrolled;
+    private int standing = 1;
 
     @Test
     @DisplayName("exactly the roles granting a payout destination's proposal, its approval or a payout need one")
@@ -106,18 +107,33 @@ class RoleGrantNeedsAFactorTest {
     @Test
     @DisplayName("the check of standing holdings is recorded as a read, naming how many it served")
     void theCheckIsARecordedRead() throws Exception {
-        IdentityAdministration administration = administration();
-        List<RoleAssignmentStore.FactorlessHolding> found;
-        try (var correlation = CorrelationContext.enter(Correlation.startingWith(CorrelationId.of("the-check")));
-                var actor = SecurityContext.enter(new Actor(ADMINISTRATOR.value().toString(), ActorType.EMPLOYEE))) {
-            found = administration.factorlessHoldings(UNIT_OF_WORK, 201);
-        }
+        IdentityAdministration.FactorlessHoldings found = read(200);
 
-        assertThat(found).singleElement().satisfies(holding -> assertThat(holding.role()).isEqualTo(RoleName.LEDGER_OPERATOR));
+        assertThat(found.holdings()).singleElement().satisfies(holding -> assertThat(holding.role()).isEqualTo(RoleName.LEDGER_OPERATOR));
+        assertThat(found.truncated()).isFalse();
         assertThat(written).singleElement().satisfies(record -> {
             assertThat(record.operation()).isEqualTo(IdentityAuditAction.FACTORLESS_HOLDINGS_READ);
-            assertThat(record.changeSummary()).hasValue("served=1");
+            assertThat(record.changeSummary()).hasValue("served=1, truncated=false");
         });
+    }
+
+    @Test
+    @DisplayName("past the page, the record counts what was served and not the row read past it to learn there were more")
+    void theRecordCountsWhatWasServed() throws Exception {
+        standing = 3;
+
+        IdentityAdministration.FactorlessHoldings found = read(2);
+
+        assertThat(found.holdings()).hasSize(2);
+        assertThat(found.truncated()).isTrue();
+        assertThat(written).singleElement().satisfies(record -> assertThat(record.changeSummary()).hasValue("served=2, truncated=true"));
+    }
+
+    private IdentityAdministration.FactorlessHoldings read(int mostServed) {
+        try (var correlation = CorrelationContext.enter(Correlation.startingWith(CorrelationId.of("the-check")));
+                var actor = SecurityContext.enter(new Actor(ADMINISTRATOR.value().toString(), ActorType.EMPLOYEE))) {
+            return administration().factorlessHoldings(UNIT_OF_WORK, mostServed);
+        }
     }
 
     /** Under the request's scopes, for the audit record a real grant writes. */
@@ -149,7 +165,8 @@ class RoleGrantNeedsAFactorTest {
                     }
                     if (method.getName().equals("holdingsWithoutFactor")) {
                         assertThat((Set<RoleName>) args[1]).containsExactlyInAnyOrder(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR);
-                        return List.of(new RoleAssignmentStore.FactorlessHolding(SUBJECT, RoleName.LEDGER_OPERATOR, Instant.now(CLOCK)));
+                        return java.util.Collections.nCopies(standing,
+                                new RoleAssignmentStore.FactorlessHolding(SUBJECT, RoleName.LEDGER_OPERATOR, Instant.now(CLOCK)));
                     }
                     throw new UnsupportedOperationException(method.getName());
                 });

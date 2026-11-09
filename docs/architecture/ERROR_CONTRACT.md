@@ -151,8 +151,11 @@ at a declared step-up, by this renderer at an operation's own. Where the record 
 answered `500 api.InternalError` instead, on both paths, as a permission denial is: refused either way, and the
 answer never claims a refusal the audit trail lacks.
 
-**So does every other refusal at a declared door** (`P15-TSK-039`): at an operator's or a merchant's door of Phases 7 to
-10, any problem this renderer answers has `door.ActRefused` committed first, or is answered `500 api.InternalError`
+**So does a refusal at a declared door, where an actor is proven** (`P15-TSK-039`): at an operator's or a merchant's door
+of Phases 7 to 10, a problem this renderer answers for a proven actor has `door.ActRefused` committed first, or is answered
+`500 api.InternalError`. Three leave no row: a `401`, which has nobody to name; a missing or malformed idempotency key,
+refused by the first interceptor before any actor is proven; a `413` from `RequestSizeLimitFilter`, which never reaches this
+renderer. `409 api.IdempotencyInProgress` is the same request's retry, not a refusal, and is not recorded either
 (`AUDITABLE_ACTIONS.md`).
 
 **`identity.FactorRequiredForRole`** (`P15-TSK-039`; `PRIVILEGED_ACCESS_REVIEW.md` §6): `POST /v1/identities/{id}/roles` for

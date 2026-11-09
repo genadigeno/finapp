@@ -60,7 +60,7 @@ question, not a refactor.
 | `deadletter.DiscardProposed` | **Yes** | An operator proposed discarding an abandoned event or a parked record; nothing changes until a different person approves (`P15-TSK-028`). |
 | `deadletter.DiscardRejected` | **Yes** | A proposed discard of an abandoned event or a parked record was rejected, by anyone, its proposer included; nothing was discarded (`P15-TSK-028`). |
 | `deadletter.ActRefused` | No | A dead-letter door refused an act - not abandoned, past the dedupe window, one's own proposal; the summary names the act and the refusal's code (`P15-TSK-028`). Recorded `DENIED` in a transaction of its own, after the act's rolled back; a reason is not demanded, because a refused request may have given none. A missing permission or step-up is the interceptor's record. |
-| `door.ActRefused` | No | A request at an operator's or a merchant's door of Phases 7 to 10 was refused or failed (`P15-TSK-039`; the doors declare `@RecordsRefusals`): one record per refused request, committed before the answer. Outcome `DENIED` for a control refusing it, `FAILED` for what was attempted and did not complete, a lookup that found nothing among them. The target is the route pattern; the summary the answered code and status, the path's UUIDs (any other path value is written as `(not an id)`) and a merchant's API key by its public id - never a body, a reason, a secret or a PAN. |
+| `door.ActRefused` | No | A request at an operator's or a merchant's door of Phases 7 to 10 was refused or failed (`P15-TSK-039`; the doors declare `@RecordsRefusals`): one record per refused request with a proven actor, committed before the answer. It records what the door answered: `DENIED` for a control's refusal, `FAILED` for a failure or a lookup that found nothing. The target is the route pattern; the summary the answered code and status, the path's UUIDs and its named codes in their closed shapes (any other value is written as `(not an id)`) and a merchant's API key by its public id - never a body, a reason, a secret or a PAN. |
 | `inbox.RecordParked` | No | A consumer's record failed its bounded retries for a reason of its own and was parked, so its consumer group continued (`P15-TSK-028`). Recorded by the platform, in the transaction that parks it. |
 | `inbox.ParkedRecordReleased` | **Yes** | An operator released a parked record: its failure count cleared and its event republished from the outbox (`P15-TSK-028`). |
 | `inbox.ParkedRecordDiscarded` | **Yes** | A second operator approved discarding a parked record: the consumer will never apply it, and the row is kept (`P15-TSK-028`). |
@@ -108,7 +108,7 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.MfaChallengeFailed` | No | A second-factor challenge was refused. |
 | `identity.AuthorizationDenied` | No | A privileged action was refused because the actor lacked the permission. |
 | `identity.StepUpRefused` | No | A request was refused because its session had not stepped up to the assurance the operation requires. |
-| `identity.FactorlessHoldingsRead` | No | An administrator read the live holdings of a role that can redirect a merchant's money with no enrolled factor (`P15-TSK-039`; `GET /v1/operator/access-review/factorless-holdings`, `ROLE_ASSIGN`): the check of holdings that stood before the rule. It grants and revokes nothing. Written in the read's own transaction; the summary counts what it served. |
+| `identity.FactorlessHoldingsRead` | No | An administrator read the live holdings of a role that can redirect a merchant's money with no enrolled factor (`P15-TSK-039`; `GET /v1/operator/access-review/factorless-holdings`, `ROLE_ASSIGN`, on a `MULTI_FACTOR` session): the check of holdings that stood before the rule. It grants and revokes nothing. Written in the read's own transaction; the summary counts what it served. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.IdentityReinstated` | **Yes** | A suspension was lifted by an administrator and the identity can authenticate again. |
 | `identity.RoleAssigned` | **Yes** | An administrator changed the roles held by an identity, altering what it is permitted to do. |
@@ -168,13 +168,26 @@ record, the denial and every operator act's own record say which population acte
 
 **`door.ActRefused` is the refused or failed act at a privileged door** (`P15-TSK-039`; `THREAT_MODEL.md` T38). Every
 operator and merchant door of Phases 7 to 10 declares `@RecordsRefusals`, and `RefusedActsAreRecordedTest` reads the
-controllers and fails on a new one without it. The record is written by the error contract, so every path to a refusal
-is one path: a domain refusal (a self-approval, a stale echo, a refused kind), a body the framework rejected, a missing
-key, an accident. It commits in a transaction of its own before the answer, because the act's rolled back, and a record
-that cannot be written answers `500 api.InternalError`, never the refusal without its record. An operation's own
-record of a refusal (`credit.ReviewOwnCaseRefused`, an unreadable evidence read) stands beside it: that one says what
-the operation did, this one what the door answered, and the correlation id joins them. A refused step-up has its own
-record and no second one here; a denied permission, likewise; a `401` has nobody to name.
+controllers and fails on a new one without it. The record is written by the error contract, so every problem that
+renders for a proven actor is one path: a domain refusal (a self-approval, a stale echo, a refused kind), a body the
+framework rejected, an accident. It commits in a transaction of its own before the answer, because the act's rolled
+back, and a record that cannot be written answers `500 api.InternalError`, never the refusal without its record. An
+operation's own record of a refusal (`credit.ReviewOwnCaseRefused`, an unreadable evidence read) stands beside it: that
+one says what the operation did, this one what the door answered, and the correlation id joins them.
+
+**It records what the door answered, not what became of the act.** A `5xx` after an earlier transaction of the request
+committed is `FAILED`, and that work may yet complete. A merchant's `404` is `FAILED` whether the dispute is unknown or
+another merchant's: the tenant-scoped statement cannot tell them apart, and answers one `404` on purpose.
+
+**What leaves no row.** A `401` has nobody to name. A missing or malformed idempotency key is refused by the first
+interceptor, before any session or merchant key is proven, so a valid operator posting with no key gets `422
+api.IdempotencyKeyRequired` and no record. A `413` from `RequestSizeLimitFilter` answers outside the dispatcher and never
+reaches the error contract. A denied permission and a refused step-up have records of their own, and
+`409 api.IdempotencyInProgress` is the same request's retry while its first flight runs, not a refusal. **Outside the
+class**: a customer's doors, and Phase 6's merchant operator doors (`com.finapp.app.merchant`: payouts, payout
+destinations, fee schedules, API keys), which keep their own records - a destination's refused step-up is
+`identity.StepUpRefused` and its refused self-approval `merchant.PayoutDestinationApprovalRefused`, and its other refusals
+leave none.
 
 **What bounds the rows a caller can make by being refused.** A refusal can be repeated and each is a row, as a denial
 and a refused step-up are; a client's retry is a second attempt. The bound is who can reach it and what a row holds:
