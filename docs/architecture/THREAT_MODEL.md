@@ -1417,6 +1417,52 @@ the owner.**
 
       *Recommendation*: **(i)**, beside the two workload identities that exist, never a stored credential.
 
+36. **T6's, T7's, T9's, T22's, T34's, T36's and T44's residuals: what the rotation rehearsal leaves** *(added 2026-11-11 by the rotation rehearsal; (e) to (g) by its review's fix round)*. Seven things.
+
+    *(a) ADR-0032's rotation policy for a customer's credential, and its "older than X" report.* ADR-0032 gave Phase 15 both, and no
+    register row held either. Built: a customer's credential changes when its holder changes it, which ends every other session, and its
+    derivation moves to current parameters on its next successful use. Not built: a schedule, and the report. What the report would
+    watch is a database disclosure's cost (T7): a credential under weaker parameters is cheaper to guess offline. *Recommendation*: no
+    scheduled rotation of a customer's credential, which changes on the holder's act or on suspected compromise; and the report as the
+    count of credentials under parameters older than current policy, the upgrade's convergence, postponed until the first change of
+    parameters, because until then every credential is under the first ones and it would read zero.
+
+    *(b) A ring of one version with no check value* (T34). A replica refuses a stored value that does not give its published check value,
+    for every version of a ring holding more than one (a second version listed without one for each refuses) and for any version given
+    one. A ring of one version with none starts as it always has, so a base key overwritten in the store before the first rotation is
+    still found only by its first row failing. The first fill now publishes one (`OPERATIONS_RUNBOOK.md` section 11.7), but nothing
+    requires it. *Recommendation*: require one for every held version off loopback once a real environment exists, so that a replica
+    cannot start without one; until then, publish it at each environment's first fill.
+
+    *(c) A provider's API credential and a report source's* (T22). Their method is the callback secret's, two valid during a window
+    (`SECRET_MANAGEMENT.md` section 5.1), but the window is the provider's to hold: the simulated provider verifies no credential, so a
+    rotation against it would pass whatever was sent. *Recommendation*: rehearse each against the provider's own sandbox when a real
+    provider is connected, which plan section 1.1 defers with every real provider.
+
+    *(d) Three classes not rotated on the cluster* (T6). The migrator's credential (between releases: the role's password and the store
+    change, and the next Job reads it), the source-bucket key (one store change and a roll, every source starting a fresh window once)
+    and the master credential (the managed service's own mechanism). None moves money or needs a window, and the first two use steps the
+    rehearsal ran for other classes. *Recommendation*: rehearse the first two in the operations rehearsal's run of runbook section 11.7,
+    and leave the master credential to the environment, as section 5.1 of `SECRET_MANAGEMENT.md` does.
+
+    *(e) The upgrade path into the check value* (T34). A replica of this release refuses to start when its ring lists two versions and
+    publishes no check value for each. An environment already listing two, rotated before this release, would see every new replica
+    refused while the old ones serve on: closed, not open, and the rollout stalls rather than completes. No environment exists yet, so
+    none is in that state. *Recommendation*: before this release reaches an environment whose ring lists two versions, compute each held
+    version's check value from the store with `infra/scripts/KeyCheckValue.java`, as runbook section 11.29's step 0 computes them, and
+    add `…_RING_CHECKVALUES` in the same overlay change that carries the release; if a rollout has already stalled, add them and roll
+    again, the refused replicas holding nothing.
+
+    *(f) The PostgreSQL and Kafka CA bundles* (T9, T36). `PHASE_15_PLAN.md` section 10's TLS row includes the bundles a replica verifies
+    the database and the brokers against. The rehearsal renewed the edge's certificate; neither bundle was changed under a running fleet,
+    and in a real environment both authorities are the managed services'. *Recommendation*: rehearse a bundle change (both old and new
+    authorities in the bundle, roll, then the old one out) when a managed service first announces one, in the operations rehearsal.
+
+    *(g) The reporting pool refuses a writing role by name* (T44, the review's M8). It refuses `finapp_app`, its two alternating users,
+    the migrator and the superuser by name; a role holding a writer's rights under any other name starts it. *Recommendation*: a
+    capability check at the pool's start, the role refused if `pg_has_role(current_user, 'finapp_app', 'USAGE')` or any
+    `has_table_privilege(…, 'INSERT')` on a ledger table answers true, beside the name check; not built in the rotation rehearsal.
+
 38. **T32's residual: the managed restore, and a logical restore into a managed instance** *(added 2026-11-11 by the restore
     rehearsal; (c) added the same day by its review)*. The rehearsal restores a logical backup into a PostgreSQL it runs itself
     (`OPERATIONS_RUNBOOK.md` section 11.35). Three things it cannot settle.
@@ -1500,52 +1546,6 @@ the owner.**
 
     *Recommendation*: **(c1)**, with a second, customer-only identity as the supported way to bank from the internet. (c2) gives a
     phished operator password back its internet sign-in, which is what this control exists to take away.
-
-36. **T6's, T7's, T9's, T22's, T34's, T36's and T44's residuals: what the rotation rehearsal leaves** *(added 2026-11-11 by the rotation rehearsal; (e) to (g) by its review's fix round)*. Seven things.
-
-    *(a) ADR-0032's rotation policy for a customer's credential, and its "older than X" report.* ADR-0032 gave Phase 15 both, and no
-    register row held either. Built: a customer's credential changes when its holder changes it, which ends every other session, and its
-    derivation moves to current parameters on its next successful use. Not built: a schedule, and the report. What the report would
-    watch is a database disclosure's cost (T7): a credential under weaker parameters is cheaper to guess offline. *Recommendation*: no
-    scheduled rotation of a customer's credential, which changes on the holder's act or on suspected compromise; and the report as the
-    count of credentials under parameters older than current policy, the upgrade's convergence, postponed until the first change of
-    parameters, because until then every credential is under the first ones and it would read zero.
-
-    *(b) A ring of one version with no check value* (T34). A replica refuses a stored value that does not give its published check value,
-    for every version of a ring holding more than one (a second version listed without one for each refuses) and for any version given
-    one. A ring of one version with none starts as it always has, so a base key overwritten in the store before the first rotation is
-    still found only by its first row failing. The first fill now publishes one (`OPERATIONS_RUNBOOK.md` section 11.7), but nothing
-    requires it. *Recommendation*: require one for every held version off loopback once a real environment exists, so that a replica
-    cannot start without one; until then, publish it at each environment's first fill.
-
-    *(c) A provider's API credential and a report source's* (T22). Their method is the callback secret's, two valid during a window
-    (`SECRET_MANAGEMENT.md` section 5.1), but the window is the provider's to hold: the simulated provider verifies no credential, so a
-    rotation against it would pass whatever was sent. *Recommendation*: rehearse each against the provider's own sandbox when a real
-    provider is connected, which plan section 1.1 defers with every real provider.
-
-    *(d) Three classes not rotated on the cluster* (T6). The migrator's credential (between releases: the role's password and the store
-    change, and the next Job reads it), the source-bucket key (one store change and a roll, every source starting a fresh window once)
-    and the master credential (the managed service's own mechanism). None moves money or needs a window, and the first two use steps the
-    rehearsal ran for other classes. *Recommendation*: rehearse the first two in the operations rehearsal's run of runbook section 11.7,
-    and leave the master credential to the environment, as section 5.1 of `SECRET_MANAGEMENT.md` does.
-
-    *(e) The upgrade path into the check value* (T34). A replica of this release refuses to start when its ring lists two versions and
-    publishes no check value for each. An environment already listing two, rotated before this release, would see every new replica
-    refused while the old ones serve on: closed, not open, and the rollout stalls rather than completes. No environment exists yet, so
-    none is in that state. *Recommendation*: before this release reaches an environment whose ring lists two versions, compute each held
-    version's check value from the store with `infra/scripts/KeyCheckValue.java`, as runbook section 11.29's step 0 computes them, and
-    add `…_RING_CHECKVALUES` in the same overlay change that carries the release; if a rollout has already stalled, add them and roll
-    again, the refused replicas holding nothing.
-
-    *(f) The PostgreSQL and Kafka CA bundles* (T9, T36). `PHASE_15_PLAN.md` section 10's TLS row includes the bundles a replica verifies
-    the database and the brokers against. The rehearsal renewed the edge's certificate; neither bundle was changed under a running fleet,
-    and in a real environment both authorities are the managed services'. *Recommendation*: rehearse a bundle change (both old and new
-    authorities in the bundle, roll, then the old one out) when a managed service first announces one, in the operations rehearsal.
-
-    *(g) The reporting pool refuses a writing role by name* (T44, the review's M8). It refuses `finapp_app`, its two alternating users,
-    the migrator and the superuser by name; a role holding a writer's rights under any other name starts it. *Recommendation*: a
-    capability check at the pool's start, the role refused if `pg_has_role(current_user, 'finapp_app', 'USAGE')` or any
-    `has_table_privilege(…, 'INSERT')` on a ledger table answers true, beside the name check; not built in the rotation rehearsal.
 
 ## 7. Decided against
 
