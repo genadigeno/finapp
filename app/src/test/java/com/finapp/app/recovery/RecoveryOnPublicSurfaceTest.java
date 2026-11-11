@@ -62,7 +62,7 @@ class RecoveryOnPublicSurfaceTest {
     @Test
     @DisplayName("a role-holder's initiation on the public surface touches no recovery request, and is recorded")
     void staffInitiationIsRefused() {
-        World world = new World(true);
+        RecoveryWorld world = new RecoveryWorld(true);
         world.initiate(Surface.PUBLIC);
         assertThat(world.recoveryCalls).as("neither the cancellation of a live request nor a new one").isEmpty();
         assertThat(world.written).singleElement().satisfies(record -> {
@@ -77,7 +77,7 @@ class RecoveryOnPublicSurfaceTest {
     @Test
     @DisplayName("a role-holder's completion on the public surface is refused before its token is judged: nothing spent, nothing replaced")
     void staffCompletionIsRefused() {
-        World world = new World(true);
+        RecoveryWorld world = new RecoveryWorld(true);
         assertThat(world.complete(Surface.UNMARKED)).as("one answer, a wrong token's").isFalse();
         assertThat(world.recoveryCalls).as("the token is never presented to the store").isEmpty();
         assertThat(world.written).singleElement().satisfies(record ->
@@ -88,7 +88,7 @@ class RecoveryOnPublicSurfaceTest {
     @Test
     @DisplayName("a customer's recovery on the public surface goes on as before: the role read, then the request's own statements")
     void aCustomerRecovers() {
-        World world = new World(false);
+        RecoveryWorld world = new RecoveryWorld(false);
         world.initiate(Surface.PUBLIC);
         assertThat(world.roleReads).hasValue(1);
         assertThat(world.recoveryCalls).containsExactly("cancelLiveFor", "initiate");
@@ -100,7 +100,7 @@ class RecoveryOnPublicSurfaceTest {
     @Test
     @DisplayName("on the operator surface staff recover, and no role is read")
     void staffRecoverOnTheOperatorSurface() {
-        World world = new World(true);
+        RecoveryWorld world = new RecoveryWorld(true);
         world.initiate(Surface.OPERATOR);
         world.complete(Surface.OPERATOR);
         assertThat(world.roleReads).hasValue(0);
@@ -108,151 +108,4 @@ class RecoveryOnPublicSurfaceTest {
         assertThat(world.written).isEmpty();
     }
 
-    // -----------------------------------------------------------------
-
-    @SuppressWarnings("try") // The Scope is used for its close side effect.
-    private static final class World {
-
-        final IdentityId holder = IdentityId.next(IDS);
-        final List<String> recoveryCalls = new ArrayList<>();
-        final List<AuditRecord> written = new ArrayList<>();
-        final AtomicInteger roleReads = new AtomicInteger();
-        final SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        private final boolean staff;
-        private final RecoveryApplicationService service;
-
-        World(boolean staff) {
-            this.staff = staff;
-            CredentialStore<Connection> noCredentials = unused(CredentialStore.class);
-            SessionStore<Connection> noSessions = unused(SessionStore.class);
-            ContactChannelStore<Connection> noChannels = unused(ContactChannelStore.class);
-            RecoveryService recoveries = new RecoveryService(recoveryStore(), noCredentials, noSessions,
-                    new Argon2PasswordDeriver(new DerivationParameters(1024, 1, 1)), IDS,
-                    new SecureRandom(), (uow, record) -> written.add(record), (uow, envelope, payload, mediaType) -> { });
-            ContactChannelService channels = new ContactChannelService(noChannels, IDS, CLOCK,
-                    new SecureRandom(), (uow, record) -> written.add(record));
-            service = new RecoveryApplicationService(recoveries, channels, new TransactionTemplate(new NoTransactions()),
-                    new NoConnections(), new SimpleMeterRegistry(),
-                    new Authorization(roles(), IDS, CLOCK, (uow, record) -> written.add(record)),
-                    new SurfaceRefusalMeters(registry));
-        }
-
-        void initiate(Surface surface) {
-            try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
-                service.initiate(new LoginIdentifier("someone"), surface);
-            }
-        }
-
-        boolean complete(Surface surface) {
-            try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
-                return service.complete(RecoveryRequestId.next(IDS), Sensitive.of("a-token"),
-                        RawPassword.of("a new password of length"), surface);
-            }
-        }
-
-        double refusals(String type, String kind) {
-            return registry.get("finapp.identity.surface.refusal").tag("type", type).tag("kind", kind).counter().count();
-        }
-
-        @SuppressWarnings("unchecked")
-        private RecoveryRequestStore<Connection> recoveryStore() {
-            return (RecoveryRequestStore<Connection>) Proxy.newProxyInstance(RecoveryRequestStore.class.getClassLoader(),
-                    new Class<?>[] {RecoveryRequestStore.class}, (proxy, method, args) -> {
-                        recoveryCalls.add(method.getName());
-                        return switch (method.getName()) {
-                            case "cancelLiveFor" -> 0;
-                            case "initiate", "consume" -> Optional.empty();
-                            default -> throw new UnsupportedOperationException(method.getName());
-                        };
-                    });
-        }
-
-        @SuppressWarnings("unchecked")
-        private RoleAssignmentStore<Connection> roles() {
-            return (RoleAssignmentStore<Connection>) Proxy.newProxyInstance(RoleAssignmentStore.class.getClassLoader(),
-                    new Class<?>[] {RoleAssignmentStore.class}, (proxy, method, args) -> switch (method.getName()) {
-                        case "liveHolderByLogin", "liveHolderOfRecovery" -> {
-                            roleReads.incrementAndGet();
-                            yield staff ? Optional.of(holder) : Optional.empty();
-                        }
-                        default -> throw new UnsupportedOperationException(method.getName());
-                    });
-        }
-    }
-
-    /** A store nothing here may touch: any call is a failure. Typed by the caller's declaration. */
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static <T> T unused(Class type) {
-        return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, (proxy, method, args) -> {
-            throw new UnsupportedOperationException(type.getSimpleName() + "." + method.getName());
-        });
-    }
-
-    /** A transaction manager that manages nothing. */
-    private static final class NoTransactions extends AbstractPlatformTransactionManager {
-
-        private static final long serialVersionUID = 1L;
-
-        @Override
-        protected Object doGetTransaction() {
-            return new Object();
-        }
-
-        @Override
-        protected void doBegin(Object transaction, TransactionDefinition definition) {}
-
-        @Override
-        protected void doCommit(DefaultTransactionStatus status) {}
-
-        @Override
-        protected void doRollback(DefaultTransactionStatus status) {}
-    }
-
-    /** A source whose one connection answers nothing: every statement here goes through a stood-in store. */
-    private static final class NoConnections implements javax.sql.DataSource {
-
-        private final Connection connection = (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
-                new Class<?>[] {Connection.class}, (proxy, method, args) -> method.getReturnType() == boolean.class ? false : null);
-
-        @Override
-        public Connection getConnection() {
-            return connection;
-        }
-
-        @Override
-        public Connection getConnection(String username, String password) {
-            return connection;
-        }
-
-        @Override
-        public java.io.PrintWriter getLogWriter() {
-            return null;
-        }
-
-        @Override
-        public void setLogWriter(java.io.PrintWriter out) {}
-
-        @Override
-        public void setLoginTimeout(int seconds) {}
-
-        @Override
-        public int getLoginTimeout() {
-            return 0;
-        }
-
-        @Override
-        public java.util.logging.Logger getParentLogger() {
-            return java.util.logging.Logger.getGlobal();
-        }
-
-        @Override
-        public <T> T unwrap(Class<T> iface) {
-            throw new UnsupportedOperationException("unwrap");
-        }
-
-        @Override
-        public boolean isWrapperFor(Class<?> iface) {
-            return false;
-        }
-    }
 }
