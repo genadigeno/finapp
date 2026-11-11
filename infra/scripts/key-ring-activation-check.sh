@@ -12,7 +12,11 @@
 #       while it was active would be refused with nothing having said so, because a version dropped off the top leaves no hole. It
 #       must leave through ring.retired-versions, so that KeyRingRetirementGuard reads the real tables first;
 #   (3) anything that reads like a ring setting in a shape this script does not read: a spelling Spring still binds, a dotted
-#       property, any YAML file. Silence would be the failure.
+#       property, any YAML file. Silence would be the failure;
+#   (4) a published check value changed or removed for a version still held (P15-TSK-020, THREAT_MODEL.md section 6 item 32 (a)):
+#       the replica refuses a stored value that differs from its check value, and the one way round that is to publish the new
+#       value's, which is exactly what makes every row under the old value unreadable. A version's value and its check value never
+#       change once listed; new material goes to a new version.
 #
 # WHAT IT CANNOT PROVE. It compares two commits, so it proves the change was two commits, not that the first rollout finished
 # (OPERATIONS_RUNBOOK.md section 11.29 states that gate; delivery order is P15-TSK-017's once a GitOps controller applies these).
@@ -52,7 +56,20 @@ stems_of() {
     [ -f "$1" ] || return 0
     sed -n -e 's/^ *- *\(FINAPP_[A-Z0-9_]*\)_RING_ACTIVEVERSION=.*/\1/p' \
         -e 's/^ *- *\(FINAPP_[A-Z0-9_]*\)_RING_VERSIONS=.*/\1/p' \
-        -e 's/^ *- *\(FINAPP_[A-Z0-9_]*\)_RING_RETIREDVERSIONS=.*/\1/p' "$1"
+        -e 's/^ *- *\(FINAPP_[A-Z0-9_]*\)_RING_RETIREDVERSIONS=.*/\1/p' \
+        -e 's/^ *- *\(FINAPP_[A-Z0-9_]*\)_RING_CHECKVALUES=.*/\1/p' "$1"
+}
+
+# The check value FILE publishes for VERSION of STEM; nothing if none.
+check_value() {
+    [ -f "$3" ] || return 0
+    sed -n "s/^ *- *$1_RING_CHECKVALUES=\([0-9a-f:, ]*\) *\$/\1/p" "$3" | tail -1 | tr -d ' ' | tr ',' '\n' | sed -n "s/^$2:\([0-9a-f]*\)\$/\1/p"
+}
+
+# The versions STEM's check values name in FILE, comma-separated.
+checked_versions() {
+    [ -f "$2" ] || return 0
+    sed -n "s/^ *- *$1_RING_CHECKVALUES=\([0-9a-f:, ]*\) *\$/\1/p" "$2" | tail -1 | tr -d ' ' | tr ',' '\n' | sed -n 's/^\([0-9]*\):.*/\1/p' | paste -sd, -
 }
 
 # compare BASE HEAD: two directories, each holding a deploy tree. Sets status to 1 on any refusal.
@@ -89,6 +106,19 @@ compare() {
                     echo "$file: ${stem} version $version is listed at the base and is neither held nor retired here: rows under it would be refused" >&2
                     echo "  a version leaves a ring only through ring.retired-versions, which reads the real tables first" >&2
                     status=1
+                fi
+            done
+
+            # (4) A published check value changed or removed for a version still held.
+            for version in $(checked_versions "$stem" "$base/$file" | tr ',' ' '); do
+                if in_list "$version" "${head_versions:-1}"; then
+                    base_check=$(check_value "$stem" "$version" "$base/$file")
+                    head_check=$(check_value "$stem" "$version" "$head/$file")
+                    if [ "$head_check" != "$base_check" ]; then
+                        echo "$file: ${stem} version $version's published check value is changed or removed while the version is held" >&2
+                        echo "  a listed version's value never changes: put new material in a new version, and leave this check value as it was" >&2
+                        status=1
+                    fi
                 fi
             done
         done
@@ -134,6 +164,12 @@ self_test() {
     plant a-dotted-property-spring-binds 1 "$f" 'NOT_A_RING=1' 'finapp.doc.ring.active-version=2'
     plant a-yml-file-is-read 1 deploy/overlays/production/ring.yml 'NOT_A_RING=1' 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_ACTIVEVERSION=2'
     plant spring-is-not-a-ring 0 "$f" 'NOT_A_RING=1' 'spring.versions=1'
+    c1=FINAPP_DOC_RING_CHECKVALUES=1:552d40876e6d9748,2:0ec936eb254d5bcf
+    plant check-values-kept-through-activation 0 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" "FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_ACTIVEVERSION=2|$c1"
+    plant check-value-of-a-held-version-changed 1 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_CHECKVALUES=1:552d40876e6d9748,2:5daa68abe4ec79b0'
+    plant check-value-of-a-held-version-removed 1 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_CHECKVALUES=1:552d40876e6d9748'
+    plant base-check-value-changed-with-one-version 1 "$f" 'FINAPP_DOC_RING_CHECKVALUES=1:552d40876e6d9748' 'FINAPP_DOC_RING_CHECKVALUES=1:5daa68abe4ec79b0'
+    plant check-value-of-a-retired-version-dropped 0 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" 'FINAPP_DOC_RING_VERSIONS=2|FINAPP_DOC_RING_ACTIVEVERSION=2|FINAPP_DOC_RING_RETIREDVERSIONS=1|FINAPP_DOC_RING_CHECKVALUES=2:0ec936eb254d5bcf'
 
     if [ "$failures" -ne 0 ]; then
         echo "!!   $failures plant(s) not refused for their reason" >&2

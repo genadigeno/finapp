@@ -98,6 +98,20 @@ variable "provisioning_stage" {
   }
 }
 
+variable "scram_user_slots" {
+  description = "Each rotating principal's live SCRAM users (P15-TSK-020, add-roll-remove): primary, alternate, or both while a fleet rolls from one to the other. A principal not named has its primary user alone. Each user has its own AmazonMSK_ entry and exactly the principal's ACLs."
+  type        = map(set(string))
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for principal, slots in var.scram_user_slots :
+      contains(keys(yamldecode(file(var.topic_catalogue_path)).principals), principal) && length(slots) > 0 && alltrue([for slot in slots : contains(["primary", "alternate"], slot)])
+    ])
+    error_message = "Each key is a principal of the catalogue, and each holds primary, alternate or both: a principal with no user would hold no credential at all."
+  }
+}
+
 variable "broker_log_kms_key_arn" {
   description = "The customer-managed key the brokers' logs are encrypted under: the security module's logs key."
   type        = string

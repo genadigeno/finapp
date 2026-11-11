@@ -30,9 +30,13 @@ class ConfinedKeyRingTest {
 
     private static final ConfinedKeyRing.RingProperties PROPERTIES = new ConfinedKeyRing.RingProperties(
             "finapp.test.ring.versions", "finapp.test.ring.active-version", "finapp.test.ring.retired-versions",
+            "finapp.test.ring.check-values",
             Map.of(2, "finapp.test.v2.key", 3, "finapp.test.v3.key"));
 
     private static final Instant NOW = Instant.parse("2026-11-09T12:00:00Z");
+
+    /** Versions 1 and 2 of {@link #bytes}, each with its check value: what every listing of two versions now publishes (`P15-TSK-020`). */
+    private static final String CHECKED_1_2 = "1:" + KeyRing.checkValueOf(bytes(1)) + ",2:" + KeyRing.checkValueOf(bytes(2));
 
     /** Obviously not a key: a fill byte, base64-encoded. */
     private static String encoded(int fill) {
@@ -87,6 +91,7 @@ class ConfinedKeyRingTest {
     void aListedVersionIsKnownBeforeItIsActive() {
         MockEnvironment environment = environment()
                 .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", CHECKED_1_2)
                 .withProperty("finapp.test.v2.key", encoded(2));
 
         KeyRing ring = ring(environment);
@@ -101,12 +106,14 @@ class ConfinedKeyRingTest {
     void activationIsTheSecondStep() {
         MockEnvironment environment = environment()
                 .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", CHECKED_1_2)
                 .withProperty("finapp.test.ring.active-version", "2")
                 .withProperty("finapp.test.v2.key", encoded(2));
         assertThat(ring(environment).activeVersion()).isEqualTo(2);
 
         MockEnvironment movedBack = environment()
                 .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", CHECKED_1_2)
                 .withProperty("finapp.test.ring.active-version", "1")
                 .withProperty("finapp.test.v2.key", encoded(2));
         assertThat(ring(movedBack).activeVersion()).isEqualTo(1);
@@ -118,6 +125,7 @@ class ConfinedKeyRingTest {
     void anActiveVersionWithNoKeyRefuses() {
         MockEnvironment environment = environment()
                 .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", CHECKED_1_2)
                 .withProperty("finapp.test.ring.active-version", "2");
 
         assertThatThrownBy(() -> ring(environment))
@@ -128,7 +136,8 @@ class ConfinedKeyRingTest {
     @Test
     @DisplayName("a listed version with no key refuses to start, off loopback, under the marked-default confinement")
     void aListedVersionWithNoKeyRefuses() {
-        MockEnvironment environment = environment().withProperty("finapp.test.ring.versions", "1,2");
+        MockEnvironment environment = environment().withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", CHECKED_1_2);
 
         assertThatThrownBy(() -> ring(environment))
                 .isInstanceOf(IllegalStateException.class)
@@ -140,6 +149,7 @@ class ConfinedKeyRingTest {
     void aVersionsMarkedDefaultIsConfined() {
         MockEnvironment environment = environment()
                 .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", CHECKED_1_2)
                 .withProperty("finapp.test.v2.key", ConfinedCredential.MARKED_LOCAL_DEFAULT);
 
         assertThatThrownBy(() -> ring(environment))
@@ -147,7 +157,12 @@ class ConfinedKeyRingTest {
                 .hasMessageContaining("published local default")
                 .hasMessageContaining("FINAPP_TEST_V2_KEY");
 
-        KeyRing onLoopback = ConfinedKeyRing.read(SPEC, PROPERTIES, encoded(1), 1, environment, true);
+        byte[] derived = SPEC.forVersion(2, "FINAPP_TEST_V2_KEY").decode(ConfinedCredential.MARKED_LOCAL_DEFAULT, true);
+        MockEnvironment loopback = environment()
+                .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", "1:" + KeyRing.checkValueOf(bytes(1)) + ",2:" + KeyRing.checkValueOf(derived))
+                .withProperty("finapp.test.v2.key", ConfinedCredential.MARKED_LOCAL_DEFAULT);
+        KeyRing onLoopback = ConfinedKeyRing.read(SPEC, PROPERTIES, encoded(1), 1, loopback, true);
         assertThat(onLoopback.keyFor(2).getEncoded()).as("derived, and not the base key's bytes").isNotEqualTo(bytes(1));
     }
 
@@ -156,6 +171,7 @@ class ConfinedKeyRingTest {
     void aMalformedVersionKeyRefuses() {
         MockEnvironment environment = environment()
                 .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", CHECKED_1_2)
                 .withProperty("finapp.test.v2.key", "not base64 at all");
 
         assertThatThrownBy(() -> ring(environment))
@@ -175,6 +191,7 @@ class ConfinedKeyRingTest {
 
         MockEnvironment heldAndRetired = environment()
                 .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", CHECKED_1_2)
                 .withProperty("finapp.test.ring.retired-versions", "1")
                 .withProperty("finapp.test.v2.key", encoded(2));
         assertThatThrownBy(() -> ring(heldAndRetired)).isInstanceOf(IllegalStateException.class).hasMessageContaining("both held and retired");
@@ -191,6 +208,7 @@ class ConfinedKeyRingTest {
 
         MockEnvironment middleDropped = environment()
                 .withProperty("finapp.test.ring.versions", "1,3")
+                .withProperty("finapp.test.ring.check-values", "1:" + KeyRing.checkValueOf(bytes(1)) + ",3:" + KeyRing.checkValueOf(bytes(3)))
                 .withProperty("finapp.test.v3.key", encoded(3));
         assertThatThrownBy(() -> ring(middleDropped)).isInstanceOf(IllegalStateException.class).hasMessageContaining("hole");
     }
@@ -214,6 +232,7 @@ class ConfinedKeyRingTest {
     @DisplayName("a version with no configured slot refuses to start, and so does the base version named twice")
     void noSlotAndNamedTwiceRefuse() {
         MockEnvironment noSlot = environment().withProperty("finapp.test.ring.versions", "1,2,3,4")
+                .withProperty("finapp.test.ring.check-values", CHECKED_1_2 + ",3:" + KeyRing.checkValueOf(bytes(3)) + ",4:" + KeyRing.checkValueOf(bytes(4)))
                 .withProperty("finapp.test.v2.key", encoded(2))
                 .withProperty("finapp.test.v3.key", encoded(3));
         assertThatThrownBy(() -> ring(noSlot)).isInstanceOf(IllegalStateException.class).hasMessageContaining("no configured place for version 4");
@@ -245,6 +264,7 @@ class ConfinedKeyRingTest {
     void aRealKeyClassBuildsItsRing() {
         MockEnvironment environment = environment()
                 .withProperty("finapp.doc.ring.versions", "1,2")
+                .withProperty("finapp.doc.ring.check-values", "1:" + KeyRing.checkValueOf(bytes(8)) + ",2:" + KeyRing.checkValueOf(bytes(9)))
                 .withProperty("finapp.doc.ring.active-version", "2")
                 .withProperty("finapp.doc.v2.key", encoded(9));
 
@@ -253,6 +273,73 @@ class ConfinedKeyRingTest {
         assertThat(ring.activeVersion()).isEqualTo(2);
         assertThat(ring.keyFor(1).getEncoded()).isEqualTo(bytes(8));
         assertThat(ring.keyFor(2).getEncoded()).isEqualTo(bytes(9));
+    }
+
+    // ----------------------------------------------------------------- the check values (P15-TSK-020, THREAT_MODEL.md section 6 item 32 (a))
+
+    @Test
+    @DisplayName("once two versions are listed, every one needs a published check value, the base included, or the replica refuses")
+    void checkValuesAreRequiredOnceTwoVersionsAreListed() {
+        MockEnvironment none = environment()
+                .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.v2.key", encoded(2));
+        assertThatThrownBy(() -> ring(none)).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("finapp.test.ring.check-values publishes no check value for version 1");
+
+        MockEnvironment onlyTheNewOne = environment()
+                .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", "2:" + KeyRing.checkValueOf(bytes(2)))
+                .withProperty("finapp.test.v2.key", encoded(2));
+        assertThatThrownBy(() -> ring(onlyTheNewOne)).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no check value for version 1");
+
+        assertThat(ring(environment()).heldVersions()).as("one version and no check value: today's start, unchanged").containsExactly(1);
+    }
+
+    @Test
+    @DisplayName("a listed version's value replaced in its slot refuses the replica, echoing neither the key nor a check value")
+    void aReplacedValueRefusesTheReplica() {
+        MockEnvironment replaced = environment()
+                .withProperty("finapp.test.ring.versions", "1,2")
+                .withProperty("finapp.test.ring.check-values", CHECKED_1_2)
+                .withProperty("finapp.test.v2.key", encoded(7));
+        assertThatThrownBy(() -> ring(replaced)).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("version 2 does not give its published check value")
+                .hasMessageNotContaining(encoded(7))
+                .hasMessageNotContaining(KeyRing.checkValueOf(bytes(2)))
+                .hasMessageNotContaining(KeyRing.checkValueOf(bytes(7)));
+
+        MockEnvironment baseReplaced = environment().withProperty("finapp.test.ring.check-values", "1:" + KeyRing.checkValueOf(bytes(3)));
+        assertThatThrownBy(() -> ring(baseReplaced)).as("one version with a published value is checked too")
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("version 1 does not give its published check value");
+    }
+
+    @Test
+    @DisplayName("a check-value list that does not parse, or names a version twice or one not held, refuses without echoing it")
+    void aMalformedCheckValueListRefuses() {
+        String good = KeyRing.checkValueOf(bytes(1));
+        for (String malformed : new String[] {"1", "1:", "1:" + good + ":x", "x:" + good, "1:" + good.substring(2), "1:" + good + ",",
+                "1:" + good.replace(good.charAt(0), 'z'), "c2VjcmV0"}) {
+            MockEnvironment environment = environment().withProperty("finapp.test.ring.check-values", malformed);
+            assertThatThrownBy(() -> ring(environment)).as("the list [%s]", malformed).isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("finapp.test.ring.check-values").hasMessageNotContaining(malformed);
+        }
+        MockEnvironment twice = environment().withProperty("finapp.test.ring.check-values", "1:" + good + ",1:" + good);
+        assertThatThrownBy(() -> ring(twice)).isInstanceOf(IllegalStateException.class).hasMessageContaining("names one version twice");
+        MockEnvironment notHeld = environment().withProperty("finapp.test.ring.check-values", "1:" + good + ",2:" + good);
+        assertThatThrownBy(() -> ring(notHeld)).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("version 2, which this instance does not hold");
+    }
+
+    @Test
+    @DisplayName("every one of the eight keys reads its check values from a property of its own: the real MfaKey refuses a replaced version")
+    void aRealKeyClassReadsItsCheckValues() {
+        MockEnvironment replaced = environment()
+                .withProperty("finapp.mfa.ring.versions", "1,2")
+                .withProperty("finapp.mfa.ring.check-values", "1:" + KeyRing.checkValueOf(bytes(8)) + ",2:" + KeyRing.checkValueOf(bytes(9)))
+                .withProperty("finapp.mfa.v2.key", encoded(6));
+        assertThatThrownBy(() -> com.finapp.app.mfa.MfaKey.ring(encoded(8), 1, replaced, false))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("version 2 does not give its published check value");
     }
 
     // ----------------------------------------------------------------- the previous-key window

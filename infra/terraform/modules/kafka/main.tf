@@ -56,14 +56,34 @@ locals {
 
   # A role in the catalogue is a SCRAM user here. The name is derived, so ACLs can name it without reading
   # the secret; the secret's "username" must be exactly this (README.md).
-  scram_users = { for principal in keys(local.catalogue.principals) : principal => "${var.name_prefix}-${principal}" }
+  #
+  # A principal's live users (P15-TSK-020, SECRET_MANAGEMENT.md section 5.1's add-roll-remove): its primary user, and during a
+  # rotation its alternate too, each with its own entry and exactly the principal's ACLs, because an ACL names a user and a fleet
+  # half rolled is authenticating as both. The second user exists with its grants before the fleet rolls (one apply), the
+  # application's entries are pointed at it and the fleet rolls, and then the old user leaves (a second apply). A principal
+  # absent from scram_user_slots has its primary user alone, which is every principal's state outside a rotation.
+  scram_slots = {
+    for principal in keys(local.catalogue.principals) : principal => lookup(var.scram_user_slots, principal, toset(["primary"]))
+  }
+  scram_user_entries = flatten([
+    for principal, slots in local.scram_slots : [
+      for slot in slots : {
+        key       = slot == "primary" ? principal : "${principal}-alternate"
+        principal = principal
+        username  = slot == "primary" ? "${var.name_prefix}-${principal}" : "${var.name_prefix}-${principal}-alternate"
+      }
+    ]
+  ])
+  scram_users        = { for user in local.scram_user_entries : user.key => user.username }
+  scram_principal_of = { for user in local.scram_user_entries : user.key => user.principal }
 
   principals_exist = var.provisioning_stage != "brokers"
 
   topic_grants = flatten([
-    for principal, grants in local.catalogue.principals : [
+    for user, principal in local.scram_principal_of : [
       for topic in keys(local.catalogue.topics) : [
-        for operation in grants.topics : {
+        for operation in local.catalogue.principals[principal].topics : {
+          user      = user
           principal = principal
           type      = "Topic"
           name      = topic
@@ -75,11 +95,12 @@ locals {
   ])
 
   group_grants = flatten([
-    for principal, grants in local.catalogue.principals : [
-      for operation in try(grants.groups.operations, []) : {
+    for user, principal in local.scram_principal_of : [
+      for operation in try(local.catalogue.principals[principal].groups.operations, []) : {
+        user      = user
         principal = principal
         type      = "Group"
-        name      = grants.groups.prefix
+        name      = local.catalogue.principals[principal].groups.prefix
         pattern   = "Prefixed"
         operation = operation
       }
@@ -87,8 +108,9 @@ locals {
   ])
 
   cluster_grants = flatten([
-    for principal, grants in local.catalogue.principals : [
-      for operation in try(grants.cluster, []) : {
+    for user, principal in local.scram_principal_of : [
+      for operation in try(local.catalogue.principals[principal].cluster, []) : {
+        user      = user
         principal = principal
         type      = "Cluster"
         name      = "kafka-cluster"
@@ -100,7 +122,7 @@ locals {
 
   acl_grants = {
     for grant in concat(local.topic_grants, local.group_grants, local.cluster_grants) :
-    "${grant.principal}/${grant.type}/${grant.name}/${grant.operation}" => grant
+    "${grant.user}/${grant.type}/${grant.name}/${grant.operation}" => grant
   }
 }
 
@@ -262,7 +284,7 @@ resource "kafka_acl" "catalogue" {
   resource_name                = each.value.name
   resource_type                = each.value.type
   resource_pattern_type_filter = each.value.pattern
-  acl_principal                = "User:${local.scram_users[each.value.principal]}"
+  acl_principal                = "User:${local.scram_users[each.value.user]}"
   acl_host                     = "*"
   acl_operation                = each.value.operation
   acl_permission_type          = "Allow"

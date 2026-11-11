@@ -566,9 +566,14 @@ jobs:
   # the job went green or red, because the artefacts are the evidence.
   # ---------------------------------------------------------------------------
   rehearsal:
-    name: Kubernetes rehearsal (kind)
+    name: Kubernetes rehearsal (kind, ${{ matrix.scope }})
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    # P15-TSK-020: the release's walk and the credential and certificate rotations, each on a cluster and a runner of its own.
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [release, rotations]
     steps:
       - name: Check out, with the history N - 1 is built from
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -581,7 +586,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|infra/scripts/kind-rehearsal|infra/scripts/kind-secrets|infra/kafka/|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
+          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|infra/scripts/kind-rehearsal|infra/scripts/kind-secrets|infra/scripts/KeyCheckValue\.java$|infra/postgres/|infra/kafka/|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -618,13 +623,15 @@ jobs:
 
       - name: The rehearsal
         if: steps.gate.outputs.run == 'true'
+        env:
+          REHEARSAL_SCOPE: ${{ matrix.scope }}
         run: ./infra/scripts/kind-rehearsal.sh
 
       - name: Keep the artefacts
         if: always() && steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: kind-rehearsal
+          name: kind-rehearsal-${{ matrix.scope }}
           path: build/rehearsal/
           if-no-files-found: error
           retention-days: 30

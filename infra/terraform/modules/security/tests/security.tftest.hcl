@@ -407,11 +407,12 @@ run "each_reader_reads_exactly_its_own_entries" {
   assert {
     condition = toset(jsondecode(aws_iam_role_policy.secret_reader["app"].policy).Statement[0].Resource) == toset([
       "arn:aws:secretsmanager:eu-central-1:111111111111:secret:AmazonMSK_finapp-staging-application-??????",
+      "arn:aws:secretsmanager:eu-central-1:111111111111:secret:AmazonMSK_finapp-staging-application-alternate-??????",
       "arn:aws:secretsmanager:eu-central-1:111111111111:secret:finapp/staging/app/FINAPP_DB_URL-??????",
       "arn:aws:secretsmanager:eu-central-1:111111111111:secret:finapp/staging/app/FINAPP_MFA_KEY-??????",
       "arn:aws:secretsmanager:eu-central-1:111111111111:secret:finapp/staging/app/FINAPP_PAYMENTS_WEBHOOK_KEY-??????",
     ])
-    error_message = "The application's reader may not read exactly its own entries and the application's SCRAM entry."
+    error_message = "The application's reader may not read exactly its own entries and the application's two SCRAM entries, the second its rotation's."
   }
 
   assert {

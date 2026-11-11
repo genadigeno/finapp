@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
 
@@ -27,6 +28,14 @@ import org.springframework.core.env.Environment;
  * {@code ring.active-version} move, in a later change. {@code ring.retired-versions} is the third input: a version
  * whose key is gone, checked against the real tables by {@code KeyRingRetirementGuard}. All three are non-secret, so a
  * change to any of them is a line in a reviewed diff, and absent all three the ring is the base key alone.
+ *
+ * <h2>The check values: a value replaced in a listed slot refuses (`P15-TSK-020`)</h2>
+ *
+ * <p>{@code ring.check-values} publishes, per held version, {@link KeyRing#checkValueOf} of the value that version stands for.
+ * <strong>Once more than one version is listed, every held version needs one</strong>, the base included: listing a second
+ * version is the moment a rotation began, and from then a slot overwritten in the store would read as the same version and
+ * leave every row under the old value unreadable. A ring of one version may publish one and is then checked; with none it
+ * starts as it always has, which is the residual {@code THREAT_MODEL.md} section 6 item 36 (b) holds.
  *
  * <h2>What cannot be seen from here</h2>
  *
@@ -49,14 +58,18 @@ public final class ConfinedKeyRing {
      * @param versions the property listing the held versions, comma-separated, default the base version alone
      * @param activeVersion the property holding the active pointer, default the base version
      * @param retiredVersions the property listing retired versions, default none
+     * @param checkValues the property publishing each held version's check value (`P15-TSK-020`), {@code version:hex} pairs,
+     *     comma-separated; required for every held version once more than one is held, checked wherever given
      * @param slots the property of each further version's key; a version beyond these has no way in
      */
-    public record RingProperties(String versions, String activeVersion, String retiredVersions, Map<Integer, String> slots) {
+    public record RingProperties(
+            String versions, String activeVersion, String retiredVersions, String checkValues, Map<Integer, String> slots) {
 
         public RingProperties {
             Objects.requireNonNull(versions, "versions");
             Objects.requireNonNull(activeVersion, "activeVersion");
             Objects.requireNonNull(retiredVersions, "retiredVersions");
+            Objects.requireNonNull(checkValues, "checkValues");
             slots = Map.copyOf(slots);
         }
     }
@@ -91,13 +104,48 @@ public final class ConfinedKeyRing {
                     "The " + spec.name() + " base version " + baseVersion + " is neither held nor retired: every version"
                             + " from the first must stay held until it is declared retired");
         }
+        Map<Integer, String> checkValues = checkValuesOf(environment, properties.checkValues());
+        // From the moment a ring holds two versions a rotation has begun, and a value overwritten in a listed slot would leave
+        // every row under the old value unreadable with nothing having said so (THREAT_MODEL.md section 6 item 32 (a)).
+        if (versions.size() > 1) {
+            for (int version : new TreeSet<>(versions)) {
+                if (!checkValues.containsKey(version)) {
+                    throw new IllegalStateException(
+                            "The " + spec.name() + " holds key versions " + new TreeSet<>(versions) + " and " + properties.checkValues()
+                                    + " publishes no check value for version " + version + ": once a ring holds more than one version"
+                                    + " every one is checked, so that a value replaced after it was listed refuses this replica rather"
+                                    + " than every row under the old value");
+                }
+            }
+        }
         Map<Integer, byte[]> keys = new TreeMap<>();
         for (int version : versions) {
             keys.put(version, keyOf(spec, properties, version, baseVersion, configuredBase, environment, localDefaultPermitted));
         }
-        KeyRing ring = KeyRing.of(spec.name(), keys, active, retired);
-        log.info("Key ring: {}", ring);
+        KeyRing ring = KeyRing.of(spec.name(), keys, active, retired, checkValues);
+        log.info("Key ring: {}{}", ring, checkValues.isEmpty() ? "" : ", every held version's check value matched");
         return ring;
+    }
+
+    /** {@code version:hex} pairs; a malformed element is refused naming the property, never the element. */
+    private static Map<Integer, String> checkValuesOf(Environment environment, String property) {
+        String configured = environment.getProperty(property);
+        if (!isSet(configured)) {
+            return Map.of();
+        }
+        Map<Integer, String> checkValues = new TreeMap<>();
+        for (String element : configured.split(",", -1)) {
+            String[] pair = element.trim().split(":", -1);
+            if (pair.length != 2 || !pair[1].trim().matches("[0-9a-fA-F]{" + (2 * KeyRing.CHECK_VALUE_BYTES) + "}")) {
+                throw new IllegalStateException("The property " + property + " must hold version:check-value pairs, each check value "
+                        + (2 * KeyRing.CHECK_VALUE_BYTES) + " hexadecimal characters");
+            }
+            int version = parseVersion(property, pair[0]);
+            if (checkValues.put(version, pair[1].trim()) != null) {
+                throw new IllegalStateException("The property " + property + " names one version twice");
+            }
+        }
+        return checkValues;
     }
 
     private static byte[] keyOf(

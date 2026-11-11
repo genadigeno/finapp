@@ -17,8 +17,12 @@
 # release N" is a real case: this is a rehearsal's stand-in, and the first real release moves both definitions.
 #
 # THE MODES (REHEARSAL_PROBE), each a deliberate break that must turn the run red: `max-unavailable`, `min-ready`, `skip-replay`,
-# `no-default-deny`. A probe stops as soon as its assertion has gone red or the run has completed green, and the script's exit status
-# says which. MUTATION_TESTING.md records what each was seen to do.
+# `no-default-deny`; under REHEARSAL_SCOPE=rotations (P15-TSK-020) `hmac-previous-dropped` and `grant-missing`. A probe stops as soon as its
+# assertion has gone red or the run has completed green, and the script's exit status says which. MUTATION_TESTING.md records what each
+# was seen to do.
+#
+# THE SCOPES (REHEARSAL_SCOPE). `release`, the default: the walk above. `rotations` (P15-TSK-020): release N alone, then every rotation
+# of kind-rehearsal/rotations.sh (REHEARSAL_ROTATIONS selects some), each under the workload, with the census after it and its rollback.
 #
 # Usage:   infra/scripts/kind-rehearsal.sh
 # Needs:   Docker with buildx, kind (KIND, default `kind`), git, openssl, a JDK for Gradle, sha256sum, tar, base64.
@@ -42,6 +46,10 @@ POLICY_ENGINE=${REHEARSAL_POLICY_ENGINE:-kindnet}
 # own pull of cert-manager both use it. CI never does.
 CA_BUNDLE=${REHEARSAL_CA_BUNDLE:-}
 ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
+# What the run rehearses: `release` (the default, P15-TSK-012's walk from N - 1 to N and back) or `rotations` (P15-TSK-020: release N alone,
+# then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
+SCOPE=${REHEARSAL_SCOPE:-release}
+case $SCOPE in release | rotations) ;; *) echo "?? REHEARSAL_SCOPE is release or rotations, not $SCOPE" >&2; exit 2 ;; esac
 
 KIND_NODE_IMAGE="$KIND_NODE_REPOSITORY:$KIND_NODE_VERSION@$KIND_NODE_DIGEST"
 KUSTOMIZE_IMAGE="$KUSTOMIZE_REPOSITORY:$KUSTOMIZE_VERSION@$KUSTOMIZE_DIGEST"
@@ -361,7 +369,7 @@ wait_job() {
 step build-images
 if [ -z "${REHEARSAL_SKIP_BUILD:-}" ]; then
     build_tree "$ROOT" n
-    [ -n "${REHEARSAL_REUSE_NMINUS1:-}" ] || build_nminus1
+    [ -n "${REHEARSAL_REUSE_NMINUS1:-}" ] || [ "$SCOPE" = rotations ] || build_nminus1
 elif [ -n "${REHEARSAL_NMINUS1_REF:-}" ]; then
     # A reused build still has to say which tree N - 1 was: the hold step reads it, and without it reports itself not exercised.
     printf '%s\n' "$REHEARSAL_NMINUS1_REF" > "$ART/nminus1.ref"
@@ -413,8 +421,13 @@ step images-loaded
 if [ -n "$REUSING" ]; then
     IMAGE_APP_N=$(ref_of_built finapp-app:rehearsal-n)
     IMAGE_MIGRATOR_N=$(ref_of_built finapp-migrator:rehearsal-n)
-    IMAGE_APP_NM1=$(ref_of_built finapp-app:rehearsal-nminus1)
-    IMAGE_MIGRATOR_NM1=$(ref_of_built finapp-migrator:rehearsal-nminus1)
+    if [ "$SCOPE" = rotations ]; then
+        IMAGE_APP_NM1=$IMAGE_APP_N
+        IMAGE_MIGRATOR_NM1=$IMAGE_MIGRATOR_N
+    else
+        IMAGE_APP_NM1=$(ref_of_built finapp-app:rehearsal-nminus1)
+        IMAGE_MIGRATOR_NM1=$(ref_of_built finapp-migrator:rehearsal-nminus1)
+    fi
 else
 if [ "$POLICY_ENGINE" = kube-router ]; then
     load_tagged "$KUBE_ROUTER_REPOSITORY" "$KUBE_ROUTER_VERSION" "$KUBE_ROUTER_DIGEST"
@@ -427,8 +440,14 @@ load_tagged "$TRAEFIK_REPOSITORY" "$TRAEFIK_VERSION" "$TRAEFIK_DIGEST"
 load_tagged "$CURL_REPOSITORY" "$CURL_VERSION" "$CURL_DIGEST"
 IMAGE_APP_N=$(load_built finapp-app:rehearsal-n)
 IMAGE_MIGRATOR_N=$(load_built finapp-migrator:rehearsal-n)
+if [ "$SCOPE" = rotations ]; then
+    # Rotations are rehearsed on release N alone: the first deployment is N's, so every step below that names N - 1 deploys N.
+    IMAGE_APP_NM1=$IMAGE_APP_N
+    IMAGE_MIGRATOR_NM1=$IMAGE_MIGRATOR_N
+else
 IMAGE_APP_NM1=$(load_built finapp-app:rehearsal-nminus1)
 IMAGE_MIGRATOR_NM1=$(load_built finapp-migrator:rehearsal-nminus1)
+fi
 fi
 log "N-1 $IMAGE_APP_NM1 / $IMAGE_MIGRATOR_NM1"
 log "N   $IMAGE_APP_N / $IMAGE_MIGRATOR_N"
@@ -1072,8 +1091,9 @@ log "the budget's arithmetic: $FLEET_INSTANCES instances x ($WRITER_POOL + $REPO
 REPORTING_LOGIN=$(kube -n finapp get secret finapp-app-secrets -o jsonpath='{.data.FINAPP_DB_REPORTING_PASSWORD}' | base64 -d)
 operator_connect() {
     # An operator's session, as finapp_reporting, over TLS: not a superuser, so the reserved slots are not what admit it.
-    printf '%s\n' "$REPORTING_LOGIN" | kube -n finapp exec -i finapp-postgres-0 -c postgres -- /bin/sh -c \
-        'IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql "host=127.0.0.1 dbname=finapp user=finapp_reporting sslmode=require" -X -q -A -t -c "select 1"' 2>/dev/null
+    # The user travels beside the password: after a rotation (P15-TSK-020) the reporting credential is an alternating user's.
+    printf '%s\n%s\n' "$REPORTING_LOGIN" "${REPORTING_USER:-finapp_reporting}" | kube -n finapp exec -i finapp-postgres-0 -c postgres -- /bin/sh -c \
+        'IFS= read -r PGPASSWORD; IFS= read -r PGUSER; export PGPASSWORD PGUSER; exec psql "host=127.0.0.1 dbname=finapp sslmode=require" -X -q -A -t -c "select 1"' 2>/dev/null
 }
 
 sample_fleet() {
@@ -1277,7 +1297,22 @@ rollout() {
     start_reporter "$label"
     ROLLOUT_FROM=$(db_epoch)
     started=$(date +%s)
-    kube -n finapp set image deployment/finapp-app "app=$2" >> "$ART/apply.log" 2>&1 || fail "the image could not be set"
+    case $2 in
+        generation=*)
+            # A rotation's roll (P15-TSK-020, SECRET_MANAGEMENT.md section 5.2 step 3): the pod template's generation moves, and nothing else.
+            kube -n finapp patch deployment finapp-app --type=merge \
+                -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"finapp/rotation-generation\":\"${2#generation=}\"}}}}}" >> "$ART/apply.log" 2>&1 \
+                || fail "the pod template's generation could not be moved"
+            ;;
+        config=*)
+            # A configuration change's roll (P15-TSK-020): what a new hash-named ConfigMap does to the template in a real overlay, here a
+            # counter of its own, because the rehearsal changes the live ConfigMap and its name stays. Never the generation above.
+            kube -n finapp patch deployment finapp-app --type=merge \
+                -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"finapp/rehearsal-configuration\":\"${2#config=}\"}}}}}" >> "$ART/apply.log" 2>&1 \
+                || fail "the pod template could not be changed for a configuration roll"
+            ;;
+        *) kube -n finapp set image deployment/finapp-app "app=$2" >> "$ART/apply.log" 2>&1 || fail "the image could not be set" ;;
+    esac
     if [ "$4" = yes ]; then
         if [ "$PROBE" = min-ready ]; then
             # Three old pods held by the long preStop and three new ones running are six, the quota's own figure, which the probe has raised. Evicting a new pod then makes a seventh.
@@ -1367,6 +1402,14 @@ assert_handler_window() {
 migrations_between() {
     git -C "$(dpath "$ROOT")" diff --name-only "$1" HEAD -- '*/src/main/resources/db/migration/*' | wc -l | tr -d ' '
 }
+
+# The rotations scope (P15-TSK-020) stops the release's walk here: N is deployed, smoked, its census green, the cluster suites passed.
+if [ "$SCOPE" = rotations ]; then
+    # shellcheck source=infra/scripts/kind-rehearsal/rotations.sh
+    . "$DIR/rotations.sh"
+    step end
+    finish
+fi
 
 NM1_REF=$(cat "$ART/nminus1.ref" 2>/dev/null || true)
 step hold
