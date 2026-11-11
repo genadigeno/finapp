@@ -292,7 +292,7 @@ Two edge hosts serve the one API, and which route lives where is derived from wh
 | Surface | Reached from | Routes |
 |---|---|---|
 | Public | The internet | Every route no operator permission guards and not under `/v1/operator`: a customer's, a merchant's and a provider's |
-| Operator | The internal network | `/v1/operator/**`, every `@RequiresPermission` route outside that prefix, and the doors an operator needs for a session (`POST /v1/authentications` and `/v1/authentications/mfa`, the `/v1/sessions` routes, `/v1/me/mfa` and `POST /v1/me/credential`) |
+| Operator | The internal network | `/v1/operator/**`, every `@RequiresPermission` route outside that prefix, and the doors an operator needs for a session (`POST /v1/authentications` and `/v1/authentications/mfa`, the `/v1/sessions` routes, `/v1/me/mfa` and `POST /v1/me/credential`) and, since `P15-TSK-042`, to recover an account (`/v1/recoveries` and its completion, `/v1/me/channels` and its verification) |
 
 The generated lists, `deploy/edge/base/public-routes.yaml` and `operator-routes.yaml`, are never edited. A route added or
 moved shows up as a failing `EdgeAllowListTest` until the regenerated file is copied over, so the change is a reviewed line.
@@ -311,6 +311,15 @@ answer. The per-source limits are coarse: one bucket for each source across each
 
 **The client's address** the application records is the one the edge set from the connection. A client-supplied forwarded header
 never becomes it (`ForwardedAddressTest`).
+
+**Staff use the operator surface for their own access** (`P15-TSK-042`). Each edge states which surface a request arrived on in
+`X-Finapp-Surface` (`public` or `operator`), replacing whatever a client sent, so it is never a client's to set and is not part of the
+published contract. A role-holding identity signs in, steps up, enrols and confirms a factor, changes its password, names a recovery
+channel and recovers on the operator surface alone; on the public surface each of those doors answers it with its ordinary failure
+(`ERROR_CONTRACT.md`, the identity section), counts nothing against its lockout and changes nothing. Customers are answered on both
+surfaces as before. Behind the edge, a request with no usable marker is treated as the public surface's; where nothing is deployed in
+front of the application (its database on loopback) the one port serves both, as it did before the edge. A role-holder is any
+identity holding a live role, read from the grants on every request.
 
 ## 9. What is deliberately not decided here
 

@@ -38,6 +38,12 @@ http:
           # No route upgrades a connection. Should the application ever enable HTTP/2 in the clear, an h2c upgrade forwarded here would be
           # a tunnel past every rule in this file.
           Upgrade: ""
+          # WHICH SURFACE THIS IS (P15-TSK-042). Set, not added: the proxy replaces every value a client sent under this name, in any
+          # case and any number of times, so the application reads one value and it is this edge's. Staff are refused at the doors
+          # that sign in, step up, enrol, change a password or recover on this surface. The word is believed only because
+          # finapp-app-ingress admits nothing but the two controllers to the application's port. edge-check.sh proves the
+          # replacement on the pinned proxy; EdgeManifestsTest holds the name and the word to the application's.
+          X-Finapp-Surface: public
 
     # Above the application's own limit, so the application answers its own 413 and the edge only stops the gross case. Every
     # provider's bound is inside this: a limit at the edge never cuts a signed delivery. EdgeAllowListTest reads both numbers.

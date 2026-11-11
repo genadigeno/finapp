@@ -52,7 +52,10 @@ final class SteppedUpDoor {
         Session session = Session.rehydrate(SessionId.next(IDS), IdentityId.next(IDS), Sensitive.of("hash"), assurance, SessionStatus.ACTIVE, now, now.plusSeconds(600), now.plusSeconds(3600), "test", null);
         Connection connection = unanswering(Connection.class);
         SessionAuthenticationInterceptor interceptor = new SessionAuthenticationInterceptor(sessionsAnswering(session), new TransactionTemplate(new NoTransactions()), new OneConnection(connection), SessionPolicy.current(),
-                new Authorization(rolesAnswering(roles), IDS, CLOCK, (uow, record) -> { }));
+                new Authorization(rolesAnswering(roles), IDS, CLOCK, (uow, record) -> { }),
+                // Where nothing is deployed: these doors are judged by their step-up, not by the surface (P15-TSK-042).
+                new com.finapp.app.surface.RequestSurfaces(true),
+                new com.finapp.app.surface.SurfaceRefusalMeters(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/knock");
         request.addHeader("Authorization", "Bearer a-token-of-any-shape");
         MockHttpServletResponse response = new MockHttpServletResponse();

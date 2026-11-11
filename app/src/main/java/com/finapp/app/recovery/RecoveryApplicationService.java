@@ -1,5 +1,9 @@
 package com.finapp.app.recovery;
 
+import com.finapp.app.surface.Surface;
+import com.finapp.app.surface.SurfaceDoor;
+import com.finapp.app.surface.SurfaceRefusalMeters;
+import com.finapp.identity.Authorization;
 import com.finapp.identity.ContactChannelService;
 import com.finapp.identity.EmailAddress;
 import com.finapp.sharedkernel.security.Sensitive;
@@ -82,17 +86,28 @@ public class RecoveryApplicationService {
     private final java.util.Map<String, io.micrometer.core.instrument.Counter> counters =
             new java.util.LinkedHashMap<>();
 
+    private final Authorization authorization;
+    private final SurfaceRefusalMeters surfaceRefusals;
+
+    /**
+     * @param authorization who holds a role, and the record of a refusal on the public surface (`P15-TSK-042`)
+     * @param surfaceRefusals the meter of those refusals, moved after the transaction commits
+     */
     public RecoveryApplicationService(
             RecoveryService recoveries,
             ContactChannelService channels,
             TransactionTemplate recoveryTransactions,
             DataSource dataSource,
-            MeterRegistry meters) {
+            MeterRegistry meters,
+            Authorization authorization,
+            SurfaceRefusalMeters surfaceRefusals) {
         this.recoveries = Objects.requireNonNull(recoveries, "recoveries must not be null");
         this.channels = Objects.requireNonNull(channels, "channels must not be null");
         this.transactions =
                 Objects.requireNonNull(recoveryTransactions, "recoveryTransactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.authorization = Objects.requireNonNull(authorization, "authorization must not be null");
+        this.surfaceRefusals = Objects.requireNonNull(surfaceRefusals, "surfaceRefusals must not be null");
         Objects.requireNonNull(meters, "meters must not be null");
         for (String meter : java.util.List.of(INITIATION_COUNTER, COMPLETION_COUNTER)) {
             for (String outcome : java.util.List.of("accepted", "refused")) {
@@ -113,24 +128,86 @@ public class RecoveryApplicationService {
      * leak.</strong> A metric is never visible to the caller, and a flood of <em>refused</em>
      * initiations is a probe against identifiers that do not exist - which is the account-takeover
      * signal in its sharpest form, and the one {@code PHASE_1_PLAN.md} §10 calls out by name.
+     *
+     * <p><strong>Staff recover on the operator surface alone</strong> (`P15-TSK-042`). Elsewhere a role-holding identity's
+     * request is refused before anything is cancelled or created - a request from the internet neither starts an operator's
+     * recovery nor kills one the operator started - and the caller gets the same 202. The role read runs on every
+     * initiation the surface does not admit staff on, whatever the identifier names.
      */
-    public void initiate(LoginIdentifier login) {
+    public void initiate(LoginIdentifier login, Surface surface) {
         Objects.requireNonNull(login, "login must not be null");
-        Optional<RecoveryService.Initiated> initiated =
-                inAFlowAsThePlatform(unitOfWork -> recoveries.initiate(unitOfWork, login));
-        count(INITIATION_COUNTER, initiated != null && initiated.isPresent());
-    }
-
-    /** Completes recovery. False is one answer for every reason it could be. */
-    public boolean complete(RecoveryRequestId id, Sensitive<String> token, RawPassword replacement) {
-        Objects.requireNonNull(id, "id must not be null");
-        boolean completed =
-                Boolean.TRUE.equals(
+        Objects.requireNonNull(surface, "surface must not be null");
+        Decided decided =
+                Objects.requireNonNull(
                         inAFlowAsThePlatform(
                                 unitOfWork ->
-                                        recoveries.complete(unitOfWork, id, token, replacement)));
-        count(COMPLETION_COUNTER, completed);
-        return completed;
+                                        refuseStaff(unitOfWork, surface, SurfaceDoor.RECOVERY,
+                                                        () -> authorization.roleHolderSigningInAs(unitOfWork, login))
+                                                ? Decided.REFUSED_ON_SURFACE
+                                                : Decided.of(recoveries.initiate(unitOfWork, login).isPresent())),
+                        "the transaction returned no outcome");
+        count(INITIATION_COUNTER, decided.accepted());
+        afterCommit(decided, SurfaceDoor.RECOVERY, surface);
+    }
+
+    /**
+     * Completes recovery. False is one answer for every reason it could be.
+     *
+     * <p>Including a role-holding identity's request off the operator surface (`P15-TSK-042`), refused before its token is
+     * judged: the token is not spent, no credential is replaced, and the caller cannot tell it from a wrong token.
+     */
+    public boolean complete(
+            RecoveryRequestId id, Sensitive<String> token, RawPassword replacement, Surface surface) {
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(surface, "surface must not be null");
+        Decided decided =
+                Objects.requireNonNull(
+                        inAFlowAsThePlatform(
+                                unitOfWork ->
+                                        refuseStaff(unitOfWork, surface, SurfaceDoor.RECOVERY_COMPLETION,
+                                                        () -> authorization.roleHolderRecovering(unitOfWork, id))
+                                                ? Decided.REFUSED_ON_SURFACE
+                                                : Decided.of(recoveries.complete(unitOfWork, id, token, replacement))),
+                        "the transaction returned no outcome");
+        count(COMPLETION_COUNTER, decided.accepted());
+        afterCommit(decided, SurfaceDoor.RECOVERY_COMPLETION, surface);
+        return decided.accepted();
+    }
+
+    /**
+     * Staff off the operator surface (`P15-TSK-042`): the role read and, for a role-holder, the refusal's record, in the
+     * flow's own transaction and before anything else in it. On a surface that admits staff, nothing is read.
+     */
+    private boolean refuseStaff(
+            Connection unitOfWork,
+            Surface surface,
+            SurfaceDoor door,
+            java.util.function.Supplier<Optional<IdentityId>> holder) {
+        if (surface.admitsRoleHolders()) {
+            return false;
+        }
+        Optional<IdentityId> staff = holder.get();
+        staff.ifPresent(
+                identity ->
+                        authorization.recordPublicSurfaceRefusal(
+                                unitOfWork, identity, door.operation(), surface.tag(), ""));
+        return staff.isPresent();
+    }
+
+    private void afterCommit(Decided decided, SurfaceDoor door, Surface surface) {
+        if (decided.refusedOnSurface()) {
+            surfaceRefusals.record(door, surface);
+        }
+    }
+
+    /** What a flow decided, read after its transaction commits. */
+    private record Decided(boolean accepted, boolean refusedOnSurface) {
+
+        static final Decided REFUSED_ON_SURFACE = new Decided(false, true);
+
+        static Decided of(boolean accepted) {
+            return new Decided(accepted, false);
+        }
     }
 
     /**
