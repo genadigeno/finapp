@@ -218,17 +218,37 @@ public final class Authorization {
             RoleName role,
             IdentityId assignedBy,
             String reason) {
+        return assign(unitOfWork, identityId, role, assignedBy, reason, granted -> "");
+    }
+
+    /**
+     * Grants a role, and runs {@code consequence} on the same unit of work after the row is written and before the record
+     * is (`P15-TSK-043`): what the grant did beside the row, which the record then names. A first role ends the grantee's
+     * sessions here, so one record says both, and a consequence that fails leaves no record and rolls the grant back with
+     * the caller's transaction. Not run when the role was already held: nothing was granted.
+     *
+     * @param consequence given the unit of work; answers the words the record appends to {@code granted=<role>}, or empty
+     */
+    public boolean assign(
+            Connection unitOfWork,
+            IdentityId identityId,
+            RoleName role,
+            IdentityId assignedBy,
+            String reason,
+            java.util.function.Function<Connection, String> consequence) {
         Objects.requireNonNull(reason, "reason must not be null");
+        Objects.requireNonNull(consequence, "consequence must not be null");
 
         Instant at = Instant.now(clock);
         boolean assigned = assignments.assign(unitOfWork, identityId, role, assignedBy, at);
         if (assigned) {
+            String also = Objects.requireNonNull(consequence.apply(unitOfWork), "a consequence answers its words, or empty");
             audit(
                     unitOfWork,
                     identityId,
                     IdentityAuditAction.IDENTITY_ROLE_ASSIGNED,
                     AuditOutcome.SUCCEEDED,
-                    "granted=" + role,
+                    "granted=" + role + (also.isEmpty() ? "" : ", " + also),
                     Optional.of(reason));
         }
         return assigned;

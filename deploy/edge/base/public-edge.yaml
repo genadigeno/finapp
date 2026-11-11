@@ -48,8 +48,8 @@ http:
           # NO CALLER'S TRACE (P15-TSK-023's review). The platform joins an inbound W3C trace context, and its sampler follows the
           # parent's flag: a public caller's traceparent would switch tracing off for its own requests, or choose the trace ids the
           # collectors route by and load one of them. Removed here, so a public request always starts a trace of its own; the operator
-          # edge keeps them for staff's tooling (THREAT_MODEL.md section 6 item 37 (f)). edge-check.sh proves the removal on the pinned
-          # proxy; EdgeManifestsTest holds the three names.
+          # edge removes them too since P15-TSK-043 (THREAT_MODEL.md section 6 item 37 (f)). edge-check.sh proves the removal on the
+          # pinned proxy, on both hosts; EdgeManifestsTest and edge.rego's [edge-trace-context] hold the three names on both edges.
           traceparent: ""
           tracestate: ""
           baggage: ""

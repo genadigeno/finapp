@@ -272,6 +272,22 @@ public final class IdentityAdministration {
      * confirmed factor, so a factor seen here cannot be taken away between this read and the grant. A retried grant to
      * someone already holding the role without a factor is refused too: the answer says what the holding lacks, where
      * reporting success would tell the administrator the rule was satisfied.
+     *
+     * <h2>A first role ends every session the grantee holds</h2>
+     *
+     * <p>`P15-TSK-043`, {@code THREAT_MODEL.md} §6 item 39 (a2). The interceptor checks a session's level and nothing else,
+     * so a session a customer stepped up from the internet would become a staff session at {@code MULTI_FACTOR} the moment a
+     * role is granted. A <strong>first</strong> role - the identity held no live role, read here, on the grant's own unit of
+     * work, as the interceptor and the public doors decide who is staff - moves it from the customer population into the
+     * operator one, so every session it holds is revoked in this transaction, between the grant's row and its record: a
+     * grant that commits has ended them, and one that rolls back, the revocation's failure included, has not. The grantee
+     * signs in again on the operator surface. Every replica reads sessions from PostgreSQL per request, so the next request
+     * on any of them is refused.
+     *
+     * <p>A second role ends nothing: its holder's sessions were issued at doors that already knew it was staff, since the
+     * public doors refuse staff. A retry of a first grant finds it held and ends nothing more - the first attempt ended them
+     * or granted nothing. A re-grant after a revocation is a first role again, because in between the identity was a
+     * customer. A revocation ends nothing: the role stops granting on the next request and the sessions serve a customer.
      */
     public RoleGrant assignRole(
             Connection unitOfWork,
@@ -295,7 +311,14 @@ public final class IdentityAdministration {
                 && enrolments.findActive(unitOfWork, subject, MfaFactorType.TOTP).isEmpty()) {
             return RoleGrant.FACTOR_REQUIRED;
         }
-        return authorization.assign(unitOfWork, subject, role, actor, reason)
+        // Staff is any live role: the same read the interceptor types an act by (Standing.actorType). Under READ COMMITTED a
+        // concurrent grant not yet committed is invisible, so this can only err towards "first", which ends the sessions once
+        // more, harmlessly; a committed role read here was a first role's grant, which ended them.
+        boolean firstRole = authorization.standingOf(unitOfWork, subject).roles().isEmpty();
+        return authorization.assign(unitOfWork, subject, role, actor, reason,
+                        granted -> firstRole
+                                ? "firstRole=true, sessionsRevoked=" + sessions.revokeAll(granted, subject)
+                                : "firstRole=false")
                 ? RoleGrant.GRANTED
                 : RoleGrant.ALREADY_HELD;
     }

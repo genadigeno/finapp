@@ -1,0 +1,136 @@
+# promtool unit tests for the two rules on staff refused where staff are refused (P15-TSK-043), in infra/prometheus/rules/flows.yml's
+# identity group: OperatorPasswordProvenOnPublic pages on any proven refusal, StaffRefusedUnmarked tickets on any unmarked one. Each fires
+# on its series and is silent on the other's and on old counts, over two or three instances; CI runs every file here through promtool
+# (infra/scripts/alert-rules-check.sh). The series are SurfaceRefusalMeters' own, as the scrape names them.
+
+rule_files:
+  - ../rules/flows.yml
+
+evaluation_interval: 1m
+
+tests:
+  # OperatorPasswordProvenOnPublic: one proven refusal from the internet on one of two instances pages, the other instance at zero, wrong
+  # passwords beside it; ten minutes later, nothing new, it is silent: an old count never pages for ever.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="authentication", kind="public", outcome="credential_proven"}'
+        values: '0x5 1x20'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="b:8081", type="authentication", kind="public", outcome="credential_proven"}'
+        values: '0x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="authentication", kind="public", outcome="credential_unproven"}'
+        values: '0+1x25'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: OperatorPasswordProvenOnPublic
+        exp_alerts:
+          - exp_labels:
+              kind: public
+              owner: identity
+              severity: page
+            exp_annotations:
+              summary: "An operator's correct password was refused where staff are refused"
+              description: "A role-holding identity's own password was refused at sign-in in the last 10 minutes, kind public: public is a phished credential in use from the internet, unmarked a request no edge marked. See OPERATIONS_RUNBOOK.md section 11.37."
+      - eval_time: 20m
+        alertname: OperatorPasswordProvenOnPublic
+        exp_alerts: []
+
+  # OperatorPasswordProvenOnPublic: a replica first scraped with its counter already at one (the refusal came between its start and its
+  # first scrape), so increase() reads nothing; the rule's second term pages while the series is new, and stops once it is ten minutes old.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="authentication", kind="unmarked", outcome="credential_proven"}'
+        values: '0x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="c:8081", type="authentication", kind="unmarked", outcome="credential_proven"}'
+        values: '_x5 1x20'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: OperatorPasswordProvenOnPublic
+        exp_alerts:
+          - exp_labels:
+              kind: unmarked
+              owner: identity
+              severity: page
+            exp_annotations:
+              summary: "An operator's correct password was refused where staff are refused"
+              description: "A role-holding identity's own password was refused at sign-in in the last 10 minutes, kind unmarked: public is a phished credential in use from the internet, unmarked a request no edge marked. See OPERATIONS_RUNBOOK.md section 11.37."
+      - eval_time: 17m
+        alertname: OperatorPasswordProvenOnPublic
+        exp_alerts: []
+
+  # OperatorPasswordProvenOnPublic, the opposite case: staff refused everywhere else - wrong passwords, the session doors, unmarked
+  # requests - over two instances, and no password proven: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="authentication", kind="public", outcome="credential_proven"}'
+        values: '0x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="b:8081", type="authentication", kind="unmarked", outcome="credential_proven"}'
+        values: '0x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="authentication", kind="public", outcome="credential_unproven"}'
+        values: '0+2x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="b:8081", type="mfa_challenge", kind="unmarked", outcome="refused"}'
+        values: '0+1x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="b:8081", type="recovery", kind="public", outcome="refused"}'
+        values: '0+1x25'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: OperatorPasswordProvenOnPublic
+        exp_alerts: []
+
+  # StaffRefusedUnmarked: one refusal at the MFA door with no marker on one of two instances tickets; ten minutes later, nothing new, silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="mfa_challenge", kind="unmarked", outcome="refused"}'
+        values: '0x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="b:8081", type="mfa_challenge", kind="unmarked", outcome="refused"}'
+        values: '0x5 1x20'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: StaffRefusedUnmarked
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: ticket
+            exp_annotations:
+              summary: "Staff are being refused for want of the edge's surface marker"
+              description: "A role-holding identity was refused in the last 10 minutes at a request with no usable surface marker: the edge was rolled after the application, or something other than the edge reached it. See OPERATIONS_RUNBOOK.md section 11.37."
+      - eval_time: 20m
+        alertname: StaffRefusedUnmarked
+        exp_alerts: []
+
+  # StaffRefusedUnmarked: a replica first scraped with an unmarked sign-in already counted; the second term tickets while it is new.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="c:8081", type="authentication", kind="unmarked", outcome="credential_unproven"}'
+        values: '_x5 1x20'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: StaffRefusedUnmarked
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: ticket
+            exp_annotations:
+              summary: "Staff are being refused for want of the edge's surface marker"
+              description: "A role-holding identity was refused in the last 10 minutes at a request with no usable surface marker: the edge was rolled after the application, or something other than the edge reached it. See OPERATIONS_RUNBOOK.md section 11.37."
+      - eval_time: 17m
+        alertname: StaffRefusedUnmarked
+        exp_alerts: []
+
+  # StaffRefusedUnmarked, the opposite case: staff refused through the public edge at every door, proven and unproven, over two instances,
+  # every unmarked series at zero - the edge is marking, so nothing to ticket.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="authentication", kind="public", outcome="credential_proven"}'
+        values: '0+1x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="b:8081", type="authentication", kind="public", outcome="credential_unproven"}'
+        values: '0+3x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="credential_change", kind="public", outcome="refused"}'
+        values: '0+1x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="b:8081", type="mfa_challenge", kind="unmarked", outcome="refused"}'
+        values: '0x25'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="authentication", kind="unmarked", outcome="credential_proven"}'
+        values: '0x25'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: StaffRefusedUnmarked
+        exp_alerts: []

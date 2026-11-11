@@ -175,3 +175,10 @@ remains deliberately off metrics.
   tracing off for its own requests, and the collectors route by trace id, so it could choose which one carries its load. A public
   request now always starts its own trace. The operator edge keeps the three headers for staff's tooling, a residue recorded in
   `THREAT_MODEL.md` section 6 item 37 (f).
+- *Dated note (2026-11-12, `P15-TSK-043`, the owner's decision on item 37 (f) (i)):* the operator edge removes them too
+  (`deploy/edge/base/operator-edge.yaml`'s `edge-headers`), so no caller, staff included, can switch tracing off for their own
+  requests or choose the trace ids the collectors route by. `edge.rego`'s `[edge-trace-context]` now asks every edge, with plants on
+  the operator's (a name removed, a name left null); `EdgeManifestsTest` holds both files; `infra/scripts/edge-check.sh` shows the
+  operator host's backend seeing none of the three. What staff's tooling keeps is this ADR's: the identifier the platform mints and
+  answers in `X-Correlation-Id`, and a tool's own reference echoed in `X-Client-Correlation-Id`. Neither edge sets or removes either,
+  and the pinned proxy carries a tool's `X-Correlation-Id` to the replica as sent. The decision above is unchanged.

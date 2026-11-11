@@ -1,7 +1,8 @@
 # Alerts for the critical flows that had dashboard panels and no rule (P15-TSK-025; ADR-0124's Context): identity, ledger, payments, transfers,
 # checkout, merchant, kyc and consent. Their availability is slo.yml's; these read each flow's own domain signal. Thresholds are
 # reference values that Phase 16 calibrates. Each group's owner label is the module that owns the flow, and OPERATIONS_RUNBOOK.md
-# section 11.22 names every alert.
+# section 11.22 names every alert but the abuse group's (section 11.30) and the two on staff refused where staff are refused
+# (section 11.37, P15-TSK-043).
 #
 # No amount, no party, no identifier anywhere: counts, ages and outcomes only (ADR-0072, INV-AUD-02).
 
@@ -43,6 +44,32 @@ groups:
         annotations:
           summary: "Accounts are being locked at a campaign's rate"
           description: "More than 20 accounts were locked in 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: OperatorPasswordProvenOnPublic
+        # Aggregation: sum by (kind) - counters are per instance, one refusal on any of them is the signal, and the kind says where it came
+        # P15-TSK-043 (THREAT_MODEL.md T3): a role-holder's own correct password refused at sign-in where staff are refused. kind="public"
+        # is a phished operator credential in use from the internet; kind="unmarked" is a request no edge marked - the rollout
+        # StaffRefusedUnmarked tickets, or a caller past the edge - and pages too, by the owner's ruling (item 39 (b)): any proven refusal.
+        # The second term is a replica whose counter is already above zero when first scraped (a refusal between its start and its
+        # first scrape), which increase() cannot see; it pages while that series is under ten minutes old.
+        expr: sum by (kind) (increase(finapp_identity_surface_refusal_total{outcome="credential_proven"}[10m])) > 0 or sum by (kind) (finapp_identity_surface_refusal_total{outcome="credential_proven"} > 0 unless finapp_identity_surface_refusal_total{outcome="credential_proven"} offset 10m) > 0
+        for: 0s
+        labels:
+          severity: page
+        annotations:
+          summary: "An operator's correct password was refused where staff are refused"
+          description: "A role-holding identity's own password was refused at sign-in in the last 10 minutes, kind {{ $labels.kind }}: public is a phished credential in use from the internet, unmarked a request no edge marked. See OPERATIONS_RUNBOOK.md section 11.37."
+      - alert: StaffRefusedUnmarked
+        # Aggregation: sum() - counters are per instance, and one refusal on any of them is the signal
+        # P15-TSK-043 (THREAT_MODEL.md T31): staff refused at a public door because the request carried no usable surface marker, so the
+        # application was rolled before the edge, or something other than the edge reached it. Found before an operator is locked out
+        # and calls; the second term is OperatorPasswordProvenOnPublic's.
+        expr: sum(increase(finapp_identity_surface_refusal_total{kind="unmarked"}[10m])) > 0 or sum(finapp_identity_surface_refusal_total{kind="unmarked"} > 0 unless finapp_identity_surface_refusal_total{kind="unmarked"} offset 10m) > 0
+        for: 0s
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Staff are being refused for want of the edge's surface marker"
+          description: "A role-holding identity was refused in the last 10 minutes at a request with no usable surface marker: the edge was rolled after the application, or something other than the edge reached it. See OPERATIONS_RUNBOOK.md section 11.37."
   - name: ledger
     labels:
       owner: ledger
