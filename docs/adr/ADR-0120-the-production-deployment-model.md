@@ -186,5 +186,5 @@ transaction counter below the restored rows' `xid8` values, which ledger `V034`'
 the counter's epoch past them before anything runs. A managed server gives no one its stopped data directory, so it cannot, and a
 logical restore into a managed instance would be refused by the census check. The recommendation, which awaits the owner
 (`THREAT_MODEL.md` §6 item 38), is that with this decision's managed PostgreSQL a restore be physical (point in time or snapshot),
-which carries the counter; nothing here decides it. Rehearsed on containers from a seeded source (2026-11-11); the restore of a
-`kind` rehearsal's database and the managed restore have not run.
+which carries the counter; nothing here decides it. Rehearsed into containers from a seeded source and from a `kind` rehearsal's
+database (2026-11-11); the managed restore has never run.
