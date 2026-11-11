@@ -68,6 +68,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 // P9-TSK-006: the FX evidence key, its own concern.
                                                 "--finapp.fx.evidence.key=CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws=",
                                                 "--finapp.credit.evidence.key=DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0=",
+                                                // P15-TSK-022: the per-source buckets' key, its own concern - marked like the others, so refused off loopback.
+                                                "--finapp.abuse.bucket.key=DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw=",
                                                 // P8-TSK-002: the settlement file key, its own concern.
                                                 "--finapp.settlement.file.key=CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo="))
                 .rootCause()
@@ -112,6 +114,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 // P9-TSK-006: the FX evidence key, its own concern.
                                                 "--finapp.fx.evidence.key=CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws=",
                                                 "--finapp.credit.evidence.key=DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0=",
+                                                // P15-TSK-022: the per-source buckets' key, its own concern - marked like the others, so refused off loopback.
+                                                "--finapp.abuse.bucket.key=DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw=",
                                                 // P8-TSK-002: the settlement file key, its own concern.
                                                 "--finapp.settlement.file.key=CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo=",
                                                 "--spring.datasource.password=supplied-by-the-deployment",
@@ -157,6 +161,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 // P9-TSK-006: the FX evidence key, its own concern.
                                                 "--finapp.fx.evidence.key=CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws=",
                                                 "--finapp.credit.evidence.key=DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0=",
+                                                // P15-TSK-022: the per-source buckets' key, its own concern - marked like the others, so refused off loopback.
+                                                "--finapp.abuse.bucket.key=DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw=",
                                                 // P8-TSK-002: the settlement file key, its own concern.
                                                 "--finapp.settlement.file.key=CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo=",
                                 "--spring.datasource.password=supplied-by-the-deployment",
@@ -225,6 +231,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 // P9-TSK-006: the FX evidence key, its own concern.
                                                 "--finapp.fx.evidence.key=CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws=",
                                                 "--finapp.credit.evidence.key=DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0=",
+                                                // P15-TSK-022: the per-source buckets' key, its own concern - marked like the others, so refused off loopback.
+                                                "--finapp.abuse.bucket.key=DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw=",
                                                 // P8-TSK-002: the settlement file key, its own concern.
                                                 "--finapp.settlement.file.key=CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo=");
     }
