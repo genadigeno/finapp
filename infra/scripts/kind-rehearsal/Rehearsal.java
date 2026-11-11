@@ -734,7 +734,8 @@ public final class Rehearsal {
         while (System.nanoTime() < until) {
             int from = i % 2;
             String key = "tl-" + label + "-" + i + "-" + key();
-            String reference = "tl-" + label + "-" + UUID.randomUUID();
+            // A workload's reference, which the census counts by its prefix (census.sql's one transfer per key).
+            String reference = "wl-telemetry-" + label + "-" + UUID.randomUUID();
             long started = System.nanoTime();
             int status = transferStatus(from, key, reference);
             lines.append(status).append('\t').append(Duration.ofNanos(System.nanoTime() - started).toMillis()).append('\n');
