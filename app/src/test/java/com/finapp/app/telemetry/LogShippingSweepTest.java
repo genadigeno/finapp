@@ -61,7 +61,7 @@ class LogShippingSweepTest {
 
     @DynamicPropertySource
     static void collector(DynamicPropertyRegistry registry) {
-        registry.add("management.opentelemetry.logging.export.otlp.endpoint", () -> COLLECTOR.endpoint("/v1/logs"));
+        registry.add("finapp.telemetry.logs-endpoint", () -> COLLECTOR.endpoint("/v1/logs"));
     }
 
     @AfterAll

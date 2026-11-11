@@ -244,8 +244,8 @@ services:
 
   # The telemetry pipeline (P15-TSK-023, ADR-0124 decision 1). The collector with the committed configuration, unchanged, and the two reference
   # backends, on loopback like everything else here. The application on the host exports to it only when told to:
-  #   MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces
-  #   MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/logs
+  #   FINAPP_TELEMETRY_TRACESENDPOINT=http://localhost:4318/v1/traces
+  #   FINAPP_TELEMETRY_LOGSENDPOINT=http://localhost:4318/v1/logs
   # (OPERATIONS_RUNBOOK.md section 11.34). Tempo's API answers on 3200 and Loki's on 3100. Their data is a developer's, and short-lived.
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.165.0

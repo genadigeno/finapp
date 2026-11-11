@@ -147,8 +147,8 @@ deny contains "[obs-scraper] no policy lets a pod labelled finapp/role: metrics-
 # ------------------------------------------------------------------------------------------- the application's one endpoint
 
 collector_endpoints := {
-	"MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT": "http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/traces",
-	"MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT": "http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/logs",
+	"FINAPP_TELEMETRY_TRACESENDPOINT": "http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/traces",
+	"FINAPP_TELEMETRY_LOGSENDPOINT": "http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/logs",
 }
 
 app_states(name, value) if {

@@ -216,7 +216,7 @@ logging:
 # what a developer's machine should do.
 #
 # THE EXPORT (P15-TSK-023, ADR-0124 decision 1). Kubernetes names the cluster's own collector in the
-# Deployment (MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT and its logging twin), and only
+# Deployment (FINAPP_TELEMETRY_TRACESENDPOINT and its logging twin), and only
 # then does Boot build an OTLP/HTTP exporter for spans and log records. Both leave through batch
 # processors on their own threads with bounded queues: a request never waits on the collector, and
 # a collector that is down, slow or refusing costs dropped telemetry, never a slower or failed

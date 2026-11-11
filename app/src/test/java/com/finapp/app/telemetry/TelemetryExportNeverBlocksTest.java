@@ -55,8 +55,8 @@ class TelemetryExportNeverBlocksTest {
 
     @DynamicPropertySource
     static void collector(DynamicPropertyRegistry registry) {
-        registry.add("management.opentelemetry.tracing.export.otlp.endpoint", () -> COLLECTOR.endpoint("/v1/traces"));
-        registry.add("management.opentelemetry.logging.export.otlp.endpoint", () -> COLLECTOR.endpoint("/v1/logs"));
+        registry.add("finapp.telemetry.traces-endpoint", () -> COLLECTOR.endpoint("/v1/traces"));
+        registry.add("finapp.telemetry.logs-endpoint", () -> COLLECTOR.endpoint("/v1/logs"));
         // A batch as soon as there is anything, so the exporter dials the stand-in during the measurement and not after it.
         registry.add("management.opentelemetry.tracing.export.schedule-delay", () -> "10ms");
         registry.add("management.opentelemetry.tracing.export.max-batch-size", () -> "8");

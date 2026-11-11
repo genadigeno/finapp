@@ -133,7 +133,9 @@ SQL
     done
     printf 'payment=%s file=%s chain=%s\n' "$payment" "$file" "$settled" > "$ART/telemetry-trace.txt"
     psql_query -c "SELECT 'file ' || f.id || ' ' || f.status FROM settlement.settlement_file f WHERE f.id = '$file'::uuid" >> "$ART/telemetry-trace.txt" 2>&1 || true
-    [ -n "$settled" ] || fail "the reconciliation run never allocated the traced payment's expectation: see telemetry-trace.txt"
+    # Every leg is looked up before any verdict, so one missing leg does not hide what the others show.
+    missing=""
+    [ -n "$settled" ] || missing="$missing; the reconciliation run never allocated the payment's expectation (telemetry-trace.txt)"
     run=${settled##*|}
     # Long enough for the tail policy's ten seconds, the load-balancing hop and Tempo's ingest.
     sleep 30
@@ -156,27 +158,27 @@ SQL
         if grep -qF -- "$leg" "$ART/telemetry-trace-payment-spans.txt"; then
             pass "trace: '$leg' found under the payment's correlation"
         else
-            fail "trace: no '$leg' span under the payment's correlation (telemetry-trace-payment-spans.txt)"
+            missing="$missing; no '$leg' span under the payment's correlation"
         fi
     done
     for leg in "http post /v1/operator/settlement/files" "http post /v1/operator/settlement/files/{id}/attestation"; do
         if grep -qF -- "$leg" "$ART/telemetry-trace-file-spans.txt"; then
             pass "trace: '$leg' found under the file's correlation"
         else
-            fail "trace: no '$leg' span under the file's correlation (telemetry-trace-file-spans.txt)"
+            missing="$missing; no '$leg' span under the file's correlation"
         fi
     done
     for leg in settlement.parse settlement.accept; do
         if grep -qF -- "$leg" "$ART/telemetry-trace-intake-spans.txt"; then
             pass "trace: '$leg' found by the file's identifier"
         else
-            fail "trace: no '$leg' span carrying the file's identifier (telemetry-trace-intake-spans.txt)"
+            missing="$missing; no '$leg' span carrying the file's identifier"
         fi
     done
     if grep -qF -- "reconciliation.chunk" "$ART/telemetry-trace-chunk-spans.txt"; then
         pass "trace: the reconciliation run's chunks are in Tempo; the run that settled the payment ($run) is joined to it by the stored chain"
     else
-        fail "trace: no reconciliation.chunk span in Tempo"
+        missing="$missing; no reconciliation.chunk span in Tempo"
     fi
     if [ "${settled%%|*}" != "" ]; then
         pass "trace: the stored chain joins the legs: expectation under $C_PAY $(printf '%s' "$settled" | cut -d'|' -f1), allocated under $(printf '%s' "$settled" | cut -d'|' -f2) by run $run"
@@ -186,6 +188,12 @@ SQL
     telemetry_get finapp-loki:3100 "/loki/api/v1/query_range?query=$(urlencode "{service_name=\"finapp\"} | finapp_correlation_id=\"$C_PAY\"")&start=$((now - 3600))000000000&end=$((now + 60))000000000&limit=1000" \
         > "$ART/telemetry-trace-logs.json" 2>&1 || true
     log "trace: Loki answered $(wc -c < "$ART/telemetry-trace-logs.json") bytes for the payment's correlation"
+    if grep -qF -- "$C_PAY" "$ART/telemetry-trace-logs.json"; then
+        pass "trace: the payment's log records are in Loki under its correlation"
+    else
+        missing="$missing; no log record of the payment's correlation in Loki"
+    fi
+    [ -z "$missing" ] || fail "trace:$missing (the span lists are telemetry-trace-*-spans.txt)"
 }
 
 latency_summary() {
@@ -216,7 +224,6 @@ telemetry_outage() {
                 kube -n finapp-observability rollout status deployment/finapp-collector --timeout=180s >> "$ART/apply.log" 2>&1 || fail "the collector did not come back"
                 # The collector's own allow rules removed: the namespace's default-deny now drops the application's packets, so a connection hangs
                 # until the exporter's own timeout - the slow collector, which a refused connection is not.
-                kube -n finapp-observability get networkpolicy finapp-collector -o yaml > "$WORK/finapp-collector-policy.yaml" 2>>"$ART/apply.log"
                 kube -n finapp-observability delete networkpolicy finapp-collector >> "$ART/apply.log" 2>&1 || cannot "the collector's policy could not be removed"
                 sleep 8
                 ;;
@@ -238,7 +245,8 @@ telemetry_outage() {
         [ "$1" -gt 0 ] || cannot "outage $phase: no request ran"
         eval "OUTAGE_P95_$phase=$4"
     done
-    kube apply -f - < "$WORK/finapp-collector-policy.yaml" >> "$ART/apply.log" 2>&1 || fail "the collector's policy could not be restored"
+    # Restored as rendered: the release's own file, never a copy read back from the cluster.
+    apply_files "$WORK/render/observability/NetworkPolicy.finapp-collector.yaml"
     # Slower is judged against the collector up, with room for this machine's noise: twice the p95 plus 50 ms. A request that waited on the
     # exporter's connect timeout (2 s) or call timeout (5 s) would be far past it.
     for phase in down blackholed; do
