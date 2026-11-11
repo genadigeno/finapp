@@ -34,6 +34,36 @@ compatibility check between releases.
    attestations. The cluster's admission controller refuses an image that is unsigned or comes from an unexpected
    identity. Keyless signing from CI's OIDC identity is the reference. Until a registry and an identity exist, CI proves
    the whole path against a local registry with an ephemeral key, and `kind` proves the refusal.
+
+   *Note (2026-11-11, `P15-TSK-007`), as built:*
+   - **CI** (`admission` job, `infra/scripts/admission-check.sh`) builds both images once, pushes them by digest to a
+     registry of the run's own, and signs each with cosign under a key pair generated for the run in a temporary directory
+     outside the repository. Each gets two attestations, SLSA provenance v1 (the commit, the source, the Dockerfile's
+     pinned bases, the builder) and the CycloneDX SBOM. `cosign verify` and `cosign verify-attestation` accept both images
+     before anything deploys them, and refuse an unsigned image, one signed by another key, and a signed one with no
+     attestations, each by name. Nothing reaches a transparency log, and the job holds no secret and no OIDC token.
+   - **Admission** is the Sigstore policy controller, pinned with its chart (`deploy/operators/policy-controller`):
+     `no-match-policy: deny`, `failurePolicy: Fail`, two replicas, watching the namespaces labelled
+     `policy.sigstore.dev/include` (`finapp` and `finapp-edge`). `deploy/admission` holds three policies. Two match
+     `finapp-app` and `finapp-migrator` by repository name from any registry, one requiring the signature and the other
+     both attestations: one authority that lists attestations checks no signature, and every matching policy must pass.
+     The third is the one exception, the edge's Traefik admitted by its pinned digest alone. The authority is a
+     placeholder until an environment supplies it. On `kind`, the check proves both images admitted, and unsigned,
+     other-key and unattested images refused. It also proves an unsigned init container refused, any image no policy
+     names refused, and a refusal while the controller is down. Each refusal sits beside the identical object admitted in
+     a namespace the policy does not cover.
+   - **Two facts read from the controller's own code** shaped this. Its key authority reads only cosign's tag-based
+     format: the bundle format is keyless-only in v0.15.1. And its webhook is created with no rules, which it fills in
+     when it starts. So a namespace whose pods are created before then is admitted unchecked. The order is the
+     controller, its rules, the policies, then the platform's namespaces (`OPERATIONS_RUNBOOK.md` §11.32).
+   - **Where signatures live, decided**: in a repository of their own per environment (cosign's `COSIGN_REPOSITORY`,
+     read by the policy through `source.oci`), tag-based, with mutable tags and no lifecycle rule. cosign adds a second
+     signature or attestation by rewriting a tag, and under `IMMUTABLE` tags the second `cosign attest` on one digest
+     would be refused. The image repositories keep `IMMUTABLE` tags, and an untagged-expiry rule on them can never reach
+     a signature. The `kind` check proves the policy reading signatures from that repository. `P15-TSK-017` carries the
+     repository and the lifecycle rule.
+   - **The production identity is the owner's** (`THREAT_MODEL.md` §6 item 35). Keyless signing needs `id-token: write`
+     on the signing job alone, and nothing here grants it.
 4. **Delivery is GitOps by pull.** Argo CD syncs environment overlays that are pinned by digest. Promotion is a pull
    request that changes a digest. A production change needs a second person's approval (CODEOWNERS on the production
    overlay) and names the staging evidence for that digest. No CI credential reaches production. The migration Job runs
@@ -124,3 +154,9 @@ pinned. The same digest runs in every environment.
 
 `P15-TSK-005`…`-007`, `-012`, `-017` and `-027` build this ADR. The production signing identity and GitHub's branch and
 environment rules are the owner's to apply when a registry and hosted runners exist.
+
+*(2026-11-11, `P15-TSK-007`:)* decision 3 is built for CI and `kind` (its note above). What remains of it:
+- the production identity, `THREAT_MODEL.md` §6 item 35;
+- the signature repository in each environment's registry, its lifecycle rule, and a promotion that refuses a digest
+  without its signature, all `P15-TSK-017`'s;
+- the install order of the controller before the namespaces it watches, also `P15-TSK-017`'s.

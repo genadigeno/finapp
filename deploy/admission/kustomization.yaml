@@ -1,0 +1,8 @@
+# The admission policies (P15-TSK-007). A root of its own, cluster-scoped, applied after the policy controller is ready and before any
+# overlay whose namespace opts in: the controller's webhook has no rules until it has started, and a namespace whose pods are created
+# before then is admitted unchecked (OPERATIONS_RUNBOOK.md section 11.32 states the order; the GitOps task carries it).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - clusterimagepolicies.yaml
