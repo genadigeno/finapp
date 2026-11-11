@@ -104,11 +104,14 @@ class NoSpringProfileDecidesBehaviourTest {
 
     @Test
     @DisplayName("a YAML profile key nested the way Spring reads it is refused: the flat spelling above is not the only one")
-    void aNestedYamlProfileKeyIsRefused() {
+    void aNestedYamlProfileKeyIsRefused() throws IOException {
         assertThat(profilesKeyIn(Map.of("spring", Map.of("profiles", Map.of("active", "production"))))).isTrue();
         assertThat(profilesKeyIn(Map.of("spring", Map.of("config", Map.of("activate", Map.of("on-profile", "production")))))).isTrue();
         assertThat(profilesKeyIn(Map.of("spring", Map.of("application", Map.of("name", "finapp"))))).isFalse();
-        assertThat(profilesKeyIn(SecretInventoryIsCompleteTest.loadAll(SecretInventoryIsCompleteTest.read("app/src/main/resources/application.yaml")).get(0)))
+        // Read here, not through SecretInventoryIsCompleteTest.read: that one resolves against a root its own @BeforeAll sets, so this
+        // assertion threw a NullPointerException whenever this class ran without it, or before it.
+        Path application = RepositoryPaths.locate("settings.gradle.kts").getParent().resolve("app/src/main/resources/application.yaml");
+        assertThat(profilesKeyIn(SecretInventoryIsCompleteTest.loadAll(Files.readString(application, StandardCharsets.UTF_8)).get(0)))
                 .as("application.yaml itself").isFalse();
     }
 
