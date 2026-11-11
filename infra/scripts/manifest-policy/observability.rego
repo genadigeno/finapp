@@ -28,6 +28,13 @@ in_namespace(doc) if {
 	doc.metadata.namespace == namespace
 }
 
+# The pipeline's own rules hold where the pipeline is rendered: the kind stream renders it with the application, while staging's and
+# production's application overlays, rendered alone, are held to the endpoint rule below and to nothing that needs the pipeline.
+pipeline_rendered if {
+	some doc in main.documents
+	in_namespace(doc)
+}
+
 # ------------------------------------------------------------------------------------------- the namespace's default-deny
 
 denies_everything(policy) if {
@@ -44,6 +51,7 @@ default_denied if {
 }
 
 deny contains "[obs-default-deny] no NetworkPolicy denies every pod of finapp-observability in both directions" if {
+	pipeline_rendered
 	not default_denied
 }
 
@@ -65,14 +73,32 @@ collector_holds if {
 
 # P15-TSK-010's egress admits the collector by this label on 4318; without it every export is dropped silently.
 deny contains "[obs-collector] finapp-collector is not rendered with two replicas or more, finapp/role: telemetry-collector and OTLP/HTTP on 4318" if {
+	pipeline_rendered
 	not collector_holds
 }
 
 # Every ingress rule of a policy selecting the collector names peers, and on 4318 every peer is the application's replicas.
+# Every policy that may select the collector's pods: an empty selector, or one whose every label the collector's pods carry, or one
+# with expressions, which is read as selecting them. A policy reaches the collector by what it selects, not by naming its role.
+collector_labels := object.get(object.get(object.get(collector.spec, "template", {}), "metadata", {}), "labels", {})
+
+may_select_collector(policy) if {
+	selector := main.section(policy.spec, "podSelector")
+	count(main.list_of(selector, "matchExpressions")) > 0
+}
+
+may_select_collector(policy) if {
+	selector := main.section(policy.spec, "podSelector")
+	count(main.list_of(selector, "matchExpressions")) == 0
+	every key, value in main.section(selector, "matchLabels") {
+		collector_labels[key] == value
+	}
+}
+
 collector_policies contains policy if {
 	some policy in main.of_kind("NetworkPolicy")
 	in_namespace(policy)
-	policy.spec.podSelector.matchLabels["finapp/role"] == "telemetry-collector"
+	may_select_collector(policy)
 }
 
 otlp_rule_admits_only_the_application(rule) if {
@@ -99,6 +125,30 @@ deny contains msg if {
 	msg := sprintf("[obs-collector-ingress] %s has an ingress rule naming no peer: every pod in the cluster", [main.label(policy)])
 }
 
+# A rule naming no port admits every port: the peers' unscrubbed 4317 and the counters among them.
+deny contains msg if {
+	some policy in collector_policies
+	some rule in main.list_of(policy.spec, "ingress")
+	count(main.list_of(rule, "ports")) == 0
+	msg := sprintf("[obs-collector-ingress] %s has an ingress rule naming no port: every port of the collector, the peers' 4317 among them", [main.label(policy)])
+}
+
+# The second tier's receiver takes spans already scrubbed by a peer and scrubs nothing itself: only a collector of this namespace may
+# send to it.
+peer_is_a_collector(peer) if {
+	object.keys(peer) == {"podSelector"}
+	peer.podSelector == {"matchLabels": {"finapp/role": "telemetry-collector"}}
+}
+
+deny contains msg if {
+	some policy in collector_policies
+	some rule in main.list_of(policy.spec, "ingress")
+	rule_names_port(rule, 4317)
+	some peer in main.list_of(rule, "from")
+	not peer_is_a_collector(peer)
+	msg := sprintf("[obs-collector-peers] %s admits the peers' unscrubbed 4317 from something other than a collector of finapp-observability", [main.label(policy)])
+}
+
 # ------------------------------------------------------------------------------------------- nothing here reaches the data tier or out
 
 data_tier_ports := {5432, 9092, 9093, 9094}
@@ -110,6 +160,15 @@ deny contains msg if {
 	some port in main.list_of(rule, "ports")
 	port.port in data_tier_ports
 	msg := sprintf("[obs-egress] %s lets a pod of the telemetry pipeline reach port %v of the data tier", [main.label(policy), port.port])
+}
+
+# A rule naming no port is every port, the data tier's among them.
+deny contains msg if {
+	some policy in main.of_kind("NetworkPolicy")
+	in_namespace(policy)
+	some rule in main.list_of(policy.spec, "egress")
+	count(main.list_of(rule, "ports")) == 0
+	msg := sprintf("[obs-egress] %s has an egress rule naming no port: every port, the data tier's among them", [main.label(policy)])
 }
 
 deny contains msg if {
@@ -141,6 +200,7 @@ scraper_reaches_the_application if {
 }
 
 deny contains "[obs-scraper] no policy lets a pod labelled finapp/role: metrics-scraper reach the application's management port, and nothing else on that rule" if {
+	pipeline_rendered
 	not scraper_reaches_the_application
 }
 
@@ -185,5 +245,6 @@ deny contains msg if {
 }
 
 deny contains "[obs-scrub] the collector's configuration renders no pipeline at all" if {
+	pipeline_rendered
 	count(main.section(main.section(collector_config, "service"), "pipelines")) == 0
 }

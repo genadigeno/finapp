@@ -108,6 +108,7 @@ plant_all() {
     edge_plant_on edge-no-backend-timeout "$PUBLIC_EDGE" '/responseHeaderTimeout: 60s/d'
     edge_plant_on edge-no-write-timeout "$STATIC" '/writeTimeout: 120s/d'
     edge_plant_on edge-upgrade-forwarded "$PUBLIC_EDGE" '/^          Upgrade: ""$/d'
+    edge_plant_on edge-trace-context-forwarded "$PUBLIC_EDGE" '/^          traceparent: ""$/d'
     edge_plant_on edge-operator-no-allowlist "$OPERATOR_ROUTES" '1,/internal-only, body-cap/s/internal-only, //'
     # P15-TSK-042: each edge states its own surface on every router.
     edge_plant_on edge-surface-unstated "$PUBLIC_EDGE" '/^          X-Finapp-Surface: public$/d'
@@ -307,6 +308,7 @@ edge_refused edge-spool-over-limit edge-spool
 edge_refused edge-no-backend-timeout edge-timeouts
 edge_refused edge-no-write-timeout edge-timeouts
 edge_refused edge-upgrade-forwarded edge-upgrade
+edge_refused edge-trace-context-forwarded edge-trace-context
 edge_refused edge-operator-no-allowlist edge-routes-operator
 edge_refused edge-surface-unstated edge-surface
 edge_refused edge-surface-wrong-word edge-surface
@@ -621,6 +623,32 @@ surface_seen "the public host, a forged marker named hop-by-hop" public --http1.
     -H 'X-Finapp-Surface: operator' "$PUBLIC/v1/me"
 surface_seen "the operator host, the marker named hop-by-hop" operator --http1.1 -X POST -H 'Connection: X-Finapp-Surface' \
     "$OPERATOR/v1/authentications"
+
+# P15-TSK-023's review. The platform joins an inbound W3C trace context and samples by its flag, so a public caller's would decide its own
+# requests' tracing and choose the trace ids the collectors route by. The public edge removes all three names; the operator edge keeps
+# them for staff's tooling (THREAT_MODEL.md section 6 item 37 (f)). A client's trace context: none of it may reach the backend publicly.
+# trace_context_seen <label> <wanted count of the three names> <curl args...>
+trace_context_seen() {
+    label=$1 wanted=$2
+    shift 2
+    answer=$(client curl -sk --max-time 15 "$@" | tr -d '\r')
+    seen=$(printf '%s\n' "$answer" | grep -ic '^\(traceparent\|tracestate\|baggage\):' || true)
+    if [ "$seen" = "$wanted" ]; then
+        echo "ok   $label: the backend saw $seen of the client's traceparent, tracestate and baggage"
+    else
+        printf '%s\n' "$answer" | grep -i '^\(traceparent\|tracestate\|baggage\):'
+        echo "!!   $label: the backend saw $seen of the client's trace context headers, not $wanted"
+        status=1
+    fi
+}
+echo "==   a public caller's trace context never reaches a replica (edge-trace-context)"
+TRACE_CONTEXT="-H traceparent:00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00 -H tracestate:vendor=planted -H baggage:planted=1"
+# shellcheck disable=SC2086
+trace_context_seen "the public host" 0 $TRACE_CONTEXT "$PUBLIC/v1/me"
+# shellcheck disable=SC2086
+trace_context_seen "the public host over HTTP/2" 0 --http2 $TRACE_CONTEXT "$PUBLIC/v1/me"
+# shellcheck disable=SC2086
+trace_context_seen "the operator host, which keeps them" 3 -X POST $TRACE_CONTEXT "$OPERATOR/v1/authentications"
 
 client sh -c 'head -c 1048576 /dev/zero > /tmp/one-mib; head -c 3145728 /dev/zero > /tmp/three-mib; head -c 1900000 /dev/zero > /tmp/almost-two'
 

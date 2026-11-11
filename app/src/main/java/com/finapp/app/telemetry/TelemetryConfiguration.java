@@ -65,6 +65,17 @@ class TelemetryConfiguration {
         return new OtlpLogShipping(openTelemetry);
     }
 
+    /**
+     * The SDK's last export, bounded and in the ordered stop (`P15-TSK-023`'s review): a collector that never answers cannot hold
+     * a stopping pod past {@link TelemetryFlush#BOUND}, so the grace the producer's and the pools' closes need is theirs.
+     */
+    @Bean
+    TelemetryFlush telemetryFlush(org.springframework.beans.factory.ObjectProvider<io.opentelemetry.sdk.trace.SdkTracerProvider> traces,
+            org.springframework.beans.factory.ObjectProvider<io.opentelemetry.sdk.logs.SdkLoggerProvider> logs,
+            org.springframework.beans.factory.ObjectProvider<io.opentelemetry.sdk.metrics.SdkMeterProvider> metrics) {
+        return TelemetryFlush.of(traces, logs, metrics);
+    }
+
     /** The collector's OTLP/HTTP traces endpoint, when the deployment names one. */
     static final String TRACES_ENDPOINT = "finapp.telemetry.traces-endpoint";
 

@@ -7,10 +7,11 @@
 #                       Kafka, another namespace and the internet; an unlabelled pod there reaches nothing; the application reaches the collector
 #   telemetry_trace     one card payment, its PSP settlement file and its reconciliation run, every leg looked up in Tempo and Loki, and the
 #                       stored chain that joins the legs no span can (the run decides an item in the file's correlation, never the payment's)
-#   telemetry_outage    the collector scaled to zero, then black-holed by its own namespace's policy, each in the middle of a stream of requests:
-#                       none failed, none slower than the bound below, every replica ready throughout
-#   telemetry_sweep     the needles - the traced payment's planted amount and every rehearsal customer's party - over everything Loki and Tempo
-#                       hold of the run and every replica's console
+#   telemetry_outage    the collector scaled to zero (a refusal), then a stand-in that accepts and never answers (a hang), each in the middle
+#                       of a stream of requests: none failed, none unresolved, none slower than the bound below, every replica ready
+#   telemetry_sweep     the needles - the traced payment's amount, a record planted through the collector with an amount and a card number,
+#                       and every rehearsal customer's party - over every record Loki holds of the run, the latest and the flow's traces
+#                       and every replica's console; the planted record and a correlation a replica printed found in Loki as controls
 #   telemetry_scrape    the deployed Prometheus: job finapp, every replica up, env="kind" and never env="local"
 
 TELEMETRY_PROXY=/api/v1/namespaces/finapp-observability/services
@@ -104,6 +105,7 @@ span_names_of() {
 }
 
 telemetry_trace() {
+    telemetry_debug_pod
     # The platform mints every request's correlation (ADR-0034), so each leg is looked up by the correlation it really ran in: each request's
     # own, read from its answer; the payment's events' and the expectation's, as the platform stored them; the file's legs by its identifier.
     tag=$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
@@ -226,13 +228,13 @@ EOF
     leg "carrying the file's identifier" "settlement.parse" "$file_spans"
     leg "carrying the file's identifier" "settlement.accept" "$file_spans"
     leg "in Tempo for the reconciliation runs" "reconciliation.chunk" "$chunk_spans"
-    # The client sends its own W3C traceparent on both requests, and the platform joins it rather than replacing it (TracingTest), here
-    # through the edge. Reported, not judged: the legs above are found by what the platform itself stores, whatever a caller sends.
+    # The client sent its own W3C traceparent on both requests, through the public edge, which removes it (edge-headers): a public caller
+    # may not set the sampler's flag or choose the trace ids the collectors route by. So Tempo holds nothing under the client's trace id.
     customer_spans=$(span_names_of "$t_customer" | sed 's/^/customer-trace /' | tee -a "$ART/telemetry-trace-spans.txt")
-    if has_span "$customer_spans" "http post /v1/payments/{id}/confirmation" && has_span "$customer_spans" "http post /v1/payments"; then
-        pass "trace: the client's traceparent was joined on both its requests, not replaced ($t_customer)"
+    if [ -z "$customer_spans" ]; then
+        pass "trace: the customer's own traceparent was removed at the public edge: Tempo holds nothing under its trace id ($t_customer)"
     else
-        log "trace: the customer's own trace $t_customer does not hold both requests (telemetry-trace-spans.txt, customer-trace)"
+        missing="$missing; the customer's own trace id $t_customer reached Tempo through the public edge"
     fi
     # The expectation was opened by the payment's own flow: its correlation is one the payment's requests or events ran in.
     case " $c_create $c_confirm $c_events " in
@@ -271,20 +273,69 @@ all_ready() {
     [ "$(sample_fleet | awk -F'|' '$3 != "True" {n++} END {print n+0}')" = 0 ]
 }
 
+hung_collector() {
+    # hung_collector <file>: a pod the collector's Service selects and its policy admits, on 4318, that accepts every connection and never
+    # answers - the slow collector, which a refused connection is not. kube-router REJECTs traffic no policy allows, so removing the
+    # collector's policy would only have refused faster.
+    cat > "$1" <<YAML
+apiVersion: v1
+kind: Pod
+metadata:
+  name: np-obs-hung
+  namespace: finapp-observability
+  labels:
+    app.kubernetes.io/name: finapp-collector
+    finapp/role: telemetry-collector
+spec:
+  automountServiceAccountToken: false
+  terminationGracePeriodSeconds: 0
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    runAsGroup: 101
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: hang
+      image: $CURL_IMAGE
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/sh", "-c", "while true; do nc -l -p 4318 >/dev/null 2>&1 || sleep 1; done"]
+      ports:
+        - name: otlp-http
+          containerPort: 4318
+      resources:
+        requests: {cpu: 100m, memory: 128Mi}
+        limits: {cpu: 100m, memory: 128Mi}
+      securityContext:
+        allowPrivilegeEscalation: false
+        privileged: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+YAML
+}
+
 telemetry_outage() {
-    for phase in up down blackholed; do
+    # Three phases of a minute of one-cent transfers: the collector up; stopped, which kube-proxy answers with a refusal (no endpoint);
+    # and hung, a stand-in that accepts and never answers, so the exporter waits out its own timeouts on its own threads.
+    for phase in up down hung; do
         case $phase in
             down)
                 kube -n finapp-observability scale deployment/finapp-collector --replicas=0 >> "$ART/apply.log" 2>&1 || cannot "the collector could not be stopped"
                 kube -n finapp-observability wait --for=delete pod -l app.kubernetes.io/name=finapp-collector --timeout=120s >> "$ART/apply.log" 2>&1 || true
                 ;;
-            blackholed)
-                kube -n finapp-observability scale deployment/finapp-collector --replicas=2 >> "$ART/apply.log" 2>&1 || cannot "the collector could not be restarted"
-                kube -n finapp-observability rollout status deployment/finapp-collector --timeout=180s >> "$ART/apply.log" 2>&1 || fail "the collector did not come back"
-                # The collector's own allow rules removed: the namespace's default-deny now drops the application's packets, so a connection hangs
-                # until the exporter's own timeout - the slow collector, which a refused connection is not.
-                kube -n finapp-observability delete networkpolicy finapp-collector >> "$ART/apply.log" 2>&1 || cannot "the collector's policy could not be removed"
-                sleep 8
+            hung)
+                hung_collector "$WORK/pod-obs-hung.yaml"
+                apply_files "$WORK/pod-obs-hung.yaml"
+                kube -n finapp-observability wait --for=condition=Ready pod/np-obs-hung --timeout=120s >> "$ART/apply.log" 2>&1 \
+                    || cannot "the hung collector did not start"
+                # The control: the Service's one endpoint is the stand-in, which takes a connection and answers nothing within five seconds.
+                endpoints=$(kube -n finapp-observability get endpointslices -l kubernetes.io/service-name=finapp-collector \
+                    -o jsonpath='{range .items[*].endpoints[*]}{.targetRef.name}{"\n"}{end}' 2>/dev/null | grep -c . || true)
+                answered=$(kube -n finapp exec "$TELEMETRY_DEBUG_POD" -c np-obs-debug -- curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+                    -X POST http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/logs 2>/dev/null || true)
+                log "outage hung: the collector Service has $endpoints endpoint(s), and a POST to it answered '${answered:-nothing}' within 5 s"
+                [ "$endpoints" = 1 ] && [ "${answered:-000}" = 000 ] || cannot "the hung collector is not the Service's one endpoint, or it answered"
                 ;;
         esac
         client latency "$phase" 60 >> "$ART/telemetry-outage.log" 2>&1 &
@@ -295,20 +346,23 @@ telemetry_outage() {
             sleep 3
         done
         wait "$latency_pid" || fail "the latency client failed in phase $phase"
+        unresolved=$(grep -c 'UNRESOLVED$' "$CLIENT/workload-telemetry-$phase.tsv" || true)
         # shellcheck disable=SC2046
         set -- $(latency_summary "$phase")
-        printf '%s\trequests=%s\tfailed=%s\tp50=%s\tp95=%s\tmax=%s\tnot-ready-samples=%s\n' "$phase" "$1" "$2" "$3" "$4" "$5" "$not_ready" >> "$ART/telemetry-outage.tsv"
-        log "outage $phase: requests=$1 failed=$2 p50=$3ms p95=$4ms max=$5ms, samples with a replica not ready: $not_ready"
+        printf '%s\trequests=%s\tfailed=%s\tp50=%s\tp95=%s\tmax=%s\tnot-ready-samples=%s\tunresolved=%s\n' "$phase" "$1" "$2" "$3" "$4" "$5" "$not_ready" "$unresolved" >> "$ART/telemetry-outage.tsv"
+        log "outage $phase: requests=$1 failed=$2 p50=$3ms p95=$4ms max=$5ms, samples with a replica not ready: $not_ready, unresolved: $unresolved"
         [ "$2" = 0 ] || fail "outage $phase: $2 requests failed"
+        [ "$unresolved" = 0 ] || fail "outage $phase: $unresolved transfers never answered, so the census cannot count them"
         [ "$not_ready" = 0 ] || fail "outage $phase: a replica was not ready while the collector was $phase"
         [ "$1" -gt 0 ] || cannot "outage $phase: no request ran"
         eval "OUTAGE_P95_$phase=$4"
     done
-    # Restored as rendered: the release's own file, never a copy read back from the cluster.
-    apply_files "$WORK/render/observability/NetworkPolicy.finapp-collector.yaml"
+    kube -n finapp-observability delete pod np-obs-hung --wait=true --timeout=60s >> "$ART/apply.log" 2>&1 || true
+    kube -n finapp-observability scale deployment/finapp-collector --replicas=2 >> "$ART/apply.log" 2>&1 || cannot "the collector could not be restarted"
+    kube -n finapp-observability rollout status deployment/finapp-collector --timeout=180s >> "$ART/apply.log" 2>&1 || fail "the collector did not come back"
     # Slower is judged against the collector up, with room for this machine's noise: twice the p95 plus 50 ms. A request that waited on the
     # exporter's connect timeout (2 s) or call timeout (5 s) would be far past it.
-    for phase in down blackholed; do
+    for phase in down hung; do
         eval "p95=\$OUTAGE_P95_$phase"
         bound=$(( OUTAGE_P95_up * 2 + 50 ))
         if [ "$p95" -le "$bound" ]; then
@@ -319,11 +373,64 @@ telemetry_outage() {
     done
 }
 
+telemetry_debug_pod() {
+    # A debug container on a replica of N, inside its network namespace: the one place the collector's policy admits on 4318 besides the
+    # application itself. The outage's control and the sweep's planted record are sent from it.
+    TELEMETRY_DEBUG_POD=$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{.items[0].metadata.name}')
+    kube -n finapp debug "$TELEMETRY_DEBUG_POD" --profile=restricted --image="$CURL_IMAGE" --container=np-obs-debug --target=app -- sleep 3600 \
+        >> "$ART/apply.log" 2>&1 || cannot "the telemetry debug container could not be added to $TELEMETRY_DEBUG_POD"
+    deadline=$(( $(date +%s) + 120 ))
+    until kube -n finapp exec "$TELEMETRY_DEBUG_POD" -c np-obs-debug -- true >/dev/null 2>&1; do
+        [ "$(date +%s)" -lt "$deadline" ] || cannot "the telemetry debug container did not start on $TELEMETRY_DEBUG_POD"
+        sleep 2
+    done
+}
+
 telemetry_sweep() {
-    now=$(date +%s)
+    # The needles: every rehearsal party, the traced payment's amount, and what this step plants itself below - an amount after a JSON
+    # escape and a card number, in a record sent to the collector as a replica sends one, so the sweep can go red on this cluster.
+    PLANT_AMOUNT="6234.18 EUR"
+    PLANT_PAN="5555 5555 5555 4444"
+    control="sweep-control-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
     psql_query -c "SELECT i.party_id FROM identity.identity i WHERE i.party_id IS NOT NULL" | tr -d ' ' | grep . > "$WORK/needles.txt" || true
-    printf '%s\n' "${TRACE_AMOUNT:-731.94}" >> "$WORK/needles.txt"
+    printf '%s\n%s\n%s\n' "${TRACE_AMOUNT:-731.94}" "6234.18" "$PLANT_PAN" >> "$WORK/needles.txt"
     needles=$(grep -c . "$WORK/needles.txt" || true)
+    now=$(date +%s)
+    cat > "$WORK/planted-record.json" <<JSON
+{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"finapp"}}]},"scopeLogs":[{"scope":{"name":"finapp"},"logRecords":[{"timeUnixNano":"${now}000000000","severityNumber":9,"severityText":"INFO","body":{"stringValue":"{\\"message\\":\\"planted by the sweep\\\\n$PLANT_AMOUNT for card $PLANT_PAN\\",\\"correlationId\\":\\"$control\\"}"},"attributes":[{"key":"finapp.correlation_id","value":{"stringValue":"$control"}}]}]}]}]}
+JSON
+    planted=$(kube -n finapp exec -i "$TELEMETRY_DEBUG_POD" -c np-obs-debug -- curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+        -H 'Content-Type: application/json' --data-binary @- http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/logs \
+        < "$WORK/planted-record.json" 2>/dev/null || true)
+    log "sweep: the planted record was answered $planted by the collector"
+    [ "$planted" = 200 ] || cannot "the collector did not take the planted record: $planted"
+    # The record's way through the batch, the collector's own batch and Loki's ingest.
+    sleep 20
+    : > "$ART/telemetry-sweep-console.txt"
+    for pod in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name); do
+        kube -n finapp logs "$pod" --all-containers >> "$ART/telemetry-sweep-console.txt" 2>&1 || true
+    done
+    now=$(date +%s)
+    loki_by() {
+        # loki_by <correlation> <file>: the records Loki holds under that correlation, counted by their timestamps.
+        telemetry_get finapp-loki:3100 "/loki/api/v1/query_range?query=$(urlencode "{service_name=\"finapp\"} | finapp_correlation_id=\"$1\"")&start=$((now - 7200))000000000&end=$((now + 60))000000000&limit=100" \
+            > "$2" 2>/dev/null || true
+        tr ',' '\n' < "$2" | grep -c '"[0-9]\{19\}"' || true
+    }
+    # The controls. The planted record arrived, scrubbed: it is in Loki under its correlation, with the scrub's mark and without either
+    # needle. And a correlation a replica printed on its console is in Loki too: what a replica ships is found by its correlation.
+    controls=$(loki_by "$control" "$ART/telemetry-sweep-planted.json")
+    [ "$controls" -ge 1 ] || fail "sweep: the planted record never reached Loki, so the sweep could not have seen it leak"
+    grep -qF '[scrubbed]' "$ART/telemetry-sweep-planted.json" || fail "sweep: the planted record reached Loki without the scrub's mark"
+    pass "sweep: the planted record reached Loki under its correlation, scrubbed"
+    shipped=0
+    for correlation in $(grep -o '"correlationId":"[^"]*"' "$ART/telemetry-sweep-console.txt" | sed 's/.*:"\([^"]*\)"/\1/' | grep -v '^sweep-control' | sort -u | head -5); do
+        records=$(loki_by "$correlation" "$WORK/console-correlation.json")
+        printf '%s\t%s\n' "$correlation" "$records" >> "$ART/telemetry-sweep-console-correlations.tsv"
+        shipped=$((shipped + records))
+    done
+    [ "$shipped" -ge 1 ] || fail "sweep: no correlation a replica printed was found in Loki: a record's correlation never arrives"
+    pass "sweep: correlations the replicas printed are in Loki, $shipped records under five of them (telemetry-sweep-console-correlations.tsv)"
     # Loki is searched for the needles themselves, over every record of the last two hours rather than a sample of the latest; the count of
     # records in the same window is the control. A needle's dot is a class, so the pattern needs no escaping.
     pattern=$(sed 's/\./[.]/g' "$WORK/needles.txt" | paste -sd'|' -)
@@ -333,21 +440,17 @@ telemetry_sweep() {
     telemetry_get finapp-loki:3100 "/loki/api/v1/query_range?query=$(urlencode "{service_name=\"finapp\"} |~ \"$pattern\"")&start=$((now - 7200))000000000&end=$((now + 60))000000000&limit=1000" \
         > "$ART/telemetry-sweep-loki.json" 2>&1 || fail "Loki could not be searched for the needles"
     loki_found=$(tr ',' '\n' < "$ART/telemetry-sweep-loki.json" | grep -c '"[0-9]\{19\}"' || true)
-    # Tempo: the latest hundred traces, and every trace of the traced flow's own correlations and of the trace its customer started.
+    # Tempo: the latest hundred traces, and every trace of the traced flow's own correlations.
     : > "$ART/telemetry-sweep-tempo.json"
     flow_traces=""
     for correlation in ${c_create:-} ${c_confirm:-} ${c_events:-} ${c_expectation:-} ${c_upload:-} ${c_attest:-}; do
         flow_traces="$flow_traces $(trace_ids_for "{ span.finapp.correlation_id = \"$correlation\" }" | tr '\n' ' ')"
     done
     traces=0
-    for trace in $(trace_ids_for "{ }") $flow_traces ${t_customer:-}; do
+    for trace in $(trace_ids_for "{ }") $flow_traces; do
         telemetry_get finapp-tempo:3200 "/api/traces/$trace" >> "$ART/telemetry-sweep-tempo.json" 2>&1 || true
         printf '\n' >> "$ART/telemetry-sweep-tempo.json"
         traces=$((traces + 1))
-    done
-    : > "$ART/telemetry-sweep-console.txt"
-    for pod in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name); do
-        kube -n finapp logs "$pod" --all-containers >> "$ART/telemetry-sweep-console.txt" 2>&1 || true
     done
     tempo_bytes=$(wc -c < "$ART/telemetry-sweep-tempo.json")
     [ "${loki_lines:-0}" -gt 0 ] || fail "the sweep read no log record from Loki: a sweep over nothing proves nothing"
@@ -358,7 +461,7 @@ telemetry_sweep() {
     if [ -n "$found" ]; then
         fail "sweep: needles exported or printed: $(printf '%s' "$found" | tr '\n' ';' | cut -c1-400)"
     else
-        pass "sweep: none of $needles needles (the planted amount and every party) in $loki_lines log records, $traces traces (${tempo_bytes} bytes) or any replica's console"
+        pass "sweep: none of $needles needles (the traced and the planted amounts, a planted card number and every party) in $loki_lines log records, $traces traces (${tempo_bytes} bytes) or any replica's console"
     fi
 }
 

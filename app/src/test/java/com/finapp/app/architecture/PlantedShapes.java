@@ -33,6 +33,14 @@ final class PlantedShapes {
         log.info("{} {} {}", first, second, amount);
     }
 
+    static void fluentArgument(Money amount) {
+        log.atInfo().addArgument(amount).log("an amount {}");
+    }
+
+    static void fluentKeyValue(Money amount) {
+        log.atWarn().addKeyValue("amount", amount).log("an amount");
+    }
+
     static String concatenated(Money amount) {
         return "an amount " + amount;
     }

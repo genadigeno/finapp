@@ -8,12 +8,15 @@
 # exception's message or stack (a driver's message can quote a row), a host, a user agent or a thread. A span's status message is an
 # exception's message, so it is emptied. TelemetryPipelineManifestsTest holds the lists to Spans.IDENTIFIER_KEYS and to what is written here.
 #
-# WHAT IS SCRUBBED. A log record's body is the ECS line the console printed: free text in the message field. A card number's shape - 13 to
-# 19 digits in a row, or four groups of four (or Amex's 4-6-5) split by a space or a dash - and an amount in Money's string form
-# ("12.34 EUR") are replaced in every body and in every surviving attribute value. The grouped form needs four groups exactly because a
-# UUID can hold three four-digit groups in a row: a looser pattern would cut a correlation id and break the join it exists for. A party's identifier cannot be told from any other identifier by its shape, so it is held by the
-# allow-list in an attribute and by ADR-0019 in a message, never by a pattern here. infra/scripts/telemetry-check.sh plants each needle
-# through this file, unchanged, and requires none to come out, and then removes the scrubbing processor and requires the needle to come out.
+# WHAT IS SCRUBBED. A log record's body is the ECS line the console printed: free text in the message field, JSON-escaped. A card number's
+# shape - 13 to 19 digits in a row, or four groups of four, Amex's 4-6-5 or Diners' 4-6-4, split by a space, a dash or a dot - and an amount
+# in Money's string form ("12.34 EUR") are replaced in every body and in every surviving attribute value, also right after a JSON escape
+# (\n, \r, \t), whose letter would otherwise stand against the digits. A run of twenty digits or more is no card number and is left. The
+# grouped form needs four groups exactly because a UUID can hold three four-digit groups in a row: a looser pattern would cut a correlation
+# id and break the join it exists for. A party's identifier cannot be told from any other identifier by its shape: an attribute holding one
+# is dropped by the allow-list, and nothing keeps one out of a message's free text - ADR-0019 governs Sensitive<T> values, not text
+# (THREAT_MODEL.md section 6 item 37). infra/scripts/telemetry-check.sh plants each needle through this file, unchanged, and requires none
+# to come out, and then removes the scrubbing processor and requires the needle to come out.
 #
 # TWO TIERS IN ONE DEPLOYMENT, BECAUSE OF THE TAIL POLICY. A trace is kept or dropped once its last span has had time to arrive, and the
 # decision is only right if one replica holds the whole trace. With N collectors behind a Service, a trace's spans can reach two of them
@@ -62,8 +65,8 @@ processors:
         statements:
           - keep_keys(attributes, ["finapp.correlation_id", "finapp.causation_id", "run.id", "batch.id", "file.id", "source.id", "break.id", "resolution.id", "quote.id", "trade.id", "cover.id", "payment.id", "credit.id", "screening.id", "error.type", "exception", "method", "status", "uri", "outcome", "http.request.method", "http.response.status_code", "http.route"])
           - set(status.message, "")
-          - replace_all_patterns(attributes, "value", "\\b(?:\\d{13,19}|\\d{4}(?:[ -]\\d{4}){3}|\\d{4}[ -]\\d{6}[ -]\\d{5})\\b", "[scrubbed]")
-          - replace_all_patterns(attributes, "value", "\\b\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "[scrubbed]")
+          - replace_all_patterns(attributes, "value", "(^|[^0-9A-Za-z_]|\\\\[nrt])(?:\\d{13,19}|\\d{4}(?:[ .-]\\d{4}){3}|\\d{4}[ .-]\\d{6}[ .-]\\d{5}|\\d{4}[ .-]\\d{6}[ .-]\\d{4})\\b", "$$1[scrubbed]")
+          - replace_all_patterns(attributes, "value", "(^|[^0-9A-Za-z_]|\\\\[nrt])\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "$$1[scrubbed]")
       - context: spanevent
         statements:
           - keep_keys(attributes, ["exception.type"])
@@ -77,9 +80,9 @@ processors:
       - context: log
         statements:
           - keep_keys(attributes, ["finapp.correlation_id", "finapp.causation_id"])
-          - replace_pattern(body, "\\b(?:\\d{13,19}|\\d{4}(?:[ -]\\d{4}){3}|\\d{4}[ -]\\d{6}[ -]\\d{5})\\b", "[scrubbed]")
-          - replace_pattern(body, "\\b\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "[scrubbed]")
-          - replace_all_patterns(attributes, "value", "\\b(?:\\d{13,19}|\\d{4}(?:[ -]\\d{4}){3}|\\d{4}[ -]\\d{6}[ -]\\d{5})\\b", "[scrubbed]")
+          - replace_pattern(body, "(^|[^0-9A-Za-z_]|\\\\[nrt])(?:\\d{13,19}|\\d{4}(?:[ .-]\\d{4}){3}|\\d{4}[ .-]\\d{6}[ .-]\\d{5}|\\d{4}[ .-]\\d{6}[ .-]\\d{4})\\b", "$$1[scrubbed]")
+          - replace_pattern(body, "(^|[^0-9A-Za-z_]|\\\\[nrt])\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "$$1[scrubbed]")
+          - replace_all_patterns(attributes, "value", "(^|[^0-9A-Za-z_]|\\\\[nrt])(?:\\d{13,19}|\\d{4}(?:[ .-]\\d{4}){3}|\\d{4}[ .-]\\d{6}[ .-]\\d{5}|\\d{4}[ .-]\\d{6}[ .-]\\d{4})\\b", "$$1[scrubbed]")
 
   # Names the environment on what leaves, so two environments on one backend never read as one fleet.
   resource/environment:

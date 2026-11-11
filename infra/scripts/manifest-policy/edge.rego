@@ -313,6 +313,22 @@ deny contains msg if {
 	msg := sprintf("[edge-upgrade] %s forwards a client's Upgrade header: an h2c upgrade would be a tunnel past the allow-list", [prefix])
 }
 
+# The public edge starts every trace (P15-TSK-023's review): a caller's W3C context would set the sampler's flag for its own requests or
+# choose the trace ids the collectors route by. The operator edge keeps them, for staff's tooling (THREAT_MODEL.md section 6 item 37 (f)).
+trace_headers := {"traceparent", "tracestate", "baggage"}
+
+trace_context_is_stripped if {
+	every name in trace_headers {
+		edge_file("finapp-edge-public-routes-").http.middlewares["edge-headers"].headers.customRequestHeaders[name] == ""
+	}
+}
+
+deny contains msg if {
+	"finapp-edge-public-routes-" in route_config_prefixes
+	not trace_context_is_stripped
+	msg := "[edge-trace-context] the public edge forwards a client's traceparent, tracestate or baggage: a caller would sample its own requests or pick the collectors' routing"
+}
+
 # ------------------------------------------------------------------------------------------- which surface (P15-TSK-042)
 
 # Each edge states its own surface, replacing whatever the client sent, on every router: the application refuses staff at the doors

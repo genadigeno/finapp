@@ -25,6 +25,8 @@ import org.springframework.boot.web.server.context.WebServerApplicationContext;
  *   <li>phase {@code 0}: the gauge refresher ({@code platform}'s {@code GaugeRefresher}, in the context through
  *       {@code GaugeRefresherBeans}' lifecycle; {@code AccountingGaugeRefresher} until `P15-TSK-024` moved every gauge onto
  *       it) drops its queued reads and lets the one in flight end within its bound;
+ *   <li>{@link #TELEMETRY_FLUSH}: the OpenTelemetry SDK's last export, given at most its bound ({@code TelemetryFlush},
+ *       `P15-TSK-023`), so a collector that never answers cannot spend the grace the closes below need;
  *   <li>the beans are destroyed - the Kafka producer, and the connection pool after every stop above has returned.
  * </ol>
  *
@@ -39,6 +41,9 @@ public final class ShutdownOrder {
 
     /** The consumer loops: after the schedules, before the management server closes. */
     public static final int CONSUMERS = WebServerApplicationContext.GRACEFUL_SHUTDOWN_PHASE - 256;
+
+    /** The telemetry SDK's bounded last export: after every other stop, the gauge refresher's phase {@code 0} included. */
+    public static final int TELEMETRY_FLUSH = -256;
 
     private ShutdownOrder() {
         // Constants only.

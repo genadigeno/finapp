@@ -95,8 +95,14 @@ plant_all() {
     # The scraper's flow.
     obs_plant_on obs-no-scraper "$POLICY" 's/^      finapp\/role: metrics-scraper$/      finapp\/role: nobody/'
 
-    # The application's endpoint: anything but the cluster's own collector is refused.
+    # The application's endpoint: anything but the cluster's own collector is refused, in the base and in an overlay of its own.
     obs_plant_on obs-endpoint-external "$APP" 's|http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/traces|https://otlp.example.invalid/v1/traces|'
+    obs_plant_on obs-endpoint-staging overlays/staging/kustomization.yaml 's/^patches:$/patches:\n  - target:\n      kind: Deployment\n      name: finapp-app\n    patch: |-\n      apiVersion: apps\/v1\n      kind: Deployment\n      metadata:\n        name: finapp-app\n      spec:\n        template:\n          spec:\n            containers:\n              - name: app\n                env:\n                  - name: FINAPP_TELEMETRY_TRACESENDPOINT\n                    value: https:\/\/otlp.example.invalid\/v1\/traces/'
+    # The peers' tier scrubs nothing: its 4317 from any namespace is refused, and so is an ingress rule naming no port.
+    obs_plant_on obs-peers-from-anywhere "$POLICY" '1,/^  ingress:$/s/^  ingress:$/  ingress:\n    - from:\n        - namespaceSelector: {}\n      ports:\n        - protocol: TCP\n          port: 4317/'
+    obs_plant_on obs-ingress-portless "$POLICY" '1,/^  ingress:$/s/^  ingress:$/  ingress:\n    - from:\n        - namespaceSelector: {}/'
+    # An egress rule naming no port is every port, the database's among them.
+    obs_plant_on obs-egress-portless "$POLICY" '1,/^  egress:$/s/^  egress:$/  egress:\n    - to:\n        - namespaceSelector:\n            matchLabels:\n              kubernetes.io\/metadata.name: finapp\n          podSelector:\n            matchLabels:\n              app.kubernetes.io\/name: finapp-postgres/'
 
     # The second net taken out of a pipeline.
     obs_plant_on obs-scrub-removed "$CONFIG" '1,/processors: \[memory_limiter, transform\/scrub, resource\/environment, batch\]/s/processors: \[memory_limiter, transform\/scrub, resource\/environment, batch\]/processors: [memory_limiter, resource\/environment, batch]/'
@@ -108,12 +114,27 @@ in_container() {
             mkdir -p /scratch/rendered
             render_stream /repo/deploy /scratch/rendered/kind.yaml
             printf 'overlay: kind\n' > /scratch/rendered/kind.data.yaml
+            # The pipeline's rules hold where it is rendered: the kind stream must render it, or they would hold nothing.
+            grep -q '^  namespace: finapp-observability$' /scratch/rendered/kind.yaml || { echo "the kind stream renders no finapp-observability" >&2; exit 1; }
+            # Staging's and production's application overlays, alone: held to the endpoint rule, the pipeline having no overlay there.
+            for overlay in staging production; do
+                kustomize build "/repo/deploy/overlays/$overlay" > "/scratch/rendered/$overlay.yaml"
+                printf 'overlay: %s\n' "$overlay" > "/scratch/rendered/$overlay.data.yaml"
+            done
             ;;
         plants)
             plant_all
             for directory in "$PLANTS"/*; do
-                render_stream "$directory/deploy" "$directory/rendered.yaml"
-                printf 'overlay: kind\n' > "$directory/overlay.yaml"
+                case $directory in
+                    */obs-endpoint-staging)
+                        kustomize build "$directory/deploy/overlays/staging" > "$directory/rendered.yaml"
+                        printf 'overlay: staging\n' > "$directory/overlay.yaml"
+                        ;;
+                    *)
+                        render_stream "$directory/deploy" "$directory/rendered.yaml"
+                        printf 'overlay: kind\n' > "$directory/overlay.yaml"
+                        ;;
+                esac
             done
             ;;
         *)
@@ -225,6 +246,8 @@ check "the application's, the namespaces' and the pipeline's kind overlays rende
 check "the plants are planted and rendered" in_kustomize plants
 check "kubeconform kind" kubeconform_on /scratch/rendered/kind.yaml
 check "the pipeline's policies on kind" conftest_on /scratch/rendered/kind.yaml /scratch/rendered/kind.data.yaml
+check "the application's one telemetry endpoint on staging" conftest_on /scratch/rendered/staging.yaml /scratch/rendered/staging.data.yaml
+check "the application's one telemetry endpoint on production" conftest_on /scratch/rendered/production.yaml /scratch/rendered/production.data.yaml
 
 obs_refused obs-mounted-account security-token
 obs_refused obs-image-tag images-digest
@@ -240,6 +263,10 @@ obs_refused obs-egress-anywhere obs-egress
 obs_refused obs-egress-block obs-egress
 obs_refused obs-no-scraper obs-scraper
 obs_refused obs-endpoint-external obs-endpoint
+obs_refused obs-endpoint-staging obs-endpoint
+obs_refused obs-peers-from-anywhere obs-collector-peers
+obs_refused obs-ingress-portless obs-collector-ingress
+obs_refused obs-egress-portless obs-egress
 obs_refused obs-scrub-removed obs-scrub
 
 # ---------------------------------------------------------------------------------------------------
@@ -250,6 +277,12 @@ obs_refused obs-scrub-removed obs-scrub
 PAN=4111111111111111
 PAN_SPACED="4111 1111 1111 1111"
 AMOUNT="7319.47 EUR"
+# The scrub's edges: an amount right after a JSON escape (the ECS line escapes a message's newline as a backslash and a letter), a
+# dot-separated card number after another, and Diners' 4-6-4. A run of twenty digits is no card number and must come through unchanged.
+AMOUNT_ESCAPED="4821.37 EUR"
+PAN_DOTTED="4111.1111.1111.1111"
+DINERS="3056 930902 5904"
+RUN20=98765432109876543210
 PARTY=0b6f3c1e-8d2a-4e57-9a31-5c7d2e8f4a19
 HOST=needle-host.invalid
 QUERY="pan=$PAN"
@@ -325,7 +358,7 @@ log_body() {
   {"key":"host.name","value":{"stringValue":"$HOST"}}]},
  "scopeLogs":[{"scope":{"name":"finapp"},"logRecords":[{
   "timeUnixNano":"$now","severityNumber":9,"severityText":"INFO",
-  "body":{"stringValue":"{\\"message\\":\\"captured card $PAN_SPACED and $PAN for $AMOUNT\\",\\"correlationId\\":\\"$1\\"}"},
+  "body":{"stringValue":"{\\"message\\":\\"captured card $PAN_SPACED and $PAN for $AMOUNT\\\\n$AMOUNT_ESCAPED\\\\t$PAN_DOTTED or $DINERS, reference $RUN20\\",\\"correlationId\\":\\"$1\\"}"},
   "attributes":[
    {"key":"finapp.correlation_id","value":{"stringValue":"$1"}},
    {"key":"party.id","value":{"stringValue":"$PARTY"}},
@@ -378,7 +411,7 @@ sweep() {
 
 needles_in() {
     # needles_in <text>: prints each needle found.
-    for needle in "$PAN" "$PAN_SPACED" "7319.47" "$PARTY" "$HOST" "$QUERY"; do
+    for needle in "$PAN" "$PAN_SPACED" "7319.47" "4821.37" "$PAN_DOTTED" "$DINERS" "$PARTY" "$HOST" "$QUERY"; do
         if printf '%s' "$1" | grep -qF -- "$needle"; then
             printf '%s\n' "$needle"
         fi
@@ -403,7 +436,7 @@ if sweep "$RUN-collector" "check-committed" "$TRACE"; then
         status=1
     else
         missing=""
-        for control in check-committed "$PAYMENT" "/v1/payments/{id}" "[scrubbed]" "exception.type" "captured card" "deployment.environment.name"; do
+        for control in check-committed "$PAYMENT" "/v1/payments/{id}" "[scrubbed]" "exception.type" "captured card" "deployment.environment.name" "$RUN20"; do
             printf '%s' "$output" | grep -qF -- "$control" || missing="$missing $control"
         done
         if [ -n "$missing" ]; then

@@ -760,7 +760,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T46 | A `Sensitive` value is masked on every rendering path and on both appenders | EXISTS | `app/src/test/java/com/finapp/app/observability/LogRedactionTest.java#everyRenderingPathIsMasked`; `app/src/test/java/com/finapp/app/observability/RedactionAcrossAppendersTest.java#redactionHoldsOnBothAppenders` |
 | T46 | No meter carries a tag whose value a request could influence | EXISTS | `app/src/test/java/com/finapp/app/telemetry/MetricConventionTest.java#tagsCannotCarryUnboundedValues` |
 | T46 | An unexpected exception's message, type and stack frames never reach an error body; a malformed body is not echoed back; no error body carries a member beyond the contract | EXISTS | `app/src/test/java/com/finapp/app/api/ApiErrorHandlerTest.java#anUnexpectedExceptionLeaksNothing`; `app/src/test/java/com/finapp/app/api/ApiErrorHandlerTest.java#aMalformedBodyRendersTheContract`; `app/src/test/java/com/finapp/app/api/ApiErrorHandlerTest.java#theShapeIsExactlyTheContract` |
-| T46 | One telemetry egress: the application exports spans and log records only to the cluster's own collector Service on 4318, in every overlay, and a manifest naming any other endpoint is refused by CI's check, a planted one proven refused in the same run | EXISTS | `app/src/test/java/com/finapp/app/architecture/TelemetryPipelineManifestsTest.java#theCollectorIsTheApplicationsOneEgress`; `infra/scripts/telemetry-check.sh` `contains: obs_refused obs-endpoint-external obs-endpoint` |
+| T46 | One telemetry egress: the application exports spans and log records only to the cluster's own collector Service on 4318, in every overlay - kind, staging and production each rendered and held to it by CI's check, no overlay naming a telemetry variable of its own - and a manifest naming any other endpoint, in the base or in an overlay, is refused, each planted one proven refused in the same run | EXISTS | `app/src/test/java/com/finapp/app/architecture/TelemetryPipelineManifestsTest.java#theCollectorIsTheApplicationsOneEgress`; `infra/scripts/telemetry-check.sh` `contains: obs_refused obs-endpoint-external obs-endpoint` `contains: obs_refused obs-endpoint-staging obs-endpoint` |
 | T46 | The collector's second net, run in CI as the pinned collector with the committed configuration: an allow-list of resource, span, span-event and record attributes holding the flow's ids and what the platform's `Spans` port admits, a span's status message emptied, a card number's shape and an amount in `Money`'s string form scrubbed from bodies and values; planted needles (a card number with and without separators, an amount, a party's identifier, a URL's query, an exception's message, a host) none exported and every allowed identifier exported; the scrub removed, the needles exported, in the same run | EXISTS | `app/src/test/java/com/finapp/app/architecture/TelemetryPipelineManifestsTest.java#theAllowListIsWhatThePlatformAdmits`; `app/src/test/java/com/finapp/app/architecture/TelemetryPipelineManifestsTest.java#thePatternLeavesIdentifiersAlone`; `infra/scripts/telemetry-check.sh` `contains: the probe is red: without the scrub the collector exported` `contains: no needle exported` |
 | T46 | No production instruction hands a logger or a formatter a `Money`, or what prints one (a record with the generated form, a class whose own form renders one), directly or in their `Object[]`, read with ASM's analyser over every production class; the lending records that printed money redact their own form, and logged with a planted amount through the real console encoder and the OTLP appender they ship none. Not seen: an element of a collection, a value cast to `Object`, an amount already a plain number | EXISTS | `app/src/test/java/com/finapp/app/architecture/MoneyReachesNoTextSinkTest.java#noProductionCodeHandsAnAmountToALogger`; `app/src/test/java/com/finapp/app/architecture/MoneyReachesNoTextSinkTest.java#theGuardSeesEachShape`; `app/src/test/java/com/finapp/app/telemetry/LogShippingSweepTest.java#noLendingRecordShipsAnAmount` |
 | T46 | Thirteen classes turn an amount into text by concatenation, each in an exception's message for a state that must not happen or in a builder's generated form; an unhandled one reaches the error log's stack trace, the collector scrubbing `Money`'s string form from the shipped record and the console keeping it. The set is held so it cannot grow unnoticed, and is not cleared | GAP | `owner item 37`; owner: the owner, since 2026-11-11 |
@@ -840,8 +840,9 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   log call has no declaration for either rule to inspect (`SECURITY_ARCHITECTURE.md` §Logging). Since 2026-11-11 the collector's
   allow-list and scrub are the second net, proven in CI by planted needles through the pinned collector, and a build guard holds
   amounts away from every text sink. A party's identifier in a message's free text cannot be told from any other identifier by its
-  shape, so ADR-0019 alone holds that. Back ends exist on `kind` and in compose only; a real environment's, their readers and
-  retention are owner item 37.
+  shape, and no rule keeps one out: ADR-0019 governs values held in `Sensitive<T>`, not what a message's text says, and the allow-list
+  drops it only from an attribute. Back ends exist on `kind` and in compose only; a real environment's, their readers and retention,
+  the stack's own alerts, erasure against the logs' retention and the operator surface's trace context are owner item 37.
 - **T47, registration enumeration.** `POST /v1/registrations` answers `422` for a taken login identifier, by design: a
   registration endpoint tells you the name is taken. Authentication's paths are equal-cost (`INV-IDN-07`), so the leak
   is registration's alone. The registration throttle bounds the rate and does not remove the oracle. **Accepted by the owner
@@ -1415,7 +1416,8 @@ were added on 2026-11-09 and await the owner." until then.)* **Item 35 was added
       *Recommendation*: **(i)**, beside the two workload identities that exist, never a stored credential.
 
 37. **T46's residuals, and the trace's last join: the telemetry back ends of a real environment, the reconciliation leg, and amounts in
-    exception messages** *(added 2026-11-11 by the telemetry pipeline's task)*. Three decisions.
+    exception messages** *(added 2026-11-11 by the telemetry pipeline's task; (d) to (f) added by its review's fix round, the same day)*.
+    Six decisions.
     - **(a) The back ends.** Traces and logs reach Tempo and Loki on `kind` and in compose only, each holding seven and thirty-one days. A real
       environment's back ends have readers of their own, a retention of their own and an identity to write with, and the infrastructure
       module already plans a `logs` and a `traces` bucket per environment that no role reads or writes. The options: **(i)** Tempo and Loki
@@ -1430,20 +1432,41 @@ were added on 2026-11-09 and await the owner." until then.)* **Item 35 was added
       `PHASE_8_PLAN.md` section 15 decided the durable trace would be. The options: **(i)** keep the stored chain as the join; **(ii)** open
       the settlement and reconciliation spans inside the correlation each leg restores, and record a marker span in the expectation's
       stored correlation, caused by the run, when a run settles it: one more span per matched item, and a change to the matching leg.
-
     - **(c) Amounts in exception messages.** Read with ASM's analyser, thirteen production classes (`Money` itself among them, and the
       merchant fee, FX conversion and refund classes) put an amount into an exception's message for a state that must not happen, or
       into a Lombok builder's generated form; and `BigDecimal` figures appear in others' messages the analyser cannot tell from any
       number. Such a message reaches no error body and no exported span, but an unhandled one is printed with its stack trace: the
       collector scrubs `Money`'s string form from the shipped record, and the pod's console keeps it. The options: **(i)** rewrite each
       message to name the rule and the currency, never the figure, and suppress the two builders' forms - a change to sixteen classes'
-      messages and the tests that read them; **(ii)** accept it, the set held by the build so it cannot grow.
+      messages and the tests that read them; **(ii)** accept it, the set held by the build so it cannot grow - held per instruction,
+      thirty-eight of them, so a new one inside a listed class is a change to the list in the same review.
+    - **(d) The telemetry stack's own alerts.** The collector counts what it drops and refuses, and Tempo and Loki count their own
+      failures, but no rule reads any of it: a collector that has refused every batch for an hour, or a back end that stopped ingesting,
+      is seen only by someone looking. `PRODUCTION_READINESS.md` lists it as not done. The options: **(i)** rules on the collector's
+      `otelcol_exporter_send_failed_*` and `otelcol_receiver_refused_*` rates and on each back end's ingest, in the alert catalogue with
+      runbook sections; **(ii)** leave telemetry unwatched, since no money depends on it.
+    - **(e) Erasure against the logs' retention.** A person's erasure (C12) reaches the database's rows, but a log record that printed
+      something of that person stays in Loki for its thirty-one days, and the platform has no way to find or remove it there. The
+      options: **(i)** keep the logs' retention short enough to be the erasure's own bound, stated in the retention schedule as such;
+      **(ii)** a deletion request per person against the log store, which needs a person's identifiers in the logs to find them by -
+      the opposite of what the scrub aims at; **(iii)** a log store per retention class, the shortest for anything a person's request
+      could name.
+    - **(f) The operator surface's trace context.** The public edge removes a caller's `traceparent`, `tracestate` and `baggage`, so a
+      public caller can neither switch tracing off for its own requests nor choose the trace ids the collectors route by. The operator
+      edge keeps them, for staff's tooling, so a member of staff can do both for their own requests: an operator's work can go
+      unsampled when that operator chooses. The options: **(i)** remove them at the operator edge too, and let staff's tooling find a
+      request by the correlation id every answer carries; **(ii)** keep them, the operator surface being staff's alone and every act
+      audited whatever the trace says.
 
     *Recommendation*: **(a)(i)** with the first real environment, at seven and thirty-one days unless a jurisdiction says otherwise:
     it keeps the telemetry inside the account the platform already secures, and the buckets exist. **(b)(i)** now, and (ii) only if an
     operator ever needs the span join: the stored chain is durable and audited, a span is sampled telemetry, and a change to the matching
     leg in a phase that moves no money needs a reason this does not give. **(c)(i)**, as one small remediation entry before production
-    use: a figure in a message helps nobody fix an overflow, and the console is a sink the collector cannot scrub.
+    use: a figure in a message helps nobody fix an overflow, and the console is a sink the collector cannot scrub. **(d)(i)**, with the
+    first real environment and in `P15-TSK-032`'s rehearsal of section 11 (routed there): a second net nobody watches can fail for a
+    week. **(e)(i)** now: thirty-one days is already the logs' class, so the retention schedule says it is also the erasure's bound for
+    anything a log printed, and (iii) only if a regulator asks for less. **(f)(i)**: staff's tooling loses nothing the correlation id
+    does not give, and a trace no member of staff can switch off is the simpler thing to audit.
 
 39. **T3's and T31's residuals once staff are refused on the public surface** *(added 2026-11-11 by the task that refuses them;
     (a) rewritten and (c) added by its review's fix round, the same day)*. Three things, each a decision.

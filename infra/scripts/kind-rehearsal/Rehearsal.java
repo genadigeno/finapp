@@ -715,14 +715,19 @@ public final class Rehearsal {
     }
 
     /**
-     * Transfers of a cent between two customers, one after another, for {@code seconds}: each request's status and milliseconds in
-     * latency-&lt;label&gt;.tsv, so the shell can compare the collector up, down and black-holed. A write, so its trace is one the tail policy keeps.
+     * Transfers of a cent between two customers, one after another, for {@code seconds}: each request's first status and milliseconds in
+     * latency-&lt;label&gt;.tsv, so the shell can compare the collector up, stopped and hung. A write, so its trace is one the tail policy keeps.
+     *
+     * <p>A transfer whose answer was lost, or a 5xx, may have committed: it is asked again with the same key and reference until the
+     * platform answers it (the stored answer for one that committed), so the census counts each transfer that moved money exactly once.
+     * One still unanswered after a minute is written {@code UNRESOLVED}, and the shell fails the step on it.
      */
     private void latency(String label, int seconds) throws Exception {
         Path results = work.resolve("latency-" + label + ".tsv");
         Files.writeString(results, "");
         long until = System.nanoTime() + Duration.ofSeconds(seconds).toNanos();
         int i = 0;
+        int unresolvedHere = 0;
         StringBuilder lines = new StringBuilder();
         // Every transfer that succeeded, in the workload's own record, so the census counts it like any other.
         StringBuilder counted = new StringBuilder();
@@ -731,21 +736,34 @@ public final class Rehearsal {
             String key = "tl-" + label + "-" + i + "-" + key();
             String reference = "tl-" + label + "-" + UUID.randomUUID();
             long started = System.nanoTime();
-            int status;
-            try {
-                status = transfer(from, 1 - from, "0.01", key, reference).status();
-            } catch (IOException failure) {
-                status = -1;
-            }
+            int status = transferStatus(from, key, reference);
             lines.append(status).append('\t').append(Duration.ofNanos(System.nanoTime() - started).toMillis()).append('\n');
-            if (status == 200 || status == 201) {
+            int settled = status;
+            Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
+            while ((settled == -1 || settled >= 500) && Instant.now().isBefore(deadline)) {
+                pause(1000);
+                settled = transferStatus(from, key, reference);
+            }
+            if (settled == 200 || settled == 201) {
                 counted.append("transfer\t").append(key).append('\t').append(reference).append("\tok\n");
+            } else if (settled == -1 || settled >= 500) {
+                unresolvedHere++;
+                counted.append("transfer\t").append(key).append('\t').append(reference).append("\tUNRESOLVED\n");
             }
             i++;
         }
         Files.writeString(results, lines.toString());
         Files.writeString(work.resolve("workload-telemetry-" + label + ".tsv"), "flow\tkey\toutcome\n" + counted);
-        System.out.println("latency " + label + " requests=" + i);
+        System.out.println("latency " + label + " requests=" + i + " unresolved=" + unresolvedHere);
+    }
+
+    /** One transfer of a cent from customer {@code from} to the other; -1 when no answer came. */
+    private int transferStatus(int from, String key, String reference) throws InterruptedException {
+        try {
+            return transfer(from, 1 - from, "0.01", key, reference).status();
+        } catch (IOException failure) {
+            return -1;
+        }
     }
 
     /**

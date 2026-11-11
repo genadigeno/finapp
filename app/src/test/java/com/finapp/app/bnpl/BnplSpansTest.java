@@ -153,6 +153,19 @@ class BnplSpansTest {
         assertThat(read[0]).as("the row's flow was never read").isFalse();
     }
 
+    @Test
+    @DisplayName("every flow lookup is a fixed statement reading one stored correlation by one bound identifier - an"
+            + " agreement and a dispute in their obligation's flow")
+    void everyLookupIsAFixedStatement() {
+        for (BnplFlowScope.Flow flow : BnplFlowScope.Flow.values()) {
+            assertThat(flow.select).as(flow.name()).startsWithIgnoringCase("SELECT ")
+                    .contains("correlation_id FROM bnpl.").endsWith(" = ?").doesNotContain("%s");
+            assertThat(flow.select.chars().filter(character -> character == '?').count()).as(flow.name()).isEqualTo(1);
+        }
+        assertThat(BnplFlowScope.Flow.AGREEMENT.select).contains("bnpl.bnpl_obligation WHERE agreement_id = ?");
+        assertThat(BnplFlowScope.Flow.DISPUTE.select).contains("JOIN bnpl.bnpl_obligation o");
+    }
+
     /** Records each span's name, attributes and the correlation in scope when it started, running the work. */
     private static final class Recording implements Spans {
         final List<String> names = new ArrayList<>();

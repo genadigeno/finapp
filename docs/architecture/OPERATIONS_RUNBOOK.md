@@ -2770,7 +2770,7 @@ certificate added, and set `KUBECONFORM_IMAGE` to it for the run. CI never sets 
   waits for a reboot. To raise it, apply and reboot first, then roll the application; to lower it, the application first. Never
   the other way round: the guard reads the declaration and cannot see the server. The `postgres` module's README has the steps.
 
-**What a rollout costs.** `minReadySeconds` is the grace, 115 s, so each step takes a new pod's startup plus 115 s: about
+**What a rollout costs.** `minReadySeconds` is the grace, 117 s, so each step takes a new pod's startup plus 117 s: about
 eight minutes for three replicas, longer at the maximum. That is the price of never stacking terminating pods.
 
 **Kubernetes 1.30 or later.** The `preStop` is a `sleep` action, because the image has no shell. The schemas checked are

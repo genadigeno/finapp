@@ -64,8 +64,43 @@ class MoneyReachesNoTextSinkTest {
 
     static final String MONEY = "com/finapp/sharedkernel/money/Money";
 
-    /** The classes that turn an amount into text in an exception's message or a builder's form: section 6 item 37 (c). */
-    static final Set<String> TEXT_RESIDUE = Set.of(
+    /**
+     * Each instruction that turns an amount into text in an exception's message or a builder's form, as {@code class.method: what}
+     * (one line per instruction, so a second in the same method is a second line): section 6 item 37 (c).
+     */
+    static final List<String> TEXT_RESIDUE = valueOfs(
+            "com/finapp/bnpl/BnplTerms$BnplTermsBuilder.toString", 3,
+            "com/finapp/fx/ConversionPlan.compute", 8,
+            "com/finapp/fx/ConversionPlan.requireExact", 1,
+            "com/finapp/fx/NotionalBounds.<init>", 4,
+            "com/finapp/lending/LoanTerms$LoanTermsBuilder.toString", 2,
+            "com/finapp/merchant/FeeAssessment.<init>", 3,
+            "com/finapp/merchant/FeeCalculation.refundedAfter", 2,
+            "com/finapp/merchant/FeeScheduleVersion.<init>", 1,
+            "com/finapp/merchant/FeeScheduleVersion.toString", 1,
+            "com/finapp/merchant/FeeSchedules.addVersion", 1,
+            "com/finapp/merchant/MerchantSettlement.pin", 2,
+            "com/finapp/merchant/MerchantSettlement.refundTerms", 1,
+            "com/finapp/merchant/MerchantSettlement.settle", 2,
+            "com/finapp/merchant/PaymentFeePin.<init>", 1,
+            "com/finapp/payments/RefundReservation.<init>", 2,
+            "com/finapp/payments/RefundSettlement.<init>", 2,
+            "com/finapp/sharedkernel/money/Money.negated", 1,
+            "com/finapp/sharedkernel/money/Money.times", 1);
+
+    /** {@code method, count, ...}: that many instructions of each method handing a {@code Money} to {@code String.valueOf}. */
+    private static List<String> valueOfs(Object... methodsAndCounts) {
+        List<String> findings = new ArrayList<>();
+        for (int i = 0; i < methodsAndCounts.length; i += 2) {
+            for (int n = 0; n < (Integer) methodsAndCounts[i + 1]; n++) {
+                findings.add(methodsAndCounts[i] + ": hands a com.finapp.sharedkernel.money.Money to java/lang/String.valueOf");
+            }
+        }
+        return List.copyOf(findings);
+    }
+
+    /** The thirteen classes those instructions are in. */
+    static final Set<String> TEXT_CLASSES = Set.of(
             "com/finapp/sharedkernel/money/Money",
             "com/finapp/fx/NotionalBounds",
             "com/finapp/fx/ConversionPlan",
@@ -116,14 +151,18 @@ class MoneyReachesNoTextSinkTest {
     @Test
     @DisplayName("the classes that turn an amount into text by concatenation are the known residue, each in an exception's message or a builder's form")
     void theTextResidueIsHeld() {
-        Set<String> rendering = new TreeSet<>();
+        List<String> rendering = new ArrayList<>();
         for (ClassNode node : production.values()) {
-            for (String finding : sinks(node, bearing, false)) {
-                rendering.add(finding.substring(0, finding.indexOf('.')));
-            }
+            rendering.addAll(sinks(node, bearing, false));
         }
+        rendering.sort(null);
         assertThat(rendering).as("the residue was read, so this holds something").isNotEmpty();
-        assertThat(rendering).as("a class new to this list turns an amount into text: name the rule, not the figure").isSubsetOf(TEXT_RESIDUE);
+        assertThat(rendering.stream().map(finding -> finding.substring(0, finding.indexOf('.'))).distinct())
+                .as("the residue's classes").isSubsetOf(TEXT_CLASSES);
+        // Per method and per instruction, not per class: a new concatenation inside a listed class, or a second one inside a
+        // listed method, is a change to this list in the same review. One cleared is one taken off.
+        assertThat(rendering).as("a finding new to this list turns an amount into text: name the rule, not the figure")
+                .isEqualTo(TEXT_RESIDUE.stream().sorted().toList());
     }
 
     @Test
@@ -141,6 +180,8 @@ class MoneyReachesNoTextSinkTest {
         List<String> logged = sinks(fixture, withFixture, true);
         assertThat(logged).anyMatch(finding -> finding.contains("loggerArgument"))
                 .anyMatch(finding -> finding.contains("loggerVarargs"))
+                .anyMatch(finding -> finding.contains("fluentArgument"))
+                .anyMatch(finding -> finding.contains("fluentKeyValue"))
                 .anyMatch(finding -> finding.contains("formatted"))
                 .anyMatch(finding -> finding.contains("printingRecord"))
                 .noneMatch(finding -> finding.contains("redactingRecord"))
@@ -332,6 +373,8 @@ class MoneyReachesNoTextSinkTest {
         boolean takesObject = call.desc.contains("Ljava/lang/Object;");
         return switch (call.owner) {
             case "org/slf4j/Logger" -> takesObject && Set.of("trace", "debug", "info", "warn", "error").contains(call.name);
+            // SLF4J 2's fluent form: an argument, a key's value, or the log call's own arguments.
+            case "org/slf4j/spi/LoggingEventBuilder" -> takesObject && Set.of("addArgument", "addKeyValue", "log").contains(call.name);
             case "java/lang/String" -> takesObject && Set.of("format", "formatted").contains(call.name);
             case "java/text/MessageFormat" -> "format".equals(call.name);
             case "java/io/PrintStream", "java/io/PrintWriter" -> takesObject && call.name.startsWith("print");

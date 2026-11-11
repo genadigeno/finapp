@@ -89,12 +89,40 @@ class TelemetryPipelineManifestsTest {
                 for (Object peer : to) {
                     assertThat((Map<String, Object>) peer).as("an address block reaches outside the cluster").doesNotContainKey("ipBlock");
                 }
-                for (Object port : (List<Object>) egress.getOrDefault("ports", List.of())) {
+                List<Object> ports = (List<Object>) egress.getOrDefault("ports", List.of());
+                assertThat(ports).as("%s: an egress rule naming no port is every port, the data tier's among them", map(policy, "metadata").get("name"))
+                        .isNotEmpty();
+                for (Object port : ports) {
                     assertThat(((Number) ((Map<String, Object>) port).get("port")).intValue()).isNotIn(DATA_TIER);
                 }
             }
         }
         assertThat(rules).as("the egress rules were read").isGreaterThanOrEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("the collector's ingress names its ports, and the peers' unscrubbed 4317 is open to the collectors of the namespace alone")
+    @SuppressWarnings("unchecked")
+    void thePeersTierIsTheCollectorsAlone() {
+        int peerRules = 0;
+        for (Map<String, Object> policy : policies) {
+            Map<String, Object> labels = map(map(map(policy, "spec"), "podSelector"), "matchLabels");
+            if (!labels.isEmpty() && !"telemetry-collector".equals(labels.get("finapp/role"))) {
+                continue;
+            }
+            for (Object rule : (List<Object>) map(policy, "spec").getOrDefault("ingress", List.of())) {
+                Map<String, Object> ingress = (Map<String, Object>) rule;
+                List<Object> ports = (List<Object>) ingress.getOrDefault("ports", List.of());
+                assertThat(ports).as("%s: an ingress rule naming no port is every port", map(policy, "metadata").get("name")).isNotEmpty();
+                boolean peers = ports.stream().anyMatch(port -> ((Number) ((Map<String, Object>) port).get("port")).intValue() == 4317);
+                if (peers) {
+                    peerRules++;
+                    assertThat((List<Object>) ingress.getOrDefault("from", List.of())).isNotEmpty()
+                            .allSatisfy(peer -> assertThat(peer).isEqualTo(Map.of("podSelector", Map.of("matchLabels", Map.of("finapp/role", "telemetry-collector")))));
+                }
+            }
+        }
+        assertThat(peerRules).as("the peers' rule was read").isEqualTo(1);
     }
 
     @Test
@@ -112,6 +140,21 @@ class TelemetryPipelineManifestsTest {
         assertThat(app).contains("value: " + ENDPOINT + "traces").contains("value: " + ENDPOINT + "logs");
         assertThat(Pattern.compile("(?m)^\\s+value: (https?://\\S+)$").matcher(app).results().map(found -> found.group(1)))
                 .allMatch(value -> value.startsWith(ENDPOINT));
+        // Every overlay takes the base's endpoints unchanged: none names a telemetry variable or an OTLP address of its own. The
+        // rendered staging and production overlays are also held to them by observability.rego in infra/scripts/telemetry-check.sh.
+        for (String overlay : List.of("kind", "staging", "production")) {
+            try (Stream<Path> files = Files.walk(root.resolve("deploy/overlays/" + overlay))) {
+                for (Path file : files.filter(Files::isRegularFile).toList()) {
+                    String text = read(root.relativize(file).toString().replace('\\', '/'));
+                    assertThat(text).as(overlay + ": " + file.getFileName()).doesNotContain("FINAPP_TELEMETRY").doesNotContain(":4318")
+                            .doesNotContain("/v1/traces").doesNotContain("/v1/logs");
+                }
+            } catch (java.io.IOException unreadable) {
+                throw new java.io.UncheckedIOException(unreadable);
+            }
+        }
+        assertThat(read("infra/scripts/telemetry-check.sh")).contains("overlays/staging").contains("overlays/production")
+                .contains("obs_refused obs-endpoint-staging obs-endpoint");
     }
 
     @Test
@@ -158,16 +201,40 @@ class TelemetryPipelineManifestsTest {
             }
         }
         assertThat(statement).as("the card-number scrub of a log body").isNotNull();
-        String written = statement.substring(statement.indexOf('"') + 1, statement.indexOf("\", \"[scrubbed]\""));
-        // A plain YAML scalar keeps its backslashes; OTTL's string literal then reads each doubled one as one.
-        Pattern card = Pattern.compile(written.replace("\\\\", "\\"));
-        for (String number : List.of("4111111111111111", "4111 1111 1111 1111", "4111-1111-1111-1111", "3782 822463 10005")) {
+        Pattern card = patternOf(statement);
+        // A JSON-escaped body: "\n" before the digits is a backslash and a letter, which a word boundary alone would not see past.
+        for (String number : List.of("4111111111111111", "4111 1111 1111 1111", "4111-1111-1111-1111", "3782 822463 10005",
+                "4111.1111.1111.1111", "3056 930902 5904")) {
             assertThat(card.matcher("card " + number + " end").find()).as(number).isTrue();
+            assertThat(card.matcher("line\\n" + number + "\\t").find()).as("after an escape: " + number).isTrue();
         }
+        assertThat(card.matcher("a run 41111111111111111111 of twenty").find()).as("twenty digits are no card number").isFalse();
         for (String identifier : List.of("01937a2c-1234-5678-9012-3456789abcde", "12345678-1234-1234-1234-123456789012",
                 "019a7c3e-4123-8456-1234-bcde12345678")) {
             assertThat(card.matcher("correlation " + identifier).find()).as(identifier).isFalse();
         }
+
+        String money = null;
+        for (Object context : contexts) {
+            Map<String, Object> declared = cast(context);
+            for (String text : stringList(declared.get("statements"))) {
+                if (money == null && text.startsWith("replace_pattern(body, \"") && text.contains("[A-Z]{3}")) {
+                    money = text;
+                }
+            }
+        }
+        assertThat(money).as("the amount scrub of a log body").isNotNull();
+        Pattern amount = patternOf(money);
+        assertThat(amount.matcher("an amount 731.94 EUR").find()).isTrue();
+        assertThat(amount.matcher("{\"message\":\"first\\n731.94 EUR\"}").find()).as("after an escaped newline").isTrue();
+        assertThat(amount.matcher("{\"message\":\"x\\t12 USD\"}").find()).as("after an escaped tab").isTrue();
+        assertThat(amount.matcher("version v2 EUR").find()).as("a word's digits are no amount").isFalse();
+    }
+
+    /** The pattern between a statement's first two quotes: a plain YAML scalar keeps its backslashes, OTTL reads each doubled one as one. */
+    private static Pattern patternOf(String statement) {
+        String written = statement.substring(statement.indexOf('"') + 1, statement.indexOf("\", \"$$1[scrubbed]\""));
+        return Pattern.compile(written.replace("\\\\", "\\"));
     }
 
     @Test
