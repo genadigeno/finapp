@@ -628,3 +628,77 @@ jobs:
           path: build/rehearsal/
           if-no-files-found: error
           retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # The restore rehearsal (P15-TSK-030, OPERATIONS_RUNBOOK.md section 11.35): a logical
+  # backup of a database the platform's own services wrote, encrypted as it is written,
+  # restored into a fresh PostgreSQL held so that no platform role can log in, its
+  # transaction counter moved past the restored journal, and proven financially whole by
+  # the platform's own checks before the roles are released; then each kind of corruption
+  # planted in a restore of its own and refused by its own check alone.
+  #
+  # Docker and a JDK, no cluster. It runs on master, nightly and on a pull request that
+  # changes a migration (what a restore must carry), the harness, its commands or the
+  # role script. It holds no credential: every password and both backup keys are generated
+  # per run into a temporary directory the script removes. Its artefacts are logs and
+  # verdicts, never the backup.
+  # ---------------------------------------------------------------------------
+  restore-rehearsal:
+    name: Restore rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run only on master, nightly, or when a migration, the harness or its commands changed
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE"
+          if git diff --name-only "origin/$BASE" HEAD | grep -Eq '(^[a-z]+/src/main/resources/db/migration/|^infra/scripts/restore-rehearsal|^app/src/test/java/com/finapp/app/restore/|^infra/postgres/|^\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read the pinned Java version from the version catalog
+        id: toolchain
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          version=$(grep -E '^javaToolchain[[:space:]]*=' gradle/libs.versions.toml | cut -d'"' -f2)
+          if [ -z "$version" ]; then
+            echo "::error::javaToolchain not found in gradle/libs.versions.toml"
+            exit 1
+          fi
+          echo "java-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
+      - name: Set up Gradle
+        if: steps.gate.outputs.run == 'true'
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: The rehearsal
+        if: steps.gate.outputs.run == 'true'
+        run: ./infra/scripts/restore-rehearsal.sh
+
+      - name: Keep the artefacts
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: restore-rehearsal
+          path: build/restore-rehearsal/
+          if-no-files-found: error
+          retention-days: 30

@@ -1860,7 +1860,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.2 Promote a release by digest; the production approval boundary | `-017` | `-017` |
 | 11.3 Roll back by digest (a schema is never rolled back; never across a contract marker; an added handler's type replayed over the rollback window after the re-roll) | `-005`, `-012`, `-017`, `-027` | `-012` |
 | 11.4 A failed migration (forward fix only) | `-004`, `-005` | `-032` |
-| 11.5 Restore, then verify financially before any money moves | `-030` | `-030` |
+| 11.5 Restore, then verify financially before any money moves *(written 2026-11-11 as §11.35, below)* | `-030` | `-030` |
 | 11.6 Broker outage, consumer lag, a poison record, dead letters and replay | `-026`, `-028` | `-028`, `-032` |
 | 11.7 Rotation and revocation per secret class; a key compromise *(the cloud half written 2026-11-09, below; the fleet's half is `SECRET_MANAGEMENT.md` §5.1 and §5.2)* | `-016`, `-018`…`-020` | `-020` |
 | 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `P15-TSK-024` (instance down, stale gauges: written below, 2026-11-08), `P15-TSK-025` (burn rate and certificates: written below, 2026-11-08) | `-032` |
@@ -1878,6 +1878,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.30 Abuse limits: the doors' per-source limits, a door that refuses everyone, a store that cannot count, raising a limit, rotating the bucket key *(written 2026-11-09, below)* | `P15-TSK-022` | `-032` |
 | 11.29 Key rotation and key compromise: the field-level key rings and the callback window *(written 2026-11-09, below)* | `P15-TSK-019` | `-020` |
 | 11.31 Changing configuration: which class, which way, and `ConfigFingerprintDisagrees` *(written 2026-11-09, below)* | `P15-TSK-031` | `-032` |
+| 11.35 Restore, held until the platform's own checks pass on it; the restore rehearsal and its last record *(written 2026-11-11, below)* | `P15-TSK-030` | `P15-TSK-030` (the logical restore, on containers); the managed restore is `THREAT_MODEL.md` §6 item 38 |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -1902,6 +1903,8 @@ row.)*
 *(Added 2026-11-09 by `P15-TSK-031`: §11.31 below is written, from the register, the overlays and `infra/prometheus/rules/platform.yml`; not yet rehearsed.)*
 
 *(Added 2026-11-09 by `P15-TSK-016`: §11.7 below is written, the cloud half; no account exists to run it.)*
+
+*(Added 2026-11-11 by `P15-TSK-030`: §11.35 below is written, row 11.5's procedure, and records the restore rehearsal: a logical backup restored into containers on one machine. A managed restore has not run anywhere.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
@@ -2507,7 +2510,7 @@ SELECT position, entries_judged, last_success_at, last_failure_at, last_failure_
 
 **Stopping it.** `finapp.accounting.source-census.enabled=false` stops the census on an instance; it moves no money and writes only its own records, so rolling a release back removes it cleanly. Stopped on every instance, its gauges read no value past `.stale-after` (the unreadable tickets, section 11.20), by design.
 
-**A logical restore.** Transaction ids are not portable: a dump restored into a new cluster restarts the counter below the restored rows' `txid`. A census whose head is ahead of the database's counter refuses to walk (a stamped failure, the head unmoved) rather than skip silently, and it needs a reviewed migration to reset the head at the floor: the head's own trigger refuses a move backward from any other path. A physical restore carries the counter with it and needs nothing.
+**A logical restore.** Transaction ids are not portable: a dump restored into a new cluster restarts the counter below the restored rows' `txid`. A census whose head is ahead of the database's counter refuses to walk (a stamped failure, the head unmoved) rather than skip silently. The restore procedure (§11.35) moves the restored cluster's counter past every restored `xid8` before anything runs, by its epoch on the stopped cluster, so the head stays where it was, nothing is walked twice and new entries land after it; the procedure's verification proves the census can walk the whole restored journal. A managed server gives no one its stopped data directory, which `pg_resetwal` needs, so a logical restore into one is refused by that verification (`THREAT_MODEL.md` §6 item 38): a migration resetting the head to its floor would not make the walk whole, because restored entries above the counter stay out of reach. A physical restore carries the counter with it and needs nothing. *(Read "and it needs a reviewed migration to reset the head at the floor: the head's own trigger refuses a move backward from any other path" until 2026-11-11.)*
 
 **`GaugesStaleAcrossTheFleet` (page, 5 minutes).** Every instance that is up has a stale gauge canary (`finapp_gauges_refreshed` NaN): each instance's own `GaugesStale` is a ticket, but while the whole fleet's refreshers are stale, every fleet-wide `max()` rule on a gauge reads NaN and every correctness page on a gauge is blind. One stale instance never pages this way. Check the database first (the gauge reads block on the pool and database timeouts), then the refresher on one instance (section 11.8). Do not restart the fleet at once; the page is about reading, not about money.
 
@@ -2711,7 +2714,7 @@ Dependabot pull request that moves one root and not the other, or the roots and 
 `docker buildx imagetools inspect <repository>:<version>`, as for the scanners. For Terraform, set every root's
 `required_version` to the same version. The build refuses a mismatch.
 
-**What this does not cover.** An apply, a plan against an account, a drift check, and a managed restore (the `postgres` module's README says what one must re-attach; the local rehearsal is §11.5's). Each needs a real account, which
+**What this does not cover.** An apply, a plan against an account, a drift check, and a managed restore (the `postgres` module's README says what one must re-attach; the local rehearsal is §11.35's, row 11.5's procedure). Each needs a real account, which
 Phase 15 does not have (`THREAT_MODEL.md` §6 items 7 and 23). A first apply is not one step: the state bucket comes before its own
 backend (the `object-storage` README) and the brokers come up in three stages (the `kafka` README).
 
@@ -2951,6 +2954,55 @@ the controller pods do not start.
 **What this does not mean.** One node, one machine, three replicas plus a surge: load, chaos and ten instances are the storm's (`P15-TST-001`, postponed by the owner). The broker and the database are test-only copies. kindnetd has not answered yet: `THREAT_MODEL.md` section 6 item 30. No Prometheus runs in the cluster: cert-manager's series and a replica's scrape are read once by the rehearsal's own pod. The cooperative assignor's moving only what changes hands is counted by a test of the broker tier owed to `P15-TST-002`, and a refused broker credential failing readiness was not exercised. T40's acceptance rows were not created, because an offer needs the origination chain the rehearsal does not build: the forged address is measured on the per-source key, the same `request.getRemoteAddr()`. The numbers are from a loaded development machine.
 
 **CI's runner.** Nothing has run there. `ubuntu-latest` on a public repository is, by GitHub's published figures, 4 vCPUs and 16 GB. The application namespace's quota is 8 GiB, and the rest of the cluster comes on top of it (the node's own components, cert-manager, both edge controllers, the simulator, the client's JVM), so it should fit with little to spare, and a 7 GB runner would not. The job's first run is the test. It sits inside the workflow's `concurrency` group: a run in progress on `master` is not cancelled, but a newer push replaces one still waiting, so a rehearsal can be skipped between two pushes and the nightly run is what covers it.
+
+### 11.35 Restore: held until the platform's own checks pass on it; the restore rehearsal and its last record (`P15-TSK-030`)
+
+*(Written by `P15-TSK-030`, 2026-11-11, from `infra/scripts/restore-rehearsal.sh` and the two commands it runs from `app`'s test source set, `RestoreVerification` and `RestoreRehearsalSeed`. The procedure has run against containers on one machine, as the rehearsal below. It has never run against a managed instance: `THREAT_MODEL.md` §6 item 38.)*
+
+**The first rule: no money moves on a restored database until the verification passes.** Every schedule, every consumer, the outbox relay and every door reach PostgreSQL only through the pools the application opens as `finapp_app`, and report generation as `finapp_reporting` (`application.yaml`, `spring.datasource` and `finapp.database.reporting`). So the restore makes those two roles and `finapp_migrator` unable to log in before anything is restored into the database, and releases them only when every check below has passed. What enforces it is the database, not this page: a replica pointed at the restored database cannot open a connection, so readiness's `db` is down and no door is routed to it, and `SchemaVersionGuard` never proves `READY` (a failed read moves no verdict), so its schedules, relay and consumers do no work (`P15-TSK-005`'s hold, as a second line). Ten replicas are refused exactly as one is, and a migration Job cannot run either.
+
+**What "financially whole" means: the platform's own checks, not a copy of them.**
+
+| Check | What answers it | Where it runs |
+|---|---|---|
+| `flywayValidate` | Every schema's history against the repository's migrations (`./gradlew flywayValidate`, CI's gate) | the script, in a read-only session |
+| Row counts equal to the source's | Every table's `count(*)`, read in the dump's own snapshot and again on the restore | the script, against the backup's manifest |
+| The catalogue equal to the source's | Read from the catalogue: the roles' attributes and settings and memberships (cluster objects `pg_dump` never carries), the database's grants, every definer function with its owner and settings, every `TRUNCATE` refusal, every `UNLOGGED` table, every grant to a platform role. And `pg_dump --schema-only`, against the source's schema taken once through dump and restore in its own cluster (a `CHECK` comes back from a restore with its parentheses regrouped, so the source's own text would differ from every faithful restore) | the script, against the manifest |
+| Trial balance per currency | The ledger's `TrialBalance.sweep` (`INV-ACC-01`) | `RestoreVerification` |
+| GL = ledger per period | `GeneralLedger.balances` under the version `GlPins.forPeriod` reads, a locked period by its pin, judged by `GlEqualsLedger` (`INV-ACC-06`); a period that cannot be read fails | `RestoreVerification` |
+| The projection check | `ProjectionVerification` through the wired `SourceProofs` (`INV-BAL-02`) | `RestoreVerification` |
+| Every product proof | The wired `SourceProofs`, one reading per `SourceProofs.Source`, every `SourceProofs.Proof` answered once and complete (`INV-ACC-12`) | `RestoreVerification` |
+| The source-join census | `SourceCensus`'s own walk and judgement over the whole journal from its floor, with a head kept in memory so the restored head never moves; every entry must be walked, and no finding may be new | `RestoreVerification` |
+
+`RestoreVerification` starts the platform's own application context against the database, as the restore's administrator, in sessions whose default is `default_transaction_read_only`: whatever in that context started could change nothing, and the command refuses to run on a session that is not read-only. A check that throws fails, and so does a check over nothing (an empty journal, no period judged, a census that walked no entry). Its report states how many checks the catalogue has and then one `PASS|<check>|<detail>` line each, never an amount.
+
+**The procedure.**
+
+1. **Take the backup in one snapshot.** A `REPEATABLE READ READ ONLY` session exports its snapshot; in it, count every table and read the catalogue (the manifest); `pg_dump --snapshot` writes the schema and the data from the same snapshot; the session commits after them. The dump is a copy of the ledger: it goes straight into `openssl enc` (AES-256) under a key made for it and never reaches a disk unencrypted; the manifest is encrypted beside it; each ciphertext's SHA-256 is kept so a damaged file is refused before it is decrypted.
+2. **A fresh server, the roles held.** Create the platform's three roles with their attributes and settings, and `NOLOGIN`, in one transaction, before anything is restored (the local role script here, the bootstrap step in an environment). Confirm each is refused at log-in (`role "…" is not permitted to log in`).
+3. **Restore** with `pg_restore --single-transaction --exit-on-error`, as the administrator: all or nothing.
+4. **Move the transaction counter.** A logical restore restarts the counter below the restored rows' `xid8` values (ledger `V034`'s `txid`, the census's head, any other `xid8` column, read from the catalogue). Stop the server cleanly, set the epoch past the highest of them (`pg_resetwal -e <highest / 2^32 + 1>`), start it, and confirm `pg_snapshot_xmin(pg_current_snapshot())` is above them. Only the epoch moves: the 32-bit transaction ids, and with them visibility, wraparound and the migrations that compare a row's `xmin` with the current id modulo 2^32, are untouched. A managed server gives no one its stopped data directory, so it cannot do this, and a logical restore into one is refused by the census check (`THREAT_MODEL.md` §6 item 38); a physical restore carries the counter and skips this step. The reset starts a new write-ahead log, so take a base backup of the restored server once it is released.
+5. **Compare and verify**: `flywayValidate`, the counts and the catalogue against the manifest, then `RestoreVerification`.
+6. **Release only when every verdict is a pass.** `ALTER ROLE finapp_app LOGIN`, the same for `finapp_migrator` and `finapp_reporting`, and confirm each logs in. Then, and only then, point the deployment at it.
+7. **A refusal leaves the database unused.** Nothing is corrected to make a restore pass. A failing check is read as the incident it is (§11.12), the restored database is discarded, and the restore is taken again from another backup or the cause is found in the source.
+
+**What a restore to an earlier point leaves outside the books.** A backup is a moment. Anything a provider did for the platform after it, a capture, a payout, a settlement line, is not in the restored journal, and the released fleet will meet it as an unknown outcome to inquire about or a settlement line with nothing behind it: the resolution sweeps ask the providers, and reconciliation raises the rest as breaks. That is the platform's ordinary handling of a provider that is ahead of it, and no step here replaces it. How far behind a backup may be is the recovery point, which Phase 16 measures.
+
+**The managed half, referenced and deferred.** A point-in-time restore makes a new instance; its parameter group, security group and subnet group must be attached before anything connects, and only that parameter group gives it the application's `max_connections` (`infra/terraform/modules/postgres`, its README's "Operating it"). A physical restore brings the roles back able to log in, so step 2 becomes the master user's `ALTER ROLE … NOLOGIN` before the new address is given to anything, and step 4 does not apply. The verification would run from inside the network as the master user acting as the schemas' owner, a Job of the application image that does not exist yet. None of it has run: `THREAT_MODEL.md` §6 item 38.
+
+**Run the rehearsal.** `infra/scripts/restore-rehearsal.sh`; Docker, a JDK for Gradle, `openssl`. It builds the two commands (`:app:restoreRehearsalLauncher`); starts a source PostgreSQL on a random loopback port with its epoch set to 1, as a cluster that has run for a while would have; migrates it; seeds it through the platform's own services (`RestoreRehearsalSeed`: the period opened, the reference GL chart proposed and activated by two persons, four customers with EUR wallets, each funded by a two-person manual adjustment, the census run to its end, then six transfers past the census's head); verifies the source by the same checks, and a source that is not whole stops the run; backs it up and removes it; restores into a fresh server held as above; and releases that restore. Then it plants each kind of corruption in a restore of its own and requires each to be refused by its own check and by no other (`RESTORE_PLANTS` selects them). Artefacts (logs, reports, verdicts, never the backup) go to `build/restore-rehearsal` (`RESTORE_ARTEFACTS`). Exit `0` every assertion held, `1` one failed, `2` a step could not run. CI's `restore-rehearsal` job runs it on master, nightly and on a pull request that changes a migration, the harness, its commands or the role script.
+
+| Plant | What it is | Refused by |
+|---|---|---|
+| `unbalanced-entry` | One line of a two-person adjustment raised by one minor unit, with its proposal line and its balance row, so the census and the projection still agree | the trial balance, alone |
+| `balance-disagrees` | One wallet's balance row moved by one minor unit | the projection check, alone |
+| `missing-row` | One audit record deleted (no financial check reads the audit trail) | the row counts, alone |
+| `grant-dropped` | `finapp_app`'s `INSERT` on the journal's lines revoked | the catalogue, alone |
+| `counter-not-moved` | Step 4 skipped | the source-join census, alone |
+
+**The last record.** RESTORE_RECORD
+
+**What this does not mean.** One machine, containers, a journal of ten entries: no measured recovery time or recovery point (Phase 16), and no managed instance (item 38). The products with no seed flow (cards, lending, BNPL, FX, merchants, positions) were judged over no rows, so their proofs answered complete over nothing in this record; they read real rows when the backup holds them. No period was locked, because a period locks only after its grace on the database's clock, so "GL = ledger per locked period" ran on the open period, through the same `GlPins.forPeriod`, and a locked period that cannot be read under its pin is refused (`RestoreVerdictsTest`). An open period with a GL finding, or any proof finding, refuses a restore of that database: the verification is strict, and a person decides from the break register. A census finding recorded before the backup is disclosed rather than refused, because nothing ever closes one. GL = ledger reads the months that have an accounting period; a month with entries and no period is read by the trial balance and the census only. A sequence's value is restored by `pg_dump`'s own `setval` and not compared, because it is read at the moment of the dump rather than in its snapshot: one restored behind would refuse the first insert that reached it, never write silently. The backup's integrity is a SHA-256 digest beside it, which finds a damaged file and not a deliberate one: the work directory is the run's own and lives as long as the run. The seed's parties, identities and customers are written by SQL, as the database suites write them; every entry and balance is the platform's own.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 
