@@ -269,7 +269,9 @@ any delivery.
 ### B8 — CI → registry
 
 CI builds the application and migrator images from a reviewed commit and pushes them to the registry (C7). Today CI
-builds, tests and scans, builds the application image (since 2026-11-08), and pushes nothing.
+builds, tests and scans, builds the application image (since 2026-11-08), and pushes nothing to a real registry. Since
+2026-11-11 it also pushes both images by digest to a registry of the run's own, signs and attests them there under a key of
+the run's own, and verifies them before a `kind` cluster admits them.
 
 | Category | Threats | Note |
 |---|---|---|
@@ -458,7 +460,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T5 | Static analysis of every module's production source in CI: Semgrep pinned by digest with no network, rules vendored, a finding needing a baseline row with a reason and an expiry, the scanner required to have read every Java file, the rules' own tests and the plants run in the same job | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theStaticAnalysisRunsOverTheVendoredRulesOffline`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#theBaselineIsSmallAndReasoned`; `infra/scripts/sast.sh` `contains: --network none` |
 | T5 | The JSON library, in both its lines (3 in the image, 2 on the test classpath only, which the dependency scan reads), and the Kafka client's two compression codecs held at their fixed releases rather than carried: floors every module takes from the build logic on its runtime and test-fixture classpaths, the application's lockfile (what the image and the dependency scan's SBOM are built from) holding none of the versions the scans reported, and the list of carried findings naming none of them, so a finding on any of them fails its scan | EXISTS | `build-logic/src/main/kotlin/finapp.java-conventions.gradle.kts` `contains: listOf("jackson-bom", "jackson2-bom", "lz4-java", "snappy-java")` `contains: libraryFloors.forEach { "implementation"(it) }` `contains: libraryFloors.forEach { "testFixturesImplementation"(it) }`; `app/gradle.lockfile` `lacks: tools.jackson.core:jackson-core:3.1.5=` `lacks: tools.jackson.core:jackson-databind:3.1.5=` `lacks: com.fasterxml.jackson.core:jackson-core:2.22.1=` `lacks: com.fasterxml.jackson.core:jackson-databind:2.22.1=` `lacks: at.yawk.lz4:lz4-java:1.10.1=` `lacks: org.xerial.snappy:snappy-java:1.1.10.7=`; `infra/trivy/accepted-findings.yaml` `lacks: jackson` `lacks: lz4` `lacks: snappy`; `app/src/test/java/com/finapp/app/architecture/SecurityScansAreWiredTest.java#everyFindingCarriedIsInTheRegister` |
 | T5 | The findings the image and dependency scans carry today (10 HIGH, 0 CRITICAL, all in the distroless base's packages, which both images share), each with a reason and an expiry, applied by `infra/trivy/accepted-findings.yaml`; accepted by the owner on 2026-11-09, each until its date in §6 item 12 | GAP | `owner item 12`; owner: the owner, since 2026-11-08 |
-| T5 | Signatures and provenance, with admission refusing an unsigned image | PLANNED | `P15-TSK-007` |
+| T5 | Both images signed, with SLSA provenance and the CycloneDX SBOM as attestations, under a key pair generated per run outside the repository, and verified with `cosign verify` and `cosign verify-attestation` before the job deploys them, each attestation naming the pushed digest; an unsigned image, one signed by another key and a signed one with no attestation each refused by cosign, by name, in the same run | EXISTS | `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#ciProvesItOnKindWithNoCredential`; `infra/scripts/admission-check.sh` `contains: step "verify before deploy"` `contains: refused_by_verify unsigned "no signatures found"` `contains: refused_by_verify other-key "no matching signatures"` `contains: refused_by_verify unattested "no matching attestations"` |
+| T5 | Admission on a real cluster (`kind`): the Sigstore policy controller, pinned with its chart, refusing in the platform's namespaces an image unsigned, signed by another key, or signed without its attestations, an unsigned init container, any image no policy names, and everything while it cannot answer; every refusal beside its control, the identical object admitted in a namespace the policy does not watch | EXISTS | `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#everyPolicyEnforcesAndThePlatformImagesNeedEverything`; `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#theControllerFailsClosed`; `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#theToolsArePinnedAndWatched`; `infra/scripts/admission-check.sh` `contains: refused "app unsigned"` `contains: refused "app signed by another key"` `contains: refused "app signed, not attested"` `contains: refused "an image no policy names"` `contains: attempt "$1-control" "$4"` |
 | T6 | No credential literal in committed configuration except the one marked local default | EXISTS | `app/src/test/java/com/finapp/app/security/CommittedConfigurationHoldsNoSecretTest.java#noCommittedConfigurationHoldsACredentialLiteral` |
 | T6 | The whole of git history scanned for secrets in CI, with the pinned scanner | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theHistoryIsScannedForSecrets` |
 | T6 | A field or accessor named for a secret must be held in `Sensitive` (the build rule) | EXISTS | `app/src/test/java/com/finapp/app/architecture/NoUnwrappedSecretRulesTest.java#secretsAreWrapped` |
@@ -656,7 +659,9 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T26 | Audit retention and its archival design are written: no audit record is deleted, a jurisdiction's period stays open, and the archival is a verified copy (the guard holds what the policy states) | EXISTS | `app/src/test/java/com/finapp/app/architecture/RetentionPolicyIsCompleteTest.java#auditIsNeverDeletedAndItsArchivalIsACopy`; `app/src/test/java/com/finapp/app/architecture/RetentionPolicyIsCompleteTest.java#everyJurisdictionDependentPeriodIsOpen` |
 | T27 | The application image carries the OCI `revision` (the commit, marked `-dirty` from a changed tree), `source` and `version` labels, passed by the build script and read back from the built image by CI's image job | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageCarriesItsRevisionSourceAndVersion`; `infra/scripts/image-build.sh` `contains: label org.opencontainers.image.$key is` |
 | T27 | Build identity asserted after deploy, against the promoted image's revision | PLANNED | `P15-TSK-017` |
-| T27 | Signatures with provenance and SBOM attestations, verified at admission | PLANNED | `P15-TSK-007` |
+| T27 | Admission verifies, by digest, the signature and both attestations of every platform image a workload runs, the migrator's Job and init containers included, read from every manifest, overlay image entry and patch under `deploy/`, and under every repository name the registry module gives the images in each environment (`finapp-<environment>-app`, `-migrator`); every admission policy is in one file, which the admission root renders alone; the one exception is the edge's Traefik at its one pinned digest, equal to the edge's own; no namespace carries the controller's own opt-out label; on `kind` both images admitted at their signed digests, the application under an environment's name admitted signed and refused unsigned, and the migrator unsigned or signed by another key refused | EXISTS | `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#everyImageThePlatformNamespacesRunIsMatched`; `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#everyNameTheRegistryGivesIsHeldToBothPolicies`; `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#everyAdmissionPolicyIsInTheOneFile`; `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#noNamespaceOptsOutThroughKnative`; `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#exactlyOneExceptionAndItIsTheEdgesPinnedDigest`; `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#theGlobPortIsTheControllers`; `infra/scripts/admission-check.sh` `contains: admitted "migrator signed"` `contains: admitted "app under an environment's name, signed"` `contains: refused "app under an environment's name, unsigned"` `contains: refused "migrator unsigned"` `contains: refused "migrator signed by another key"` `contains: refused "init container unsigned"` `contains: admitted "edge at Traefik's pinned digest"` |
+| T27 | The policy controller ready, its webhook's rules registered and its policies `Ready` before any workload of a namespace it watches is synced: its webhook is created with no rules, so a pod created before then is admitted unchecked | PLANNED | `P15-TSK-017` |
+| T27 | The namespaces admission does not watch: the controller's own, External Secrets' and `finapp-observability`, whose third-party images are pinned by digest in their manifests and enforced by nothing at the cluster | GAP | `owner item 35`; owner: the owner, since 2026-11-11 |
 | T27 | A registry with immutable tags and scan on push, one repository per image the overlay names; no expiry rule, so nothing a deployment runs can expire, until a promotion lands under an immutable tag. Asserted over a plan against a mock provider, never applied: no registry exists and nothing has been pushed | EXISTS | `infra/terraform/modules/registry/tests/registry.tftest.hcl` `contains: A repository's tags are not immutable` `contains: A repository does not scan on push.`; `infra/terraform/modules/registry/main.tf` `contains: image_tag_mutability = "IMMUTABLE"` `lacks: aws_ecr_lifecycle_policy`; `infra/scripts/terraform-check.sh` `contains: refuses registry-mutable` |
 | T27 | Deploy by digest, with promotion refusing a tag or an unsigned digest | PLANNED | `P15-TSK-017` |
 | T28 | A second approver on the production overlay through `CODEOWNERS`, a promotion script demanding staging evidence, pull-based GitOps | PLANNED | `P15-TSK-017` |
@@ -674,7 +679,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T30 | CI's token is read-only in every permissions entry, no job references a secret, and the workflow is the repository's only one, with no local action | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theTokenIsReadOnly`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#noJobReferencesASecret`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#thereIsOneWorkflow` |
 | T30 | Pull-based GitOps: no CI credential reaches production | PLANNED | `P15-TSK-017` |
 | T30 | No cloud credential and no state backend in CI's infrastructure checks. The `iac` job declares no environment, permission or secret of its own. Its script initialises only with `-backend=false`, runs no command that touches a backend, a state or an account, gives no container a host variable, and mounts the tree read-only. Every `terraform test` file mocks every provider its directory requires and configures no real one. No backend or provider block holds a credential argument | EXISTS | `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#ciHoldsNoCredentialAndInitialisesNoBackend`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyTestMocksEveryProvider`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyEnvironmentKeepsItsStateRemoteLockedAndEncrypted` |
-| T30 | Keyless signing from CI's identity, its trust narrowed at admission | PLANNED | `P15-TSK-007` |
+| T30 | Signing in CI holds no credential and no OIDC token: the key pair and its passphrase are generated per run in a temporary directory and die with it; the passphrase is in the environment of the docker client that starts each cosign container, not exported to the script's other children, and readable in a running cosign container's configuration by whoever can inspect the runner's containers, as the key file is by whoever can read the directory; nothing reaches a transparency log, no job asks for `id-token`, CI never sets the check's developer aids, and the workflow's token stays read-only | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theTokenIsReadOnly`; `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#ciProvesItOnKindWithNoCredential` |
+| T30 | Keyless signing from CI's own identity on `master`, `id-token: write` on the signing job alone, and the policy naming that identity exactly: no registry or Sigstore identity exists, so the production identity is the owner's to ratify | GAP | `owner item 35`; owner: the owner, since 2026-11-11 |
 | T31 | No handler is served without a declared rule, and every permission-guarded route requires exactly the permission the register names | EXISTS | `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#everyGuardedRouteRequiresItsRegisteredPermission`; `app/src/test/java/com/finapp/app/api/EveryEndpointDeclaresARuleTest.java#everyHandlerDeclaresSomething` |
 | T31 | The public allow-list generated from the handler mapping and the permission register, byte for byte, and read back from the committed file: no operator route on it by permission or by path, every public route on it. A hostile spelling of an operator path is admitted by no public rule, and a planted operator route declaring only a session stays off it | EXISTS | `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#theRouteFilesAreGenerated`; `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#noOperatorRouteIsOnThePublicList`; `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#everyPublicRouteIsListed`; `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#aHostileSpellingIsAdmittedByNoPublicRule`; `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#aSessionOnlyOperatorRouteIsStillOperator` |
 | T31 | The proxy's own behaviour on those spellings, in the pinned image with the committed files: an operator path in each form reaches no backend | EXISTS | `infra/scripts/edge-check.sh` `contains: an operator route in every spelling` |
@@ -955,7 +961,7 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
 2026-11-09, accepting each recommendation** ("accept recommendations", at the end of wave C); each item's decision follows its
 options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)* **Items 21, 22, 23, 27 and 28 were added on 2026-11-09, and the owner decided them the same day, accepting each recommendation** ("accept recommendations", at the end of wave D); each item's decision follows its options. *(This paragraph read "Items 21, 27 and 28 ... await the owner" and "Item 22 ... awaits the owner" until then.)* **Items 30 to 34 were added on 2026-11-09, and the owner decided them on 2026-11-11, accepting each recommendation**
 ("accept recommendations", at the end of wave E); each item's decision follows its options. *(This paragraph read "Items 31 to 34
-were added on 2026-11-09 and await the owner." until then.)*
+were added on 2026-11-09 and await the owner." until then.)* **Item 35 was added on 2026-11-11 and awaits the owner.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1337,6 +1343,64 @@ were added on 2026-11-09 and await the owner." until then.)*
     *Recommendation*: **(a)**. The job needs no machine anyone has to find, and every denial sits beside a control, so a plugin that
     enforces nothing goes red rather than green.
     **Decided 2026-11-11**: (a); the first CI run of the `rehearsal` job is read for which engine answered.
+
+35. **T27's and T30's residual: the production signing identity, the namespaces admission does not watch, and what a real
+    environment's admission needs** *(added 2026-11-11 by the signing task; parts (c) to (f) by its review)*. Six separate things.
+    - **(a) Who signs in production.** CI signs today under a key pair generated for each run, which proves the path and
+      vouches for nothing past the run, because no registry or Sigstore identity exists. The options:
+      - **(i) Keyless, from CI's own identity.** GitHub's token issuer, the subject this workflow on `refs/heads/master`,
+        and the policy naming exactly that identity, never a pattern. `id-token: write` is granted on the signing job
+        alone, and `CiWorkflowIsLockedDownTest` names that one exception. Fulcio and Rekor are the public instance unless
+        the organisation runs its own.
+      - **(ii) A key held in KMS** (ADR-0122's alternative). Someone owns it and its rotation, and no transparency log is
+        needed.
+
+      *Recommendation*: **(i)** with the public instance, applied when the registry exists. Then a signature names the
+      commit's workflow run and no key has a holder. A private instance waits for an organisation that has one.
+    - **(b) The namespaces admission does not watch.** The policy controller's own namespace, External Secrets' and
+      `finapp-observability` run third-party images. Each is pinned by digest in its manifest, and nothing at the cluster
+      enforces it. Opting a namespace in refuses all of it, because no policy names those images. The options:
+      - **(i) Accept it until a registry exists**, then mirror each pinned upstream digest into it, sign the mirror under
+        the CI identity, and opt the namespace in.
+      - **(ii) Name each image's digest as an exception now.** This widens the exception list from one entry to a list
+        that grows with every controller.
+
+      *Recommendation*: **(i)**. The digest pins hold what they can today, and an exception list that grows is the
+      defect admission exists to prevent.
+    - **(c) Rotating the trusted key or identity.** A pod is admitted only under an authority the policy holds now. After a
+      rotation, a new pod of a digest signed only under the old key is refused: a rescheduled replica, an HPA scale-out, and
+      the rollback target `P15-TSK-017` keeps. The options:
+      - **(i) Overlap**: the policy holds both authorities, and every digest still running or kept for rollback is signed
+        again under the new one, before the old authority is removed.
+      - **(ii) A clean cut**: remove the old authority at once, and accept that a rollback past the rotation is a forward fix.
+
+      *Recommendation*: **(i)**. A rotation must never take away the way back, and re-signing a digest changes no byte of it.
+    - **(d) Who may write the signature repository.** Its tags are mutable by design, so whoever can push there can delete or
+      replace a signature or an attestation. That denies service: every pod of that digest is refused. It could also undo a
+      revocation by restoring a removed signature. It cannot forge one: the controller verifies each signature's digest and each
+      attestation's subject against the image (cosign's `SimpleClaimVerifier` and `IntotoSubjectClaimVerifier`). The options:
+      - **(i) Only the pipeline's signing role writes it**, nobody reads it but the clusters' pull identities, and its writes
+        are in the cloud's audit trail.
+      - **(ii) Immutable tags there too**, which makes a second attestation on a digest impossible.
+
+      *Recommendation*: **(i)**, and a revocation becomes an authority change (part (c)), never a deletion alone.
+    - **(e) A TUF outage, under part (a)'s public instance.** The controller initialises its trust root from the public TUF
+      mirror when it starts, and stops if it cannot. While its replicas restart in that outage, `failurePolicy: Fail` refuses
+      every new pod in both namespaces. The options:
+      - **(i) A trust root of our own** (the controller's `TrustRoot` resource, or `-tuf-root` with a mirror we run), refreshed
+        on a schedule.
+      - **(ii) Accept it**, with two replicas and a disruption budget making a restart of both together rare.
+
+      *Recommendation*: **(i)** when keyless is applied. Admission should not depend on a third party being reachable at the
+      moment a pod starts.
+    - **(f) The controller's own registry identity.** In a real cluster the controller reads signatures, attestations and image
+      configurations from the registry. In AWS that needs a role of its own with read access to the image and signature
+      repositories, and the security modules hold none. Without one, every image is refused. The options:
+      - **(i) A read-only workload identity for the controller**, scoped to the environment's repositories, added to the
+        security module.
+      - **(ii) Image pull secrets**, a long-lived credential.
+
+      *Recommendation*: **(i)**, beside the two workload identities that exist, never a stored credential.
 
 39. **T3's and T31's residuals once staff are refused on the public surface** *(added 2026-11-11 by the task that refuses them;
     (a) rewritten and (c) added by its review's fix round, the same day)*. Three things, each a decision.
