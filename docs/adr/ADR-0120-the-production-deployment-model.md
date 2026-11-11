@@ -155,6 +155,8 @@ for the pools. An empty or any-local `FINAPP_MANAGEMENT_ADDRESS`, and a manageme
 (`ManagementAddressGuard`). Secrets and endpoints arrive from the secret store; the Job and the test-only copies carry the
 restricted profile too.
 
+*Dated note (2026-11-11, `P15-TSK-023`'s review; the decision is unchanged):* the grace is now 117 s and `minReadySeconds` with it. The telemetry SDK's last export joins the ordered stop with a bound of its own, 2 s (`TelemetryFlush`, after the gauge refresher and before the beans are destroyed), a row of the shutdown budget; left to the providers' own close it was `shutdown().join(10 s)` each, which a collector that never answers would spend inside the pod's slack. The sum is 113 and the JVM's 4 s are kept.
+
 *As built for decision 1's image, `P15-TSK-003` (2026-11-08); the decision is unchanged.* The two bases' one
 definition is the root `Dockerfile`'s `FROM` lines (`tag@sha256`): Dependabot's docker ecosystem reads `FROM` lines and
 does not resolve `ARG`, so a separate pins file would have left it inert. The jar is built by Gradle outside the image;

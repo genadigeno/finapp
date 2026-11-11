@@ -77,6 +77,16 @@ class EdgeManifestsTest {
             Map<String, Object> custom = map(map(map(map(yaml(read(file)), "http"), "middlewares"), "edge-headers"), "headers");
             assertThat(map(custom, "customRequestHeaders")).containsEntry("Forwarded", "").containsEntry("X-Forwarded-Prefix", "").containsEntry("Upgrade", "");
         }
+        // A public caller's trace context never reaches a replica: the platform joins it and samples by its flag (P15-TSK-023's review).
+        // The operator edge keeps it (THREAT_MODEL.md section 6 item 37 (f)).
+        Map<String, Object> publicHeaders = map(map(map(map(map(yaml(read(PUBLIC_EDGE)), "http"), "middlewares"), "edge-headers"), "headers"),
+                "customRequestHeaders");
+        assertThat(publicHeaders).containsEntry("traceparent", "").containsEntry("tracestate", "").containsEntry("baggage", "");
+        Map<String, Object> operatorHeaders = map(map(map(map(map(yaml(read(OPERATOR_EDGE)), "http"), "middlewares"), "edge-headers"), "headers"),
+                "customRequestHeaders");
+        assertThat(operatorHeaders).doesNotContainKeys("traceparent", "tracestate", "baggage");
+        assertThat(read("infra/scripts/manifest-policy/edge.rego")).contains("[edge-trace-context]");
+        assertThat(read("infra/scripts/edge-check.sh")).contains("edge-trace-context").contains("traceparent");
     }
 
     @Test

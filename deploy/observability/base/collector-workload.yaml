@@ -1,0 +1,162 @@
+# The collector (P15-TSK-023): two replicas of the pinned OpenTelemetry Collector, each running both tiers of collector.yaml. Neither holds a
+# Kubernetes credential or a backend credential, and neither keeps anything on disk: a restart loses the batches in memory, never a request.
+# The application's egress names these pods by finapp/role: telemetry-collector on 4318 (P15-TSK-010), which is why the label is the contract.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finapp-collector
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-collector
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-collector
+        app.kubernetes.io/component: telemetry-collector
+        finapp/role: telemetry-collector
+        app.kubernetes.io/part-of: finapp
+    spec:
+      serviceAccountName: finapp-collector
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-collector
+      containers:
+        - name: collector
+          image: docker.io/otel/opentelemetry-collector-contrib@sha256:e40d61f10c9a617cca1ffd1be4d7e2b3a4b0f0001798ff07e58cabe82e618cea
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/otelcol/config.yaml
+          env:
+            # Every listener on the pod's own address, never 0.0.0.0.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # The peers of the load-balancing tier, by the headless Service below.
+            - name: COLLECTOR_PEERS
+              value: finapp-collector-peers.finapp-observability.svc.cluster.local
+            # The Go runtime's soft limit under the container's, so memory_limiter refuses before the kernel kills.
+            - name: GOMEMLIMIT
+              value: 400MiB
+          envFrom:
+            - configMapRef:
+                name: finapp-collector-backends
+          ports:
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: otlp-peers
+              containerPort: 4317
+              protocol: TCP
+            - name: health
+              containerPort: 13133
+              protocol: TCP
+            - name: metrics
+              containerPort: 8888
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: finapp-collector-config
+---
+# What the application's replicas export to: OTLP over HTTP alone. The Deployment's endpoint names this Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-collector
+spec:
+  selector:
+    app.kubernetes.io/name: finapp-collector
+  ports:
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+---
+# The load-balancing tier's view of its peers: every collector's own address, ready or not, so a trace id's owner is the same on every peer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-collector-peers
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: finapp-collector
+  ports:
+    - name: otlp-peers
+      port: 4317
+      targetPort: otlp-peers
+      protocol: TCP
+    - name: metrics
+      port: 8888
+      targetPort: metrics
+      protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: finapp-collector
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-collector

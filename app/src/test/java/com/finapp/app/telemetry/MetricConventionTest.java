@@ -36,10 +36,16 @@ import org.springframework.boot.test.context.SpringBootTest;
  * many, how long and how often, never which one.
  */
 @org.junit.jupiter.api.Tag("slice") // qualified: io.micrometer.core.instrument.Tag is imported here
-@SpringBootTest(properties = "spring.datasource.url=jdbc:postgresql://127.0.0.1:1/absent")
+@SpringBootTest(properties = {
+        "spring.datasource.url=jdbc:postgresql://127.0.0.1:1/absent",
+        // A replica's name, as Kubernetes would give it (P15-TSK-023): the resource carries it, and no meter may.
+        "management.opentelemetry.resource-attributes.[k8s.pod.name]=" + MetricConventionTest.POD})
 class MetricConventionTest {
 
+    static final String POD = "finapp-app-5c7b9d6f4d-q2x8z";
+
     @Autowired private MeterRegistry registry;
+    @Autowired private io.opentelemetry.sdk.resources.Resource resource;
 
     @Test
     @DisplayName("every meter the platform publishes is named finapp.<module>.<noun>")
@@ -130,6 +136,29 @@ class MetricConventionTest {
         assertThat(MetricNames.isWellFormed("finapp_outbox_pending"))
                 .as("the Prometheus form would bake one backend into the name")
                 .isFalse();
+    }
+
+    @Test
+    @DisplayName("the pod is a resource attribute of every span and log record, and never a metric tag (P15-TSK-023)")
+    void thePodIsAResourceAttributeNeverATag() throws java.io.IOException {
+        String pod = resource.getAttribute(io.opentelemetry.api.common.AttributeKey.stringKey("k8s.pod.name"));
+        assertThat(pod).as("the property this context set reached the resource every span and record carries").isEqualTo(POD);
+        assertThat(registry.getMeters()).as("a real registry").isNotEmpty();
+        for (Meter meter : registry.getMeters()) {
+            for (Tag tag : meter.getId().getTags()) {
+                assertThat(tag.getValue()).as("meter %s tag %s carries the pod", meter.getId().getName(), tag.getKey()).isNotEqualTo(POD);
+                assertThat(tag.getKey().toLowerCase(Locale.ROOT)).as("meter %s", meter.getId().getName())
+                        .isNotIn("k8s.pod.name", "pod", "instance", "host", "hostname");
+            }
+        }
+        // In a pod the value is the container's own hostname, which Kubernetes sets to the pod's name.
+        java.nio.file.Path here = java.nio.file.Path.of("").toAbsolutePath();
+        while (here != null && !java.nio.file.Files.exists(here.resolve("app/src/main/resources/application.yaml"))) {
+            here = here.getParent();
+        }
+        assertThat(here).as("the repository root").isNotNull();
+        String yaml = java.nio.file.Files.readString(here.resolve("app/src/main/resources/application.yaml"));
+        assertThat(yaml).contains("\"[k8s.pod.name]\": ${HOSTNAME:local}");
     }
 
     private List<String> ourMeterNames() {

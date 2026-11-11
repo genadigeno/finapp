@@ -415,6 +415,8 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.settlement.pull.timeout` | `FINAPP_SETTLEMENT_PULL_TIMEOUT` | OPERATIONAL | `PT10S` | default | default | default | default | default | - |
 | `finapp.settlement.pull.window` | `FINAPP_SETTLEMENT_PULL_WINDOW` | OPERATIONAL | `PT15M` | default | default | default | default | default | - |
 | `finapp.settlement.scheme.report.url` | `FINAPP_SETTLEMENT_SCHEME_REPORT_URL` | FINANCIAL | (none) | default | default | default | default | default | A settlement pull source. The worklist is derived on every replica from accepted batches and each key is pulled through a permit, so a replica with no source skips the key, one with a source pulls it, and a key stays owed until a batch for it is accepted. Absent in every environment until a real provider exists. |
+| `finapp.telemetry.logs-endpoint` | `FINAPP_TELEMETRY_LOGSENDPOINT` | OPERATIONAL | (none) | default | default | pod | pod | pod | - |
+| `finapp.telemetry.traces-endpoint` | `FINAPP_TELEMETRY_TRACESENDPOINT` | OPERATIONAL | (none) | default | default | pod | pod | pod | - |
 | `management.server.address` | `FINAPP_MANAGEMENT_ADDRESS` | OPERATIONAL | (loopback) | default | default | pod | pod | pod | - |
 | `server.tomcat.remoteip.internal-proxies` | `FINAPP_EDGE_PROXIES` | OPERATIONAL | (blank) | default | default | overlay | overlay | overlay | - |
 | `spring.datasource.url` | `FINAPP_DB_URL` | OPERATIONAL | (loopback) | default | default | generated | store | store | - |

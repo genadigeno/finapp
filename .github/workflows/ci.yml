@@ -352,6 +352,10 @@ jobs:
         # P15-TSK-011. The pinned Traefik with the committed route files, against a stand-in backend; no cluster, no credential.
         run: ./infra/scripts/edge-check.sh
 
+      - name: The telemetry pipeline - its manifests and policies, and the planted needles through the real collector
+        # P15-TSK-023. The pinned collector with the committed configuration; its scrubbing removed must let the needles out. No cluster, no credential.
+        run: ./infra/scripts/telemetry-check.sh
+
   # ---------------------------------------------------------------------------
   # A key ring's version is activated only in a change after one that listed it
   # (P15-TSK-019, ADR-0123): compares this change with its base, so a replica is

@@ -1,6 +1,7 @@
 package com.finapp.app.bnpl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.bnpl.BnplObligationId;
 import com.finapp.bnpl.BnplSpans;
@@ -96,32 +97,60 @@ class BnplSpansTest {
     }
 
     @Test
-    @DisplayName("a door on an existing row records its span in the row's correlation caused by the request's, and runs"
-            + " the act in the request's own scope - nothing the act writes changes; unlinked when nothing is stored")
+    @DisplayName("a door on an existing row runs the act in the request's own scope and span, and only once the act has returned"
+            + " records a span in the row's correlation caused by the request's (P15-TSK-023); unlinked when nothing is stored")
     @SuppressWarnings("try")
     void aDoorIsLinkedButTheActStaysInTheRequestsScope() {
         Recording spans = new Recording();
         Correlation request = Correlation.startingWith(CorrelationId.of("request-correlation-1"));
         try (CorrelationContext.Scope scope = CorrelationContext.enter(request)) {
-            Correlation acting = BnplFlowScope.linked(spans, BnplSpans.REFUND, Optional.of("acceptance-correlation-2"),
-                    () -> CorrelationContext.current().orElseThrow());
+            Correlation acting = BnplFlowScope.linked(spans, BnplSpans.REFUND,
+                    () -> Optional.of("acceptance-correlation-2"), () -> CorrelationContext.current().orElseThrow());
             assertThat(acting).as("the act runs in the request's own scope").isEqualTo(request);
-            Correlation spanned = spans.seen.get(0).orElseThrow();
+            assertThat(spans.names).containsExactly(BnplSpans.REFUND, BnplSpans.REFUND);
+            assertThat(spans.seen.get(0)).as("the act's own span: the request's").contains(request);
+            Correlation spanned = spans.seen.get(1).orElseThrow();
             assertThat(spanned.correlationId().value()).isEqualTo("acceptance-correlation-2");
             assertThat(spanned.cause()).map(cause -> cause.value()).contains("request-correlation-1");
             assertThat(CorrelationContext.current()).contains(request);
 
-            Correlation unlinked = BnplFlowScope.linked(spans, BnplSpans.REPAY, Optional.empty(),
+            Correlation unlinked = BnplFlowScope.linked(spans, BnplSpans.REPAY, Optional::empty,
                     () -> CorrelationContext.current().orElseThrow());
             assertThat(unlinked).isEqualTo(request);
-            assertThat(spans.seen.get(1)).contains(request);
+            assertThat(spans.names).hasSize(3);
+            assertThat(spans.seen.get(2)).contains(request);
         }
-        assertThat(BnplFlowScope.linked(spans, BnplSpans.CORRECT, Optional.of("flow-3"), () -> "no request"))
+        assertThat(BnplFlowScope.linked(spans, BnplSpans.CORRECT, () -> Optional.of("flow-3"), () -> "no request"))
                 .as("no request scope: unlinked, still run").isEqualTo("no request");
         assertThat(spans.attributes).allSatisfy(attributes -> assertThat(attributes).isEmpty());
         assertThat(BnplFlowScope.NONE.doorOnAgreement(BnplSpans.PAYOFF, "not-a-uuid", () -> "ran")).isEqualTo("ran");
         assertThat(BnplFlowScope.NONE.doorOnDispute(BnplSpans.DISPUTE_RESOLVE, null, () -> "ran")).isEqualTo("ran");
         assertThat(BnplFlowScope.uuid("not-a-uuid")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a refused act - a stranger's purchase identifier - is never linked into the row's flow, and the row's flow is never read for it:"
+            + " its one span is the request's (P15-TSK-023, the residue A5-05)")
+    @SuppressWarnings("try")
+    void aRefusedActIsNeverLinked() {
+        Recording spans = new Recording();
+        Correlation stranger = Correlation.startingWith(CorrelationId.of("stranger-correlation-1"));
+        boolean[] read = {false};
+        try (CorrelationContext.Scope scope = CorrelationContext.enter(stranger)) {
+            assertThatThrownBy(() -> BnplFlowScope.linked(spans, BnplSpans.REFUND,
+                    () -> {
+                        read[0] = true;
+                        return Optional.of("buyer-correlation-1");
+                    },
+                    () -> {
+                        throw new IllegalStateException("not this caller's row");
+                    }))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+        assertThat(spans.names).containsExactly(BnplSpans.REFUND);
+        assertThat(spans.seen.get(0)).contains(stranger);
+        assertThat(spans.seen).noneSatisfy(seen -> assertThat(seen).map(c -> c.correlationId().value()).contains("buyer-correlation-1"));
+        assertThat(read[0]).as("the row's flow was never read").isFalse();
     }
 
     @Test

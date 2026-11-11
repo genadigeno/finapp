@@ -81,13 +81,15 @@ class KubernetesManifestsTest {
     void theShutdownBudgetIsTheCodes() {
         Map<String, Object> budget = map(document(BUDGET), "shutdownBudget");
         assertThat(budget).containsOnlyKeys("httpDrain", "schedules", "consumers", "managementServerStop", "managementServerExecutor",
-                "apiServerStop", "apiServerExecutor", "gaugeRefresher", "kafkaProducerClose", "writerPoolClose", "reportingPoolClose");
+                "apiServerStop", "apiServerExecutor", "gaugeRefresher", "telemetryFlush", "kafkaProducerClose", "writerPoolClose",
+                "reportingPoolClose");
 
         assertThat(seconds(budget, "httpDrain")).as("spring.lifecycle.timeout-per-shutdown-phase")
                 .isEqualTo(DurationStyle.detectAndParse(String.valueOf(value(application, "spring", "lifecycle", "timeout-per-shutdown-phase"))));
         assertThat(seconds(budget, "schedules")).isEqualTo(ScheduleDrain.BOUND.plus(ScheduleDrain.INTERRUPT_GRACE));
         assertThat(seconds(budget, "consumers")).isEqualTo(InboxConsumers.SETTLE_BOUND.plus(InboxConsumers.INTERRUPT_GRACE));
         assertThat(seconds(budget, "gaugeRefresher")).isEqualTo(GaugeRefresher.STOP_BOUND);
+        assertThat(seconds(budget, "telemetryFlush")).as("the telemetry SDK's last export").isEqualTo(com.finapp.app.telemetry.TelemetryFlush.BOUND);
         assertThat(seconds(budget, "kafkaProducerClose")).as("the producer's close is finapp.kafka.ack-timeout").isEqualTo(kafkaAckTimeoutDefault());
 
         Duration tomcatUnload = Duration.ofMillis(new StandardContext().getUnloadDelay());

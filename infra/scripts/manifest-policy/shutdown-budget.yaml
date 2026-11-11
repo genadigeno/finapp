@@ -20,6 +20,8 @@ shutdownBudget:
   apiServerExecutor: 5
   # GaugeRefresher.STOP_BOUND
   gaugeRefresher: 3
+  # TelemetryFlush.BOUND: the telemetry SDK's last export, given up after it (P15-TSK-023)
+  telemetryFlush: 2
   # finapp.kafka.ack-timeout
   kafkaProducerClose: 10
   # HikariPool.shutdown's abort loop, per pool, while something still holds a connection. A library's own

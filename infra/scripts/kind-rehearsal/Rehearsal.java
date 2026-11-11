@@ -99,6 +99,10 @@ public final class Rehearsal {
             case "callbacks" -> rehearsal.callbacks(args[2]);
             case "callbacks-burst" -> rehearsal.callbacksBurst(args[2], Integer.parseInt(args[3]));
             case "served-serial" -> rehearsal.servedSerial();
+            // The telemetry pipeline's steps (P15-TSK-023): infra/scripts/kind-rehearsal/telemetry.sh calls these.
+            case "trace-payment" -> rehearsal.tracePayment(args[2]);
+            case "settle-file" -> rehearsal.settleFile(args[2], args[3]);
+            case "latency" -> rehearsal.latency(args[2], Integer.parseInt(args[3]));
             default -> throw new IllegalArgumentException("unknown step " + args[1]);
         }
     }
@@ -663,6 +667,117 @@ public final class Rehearsal {
         System.out.println("edge operator-route-on-operator status=" + operator.status() + " body=" + operator.body().replaceAll("\\s+", " "));
         Answer actuator = get(publicBase, "/actuator/health", null);
         System.out.println("edge actuator-on-public status=" + actuator.status());
+    }
+
+    // ---------------------------------------------------------------------------------------------- the telemetry pipeline (P15-TSK-023)
+
+    /**
+     * One card top-up of a planted amount, created and then confirmed. The platform mints every request's correlation (ADR-0034: a caller's
+     * own value is only echoed as a client reference), so each request's is read from its answer and printed with the payment's id: the
+     * shell follows each request's legs by its own correlation, and the asynchronous ones by the correlation the platform stored with them.
+     */
+    private void tracePayment(String amount) throws Exception {
+        String token = customerToken(0);
+        // The client sends its own W3C traceparent on both requests; the platform joins it rather than replacing it.
+        java.security.SecureRandom random = new java.security.SecureRandom();
+        byte[] traceBytes = new byte[16];
+        random.nextBytes(traceBytes);
+        String trace = java.util.HexFormat.of().formatHex(traceBytes);
+        Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("Authorization", "Bearer " + token);
+        headers.put("Idempotency-Key", key());
+        headers.put("traceparent", "00-" + trace + "-" + java.util.HexFormat.of().formatHex(new byte[] {1, 2, 3, 4, 5, 6, 7, 8}) + "-01");
+        Answer created = expect("traced top-up create", call("POST", publicBase + "/v1/payments",
+                "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\",\"paymentMethodId\":\"" + state.getProperty("customer.0.card") + "\"}",
+                headers), 200, 201);
+        String id = field(created.body(), "id");
+        headers.remove("Idempotency-Key");
+        headers.put("traceparent", "00-" + trace + "-" + java.util.HexFormat.of().formatHex(new byte[] {8, 7, 6, 5, 4, 3, 2, 1}) + "-01");
+        Answer confirmed = expect("traced top-up confirm", call("POST", publicBase + "/v1/payments/" + id + "/confirmation", null, headers), 200, 409);
+        String status = confirmed.status() == 200 ? field(confirmed.body(), "status") : null;
+        for (int polls = 0; polls < 30 && !"SUCCEEDED".equals(status); polls++) {
+            pause(1000);
+            status = field(expect("traced top-up read", get(publicBase, "/v1/payments/" + id, token), 200).body(), "status");
+        }
+        System.out.println("traced payment=" + id + " status=" + status + " create=" + correlationOf(created) + " confirm=" + correlationOf(confirmed)
+                + " trace=" + trace);
+    }
+
+    /**
+     * A PSP settlement report delivered as a person would: uploaded by the operator, then attested by the controller, the second person the
+     * upload door requires. The file's id and each request's minted correlation are printed for the shell to follow.
+     */
+    private void settleFile(String businessDate, String reportFile) throws Exception {
+        String content = java.util.Base64.getEncoder().encodeToString(Files.readAllBytes(work.resolve(reportFile)));
+        Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("Authorization", "Bearer " + fresh("operator"));
+        headers.put("Idempotency-Key", key());
+        Answer landed = expect("settlement upload", call("POST", operatorBase + "/v1/operator/settlement/files",
+                "{\"sourceCode\":\"simulated-psp.settlement\",\"businessDate\":\"" + businessDate + "\",\"content\":\"" + content + "\"}",
+                headers), 202);
+        String file = field(landed.body(), "fileId");
+        Map<String, String> attest = new java.util.HashMap<>();
+        attest.put("Authorization", "Bearer " + fresh("controller"));
+        Answer attested = expect("settlement attestation", call("POST", operatorBase + "/v1/operator/settlement/files/" + file + "/attestation", null, attest), 200);
+        System.out.println("settlement file=" + file + " upload=" + correlationOf(landed) + " attestation=" + correlationOf(attested));
+    }
+
+    /** The correlation the platform minted for a request, from its answer's header; "-" when absent. */
+    private static String correlationOf(Answer answer) {
+        return answer.raw().headers().firstValue("X-Correlation-Id").orElse("-");
+    }
+
+    /**
+     * Transfers of a cent between two customers, one after another, for {@code seconds}: each request's first status and milliseconds in
+     * latency-&lt;label&gt;.tsv, so the shell can compare the collector up, stopped and hung. A write, so its trace is one the tail policy keeps.
+     *
+     * <p>A transfer whose answer was lost, or a 5xx, may have committed: it is asked again with the same key and reference until the
+     * platform answers it (the stored answer for one that committed), so the census counts each transfer that moved money exactly once.
+     * One still unanswered after a minute is written {@code UNRESOLVED}, and the shell fails the step on it.
+     */
+    private void latency(String label, int seconds) throws Exception {
+        Path results = work.resolve("latency-" + label + ".tsv");
+        Files.writeString(results, "");
+        long until = System.nanoTime() + Duration.ofSeconds(seconds).toNanos();
+        int i = 0;
+        int unresolvedHere = 0;
+        StringBuilder lines = new StringBuilder();
+        // Every transfer that succeeded, in the workload's own record, so the census counts it like any other.
+        StringBuilder counted = new StringBuilder();
+        while (System.nanoTime() < until) {
+            int from = i % 2;
+            String key = "tl-" + label + "-" + i + "-" + key();
+            // A workload's reference, which the census counts by its prefix (census.sql's one transfer per key).
+            String reference = "wl-telemetry-" + label + "-" + UUID.randomUUID();
+            long started = System.nanoTime();
+            int status = transferStatus(from, key, reference);
+            lines.append(status).append('\t').append(Duration.ofNanos(System.nanoTime() - started).toMillis()).append('\n');
+            int settled = status;
+            Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
+            while ((settled == -1 || settled >= 500) && Instant.now().isBefore(deadline)) {
+                pause(1000);
+                settled = transferStatus(from, key, reference);
+            }
+            if (settled == 200 || settled == 201) {
+                counted.append("transfer\t").append(key).append('\t').append(reference).append("\tok\n");
+            } else if (settled == -1 || settled >= 500) {
+                unresolvedHere++;
+                counted.append("transfer\t").append(key).append('\t').append(reference).append("\tUNRESOLVED\n");
+            }
+            i++;
+        }
+        Files.writeString(results, lines.toString());
+        Files.writeString(work.resolve("workload-telemetry-" + label + ".tsv"), "flow\tkey\toutcome\n" + counted);
+        System.out.println("latency " + label + " requests=" + i + " unresolved=" + unresolvedHere);
+    }
+
+    /** One transfer of a cent from customer {@code from} to the other; -1 when no answer came. */
+    private int transferStatus(int from, String key, String reference) throws InterruptedException {
+        try {
+            return transfer(from, 1 - from, "0.01", key, reference).status();
+        } catch (IOException failure) {
+            return -1;
+        }
     }
 
     /**

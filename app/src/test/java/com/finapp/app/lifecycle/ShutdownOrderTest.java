@@ -51,7 +51,7 @@ import org.springframework.core.Ordered;
 
 /**
  * The order a stopping instance lets go in, on a real context (`P15-TSK-008`, ADR-0120 decision 4): the production
- * configuration's own beans - all thirty-seven of the platform's lifecycle components running - stopped by Spring's own
+ * configuration's own beans - all forty of the platform's lifecycle components running - stopped by Spring's own
  * lifecycle processor, never a list of phase numbers.
  *
  * <p><strong>How the order is observed.</strong> Each step is caught at the moment it happens, on the thread doing it: the
@@ -73,8 +73,8 @@ class ShutdownOrderTest {
 
     private static final String PROBE_PATH = "/__drain-probe";
 
-    /** The platform's lifecycle components: thirty-seven schedules (`P15-TSK-022`'s window-counter sweep the latest), the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`). */
-    private static final int COMPONENTS = 39;
+    /** The platform's lifecycle components: thirty-seven schedules (`P15-TSK-022`'s window-counter sweep the latest), the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`), the telemetry SDK's bounded flush (`P15-TSK-023`). */
+    private static final int COMPONENTS = 40;
 
     private static final int SCHEDULES = 37;
 
@@ -230,6 +230,16 @@ class ShutdownOrderTest {
                 }
             });
             assertThat(tooLong).as("a stop past spring.lifecycle.timeout-per-shutdown-phase is cut off, not finished").isEmpty();
+            // The telemetry SDK's bounded last export (P15-TSK-023): the last of the platform's stops, before the beans - the
+            // producer and the pools - are destroyed, so a collector that never answers cannot spend their grace.
+            SmartLifecycle flush = snapshot.components.get("telemetryFlush");
+            assertThat(flush).as("the telemetry flush is a lifecycle component of the production context").isNotNull();
+            assertThat(stopBound("telemetryFlush", flush)).isEqualTo(com.finapp.app.telemetry.TelemetryFlush.BOUND);
+            snapshot.components.forEach((name, component) -> {
+                if (component != flush) {
+                    assertThat(component.getPhase()).as("%s stops before the telemetry flush", name).isGreaterThan(flush.getPhase());
+                }
+            });
         } finally {
             context.close();
         }

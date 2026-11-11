@@ -35,6 +35,9 @@ val verifyInfrastructureVersions = tasks.register("verifyInfrastructureVersions"
         "prom/prometheus" to libs.versions.prometheusImage.get(),
         "prom/alertmanager" to libs.versions.alertmanagerImage.get(),
         "grafana/grafana" to libs.versions.grafanaImage.get(),
+        "otel/opentelemetry-collector-contrib" to libs.versions.collectorImage.get(),
+        "grafana/tempo" to libs.versions.tempoImage.get(),
+        "grafana/loki" to libs.versions.lokiImage.get(),
     )
 
     inputs.file(composeFile)

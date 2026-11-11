@@ -29,17 +29,20 @@ import lombok.extern.slf4j.Slf4j;
  *       application's for an application or offer, the account's for a loan) - the flow every row the step writes already
  *       carries - so the leg's span joins the flow the customer's application or acceptance began.
  *   <li><strong>A door on an existing row</strong> - a repayment, a draw, a payoff, a closure, an amendment's acceptance, an
- *       operator's correction, a withdrawal or a decline - records its span in the row's stored correlation with the
- *       request's correlation as the CAUSE, then runs the act back in the request's own scope: what the act writes - its
- *       rows, its audit, its idempotency record - carries the request's correlation exactly as before; only the span is
- *       linked. An unknown or malformed identifier, or no request scope, records the span in the request's scope unlinked.
+ *       operator's correction, a withdrawal or a decline - runs the act in the request's own scope and span: what the act
+ *       writes - its rows, its audit, its idempotency record - carries the request's correlation exactly as before. Only
+ *       once the act has returned, so only once it has judged the row the caller's to act on, is a span of the same name
+ *       recorded in the row's stored correlation with the request's correlation as the CAUSE (`P15-TSK-023`: until then the
+ *       link was made before ownership was judged, so a stranger's refused request joined another party's flow). An unknown
+ *       or malformed identifier, no request scope, or a refused act leaves the request's span alone, unlinked.
  *   <li><strong>A door that begins a flow</strong> - the application, the acceptance - records its span in the request's
  *       scope, which becomes the stored correlation every later leg is linked by.
  * </ul>
  *
  * <p>The lookup is one read on a read-only snapshot of its own, without a lock; a lookup that fails leaves the step to run
  * unlinked, never to fail - a span is telemetry, never the work's precondition. A door's lookup is owner-agnostic: it
- * reads a correlation identifier, never anything the caller is shown, and the act it wraps judges ownership as before.
+ * reads a correlation identifier, never anything the caller is shown, and it runs only after the act it follows has judged
+ * ownership and returned.
  */
 @Slf4j
 public final class LendingFlowScope {
@@ -81,17 +84,17 @@ public final class LendingFlowScope {
 
     /** A door on the loan {@code rawId} names: the span in the account's correlation, the act in the request's. */
     public <T> T doorOnLoan(String span, String rawId, Supplier<T> work) {
-        return linked(spans, span, uuid(rawId).flatMap(id -> lookup("lending.loan", id)), work);
+        return linked(spans, span, () -> uuid(rawId).flatMap(id -> lookup("lending.loan", id)), work);
     }
 
     /** A door on the application {@code rawId} names. */
     public <T> T doorOnApplication(String span, String rawId, Supplier<T> work) {
-        return linked(spans, span, uuid(rawId).flatMap(id -> lookup("lending.loan_application", id)), work);
+        return linked(spans, span, () -> uuid(rawId).flatMap(id -> lookup("lending.loan_application", id)), work);
     }
 
     /** A door on the offer {@code rawId} names. */
     public <T> T doorOnOffer(String span, String rawId, Supplier<T> work) {
-        return linked(spans, span, uuid(rawId).flatMap(id -> lookup("lending.loan_offer", id)), work);
+        return linked(spans, span, () -> uuid(rawId).flatMap(id -> lookup("lending.loan_offer", id)), work);
     }
 
     // ------------------------------------------------------------------ the linking, pure
@@ -110,24 +113,28 @@ public final class LendingFlowScope {
     }
 
     /**
-     * A door on an existing row: the span in {@code stored}'s flow caused by the request's correlation, the work back in
-     * the request's own scope; unlinked when either is missing.
+     * A door on an existing row (`P15-TSK-023`, closing the privacy residue A5-05): the act first, in the request's own scope and
+     * a span of its own, because the act is where ownership is judged; then, <strong>only once the act has returned</strong>, the
+     * link - a span of the same name in {@code stored}'s flow, caused by the request's correlation. A refused act (a stranger's
+     * identifier, a closed row) throws, so it is never linked into another party's flow, and {@code stored} is never even read
+     * for it. Unlinked when there is no request scope or nothing usable is stored.
      */
-    @SuppressWarnings("try") // The scopes are used for their close side effect.
-    static <T> T linked(Spans spans, String span, Optional<String> stored, Supplier<T> work) {
+    @SuppressWarnings("try") // The scope is used for its close side effect.
+    static <T> T linked(Spans spans, String span, Supplier<Optional<String>> stored, Supplier<T> work) {
         Optional<Correlation> request = CorrelationContext.current();
-        Optional<CorrelationId> flow = stored.flatMap(LendingFlowScope::correlation);
-        if (request.isEmpty() || flow.isEmpty()) {
-            return spans.within(span, Map.of(), work);
+        T result = spans.within(span, Map.of(), work);
+        if (request.isEmpty()) {
+            return result;
         }
-        Correlation linked = new Correlation(flow.get(), CausationId.of(request.get().correlationId().value()));
-        try (CorrelationContext.Scope outer = CorrelationContext.enter(linked)) {
-            return spans.within(span, Map.of(), () -> {
-                try (CorrelationContext.Scope inner = CorrelationContext.enter(request.get())) {
-                    return work.get();
-                }
-            });
+        Optional<CorrelationId> flow = stored.get().flatMap(LendingFlowScope::correlation)
+                .filter(id -> !id.equals(request.get().correlationId()));
+        if (flow.isPresent()) {
+            Correlation linked = new Correlation(flow.get(), CausationId.of(request.get().correlationId().value()));
+            try (CorrelationContext.Scope scope = CorrelationContext.enter(linked)) {
+                spans.within(span, Map.of(), () -> null);
+            }
         }
+        return result;
     }
 
     private static Optional<CorrelationId> correlation(String stored) {

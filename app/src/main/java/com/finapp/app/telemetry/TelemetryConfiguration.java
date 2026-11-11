@@ -35,6 +35,54 @@ class TelemetryConfiguration {
     }
 
     /**
+     * Where spans go (`P15-TSK-023`, ADR-0124 decision 1): the collector the Deployment names, and nowhere when nothing does. Boot
+     * builds its OTLP/HTTP span exporter only when a connection is declared, so this declaration is the exporter's switch: a
+     * developer's machine and every test export nothing. A {@code finapp} property, so the register reads it like every other.
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(TRACES_ENDPOINT)
+    org.springframework.boot.micrometer.tracing.opentelemetry.autoconfigure.otlp.OtlpTracingConnectionDetails collectorTraces(
+            @org.springframework.beans.factory.annotation.Value("${" + TRACES_ENDPOINT + "}") String endpoint) {
+        return transport -> endpoint;
+    }
+
+    /** Where log records go: as {@link #collectorTraces}, for Boot's OTLP/HTTP log record exporter. */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(LOGS_ENDPOINT)
+    org.springframework.boot.opentelemetry.autoconfigure.logging.otlp.OtlpLoggingConnectionDetails collectorLogs(
+            @org.springframework.beans.factory.annotation.Value("${" + LOGS_ENDPOINT + "}") String endpoint) {
+        return transport -> endpoint;
+    }
+
+    /**
+     * Ships every log line to the collector as an OTLP record whose body is the console's ECS line (`P15-TSK-023`). Only where a
+     * log endpoint is configured - the Deployment names the cluster's collector - so a developer's machine and every test log to
+     * the console alone.
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(LOGS_ENDPOINT)
+    OtlpLogShipping otlpLogShipping(io.opentelemetry.api.OpenTelemetry openTelemetry) {
+        return new OtlpLogShipping(openTelemetry);
+    }
+
+    /**
+     * The SDK's last export, bounded and in the ordered stop (`P15-TSK-023`'s review): a collector that never answers cannot hold
+     * a stopping pod past {@link TelemetryFlush#BOUND}, so the grace the producer's and the pools' closes need is theirs.
+     */
+    @Bean
+    TelemetryFlush telemetryFlush(org.springframework.beans.factory.ObjectProvider<io.opentelemetry.sdk.trace.SdkTracerProvider> traces,
+            org.springframework.beans.factory.ObjectProvider<io.opentelemetry.sdk.logs.SdkLoggerProvider> logs,
+            org.springframework.beans.factory.ObjectProvider<io.opentelemetry.sdk.metrics.SdkMeterProvider> metrics) {
+        return TelemetryFlush.of(traces, logs, metrics);
+    }
+
+    /** The collector's OTLP/HTTP traces endpoint, when the deployment names one. */
+    static final String TRACES_ENDPOINT = "finapp.telemetry.traces-endpoint";
+
+    /** The collector's OTLP/HTTP logs endpoint, when the deployment names one. */
+    static final String LOGS_ENDPOINT = "finapp.telemetry.logs-endpoint";
+
+    /**
      * The outbox backlog, as gauges (`P0-TSK-029`, paying down the debt `P0-TSK-020` recorded).
      *
      * <p>Reads through the application's own {@code DataSource}, so it measures what the

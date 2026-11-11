@@ -168,3 +168,10 @@ remains deliberately off metrics.
   PII path this ADR closes does not exist there. Recorded so the omission is a decision.
 - The output scrubber recorded as debt in `P0-TSK-030` remains a separate concern: it covers a
   secret held in a local variable, not a caller-supplied identifier.
+- *Dated note (2026-11-11, `P15-TSK-023`'s review):* the public edge now removes a caller's `traceparent`,
+  `tracestate` and `baggage` (`deploy/edge/base/public-edge.yaml`'s `edge-headers`, held by `EdgeManifestsTest`, `edge.rego`'s
+  `[edge-trace-context]` and a case of `infra/scripts/edge-check.sh` on the pinned proxy). Joining the W3C trace id was safe from
+  the accidental-PII path above, but not from a caller: the sampler follows the parent's flag, so a public caller could switch
+  tracing off for its own requests, and the collectors route by trace id, so it could choose which one carries its load. A public
+  request now always starts its own trace. The operator edge keeps the three headers for staff's tooling, a residue recorded in
+  `THREAT_MODEL.md` section 6 item 37 (f).

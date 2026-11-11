@@ -151,3 +151,19 @@ REGISTRY_DIGEST=sha256:38907510915c3f1604c7e83d6ab602ab3020d092f73bdaed869677369
 KUBE_ROUTER_REPOSITORY=cloudnativelabs/kube-router
 KUBE_ROUTER_VERSION=v2.12.0
 KUBE_ROUTER_DIGEST=sha256:e1da38f71e2f1521e7a74c5cdaa511fdee9d2ee76972b25c9b5785b030b96fe4
+
+# The telemetry pipeline (P15-TSK-023, ADR-0124 decision 1): sourced by infra/scripts/telemetry-check.sh and the kind rehearsal. The collector is the
+# contrib distribution, which holds the transform, tail-sampling and load-balancing components the configuration names; its digest is named
+# again in deploy/observability/base/collector-workload.yaml, Tempo's and Loki's in kind's overlay, and TelemetryPipelineManifestsTest holds each
+# pair equal. Prometheus on kind is PROMETHEUS_* above, the version compose runs.
+COLLECTOR_REPOSITORY=otel/opentelemetry-collector-contrib
+COLLECTOR_VERSION=0.165.0
+COLLECTOR_DIGEST=sha256:e40d61f10c9a617cca1ffd1be4d7e2b3a4b0f0001798ff07e58cabe82e618cea
+
+TEMPO_REPOSITORY=grafana/tempo
+TEMPO_VERSION=2.10.10
+TEMPO_DIGEST=sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38
+
+LOKI_REPOSITORY=grafana/loki
+LOKI_VERSION=3.7.9
+LOKI_DIGEST=sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28

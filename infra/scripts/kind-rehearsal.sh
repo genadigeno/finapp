@@ -33,6 +33,9 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 DIR="$ROOT/infra/scripts/kind-rehearsal"
 # shellcheck source=infra/scanner-pins.sh
 . "$ROOT/infra/scanner-pins.sh"
+# The telemetry pipeline's steps (P15-TSK-023): telemetry, telemetry-trace, telemetry-outage, telemetry-sweep, telemetry-scrape.
+# shellcheck source=infra/scripts/kind-rehearsal/telemetry.sh
+. "$DIR/telemetry.sh"
 
 CLUSTER=${REHEARSAL_CLUSTER:-finapp-rehearsal}
 NODE="$CLUSTER-control-plane"
@@ -198,10 +201,23 @@ load_tagged() {
             dock pull --platform linux/amd64 "$source_ref" >/dev/null || cannot "could not pull $source_ref"
         fi
     fi
-    dock save --platform linux/amd64 "$source_ref" -o "$(dpath "$WORK/image.tar")" 2>/dev/null || dock save "$source_ref" -o "$(dpath "$WORK/image.tar")" \
-        || cannot "could not save $source_ref"
-    dock exec -i "$NODE" ctr -n k8s.io images import --platform linux/amd64 - < "$WORK/image.tar" >> "$ART/images.log" 2>&1 \
-        || cannot "could not import $source_ref into the node"
+    if dock save --platform linux/amd64 "$source_ref" -o "$(dpath "$WORK/image.tar")" 2>/dev/null; then
+        dock exec -i "$NODE" ctr -n k8s.io images import --platform linux/amd64 - < "$WORK/image.tar" >> "$ART/images.log" 2>&1 \
+            || cannot "could not import $source_ref into the node"
+    elif [ -n "${3:-}" ]; then
+        # Docker Desktop's image store can refuse to save one platform of an index it holds - "does not provide the specified platform"
+        # while its own listing shows that platform's content (seen for Loki and kube-router, P15-TSK-023) - and saved whole the index
+        # names the blobs of platforms never pulled, which the node's import cannot find. The node then pulls its own platform of the
+        # pinned digest itself, and the tag names the same image.
+        dock exec "$NODE" ctr -n k8s.io images pull --platform linux/amd64 "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
+            || cannot "the node could not pull $1@$3"
+        dock exec "$NODE" ctr -n k8s.io images tag --force "$(normalized "$1")@$3" "$(normalized "$source_ref")" >> "$ART/images.log" 2>&1 \
+            || cannot "could not name $1@$3 as $source_ref in the node"
+    else
+        dock save "$source_ref" -o "$(dpath "$WORK/image.tar")" || cannot "could not save $source_ref"
+        dock exec -i "$NODE" ctr -n k8s.io images import --platform linux/amd64 - < "$WORK/image.tar" >> "$ART/images.log" 2>&1 \
+            || cannot "could not import $source_ref into the node"
+    fi
     rm -f "$WORK/image.tar"
     if [ -n "${3:-}" ]; then
         dock exec "$NODE" ctr -n k8s.io images tag --force "$(normalized "$source_ref")" "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
@@ -751,12 +767,19 @@ census() {
     label=$1
     drained 240 || fail "the outbox did not drain before census $label: $(pending_events) rows pending"
     expected_transfers=$(( $(transfer_ok_count) + SMOKE_TRANSFERS ))
-    expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS ))
+    # The telemetry steps' one traced top-up, of its own planted amount (P15-TSK-023); zero until it runs.
+    expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS + ${TELEMETRY_TOPUPS:-0} ))
     expected_checkouts=$(( $(flow_ok_count checkout) + SMOKE_CHECKOUTS ))
     expected_payouts=$(( $(flow_ok_count payout) + SMOKE_PAYOUTS ))
     # Every top-up credits one wallet: 5.00 in a smoke, 0.05 in the workload. Transfers move money between the same wallets and a checkout is paid by card.
-    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 ))
-    lag_settled "$label" || fail "census $label: a partition is unowned or lagging: see consumer-groups-$label.txt"
+    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} ))
+    if ! lag_settled "$label"; then
+        # Each replica's last lines, kept before the cluster goes: a loop stuck on one record says why only in its own log.
+        for pod in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name 2>/dev/null); do
+            kube -n finapp logs "$pod" --tail=600 > "$ART/lagging-$label-${pod##*/}.log" 2>&1 || true
+        done
+        fail "census $label: a partition is unowned or lagging: see consumer-groups-$label.txt and lagging-$label-*.log"
+    fi
     # A consumer's inbox row can trail the outbox by a poll: the check waits for it, bounded, and what it last read is the verdict.
     lost_deadline=$(( $(date +%s) + 180 ))
     while :; do
@@ -1081,6 +1104,12 @@ kube -n finapp-observability exec np-scraper -c probe -- curl -s --max-time 10 "
     || fail "cert-manager could not be scraped"
 series=$(grep -c '^certmanager_certificate_expiration_timestamp_seconds' "$ART/cert-manager-metrics.txt" || true)
 [ "$series" -ge 2 ] && pass "cert-manager is scraped: $series certificate-expiry series" || fail "no certificate-expiry series in cert-manager's metrics"
+
+# The telemetry pipeline (P15-TSK-023), before N rolls out so that N exports from its first request: deployed, and its namespace's default-deny
+# read from inside it.
+step telemetry
+telemetry_deploy
+telemetry_policy
 
 # ---------------------------------------------------------------------------------------------------
 # The connection budget and the rollout.
@@ -1540,6 +1569,16 @@ grep -qx 'surface operator-sign-in-on-public status=401' "$ART/surface.txt" \
 grep -qx 'surface operator-sign-in-on-operator status=201' "$ART/surface.txt" \
     && pass "an operator signs in on the operator host" \
     || fail "the operator's sign-in on the operator host: $(grep 'operator-sign-in-on-operator' "$ART/surface.txt")"
+
+# The end-to-end trace on N, the collector's outage under requests, the needle sweep and the deployed scrape (P15-TSK-023).
+step telemetry-trace
+telemetry_trace
+step telemetry-outage
+telemetry_outage
+step telemetry-sweep
+telemetry_sweep
+step telemetry-scrape
+telemetry_scrape
 
 step forged-address
 # (3) of the edge's acceptance. What the application keys on is request.getRemoteAddr() after the RemoteIpValve, and N's per-source limits are built on it, a bucket of the address

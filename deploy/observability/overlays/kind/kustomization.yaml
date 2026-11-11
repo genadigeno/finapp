@@ -1,0 +1,29 @@
+# The telemetry pipeline on kind, test-only (P15-TSK-023): the base's collector and default-deny, Tempo, Loki and Prometheus as the reference
+# backends, and the flows to them. No credential and no endpoint outside the cluster: every address below is a Service of this namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: finapp-observability
+
+resources:
+  - ../../base
+  - backends.yaml
+  - networkpolicy-backends.yaml
+
+configMapGenerator:
+  - name: finapp-collector-backends
+    literals:
+      - FINAPP_ENVIRONMENT=kind
+      - TEMPO_ENDPOINT=finapp-tempo.finapp-observability.svc.cluster.local:4317
+      - LOKI_ENDPOINT=http://finapp-loki.finapp-observability.svc.cluster.local:3100/otlp
+      # Long enough for a request's last span to arrive, short enough for the rehearsal to read the trace within a minute.
+      - TAIL_DECISION_WAIT=10s
+  - name: finapp-tempo-config
+    files:
+      - tempo.yaml
+  - name: finapp-loki-config
+    files:
+      - loki.yaml
+  - name: finapp-prometheus-config
+    files:
+      - prometheus.yml

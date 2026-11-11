@@ -186,19 +186,19 @@ gaps of the module they touch (§4).
 
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
-| Deployment | Local only: Prometheus and Grafana in compose | — | — | — |
-| Health checks | Local only | — | — | — |
-| Logging | — | — | — | — |
-| Metrics | Local only | — | — | — |
-| Tracing | Missing: no collector or back end | — | — | — |
+| Deployment | The collector, `deploy/observability/base/` (two replicas, two tiers, by digest), every environment's release; Tempo, Loki and Prometheus on `kind` and in compose only (`P15-TSK-023`); a real environment's back ends not chosen | — | — | — |
+| Health checks | The collector's health endpoint behind startup, liveness and readiness probes; the backends' own readiness on `kind` | — | — | — |
+| Logging | Each replica's ECS console line shipped as an OTLP record's body through the collector; the migrator Job's and the cluster components' own lines are not shipped | — | — | — |
+| Metrics | Prometheus deployed on `kind` reading job `finapp` by DNS, `env="kind"`, every replica a target ready or not; the collector's own counters as job `finapp-collector`; compose local | — | — | — |
+| Tracing | OTLP export to the collector, tail policy (errors, slow, writes, asynchronous legs, a tenth of the rest), Tempo on `kind`; the reconciliation leg joined by the stored chain, not a span | — | — | — |
 | Alerting | Partial: Alertmanager configured in compose and `deploy/observability/alertmanager/` (`P15-TSK-025`), its receivers placeholders; the telemetry stack's own alerts are not built | — | — | — |
-| Security | Missing | — | — | — |
-| Resource limits | Missing | — | — | — |
-| Failure handling | — | — | — | — |
-| Recovery | — | — | — | — |
+| Security | Default-deny namespace with its workloads' flows named, nothing reaching the data tier or out; the restricted profile, tokenless, no RBAC; an allow-list and scrub as the second net, proven in CI by planted needles; in-cluster OTLP is plaintext, as every in-cluster hop is (C9) | — | — | — |
+| Resource limits | Requests and limits on every workload, memory request = limit; the collector's `memory_limiter` under `GOMEMLIMIT` | — | — | — |
+| Failure handling | A collector down, slow or refusing drops telemetry and leaves requests and readiness alone (measured on `kind`); a back end down is retried by the collector, then dropped | — | — | — |
+| Recovery | Nothing to recover: telemetry is never a record, and a restart loses only what was in memory | — | — | — |
 | Ownership | Missing | — | — | — |
-| Runbooks | Missing | — | — | — |
-| Multi-instance | — | — | — | — |
+| Runbooks | `OPERATIONS_RUNBOOK.md` §11.34 | — | — | — |
+| Multi-instance | Each replica exports alone; the collector routes by trace id so one replica decides a whole trace (`DISTRIBUTED_EXECUTION.md` §3) | — | — | — |
 
 ### 3.6 Edge
 

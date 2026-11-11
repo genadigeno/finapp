@@ -1,0 +1,25 @@
+# Tempo on kind, test-only (P15-TSK-023): the reference trace backend of the rehearsal, one process, its blocks on the pod's own disk.
+# Retention is the trace class's: seven days (OPERATIONS_RUNBOOK.md section 11.34; DATA_RETENTION.md's operational row).
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+ingester:
+  max_block_duration: 2m
+compactor:
+  compaction:
+    block_retention: 168h
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+usage_report:
+  reporting_enabled: false

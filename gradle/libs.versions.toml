@@ -184,6 +184,11 @@ redisImage = "8.10.1"
 prometheusImage = "v3.14.0"
 alertmanagerImage = "v0.34.2"
 grafanaImage = "12.4.10"
+# The telemetry pipeline (P15-TSK-023): the collector and the two reference backends compose runs, the versions
+# infra/scanner-pins.sh pins by digest for kind.
+collectorImage = "0.165.0"
+tempoImage = "2.10.10"
+lokiImage = "3.7.9"
 
 [libraries]
 # --- BOM -------------------------------------------------------------------
@@ -247,8 +252,13 @@ spring-boot-micrometer-tracing-opentelemetry = { module = "org.springframework.b
 # the bridge it backs off entirely, leaving a NOOP Tracer, no SdkTracerProvider, and spans that
 # are recorded into nothing. Nothing fails - there are simply no traces.
 micrometer-tracing-bridge-otel = { module = "io.micrometer:micrometer-tracing-bridge-otel" }
+# The OTLP exporter (P15-TSK-023, ADR-0124 decision 1): traces and log records leave each replica for the one collector. Version
+# from the Spring Boot BOM (OpenTelemetry 1.62.0), so the exporter is the SDK's own release. Its default sender is OkHttp, which
+# would bring OkHttp, Okio and a Kotlin runtime into the image: app excludes it and takes the JDK's HttpClient sender instead.
+opentelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp" }
+opentelemetry-exporter-sender-jdk = { module = "io.opentelemetry:opentelemetry-exporter-sender-jdk" }
 
-# --- Metrics (P0-TSK-029) ------------------------------------------------------
+# --- Metrics (P0-TSK-029)------------------------------------------------------
 # The Prometheus registry. Version from the Spring Boot BOM, like everything else, so the
 # metrics graph stays consistent with the tracing one - both are Micrometer.
 micrometer-registry-prometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
@@ -271,6 +281,10 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
+# The type of every value on the operand stack, for a guard that must know what a call is handed (P15-TSK-023,
+# MoneyReachesNoTextSinkTest): the tree API and its analyser, at ASM's own version. Test scope: nothing ships.
+asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
+asm-analysis = { module = "org.ow2.asm:asm-analysis", version.ref = "asm" }
 # Standalone (shaded) rather than the plain artefact - see the version note above.
 wiremock-standalone = { module = "org.wiremock:wiremock-standalone", version.ref = "wiremock" }
 # The -api starter, not -ui: a Swagger UI is an extra surface nobody here needs.

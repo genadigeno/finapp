@@ -182,6 +182,18 @@ dependencies {
     implementation(libs.spring.boot.micrometer.tracing.opentelemetry)
     implementation(libs.micrometer.tracing.bridge.otel)
 
+    // The OTLP exporter (P15-TSK-023, ADR-0124 decision 1). Boot's tracing and logging auto-configurations build an OTLP/HTTP
+    // exporter when this is on the classpath AND an endpoint is configured; no endpoint is committed, so a developer's machine
+    // and every test export nothing, as before. The deployment names the cluster's own collector.
+    //
+    // The OkHttp sender the exporter declares is excluded and the JDK's HttpClient sender takes its place: the exporter finds its
+    // sender through a ServiceLoader, and with exactly one on the classpath there is nothing to choose. OkHttp would bring OkHttp,
+    // Okio and a Kotlin standard library into the image for a client the JDK already has.
+    implementation(libs.opentelemetry.exporter.otlp) {
+        exclude(group = "io.opentelemetry", module = "opentelemetry-exporter-sender-okhttp")
+    }
+    runtimeOnly(libs.opentelemetry.exporter.sender.jdk)
+
     // Prometheus metrics (P0-TSK-029). The registry is the implementation; `platform` records
     // through Micrometer's MeterRegistry facade, the same split as slf4j and the tracer.
     implementation(libs.micrometer.registry.prometheus)
@@ -222,6 +234,10 @@ dependencies {
     // `synchronized` block is a MONITORENTER instruction rather than an access flag, so it is
     // invisible to a model built on accesses (P0-TSK-041, ADR-0024). Test scope: nothing ships.
     testImplementation(libs.asm)
+    // The analyser that says what a call is handed (P15-TSK-023): MoneyReachesNoTextSinkTest asks, of every text sink in
+    // production code, whether an amount reaches it. Test scope: nothing ships.
+    testImplementation(libs.asm.tree)
+    testImplementation(libs.asm.analysis)
 
     // OpenAPI generation (P0-TSK-026), test scope only.
     //

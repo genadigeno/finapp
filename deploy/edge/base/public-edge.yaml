@@ -45,6 +45,14 @@ http:
           # the pod's node is the policy's own exception, and could reach the operator routes directly anyway). edge-check.sh proves
           # the replacement on the pinned proxy; EdgeManifestsTest holds the name and the word to the application's.
           X-Finapp-Surface: public
+          # NO CALLER'S TRACE (P15-TSK-023's review). The platform joins an inbound W3C trace context, and its sampler follows the
+          # parent's flag: a public caller's traceparent would switch tracing off for its own requests, or choose the trace ids the
+          # collectors route by and load one of them. Removed here, so a public request always starts a trace of its own; the operator
+          # edge keeps them for staff's tooling (THREAT_MODEL.md section 6 item 37 (f)). edge-check.sh proves the removal on the pinned
+          # proxy; EdgeManifestsTest holds the three names.
+          traceparent: ""
+          tracestate: ""
+          baggage: ""
 
     # Above the application's own limit, so the application answers its own 413 and the edge only stops the gross case. Every
     # provider's bound is inside this: a limit at the edge never cuts a signed delivery. EdgeAllowListTest reads both numbers.
