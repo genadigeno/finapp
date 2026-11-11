@@ -71,7 +71,8 @@ telemetry_policy() {
     # The controls first: the backends are reachable from where the policy says, so each refusal below is the policy's.
     must_reach "telemetry control" finapp-observability np-obs-collector probe "$tempo_ip" 4317
     must_reach "telemetry control" finapp-observability np-obs-collector probe "$loki_ip" 3100
-    must_reach "telemetry control" finapp-rehearsal np-outsider probe "$pg_ip" 5432
+    # The database admits the application's own namespace alone, so its control is the replica's debug container (the network-policy step's).
+    must_reach "telemetry control" finapp "$TARGET_POD" np-debug "$pg_ip" 5432
     # T15: a pod of the telemetry pipeline's namespace is refused the database, labelled as the collector or not; and T4: nothing else.
     must_not_reach "telemetry T15" finapp-observability np-obs-collector probe "$pg_ip" 5432
     must_not_reach "telemetry T15" finapp-observability np-obs-plain probe "$pg_ip" 5432
@@ -103,12 +104,16 @@ span_names_of() {
 }
 
 telemetry_trace() {
+    # The platform mints every request's correlation (ADR-0034), so each leg is looked up by the correlation it really ran in: each request's
+    # own, read from its answer; the payment's events' and the expectation's, as the platform stored them; the file's legs by its identifier.
     tag=$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
-    C_PAY="e2e-payment-$tag"
-    C_FILE="e2e-settlement-$tag"
     TRACE_AMOUNT=731.94
-    client trace-payment "$C_PAY" "$TRACE_AMOUNT" > "$ART/telemetry-trace-payment.log" 2>&1 || fail "the traced payment could not run: see telemetry-trace-payment.log"
-    payment=$(sed -n 's/^traced payment=\([^ ]*\) status=SUCCEEDED .*/\1/p' "$ART/telemetry-trace-payment.log")
+    client trace-payment "$TRACE_AMOUNT" > "$ART/telemetry-trace-payment.log" 2>&1 || fail "the traced payment could not run: see telemetry-trace-payment.log"
+    line=$(grep '^traced payment=' "$ART/telemetry-trace-payment.log" | tail -1)
+    payment=$(printf '%s' "$line" | sed -n 's/^traced payment=\([^ ]*\) status=SUCCEEDED .*/\1/p')
+    c_create=$(printf '%s' "$line" | sed -n 's/.* create=\([^ ]*\).*/\1/p')
+    c_confirm=$(printf '%s' "$line" | sed -n 's/.* confirm=\([^ ]*\).*/\1/p')
+    t_customer=$(printf '%s' "$line" | sed -n 's/.* trace=\([0-9a-f]*\).*/\1/p')
     [ -n "$payment" ] || fail "the traced payment did not succeed"
     # The census counts it from here on: one more captured top-up, and its amount in the wallets.
     TELEMETRY_TOPUPS=1
@@ -118,6 +123,8 @@ telemetry_trace() {
     reference=${capture%%|*}
     minor=${capture##*|}
     [ -n "$reference" ] && [ -n "$minor" ] || fail "no captured attempt for the traced payment"
+    # The correlations the payment's events were written in: the outbox keeps each event's, under the payment's id.
+    c_events=$(psql_query -c "SELECT DISTINCT correlation_id FROM platform.outbox_event WHERE aggregate_id = '$payment'::uuid" | tr -d ' ' | grep . | tr '\n' ' ')
     # The PSP's published fee in rule set v1: round_half_up(1.5% of gross) + 0.25, so the line matches without a fee break.
     fee=$(( (minor * 15 + 500) / 1000 + 25 ))
     net=$(( minor - fee ))
@@ -136,80 +143,116 @@ INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, a
   WHERE i.login_identifier IN ('$(sed -n 's/^operator.login=//p' "$CLIENT/state.properties")', '$(sed -n 's/^controller.login=//p' "$CLIENT/state.properties")')
   AND NOT EXISTS (SELECT 1 FROM identity.role_assignment r WHERE r.identity_id = i.id AND r.role_name = 'RECONCILIATION_OPERATOR');
 SQL
-    client settle-file "$C_FILE" "$day" e2e-report.csv > "$ART/telemetry-settle-file.log" 2>&1 || fail "the settlement file could not be delivered: see telemetry-settle-file.log"
-    file=$(sed -n 's/^settlement file=\([^ ]*\) .*/\1/p' "$ART/telemetry-settle-file.log")
+    client settle-file "$day" e2e-report.csv > "$ART/telemetry-settle-file.log" 2>&1 || fail "the settlement file could not be delivered: see telemetry-settle-file.log"
+    line=$(grep '^settlement file=' "$ART/telemetry-settle-file.log" | tail -1)
+    file=$(printf '%s' "$line" | sed -n 's/^settlement file=\([^ ]*\) .*/\1/p')
+    c_upload=$(printf '%s' "$line" | sed -n 's/.* upload=\([^ ]*\).*/\1/p')
+    c_attest=$(printf '%s' "$line" | sed -n 's/.* attestation=\([^ ]*\).*/\1/p')
     [ -n "$file" ] || fail "no settlement file id"
-    # The intake and reconciliation schedules run on every replica; wait for the run to settle the payment's expectation.
+    # The intake and reconciliation schedules run on every replica: wait for a run to allocate the file's line to an expectation. The chain is
+    # read from the file's own line, so it cannot be another payment's.
     settled=""
     deadline=$(( $(date +%s) + 300 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        settled=$(psql_query -c "SELECT e.status || '|' || a.correlation_id || '|' || i.run_id FROM reconciliation.expectation e JOIN reconciliation.allocation a ON a.expectation_id = e.id JOIN reconciliation.external_item i ON i.id = a.external_item_id WHERE e.correlation_id = '$C_PAY' LIMIT 1" | tr -d '[:space:]')
+        settled=$(psql_query -c "SELECT e.status || '|' || e.correlation_id || '|' || a.correlation_id || '|' || i.run_id || '|' || e.amount_minor || '|' || coalesce((SELECT string_agg(k.key_value, ',') FROM reconciliation.expectation_key k WHERE k.expectation_id = e.id), '') FROM settlement.line l JOIN reconciliation.external_item i ON i.settlement_line_id = l.id JOIN reconciliation.allocation a ON a.external_item_id = i.id JOIN reconciliation.expectation e ON e.id = a.expectation_id WHERE l.file_id = '$file'::uuid LIMIT 1" | tr -d '[:space:]')
         [ -n "$settled" ] && break
         sleep 5
     done
-    printf 'payment=%s file=%s chain=%s\n' "$payment" "$file" "$settled" > "$ART/telemetry-trace.txt"
-    psql_query -c "SELECT 'file ' || f.id || ' ' || f.status FROM settlement.settlement_file f WHERE f.id = '$file'::uuid" >> "$ART/telemetry-trace.txt" 2>&1 || true
+    IFS='|' read -r e_status c_expectation c_allocation run e_minor e_keys <<EOF
+$settled
+EOF
+    {
+        printf 'payment=%s create=%s confirm=%s events=%s\n' "$payment" "$c_create" "$c_confirm" "$c_events"
+        printf 'file=%s upload=%s attestation=%s\n' "$file" "$c_upload" "$c_attest"
+        printf 'chain: expectation status=%s correlation=%s amount_minor=%s keys=%s; allocation correlation=%s; run=%s\n' \
+            "${e_status:-}" "${c_expectation:-}" "${e_minor:-}" "${e_keys:-}" "${c_allocation:-}" "${run:-}"
+    } > "$ART/telemetry-trace.txt"
+    psql_query -c "SELECT 'file ' || f.id || ' ' || f.status || ' ' || f.correlation_id FROM settlement.file f WHERE f.id = '$file'::uuid" >> "$ART/telemetry-trace.txt" 2>&1 || true
     # Every leg is looked up before any verdict, so one missing leg does not hide what the others show.
     missing=""
-    [ -n "$settled" ] || missing="$missing; the reconciliation run never allocated the payment's expectation (telemetry-trace.txt)"
-    run=${settled##*|}
+    if [ -z "$settled" ]; then
+        missing="$missing; no reconciliation run allocated the file's line (telemetry-trace.txt)"
+    else
+        case ",${e_keys:-}," in
+            *",$reference,"*) pass "trace: the file's line was allocated to the payment's own expectation (its key is the capture's reference), by run $run" ;;
+            *) missing="$missing; the file's line was allocated to an expectation not keyed by the payment's capture reference" ;;
+        esac
+    fi
     # Long enough for the tail policy's ten seconds, the load-balancing hop and Tempo's ingest.
     sleep 30
 
-    # Each leg, by what joins it.
-    pay_traces=$(trace_ids_for "{ span.finapp.correlation_id = \"$C_PAY\" }")
-    file_traces=$(trace_ids_for "{ span.finapp.correlation_id = \"$C_FILE\" }")
-    intake_traces=$(trace_ids_for "{ span.file.id = \"$file\" }")
-    # shellcheck disable=SC2086
-    span_names_of $pay_traces > "$ART/telemetry-trace-payment-spans.txt"
-    # shellcheck disable=SC2086
-    span_names_of $file_traces > "$ART/telemetry-trace-file-spans.txt"
-    # shellcheck disable=SC2086
-    span_names_of $intake_traces > "$ART/telemetry-trace-intake-spans.txt"
-    chunk_traces=$(trace_ids_for "{ name = \"reconciliation.chunk\" }")
-    # shellcheck disable=SC2086
-    span_names_of $chunk_traces > "$ART/telemetry-trace-chunk-spans.txt"
-    log "trace: payment $payment under $C_PAY in $(printf '%s\n' $pay_traces | grep -c .) traces; file $file under $C_FILE; run $run"
-    for leg in "http post /v1/payments" "http post /v1/payments/{id}/confirmation" "outbox.publish" "inbox.handle"; do
-        if grep -qF -- "$leg" "$ART/telemetry-trace-payment-spans.txt"; then
-            pass "trace: '$leg' found under the payment's correlation"
+    : > "$ART/telemetry-trace-spans.txt"
+    spans_under() {
+        # spans_under <label> <correlation>...: every span name in the traces of those correlations, also kept in the artefact under the label.
+        spans_label=$1
+        shift
+        for correlation in "$@"; do
+            [ -n "$correlation" ] && [ "$correlation" != "-" ] || continue
+            # shellcheck disable=SC2046
+            span_names_of $(trace_ids_for "{ span.finapp.correlation_id = \"$correlation\" }")
+        done | sed "s/^/$spans_label /" | tee -a "$ART/telemetry-trace-spans.txt"
+    }
+    has_span() {
+        # has_span <listing> <span name>: the listing's lines are "<label> <count> <name>"; the name must match whole.
+        printf '%s\n' "$1" | sed 's/^[^ ]* *[0-9]* //' | grep -qxF -- "$2"
+    }
+    leg() {
+        # leg <where it ran> <span name> <listing>: found, or one more line of what is missing.
+        if has_span "$3" "$2"; then
+            pass "trace: '$2' found $1"
         else
-            missing="$missing; no '$leg' span under the payment's correlation"
+            missing="$missing; no '$2' span $1"
         fi
-    done
-    for leg in "http post /v1/operator/settlement/files" "http post /v1/operator/settlement/files/{id}/attestation"; do
-        if grep -qF -- "$leg" "$ART/telemetry-trace-file-spans.txt"; then
-            pass "trace: '$leg' found under the file's correlation"
-        else
-            missing="$missing; no '$leg' span under the file's correlation"
-        fi
-    done
-    for leg in settlement.parse settlement.accept; do
-        if grep -qF -- "$leg" "$ART/telemetry-trace-intake-spans.txt"; then
-            pass "trace: '$leg' found by the file's identifier"
-        else
-            missing="$missing; no '$leg' span carrying the file's identifier"
-        fi
-    done
-    if grep -qF -- "reconciliation.chunk" "$ART/telemetry-trace-chunk-spans.txt"; then
-        pass "trace: the reconciliation run's chunks are in Tempo; the run that settled the payment ($run) is joined to it by the stored chain"
+    }
+    # shellcheck disable=SC2086
+    create_spans=$(spans_under create "$c_create")
+    confirm_spans=$(spans_under confirm "$c_confirm")
+    # shellcheck disable=SC2086
+    event_spans=$(spans_under events $c_events)
+    expectation_spans=$(spans_under expectation "${c_expectation:-}")
+    upload_spans=$(spans_under upload "$c_upload")
+    attest_spans=$(spans_under attestation "$c_attest")
+    # shellcheck disable=SC2046
+    file_spans=$(span_names_of $(trace_ids_for "{ span.file.id = \"$file\" }") | sed 's/^/file /' | tee -a "$ART/telemetry-trace-spans.txt")
+    # shellcheck disable=SC2046
+    chunk_spans=$(span_names_of $(trace_ids_for "{ name = \"reconciliation.chunk\" }") | sed 's/^/chunks /' | tee -a "$ART/telemetry-trace-spans.txt")
+    log "trace: payment $payment (create $c_create, confirm $c_confirm, its events in: $c_events); file $file (upload $c_upload, attestation $c_attest); run ${run:-none}"
+    leg "in the create request's correlation" "http post /v1/payments" "$create_spans"
+    leg "in the confirm request's correlation" "http post /v1/payments/{id}/confirmation" "$confirm_spans"
+    leg "in the correlation of the payment's events" "outbox.publish" "$event_spans"
+    leg "in the correlation of the payment's events" "inbox.handle" "$event_spans"
+    leg "in the upload's correlation" "http post /v1/operator/settlement/files" "$upload_spans"
+    leg "in the attestation's correlation" "http post /v1/operator/settlement/files/{id}/attestation" "$attest_spans"
+    leg "carrying the file's identifier" "settlement.parse" "$file_spans"
+    leg "carrying the file's identifier" "settlement.accept" "$file_spans"
+    leg "in Tempo for the reconciliation runs" "reconciliation.chunk" "$chunk_spans"
+    # The customer's two requests under the one trace the client started: the platform joins an inbound traceparent (TracingTest), here
+    # through the edge. Reported, not judged: the legs above are found by what the platform itself stores, whatever a caller sends.
+    customer_spans=$(span_names_of "$t_customer" | sed 's/^/customer-trace /' | tee -a "$ART/telemetry-trace-spans.txt")
+    if has_span "$customer_spans" "http post /v1/payments/{id}/confirmation" && has_span "$customer_spans" "http post /v1/payments"; then
+        pass "trace: the customer's create and confirm requests are one trace, the one the client started ($t_customer)"
     else
-        missing="$missing; no reconciliation.chunk span in Tempo"
+        log "trace: the customer's own trace $t_customer does not hold both requests (telemetry-trace-spans.txt, customer-trace)"
     fi
-    if [ "${settled%%|*}" != "" ]; then
-        pass "trace: the stored chain joins the legs: expectation under $C_PAY $(printf '%s' "$settled" | cut -d'|' -f1), allocated under $(printf '%s' "$settled" | cut -d'|' -f2) by run $run"
-    fi
-    # The logs of the same flow, from Loki: the payment's correlation is an indexed attribute of each record.
+    # The expectation was opened by the payment's own flow: its correlation is one the payment's requests or events ran in.
+    case " $c_create $c_confirm $c_events " in
+        *" ${c_expectation:-none} "*) pass "trace: the payment's expectation was opened in the payment's own flow ($c_expectation)" ;;
+        *) log "trace: the expectation's correlation (${c_expectation:-none}) is none of the payment's requests' or events': its spans are listed under 'expectation'" ;;
+    esac
+    # The logs of the flow, from Loki: a record's correlation is an indexed attribute. A request that logs nothing has no record, so this is
+    # reported, and the sweep below is what proves records arrive at all.
     now=$(date +%s)
-    telemetry_get finapp-loki:3100 "/loki/api/v1/query_range?query=$(urlencode "{service_name=\"finapp\"} | finapp_correlation_id=\"$C_PAY\"")&start=$((now - 3600))000000000&end=$((now + 60))000000000&limit=1000" \
-        > "$ART/telemetry-trace-logs.json" 2>&1 || true
-    log "trace: Loki answered $(wc -c < "$ART/telemetry-trace-logs.json") bytes for the payment's correlation"
-    if grep -qF -- "$C_PAY" "$ART/telemetry-trace-logs.json"; then
-        pass "trace: the payment's log records are in Loki under its correlation"
-    else
-        missing="$missing; no log record of the payment's correlation in Loki"
-    fi
-    [ -z "$missing" ] || fail "trace:$missing (the span lists are telemetry-trace-*-spans.txt)"
+    found_logs=0
+    for correlation in "$c_create" "$c_confirm" $c_events "$c_upload" "$c_attest"; do
+        [ -n "$correlation" ] && [ "$correlation" != "-" ] || continue
+        telemetry_get finapp-loki:3100 "/loki/api/v1/query_range?query=$(urlencode "{service_name=\"finapp\"} | finapp_correlation_id=\"$correlation\"")&start=$((now - 3600))000000000&end=$((now + 60))000000000&limit=1000" \
+            > "$WORK/trace-logs.json" 2>/dev/null || true
+        records=$(tr ',' '\n' < "$WORK/trace-logs.json" | grep -c '"[0-9]\{19\}"' || true)
+        found_logs=$((found_logs + records))
+        printf '%s\t%s\n' "$correlation" "$records" >> "$ART/telemetry-trace-logs.tsv"
+    done
+    log "trace: Loki holds $found_logs log records under the flow's correlations (telemetry-trace-logs.tsv)"
+    [ -z "$missing" ] || fail "trace:$missing (the span lists are in telemetry-trace-spans.txt)"
 }
 
 latency_summary() {
@@ -278,40 +321,54 @@ telemetry_outage() {
 
 telemetry_sweep() {
     now=$(date +%s)
-    telemetry_get finapp-loki:3100 "/loki/api/v1/query_range?query=$(urlencode '{service_name="finapp"}')&start=$((now - 7200))000000000&end=$((now + 60))000000000&limit=5000" \
-        > "$ART/telemetry-sweep-loki.json" 2>&1 || fail "Loki could not be read for the sweep"
+    psql_query -c "SELECT i.party_id FROM identity.identity i WHERE i.party_id IS NOT NULL" | tr -d ' ' | grep . > "$WORK/needles.txt" || true
+    printf '%s\n' "${TRACE_AMOUNT:-731.94}" >> "$WORK/needles.txt"
+    needles=$(grep -c . "$WORK/needles.txt" || true)
+    # Loki is searched for the needles themselves, over every record of the last two hours rather than a sample of the latest; the count of
+    # records in the same window is the control. A needle's dot is a class, so the pattern needs no escaping.
+    pattern=$(sed 's/\./[.]/g' "$WORK/needles.txt" | paste -sd'|' -)
+    telemetry_get finapp-loki:3100 "/loki/api/v1/query?query=$(urlencode 'sum(count_over_time({service_name="finapp"}[2h]))')&time=$((now + 1))000000000" \
+        > "$ART/telemetry-sweep-loki-count.json" 2>&1 || fail "Loki could not be read for the sweep"
+    loki_lines=$(sed -n 's/.*"value":\[[0-9.]*,"\([0-9]*\)"\].*/\1/p' "$ART/telemetry-sweep-loki-count.json" | head -1)
+    telemetry_get finapp-loki:3100 "/loki/api/v1/query_range?query=$(urlencode "{service_name=\"finapp\"} |~ \"$pattern\"")&start=$((now - 7200))000000000&end=$((now + 60))000000000&limit=1000" \
+        > "$ART/telemetry-sweep-loki.json" 2>&1 || fail "Loki could not be searched for the needles"
+    loki_found=$(tr ',' '\n' < "$ART/telemetry-sweep-loki.json" | grep -c '"[0-9]\{19\}"' || true)
+    # Tempo: the latest hundred traces, and every trace of the traced flow's own correlations and of the trace its customer started.
     : > "$ART/telemetry-sweep-tempo.json"
-    for trace in $(trace_ids_for "{ }") $(trace_ids_for "{ span.finapp.correlation_id = \"${C_PAY:-none}\" }"); do
+    flow_traces=""
+    for correlation in ${c_create:-} ${c_confirm:-} ${c_events:-} ${c_expectation:-} ${c_upload:-} ${c_attest:-}; do
+        flow_traces="$flow_traces $(trace_ids_for "{ span.finapp.correlation_id = \"$correlation\" }" | tr '\n' ' ')"
+    done
+    traces=0
+    for trace in $(trace_ids_for "{ }") $flow_traces ${t_customer:-}; do
         telemetry_get finapp-tempo:3200 "/api/traces/$trace" >> "$ART/telemetry-sweep-tempo.json" 2>&1 || true
         printf '\n' >> "$ART/telemetry-sweep-tempo.json"
+        traces=$((traces + 1))
     done
     : > "$ART/telemetry-sweep-console.txt"
     for pod in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name); do
         kube -n finapp logs "$pod" --all-containers >> "$ART/telemetry-sweep-console.txt" 2>&1 || true
     done
-    psql_query -c "SELECT i.party_id FROM identity.identity i WHERE i.party_id IS NOT NULL" | tr -d ' ' | grep . > "$WORK/needles.txt" || true
-    printf '%s\n' "${TRACE_AMOUNT:-731.94}" >> "$WORK/needles.txt"
-    needles=$(grep -c . "$WORK/needles.txt")
-    loki_lines=$(tr ',' '\n' < "$ART/telemetry-sweep-loki.json" | grep -c '"[0-9]\{19\}"')
     tempo_bytes=$(wc -c < "$ART/telemetry-sweep-tempo.json")
-    [ "$loki_lines" -gt 0 ] || fail "the sweep read no log record from Loki: a sweep over nothing proves nothing"
+    [ "${loki_lines:-0}" -gt 0 ] || fail "the sweep read no log record from Loki: a sweep over nothing proves nothing"
     [ "$tempo_bytes" -gt 1000 ] || fail "the sweep read no trace from Tempo"
-    found=$(grep -F -f "$WORK/needles.txt" -o "$ART/telemetry-sweep-loki.json" "$ART/telemetry-sweep-tempo.json" "$ART/telemetry-sweep-console.txt" | sort | uniq -c || true)
+    found=$(grep -F -f "$WORK/needles.txt" -o "$ART/telemetry-sweep-tempo.json" "$ART/telemetry-sweep-console.txt" | sort | uniq -c || true)
+    [ "$loki_found" = 0 ] || found="$found Loki: $loki_found records match (telemetry-sweep-loki.json)"
     printf '%s\n' "$found" > "$ART/telemetry-sweep-found.txt"
     if [ -n "$found" ]; then
         fail "sweep: needles exported or printed: $(printf '%s' "$found" | tr '\n' ';' | cut -c1-400)"
     else
-        pass "sweep: none of $needles needles (the planted amount and every party) in $loki_lines log records, ${tempo_bytes} bytes of traces or any replica's console"
+        pass "sweep: none of $needles needles (the planted amount and every party) in $loki_lines log records, $traces traces (${tempo_bytes} bytes) or any replica's console"
     fi
 }
 
 telemetry_scrape() {
     answer=$(telemetry_get finapp-prometheus:9090 "/api/v1/query?query=$(urlencode 'up{job="finapp"}')" 2>&1 || true)
     printf '%s\n' "$answer" > "$ART/telemetry-scrape.json"
-    targets=$(printf '%s' "$answer" | tr '{' '\n' | grep -c '"job":"finapp"')
-    up=$(printf '%s' "$answer" | tr '{' '\n' | grep '"job":"finapp"' | grep -c '"env":"kind"')
+    targets=$(printf '%s' "$answer" | tr '{' '\n' | grep -c '"job":"finapp"' || true)
+    up=$(printf '%s' "$answer" | tr '{' '\n' | grep '"job":"finapp"' | grep -c '"env":"kind"' || true)
     local_env=$(printf '%s' "$answer" | grep -c '"env":"local"' || true)
-    replicas=$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name | grep -c .)
+    replicas=$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name | grep -c . || true)
     ones=$(printf '%s' "$answer" | grep -o '"value":\[[0-9.]*,"1"\]' | grep -c . || true)
     log "scrape: $targets finapp targets, $up of them env=\"kind\", $ones up, $replicas replicas running"
     if [ "$targets" -ge "$replicas" ] && [ "$up" = "$targets" ] && [ "$ones" -ge "$replicas" ] && [ "$local_env" = 0 ]; then

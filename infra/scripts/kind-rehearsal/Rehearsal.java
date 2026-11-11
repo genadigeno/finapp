@@ -87,8 +87,8 @@ public final class Rehearsal {
             case "map-gl" -> rehearsal.mapGl();
             case "gl-check" -> rehearsal.glCheck();
             // The telemetry pipeline's steps (P15-TSK-023): infra/scripts/kind-rehearsal/telemetry.sh calls these.
-            case "trace-payment" -> rehearsal.tracePayment(args[2], args[3]);
-            case "settle-file" -> rehearsal.settleFile(args[2], args[3], args[4]);
+            case "trace-payment" -> rehearsal.tracePayment(args[2]);
+            case "settle-file" -> rehearsal.settleFile(args[2], args[3]);
             case "latency" -> rehearsal.latency(args[2], Integer.parseInt(args[3]));
             default -> throw new IllegalArgumentException("unknown step " + args[1]);
         }
@@ -648,38 +648,45 @@ public final class Rehearsal {
     // ---------------------------------------------------------------------------------------------- the telemetry pipeline (P15-TSK-023)
 
     /**
-     * One card top-up of a planted amount under one correlation id the client chose, on the intent and on its confirmation alike, so the
-     * whole customer flow is one correlation; the payment's id is printed for the shell to follow its capture.
+     * One card top-up of a planted amount, created and then confirmed. The platform mints every request's correlation (ADR-0034: a caller's
+     * own value is only echoed as a client reference), so each request's is read from its answer and printed with the payment's id: the
+     * shell follows each request's legs by its own correlation, and the asynchronous ones by the correlation the platform stored with them.
      */
-    private void tracePayment(String correlation, String amount) throws Exception {
+    private void tracePayment(String amount) throws Exception {
         String token = customerToken(0);
+        // The customer's two requests under one W3C trace the client starts, which the platform joins rather than replaces.
+        java.security.SecureRandom random = new java.security.SecureRandom();
+        byte[] traceBytes = new byte[16];
+        random.nextBytes(traceBytes);
+        String trace = java.util.HexFormat.of().formatHex(traceBytes);
         Map<String, String> headers = new java.util.HashMap<>();
         headers.put("Authorization", "Bearer " + token);
-        headers.put("X-Correlation-Id", correlation);
         headers.put("Idempotency-Key", key());
+        headers.put("traceparent", "00-" + trace + "-" + java.util.HexFormat.of().formatHex(new byte[] {1, 2, 3, 4, 5, 6, 7, 8}) + "-01");
         Answer created = expect("traced top-up create", call("POST", publicBase + "/v1/payments",
                 "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\",\"paymentMethodId\":\"" + state.getProperty("customer.0.card") + "\"}",
                 headers), 200, 201);
         String id = field(created.body(), "id");
         headers.remove("Idempotency-Key");
+        headers.put("traceparent", "00-" + trace + "-" + java.util.HexFormat.of().formatHex(new byte[] {8, 7, 6, 5, 4, 3, 2, 1}) + "-01");
         Answer confirmed = expect("traced top-up confirm", call("POST", publicBase + "/v1/payments/" + id + "/confirmation", null, headers), 200, 409);
         String status = confirmed.status() == 200 ? field(confirmed.body(), "status") : null;
         for (int polls = 0; polls < 30 && !"SUCCEEDED".equals(status); polls++) {
             pause(1000);
             status = field(expect("traced top-up read", get(publicBase, "/v1/payments/" + id, token), 200).body(), "status");
         }
-        System.out.println("traced payment=" + id + " status=" + status + " correlation=" + correlation);
+        System.out.println("traced payment=" + id + " status=" + status + " create=" + correlationOf(created) + " confirm=" + correlationOf(confirmed)
+                + " trace=" + trace);
     }
 
     /**
-     * A PSP settlement report delivered as a person would: uploaded by the operator under the correlation id the client chose, then attested by
-     * the controller, the second person the upload door requires. The file's id is printed for the shell to follow.
+     * A PSP settlement report delivered as a person would: uploaded by the operator, then attested by the controller, the second person the
+     * upload door requires. The file's id and each request's minted correlation are printed for the shell to follow.
      */
-    private void settleFile(String correlation, String businessDate, String reportFile) throws Exception {
+    private void settleFile(String businessDate, String reportFile) throws Exception {
         String content = java.util.Base64.getEncoder().encodeToString(Files.readAllBytes(work.resolve(reportFile)));
         Map<String, String> headers = new java.util.HashMap<>();
         headers.put("Authorization", "Bearer " + fresh("operator"));
-        headers.put("X-Correlation-Id", correlation);
         headers.put("Idempotency-Key", key());
         Answer landed = expect("settlement upload", call("POST", operatorBase + "/v1/operator/settlement/files",
                 "{\"sourceCode\":\"simulated-psp.settlement\",\"businessDate\":\"" + businessDate + "\",\"content\":\"" + content + "\"}",
@@ -687,9 +694,13 @@ public final class Rehearsal {
         String file = field(landed.body(), "fileId");
         Map<String, String> attest = new java.util.HashMap<>();
         attest.put("Authorization", "Bearer " + fresh("controller"));
-        attest.put("X-Correlation-Id", correlation);
-        expect("settlement attestation", call("POST", operatorBase + "/v1/operator/settlement/files/" + file + "/attestation", null, attest), 200);
-        System.out.println("settlement file=" + file + " correlation=" + correlation);
+        Answer attested = expect("settlement attestation", call("POST", operatorBase + "/v1/operator/settlement/files/" + file + "/attestation", null, attest), 200);
+        System.out.println("settlement file=" + file + " upload=" + correlationOf(landed) + " attestation=" + correlationOf(attested));
+    }
+
+    /** The correlation the platform minted for a request, from its answer's header; "-" when absent. */
+    private static String correlationOf(Answer answer) {
+        return answer.raw().headers().firstValue("X-Correlation-Id").orElse("-");
     }
 
     /**
