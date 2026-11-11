@@ -253,6 +253,7 @@ class ImageAdmissionTest {
                 .as("the keys are this run's, generated outside the repository and never uploaded to a log")
                 .contains("WORK=$(mktemp -d)").contains("-v \"$(dpath \"$WORK/keys\"):/keys\"")
                 .contains("generate-key-pair --output-key-prefix /keys/ci").contains("--tlog-upload=false")
+                .contains("COSIGN_PASSWORD=$(od -An -N24 -tx1 /dev/urandom").contains("rm -rf \"$WORK\"")
                 .doesNotContain("$ROOT/build/admission/ci.key").doesNotContain("cp \"$WORK/keys/ci.key\"");
         assertThat(script).as("every refusal sits beside its control, admitted outside the policy")
                 .contains("attempt \"$1-control\" \"$4\"").contains("CONTROL=finapp-admission-control");

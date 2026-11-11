@@ -580,7 +580,7 @@ awk -v keyfile="$WORK/keys/ci.pub" -v otherfile="$WORK/keys/other.pub" -v signat
 case $PROBE in
     second-key) [ "$(grep -c '^    - name: other$' "$WORK/render/admission/applied.yaml")" -eq 2 ] || cannot "the second-key probe did not apply" ;;
     warn) if grep -q '^  mode: enforce$' "$WORK/render/admission/applied.yaml"; then cannot "the warn probe did not apply"; fi ;;
-    migrator-out) if grep -q 'finapp-migrator' "$WORK/render/admission/applied.yaml"; then cannot "the migrator-out probe did not apply"; fi ;;
+    migrator-out) if grep -qF 'glob: "**/finapp-migrator@sha256:*"' "$WORK/render/admission/applied.yaml"; then cannot "the migrator-out probe did not apply"; fi ;;
 esac
 if grep -q 'ADMISSION-' "$WORK/render/admission/applied.yaml"; then cannot "a placeholder was left in the policies"; fi
 cp "$WORK/render/admission/applied.yaml" "$ART/policies-applied.yaml"
