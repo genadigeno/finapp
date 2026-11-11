@@ -181,3 +181,7 @@ recommendation that a customer's credential is never rotated on a schedule (it c
 on suspected compromise), and that the report worth having is the count of credentials still under parameters
 older than current policy, which is what a change of parameters needs to watch converge: postponed until the
 first such change, since until then every credential is under the first parameters and it would read zero.
+
+*Decided by the owner (2026-11-11, `THREAT_MODEL.md` §6 item 36 (a), accepting the recommendation):* a customer's credential is not rotated on
+a schedule; it changes on the holder's act or on suspected compromise. The report is the count of credentials still under parameters older
+than current policy, postponed until the parameters first change.
