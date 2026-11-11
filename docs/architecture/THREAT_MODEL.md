@@ -781,6 +781,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T46 | Export never waits on the collector: a collector that accepts and never answers costs a request thread's spans and log lines nothing, and no health contributor reads an exporter | EXISTS | `app/src/test/java/com/finapp/app/telemetry/TelemetryExportNeverBlocksTest.java#aHangingCollectorCostsTheRequestNothing`; `app/src/test/java/com/finapp/app/telemetry/TelemetryExportNeverBlocksTest.java#readinessReadsNoExporter` |
 | T46 | On a real API server, the rehearsal's needle sweep - Loki searched for the needles over every record of the run, Tempo's latest hundred traces and every trace of the traced flow's correlations, and every replica's console - the traced payment's amount, every rehearsal party's identifier, and an amount after a JSON escape and a card number in a record the step plants through the collector itself, none found; the planted record found in Loki under its correlation, scrubbed, and records under correlations the replicas printed found too, as its controls - so the sweep could have gone red there. On one machine | EXISTS | `infra/scripts/kind-rehearsal/telemetry.sh` `contains: sweep: none of` `contains: a sweep over nothing proves nothing` |
 | T46 | A real environment's telemetry back ends: who reads them, how long they keep what, and the identity they write with | GAP | `owner item 37`; owner: the owner, since 2026-11-11 |
+| T46 | The telemetry stack's own failures are alerted: the collector's send failures and refusals and each back end's ingest, each rule in the alert catalogue with its runbook section and rehearsed on `kind`, so a second net that stopped working is seen without anyone looking | PLANNED | `P15-TSK-032` |
+| T46 | The operator edge removes a caller's `traceparent`, `tracestate` and `baggage` as the public edge does, so no caller, staff included, can switch tracing off for their own requests or choose the trace ids the collectors route by | PLANNED | `P15-TSK-043` |
 | T47 | A cluster-safe registration throttle bounds how fast identifiers can be tested, at the same rate whatever the identifier: 10 an hour per IPv4 address or IPv6 /64, 100 an hour per IPv6 /48, and at most 65,536 buckets of 10 on the door whatever a holder has. It decides before the body is read, so a refusal says nothing of any identifier | EXISTS | `app/src/test/java/com/finapp/app/abuse/SourceLimitClusterDatabaseTest.java#exactlyTheLimitAcrossThreeContexts`; `app/src/test/java/com/finapp/app/abuse/SourceLimitInterceptorTest.java#aSiteIsCountedAfterItsSource`; `app/src/test/java/com/finapp/app/abuse/SourceLimitInterceptorTest.java#theDecisionReadsNoBody` |
 | T47 | Registration answers a taken identifier `422` by design (accepted); verify-then-tell, the alternative, waits for the first real customer launch | GAP | `PI-017`; owner: the owner, since 2026-11-08 |
 
@@ -991,7 +993,8 @@ were added on 2026-11-09 and await the owner." until then.)* **Items 35, 36, 38 
 ("accept recommendations", during wave F); each item's decision follows its options. *(This paragraph read "Item 35 was added on
 2026-11-11 and awaits the owner." and "Item 38 was added on 2026-11-11 by the restore rehearsal and awaits the owner." until then.)*
 **Item 37 was added on 2026-11-11 with (a) to (c), which the owner decided with the rest; the telemetry pipeline's review added (d) to
-(f) the same day, after the owner's word, and they await the owner.**
+(f) the same day, after the owner's word, and the owner decided them on 2026-11-12, accepting each recommendation.** *(This sentence
+read "... and they await the owner." until then.)*
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1549,7 +1552,10 @@ were added on 2026-11-09 and await the owner." until then.)* **Items 35, 36, 38 
 
     **Decided 2026-11-11**: (a), (b) and (c) as recommended: (a) (i) with the first real environment, at seven and thirty-one days
     unless a jurisdiction says otherwise; (b) (i), the stored chain is the join; (c) (i), as `PI-022`, required before production use.
-    (d), (e) and (f) were added after the owner's word and await the owner.
+    **Decided 2026-11-12**: (d), (e) and (f) as recommended: (d) (i), the stack's rules written and rehearsed on `kind` in `P15-TSK-032`,
+    live with the first real environment; (e) (i), the logs' thirty-one days stated in `DATA_RETENTION.md` as the erasure's bound for
+    anything a log printed, a store per class only if a regulator asks for less; (f) (i), the operator edge removes them too, in
+    `P15-TSK-043`.
 
 38. **T32's residual: the managed restore, and a logical restore into a managed instance** *(added 2026-11-11 by the restore
     rehearsal; (c) added the same day by its review)*. The rehearsal restores a logical backup into a PostgreSQL it runs itself
