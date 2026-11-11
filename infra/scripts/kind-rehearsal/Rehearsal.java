@@ -82,6 +82,7 @@ public final class Rehearsal {
             case "workload" -> rehearsal.workload(args[2]);
             case "replay" -> rehearsal.replay(args[2], args[3], args[4], args[5]);
             case "edge" -> rehearsal.edge();
+            case "surface" -> rehearsal.surface();
             case "forged" -> rehearsal.forged(args[2], Integer.parseInt(args[3]));
             case "report-token" -> System.out.println("token " + rehearsal.fresh("operator"));
             case "map-gl" -> rehearsal.mapGl();
@@ -649,12 +650,19 @@ public final class Rehearsal {
         System.out.println("edge operator-route-on-operator status=" + operator.status() + " body=" + operator.body().replaceAll("\\s+", " "));
         Answer actuator = get(publicBase, "/actuator/health", null);
         System.out.println("edge actuator-on-public status=" + actuator.status());
-        // P15-TSK-042: the operator's own password, on each host. Refused on the public one as a wrong password is, and counted nowhere.
+    }
+
+    /**
+     * The operator's own password, on each host (P15-TSK-042): refused on the public one as a wrong password is, and counted nowhere;
+     * served on the operator host. Run on release N only, after the rollout: the edge's acceptance runs on N - 1, which can predate the
+     * refusal. Prints the status alone, never the body: a body that was served would carry a session token into the artefacts.
+     */
+    private void surface() throws Exception {
         String staff = "{\"loginIdentifier\":\"" + state.getProperty("operator.login") + "\",\"password\":\"" + password() + "\"}";
         Answer staffOnPublic = post(publicBase, "/v1/authentications", staff, null, null);
-        System.out.println("edge operator-sign-in-on-public status=" + staffOnPublic.status() + " body=" + staffOnPublic.body().replaceAll("\\s+", " "));
+        System.out.println("surface operator-sign-in-on-public status=" + staffOnPublic.status());
         Answer staffOnOperator = post(operatorBase, "/v1/authentications", staff, null, null);
-        System.out.println("edge operator-sign-in-on-operator status=" + staffOnOperator.status());
+        System.out.println("surface operator-sign-in-on-operator status=" + staffOnOperator.status());
     }
 
     /**

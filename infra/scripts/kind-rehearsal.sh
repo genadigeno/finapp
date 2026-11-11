@@ -1052,13 +1052,7 @@ grep -Eq 'edge operator-route-on-operator status=401 ' "$ART/edge.txt" \
 grep -q 'edge actuator-on-public status=404' "$ART/edge.txt" \
     && pass "the actuator is not on the public host" \
     || fail "the actuator on the public host: $(grep 'actuator-on-public' "$ART/edge.txt")"
-# P15-TSK-042: the edge's surface marker through the real controllers - an operator's own password refused on the public host, served on the operator host.
-grep -q 'edge operator-sign-in-on-public status=401 ' "$ART/edge.txt" \
-    && pass "an operator's own password is refused on the public host" \
-    || fail "the operator's sign-in on the public host: $(grep 'operator-sign-in-on-public' "$ART/edge.txt")"
-grep -q 'edge operator-sign-in-on-operator status=201' "$ART/edge.txt" \
-    && pass "an operator signs in on the operator host" \
-    || fail "the operator's sign-in on the operator host: $(grep 'operator-sign-in-on-operator' "$ART/edge.txt")"
+# The surface marker's own acceptance (P15-TSK-042) is step surface-on-n, after the rollout: this step runs on N - 1, which can predate it.
 
 CM_POD_IP=$(kube -n cert-manager get pods -l app.kubernetes.io/component=controller -o jsonpath='{.items[0].status.podIP}')
 kube -n finapp-observability exec np-scraper -c probe -- curl -s --max-time 10 "http://$CM_POD_IP:9402/metrics" > "$ART/cert-manager-metrics.txt" 2>&1 \
@@ -1488,6 +1482,18 @@ fi
 assert_handler_window rollout "$FROM_N" "$TO_N" "$UNSEEN"
 [ "$PROBE" != skip-replay ] || fail "PROBE skip-replay: the window was clean with no replay, so the assertion cannot fail"
 census handler-window-n
+
+step surface-on-n
+# P15-TSK-042: the edge's surface marker through the real controllers, on release N - an operator's own password refused on the public host,
+# served on the operator host. Here and not at edge-acceptance, which runs on N - 1: an N - 1 that predates the refusal serves it there. The client
+# prints each status alone, never a body, so a sign-in that was served leaves no session token in the artefacts.
+client surface > "$ART/surface.txt" 2>&1 || fail "the surface check could not run: see surface.txt"
+grep -qx 'surface operator-sign-in-on-public status=401' "$ART/surface.txt" \
+    && pass "an operator's own password is refused on the public host" \
+    || fail "the operator's sign-in on the public host: $(grep 'operator-sign-in-on-public' "$ART/surface.txt")"
+grep -qx 'surface operator-sign-in-on-operator status=201' "$ART/surface.txt" \
+    && pass "an operator signs in on the operator host" \
+    || fail "the operator's sign-in on the operator host: $(grep 'operator-sign-in-on-operator' "$ART/surface.txt")"
 
 step forged-address
 # (3) of the edge's acceptance. What the application keys on is request.getRemoteAddr() after the RemoteIpValve, and N's per-source limits are built on it, a bucket of the address
