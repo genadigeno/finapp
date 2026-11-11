@@ -313,6 +313,34 @@ deny contains msg if {
 	msg := sprintf("[edge-upgrade] %s forwards a client's Upgrade header: an h2c upgrade would be a tunnel past the allow-list", [prefix])
 }
 
+# ------------------------------------------------------------------------------------------- which surface (P15-TSK-042)
+
+# Each edge states its own surface, replacing whatever the client sent, on every router: the application refuses staff at the doors
+# that sign in, step up, enrol, change a password or recover unless the operator edge said so. A missing or wrong word here would make
+# the operator edge's staff refused (fail closed) or, worse, the public edge's admitted.
+surface_word := {"finapp-edge-public-routes-": "public", "finapp-edge-operator-routes-": "operator"}
+
+states_its_surface(prefix) if {
+	edge_file(prefix).http.middlewares["edge-headers"].headers.customRequestHeaders["X-Finapp-Surface"] == surface_word[prefix]
+}
+
+deny contains msg if {
+	some prefix in route_config_prefixes
+	not states_its_surface(prefix)
+	msg := sprintf("[edge-surface] %s does not set X-Finapp-Surface: %s in edge-headers", [prefix, surface_word[prefix]])
+}
+
+router_marks_its_surface(router) if {
+	"edge-headers" in main.list_of(router, "middlewares")
+}
+
+deny contains msg if {
+	some prefix in route_config_prefixes
+	some name, router in main.section(yaml.unmarshal(config_map_with_prefix(prefix).data["routes.yaml"]), "http").routers
+	not router_marks_its_surface(router)
+	msg := sprintf("[edge-surface] %s router %s does not run edge-headers, so its requests reach the application unmarked or marked by the client", [prefix, name])
+}
+
 # ------------------------------------------------------------------------------------------- the Services
 
 deny contains msg if {

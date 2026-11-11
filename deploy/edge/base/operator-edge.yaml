@@ -29,6 +29,9 @@ http:
           Forwarded: ""
           X-Forwarded-Prefix: ""
           Upgrade: ""
+          # The operators' surface (P15-TSK-042): set, replacing whatever the client sent, as public-edge.yaml says. Staff sign in,
+          # step up, enrol, change a password and recover here and nowhere else.
+          X-Finapp-Surface: operator
 
     # The private ranges, and no others; a real environment narrows them to its own.
     internal-only:

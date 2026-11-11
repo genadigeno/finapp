@@ -25,6 +25,21 @@ public interface RoleAssignmentStore<T> {
     Set<RoleName> liveRolesOf(T unitOfWork, IdentityId identityId);
 
     /**
+     * The identity signing in as {@code login}, if it holds a live role now (`P15-TSK-042`): one statement, whatever the
+     * identifier names, so an unknown identifier, a customer's and a role-holder's cost the same read.
+     *
+     * <p>For a door that knows only what the caller typed. Read from the grants, as {@link #liveRolesOf} is: every role is
+     * an operational one ({@code Authorization.Standing}), so any live role makes the identity staff.
+     */
+    java.util.Optional<IdentityId> liveHolderByLogin(T unitOfWork, LoginIdentifier login);
+
+    /**
+     * The identity a recovery request was made for, if it holds a live role now (`P15-TSK-042`): one statement, read before
+     * the request's token is judged, so a refusal spends nothing.
+     */
+    java.util.Optional<IdentityId> liveHolderOfRecovery(T unitOfWork, RecoveryRequestId request);
+
+    /**
      * The live holdings of {@code roles} whose identity has no active factor, oldest first, at most {@code limit}
      * (`P15-TSK-039`): one read of both tables, so no holding is judged against a factor read at another moment.
      */

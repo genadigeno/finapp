@@ -132,7 +132,9 @@ class AuthenticationBeans {
             SessionIssue sessionIssue,
             TransactionTemplate authenticationTransactions,
             DataSource dataSource,
-            MeterRegistry meters) {
+            MeterRegistry meters,
+            com.finapp.identity.Authorization authorization,
+            com.finapp.app.surface.SurfaceRefusalMeters surfaceRefusalMeters) {
         return new AuthenticationService(
                 credentialVerifier,
                 authenticationThrottle,
@@ -140,6 +142,8 @@ class AuthenticationBeans {
                 sessionIssue,
                 authenticationTransactions,
                 dataSource,
-                meters);
+                meters,
+                authorization,
+                surfaceRefusalMeters);
     }
 }

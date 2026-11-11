@@ -127,13 +127,33 @@ resolve_digest() {
 
 # Tags, anonymously. Both registries allow it - verified - so this needs no credential, which
 # matters: a check that needs a token is a check that stops running when the token expires.
+#
+# Every page (P15-TSK-007). ghcr answers a page at a time and names the next one in a Link header. The first version read
+# the first page only: for cosign's repository, whose ~35 000 tags are mostly signatures, that page holds one release,
+# v1.6.0, so a newer release could never be reported - a check reading less than it says. A page limit bounds a registry
+# that never stops answering; reaching it is "could not check", never a pass.
 list_tags_ghcr() {
     repository=${1#ghcr.io/}
     token=$(curl -fsS "https://ghcr.io/token?scope=repository:${repository}:pull" \
         | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
     [ -n "$token" ] || return 1
-    curl -fsS -H "Authorization: Bearer $token" "https://ghcr.io/v2/${repository}/tags/list" \
-        | tr ',' '\n' | sed -n 's/.*"\(v\{0,1\}[0-9][0-9.]*\)".*/\1/p'
+    headers=$(mktemp)
+    path="/v2/${repository}/tags/list?n=1000"
+    pages=0
+    tags=""
+    while [ -n "$path" ]; do
+        pages=$((pages + 1))
+        [ "$pages" -le 100 ] || { rm -f "$headers"; return 1; }
+        # A page that fails mid-list fails the whole list, and nothing is printed: the caller reads empty output as "could
+        # not list", while a partial list would be read as complete and could miss the newest release.
+        body=$(curl -fsS -D "$headers" -H "Authorization: Bearer $token" "https://ghcr.io${path}") \
+            || { rm -f "$headers"; return 1; }
+        tags="$tags
+$(printf '%s' "$body" | tr ',' '\n' | sed -n 's/.*"\(v\{0,1\}[0-9][0-9.]*\)".*/\1/p')"
+        path=$(sed -n 's/^[Ll]ink: <\([^>]*\)>; *rel="next".*/\1/p' "$headers" | tr -d '\r')
+    done
+    rm -f "$headers"
+    printf '%s\n' "$tags" | sed '/^$/d'
 }
 
 list_tags_dockerhub() {
@@ -241,6 +261,12 @@ check kube-router "$KUBE_ROUTER_REPOSITORY" "$KUBE_ROUTER_VERSION" "$KUBE_ROUTER
 check collector "$COLLECTOR_REPOSITORY" "$COLLECTOR_VERSION" "$COLLECTOR_DIGEST" list_tags_like_dockerhub
 check tempo     "$TEMPO_REPOSITORY"     "$TEMPO_VERSION"     "$TEMPO_DIGEST"     list_tags_like_dockerhub
 check loki      "$LOKI_REPOSITORY"      "$LOKI_VERSION"      "$LOKI_DIGEST"      list_tags_like_dockerhub
+# Signing and admission (P15-TSK-007): cosign, the policy controller and its chart (an OCI artefact, resolved by the same
+# inspect), and the local registry the admission check signs in.
+check cosign                  "$COSIGN_REPOSITORY"                  "$COSIGN_VERSION"                  "$COSIGN_DIGEST"                  list_tags_ghcr
+check policy-controller       "$POLICY_CONTROLLER_REPOSITORY"       "$POLICY_CONTROLLER_VERSION"       "$POLICY_CONTROLLER_DIGEST"       list_tags_ghcr
+check policy-controller-chart "$POLICY_CONTROLLER_CHART_REPOSITORY" "$POLICY_CONTROLLER_CHART_VERSION" "$POLICY_CONTROLLER_CHART_DIGEST" list_tags_ghcr
+check registry                "$REGISTRY_REPOSITORY"                "$REGISTRY_VERSION"                "$REGISTRY_DIGEST"                list_tags_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

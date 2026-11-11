@@ -57,7 +57,10 @@ public class MfaController {
      * <p>The response carries the secret. <strong>This is the only time it leaves the server</strong>
      * — there is no read path that returns it, and a customer who loses it re-enrols rather than
      * retrieving it.
+     *
+     * <p>Staff enrol on the operator surface alone (`P15-TSK-042`): refused elsewhere by the session interceptor.
      */
+    @com.finapp.app.surface.OperatorsRefusedOnPublic(com.finapp.app.surface.SurfaceDoor.MFA_ENROLMENT)
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public MfaEnrolmentStarted beginMfaEnrolment(HttpServletRequest request) {
@@ -83,7 +86,10 @@ public class MfaController {
      * <p>Every failure is the same failure: no pending enrolment, a wrong code and a lost race are
      * one response, because a caller able to tell them apart learns whether an enrolment is in
      * progress on the account.
+     *
+     * <p>Staff confirm a factor on the operator surface alone (`P15-TSK-042`): refused elsewhere by the session interceptor.
      */
+    @com.finapp.app.surface.OperatorsRefusedOnPublic(com.finapp.app.surface.SurfaceDoor.MFA_CONFIRMATION)
     @PostMapping("/confirmation")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void confirmMfaEnrolment(

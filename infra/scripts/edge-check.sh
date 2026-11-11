@@ -9,7 +9,8 @@
 # THEN THE ROUTING, THROUGH THE REAL PROXY. The route files are matched by Traefik, not by anything in this repository, and a path allow-list is
 # only as good as what the proxy does with `//`, `..`, `%2F` and `;`. So this script runs the pinned image, with the committed files
 # unchanged, against a stand-in backend that reports each request it receives, and asks it: which spellings of an operator path reach
-# the backend, whose X-Forwarded-For arrives, what is refused and with what status, and whether a body at the application's limit gets through.
+# the backend, whose X-Forwarded-For arrives, whose surface marker arrives (P15-TSK-042), what is refused and with what status, and whether
+# a body at the application's limit gets through.
 # The stand-in is Traefik's own whoami image, under the name the route files address, so not a byte of the route file changes.
 #
 # WHAT IT NEVER DOES. It talks to no cluster and holds no credential. The certificate is generated per run and thrown away. Nothing here can
@@ -108,6 +109,10 @@ plant_all() {
     edge_plant_on edge-no-write-timeout "$STATIC" '/writeTimeout: 120s/d'
     edge_plant_on edge-upgrade-forwarded "$PUBLIC_EDGE" '/^          Upgrade: ""$/d'
     edge_plant_on edge-operator-no-allowlist "$OPERATOR_ROUTES" '1,/internal-only, body-cap/s/internal-only, //'
+    # P15-TSK-042: each edge states its own surface on every router.
+    edge_plant_on edge-surface-unstated "$PUBLIC_EDGE" '/^          X-Finapp-Surface: public$/d'
+    edge_plant_on edge-surface-wrong-word edge/base/operator-edge.yaml 's/X-Finapp-Surface: operator$/X-Finapp-Surface: public/'
+    edge_plant_on edge-surface-router-unmarked "$PUBLIC_ROUTES" '1,/middlewares: \[edge-headers, /s/middlewares: \[edge-headers, /middlewares: [/'
 
     edge_plant_on edge-sticky "$PUBLIC_EDGE" 's/^        passHostHeader: false$/        passHostHeader: false\n        sticky:\n          cookie: {}/'
     edge_plant_on edge-reuse "$PUBLIC_EDGE" 's/maxIdleConnsPerHost: -1/maxIdleConnsPerHost: 200/'
@@ -303,6 +308,9 @@ edge_refused edge-no-backend-timeout edge-timeouts
 edge_refused edge-no-write-timeout edge-timeouts
 edge_refused edge-upgrade-forwarded edge-upgrade
 edge_refused edge-operator-no-allowlist edge-routes-operator
+edge_refused edge-surface-unstated edge-surface
+edge_refused edge-surface-wrong-word edge-surface
+edge_refused edge-surface-router-unmarked edge-surface
 edge_refused edge-sticky edge-no-affinity
 edge_refused edge-reuse edge-no-affinity
 edge_refused edge-management-port edge-service-port
@@ -573,6 +581,46 @@ for smuggled in '203.0.113' 'X-Forwarded-Prefix' 'X_Forwarded_For' 'Forwarded: f
         echo "ok   did not reach the backend: $smuggled"
     fi
 done
+
+# P15-TSK-042. The application refuses staff at the doors that sign in, step up, enrol, change a password or recover unless this
+# header says operator, so a client must never be the one saying it. Every spelling a client could try, over HTTP/1.1 and HTTP/2:
+# the backend must see exactly one X-Finapp-Surface line, the edge's own. A name spelled with an underscore is a different header,
+# which the application never reads (RequestSurfacesTest); whatever the proxy does with one is printed, and it must not carry the word.
+# surface_seen <label> <wanted word> <curl args...>
+surface_seen() {
+    label=$1 wanted=$2
+    shift 2
+    answer=$(client curl -sk --max-time 15 "$@" | tr -d '\r')
+    lines=$(printf '%s\n' "$answer" | grep -i '^X-Finapp-Surface:' || true)
+    if [ "$lines" = "X-Finapp-Surface: $wanted" ]; then
+        echo "ok   $label: the backend saw X-Finapp-Surface: $wanted, once"
+    else
+        printf '%s\n' "$answer"
+        echo "!!   $label: the backend saw [$lines], not the edge's X-Finapp-Surface: $wanted alone"
+        status=1
+    fi
+    aliased=$(printf '%s\n' "$answer" | grep -i '^X[-_]Finapp[-_]Surface:' | grep -iv '^X-Finapp-Surface:' || true)
+    if [ -n "$aliased" ]; then
+        echo "..   $label: an underscore spelling reached the backend under its own name, which the application never reads: $aliased"
+    fi
+}
+echo "==   the surface marker is the edge's alone"
+FORGED="-H X-Finapp-Surface:operator -H x-finapp-surface:operator -H X-FINAPP-SURFACE:operator -H X-Finapp-Surface:operator,public -H X_Finapp_Surface:operator"
+# shellcheck disable=SC2086
+surface_seen "the public host, a client's forged marker in four spellings and twice over" public $FORGED "$PUBLIC/v1/me"
+# shellcheck disable=SC2086
+surface_seen "the public host over HTTP/2, the same" public --http2 $FORGED "$PUBLIC/v1/me"
+surface_seen "the public host, no marker sent" public "$PUBLIC/v1/me"
+surface_seen "the public host, a session door" public -X POST -H 'X-Finapp-Surface: operator' "$PUBLIC/v1/authentications"
+surface_seen "the operator host, a client claiming the public surface" operator -X POST -H 'X-Finapp-Surface: public' "$OPERATOR/v1/authentications"
+surface_seen "the operator host, no marker sent" operator -X POST "$OPERATOR/v1/recoveries"
+# A hop-by-hop strip: a client naming the marker in its Connection header asks every proxy to drop it on the way. Over HTTP/1.1, where a
+# Connection header is legal, the backend must still see the edge's one value on each host, not none and not the client's.
+surface_seen "the public host, the marker named hop-by-hop" public --http1.1 -H 'Connection: X-Finapp-Surface' "$PUBLIC/v1/me"
+surface_seen "the public host, a forged marker named hop-by-hop" public --http1.1 -H 'Connection: keep-alive, X-Finapp-Surface' \
+    -H 'X-Finapp-Surface: operator' "$PUBLIC/v1/me"
+surface_seen "the operator host, the marker named hop-by-hop" operator --http1.1 -X POST -H 'Connection: X-Finapp-Surface' \
+    "$OPERATOR/v1/authentications"
 
 client sh -c 'head -c 1048576 /dev/zero > /tmp/one-mib; head -c 3145728 /dev/zero > /tmp/three-mib; head -c 1900000 /dev/zero > /tmp/almost-two'
 

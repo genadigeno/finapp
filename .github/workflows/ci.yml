@@ -432,8 +432,8 @@ jobs:
   # every capability dropped, until readiness reports UP.
   #
   # It pushes nothing, so it needs no permission beyond the workflow's read-only token and no
-  # secret (THREAT_MODEL.md T30). Every script is the one a developer runs. Signing and any push
-  # are P15-TSK-007's.
+  # secret (THREAT_MODEL.md T30). Every script is the one a developer runs. Signing, attestation
+  # and admission are the `admission` job's (P15-TSK-007), which pushes only to a registry of its own.
   #
   # Since P15-TSK-006 every image built is scanned here as well (vulnerabilities, secrets,
   # misconfiguration; HIGH and CRITICAL fail; five plants refused by name), and each gets its own
@@ -630,5 +630,88 @@ jobs:
         with:
           name: kind-rehearsal
           path: build/rehearsal/
+          if-no-files-found: error
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Signing, provenance and admission (P15-TSK-007, ADR-0122 decision 3, owner decision C7).
+  #
+  # Both images of this commit built once (the image jobs prove a second build is the same bytes),
+  # pushed by digest to a registry of the job's own, signed and given SLSA provenance and the SBOM
+  # as attestations under a key generated for this run, and verified with `cosign verify` before
+  # anything deploys them; then the Sigstore policy controller, from its pinned chart, on a kind
+  # cluster of the job's own, refusing an unsigned image, one signed by another key and the rest
+  # of its cases, each beside a control admitted outside the policy.
+  #
+  # Keyless signing from this workflow's identity is the reference (C7) and is not built: no
+  # registry or Sigstore identity exists (THREAT_MODEL.md section 6 item 35). So the job holds no
+  # credential and no OIDC token: the key and its password are generated in a temporary directory
+  # and die with the run, and nothing reaches a transparency log. It runs where it pays, as the
+  # rehearsal does: on master, nightly, and on a pull request that changes deploy/, the Dockerfile,
+  # migrator/, the build logic, the Gradle wrapper and catalogue, the script, the pins or this file.
+  # A change to the application's own code reaches it on master and nightly: what it proves is the
+  # signing and admission path, not the code inside the image.
+  # ---------------------------------------------------------------------------
+  admission:
+    name: Signing, provenance and admission (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Run only on master, nightly, or when what it reads changed
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|Dockerfile$|migrator/|build-logic/|gradle/|infra/scripts/admission-check|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read the pinned Java version from the version catalog
+        id: toolchain
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          version=$(grep -E '^javaToolchain[[:space:]]*=' gradle/libs.versions.toml | cut -d'"' -f2)
+          if [ -z "$version" ]; then
+            echo "::error::javaToolchain not found in gradle/libs.versions.toml"
+            exit 1
+          fi
+          echo "java-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
+      - name: Set up Gradle
+        if: steps.gate.outputs.run == 'true'
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Install kind, at the pinned release
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          . infra/scanner-pins.sh
+          GOBIN="$HOME/.local/bin" go install "sigs.k8s.io/kind@$KIND_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Sign, attest and verify both images, then prove admission
+        if: steps.gate.outputs.run == 'true'
+        run: ./infra/scripts/admission-check.sh
+
+      - name: Keep the artefacts
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: admission
+          path: build/admission/
           if-no-files-found: error
           retention-days: 30

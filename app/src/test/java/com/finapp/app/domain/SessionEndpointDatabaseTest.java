@@ -412,7 +412,11 @@ class SessionEndpointDatabaseTest {
                         sessionTransactions,
                         dataSource,
                         SessionPolicy.current(),
-                        authorization);
+                        authorization,
+                        // The session list is no door that refuses staff (P15-TSK-042): the surface plays no part here.
+                        new com.finapp.app.surface.RequestSurfaces(true),
+                        new com.finapp.app.surface.SurfaceRefusalMeters(
+                                new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 
         var request = new org.springframework.mock.web.MockHttpServletRequest("GET", "/v1/sessions");
         request.addHeader("Authorization", "Bearer " + current.plaintext());

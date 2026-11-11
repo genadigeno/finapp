@@ -16,7 +16,8 @@
 #
 # Sourced by infra/scripts/secret-scan.sh, infra/scripts/dependency-scan.sh, (since P15-TSK-013)
 # infra/scripts/terraform-check.sh, (since P15-TSK-025) infra/scripts/alert-rules-check.sh, (since P15-TSK-006)
-# infra/scripts/image-scan.sh and infra/scripts/sast.sh and (since P15-TSK-009) infra/scripts/manifest-check.sh, which CI calls,
+# infra/scripts/image-scan.sh and infra/scripts/sast.sh, (since P15-TSK-009) infra/scripts/manifest-check.sh and (since P15-TSK-007)
+# infra/scripts/admission-check.sh, which CI calls,
 # so a developer and CI run the identical image - the single-definition property P0-TSK-031 established and this file preserves
 # rather than replaces.
 #
@@ -124,6 +125,26 @@ KIND_NODE_DIGEST=sha256:44e222ee2132dab25ff87301682f89eb82c7880ea3a1bf543bfe9708
 HELM_REPOSITORY=alpine/helm
 HELM_VERSION=3.19.0
 HELM_DIGEST=sha256:aef9b56f64e866207d9591d0abd8f6d767b36aadd12edf68f8a719716d9d29c9
+
+# Signing and admission (P15-TSK-007, ADR-0122 decision 3, C7): sourced by infra/scripts/admission-check.sh. cosign signs, attests and
+# verifies; the policy controller is the admission webhook, installed from its chart (an OCI artefact, pinned like cert-manager's, and its
+# default image, v0.13.1, overridden by this pin: deploy/operators/policy-controller/values.yaml names the same digest, which
+# ImageAdmissionTest holds equal); the registry is the local one the check pushes to and signs in, since no real registry exists.
+COSIGN_REPOSITORY=ghcr.io/sigstore/cosign/cosign
+COSIGN_VERSION=v3.1.4
+COSIGN_DIGEST=sha256:0f06154836d2de34f887a5c273506d52ca43edaa1d9e53e6510fa78a48f69c2d
+
+POLICY_CONTROLLER_REPOSITORY=ghcr.io/sigstore/policy-controller/policy-controller
+POLICY_CONTROLLER_VERSION=v0.15.1
+POLICY_CONTROLLER_DIGEST=sha256:0492bb264fb1d9bdc8e3f343ef542cc85b7dd7c7fd8d9524b453c2bd31a1d128
+
+POLICY_CONTROLLER_CHART_REPOSITORY=ghcr.io/sigstore/helm-charts/policy-controller
+POLICY_CONTROLLER_CHART_VERSION=0.10.8
+POLICY_CONTROLLER_CHART_DIGEST=sha256:9ff3ca6ae4a0155de4dd667f8b760e56e1bd5c8233a0321ad870a654ce022f2f
+
+REGISTRY_REPOSITORY=library/registry
+REGISTRY_VERSION=3.1.2
+REGISTRY_DIGEST=sha256:38907510915c3f1604c7e83d6ab602ab3020d092f73bdaed8696773693ff768c
 
 # Only where kindnetd cannot enforce NetworkPolicy, because the kernel has no nft_queue (Docker Desktop's WSL2 kernel): REHEARSAL_POLICY_ENGINE=kube-router.
 # The rehearsal says in its record which engine enforced the policies it tested, and CI never sets it.

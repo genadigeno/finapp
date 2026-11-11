@@ -78,9 +78,12 @@ class SessionBeans {
             org.springframework.transaction.support.TransactionTemplate sessionTransactions,
             javax.sql.DataSource dataSource,
             SessionPolicy sessionPolicy,
-            com.finapp.identity.Authorization authorization) {
+            com.finapp.identity.Authorization authorization,
+            com.finapp.app.surface.RequestSurfaces requestSurfaces,
+            com.finapp.app.surface.SurfaceRefusalMeters surfaceRefusalMeters) {
         return new SessionAuthenticationInterceptor(
-                sessionStore, sessionTransactions, dataSource, sessionPolicy, authorization);
+                sessionStore, sessionTransactions, dataSource, sessionPolicy, authorization, requestSurfaces,
+                surfaceRefusalMeters);
     }
 
     /**
