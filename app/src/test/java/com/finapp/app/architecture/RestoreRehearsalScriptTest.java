@@ -89,6 +89,8 @@ class RestoreRehearsalScriptTest {
         assertThat(harness).as("the key is generated for the run").contains("openssl rand -hex 32 > \"$WORK/backup.key\"");
         assertThat(harness).as("the artefacts never hold the backup").doesNotContainPattern("\\$ART/[^\" ]*\\.enc");
         assertThat(function("digests_hold")).as("a damaged file is refused before it is decrypted").contains("does not match its digest");
+        assertThat(function("restore")).as("pg_restore's output, which can quote a row, stays in the work directory")
+                .contains("> \"$WORK/restore-$label.log\" 2>&1").doesNotContain("$ART/restore-");
     }
 
     @Test

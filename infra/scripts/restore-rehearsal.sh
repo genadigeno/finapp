@@ -393,9 +393,11 @@ restore() {
     done
     pass "restore $label: finapp_app, finapp_migrator and finapp_reporting each refused at log-in before the restore"
     digests_hold
+    # pg_restore's output stays in the work directory: a failed COPY quotes the row it failed on, and the artefacts are kept by CI.
+    # What leaves it is the error's first clause, which names the object and never a value.
     decrypt backup | dock exec -i --env PGPASSWORD="$ADMIN_PASSWORD" "$target" \
-        pg_restore -h 127.0.0.1 -U postgres -d finapp --single-transaction --exit-on-error > "$ART/restore-$label.log" 2>&1 \
-        || { tail -20 "$ART/restore-$label.log" >&2; cannot "restore $label: pg_restore failed: see restore-$label.log"; }
+        pg_restore -h 127.0.0.1 -U postgres -d finapp --single-transaction --exit-on-error > "$WORK/restore-$label.log" 2>&1 \
+        || cannot "restore $label: pg_restore failed: $(sed -n 's/^\(pg_restore: error: [^:]*\).*/\1/p' "$WORK/restore-$label.log" | head -3 | tr '\n' ' ')"
     highest=$(sql "$target" "$XID8_SQL")
     counter=$(sql "$target" 'SELECT pg_current_xact_id()')
     if [ "$2" = counter ]; then
