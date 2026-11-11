@@ -635,14 +635,10 @@ rotate_callback() {
 # ---------------------------------------------------------------------------------------------------
 # A field-level key: the MFA ring.
 # ---------------------------------------------------------------------------------------------------
-# new_person <who>: registered through the edge, made an ACTIVE customer in SQL as the harness's fixtures are (a person still in
-# onboarding cannot sign in), then given a TOTP factor through the edge.
+# new_person <who>: registered through the edge with the run's password, as the operator was, then given a TOTP factor through the
+# edge. Neither needs the customer active.
 new_person() {
     client register-person "$1" >> "$ART/client.log" 2>&1 || return 1
-    login=$(sed -n "s/^$1\\.login=//p" "$CLIENT/state.properties")
-    [ -n "$login" ] || return 1
-    printf "UPDATE party.customer SET status = 'ACTIVE', status_changed_at = GREATEST(now(), opened_at) WHERE party_id IN (SELECT party_id FROM identity.identity WHERE login_identifier = '%s');\n" "$login" \
-        | psql_query -f - >> "$ART/seed.log" 2>&1 || return 1
     client enrol-person "$1" >> "$ART/client.log" 2>&1
 }
 

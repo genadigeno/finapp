@@ -202,9 +202,10 @@ public final class Rehearsal {
 
     private static final int CUSTOMERS = 4;
 
+    /** Registers with the run's password: the one the fixtures were registered with, kept in the state, so a person registered by a later invocation signs in with it too. */
     private Answer register(String login) throws IOException, InterruptedException {
         return post(publicBase, "/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","
-                + "\"password\":\"" + PASSWORD + "\"}", null, key());
+                + "\"password\":\"" + password() + "\"}", null, key());
     }
 
     private String authenticate(String login) throws IOException, InterruptedException {
@@ -419,7 +420,7 @@ public final class Rehearsal {
         expect("register", register(login), 201);
         System.out.println("smoke " + label + " register ok");
         String freshPassword = field(expect("authenticate", post(publicBase, "/v1/authentications",
-                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, null), 201).body(), "sessionToken");
+                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + password() + "\"}", null, null), 201).body(), "sessionToken");
         if (freshPassword == null) {
             throw new IllegalStateException("no session token");
         }
@@ -691,7 +692,7 @@ public final class Rehearsal {
         return mac.doFinal(text.getBytes(StandardCharsets.UTF_8));
     }
 
-    /** A new person, registered: the shell makes the customer ACTIVE in SQL, as the fixtures are, before the person can sign in. */
+    /** A new person, registered through the edge with the run's password, after the fixtures. */
     private void registerPerson(String who) throws Exception {
         String login = someLogin(who);
         expect("register " + who, register(login), 201);
@@ -700,7 +701,7 @@ public final class Rehearsal {
         System.out.println("registered " + who + " login=" + login);
     }
 
-    /** A TOTP factor for a registered, active person: its secret is encrypted under whichever key version the replica that took the enrolment had active. */
+    /** A TOTP factor for a registered person: its secret is encrypted under whichever key version the replica that took the enrolment had active. */
     private void enrolPerson(String who) throws Exception {
         enrol(who);
         save();
