@@ -654,7 +654,7 @@ public final class Rehearsal {
      */
     private void tracePayment(String amount) throws Exception {
         String token = customerToken(0);
-        // The customer's two requests under one W3C trace the client starts, which the platform joins rather than replaces.
+        // The client sends its own W3C traceparent on both requests; the platform joins it rather than replacing it.
         java.security.SecureRandom random = new java.security.SecureRandom();
         byte[] traceBytes = new byte[16];
         random.nextBytes(traceBytes);

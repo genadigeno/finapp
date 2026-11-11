@@ -226,11 +226,11 @@ EOF
     leg "carrying the file's identifier" "settlement.parse" "$file_spans"
     leg "carrying the file's identifier" "settlement.accept" "$file_spans"
     leg "in Tempo for the reconciliation runs" "reconciliation.chunk" "$chunk_spans"
-    # The customer's two requests under the one trace the client started: the platform joins an inbound traceparent (TracingTest), here
+    # The client sends its own W3C traceparent on both requests, and the platform joins it rather than replacing it (TracingTest), here
     # through the edge. Reported, not judged: the legs above are found by what the platform itself stores, whatever a caller sends.
     customer_spans=$(span_names_of "$t_customer" | sed 's/^/customer-trace /' | tee -a "$ART/telemetry-trace-spans.txt")
     if has_span "$customer_spans" "http post /v1/payments/{id}/confirmation" && has_span "$customer_spans" "http post /v1/payments"; then
-        pass "trace: the customer's create and confirm requests are one trace, the one the client started ($t_customer)"
+        pass "trace: the client's traceparent was joined on both its requests, not replaced ($t_customer)"
     else
         log "trace: the customer's own trace $t_customer does not hold both requests (telemetry-trace-spans.txt, customer-trace)"
     fi
