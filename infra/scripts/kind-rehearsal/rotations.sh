@@ -766,9 +766,9 @@ rotate_certificate() {
     assert_flows_ran certificate-renewal
     pass "certificate: renewed early by cert-manager and served $took s after the Secret changed, with no edge controller restarted and zero failed requests"
 
-    # The rollback: the previous certificate restored into the Secret and served the same way. cert-manager reissues over a certificate
-    # whose key is not its current request's, so the person restoring one stops its controller first, and starts it again after; what it
-    # does then is recorded. The edge's own reload is what this asserts.
+    # The rollback: the previous certificate restored into the Secret and served the same way, with cert-manager's controller stopped so
+    # that the edge's own reload is what this measures, not an issuance racing it. Started again, cert-manager issued over the restored
+    # copy on the record's run (OPERATIONS_RUNBOOK.md 11.33): what it does is recorded, and a re-issue must be served too.
     start_workload certificate-rollback
     sleep 8
     kube -n cert-manager scale deployment cert-manager --replicas=0 >> "$ART/apply.log" 2>&1 || fail "certificate rollback: cert-manager's controller could not be stopped"
