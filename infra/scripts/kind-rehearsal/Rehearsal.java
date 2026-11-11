@@ -74,6 +74,11 @@ public final class Rehearsal {
     }
 
     public static void main(String[] args) throws Exception {
+        if ("scram-verifier".equals(args[1])) {
+            // Needs no run directory and no edge: a computation over standard input alone (P15-TSK-020).
+            System.out.println(scramVerifier(new String(System.in.readAllBytes(), StandardCharsets.US_ASCII).strip()));
+            return;
+        }
         Rehearsal rehearsal = new Rehearsal(Path.of(args[0]));
         switch (args[1]) {
             case "prepare" -> rehearsal.prepare();
@@ -87,6 +92,13 @@ public final class Rehearsal {
             case "report-token" -> System.out.println("token " + rehearsal.fresh("operator"));
             case "map-gl" -> rehearsal.mapGl();
             case "gl-check" -> rehearsal.glCheck();
+            // P15-TSK-020: the rotations.
+            case "register-person" -> rehearsal.registerPerson(args[2]);
+            case "enrol-person" -> rehearsal.enrolPerson(args[2]);
+            case "elevate" -> rehearsal.elevate(args[2], Integer.parseInt(args[3]));
+            case "callbacks" -> rehearsal.callbacks(args[2]);
+            case "callbacks-burst" -> rehearsal.callbacksBurst(args[2], Integer.parseInt(args[3]));
+            case "served-serial" -> rehearsal.servedSerial();
             default -> throw new IllegalArgumentException("unknown step " + args[1]);
         }
     }
@@ -191,9 +203,10 @@ public final class Rehearsal {
 
     private static final int CUSTOMERS = 4;
 
+    /** Registers with the run's password: the one the fixtures were registered with, kept in the state, so a person registered by a later invocation signs in with it too. */
     private Answer register(String login) throws IOException, InterruptedException {
         return post(publicBase, "/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","
-                + "\"password\":\"" + PASSWORD + "\"}", null, key());
+                + "\"password\":\"" + password() + "\"}", null, key());
     }
 
     private String authenticate(String login) throws IOException, InterruptedException {
@@ -418,7 +431,7 @@ public final class Rehearsal {
         expect("register", register(login), 201);
         System.out.println("smoke " + label + " register ok");
         String freshPassword = field(expect("authenticate", post(publicBase, "/v1/authentications",
-                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, null), 201).body(), "sessionToken");
+                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + password() + "\"}", null, null), 201).body(), "sessionToken");
         if (freshPassword == null) {
             throw new IllegalStateException("no session token");
         }
@@ -673,6 +686,115 @@ public final class Rehearsal {
         for (int i = 1; i <= requests; i++) {
             Answer answer = call("POST", publicBase + "/v1/recoveries", "{}", Map.of("X-Forwarded-For", "198.51.100." + i));
             System.out.println("forged " + label + " status=" + answer.status() + " client=" + java.net.InetAddress.getLocalHost().getHostAddress());
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------- the rotations (P15-TSK-020)
+
+    /**
+     * A PostgreSQL SCRAM-SHA-256 verifier for the password on standard input, computed here so that the password never reaches the
+     * server, a statement or a log: the server stores exactly this, and a rotation writes it with {@code ALTER ROLE ... PASSWORD}.
+     */
+    private static String scramVerifier(String password) throws Exception {
+        if (password.isEmpty()) {
+            throw new IllegalArgumentException("no password on standard input");
+        }
+        byte[] salt = new byte[16];
+        new java.security.SecureRandom().nextBytes(salt);
+        int iterations = 4096;
+        byte[] salted = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+                .generateSecret(new javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, iterations, 256)).getEncoded();
+        byte[] storedKey = java.security.MessageDigest.getInstance("SHA-256").digest(hmac(salted, "Client Key"));
+        byte[] serverKey = hmac(salted, "Server Key");
+        java.util.Base64.Encoder b64 = java.util.Base64.getEncoder();
+        return "SCRAM-SHA-256$" + iterations + ":" + b64.encodeToString(salt) + "$" + b64.encodeToString(storedKey) + ":" + b64.encodeToString(serverKey);
+    }
+
+    private static byte[] hmac(byte[] key, String text) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        return mac.doFinal(text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** A new person, registered through the edge with the run's password, after the fixtures. */
+    private void registerPerson(String who) throws Exception {
+        String login = someLogin(who);
+        expect("register " + who, register(login), 201);
+        state.setProperty(who + ".login", login);
+        save();
+        System.out.println("registered " + who + " login=" + login);
+    }
+
+    /** A TOTP factor for a registered person: its secret is encrypted under whichever key version the replica that took the enrolment had active. */
+    private void enrolPerson(String who) throws Exception {
+        enrol(who);
+        save();
+        System.out.println("enrolled " + who);
+    }
+
+    /** Elevations of one person, each a fresh TOTP step: every one decrypts that person's factor on whichever replica takes it. */
+    private void elevate(String who, int times) throws Exception {
+        for (int i = 0; i < times; i++) {
+            fresh(who);
+            System.out.println("elevated " + who);
+        }
+    }
+
+    /**
+     * The provider of the payment webhook door, signing as a provider does: HMAC-SHA256 over {@code timestamp + "." + body} under the key in
+     * {@code provider-key}, read again before every delivery so that the shell switches the provider's secret by replacing the file. The body
+     * carries no event id: an authenticated delivery of that shape is kept as evidence and acknowledged ({@code 204}) and moves nothing; an
+     * unauthenticated one is the door's uniform {@code 401}. Every answer is counted per key name; nothing here judges, the shell does.
+     */
+    private void callbacks(String label) throws Exception {
+        Path results = work.resolve("callbacks-" + label + ".tsv");
+        Files.writeString(results, "");
+        Map<String, AtomicLong> counts = new java.util.TreeMap<>();
+        long n = 0;
+        while (!Files.exists(work.resolve("stop-callbacks-" + label))) {
+            String name = Files.readString(work.resolve("provider-key-name")).strip();
+            byte[] key = java.util.Base64.getDecoder().decode(Files.readString(work.resolve("provider-key")).strip());
+            int status = deliver(key, "{\"rehearsal\":\"" + label + "\",\"n\":" + (n++) + "}");
+            counts.computeIfAbsent(name + "." + status, ignored -> new AtomicLong()).incrementAndGet();
+            Files.writeString(results, Instant.now() + "\t" + name + "\t" + status + "\n", StandardOpenOption.APPEND);
+            pause(700);
+        }
+        String line = "callbacks " + label + " " + counts;
+        System.out.println(line);
+        Files.writeString(work.resolve("callbacks-" + label + ".summary"), line + "\n");
+    }
+
+    /** {@code requests} deliveries signed with the key in {@code burst-key}: what each replica the edge reaches answers to that key now. */
+    private void callbacksBurst(String name, int requests) throws Exception {
+        byte[] key = java.util.Base64.getDecoder().decode(Files.readString(work.resolve("burst-key")).strip());
+        Map<Integer, AtomicLong> counts = new java.util.TreeMap<>();
+        for (int i = 0; i < requests; i++) {
+            counts.computeIfAbsent(deliver(key, "{\"rehearsal\":\"burst-" + name + "\",\"n\":" + i + "}"), ignored -> new AtomicLong()).incrementAndGet();
+            pause(300);
+        }
+        System.out.println("burst " + name + " accepted=" + counts.getOrDefault(204, new AtomicLong()).get() + " refused="
+                + counts.getOrDefault(401, new AtomicLong()).get() + " all=" + counts);
+    }
+
+    private int deliver(byte[] key, String body) {
+        try {
+            String timestamp = Long.toString(Instant.now().getEpochSecond());
+            String signature = java.util.HexFormat.of().formatHex(hmac(key, timestamp + "." + body));
+            return call("POST", publicBase + "/v1/providers/payments/webhooks", body,
+                    Map.of("X-Provider-Timestamp", timestamp, "X-Provider-Signature", signature)).status();
+        } catch (Exception failed) {
+            return -1;
+        }
+    }
+
+    /** The certificate the public host serves now, on a connection of its own: its serial and its end, never the key. */
+    private void servedSerial() throws Exception {
+        URI base = URI.create(publicBase);
+        try (javax.net.ssl.SSLSocket socket = (javax.net.ssl.SSLSocket) trusting(work.resolve("edge-ca.crt")).getSocketFactory()
+                .createSocket(base.getHost(), base.getPort())) {
+            socket.startHandshake();
+            java.security.cert.X509Certificate served = (java.security.cert.X509Certificate) socket.getSession().getPeerCertificates()[0];
+            System.out.println("served serial=" + served.getSerialNumber().toString(16).toUpperCase(Locale.ROOT) + " notAfter=" + served.getNotAfter().toInstant());
         }
     }
 }

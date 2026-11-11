@@ -160,6 +160,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.credit.data.retry.sweeper.enabled` | `FINAPP_CREDIT_DATA_RETRY_SWEEPER_ENABLED` | OPERATIONAL | `true` | default | overlay | default | default | default | - |
 | `finapp.credit.evidence.key-version` | `FINAPP_CREDIT_EVIDENCE_KEYVERSION` | OPERATIONAL | `1` | default | default | default | default | default | - |
 | `finapp.credit.evidence.ring.active-version` | `FINAPP_CREDIT_EVIDENCE_RING_ACTIVEVERSION` | OPERATIONAL | (none) | default | default | default | default | default | - |
+| `finapp.credit.evidence.ring.check-values` | `FINAPP_CREDIT_EVIDENCE_RING_CHECKVALUES` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.credit.evidence.ring.retired-versions` | `FINAPP_CREDIT_EVIDENCE_RING_RETIREDVERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.credit.evidence.ring.versions` | `FINAPP_CREDIT_EVIDENCE_RING_VERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.credit.findata.collection-window` | `FINAPP_CREDIT_FINDATA_COLLECTIONWINDOW` | FINANCIAL | `PT30M` | default | default | default | default | default | Written onto each request row when the request is created (`JdbcCreditDataRequestStore`), and the request is judged by its own row from then on. A rollout changes only the requests it creates, and each row states its own window. |
@@ -178,6 +179,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.database.server-max-connections` | `FINAPP_DB_SERVER_MAX_CONNECTIONS` | OPERATIONAL | `100` | default | default | overlay | overlay | overlay | - |
 | `finapp.doc.key-version` | `FINAPP_DOC_KEYVERSION` | OPERATIONAL | `1` | default | default | default | default | default | - |
 | `finapp.doc.ring.active-version` | `FINAPP_DOC_RING_ACTIVEVERSION` | OPERATIONAL | (none) | default | default | default | default | default | - |
+| `finapp.doc.ring.check-values` | `FINAPP_DOC_RING_CHECKVALUES` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.doc.ring.retired-versions` | `FINAPP_DOC_RING_RETIREDVERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.doc.ring.versions` | `FINAPP_DOC_RING_VERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.fx.cover.batch` | `FINAPP_FX_COVER_BATCH` | OPERATIONAL | `50` | default | default | default | default | default | - |
@@ -190,6 +192,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.fx.cover.sweeper.enabled` | `FINAPP_FX_COVER_SWEEPER_ENABLED` | OPERATIONAL | `true` | default | overlay | default | default | default | - |
 | `finapp.fx.evidence.key-version` | `FINAPP_FX_EVIDENCE_KEYVERSION` | OPERATIONAL | `1` | default | default | default | default | default | - |
 | `finapp.fx.evidence.ring.active-version` | `FINAPP_FX_EVIDENCE_RING_ACTIVEVERSION` | OPERATIONAL | (none) | default | default | default | default | default | - |
+| `finapp.fx.evidence.ring.check-values` | `FINAPP_FX_EVIDENCE_RING_CHECKVALUES` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.fx.evidence.ring.retired-versions` | `FINAPP_FX_EVIDENCE_RING_RETIREDVERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.fx.evidence.ring.versions` | `FINAPP_FX_EVIDENCE_RING_VERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.fx.provider.b.timeout` | `FINAPP_FX_PROVIDER_B_TIMEOUT` | OPERATIONAL | `PT2S` | default | default | default | default | default | - |
@@ -256,6 +259,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.merchant.payout-destination.tokenisation.url` | `FINAPP_MERCHANT_PAYOUTDESTINATION_TOKENISATION_URL` | FINANCIAL | (none) | default | default | default | default | default | Where a card or payout destination is tokenised. A replica without it answers the honest unavailable error and takes no data, so a mix refuses on one replica what another completes; a retry reaches a replica that can. Absent in every environment until a real provider exists. |
 | `finapp.merchant.payout.evidence.key-version` | `FINAPP_MERCHANT_PAYOUT_EVIDENCE_KEYVERSION` | OPERATIONAL | `1` | default | default | default | default | default | - |
 | `finapp.merchant.payout.evidence.ring.active-version` | `FINAPP_MERCHANT_PAYOUT_EVIDENCE_RING_ACTIVEVERSION` | OPERATIONAL | (none) | default | default | default | default | default | - |
+| `finapp.merchant.payout.evidence.ring.check-values` | `FINAPP_MERCHANT_PAYOUT_EVIDENCE_RING_CHECKVALUES` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.merchant.payout.evidence.ring.retired-versions` | `FINAPP_MERCHANT_PAYOUT_EVIDENCE_RING_RETIREDVERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.merchant.payout.evidence.ring.versions` | `FINAPP_MERCHANT_PAYOUT_EVIDENCE_RING_VERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.merchant.payout.provider.timeout` | `FINAPP_MERCHANT_PAYOUT_PROVIDER_TIMEOUT` | OPERATIONAL | `PT2S` | default | default | overlay | default | default | - |
@@ -270,6 +274,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.merchant.payout.sweeper.unknown-age` | `FINAPP_MERCHANT_PAYOUT_SWEEPER_UNKNOWNAGE` | OPERATIONAL | `PT1M` | default | default | default | default | default | - |
 | `finapp.mfa.key-version` | `FINAPP_MFA_KEYVERSION` | OPERATIONAL | `1` | default | default | default | default | default | - |
 | `finapp.mfa.ring.active-version` | `FINAPP_MFA_RING_ACTIVEVERSION` | OPERATIONAL | (none) | default | default | default | default | default | - |
+| `finapp.mfa.ring.check-values` | `FINAPP_MFA_RING_CHECKVALUES` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.mfa.ring.retired-versions` | `FINAPP_MFA_RING_RETIREDVERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.mfa.ring.versions` | `FINAPP_MFA_RING_VERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.outbox.poll-interval` | `FINAPP_OUTBOX_POLLINTERVAL` | OPERATIONAL | `PT1S` | default | default | default | default | default | - |
@@ -296,10 +301,12 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.payments.dispute.deadline-alarm-window` | `FINAPP_PAYMENTS_DISPUTE_DEADLINEALARMWINDOW` | OPERATIONAL | `P3D` | default | default | default | default | default | - |
 | `finapp.payments.dispute.evidence.key-version` | `FINAPP_PAYMENTS_DISPUTE_EVIDENCE_KEYVERSION` | OPERATIONAL | `1` | default | default | default | default | default | - |
 | `finapp.payments.dispute.evidence.ring.active-version` | `FINAPP_PAYMENTS_DISPUTE_EVIDENCE_RING_ACTIVEVERSION` | OPERATIONAL | (none) | default | default | default | default | default | - |
+| `finapp.payments.dispute.evidence.ring.check-values` | `FINAPP_PAYMENTS_DISPUTE_EVIDENCE_RING_CHECKVALUES` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.payments.dispute.evidence.ring.retired-versions` | `FINAPP_PAYMENTS_DISPUTE_EVIDENCE_RING_RETIREDVERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.payments.dispute.evidence.ring.versions` | `FINAPP_PAYMENTS_DISPUTE_EVIDENCE_RING_VERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.payments.evidence.key-version` | `FINAPP_PAYMENTS_EVIDENCE_KEYVERSION` | OPERATIONAL | `1` | default | default | default | default | default | - |
 | `finapp.payments.evidence.ring.active-version` | `FINAPP_PAYMENTS_EVIDENCE_RING_ACTIVEVERSION` | OPERATIONAL | (none) | default | default | default | default | default | - |
+| `finapp.payments.evidence.ring.check-values` | `FINAPP_PAYMENTS_EVIDENCE_RING_CHECKVALUES` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.payments.evidence.ring.retired-versions` | `FINAPP_PAYMENTS_EVIDENCE_RING_RETIREDVERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.payments.evidence.ring.versions` | `FINAPP_PAYMENTS_EVIDENCE_RING_VERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.payments.instant.timeout` | `FINAPP_PAYMENTS_INSTANT_TIMEOUT` | OPERATIONAL | `PT2S` | default | default | default | default | default | - |
@@ -390,6 +397,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.settlement.bank.statement.url` | `FINAPP_SETTLEMENT_BANK_STATEMENT_URL` | FINANCIAL | (none) | default | default | default | default | default | A settlement pull source. The worklist is derived on every replica from accepted batches and each key is pulled through a permit, so a replica with no source skips the key, one with a source pulls it, and a key stays owed until a batch for it is accepted. Absent in every environment until a real provider exists. |
 | `finapp.settlement.file.key-version` | `FINAPP_SETTLEMENT_FILE_KEYVERSION` | OPERATIONAL | `1` | default | default | default | default | default | - |
 | `finapp.settlement.file.ring.active-version` | `FINAPP_SETTLEMENT_FILE_RING_ACTIVEVERSION` | OPERATIONAL | (none) | default | default | default | default | default | - |
+| `finapp.settlement.file.ring.check-values` | `FINAPP_SETTLEMENT_FILE_RING_CHECKVALUES` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.settlement.file.ring.retired-versions` | `FINAPP_SETTLEMENT_FILE_RING_RETIREDVERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.settlement.file.ring.versions` | `FINAPP_SETTLEMENT_FILE_RING_VERSIONS` | OPERATIONAL | (none) | default | default | default | default | default | - |
 | `finapp.settlement.intake.backoff-base` | `FINAPP_SETTLEMENT_INTAKE_BACKOFFBASE` | OPERATIONAL | `PT1M` | default | default | default | default | default | - |
@@ -426,7 +434,10 @@ being true goes on this list and into versioned data.
 
 A role's setting is a cluster object, like the role, so neither is Flyway's (`DATA_MIGRATIONS.md` section 6): `RoleBootstrap` sets it on
 a deployed role and `infra/postgres/initdb/00-roles.sql` on a laptop's and every test database's. `DatabaseRoleSettingsAreSafeTest` holds
-this row against both and the value between the bounds below.
+this row against both and the value between the bounds below. *(Since `P15-TSK-020`:)* `finapp_app`'s two alternating users,
+`finapp_app_a` and `finapp_app_b`, carry the same setting, set by the same two scripts: the fleet signs in as one of them after its first
+rotation, and a role setting belongs to the user a session signs in as, never to a role it is a member of. `RoleBootstrapTest` and
+`infra/scripts/migrator-verify.sh` hold that the three carry it and no other role does.
 
 | Role | Setting | Value | Why this value |
 |---|---|---|---|

@@ -25,7 +25,9 @@ public final class RoleBootstrapMain {
      */
     private static final Set<String> ROLE_COLLISIONS = Set.of("42710", "23505");
 
-    private static final Set<String> MASTER_NAMES = Set.of("finapp_migrator", "finapp_app", "finapp_reporting");
+    // Every role the step creates, its alternating users included (`P15-TSK-020`): the master is none of them.
+    private static final Set<String> MASTER_NAMES =
+            RoleBootstrap.ROLES.stream().map(RoleBootstrap.Role::name).collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     private RoleBootstrapMain() {}
 

@@ -65,11 +65,14 @@ public final class DocumentKey {
 
     private static final String RING_RETIRED_VERSIONS_PROPERTY = "finapp.doc.ring.retired-versions";
 
+    private static final String RING_CHECK_VALUES_PROPERTY = "finapp.doc.ring.check-values";
+
     private static final ConfinedKeyRing.RingProperties RING =
             new ConfinedKeyRing.RingProperties(
                     RING_VERSIONS_PROPERTY,
                     RING_ACTIVE_VERSION_PROPERTY,
                     RING_RETIRED_VERSIONS_PROPERTY,
+                    RING_CHECK_VALUES_PROPERTY,
                     Map.of(2, V2_KEY_PROPERTY, 3, V3_KEY_PROPERTY));
 
     /**

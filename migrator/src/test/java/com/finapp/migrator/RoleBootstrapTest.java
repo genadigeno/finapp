@@ -68,10 +68,21 @@ class RoleBootstrapTest {
         while (role.find()) {
             localRoles.put(role.group(1), tokens(role.group(2)));
         }
-        assertThat(localRoles).as("the local script's roles were read").containsOnlyKeys("finapp_migrator", "finapp_app", "finapp_reporting");
+        assertThat(localRoles).as("the local script's roles were read").containsOnlyKeys("finapp_migrator", "finapp_app", "finapp_reporting",
+                "finapp_app_a", "finapp_app_b", "finapp_reporting_a", "finapp_reporting_b");
         assertThat(RoleBootstrap.ROLES.stream().map(RoleBootstrap.Role::name).collect(Collectors.toSet()))
-                .as("a role the migrations grant to must exist before they run")
+                .as("a role the migrations grant to must exist before they run, and its alternating users with it (P15-TSK-020)")
                 .isEqualTo(localRoles.keySet());
+        Matcher raw = LOCAL_ROLE.matcher(local);
+        while (raw.find()) {
+            if (raw.group(1).matches(".*_[ab]")) {
+                assertThat(raw.group(2)).as("%s is created with no password, locally as deployed", raw.group(1)).doesNotContainIgnoringCase("PASSWORD");
+            }
+        }
+        for (RoleBootstrap.Role alternate : RoleBootstrap.ROLES.stream().filter(RoleBootstrap.Role::alternate).toList()) {
+            assertThat(local).as("the local script gives %s the bootstrap's one membership", alternate.name())
+                    .contains(RoleBootstrap.membershipStatement(alternate) + ";");
+        }
         Set<String> created = Set.copyOf(tokens(RoleBootstrap.ATTRIBUTES));
         localRoles.forEach((name, attributes) -> assertThat(created).as("%s's local attributes", name).containsAll(attributes));
         assertThat(created)
@@ -81,9 +92,93 @@ class RoleBootstrapTest {
 
         Map<String, String> localGrants = LOCAL_GRANT.matcher(local).results()
                 .collect(Collectors.toMap(match -> match.group(2), match -> match.group(1)));
-        assertThat(RoleBootstrap.ROLES.stream().collect(Collectors.toMap(RoleBootstrap.Role::name, RoleBootstrap.Role::databaseRights)))
-                .as("the migrator creates its schemas; nothing else may")
+        assertThat(RoleBootstrap.ROLES.stream().filter(granted -> granted.databaseRights() != null)
+                        .collect(Collectors.toMap(RoleBootstrap.Role::name, RoleBootstrap.Role::databaseRights)))
+                .as("the migrator creates its schemas; nothing else may; an alternating user has no right of its own")
                 .isEqualTo(localGrants);
+    }
+
+    @Test
+    @DisplayName("each alternating user is created with no password and given exactly its carrier's membership, inherit on, set off (P15-TSK-020)")
+    void theAlternatingUsersHoldTheirCarriersGrantsByMembershipAlone() throws SQLException {
+        List<RoleBootstrap.Role> alternates = RoleBootstrap.ROLES.stream().filter(RoleBootstrap.Role::alternate).toList();
+        assertThat(alternates).extracting(role -> role.name() + ">" + role.carrier())
+                .containsExactly("finapp_app_a>finapp_app", "finapp_app_b>finapp_app", "finapp_reporting_a>finapp_reporting",
+                        "finapp_reporting_b>finapp_reporting");
+        assertThat(alternates).allSatisfy(role -> {
+            assertThat(role.passwordVariable()).as("no password is generated for it").isNull();
+            assertThat(role.databaseRights()).as("its CONNECT is its carrier's").isNull();
+        });
+
+        List<String> executed = new ArrayList<>();
+        RoleBootstrap.apply(master(executed, Catalogue.empty()), RoleBootstrap.passwords(passwords()));
+        assertThat(executed).contains("CREATE ROLE finapp_app_a " + RoleBootstrap.ATTRIBUTES,
+                "GRANT finapp_app TO finapp_app_a WITH INHERIT TRUE, SET FALSE",
+                "CREATE ROLE finapp_reporting_b " + RoleBootstrap.ATTRIBUTES,
+                "GRANT finapp_reporting TO finapp_reporting_b WITH INHERIT TRUE, SET FALSE");
+        assertThat(executed).filteredOn(sql -> sql.startsWith("CREATE ROLE finapp_app_a") || sql.startsWith("CREATE ROLE finapp_reporting_"))
+                .allSatisfy(sql -> assertThat(sql).doesNotContain("PASSWORD"));
+        assertThat(executed).as("no database right is granted to an alternating user")
+                .filteredOn(sql -> sql.contains("ON DATABASE") && sql.matches("(?s).*TO finapp_[a-z]+_[ab]'.*")).isEmpty();
+        assertThat(executed).as("the carriers' are").anyMatch(sql -> sql.contains("GRANT CONNECT ON DATABASE %I TO finapp_app'"));
+        assertThat(executed.indexOf("CREATE ROLE finapp_app_a " + RoleBootstrap.ATTRIBUTES))
+                .as("the carrier exists before its member is made").isGreaterThan(indexStartingWith(executed, "CREATE ROLE finapp_app LOGIN"));
+    }
+
+    @Test
+    @DisplayName("an alternating user holding another membership, or the options wrong, and a stranger able to use a carrier's rights, each stop the step")
+    void aMembershipOutOfPlaceStopsTheStep() {
+        Catalogue wrongOptions = Catalogue.present().membership("finapp_app_b", "finapp_app", true, true, false);
+        assertThatThrownBy(() -> RoleBootstrap.apply(master(new ArrayList<>(), wrongOptions), RoleBootstrap.passwords(passwords())))
+                .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("finapp_app_b holds");
+
+        Catalogue anotherCarrier = Catalogue.present().membership("finapp_reporting_a", "finapp_app", true, false, false);
+        assertThatThrownBy(() -> RoleBootstrap.apply(master(new ArrayList<>(), anotherCarrier), RoleBootstrap.passwords(passwords())))
+                .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("finapp_reporting_a holds");
+
+        Catalogue stranger = Catalogue.present().user("finapp_app", "someone_else");
+        List<String> executed = new ArrayList<>();
+        assertThatThrownBy(() -> RoleBootstrap.apply(master(executed, stranger), RoleBootstrap.passwords(passwords())))
+                .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("someone_else can use finapp_app's rights");
+        assertThat(executed).as("nothing committed").doesNotContain("COMMIT");
+
+        RoleBootstrap.Standing alternate = new RoleBootstrap.Standing(true, false, false, false, false, false, false, 1);
+        assertThat(alternate.violations(1)).as("an alternating user holds exactly its one membership").isEmpty();
+        assertThat(new RoleBootstrap.Standing(true, false, false, false, false, false, false, 0).violations(1)).containsExactly("0 role membership(s)");
+    }
+
+    @Test
+    @DisplayName("a role able to use an alternating user's rights, or a carrier's through any chain of roles, stops the step; a superuser and an ADMIN-only creator do not (P15-TSK-020's review)")
+    void aMemberOfAnAlternatingUserStopsTheStep() {
+        for (String alternate : List.of("finapp_app_a", "finapp_app_b", "finapp_reporting_a", "finapp_reporting_b")) {
+            Catalogue memberOfAlternate = Catalogue.present().user(alternate, "bi_user");
+            List<String> executed = new ArrayList<>();
+            assertThatThrownBy(() -> RoleBootstrap.apply(master(executed, memberOfAlternate), RoleBootstrap.passwords(passwords())))
+                    .as("a member of %s", alternate)
+                    .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("bi_user can use " + alternate + "'s rights");
+            assertThat(executed).as("nothing committed").doesNotContain("COMMIT");
+        }
+        Catalogue throughAChain = Catalogue.present().user("finapp_reporting", "bi_user");
+        assertThatThrownBy(() -> RoleBootstrap.apply(master(new ArrayList<>(), throughAChain), RoleBootstrap.passwords(passwords())))
+                .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("bi_user can use finapp_reporting's rights");
+
+        assertThat(RoleBootstrap.USERS_OF)
+                .as("the server answers through every chain of memberships, not the catalogue's direct rows")
+                .contains("pg_catalog.pg_has_role(r.oid, t.oid, 'USAGE')")
+                .contains("pg_catalog.pg_has_role(r.oid, t.oid, 'SET')")
+                .doesNotContain("pg_auth_members")
+                .as("a superuser needs no membership and is the local server's own master; ADMIN alone is neither USAGE nor SET")
+                .contains("NOT r.rolsuper")
+                .doesNotContain("'MEMBER'");
+    }
+
+    private static int indexStartingWith(List<String> executed, String prefix) {
+        for (int i = 0; i < executed.size(); i++) {
+            if (executed.get(i).startsWith(prefix)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     @Test
@@ -123,45 +218,128 @@ class RoleBootstrapTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    @DisplayName("every run sets the idle timeout on finapp_app and on no other role, before it commits, whether the roles are new or already exist")
+    @DisplayName("every run sets the idle timeout on finapp_app and its alternating users and on no other role, before it commits, whether the roles are new or already exist")
     void theBootstrapSetsTheTimeoutOnTheApplicationRoleAlone(boolean rolesExist) throws SQLException {
         List<String> executed = new ArrayList<>();
-        RoleBootstrap.apply(recordingMaster(executed, rolesExist), RoleBootstrap.passwords(passwords()));
+        RoleBootstrap.apply(master(executed, rolesExist ? Catalogue.present() : Catalogue.empty()), RoleBootstrap.passwords(passwords()));
+        String setting = " SET idle_in_transaction_session_timeout = '" + RoleBootstrap.APP_IDLE_IN_TRANSACTION_TIMEOUT + "'";
         assertThat(executed).filteredOn(sql -> sql.startsWith("ALTER ROLE"))
-                .containsExactly("ALTER ROLE finapp_app SET idle_in_transaction_session_timeout = '" + RoleBootstrap.APP_IDLE_IN_TRANSACTION_TIMEOUT + "'");
+                .as("a role setting is the user's, and a membership does not carry it (P15-TSK-020)")
+                .containsExactly("ALTER ROLE finapp_app" + setting, "ALTER ROLE finapp_app_a" + setting, "ALTER ROLE finapp_app_b" + setting);
         assertThat(executed.get(executed.size() - 1)).as("inside the step's one transaction").isEqualTo("COMMIT");
+        if (rolesExist) {
+            assertThat(executed).as("a role that exists is never created, granted or given a password again")
+                    .noneMatch(sql -> sql.startsWith("CREATE ROLE") || sql.startsWith("GRANT finapp_"));
+        }
     }
 
-    /** A master connection recording what the step executes: every role found absent, or present and unprivileged. */
-    private static Connection recordingMaster(List<String> executed, boolean rolesExist) {
-        ResultSet formatted = fake(ResultSet.class, (name, args) -> switch (name) {
-            case "next" -> true;
-            case "getString" -> "GRANT";
+    /**
+     * What the catalogue holds, for a fake master: the roles present, each user's memberships as {@code carrier|inherit|set|admin},
+     * and the users of each carrier. {@link #present()} is a correct deployment; each change makes one thing out of place.
+     */
+    private record Catalogue(boolean rolesExist, Map<String, List<Object[]>> memberships, Map<String, List<String>> users) {
+
+        static Catalogue empty() {
+            return new Catalogue(false, new HashMap<>(), new HashMap<>());
+        }
+
+        /** Every role present, each alternating user a member of its carrier, inherit on and set off, and nobody else a user. */
+        static Catalogue present() {
+            Catalogue catalogue = new Catalogue(true, new HashMap<>(), new HashMap<>());
+            for (RoleBootstrap.Role role : RoleBootstrap.ROLES) {
+                if (role.alternate()) {
+                    catalogue.memberships.put(role.name(), new ArrayList<>(List.<Object[]>of(new Object[] {role.carrier(), true, false, false})));
+                    catalogue.users.computeIfAbsent(role.carrier(), carrier -> new ArrayList<>()).add(role.name());
+                }
+            }
+            return catalogue;
+        }
+
+        Catalogue membership(String user, String carrier, boolean inherit, boolean set, boolean admin) {
+            memberships.put(user, new ArrayList<>(List.<Object[]>of(new Object[] {carrier, inherit, set, admin})));
+            return this;
+        }
+
+        Catalogue user(String carrier, String user) {
+            users.computeIfAbsent(carrier, ignored -> new ArrayList<>()).add(user);
+            return this;
+        }
+
+        /** After a fresh run creates the alternates: what the step's own statements made. */
+        List<Object[]> membershipsOf(String user) {
+            if (!rolesExist) {
+                return RoleBootstrap.ROLES.stream().filter(role -> role.name().equals(user) && role.alternate())
+                        .map(role -> new Object[] {role.carrier(), true, false, false}).toList();
+            }
+            return memberships.getOrDefault(user, List.of());
+        }
+
+        List<String> usersOf(String carrier) {
+            if (!rolesExist) {
+                return RoleBootstrap.ROLES.stream().filter(role -> carrier.equals(role.carrier())).map(RoleBootstrap.Role::name).toList();
+            }
+            return users.getOrDefault(carrier, List.of());
+        }
+    }
+
+    /** A cursor over rows of values, as a fake ResultSet. */
+    private static ResultSet rows(List<Object[]> rows) {
+        int[] at = {-1};
+        return fake(ResultSet.class, (name, args) -> switch (name) {
+            case "next" -> ++at[0] < rows.size();
+            case "getString" -> (String) rows.get(at[0])[(Integer) args[0] - 1];
+            case "getBoolean" -> (Boolean) rows.get(at[0])[(Integer) args[0] - 1];
+            case "getLong" -> (Long) rows.get(at[0])[(Integer) args[0] - 1];
             default -> null;
         });
-        ResultSet roleRow = fake(ResultSet.class, (name, args) -> switch (name) {
-            case "next" -> rolesExist;
-            case "getBoolean" -> (Integer) args[0] == 1;
-            case "getLong" -> 0L;
-            default -> null;
-        });
+    }
+
+    /** A master connection recording what the step executes against {@code catalogue}: statements as run, queries as {@code QUERY <sql>}. */
+    private static Connection master(List<String> executed, Catalogue catalogue) {
         Statement statement = fake(Statement.class, (name, args) -> {
             if (name.equals("execute")) {
                 executed.add((String) args[0]);
                 return false;
             }
-            return name.equals("executeQuery") ? formatted : null;
+            if (name.equals("executeQuery")) {
+                executed.add("QUERY " + args[0]);
+                return rows(List.<Object[]>of(new Object[] {"GRANT"}));
+            }
+            return null;
         });
-        PreparedStatement query = fake(PreparedStatement.class, (name, args) -> name.equals("executeQuery") ? roleRow : null);
         return fake(Connection.class, (name, args) -> {
             if (name.equals("commit")) {
                 executed.add("COMMIT");
             }
             return switch (name) {
                 case "createStatement" -> statement;
-                case "prepareStatement" -> query;
+                case "prepareStatement" -> prepared((String) args[0], catalogue);
                 default -> null;
             };
+        });
+    }
+
+    private static PreparedStatement prepared(String sql, Catalogue catalogue) {
+        String[] bound = new String[1];
+        return fake(PreparedStatement.class, (name, args) -> {
+            if (name.equals("setString")) {
+                bound[0] = (String) args[1];
+                return null;
+            }
+            if (!name.equals("executeQuery")) {
+                return null;
+            }
+            if (sql.equals(RoleBootstrap.MEMBERSHIPS_OF)) {
+                return rows(catalogue.membershipsOf(bound[0]));
+            }
+            if (sql.equals(RoleBootstrap.USERS_OF)) {
+                return rows(catalogue.usersOf(bound[0]).stream().map(user -> new Object[] {user}).toList());
+            }
+            if (!catalogue.rolesExist()) {
+                return rows(List.of());
+            }
+            long memberships = catalogue.membershipsOf(bound[0]).size();
+            return rows(List.<Object[]>of(new Object[] {true, false, false, false, false, false, false, memberships}));
         });
     }
 

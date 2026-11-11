@@ -98,10 +98,15 @@ locals {
     for item in local.delivered_entries : "${item.workload}/${item.variable}" if !item.own && item.name != "AmazonMSK_${var.name_prefix}-application"
   ])
 
-  # Everything each workload's reader may read: its own entries, and what its ExternalSecret reads elsewhere.
+  # Everything each workload's reader may read: its own entries, and what its ExternalSecret reads elsewhere. The application's SCRAM
+  # entry comes with the one its rotation adds (P15-TSK-020, add-roll-remove: modules/kafka's alternate user): an overlay points the
+  # two entries at it for the roll, and a reader that could not read it would leave the sync failing and the old credential in place.
   reads = {
     for workload in keys(local.external_secrets) :
-    workload => toset([for item in local.delivered_entries : item.name if item.workload == workload])
+    workload => toset(flatten([
+      for item in local.delivered_entries : item.name == "AmazonMSK_${var.name_prefix}-application" ? [item.name, "${item.name}-alternate"] : [item.name]
+      if item.workload == workload
+    ]))
   }
 
   # A Secrets Manager ARN ends in a hyphen and six random characters. One entry each, known at plan, and no prefix

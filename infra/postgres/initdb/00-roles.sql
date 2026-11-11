@@ -69,14 +69,46 @@ BEGIN
             LOGIN PASSWORD 'local-development-only-not-a-secret'
             NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
     END IF;
+
+    -- The alternating users (P15-TSK-020, SECRET_MANAGEMENT.md section 5.1): a fleet's credential rotates by moving the
+    -- store from one to the other while both are valid. Each holds exactly its carrier's per-table grants, by membership
+    -- below and by nothing else, so a grant a later migration adds reaches both. No password: neither can sign in until a
+    -- rotation gives one a password, here as in a deployed database (RoleBootstrap, which this script is held equal to).
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'finapp_app_a') THEN
+        CREATE ROLE finapp_app_a
+            LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'finapp_app_b') THEN
+        CREATE ROLE finapp_app_b
+            LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'finapp_reporting_a') THEN
+        CREATE ROLE finapp_reporting_a
+            LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'finapp_reporting_b') THEN
+        CREATE ROLE finapp_reporting_b
+            LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+    END IF;
 END
 $$;
+
+-- Each alternating user's one membership: the carrier's rights inherited (the membership's own option, which NOINHERIT
+-- on the role only defaults), the carrier's identity not assumable. Re-run safe: granting a membership held is a notice.
+GRANT finapp_app TO finapp_app_a WITH INHERIT TRUE, SET FALSE;
+GRANT finapp_app TO finapp_app_b WITH INHERIT TRUE, SET FALSE;
+GRANT finapp_reporting TO finapp_reporting_a WITH INHERIT TRUE, SET FALSE;
+GRANT finapp_reporting TO finapp_reporting_b WITH INHERIT TRUE, SET FALSE;
 
 -- A session of the application left idle inside an open transaction can hold an xid and so stop the source-join census's walk, which
 -- nothing pages on for an hour. docs/architecture/CONFIGURATION_REGISTER.md section 5 is the reasoning, and
 -- DatabaseRoleSettingsAreSafeTest holds this value above the waits it names and below that page. RoleBootstrap sets the same on
 -- a deployed role. Re-run safe: a setting, not a right.
 ALTER ROLE finapp_app SET idle_in_transaction_session_timeout = '5min';
+-- A role setting belongs to the user a session signs in as, and a membership does not carry it: the same on finapp_app's
+-- alternating users (P15-TSK-020).
+ALTER ROLE finapp_app_a SET idle_in_transaction_session_timeout = '5min';
+ALTER ROLE finapp_app_b SET idle_in_transaction_session_timeout = '5min';
 
 -- Database-level grants, against whichever database this script is being run in.
 --

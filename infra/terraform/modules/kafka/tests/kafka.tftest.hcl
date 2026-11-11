@@ -41,6 +41,12 @@ mock_provider "aws" {
     target = aws_secretsmanager_secret.scram["administrator"]
     values = { arn = "arn:aws:secretsmanager:eu-central-1:111111111111:secret:administrator-mock" }
   }
+
+  # Planned only while a principal rotates (P15-TSK-020).
+  override_resource {
+    target = aws_secretsmanager_secret.scram["application-alternate"]
+    values = { arn = "arn:aws:secretsmanager:eu-central-1:111111111111:secret:application-alternate-mock" }
+  }
 }
 
 mock_provider "kafka" {}
@@ -356,6 +362,144 @@ run "the_scram_secrets_are_what_msk_requires_and_hold_no_value" {
     condition     = toset(one(aws_msk_scram_secret_association.this).secret_arn_list) == toset(["arn:aws:secretsmanager:eu-central-1:111111111111:secret:application-mock", "arn:aws:secretsmanager:eu-central-1:111111111111:secret:administrator-mock"]) && one(aws_msk_scram_secret_association.this).cluster_arn == "arn:aws:kafka:eu-central-1:111111111111:cluster/mock"
     error_message = "The SCRAM users are not associated with this cluster."
   }
+}
+
+# P15-TSK-020, SECRET_MANAGEMENT.md section 5.1's add-roll-remove, staged as the principals are (the review's fix round): the second
+# user's entry first, alone, unassociated and with no ACL, for a person to fill; then, staged "associated", the entry joins the cluster's
+# list with exactly the principal's ACLs, before the fleet is pointed at it; then the old user leaves.
+run "a_rotating_principals_new_user_is_first_an_entry_alone" {
+  command = plan
+
+  variables {
+    scram_user_slots = { application = { primary = "associated", alternate = "entry" } }
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret.scram["application-alternate"].name == "AmazonMSK_finapp-staging-application-alternate" && aws_secretsmanager_secret.scram["application-alternate"].kms_key_id == var.scram_kms_key_arn
+    error_message = "The second user has no entry of its own, under the name and key MSK requires."
+  }
+
+  assert {
+    condition     = !contains(one(aws_msk_scram_secret_association.this).secret_arn_list, "arn:aws:secretsmanager:eu-central-1:111111111111:secret:application-alternate-mock") && toset(one(aws_msk_scram_secret_association.this).secret_arn_list) == toset(["arn:aws:secretsmanager:eu-central-1:111111111111:secret:application-mock", "arn:aws:secretsmanager:eu-central-1:111111111111:secret:administrator-mock"])
+    error_message = "An entry staged \"entry\", which holds no value yet, is planned into the cluster's association."
+  }
+
+  assert {
+    condition     = length([for key in keys(kafka_acl.catalogue) : key if startswith(key, "application-alternate/")]) == 0 && !contains(keys(output.scram_associated_users), "application-alternate") && output.scram_users["application-alternate"] == "finapp-staging-application-alternate"
+    error_message = "A user staged \"entry\" was given ACLs, or reported associated."
+  }
+}
+
+run "a_rotating_principals_second_user_holds_exactly_its_acls_before_the_fleet_rolls" {
+  command = plan
+
+  variables {
+    scram_user_slots = { application = { primary = "associated", alternate = "associated" } }
+  }
+
+  assert {
+    condition     = toset([for key, acl in kafka_acl.catalogue : trimprefix(key, "application-alternate/") if startswith(key, "application-alternate/")]) == toset([for key, acl in kafka_acl.catalogue : trimprefix(key, "application/") if startswith(key, "application/")])
+    error_message = "The second user's ACLs are not exactly the first's."
+  }
+
+  assert {
+    condition     = alltrue([for key, acl in kafka_acl.catalogue : acl.acl_principal == "User:finapp-staging-application-alternate" if startswith(key, "application-alternate/")]) && length([for key in keys(kafka_acl.catalogue) : key if startswith(key, "application-alternate/")]) > 0
+    error_message = "The second user's ACLs do not name it."
+  }
+
+  assert {
+    condition     = toset(one(aws_msk_scram_secret_association.this).secret_arn_list) == toset(["arn:aws:secretsmanager:eu-central-1:111111111111:secret:application-mock", "arn:aws:secretsmanager:eu-central-1:111111111111:secret:application-alternate-mock", "arn:aws:secretsmanager:eu-central-1:111111111111:secret:administrator-mock"]) && output.scram_associated_users["application-alternate"] == "finapp-staging-application-alternate"
+    error_message = "The second user is not associated with the cluster beside the two it rolls from."
+  }
+
+  assert {
+    condition     = length([for key in keys(kafka_acl.catalogue) : key if startswith(key, "administrator-alternate/")]) == 0 && !contains(keys(aws_secretsmanager_secret.scram), "administrator-alternate")
+    error_message = "A principal that is not rotating was given a second user."
+  }
+}
+
+run "after_the_roll_the_old_user_leaves_with_its_acls" {
+  command = plan
+
+  variables {
+    scram_user_slots = { application = { alternate = "associated" } }
+  }
+
+  assert {
+    condition     = !contains(keys(aws_secretsmanager_secret.scram), "application") && length([for key in keys(kafka_acl.catalogue) : key if startswith(key, "application/")]) == 0
+    error_message = "The old user, or one of its ACLs, is still planned after it left."
+  }
+
+  assert {
+    condition     = toset(one(aws_msk_scram_secret_association.this).secret_arn_list) == toset(["arn:aws:secretsmanager:eu-central-1:111111111111:secret:application-alternate-mock", "arn:aws:secretsmanager:eu-central-1:111111111111:secret:administrator-mock"]) && length([for key in keys(kafka_acl.catalogue) : key if startswith(key, "application-alternate/")]) == length(yamldecode(file("../../../kafka/topics.yaml")).topics) * length(yamldecode(file("../../../kafka/topics.yaml")).principals.application.topics) + length(yamldecode(file("../../../kafka/topics.yaml")).principals.application.groups.operations)
+    error_message = "The remaining user is not the principal's whole grant set, associated."
+  }
+}
+
+# A removed user's entry is deleted at once, so the next rotation back to it, a rollback after a removal, or a re-rotation after a
+# compromise can create the same name again; the provider's default is a 30-day recovery window, which would hold it.
+run "every_scram_entry_is_deleted_without_a_recovery_window" {
+  command = plan
+
+  variables {
+    scram_user_slots = { application = { primary = "associated", alternate = "entry" } }
+  }
+
+  assert {
+    condition     = length(aws_secretsmanager_secret.scram) == 3 && alltrue([for secret in aws_secretsmanager_secret.scram : secret.recovery_window_in_days == 0])
+    error_message = "A SCRAM entry keeps a recovery window, which would hold its name after its user leaves."
+  }
+}
+
+# Each refusal on its own, with a principal the catalogue holds, so each run can fail only on its own rule.
+run "a_principal_left_with_no_user_is_refused" {
+  command = plan
+
+  variables {
+    scram_user_slots = { application = {} }
+  }
+
+  expect_failures = [var.scram_user_slots]
+}
+
+run "a_principal_with_no_associated_user_is_refused" {
+  command = plan
+
+  variables {
+    scram_user_slots = { application = { alternate = "entry" } }
+  }
+
+  expect_failures = [var.scram_user_slots]
+}
+
+run "a_principal_the_catalogue_does_not_hold_is_refused" {
+  command = plan
+
+  variables {
+    scram_user_slots = { not_a_principal = { primary = "associated" } }
+  }
+
+  expect_failures = [var.scram_user_slots]
+}
+
+run "an_unknown_slot_is_refused" {
+  command = plan
+
+  variables {
+    scram_user_slots = { application = { primary = "associated", next = "entry" } }
+  }
+
+  expect_failures = [var.scram_user_slots]
+}
+
+run "an_unknown_stage_of_a_user_is_refused" {
+  command = plan
+
+  variables {
+    scram_user_slots = { application = { primary = "associated", alternate = "filled" } }
+  }
+
+  expect_failures = [var.scram_user_slots]
 }
 
 run "the_first_apply_reaches_for_no_broker_and_no_empty_secret" {

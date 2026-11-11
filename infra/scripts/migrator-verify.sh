@@ -4,8 +4,10 @@
 # container of its own: nothing here can touch a developer's compose stack.
 #
 #   the bootstrap   creates the three roles with the local script's attributes, hashed client-side, the database's grants
-#                   and PUBLIC revoked; run again it changes nothing but a role setting found missing; a role holding a right it
-#                   must not is refused. The one role setting, read from the register, is on finapp_app alone, new and existing.
+#                   and PUBLIC revoked, and their four alternating users (P15-TSK-020) with no password, each a member of its
+#                   carrier alone; run again it changes nothing but a role setting found missing; a role holding a right it
+#                   must not is refused, and so is a third role able to use an alternating user's rights (ADMIN alone is not). The one role setting, read from the register, is on finapp_app and its two
+#                   alternating users alone, new and existing.
 #   the build's     ./gradlew flywayMigrate into one database, the image into another: every schema's history identical
 #   equal           (rank, version, description, type, script, checksum, installed_by, success) and pg_dump --schema-only
 #                   identical. The image never sees the build's database.
@@ -159,12 +161,19 @@ expect_exit 0 "$code" "the first bootstrap" "$WORK/bootstrap.log"
 grep -q 'role=finapp_migrator created' "$WORK/bootstrap.log" || fail "the bootstrap did not create the migrator's role"
 grep -q 'role=finapp_app created' "$WORK/bootstrap.log" || fail "the bootstrap did not create the application's role"
 grep -q 'role=finapp_reporting created' "$WORK/bootstrap.log" || fail "the bootstrap did not create the reporting role"
+plain=truefalsefalsefalsefalsefalsefalse
 attributes=$(sql postgres "SELECT string_agg(rolname || ':' || rolcanlogin || rolsuper || rolcreatedb || rolcreaterole || rolinherit
     || rolbypassrls || rolreplication, ' ' ORDER BY rolname) FROM pg_roles WHERE rolname LIKE 'finapp\_%'")
-[ "$attributes" = "finapp_app:truefalsefalsefalsefalsefalsefalse finapp_migrator:truefalsefalsefalsefalsefalsefalse finapp_reporting:truefalsefalsefalsefalsefalsefalse" ] \
+[ "$attributes" = "finapp_app:$plain finapp_app_a:$plain finapp_app_b:$plain finapp_migrator:$plain finapp_reporting:$plain finapp_reporting_a:$plain finapp_reporting_b:$plain" ] \
     || fail "the roles' attributes are not LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION: $attributes"
 hashed=$(sql postgres "SELECT count(*) FROM pg_authid WHERE rolname LIKE 'finapp\_%' AND rolpassword LIKE 'SCRAM-SHA-256\$%'")
-[ "$hashed" = 3 ] || fail "$hashed of the 3 roles hold a SCRAM verifier"
+[ "$hashed" = 3 ] || fail "$hashed roles hold a SCRAM verifier, where the three carriers do and no alternating user does"
+# The alternating users (P15-TSK-020): each a member of its carrier and of nothing else, inheriting and unable to SET ROLE, and nobody else a user of a carrier.
+memberships=$(sql postgres "SELECT string_agg(u.rolname || '>' || g.rolname || ':' || m.inherit_option || m.set_option || m.admin_option, ' ' ORDER BY u.rolname)
+    FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid JOIN pg_roles u ON u.oid = m.member
+    WHERE (g.rolname LIKE 'finapp\_%' OR u.rolname LIKE 'finapp\_%') AND (m.inherit_option OR m.set_option)")
+[ "$memberships" = "finapp_app_a>finapp_app:truefalsefalse finapp_app_b>finapp_app:truefalsefalse finapp_reporting_a>finapp_reporting:truefalsefalse finapp_reporting_b>finapp_reporting:truefalsefalse" ] \
+    || fail "the alternating users' memberships are not exactly their carriers', inherit on and set off: $memberships"
 # The register's value, read here and not copied (CONFIGURATION_REGISTER.md section 5), as the server holds it, on finapp_app and no other.
 role_settings() {
     sql postgres "SELECT coalesce(string_agg(rolname || ':' || array_to_string(rolconfig, ','), ' ' ORDER BY rolname), 'none') FROM pg_roles
@@ -172,7 +181,7 @@ role_settings() {
 }
 idle_timeout=$(sed -n 's/^| `finapp_app` | `idle_in_transaction_session_timeout` | `\([0-9a-z]*\)` |.*/\1/p' docs/architecture/CONFIGURATION_REGISTER.md)
 [ -n "$idle_timeout" ] || cannot "the register's idle timeout could not be read"
-expected_settings="finapp_app:idle_in_transaction_session_timeout=$idle_timeout"
+expected_settings="finapp_app:idle_in_transaction_session_timeout=$idle_timeout finapp_app_a:idle_in_transaction_session_timeout=$idle_timeout finapp_app_b:idle_in_transaction_session_timeout=$idle_timeout"
 settings=$(role_settings)
 [ "$settings" = "$expected_settings" ] || fail "the new roles' settings are not the register's: $settings"
 grants=$(sql finapp_build "SELECT has_database_privilege('finapp_migrator', current_database(), 'CREATE'),
@@ -185,7 +194,7 @@ sql postgres 'ALTER ROLE finapp_app RESET idle_in_transaction_session_timeout' >
 code=0
 bootstrap finapp_build > "$WORK/bootstrap2.log" 2>&1 || code=$?
 expect_exit 0 "$code" "the second bootstrap" "$WORK/bootstrap2.log"
-[ "$(grep -c 'present, unprivileged, unchanged' "$WORK/bootstrap2.log")" = 3 ] || fail "the second bootstrap changed something"
+[ "$(grep -c 'present, unprivileged, unchanged' "$WORK/bootstrap2.log")" = 7 ] || fail "the second bootstrap changed something"
 settings=$(role_settings)
 [ "$settings" = "$expected_settings" ] || fail "the second bootstrap did not set a role that already existed: $settings"
 sql postgres 'ALTER ROLE finapp_reporting CREATEDB' >/dev/null
@@ -193,12 +202,27 @@ code=0
 bootstrap finapp_build > "$WORK/bootstrap3.log" 2>&1 || code=$?
 expect_exit 12 "$code" "a bootstrap finding a role with a right it must not hold" "$WORK/bootstrap3.log"
 sql postgres 'ALTER ROLE finapp_reporting NOCREATEDB' >/dev/null
+# A third role able to use an alternating user's rights, which are its carrier's: inheriting them, or able to SET ROLE to it. Either
+# stops the step, and the refusal names it; an ADMIN-only member, a creator's bookkeeping, does not.
+for options in 'INHERIT TRUE, SET FALSE' 'INHERIT FALSE, SET TRUE'; do
+    sql postgres "CREATE ROLE finapp_verify_member NOLOGIN; GRANT finapp_app_a TO finapp_verify_member WITH $options" >/dev/null
+    code=0
+    bootstrap finapp_build > "$WORK/bootstrap-member.log" 2>&1 || code=$?
+    expect_exit 12 "$code" "a bootstrap finding a member of an alternating user ($options)" "$WORK/bootstrap-member.log"
+    grep -q 'finapp_verify_member can use' "$WORK/bootstrap-member.log" || fail "the refusal does not name the member of the alternating user ($options)"
+    sql postgres 'DROP ROLE finapp_verify_member' >/dev/null
+done
+sql postgres "CREATE ROLE finapp_verify_member NOLOGIN; GRANT finapp_app_a TO finapp_verify_member WITH INHERIT FALSE, SET FALSE, ADMIN TRUE" >/dev/null
+code=0
+bootstrap finapp_build > "$WORK/bootstrap-admin.log" 2>&1 || code=$?
+expect_exit 0 "$code" "a bootstrap finding an ADMIN-only member of an alternating user" "$WORK/bootstrap-admin.log"
+sql postgres 'DROP ROLE finapp_verify_member' >/dev/null
 for db in finapp_image finapp_race; do
     code=0
     bootstrap "$db" > "$WORK/bootstrap-$db.log" 2>&1 || code=$?
     expect_exit 0 "$code" "the bootstrap of $db" "$WORK/bootstrap-$db.log"
 done
-echo "three roles created with the local script's attributes, SCRAM-hashed, grants as the local script's; idempotent; a wrong role refused"
+echo "three roles created with the local script's attributes, SCRAM-hashed, grants as the local script's, and their four alternating users with no password, each a member of its carrier alone; idempotent; a wrong role refused, and a member of an alternating user refused"
 
 echo "== the build's flywayMigrate into one database"
 FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$PORT/finapp_build" FINAPP_DB_MIGRATOR_USER=finapp_migrator \

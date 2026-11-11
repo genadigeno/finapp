@@ -30,19 +30,49 @@ import org.postgresql.util.PasswordUtil;
  * with a right it must not hold stops the step rather than being repaired, because how it got that right is something a
  * person has to look at. <strong>A role's settings are the exception</strong>: applied on every run, so a release that changes
  * one reaches a role that already exists when the step is run for it ({@code DATA_MIGRATIONS.md} section 2.2).
+ *
+ * <h2>The alternating users (`P15-TSK-020`; {@code SECRET_MANAGEMENT.md} section 5.1, {@code database-fleet-credential})</h2>
+ *
+ * <p>A fleet's database credential rotates by alternating users: the store moves from one user to the other while both are
+ * valid, the fleet rolls, and the old user is retired. Each of the two holds <strong>exactly</strong> the per-table grants the
+ * migrations make to its carrier, {@code finapp_app} or {@code finapp_reporting}, because it holds them only <em>by
+ * membership</em> of the carrier ({@code WITH INHERIT TRUE, SET FALSE}): a grant a later migration adds reaches both with
+ * nothing to copy, and no grant names an alternate. An alternate has no database right of its own (its {@code CONNECT} is the
+ * carrier's), no password when it is created (it cannot sign in until a rotation gives it one, which is that procedure's act,
+ * never this step's), and the carrier's role settings, which a membership does not pass on. A member of a carrier that is not
+ * one of its alternates, and can use the carrier's rights, stops the step: it would hold the application's every right.
  */
 final class RoleBootstrap {
 
-    /** Every role this step creates, its password's variable, and what it may do to the database as a whole. */
-    record Role(String name, String passwordVariable, String databaseRights) {}
+    /**
+     * Every role this step creates: its password's variable and its rights over the database as a whole, or, for an alternating
+     * user, none of either and the carrier it is a member of.
+     */
+    record Role(String name, String passwordVariable, String databaseRights, String carrier) {
+
+        /** A user that alternates with another under {@link #carrier}'s grants, created without a password. */
+        boolean alternate() {
+            return carrier != null;
+        }
+    }
 
     static final List<Role> ROLES = List.of(
-            new Role("finapp_migrator", "FINAPP_DB_MIGRATOR_PASSWORD", "CREATE, CONNECT"),
-            new Role("finapp_app", "FINAPP_DB_APP_PASSWORD", "CONNECT"),
-            new Role("finapp_reporting", "FINAPP_DB_REPORTING_PASSWORD", "CONNECT"));
+            new Role("finapp_migrator", "FINAPP_DB_MIGRATOR_PASSWORD", "CREATE, CONNECT", null),
+            new Role("finapp_app", "FINAPP_DB_APP_PASSWORD", "CONNECT", null),
+            new Role("finapp_reporting", "FINAPP_DB_REPORTING_PASSWORD", "CONNECT", null),
+            new Role("finapp_app_a", null, null, "finapp_app"),
+            new Role("finapp_app_b", null, null, "finapp_app"),
+            new Role("finapp_reporting_a", null, null, "finapp_reporting"),
+            new Role("finapp_reporting_b", null, null, "finapp_reporting"));
 
     /** The attributes {@code 00-roles.sql} gives every role, and the two a managed master could otherwise hand down. */
     static final String ATTRIBUTES = "LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION";
+
+    /**
+     * The one membership an alternating user holds: its carrier's rights inherited, the carrier's identity not assumable, and
+     * nothing it can hand on. {@code NOINHERIT} on the role is only the default a membership's own option overrides.
+     */
+    static final String MEMBERSHIP_OPTIONS = "WITH INHERIT TRUE, SET FALSE";
 
     /**
      * What a {@code finapp_app} session may spend idle inside an open transaction: the value the server spells, the same one
@@ -52,6 +82,8 @@ final class RoleBootstrap {
      * stall page an hour later. This ends it at the source: the server closes the session, the transaction rolls back whole, and the
      * pool discards the connection, so the caller fails and retries under its idempotency key. It reaches only a session that has
      * stopped sending statements while a transaction stands open, never a long statement and never an idle pool connection.
+     * <strong>It is set on {@code finapp_app}'s alternating users too</strong>: a role setting belongs to the user a session signs
+     * in as, and a membership does not carry it.
      */
     static final String APP_IDLE_IN_TRANSACTION_TIMEOUT = "5min";
 
@@ -64,14 +96,37 @@ final class RoleBootstrap {
             + " rolbypassrls, rolreplication, (SELECT count(*) FROM pg_catalog.pg_auth_members m WHERE m.member = r.oid)"
             + " FROM pg_catalog.pg_roles r WHERE r.rolname = ?";
 
+    /** The memberships a user holds, as {@code carrier|inherit|set|admin}. */
+    static final String MEMBERSHIPS_OF = "SELECT g.rolname, m.inherit_option, m.set_option, m.admin_option"
+            + " FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles g ON g.oid = m.roleid"
+            + " JOIN pg_catalog.pg_roles u ON u.oid = m.member WHERE u.rolname = ? ORDER BY g.rolname";
+
+    /**
+     * Who can use a role's rights by membership, directly or through any chain of roles: every role but the one named and a
+     * superuser (who needs no membership) that the server says may use them without {@code SET ROLE} ({@code USAGE}) or may
+     * {@code SET ROLE} to it ({@code SET}). Asked of a carrier and of each alternating user, so a member of an alternating user
+     * is seen through either path: as a user of the carrier when it inherits, as a user of the alternate when it may set to it.
+     * A member holding only {@code ADMIN} is a creator's bookkeeping (a managed master that is not a superuser is given it on
+     * every role it creates) and has neither.
+     */
+    static final String USERS_OF = "SELECT r.rolname FROM pg_catalog.pg_roles r, pg_catalog.pg_roles t"
+            + " WHERE t.rolname = ? AND r.oid <> t.oid AND NOT r.rolsuper"
+            + " AND (pg_catalog.pg_has_role(r.oid, t.oid, 'USAGE') OR pg_catalog.pg_has_role(r.oid, t.oid, 'SET'))"
+            + " ORDER BY r.rolname";
+
     private RoleBootstrap() {}
 
     /** A role's standing as the catalogue reads it. */
     record Standing(boolean login, boolean superuser, boolean createDb, boolean createRole, boolean inherit,
             boolean bypassRls, boolean replication, long memberships) {
 
-        /** What this role holds that it must not. Empty is correct. */
+        /** What this role holds that it must not, for a role that is a member of nothing. Empty is correct. */
         List<String> violations() {
+            return violations(0);
+        }
+
+        /** What this role holds that it must not, given how many memberships it may hold. Empty is correct. */
+        List<String> violations(long allowedMemberships) {
             List<String> found = new ArrayList<>();
             if (!login) {
                 found.add("NOLOGIN");
@@ -94,18 +149,24 @@ final class RoleBootstrap {
             if (replication) {
                 found.add("REPLICATION");
             }
-            if (memberships != 0) {
+            if (memberships != allowedMemberships) {
                 found.add(memberships + " role membership(s)");
             }
             return found;
         }
     }
 
-    /** The passwords this step will use, after refusing the ones it must not. */
+    /** One membership as the catalogue reads it. */
+    record Membership(String carrier, boolean inherit, boolean set, boolean admin) {}
+
+    /** The passwords this step will use, after refusing the ones it must not. An alternating user is given none. */
     static Map<Role, String> passwords(Map<String, String> environment) {
         Map<Role, String> passwords = new java.util.LinkedHashMap<>();
         Set<String> distinct = new HashSet<>();
         for (Role role : ROLES) {
+            if (role.alternate()) {
+                continue;
+            }
             String password = environment.get(role.passwordVariable());
             if (password == null || password.isBlank()) {
                 throw new RefusedConfiguration(role.passwordVariable() + " is required");
@@ -127,6 +188,16 @@ final class RoleBootstrap {
         return "CREATE ROLE " + role.name() + " " + ATTRIBUTES + " PASSWORD '" + PasswordUtil.encodeScramSha256(password.toCharArray()) + "'";
     }
 
+    /** An alternating user: no password, so no way in until a rotation gives it one. */
+    static String createAlternateStatement(Role role) {
+        return "CREATE ROLE " + role.name() + " " + ATTRIBUTES;
+    }
+
+    /** The alternating user's one membership, made only when the step creates the user. */
+    static String membershipStatement(Role role) {
+        return "GRANT " + role.carrier() + " TO " + role.name() + " " + MEMBERSHIP_OPTIONS;
+    }
+
     /**
      * The whole step, in one transaction, serialised: two runs cannot both find a role missing. Advisory locks are per
      * database and roles are per cluster, so a run against another database of the cluster can still collide; that surfaces
@@ -139,22 +210,33 @@ final class RoleBootstrap {
         List<String> report = new ArrayList<>();
         try (Statement statement = master.createStatement()) {
             statement.execute("SELECT pg_advisory_xact_lock(" + LOCK_KEY + ")");
-            for (Map.Entry<Role, String> entry : passwords.entrySet()) {
-                Role role = entry.getKey();
+            for (Role role : ROLES) {
                 Optional<Standing> standing = read(master, role.name());
                 if (standing.isPresent()) {
-                    List<String> violations = standing.get().violations();
+                    List<String> violations = standing.get().violations(role.alternate() ? 1 : 0);
                     if (!violations.isEmpty()) {
                         throw new RefusedConfiguration("the role " + role.name() + " already exists and holds " + violations
                                 + ": this step does not repair a role, a person has to look at how it got that");
                     }
                     report.add("role=" + role.name() + " present, unprivileged, unchanged");
+                } else if (role.alternate()) {
+                    statement.execute(createAlternateStatement(role));
+                    statement.execute(membershipStatement(role));
+                    report.add("role=" + role.name() + " created, a member of " + role.carrier() + " and holding nothing else,"
+                            + " with no password until a rotation gives it one");
                 } else {
-                    statement.execute(createStatement(role, entry.getValue()));
+                    String password = passwords.get(role);
+                    if (password == null) {
+                        throw new RefusedConfiguration(role.passwordVariable() + " is required");
+                    }
+                    statement.execute(createStatement(role, password));
                     report.add("role=" + role.name() + " created");
                 }
-                grantOnThisDatabase(statement, "GRANT " + role.databaseRights() + " ON DATABASE %I TO " + role.name());
+                if (role.databaseRights() != null) {
+                    grantOnThisDatabase(statement, "GRANT " + role.databaseRights() + " ON DATABASE %I TO " + role.name());
+                }
             }
+            verifyMemberships(master);
             // Default-deny for everyone else, as the local script: PostgreSQL grants PUBLIC CONNECT on a new database and
             // CREATE on its public schema, which would let any role of the cluster connect and create objects beside ours.
             grantOnThisDatabase(statement, "REVOKE ALL ON DATABASE %I FROM PUBLIC");
@@ -162,12 +244,80 @@ final class RoleBootstrap {
             // A setting, not a right: re-applied on every run, so a role that already exists has it from the next run of this step.
             statement.execute(APP_ROLE_SETTING);
             report.add("role=finapp_app idle_in_transaction_session_timeout=" + APP_IDLE_IN_TRANSACTION_TIMEOUT);
+            for (Role role : ROLES) {
+                if ("finapp_app".equals(role.carrier())) {
+                    statement.execute(appSettingOf(role));
+                    report.add("role=" + role.name() + " idle_in_transaction_session_timeout=" + APP_IDLE_IN_TRANSACTION_TIMEOUT);
+                }
+            }
             master.commit();
             return report;
         } catch (SQLException | RuntimeException failure) {
             master.rollback();
             throw failure;
         }
+    }
+
+    /** {@code finapp_app}'s setting, for one of its alternating users. */
+    static String appSettingOf(Role alternate) {
+        return "ALTER ROLE " + alternate.name() + " SET idle_in_transaction_session_timeout = '" + APP_IDLE_IN_TRANSACTION_TIMEOUT + "'";
+    }
+
+    /**
+     * Each alternating user holds exactly one membership, its carrier's, with exactly the options above; nobody but a carrier's
+     * own alternating users can use its rights by membership, directly or through another role; and nobody at all can use an
+     * alternating user's, which are its carrier's. Anything else stops the step before it commits.
+     */
+    static void verifyMemberships(Connection master) throws SQLException {
+        Map<String, Set<String>> allowedUsers = new java.util.TreeMap<>();
+        for (Role role : ROLES) {
+            if (!role.alternate()) {
+                continue;
+            }
+            List<Membership> held = memberships(master, role.name());
+            if (!held.equals(List.of(new Membership(role.carrier(), true, false, false)))) {
+                throw new RefusedConfiguration("the alternating user " + role.name() + " holds " + held + " where it must hold"
+                        + " exactly membership of " + role.carrier() + " " + MEMBERSHIP_OPTIONS
+                        + ": its rights must be the carrier's grants and nothing else, so a person has to look at how it got that");
+            }
+            allowedUsers.computeIfAbsent(role.carrier(), carrier -> new HashSet<>()).add(role.name());
+            allowedUsers.put(role.name(), Set.of());
+        }
+        for (Map.Entry<String, Set<String>> target : allowedUsers.entrySet()) {
+            for (String user : usersOf(master, target.getKey())) {
+                if (!target.getValue().contains(user)) {
+                    throw new RefusedConfiguration("the role " + user + " can use " + target.getKey() + "'s rights by membership,"
+                            + " directly or through another role, and is not one of a carrier's alternating users: it holds "
+                            + "a carrier's every grant, so a person has to look at how it got that");
+                }
+            }
+        }
+    }
+
+    private static List<Membership> memberships(Connection connection, String user) throws SQLException {
+        List<Membership> found = new ArrayList<>();
+        try (PreparedStatement query = connection.prepareStatement(MEMBERSHIPS_OF)) {
+            query.setString(1, user);
+            try (ResultSet row = query.executeQuery()) {
+                while (row.next()) {
+                    found.add(new Membership(row.getString(1), row.getBoolean(2), row.getBoolean(3), row.getBoolean(4)));
+                }
+            }
+        }
+        return found;
+    }
+
+    private static List<String> usersOf(Connection connection, String carrier) throws SQLException {
+        List<String> found = new ArrayList<>();
+        try (PreparedStatement query = connection.prepareStatement(USERS_OF)) {
+            query.setString(1, carrier);
+            try (ResultSet row = query.executeQuery()) {
+                while (row.next()) {
+                    found.add(row.getString(1));
+                }
+            }
+        }
+        return found;
     }
 
     private static Optional<Standing> read(Connection connection, String role) throws SQLException {

@@ -45,6 +45,13 @@ class LocalDatabaseRolesAreUnprivilegedTest {
     private static final Pattern ALTER_ROLE = Pattern.compile("(?is)\\bALTER\\s+(?:ROLE|USER)\\s+(\\w+)(.*)");
     private static final Pattern GRANT = Pattern.compile("(?is)\\bGRANT\\b(.*?)\\bTO\\b");
 
+    /**
+     * The one membership a local role may be given (`P15-TSK-020`): an alternating user in its own carrier, the carrier's rights
+     * inherited and its identity not assumable, exactly as the bootstrap step gives it. Any other membership is a right handed over.
+     */
+    private static final Pattern ALTERNATE =
+            Pattern.compile("(?s)GRANT\\s+(finapp_app|finapp_reporting)\\s+TO\\s+(\\1_[ab])\\s+WITH\\s+INHERIT\\s+TRUE,\\s*SET\\s+FALSE");
+
     @Test
     @DisplayName("every role the initialisation scripts create is NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT, and"
             + " nothing alters or grants that away")
@@ -59,6 +66,7 @@ class LocalDatabaseRolesAreUnprivilegedTest {
                 .allSatisfy(script -> assertThat(script.toString()).endsWith(".sql"));
         Map<String, String> roles = new TreeMap<>();
         List<String> lifted = new ArrayList<>();
+        List<String> memberships = new ArrayList<>();
         for (Path script : scripts) {
             for (String statement : statements(EvidenceCitations.read(script))) {
                 Matcher create = CREATE_ROLE.matcher(statement);
@@ -74,14 +82,23 @@ class LocalDatabaseRolesAreUnprivilegedTest {
                 Matcher grant = GRANT.matcher(statement);
                 while (grant.find()) {
                     if (!Pattern.compile("(?i)\\bON\\b").matcher(grant.group(1)).find()) {
-                        lifted.add("a role membership is granted: " + statement.trim());
+                        Matcher alternate = ALTERNATE.matcher(statement.trim());
+                        if (alternate.matches()) {
+                            memberships.add(alternate.group(2) + " in " + alternate.group(1));
+                        } else {
+                            lifted.add("a role membership is granted: " + statement.trim());
+                        }
                     }
                 }
             }
         }
         assertThat(roles.keySet())
                 .as("the scripts' roles were read: the migrator, the application and report generation's (P15-TSK-021)")
-                .containsExactlyInAnyOrder("finapp_migrator", "finapp_app", "finapp_reporting");
+                .containsExactlyInAnyOrder("finapp_migrator", "finapp_app", "finapp_reporting",
+                        "finapp_app_a", "finapp_app_b", "finapp_reporting_a", "finapp_reporting_b");
+        assertThat(memberships).as("the one membership each alternating user holds, and no other (P15-TSK-020)")
+                .containsExactlyInAnyOrder("finapp_app_a in finapp_app", "finapp_app_b in finapp_app",
+                        "finapp_reporting_a in finapp_reporting", "finapp_reporting_b in finapp_reporting");
         roles.forEach((name, attributes) -> assertThat(tokens(attributes))
                 .as(name + "'s attributes")
                 .containsAll(REQUIRED));

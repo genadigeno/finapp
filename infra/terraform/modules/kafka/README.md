@@ -80,8 +80,25 @@ Inputs: `name_prefix`, `vpc_id`, `private_subnet_ids_by_zone`, `client_security_
 - **A broker outage**: `OPERATIONS_RUNBOOK.md` §11.6 has both halves, the application's and the managed service's.
 - **A posture change**: edit `infra/kafka/broker.properties`. A plan creates a configuration revision, and MSK rolls the
   brokers when it is applied, one at a time, waiting for each to catch up.
-- **Rotating a SCRAM credential**: ADR-0123's order of add, roll, remove applies, and is `P15-TSK-020`'s to rehearse. An ACL names a
-  SCRAM user, so a second user for rotation needs its grants too.
+- **Rotating a SCRAM credential**: ADR-0123's order of add, roll, remove, staged as the principals are, because an ACL names a SCRAM
+  user (so the second user needs its grants before the fleet rolls onto it) and this module associates no entry before it holds a
+  value. Four applies:
+  1. `scram_user_slots = { application = { primary = "associated", alternate = "entry" } }`: plans
+     `<prefix>-application-alternate`'s own `AmazonMSK_` entry, and nothing else for it: no association, no ACL. Fill the entry
+     (username exactly `<prefix>-application-alternate`); the security module's reader may already read it.
+  2. `{ application = { primary = "associated", alternate = "associated" } }`: associates it and gives it exactly the principal's
+     ACLs. Point the application's two `FINAPP_KAFKA_SASL_…` entries at it by an overlay patch, sync and roll
+     (`SECRET_MANAGEMENT.md` §5.2).
+  3. `{ application = { alternate = "associated" } }`: removes the old user's association, its ACLs and its entry. The entry is
+     deleted without a recovery window (`recovery_window_in_days = 0`), so its name is free again for the next rotation, a rollback
+     after the removal, or a re-rotation after a compromise; the provider's default would hold it for 30 days. AWS documents that a
+     secret deleted this way is gone for good, and that deletion completes in the background: an apply re-creating the name at once
+     may need a retry.
+  4. The next rotation goes back the same way to `primary`, staged `entry` first.
+
+  The order and the census around it have run on `kind` against a test-only broker (`OPERATIONS_RUNBOOK.md` §11.33); nothing has run
+  on MSK. What an association of an unfilled entry does is not stated on AWS's or the provider's pages read (2026-11-11); the staging
+  avoids it rather than rely on it.
 - **Before relying on this**: run the checks (`OPERATIONS_RUNBOOK.md` §11.13). Changing the Kafka provider's pin means
   regenerating this directory's lock file with both roots'.
 

@@ -118,4 +118,69 @@ class KeyRingTest {
         material[0] = 0;
         assertThat(ring.activeKey().getEncoded()).as("the key the ring was given, not the array's later state").isEqualTo(key(5));
     }
+
+    // ------------------------------------------------------------------------------- the check value (P15-TSK-020, item 32 (a))
+
+    /** Computed apart from this code, by openssl: HMAC-SHA256 of the label under each key, its first eight bytes. */
+    private static final String CHECK_OF_ONES = "552d40876e6d9748";
+    private static final String CHECK_OF_TWOS = "0ec936eb254d5bcf";
+
+    @Test
+    @DisplayName("a check value is HMAC-SHA256 of the fixed label under the key, its first eight bytes: the answer openssl gives")
+    void theCheckValueIsTheKnownAnswer() {
+        byte[] counting = new byte[KeyRing.KEY_BYTES];
+        for (int i = 0; i < counting.length; i++) {
+            counting[i] = (byte) i;
+        }
+        assertThat(KeyRing.checkValueOf(counting)).isEqualTo("5daa68abe4ec79b0");
+        assertThat(KeyRing.checkValueOf(key(1))).isEqualTo(CHECK_OF_ONES);
+        assertThat(KeyRing.checkValueOf(key(2))).isEqualTo(CHECK_OF_TWOS);
+    }
+
+    @Test
+    @DisplayName("every held version whose stored value gives its published check value starts, in either case of hexadecimal")
+    void matchingCheckValuesStart() {
+        KeyRing ring = KeyRing.of("test key", Map.of(1, key(1), 2, key(2)), 2, Set.of(),
+                Map.of(1, CHECK_OF_ONES, 2, CHECK_OF_TWOS.toUpperCase()));
+        assertThat(ring.activeVersion()).isEqualTo(2);
+        assertThat(ring.keyFor(1).getEncoded()).isEqualTo(key(1));
+    }
+
+    @Test
+    @DisplayName("a version's value replaced after it was listed refuses the replica, naming the version and neither value")
+    void aReplacedVersionIsRefused() {
+        // Version 2's slot now holds the bytes of another key, as an overwrite of a listed entry would leave it.
+        assertThatThrownBy(() -> KeyRing.of("test key", Map.of(1, key(1), 2, key(7)), 1, Set.of(),
+                Map.of(1, CHECK_OF_ONES, 2, CHECK_OF_TWOS)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("version 2 does not give its published check value")
+                .hasMessageNotContaining(CHECK_OF_TWOS)
+                .hasMessageNotContaining(KeyRing.checkValueOf(key(7)));
+        assertThatThrownBy(() -> KeyRing.of("test key", Map.of(1, key(9)), 1, Set.of(), Map.of(1, CHECK_OF_ONES)))
+                .as("a ring of one version given a check value is checked too")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("version 1 does not give its published check value");
+    }
+
+    @Test
+    @DisplayName("only what is given is checked here: a version given none is the configuration's rule to refuse (ConfinedKeyRing)")
+    void onlyTheGivenCheckValuesAreChecked() {
+        assertThat(KeyRing.of("test key", Map.of(1, key(1), 2, key(2)), 1, Set.of(), Map.of(2, CHECK_OF_TWOS)).holds(1)).isTrue();
+        assertThatThrownBy(() -> KeyRing.of("test key", Map.of(1, key(1), 2, key(2)), 1, Set.of(), Map.of(1, CHECK_OF_TWOS)))
+                .as("the one given is the one checked").isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("version 1 does not give its published check value");
+    }
+
+    @Test
+    @DisplayName("a check value for a version not held, retired or unknown, and a malformed one, are refused")
+    void aCheckValueMustNameAHeldVersionInItsForm() {
+        assertThatThrownBy(() -> KeyRing.of("test key", Map.of(2, key(2)), 2, Set.of(1), Map.of(1, CHECK_OF_ONES)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("version 1, which this instance does not hold");
+        assertThatThrownBy(() -> KeyRing.of("test key", Map.of(1, key(1)), 1, Set.of(), Map.of(3, CHECK_OF_ONES)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("version 3, which this instance does not hold");
+        assertThatThrownBy(() -> KeyRing.of("test key", Map.of(1, key(1)), 1, Set.of(), Map.of(1, "552d40876e6d97")))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("must be 16 hexadecimal characters");
+        assertThatThrownBy(() -> KeyRing.of("test key", Map.of(1, key(1)), 1, Set.of(), Map.of(1, "552d40876e6d974z")))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("must be 16 hexadecimal characters");
+    }
 }

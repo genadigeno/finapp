@@ -170,3 +170,14 @@ identity is now built (`P1-TSK-008`). What remains is the endpoint that calls it
   milestone M1.4.
 - Phase 15 owns credential-rotation policy as an operational process, and the "older than X" report
   this schema makes possible.
+
+*Dated note (`P15-TSK-020`, 2026-11-11), where the rotation policy and the report went:* Phase 15 rotated
+the platform's own credentials (the database's, the broker's, the callback secrets, the field-level keys,
+the edge certificate: `OPERATIONS_RUNBOOK.md` §11.33). A **customer's** credential is this ADR's, and two
+of its rotations are already built: it changes when its holder changes it, which ends every other session,
+and its derivation moves to current parameters on its next successful use. **Neither a schedule nor the
+"older than X" report is built.** Both are put to the owner as `THREAT_MODEL.md` §6 item 36 (a), with the
+recommendation that a customer's credential is never rotated on a schedule (it changes on the holder's act or
+on suspected compromise), and that the report worth having is the count of credentials still under parameters
+older than current policy, which is what a change of parameters needs to watch converge: postponed until the
+first such change, since until then every credential is under the first parameters and it would read zero.
