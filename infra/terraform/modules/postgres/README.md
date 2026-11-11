@@ -84,7 +84,7 @@ Outputs: `identifier` and six that read the plan back for the roots' tests. See 
 - **The master user** (`finapp_master`) is for the one-time bootstrap step alone (`DATA_MIGRATIONS.md` §2.2). Its secret
   is RDS's; nothing in this repository reads it.
 - **Restore**: a managed point-in-time restore is deferred with every apply (`PHASE_15_PLAN.md` §1.1). The local restore
-  rehearsal and its financial verification are `OPERATIONS_RUNBOOK.md` §11.5's. On a real database, a restore makes a **new** instance, so
+  rehearsal and its financial verification are `OPERATIONS_RUNBOOK.md` §11.35's. On a real database, a restore makes a **new** instance, so
   the parameter group, security group and subnet group must be re-attached before anything connects, and it comes up
   with the application's `max_connections` only once it is using this parameter group.
 - **Before relying on this**: run the checks (`OPERATIONS_RUNBOOK.md` §11.13).

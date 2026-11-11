@@ -644,7 +644,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T24 | Every webhook delivery, duplicates included, is retained as evidence (`INV-HIST-02`) | EXISTS | `app/src/test/java/com/finapp/app/payments/PaymentWebhookDatabaseTest.java#aTripleDeliveryLandsOneDedupeRecordAndThreeEvidenceRows` |
 | T24 | A late KYC callback is kept as evidence and decides nothing | EXISTS | `app/src/test/java/com/finapp/app/kyc/ProviderCallbackDatabaseTest.java#aLateCallbackIsEvidenceOnly` |
 | T24 | FX provider evidence is append-only | EXISTS | `fx/src/test/java/com/finapp/fx/FxProviderEvidenceDatabaseTest.java#evidenceIsAppendOnly` |
-| T24 | Backup and restore rehearsed, ending in the financial verification | PLANNED | `P15-TSK-030` |
+| T24 | A restore is held unless every table's row count, the provider evidence's among them, equals the count read in the backup's own snapshot; the rehearsal plants a deleted row and requires that comparison, and no other check, to refuse it | EXISTS | `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#everyPlantIsRefusedByItsOwnCheckAlone`; `infra/scripts/restore-rehearsal.sh` `contains: missing-row) echo "row counts equal to the source's" ;;` `contains: if cmp -s "$WORK/manifest/counts" "$WORK/counts-$2"; then` |
 | T25 | The outbox row commits and rolls back with the business transaction (`INV-EVT-01`) | EXISTS | `platform/src/test/java/com/finapp/platform/outbox/OutboxWriterTest.java#rollbackTakesTheOutboxRowWithIt`; `platform/src/test/java/com/finapp/platform/outbox/OutboxWriterTest.java#commitKeepsThemTogether` |
 | T25 | Every topic a produced event names is declared, the producers read from the compiled code, so a broker that creates no topic on first use stalls no aggregate | EXISTS | `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#everyProducedTopicIsDeclared`; `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#everyProducerIsReadable` |
 | T25 | The broker posture as code: no topic created on first use, no unclean leader election, three replicas with two in sync, and the consumers' session timeout inside the broker's bounds | EXISTS | `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#theBrokerPostureHolds`; `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#theSessionTimeoutIsAdmitted` |
@@ -689,7 +689,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T31 | Every route under `/v1/operator` declares a permission, read from the handler mapping that serves requests; a planted operator route declaring only a session is caught | EXISTS | `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#everyOperatorRouteIsPermissionGuarded`; `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#anUnguardedOperatorRouteIsCaught` |
 | T32 | Point-in-time recovery in every environment (7 to 35 days, anything else refused), automated backups kept when the instance is deleted, a final snapshot, deletion protection, `prevent_destroy` on the database and its vault, and a daily snapshot copied across an account or region boundary, where it takes the destination vault's key. Asserted over a plan against a mock provider, never applied: no backup has been taken or restored. What this does not give is the `GAP` row below | EXISTS | `infra/terraform/modules/postgres/tests/postgres.tftest.hcl` `contains: Point-in-time recovery does not reach back as far as the root asked.` `contains: Deleting the instance would delete its automated backups.` `contains: The database has no deletion protection.` `contains: The daily snapshot does not go to this vault and on to the destination across the boundary.` `contains: a_copy_vault_inside_this_account_and_region_is_refused`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyGuardedResourcePreventsItsDestruction` |
 | T32 | A backup under a key separate from the database's own. RDS gives no setting for it, and AWS Backup's vault key does not change an RDS recovery point inside one account and region, so a vault key that differs (asserted) does not by itself separate anything. Only the copy across the boundary does, at a daily recovery point, and its destination does not exist. A point-in-time backup under a separate key needs cross-region replication, Phase 16's | GAP | `owner item 23`; owner: the owner, since 2026-11-09 |
-| T32 | A restore rehearsed into a fresh database, ending in the financial verification, with the backup handled as a copy of the ledger | PLANNED | `P15-TSK-030` |
+| T32 | A logical backup restored into a fresh database and held there: the backup encrypted as it is written and removed with its work directory, the platform's three roles unable to log in until the platform's own checks pass on the restore, the transaction counter moved past every restored `xid8`, every sequence at or past the backup's, each kind of corruption (an unbalanced entry, a balance row disagreeing with its journal, a missing row, a role altered, a trigger dropped, a sequence set back, a migration's checksum changed, a GL rule repointed, the counter left behind) refused by its own check alone, a dropped grant by the catalogue and the schema each, and a removed journal line refused by every check that reads the lines. Rehearsed on one machine into containers, from a seeded source and from a `kind` rehearsal's database (854 journal entries walked), never against a managed instance; that is the `GAP` row below | EXISTS | `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#theRolesAreHeldUntilTheVerificationPasses`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#theBackupIsNeverPlainAtRest`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#noPasswordIsOnACommandLine`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#theCounterMovesBeforeTheChecks`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#everyPlantIsRefusedByItsOwnCheckAlone`; `app/src/test/java/com/finapp/app/restore/RestoreVerdictsTest.java#theCensusFailsShortOfTheJournalAndOnANewFinding`; `infra/scripts/restore-rehearsal.sh` `contains: ALTER ROLE finapp_app NOLOGIN;` |
+| T32 | A managed restore: a point-in-time restore into a new instance with its parameter, security and subnet groups attached before anything connects, the platform's roles held by the master user until the verification passes, the verification run from inside the network; a logical restore into a managed instance, which cannot move its counter and so is refused by the census check; and GL = ledger over a locked period on a restore, which has run only over none, because no rehearsal source can hold a locked period without its database's clock faked | GAP | `owner item 38`; owner: the owner, since 2026-11-11 |
 | T33 | Locally (compose and the test databases), the migrator is `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
 | T33 | The journal's append-only trigger binds the migrator | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
 | T33 | The migrator image holds no credential (no environment of its own, read from the built image), the application's configuration never reads the migrator's, and the runner refuses an identity holding any administrative right, a session without its lock bound and a URL that could move the host or undo verification | EXISTS | `migrator/src/test/java/com/finapp/migrator/MigratorImageTest.java#onlyTheMigratorHoldsItsCredential`; `migrator/src/test/java/com/finapp/migrator/ConnectedRoleTest.java#anAdministrativeRightIsRefused`; `migrator/src/test/java/com/finapp/migrator/ConnectedRoleTest.java#aMembershipIsARight`; `migrator/src/test/java/com/finapp/migrator/ConnectedRoleTest.java#aSessionWithoutTheBoundIsRefused`; `migrator/src/test/java/com/finapp/migrator/DatabaseUrlTest.java#parametersThatChangeWhatTheUrlMeans`; `infra/scripts/migrator-image-build.sh` `contains: the image sets environment of its own` |
@@ -850,7 +851,7 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 - **T21, T27, T28, T45.** Today **no built control exists** for these CRITICAL and HIGH threats: nothing
   is deployed, and T45's rule is unwritten. Each is answered only by its planned tasks, and rule 9 and the exit rule
   (§1.5) hold them to it. *(Read "T4, T21, T27, T28, T29, T32, T45" until 2026-11-08: T4's image and node controls and
-  T29's cluster controls are now built rows of §4, though nothing is deployed; and read with T32 among them until 2026-11-09, when its backup configuration became a built row, though nothing has been backed up.)*
+  T29's cluster controls are now built rows of §4, though nothing is deployed; and read with T32 among them until 2026-11-09, when its backup configuration became a built row, though nothing had been backed up; since 2026-11-11 a logical backup and its restore are rehearsed on containers, and a managed one is still never taken, §4's T32 rows.)*
 - **T6, T7, T29, the network and cluster modules.** Their rows are asserted over a plan against a mock provider, which
   proves the configuration and not AWS's behaviour: no account exists, so nothing has shown that AWS accepts it or
   enforces it (`PHASE_15_PLAN.md` §1.1). etcd's key is planned by the security module and has never been created.
@@ -961,7 +962,8 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
 2026-11-09, accepting each recommendation** ("accept recommendations", at the end of wave C); each item's decision follows its
 options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)* **Items 21, 22, 23, 27 and 28 were added on 2026-11-09, and the owner decided them the same day, accepting each recommendation** ("accept recommendations", at the end of wave D); each item's decision follows its options. *(This paragraph read "Items 21, 27 and 28 ... await the owner" and "Item 22 ... awaits the owner" until then.)* **Items 30 to 34 were added on 2026-11-09, and the owner decided them on 2026-11-11, accepting each recommendation**
 ("accept recommendations", at the end of wave E); each item's decision follows its options. *(This paragraph read "Items 31 to 34
-were added on 2026-11-09 and await the owner." until then.)* **Item 35 was added on 2026-11-11 and awaits the owner.**
+were added on 2026-11-09 and await the owner." until then.)* **Item 35 was added on 2026-11-11 and awaits the owner.** **Item 38 was added on 2026-11-11 by the restore rehearsal and awaits
+the owner.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1401,6 +1403,39 @@ were added on 2026-11-09 and await the owner." until then.)* **Item 35 was added
       - **(ii) Image pull secrets**, a long-lived credential.
 
       *Recommendation*: **(i)**, beside the two workload identities that exist, never a stored credential.
+
+38. **T32's residual: the managed restore, and a logical restore into a managed instance** *(added 2026-11-11 by the restore
+    rehearsal; (c) added the same day by its review)*. The rehearsal restores a logical backup into a PostgreSQL it runs itself
+    (`OPERATIONS_RUNBOOK.md` section 11.35). Three things it cannot settle.
+
+    **(a) The managed restore.** A point-in-time restore makes a new instance. Its parameter group, security group and subnet group
+    must be attached before anything connects (`infra/terraform/modules/postgres`, its README's "Operating it"). A physical restore
+    brings the platform's roles back able to log in, so the master user must make all three `NOLOGIN` before any address of the new
+    instance is given to anything, and the verification must run from inside the network as the master user, acting as the schemas'
+    owner. Today the verification is a command on the repository's test classpath, not a Job of the application image, and no account
+    exists to run any of it. *Recommendation*: rehearse it in the first real environment before it holds a customer's money, with the
+    verification packaged as a Job of the application image, and record it beside section 11.35's record; until then nothing claims a
+    managed restore.
+
+    **(b) A logical restore into a managed instance.** It cannot move the transaction counter, because `pg_resetwal` needs the stopped
+    server's data directory and a managed service gives no one that access (the service's model; AWS's own pages were not read for
+    this), so the source-join census cannot see the restored journal and the verification refuses the restore. The options:
+    - **(i) Keep it refused.** A managed restore is always physical (point in time or snapshot), which carries the counter with it.
+    - **(ii) A reviewed migration resetting the census head to its floor.** It still leaves every restored entry above the counter
+      unwalked until the counter passes it, which for a cluster in a later epoch is never.
+
+    *Recommendation*: **(i)**, as section 11.35 states it, because (ii) cannot make the walk whole.
+
+    **(c) GL = ledger over a locked period on a restore has run only over none.** The first period the platform opens is the
+    database's current month (`AccountingPeriods.openNext`), and a period locks only once `LockGrace`, at least two business days,
+    has passed since its end on the database's own date (`AccountingPeriodStore#today`). The seeded source is created the day the
+    rehearsal runs and the `kind` rehearsal's database the hour it runs, so neither holds a locked period unless the database's clock
+    is faked, which a rehearsal of a restore must not do: both of section 11.35's records, the seeded source's and the `kind`
+    rehearsal's database's, judged GL = ledger on an open period only, through the same `GlPins.forPeriod`. What holds the locked case today is narrower: `GlPinsTest` holds that a locked period is
+    read by its pin and one without a pin is refused, and `RestoreVerdictsTest` that a period the verification cannot read refuses
+    the restore. *Recommendation*: rehearse it at the first month end of the first real environment, a restore of a backup taken
+    after its first period locked, as part of (a)'s rehearsal and recorded beside section 11.35's record; until then nothing claims
+    GL = ledger was shown over a locked period on a restore.
 
 39. **T3's and T31's residuals once staff are refused on the public surface** *(added 2026-11-11 by the task that refuses them;
     (a) rewritten and (c) added by its review's fix round, the same day)*. Three things, each a decision.
