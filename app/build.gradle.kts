@@ -823,3 +823,29 @@ tasks.withType<Test>().configureEach {
         .withPropertyName("infrastructureEvidence")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }
+
+// ---------------------------------------------------------------------------
+// The restore rehearsal's launcher (P15-TSK-030). infra/scripts/restore-rehearsal.sh runs two commands from this module's
+// test classpath, RestoreRehearsalSeed and RestoreVerification, each the application's own context against a database the
+// script names in the FINAPP_DB_* environment. Neither is a test, and no test task selects them. This writes the pinned
+// toolchain's java and that classpath under build/restore-rehearsal/, so the script starts a command as often as a run
+// needs without a Gradle invocation per start. OPERATIONS_RUNBOOK.md section 11.35.
+// ---------------------------------------------------------------------------
+tasks.register("restoreRehearsalLauncher") {
+    group = "verification"
+    description = "Writes the java executable and the test runtime classpath the restore rehearsal's commands start with."
+    val launcher = javaToolchains.launcherFor(java.toolchain)
+    val classpath = sourceSets.test.get().runtimeClasspath
+    val out = layout.buildDirectory.dir("restore-rehearsal")
+    dependsOn(tasks.named("testClasses"))
+    inputs.files(classpath).withPropertyName("restoreRehearsalClasspath")
+    outputs.dir(out)
+    doLast {
+        val dir = out.get().asFile
+        dir.mkdirs()
+        File(dir, "java").writeText(launcher.get().executablePath.asFile.invariantSeparatorsPath + "\n")
+        File(dir, "classpath.args").writeText(
+            "-cp \"" + classpath.files.joinToString(File.pathSeparator) { it.invariantSeparatorsPath } + "\"\n"
+        )
+    }
+}
