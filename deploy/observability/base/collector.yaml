@@ -1,0 +1,190 @@
+# The one telemetry egress (P15-TSK-023, ADR-0124 decision 1, THREAT_MODEL.md T46): every replica's traces and log records arrive here over
+# OTLP/HTTP on 4318, the only telemetry port the application's NetworkPolicy names, and nothing leaves for a backend before it has passed
+# the allow-list and the scrub below. ADR-0019's default-deny in the application is the first net; this is the second.
+#
+# WHAT IS KEPT, BY NAME. Every attribute of a resource, a span, a span event and a log record is dropped unless its key is listed here:
+# the flow's correlation and causation, the identifier keys of the platform's Spans port (UUIDs alone; Spans.IDENTIFIER_KEYS), route
+# templates, methods, statuses and outcomes, the class of an error. Never a URL (it carries the path's identifiers and the query), an
+# exception's message or stack (a driver's message can quote a row), a host, a user agent or a thread. A span's status message is an
+# exception's message, so it is emptied. TelemetryPipelineManifestsTest holds the lists to Spans.IDENTIFIER_KEYS and to what is written here.
+#
+# WHAT IS SCRUBBED. A log record's body is the ECS line the console printed: free text in the message field. A card number's shape - 13 to
+# 19 digits in a row, or four groups of four (or Amex's 4-6-5) split by a space or a dash - and an amount in Money's string form
+# ("12.34 EUR") are replaced in every body and in every surviving attribute value. The grouped form needs four groups exactly because a
+# UUID can hold three four-digit groups in a row: a looser pattern would cut a correlation id and break the join it exists for. A party's identifier cannot be told from any other identifier by its shape, so it is held by the
+# allow-list in an attribute and by ADR-0019 in a message, never by a pattern here. infra/scripts/telemetry-check.sh plants each needle
+# through this file, unchanged, and requires none to come out, and then removes the scrubbing processor and requires the needle to come out.
+#
+# TWO TIERS IN ONE DEPLOYMENT, BECAUSE OF THE TAIL POLICY. A trace is kept or dropped once its last span has had time to arrive, and the
+# decision is only right if one replica holds the whole trace. With N collectors behind a Service, a trace's spans can reach two of them
+# (a reconnect mid-trace). So every replica's first pipeline scrubs and routes each span by its trace id to the peer that owns that id
+# (the load-balancing exporter, the peers found through a headless Service), and the second pipeline, on the owner, holds the trace and
+# decides. A peer joining or leaving moves a share of the trace ids: a trace in flight at that moment can be split, which costs at worst
+# a partial trace and never a request. Logs are never sampled and need no routing.
+#
+# WHAT IT NEVER DOES. It decides nothing about money and holds nothing durable: a restart loses the batches in memory. It holds no
+# credential. Its endpoints are the environment's: TEMPO_ENDPOINT and LOKI_ENDPOINT come from the overlay, COLLECTOR_PEERS and POD_IP
+# from the Deployment.
+extensions:
+  health_check:
+    endpoint: ${env:POD_IP}:13133
+
+receivers:
+  # The application's replicas.
+  otlp:
+    protocols:
+      http:
+        endpoint: ${env:POD_IP}:4318
+  # The peers' routed spans: the second tier.
+  otlp/peers:
+    protocols:
+      grpc:
+        endpoint: ${env:POD_IP}:4317
+
+processors:
+  # Refuses data before the process is killed for memory: the application's exporter counts a refusal as a dropped batch.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+
+  # THE SECOND NET. The allow-list first, so a scrub never has to read a value nobody may keep; then the scrub of what remains.
+  transform/scrub:
+    error_mode: ignore
+    trace_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, ["service.name", "service.namespace", "service.version", "k8s.pod.name", "k8s.namespace.name", "deployment.environment.name", "telemetry.sdk.name", "telemetry.sdk.language", "telemetry.sdk.version"])
+      - context: scope
+        statements:
+          - keep_keys(attributes, [])
+      - context: span
+        statements:
+          - keep_keys(attributes, ["finapp.correlation_id", "finapp.causation_id", "run.id", "batch.id", "file.id", "source.id", "break.id", "resolution.id", "quote.id", "trade.id", "cover.id", "payment.id", "credit.id", "screening.id", "error.type", "exception", "method", "status", "uri", "outcome", "http.request.method", "http.response.status_code", "http.route"])
+          - set(status.message, "")
+          - replace_all_patterns(attributes, "value", "\\b(?:\\d{13,19}|\\d{4}(?:[ -]\\d{4}){3}|\\d{4}[ -]\\d{6}[ -]\\d{5})\\b", "[scrubbed]")
+          - replace_all_patterns(attributes, "value", "\\b\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "[scrubbed]")
+      - context: spanevent
+        statements:
+          - keep_keys(attributes, ["exception.type"])
+    log_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, ["service.name", "service.namespace", "service.version", "k8s.pod.name", "k8s.namespace.name", "deployment.environment.name", "telemetry.sdk.name", "telemetry.sdk.language", "telemetry.sdk.version"])
+      - context: scope
+        statements:
+          - keep_keys(attributes, [])
+      - context: log
+        statements:
+          - keep_keys(attributes, ["finapp.correlation_id", "finapp.causation_id"])
+          - replace_pattern(body, "\\b(?:\\d{13,19}|\\d{4}(?:[ -]\\d{4}){3}|\\d{4}[ -]\\d{6}[ -]\\d{5})\\b", "[scrubbed]")
+          - replace_pattern(body, "\\b\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "[scrubbed]")
+          - replace_all_patterns(attributes, "value", "\\b(?:\\d{13,19}|\\d{4}(?:[ -]\\d{4}){3}|\\d{4}[ -]\\d{6}[ -]\\d{5})\\b", "[scrubbed]")
+
+  # Names the environment on what leaves, so two environments on one backend never read as one fleet.
+  resource/environment:
+    attributes:
+      - key: deployment.environment.name
+        value: ${env:FINAPP_ENVIRONMENT}
+        action: upsert
+
+  # THE TAIL POLICY (C10): a trace is kept when any of these says so. Every error; every trace slower than a second (the transfer route's
+  # p99 objective); every write, which is every money-moving route and more; every asynchronous leg of a flow (an outbox publication, an
+  # inbox handling, a settlement or reconciliation step), which carries the flow's correlation; a tenth of the rest. Calibration under
+  # load is Phase 16's. The platform's traceability of a payment rests on the correlation id in the journal and the audit trail, never on a
+  # sampled trace (ADR-0124 decision 2).
+  tail_sampling:
+    decision_wait: ${env:TAIL_DECISION_WAIT}
+    num_traces: 50000
+    expected_new_traces_per_sec: 100
+    policies:
+      - name: errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: slow
+        type: latency
+        latency:
+          threshold_ms: 1000
+      - name: writes
+        type: string_attribute
+        string_attribute:
+          key: method
+          values: [POST, PUT, PATCH, DELETE]
+      - name: writes-semconv
+        type: string_attribute
+        string_attribute:
+          key: http.request.method
+          values: [POST, PUT, PATCH, DELETE]
+      - name: asynchronous-legs
+        type: ottl_condition
+        ottl_condition:
+          error_mode: ignore
+          span:
+            - IsMatch(name, "^(outbox|inbox|settlement|reconciliation|lending|bnpl|deadletter)\\.")
+      - name: the-rest
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+
+  batch:
+    send_batch_size: 512
+    timeout: 2s
+
+exporters:
+  # The first tier's only exit: each span to the peer that owns its trace id.
+  load_balancing:
+    routing_key: traceID
+    protocol:
+      otlp:
+        timeout: 5s
+        tls:
+          insecure: true
+    resolver:
+      dns:
+        hostname: ${env:COLLECTOR_PEERS}
+        port: "4317"
+        interval: 15s
+
+  otlp_grpc/tempo:
+    endpoint: ${env:TEMPO_ENDPOINT}
+    tls:
+      insecure: true
+    sending_queue:
+      queue_size: 1000
+    retry_on_failure:
+      max_elapsed_time: 60s
+
+  otlp_http/loki:
+    endpoint: ${env:LOKI_ENDPOINT}
+    sending_queue:
+      queue_size: 1000
+    retry_on_failure:
+      max_elapsed_time: 60s
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: warn
+    metrics:
+      level: basic
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: ${env:POD_IP}
+                port: 8888
+  pipelines:
+    traces/ingress:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/scrub, resource/environment, batch]
+      exporters: [load_balancing]
+    traces/sampling:
+      receivers: [otlp/peers]
+      processors: [memory_limiter, tail_sampling, batch]
+      exporters: [otlp_grpc/tempo]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/scrub, resource/environment, batch]
+      exporters: [otlp_http/loki]

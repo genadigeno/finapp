@@ -86,7 +86,20 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("the loan application (P11-TSK-010)")
+@org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
 public class LoanApplicationDatabaseTest {
+
+    /** The spans this context records, read back by the needle sweep (`P15-TSK-023`): the SDK's own pipeline, in memory. */
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class RecordedSpans {
+        @org.springframework.context.annotation.Bean
+        io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter recordedSpans() {
+            return io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter.create();
+        }
+    }
+
+    @Autowired private io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter recordedSpans;
+    @Autowired private io.opentelemetry.sdk.trace.SdkTracerProvider tracerProvider;
 
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
 
@@ -443,6 +456,47 @@ public class LoanApplicationDatabaseTest {
             assertThat(withdraw.body()).contains("lending.NotFound");
         }
         assertThat(field(client.read(owner.token(), id).body(), "status")).isEqualTo("AWAITING_DECISION");
+    }
+
+    // ------------------------------------------------------------------ the needle sweep (P15-TSK-023)
+
+    @Test
+    @Order(30)
+    @DisplayName("the needle sweep through a lending flow (P15-TSK-023, the residues A5-05 and A5-08): a planted amount and the"
+            + " applicant's party, submitted, read, refused to a stranger and withdrawn, reach no printed line and no recorded span, and the"
+            + " stranger's refused withdrawal joins no span to the applicant's flow")
+    void aLendingFlowLeavesNoNeedle(org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        termsInForce();
+        String planted = "7319.47";
+        CreditFixtures.Customer applicant = customers.consentingCustomer();
+        CreditFixtures.Customer stranger = customers.consentingCustomer();
+        recordedSpans.reset();
+        HttpResponse<String> submitted = client.submit(applicant.token(), loan(planted, 36), key());
+        assertThat(submitted.statusCode()).as(submitted.body()).isEqualTo(202);
+        String id = field(submitted.body(), "applicationId");
+        String flow = scalar("SELECT correlation_id FROM lending.loan_application WHERE id = ?", UUID.fromString(id));
+        assertThat(client.read(applicant.token(), id).statusCode()).isEqualTo(200);
+        assertThat(client.withdraw(stranger.token(), id, key()).statusCode()).isEqualTo(404);
+        assertThat(client.withdraw(applicant.token(), id, key()).statusCode()).isEqualTo(200);
+        tracerProvider.forceFlush().join(10, TimeUnit.SECONDS);
+
+        List<io.opentelemetry.sdk.trace.data.SpanData> spans = recordedSpans.getFinishedSpanItems();
+        assertThat(spans).as("the control: the flow's spans were recorded").isNotEmpty();
+        assertThat(spans).as("and one of them is the applicant's withdrawal, linked into the application's flow")
+                .anySatisfy(span -> assertThat(span.getAttributes().get(
+                        io.opentelemetry.api.common.AttributeKey.stringKey("finapp.correlation_id"))).isEqualTo(flow));
+        for (io.opentelemetry.sdk.trace.data.SpanData span : spans) {
+            String text = span.getName() + span.getAttributes() + span.getEvents() + span.getStatus();
+            assertThat(text).as(span.getName()).doesNotContain(planted).doesNotContain(applicant.party().toString());
+        }
+        long linkedWithdrawals = spans.stream()
+                .filter(span -> span.getName().equals(com.finapp.lending.LendingSpans.WITHDRAW))
+                .filter(span -> flow.equals(span.getAttributes().get(
+                        io.opentelemetry.api.common.AttributeKey.stringKey("finapp.correlation_id"))))
+                .count();
+        assertThat(linkedWithdrawals).as("the applicant's withdrawal is linked once; the stranger's refused one never").isEqualTo(1);
+        assertThat(output.getAll()).as("nothing printed holds the amount or the party")
+                .doesNotContain(planted).doesNotContain(applicant.party().toString());
     }
 
     // ------------------------------------------------------------------ the machine, for every writer

@@ -86,6 +86,10 @@ public final class Rehearsal {
             case "report-token" -> System.out.println("token " + rehearsal.fresh("operator"));
             case "map-gl" -> rehearsal.mapGl();
             case "gl-check" -> rehearsal.glCheck();
+            // The telemetry pipeline's steps (P15-TSK-023): infra/scripts/kind-rehearsal/telemetry.sh calls these.
+            case "trace-payment" -> rehearsal.tracePayment(args[2], args[3]);
+            case "settle-file" -> rehearsal.settleFile(args[2], args[3], args[4]);
+            case "latency" -> rehearsal.latency(args[2], Integer.parseInt(args[3]));
             default -> throw new IllegalArgumentException("unknown step " + args[1]);
         }
     }
@@ -639,6 +643,87 @@ public final class Rehearsal {
         System.out.println("edge operator-route-on-operator status=" + operator.status() + " body=" + operator.body().replaceAll("\\s+", " "));
         Answer actuator = get(publicBase, "/actuator/health", null);
         System.out.println("edge actuator-on-public status=" + actuator.status());
+    }
+
+    // ---------------------------------------------------------------------------------------------- the telemetry pipeline (P15-TSK-023)
+
+    /**
+     * One card top-up of a planted amount under one correlation id the client chose, on the intent and on its confirmation alike, so the
+     * whole customer flow is one correlation; the payment's id is printed for the shell to follow its capture.
+     */
+    private void tracePayment(String correlation, String amount) throws Exception {
+        String token = customerToken(0);
+        Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("Authorization", "Bearer " + token);
+        headers.put("X-Correlation-Id", correlation);
+        headers.put("Idempotency-Key", key());
+        Answer created = expect("traced top-up create", call("POST", publicBase + "/v1/payments",
+                "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\",\"paymentMethodId\":\"" + state.getProperty("customer.0.card") + "\"}",
+                headers), 200, 201);
+        String id = field(created.body(), "id");
+        headers.remove("Idempotency-Key");
+        Answer confirmed = expect("traced top-up confirm", call("POST", publicBase + "/v1/payments/" + id + "/confirmation", null, headers), 200, 409);
+        String status = confirmed.status() == 200 ? field(confirmed.body(), "status") : null;
+        for (int polls = 0; polls < 30 && !"SUCCEEDED".equals(status); polls++) {
+            pause(1000);
+            status = field(expect("traced top-up read", get(publicBase, "/v1/payments/" + id, token), 200).body(), "status");
+        }
+        System.out.println("traced payment=" + id + " status=" + status + " correlation=" + correlation);
+    }
+
+    /**
+     * A PSP settlement report delivered as a person would: uploaded by the operator under the correlation id the client chose, then attested by
+     * the controller, the second person the upload door requires. The file's id is printed for the shell to follow.
+     */
+    private void settleFile(String correlation, String businessDate, String reportFile) throws Exception {
+        String content = java.util.Base64.getEncoder().encodeToString(Files.readAllBytes(work.resolve(reportFile)));
+        Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("Authorization", "Bearer " + fresh("operator"));
+        headers.put("X-Correlation-Id", correlation);
+        headers.put("Idempotency-Key", key());
+        Answer landed = expect("settlement upload", call("POST", operatorBase + "/v1/operator/settlement/files",
+                "{\"sourceCode\":\"simulated-psp.settlement\",\"businessDate\":\"" + businessDate + "\",\"content\":\"" + content + "\"}",
+                headers), 202);
+        String file = field(landed.body(), "fileId");
+        Map<String, String> attest = new java.util.HashMap<>();
+        attest.put("Authorization", "Bearer " + fresh("controller"));
+        attest.put("X-Correlation-Id", correlation);
+        expect("settlement attestation", call("POST", operatorBase + "/v1/operator/settlement/files/" + file + "/attestation", null, attest), 200);
+        System.out.println("settlement file=" + file + " correlation=" + correlation);
+    }
+
+    /**
+     * Transfers of a cent between two customers, one after another, for {@code seconds}: each request's status and milliseconds in
+     * latency-&lt;label&gt;.tsv, so the shell can compare the collector up, down and black-holed. A write, so its trace is one the tail policy keeps.
+     */
+    private void latency(String label, int seconds) throws Exception {
+        Path results = work.resolve("latency-" + label + ".tsv");
+        Files.writeString(results, "");
+        long until = System.nanoTime() + Duration.ofSeconds(seconds).toNanos();
+        int i = 0;
+        StringBuilder lines = new StringBuilder();
+        // Every transfer that succeeded, in the workload's own record, so the census counts it like any other.
+        StringBuilder counted = new StringBuilder();
+        while (System.nanoTime() < until) {
+            int from = i % 2;
+            String key = "tl-" + label + "-" + i + "-" + key();
+            String reference = "tl-" + label + "-" + UUID.randomUUID();
+            long started = System.nanoTime();
+            int status;
+            try {
+                status = transfer(from, 1 - from, "0.01", key, reference).status();
+            } catch (IOException failure) {
+                status = -1;
+            }
+            lines.append(status).append('\t').append(Duration.ofNanos(System.nanoTime() - started).toMillis()).append('\n');
+            if (status == 200 || status == 201) {
+                counted.append("transfer\t").append(key).append('\t').append(reference).append("\tok\n");
+            }
+            i++;
+        }
+        Files.writeString(results, lines.toString());
+        Files.writeString(work.resolve("workload-telemetry-" + label + ".tsv"), "flow\tkey\toutcome\n" + counted);
+        System.out.println("latency " + label + " requests=" + i);
     }
 
     /**

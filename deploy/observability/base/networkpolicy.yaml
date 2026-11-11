@@ -1,0 +1,131 @@
+# The telemetry pipeline's namespace, closed (P15-TSK-023; THREAT_MODEL.md section 6 item 21, decided 2026-11-09): everything denied, then the
+# flows its workloads have, each by label and port. No pod here has an egress rule to PostgreSQL, to Kafka or to any address outside the
+# cluster, so a compromised collector or scraper reaches neither the data tier nor the internet; each overlay adds the flows to its backends.
+#
+# THE KUBELET IS NOT NAMED, AND NEED NOT BE: a pod cannot block its resident node, so the probes and the API server's proxy need no rule
+# (the application's own policy says the same, and why that is also its limit).
+#
+# Peers name a namespace AND a pod in one entry. Written as two list items they would be OR.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-observability-default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-collector
+spec:
+  podSelector:
+    matchLabels:
+      finapp/role: telemetry-collector
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # The application's replicas, on OTLP over HTTP alone (the one telemetry egress their own policy names).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+      ports:
+        - protocol: TCP
+          port: 4318
+    # The peers' routed spans: the second tier.
+    - from:
+        - podSelector:
+            matchLabels:
+              finapp/role: telemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+    # The scrape of the collector's own counters (dropped and refused telemetry among them).
+    - from:
+        - podSelector:
+            matchLabels:
+              finapp/role: metrics-scraper
+      ports:
+        - protocol: TCP
+          port: 8888
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: telemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# The scraper: the application's and the edge controllers' management ports and the collector's counters, by label (P15-TSK-010 named the label
+# both of those policies admit). It is reached by nothing but its node: the API server's proxy is how an operator reads it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-metrics-scraper
+spec:
+  podSelector:
+    matchLabels:
+      finapp/role: metrics-scraper
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+      ports:
+        - protocol: TCP
+          port: 8081
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-edge
+          podSelector:
+            matchLabels:
+              finapp/role: ingress-controller
+      ports:
+        - protocol: TCP
+          port: 8081
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: telemetry-collector
+      ports:
+        - protocol: TCP
+          port: 8888
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

@@ -1,0 +1,68 @@
+# kind's flows to its reference backends (P15-TSK-023), on top of the base's default-deny: the collectors to Tempo's OTLP port and Loki's HTTP
+# port, and each backend admitting the collectors alone. The rehearsal reads the backends through the API server's proxy, which is node
+# traffic no policy can refuse, so no reader is named.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-collector-to-backends
+spec:
+  podSelector:
+    matchLabels:
+      finapp/role: telemetry-collector
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: trace-store
+      ports:
+        - protocol: TCP
+          port: 4317
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: log-store
+      ports:
+        - protocol: TCP
+          port: 3100
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-trace-store
+spec:
+  podSelector:
+    matchLabels:
+      finapp/role: trace-store
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              finapp/role: telemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-log-store
+spec:
+  podSelector:
+    matchLabels:
+      finapp/role: log-store
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              finapp/role: telemetry-collector
+      ports:
+        - protocol: TCP
+          port: 3100

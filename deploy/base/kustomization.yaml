@@ -7,6 +7,7 @@ resources:
   - serviceaccount.yaml
   - deployment.yaml
   - service.yaml
+  - service-scrape.yaml
   - poddisruptionbudget.yaml
   - horizontalpodautoscaler.yaml
   - migrator-job.yaml

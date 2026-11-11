@@ -112,11 +112,22 @@ public class EventingBeans {
     }
 
     @Bean
-    OutboxRelay outboxRelay(DataSource dataSource, EventPublisher publisher, AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
+    OutboxRelay outboxRelay(DataSource dataSource, EventPublisher publisher, AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock,
+            com.finapp.platform.telemetry.Spans domainSpans) {
         // The relay opens its own connections OUTSIDE any Spring transaction: each poll is its
         // own unit of work, committed by the relay (P0-TSK-020). Default batch bounds.
-        return new OutboxRelay(dataSource::getConnection, publisher, new AuditedAbandonments(auditWriter, idGenerator, clock));
+        //
+        // Each publication is a span (P15-TSK-023, ADR-0124 decision 8): the relay enters the event's own correlation and causation
+        // before it publishes, so the span joins the flow that wrote the event. The publisher's failure propagates unchanged.
+        EventPublisher spanned = event -> domainSpans.within(OUTBOX_PUBLISH_SPAN, java.util.Map.of(), () -> {
+            publisher.publish(event);
+            return null;
+        });
+        return new OutboxRelay(dataSource::getConnection, spanned, new AuditedAbandonments(auditWriter, idGenerator, clock));
     }
+
+    /** The span every relay publication is recorded under (`P15-TSK-023`). */
+    static final String OUTBOX_PUBLISH_SPAN = "outbox.publish";
 
     // matchIfMissing=true: a DEPLOYED instance polls without configuration. The app test suite
     // sets the property false (src/test/resources/application.properties) because a background
@@ -317,10 +328,12 @@ public class EventingBeans {
             // dials the same bootstrap, so it must not exist before the guard has ruled.
             BrokerConnection brokerConnection,
             WorkHold workHold,
+            com.finapp.platform.telemetry.Spans domainSpans,
             @Value("${finapp.inbox.poll-timeout:PT1S}") Duration pollTimeout,
             @Value("${finapp.inbox.failure-backoff:PT1S}") Duration failureBackoff) {
         return new InboxConsumers(
                 handlers.orderedStream().toList(),
+                // Each handled event a span in the envelope's correlation (P15-TSK-023): the receiver enters it before the handler runs.
                 (groupId, groupHandlers) ->
                         KafkaEventReceiver.connect(
                                 brokerConnection,
@@ -328,7 +341,7 @@ public class EventingBeans {
                                 dataSource::getConnection,
                                 inboxConsumer,
                                 inboxParking,
-                                groupHandlers,
+                                groupHandlers.stream().map(handler -> SpannedInboxHandler.of(handler, domainSpans)).toList(),
                                 pollTimeout),
                 failureBackoff,
                 registry,

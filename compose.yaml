@@ -242,7 +242,50 @@ services:
       timeout: 3s
       retries: 10
 
+  # The telemetry pipeline (P15-TSK-023, ADR-0124 decision 1). The collector with the committed configuration, unchanged, and the two reference
+  # backends, on loopback like everything else here. The application on the host exports to it only when told to:
+  #   MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+  #   MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT=http://localhost:4318/v1/logs
+  # (OPERATIONS_RUNBOOK.md section 11.34). Tempo's API answers on 3200 and Loki's on 3100. Their data is a developer's, and short-lived.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.165.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      POD_IP: 0.0.0.0
+      COLLECTOR_PEERS: otel-collector
+      TEMPO_ENDPOINT: tempo:4317
+      LOKI_ENDPOINT: http://loki:3100/otlp
+      FINAPP_ENVIRONMENT: local
+      TAIL_DECISION_WAIT: 5s
+    volumes:
+      - ./deploy/observability/base/collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"
+    depends_on:
+      - tempo
+      - loki
+
+  tempo:
+    image: grafana/tempo:2.10.10
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./deploy/observability/overlays/kind/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "127.0.0.1:3200:3200"
+
+  loki:
+    image: grafana/loki:3.7.9
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./deploy/observability/overlays/kind/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+
 volumes:
+  tempo-data:
+  loki-data:
   prometheus-data:
   alertmanager-data:
   grafana-data:

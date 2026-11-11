@@ -93,6 +93,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+            # The one telemetry egress (P15-TSK-023, ADR-0124 decision 1): the cluster's own collector by its Service name, the same in every
+            # environment and the one address finapp-app-egress already names. Never an address outside the cluster, and never in the
+            # ConfigMap, whose no-endpoint rule stands: TelemetryPipelineManifestsTest holds both values to this Service.
+            - name: MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT
+              value: http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/traces
+            - name: MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT
+              value: http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/logs
           envFrom:
             - configMapRef:
                 name: finapp-app-config

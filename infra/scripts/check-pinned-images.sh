@@ -236,6 +236,11 @@ check curl    "$CURL_REPOSITORY"    "$CURL_VERSION"    "$CURL_DIGEST"    list_ta
 check kind-node   "$KIND_NODE_REPOSITORY"   "$KIND_NODE_VERSION"   "$KIND_NODE_DIGEST"   list_tags_dockerhub
 check helm        "$HELM_REPOSITORY"        "$HELM_VERSION"        "$HELM_DIGEST"        list_tags_dockerhub
 check kube-router "$KUBE_ROUTER_REPOSITORY" "$KUBE_ROUTER_VERSION" "$KUBE_ROUTER_DIGEST" list_tags_dockerhub
+# The telemetry pipeline (P15-TSK-023): the collector everywhere, Tempo and Loki on kind. Compared within their major, as the bases are:
+# Tempo 3 is a new architecture, a decision and not rot.
+check collector "$COLLECTOR_REPOSITORY" "$COLLECTOR_VERSION" "$COLLECTOR_DIGEST" list_tags_like_dockerhub
+check tempo     "$TEMPO_REPOSITORY"     "$TEMPO_VERSION"     "$TEMPO_DIGEST"     list_tags_like_dockerhub
+check loki      "$LOKI_REPOSITORY"      "$LOKI_VERSION"      "$LOKI_DIGEST"      list_tags_like_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

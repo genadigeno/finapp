@@ -35,6 +35,17 @@ class TelemetryConfiguration {
     }
 
     /**
+     * Ships every log line to the collector as an OTLP record whose body is the console's ECS line (`P15-TSK-023`). Only where a
+     * log endpoint is configured - the Deployment names the cluster's collector - so a developer's machine and every test log to
+     * the console alone.
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty("management.opentelemetry.logging.export.otlp.endpoint")
+    OtlpLogShipping otlpLogShipping(io.opentelemetry.api.OpenTelemetry openTelemetry) {
+        return new OtlpLogShipping(openTelemetry);
+    }
+
+    /**
      * The outbox backlog, as gauges (`P0-TSK-029`, paying down the debt `P0-TSK-020` recorded).
      *
      * <p>Reads through the application's own {@code DataSource}, so it measures what the

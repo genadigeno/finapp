@@ -2823,7 +2823,7 @@ codes, versions and stamps `INTERNAL`.
 | Table | Column | Level | Note |
 |---|---|---|---|
 | `loan_application` | `id` | `CONFIDENTIAL` | A customer's application reference |
-| `loan_application` | `party_id` | `CONFIDENTIAL` | The applicant |
+| `loan_application` | `party_id` | `CONFIDENTIAL` | The applicant. `lending.LoanApplicationSubmitted` carries it on the broker too, kept (`P15-TSK-023`, the residue A5-07): `credit.CreditDecisionRequested` carries the same pairing for the request the event names, so dropping it would publish a version 2 and protect nothing; `ApplicantPartyOnTheBrokerTest` holds that reason, and no event payload reaches a log or a span |
 | `loan_application` | `product` | `INTERNAL` | A closed product code |
 | `loan_application` | `status` | `INTERNAL` | The machine's state |
 | `loan_application` | `decision_request_id` | `CONFIDENTIAL` | Credit's decision request, by value |

@@ -1,0 +1,18 @@
+# How a scraper finds every replica (P15-TSK-023): a headless Service, so it publishes each pod's own address in DNS and load-balances nothing.
+# It names the API port alone, as finapp-app does, so the management port stays off every Service (C9): Prometheus asks this name for addresses
+# and scrapes 8081 on each, which only finapp-app-ingress's scraper rule admits. publishNotReadyAddresses keeps an unready replica a target, so
+# `InstanceDown` still sees it; and a DNS answer needs no token, no role and no route to the API server for the scraper.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-app-scrape
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: finapp-app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

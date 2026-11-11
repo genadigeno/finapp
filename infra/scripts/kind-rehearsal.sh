@@ -29,6 +29,9 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 DIR="$ROOT/infra/scripts/kind-rehearsal"
 # shellcheck source=infra/scanner-pins.sh
 . "$ROOT/infra/scanner-pins.sh"
+# The telemetry pipeline's steps (P15-TSK-023): telemetry, telemetry-trace, telemetry-outage, telemetry-sweep, telemetry-scrape.
+# shellcheck source=infra/scripts/kind-rehearsal/telemetry.sh
+. "$DIR/telemetry.sh"
 
 CLUSTER=${REHEARSAL_CLUSTER:-finapp-rehearsal}
 NODE="$CLUSTER-control-plane"
@@ -729,11 +732,12 @@ census() {
     label=$1
     drained 240 || fail "the outbox did not drain before census $label: $(pending_events) rows pending"
     expected_transfers=$(( $(transfer_ok_count) + SMOKE_TRANSFERS ))
-    expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS ))
+    # The telemetry steps' one traced top-up, of its own planted amount (P15-TSK-023); zero until it runs.
+    expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS + ${TELEMETRY_TOPUPS:-0} ))
     expected_checkouts=$(( $(flow_ok_count checkout) + SMOKE_CHECKOUTS ))
     expected_payouts=$(( $(flow_ok_count payout) + SMOKE_PAYOUTS ))
     # Every top-up credits one wallet: 5.00 in a smoke, 0.05 in the workload. Transfers move money between the same wallets and a checkout is paid by card.
-    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 ))
+    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} ))
     lag_settled "$label" || fail "census $label: a partition is unowned or lagging: see consumer-groups-$label.txt"
     # A consumer's inbox row can trail the outbox by a poll: the check waits for it, bounded, and what it last read is the verdict.
     lost_deadline=$(( $(date +%s) + 180 ))
@@ -1058,6 +1062,12 @@ kube -n finapp-observability exec np-scraper -c probe -- curl -s --max-time 10 "
     || fail "cert-manager could not be scraped"
 series=$(grep -c '^certmanager_certificate_expiration_timestamp_seconds' "$ART/cert-manager-metrics.txt" || true)
 [ "$series" -ge 2 ] && pass "cert-manager is scraped: $series certificate-expiry series" || fail "no certificate-expiry series in cert-manager's metrics"
+
+# The telemetry pipeline (P15-TSK-023), before N rolls out so that N exports from its first request: deployed, and its namespace's default-deny
+# read from inside it.
+step telemetry
+telemetry_deploy
+telemetry_policy
 
 # ---------------------------------------------------------------------------------------------------
 # The connection budget and the rollout.
@@ -1481,6 +1491,16 @@ fi
 assert_handler_window rollout "$FROM_N" "$TO_N" "$UNSEEN"
 [ "$PROBE" != skip-replay ] || fail "PROBE skip-replay: the window was clean with no replay, so the assertion cannot fail"
 census handler-window-n
+
+# The end-to-end trace on N, the collector's outage under requests, the needle sweep and the deployed scrape (P15-TSK-023).
+step telemetry-trace
+telemetry_trace
+step telemetry-outage
+telemetry_outage
+step telemetry-sweep
+telemetry_sweep
+step telemetry-scrape
+telemetry_scrape
 
 step forged-address
 # (3) of the edge's acceptance. What the application keys on is request.getRemoteAddr() after the RemoteIpValve, and N's per-source limits are built on it, a bucket of the address

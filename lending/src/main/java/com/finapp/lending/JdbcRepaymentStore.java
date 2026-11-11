@@ -301,7 +301,14 @@ public final class JdbcRepaymentStore implements RepaymentStore {
             EngineVersion engine,
             JournalEntryId entry,
             LocalDate valueDate,
-            Instant receivedAt) {}
+            Instant receivedAt) {
+
+        /** No amount reaches a log line through this record (`P15-TSK-023`, ADR-0019's default-deny; the residue A5-08). */
+        @Override
+        public String toString() {
+            return "Head[redacted]";
+        }
+    }
 
     private static Head head(ResultSet row) throws SQLException {
         CurrencyCode currency = CurrencyCode.of(row.getString("currency").strip());

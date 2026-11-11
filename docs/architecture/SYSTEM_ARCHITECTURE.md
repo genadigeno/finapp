@@ -24,10 +24,24 @@ Object storage:
 - **None in the application** (ADR-0036: evidence and files are held in PostgreSQL). S3-compatible storage serves infrastructure only
 
 Observability:
-- OpenTelemetry spans, recorded; no exporter is configured yet (ADR-0124)
+- OpenTelemetry spans and log records, exported over OTLP/HTTP to one collector where the Deployment names it, and nowhere else
+  (ADR-0124; `P15-TSK-023`)
+- The OpenTelemetry Collector as the one telemetry egress and a second scrubbing net; Tempo and Loki as reference backends in compose and on
+  `kind` only
 - Prometheus and Alertmanager
 - Grafana
-- ECS JSON structured logging on the console
+- ECS JSON structured logging on the console, the same line shipped as each log record's body
+
+**OBSERVABILITY notes** *(`P15-TSK-023`, 2026-11-11)*. What leaves a replica: its spans and its log lines, over OTLP/HTTP to
+`finapp-collector` in `finapp-observability` on 4318, the one telemetry egress `finapp-app-egress` names; its metrics are scraped on the
+management port, never pushed. The replica is a resource attribute (`k8s.pod.name`) of every span and record and never a metric tag.
+Export never waits on the collector: batch processors on their own threads with bounded queues drop when it is down, slow or refusing, and no
+health indicator reads an exporter. The collector is two tiers in one Deployment of two replicas - scrub and route by trace id, then the tail
+decision on the replica that owns the trace - in a namespace closed by default in both directions. ADR-0019's default-deny in the
+application is the first net for restricted data; the collector's allow-list and scrub are the second, proven by
+`infra/scripts/telemetry-check.sh` against the pinned collector. A payment is found by its correlation id across the request, the outbox and
+the inbox; its settlement and reconciliation legs are joined to it by the stored identifier chain, not by a span (OPERATIONS_RUNBOOK.md
+section 11.34). A real environment's telemetry backends are not chosen.
 
 Infrastructure:
 - Docker images

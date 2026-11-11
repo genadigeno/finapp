@@ -1,0 +1,37 @@
+# The deployed scrape, on kind (P15-TSK-023). What a deployed environment's Prometheus must keep, and every rule reads: the job name `finapp`
+# (`up{job="finapp"}` in platform.yml and every SLO), an `env` naming the environment (`ConfigFingerprintDisagrees` counts per env), and no
+# `env="local"` (that is how `CertificateExpirySeriesAbsent` tells compose from a deployment). The lending, BNPL and risk switches as compose
+# labels them, because no rehearsal offers those products.
+#
+# DISCOVERY BY DNS, NOT BY THE KUBERNETES API: the headless Service finapp-app-scrape (deploy/base) names the API port alone, so the management port stays
+# off every Service, and the scraper needs no token, no role and no route to the API server. publishNotReadyAddresses keeps an unready replica
+# a target, so `InstanceDown` still sees it.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+scrape_configs:
+  - job_name: finapp
+    metrics_path: /actuator/prometheus
+    dns_sd_configs:
+      - names: ["finapp-app-scrape.finapp.svc.cluster.local"]
+        type: A
+        port: 8081
+        refresh_interval: 15s
+    relabel_configs:
+      - target_label: env
+        replacement: kind
+      - target_label: lending_offered
+        replacement: "false"
+      - target_label: bnpl_offered
+        replacement: "false"
+      - target_label: risk_judging
+        replacement: "false"
+  - job_name: finapp-collector
+    dns_sd_configs:
+      - names: ["finapp-collector-peers.finapp-observability.svc.cluster.local"]
+        type: A
+        port: 8888
+        refresh_interval: 15s
+    relabel_configs:
+      - target_label: env
+        replacement: kind

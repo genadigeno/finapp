@@ -74,6 +74,28 @@ exporter is configured. Several gaps remain:
    provider → ledger → settlement → reconciliation. The asynchronous legs are linked through the envelope's correlation
    and causation ids.
 
+   *(As built by `P15-TSK-023`, 2026-11-11; decisions 1, 2, 6 and 8 are unchanged, and this note records how they were built and where the build
+   corrects them.)*
+   - **The egress.** `opentelemetry-exporter-otlp` with the JDK's HTTP sender (OkHttp excluded), pinned by the Spring Boot BOM, locked and
+     checksum-verified; Boot builds the exporters only where the Deployment names the cluster's collector, so nothing else exports. Spans and log
+     records leave through batch processors on their own threads with bounded queues: `TelemetryExportNeverBlocksTest` holds that a collector which
+     never answers costs a request thread nothing, and the `kind` run measured it with the collector stopped and black-holed.
+   - **Logs: the correction to "container logs".** A node agent reading `/var/log/pods` needs `hostPath` and root, which Pod Security `restricted`
+     refuses on every namespace. So each replica ships the ECS line its console printed as an OTLP record's body (`OtlpLogAppender`), through the
+     same one egress. The migrator Job's and the cluster components' own lines are not shipped; the node's rotation keeps them.
+   - **The second net.** The collector (contrib 0.165.0, by digest) keeps an allow-list of attributes on resources, spans, span events and records,
+     empties a span's status message, and scrubs a card number's shape and `Money`'s string form from bodies and values; `infra/scripts/telemetry-check.sh`
+     plants needles through the committed configuration and requires none out, then removes the scrub and requires them out, in every CI run.
+   - **Sampling under N collectors.** Two tiers in one Deployment: each replica routes spans by trace id to the peer that owns it, which holds the
+     whole trace for the tail decision; errors, slow traces, writes and every asynchronous leg are kept, a tenth of the rest.
+   - **The asynchronous legs as spans.** The relay's publication (`outbox.publish`) and each handled event (`inbox.handle`) are spans in the envelope's
+     correlation and causation, recorded in `app` around the platform's own publisher and handlers; nothing in `platform` changed.
+   - **The reconciliation leg: the correction to "one trace".** A run decides an item in the ingesting file's correlation, and its domain spans open
+     before the leg restores even that (recorded at `P8-DOC-001`). So no span joins the run to the payment: the payment's legs are one correlation,
+     the file's upload and attestation another, the intake's spans carry the file's id, the run's the source; the stored chain (expectation, allocation,
+     item, run) joins them, as `PHASE_8_PLAN.md` §15 decided the durable trace would. `THREAT_MODEL.md` section 6 item 37 holds the choice.
+   - **Backends.** Tempo 2.10 and Loki 3.7 on `kind` and in compose; a real environment's backends and their identity are not chosen.
+
 ## Alternatives Considered
 
 ### A vendor agent per signal

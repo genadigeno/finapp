@@ -214,6 +214,14 @@ logging:
 # source-code one, and a committed endpoint is either wrong everywhere or a hostname nobody meant
 # to publish. Spans are recorded regardless; without an exporter they are simply dropped, which is
 # what a developer's machine should do.
+#
+# THE EXPORT (P15-TSK-023, ADR-0124 decision 1). Kubernetes names the cluster's own collector in the
+# Deployment (MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT and its logging twin), and only
+# then does Boot build an OTLP/HTTP exporter for spans and log records. Both leave through batch
+# processors on their own threads with bounded queues: a request never waits on the collector, and
+# a collector that is down, slow or refusing costs dropped telemetry, never a slower or failed
+# request, and never readiness (no health indicator reads an exporter). TelemetryExportNeverBlocksTest
+# holds that against an endpoint that accepts and never answers.
 # ---------------------------------------------------------------------------
 management:
   # The management port (P15-TSK-008, ADR-0120 decision 3; THREAT_MODEL.md T2).
@@ -240,6 +248,24 @@ management:
   # probes are: behaviour that differs between environments is behaviour nobody can rely on.
   opentelemetry:
     enabled: true
+    # WHICH REPLICA, ON THE TRACE AND THE LOG RECORD, NEVER ON A METRIC. A pod's hostname is its name, so
+    # every exported span and log record says which replica ran it; the Prometheus registry never reads
+    # these, which is the metrics block's argument below, and MetricConventionTest holds it.
+    resource-attributes:
+      "[service.name]": finapp
+      "[k8s.pod.name]": ${HOSTNAME:local}
+    # Short, so a black-holed collector costs the export thread seconds rather than the default ten,
+    # and the queue drops sooner. Never a request's time: the export runs on the batch processor's thread.
+    tracing:
+      export:
+        otlp:
+          connect-timeout: 2s
+          timeout: 5s
+    logging:
+      export:
+        otlp:
+          connect-timeout: 2s
+          timeout: 5s
 
   # Metrics (P0-TSK-029).
   #

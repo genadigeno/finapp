@@ -1878,6 +1878,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.30 Abuse limits: the doors' per-source limits, a door that refuses everyone, a store that cannot count, raising a limit, rotating the bucket key *(written 2026-11-09, below)* | `P15-TSK-022` | `-032` |
 | 11.29 Key rotation and key compromise: the field-level key rings and the callback window *(written 2026-11-09, below)* | `P15-TSK-019` | `-020` |
 | 11.31 Changing configuration: which class, which way, and `ConfigFingerprintDisagrees` *(written 2026-11-09, below)* | `P15-TSK-031` | `-032` |
+| 11.34 Telemetry: the collector and its second net, retention by class, finding one payment, the collector down *(written 2026-11-11, below)* | `P15-TSK-023` | `P15-TSK-023` (on `kind`), `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -1902,6 +1903,8 @@ row.)*
 *(Added 2026-11-09 by `P15-TSK-031`: §11.31 below is written, from the register, the overlays and `infra/prometheus/rules/platform.yml`; not yet rehearsed.)*
 
 *(Added 2026-11-09 by `P15-TSK-016`: §11.7 below is written, the cloud half; no account exists to run it.)*
+
+*(Added 2026-11-11 by `P15-TSK-023`: §11.34 below is written, from `deploy/observability/` and `infra/scripts/telemetry-check.sh`, and its `kind` half has run once on one machine; no deployed environment has a telemetry backend.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
@@ -2951,6 +2954,33 @@ the controller pods do not start.
 **What this does not mean.** One node, one machine, three replicas plus a surge: load, chaos and ten instances are the storm's (`P15-TST-001`, postponed by the owner). The broker and the database are test-only copies. kindnetd has not answered yet: `THREAT_MODEL.md` section 6 item 30. No Prometheus runs in the cluster: cert-manager's series and a replica's scrape are read once by the rehearsal's own pod. The cooperative assignor's moving only what changes hands is counted by a test of the broker tier owed to `P15-TST-002`, and a refused broker credential failing readiness was not exercised. T40's acceptance rows were not created, because an offer needs the origination chain the rehearsal does not build: the forged address is measured on the per-source key, the same `request.getRemoteAddr()`. The numbers are from a loaded development machine.
 
 **CI's runner.** Nothing has run there. `ubuntu-latest` on a public repository is, by GitHub's published figures, 4 vCPUs and 16 GB. The application namespace's quota is 8 GiB, and the rest of the cluster comes on top of it (the node's own components, cert-manager, both edge controllers, the simulator, the client's JVM), so it should fit with little to spare, and a 7 GB runner would not. The job's first run is the test. It sits inside the workflow's `concurrency` group: a run in progress on `master` is not cancelled, but a newer push replaces one still waiting, so a rehearsal can be skipped between two pushes and the nightly run is what covers it.
+
+### 11.34 Telemetry: the collector, the scrub, finding one payment, the collector down (`P15-TSK-023`)
+
+*(Written by `P15-TSK-023`, 2026-11-11, from `deploy/observability/`, the collector's configuration and `infra/scripts/telemetry-check.sh`. It has run on one `kind` cluster on one machine (the record at the end) and in no deployed environment, which has no telemetry backend yet.)*
+
+**What it is.** Every replica sends its spans and its log lines over OTLP/HTTP to `finapp-collector` in `finapp-observability`, port 4318, the one telemetry egress `finapp-app-egress` names. The Deployment states both endpoints, the collector's Service by name and the same in every environment; nothing else is an endpoint, and a developer's machine and every test export nothing. A log record's body is the ECS line the console printed, byte for byte (`OtlpLogAppender`), with the flow's `finapp.correlation_id` beside it. Each span and record names its replica as the resource attribute `k8s.pod.name`; no metric carries it.
+
+**The second net.** The collector keeps, of every resource, span, span event and log record, only the attributes `deploy/observability/base/collector.yaml` lists (the flow's ids, the `Spans` port's identifier keys, route templates, methods, statuses, outcomes, an error's class), empties a span's status message, and replaces a card number's shape and an amount in `Money`'s string form in every log body and every surviving value. ADR-0019's default-deny in the application is the first net, and no build change may lean on this one. `infra/scripts/telemetry-check.sh` proves it in every CI run: the pinned collector, the committed file unchanged, planted needles in, none out, and then the scrub removed and the needles out.
+
+**The tail policy.** Two collectors, each routing every span by trace id to the peer that owns it, so one replica decides a whole trace. Kept: every error, every trace slower than a second, every write (every money-moving route among them), every asynchronous leg of a flow (`outbox.publish`, `inbox.handle`, `settlement.*`, `reconciliation.*`, `lending.*`, `bnpl.*`, `deadletter.*`), and a tenth of the rest. Logs are never sampled. A payment's durable trace is its correlation id in the journal and the audit trail; a sampled-away trace changes nothing that is owed.
+
+**Retention, by class** (`DATA_RETENTION.md`'s operational row; kind's values are the reference, a real environment sets its own): traces 7 days (Tempo's `block_retention`), logs 31 days (Loki's `retention_period`, enforced by its compactor). Metrics stay with Prometheus.
+
+**Find one payment.** Take its correlation id (the customer quotes it; the payment's rows and the audit record hold it).
+1. Tempo: `{ span.finapp.correlation_id = "<id>" }` finds the request's traces: `http post /v1/payments`, the confirmation, the provider call and the posting inside them, `outbox.publish` for each event it wrote, and `inbox.handle` for each consumer that took one, each in the payment's correlation with the event as its cause.
+2. Loki: `{service_name="finapp"} | finapp_correlation_id="<id>"` gives the same flow's lines, each the ECS document as printed.
+3. Its settlement: the PSP file's upload and attestation are under the operator's own correlation; the intake's `settlement.parse` and `settlement.accept` spans carry the file's id (`{ span.file.id = "<file>" }`); the run's `reconciliation.chunk` spans carry the source. **No span joins the run to the payment**: a run decides an item in the ingesting file's correlation, and its spans open before the leg restores even that. The join is the stored chain - the payment's expectation (`reconciliation.expectation.correlation_id` is the payment's), its allocation (the file's correlation) and the run - which `/v1/operator/reconciliation/breaks/{id}/trace` and the settlement status read.
+
+**The collector down, slow or refusing.** Nothing to do for the money: export runs on the SDK's own threads behind bounded queues, so requests are neither slower nor failed and readiness does not move; telemetry is dropped until it is back. To see it: the collector's own counters (`otelcol_exporter_send_failed_*`, `otelcol_receiver_refused_*`, job `finapp-collector`), and the application's exporter warnings (from `io.opentelemetry`, printed to the console and never shipped, so they cannot feed themselves). Bring the collector back (`kubectl -n finapp-observability rollout status deployment/finapp-collector`); what was dropped while it was away is gone, and the console still has every line.
+
+**A needle found.** A restricted value in a span or a log record is an incident under ADR-0019: find the call that printed it (the record's logger and the route), fix it at the source, and add its shape to the sweep. Widening the collector's allow-list to keep a field is a change to `collector.yaml`, `TelemetryPipelineManifestsTest` and this section in one review.
+
+**Run the check.** `infra/scripts/telemetry-check.sh` (Docker; `KUSTOMIZE_IMAGE`, `KUBECONFORM_IMAGE` and `CONFTEST_IMAGE` for a machine whose TLS is intercepted, §11.13). A red plant names the rule it expected; a needle out names itself; "the probe stayed green" means the check could not see a leak and must be fixed before it is believed. Locally, `docker compose up otel-collector tempo loki` runs the same configuration, and the application exports to it when `MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT` and its logging twin name `http://localhost:4318/v1/traces` and `/v1/logs`.
+
+**The namespace.** `finapp-observability` is closed by default in both directions; the collector takes OTLP from the application's replicas alone and reaches only its peers and the backends, the scraper reaches the management ports and the collector's counters, and no pod there may reach PostgreSQL, Kafka or anything outside the cluster (`observability.rego`, each rule refused by a plant). The rehearsal reads the backends through the API server's proxy.
+
+**The last record** *(`kind`, 2026-11-11)*: @@KIND_RECORD@@
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

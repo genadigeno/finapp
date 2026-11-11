@@ -167,6 +167,12 @@ public final class LoanAmendments {
             Objects.requireNonNull(amendment, "amendment must not be null");
             Objects.requireNonNull(arrearsRescheduled, "arrearsRescheduled must not be null");
         }
+
+        /** No amount reaches a log line through this record (`P15-TSK-023`, ADR-0019's default-deny; the residue A5-08). */
+        @Override
+        public String toString() {
+            return "Accepted[redacted]";
+        }
     }
 
     /** What the customer sends: the hash of the document they were shown, and how they accepted. */
@@ -506,7 +512,14 @@ public final class LoanAmendments {
      * arrears it re-schedules, the principal outstanding and the new schedule from the open period - every bound judged.
      */
     private record Plan(BillableSchedule latest, int unbilled, int termMonths, List<DueState.DueItem> arrearsItems,
-            Money arrears, LoanTerms governing, Schedule schedule) {}
+            Money arrears, LoanTerms governing, Schedule schedule) {
+
+        /** No amount reaches a log line through this record (`P15-TSK-023`, ADR-0019's default-deny; the residue A5-08). */
+        @Override
+        public String toString() {
+            return "Plan[redacted]";
+        }
+    }
 
     private Plan plan(Connection unitOfWork, Loan account, LoanAgreement agreement, LoanTerms pinned, LocalDate today,
             BigDecimal rate, int remainingInstalments, boolean rescheduleArrears) {

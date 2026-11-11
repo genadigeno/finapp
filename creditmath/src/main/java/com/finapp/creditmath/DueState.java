@@ -112,5 +112,14 @@ public record DueState(List<DueItem> items, Money notDuePrincipal) {
         public Money total() {
             return fees.plus(interest).plus(principal);
         }
+
+        /**
+         * Which item and when it fell due; never what it has due (`P15-TSK-023`, ADR-0019's default-deny; the residue A5-08):
+         * the record's generated form printed every figure, and a list of these is what an allocation hands around.
+         */
+        @Override
+        public String toString() {
+            return "DueItem[" + dueDate + ", redacted]";
+        }
     }
 }
