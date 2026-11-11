@@ -232,13 +232,18 @@ class AuthenticationFailsClosedDatabaseTest {
                                     new java.security.SecureRandom()),
                             template,
                             source,
-                            new SimpleMeterRegistry())
+                            new SimpleMeterRegistry(),
+                            new com.finapp.identity.Authorization(
+                                    new com.finapp.identity.JdbcRoleAssignmentStore(IDS), IDS, CLOCK, new JdbcAuditWriter()),
+                            new com.finapp.app.surface.SurfaceRefusalMeters(new SimpleMeterRegistry()))
                     .authenticate(
                             new AuthenticationRequest(login.value(), Sensitive.of(password)),
                             // No device: these suites drive the SERVICE, and the User-Agent is a
                             // boundary concern the controller resolves. Passing a label here would
                             // test the fixture rather than anything the endpoint does.
-                            null);
+                            null,
+                            // The public surface, where a customer signs in (P15-TSK-042): the roles are read there too.
+                            com.finapp.app.surface.Surface.PUBLIC);
         }
     }
 

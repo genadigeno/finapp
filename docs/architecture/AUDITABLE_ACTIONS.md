@@ -108,6 +108,7 @@ someone else's behalf is a different action and will be declared when it exists.
 | `identity.MfaChallengeFailed` | No | A second-factor challenge was refused. |
 | `identity.AuthorizationDenied` | No | A privileged action was refused because the actor lacked the permission. |
 | `identity.StepUpRefused` | No | A request was refused because its session had not stepped up to the assurance the operation requires. |
+| `identity.PublicSurfaceRefused` | No | A role-holding identity was refused on the public surface at a door that issues or strengthens its access (`P15-TSK-042`). |
 | `identity.FactorlessHoldingsRead` | No | An administrator read the live holdings of a role that can redirect a merchant's money with no enrolled factor (`P15-TSK-039`; `GET /v1/operator/access-review/factorless-holdings`, `ROLE_ASSIGN`, on a `MULTI_FACTOR` session): the check of holdings that stood before the rule. It grants and revokes nothing. Written in the read's own transaction; the summary counts what it served. |
 | `identity.IdentitySuspended` | **Yes** | An identity was suspended by an administrator and can no longer authenticate. |
 | `identity.IdentityReinstated` | **Yes** | A suspension was lifted by an administrator and the identity can authenticate again. |
@@ -166,6 +167,19 @@ never the path's values, the presented code, the factor or the session. **Its ac
 record, the denial and every operator act's own record say which population acted; records written before it read
 `CUSTOMER` for operators and stay as written.
 
+**`identity.PublicSurfaceRefused` is staff knocking at the wrong door** (`P15-TSK-042`; `THREAT_MODEL.md` T1, T3, T31). Staff sign
+in, step up, enrol and confirm a factor, change their password, name a recovery channel and recover on the operator surface alone.
+On the public surface each of those doors answers a role-holder with its ordinary failure, so the response names no role, and this
+record is where the reason lives: one per refused request, a retry a second. Its target is the identity; its summary the door's
+route pattern, the surface (`public`, or `unmarked` where no usable marker came, which is a rollout that forgot the edge), and at
+sign-in `credential=proven` or `credential=unproven`. **That last field is the one place a refused sign-in says whether the
+password was right**, deliberately: a correct operator password presented from the internet is a phished one, and an investigator
+needs to know. It is written by the same code path that answers the uniform `401`, and nothing maps it to a response. Its actor is
+the session's identity typed `EMPLOYEE` at a session door, written in a transaction of its own committed before the `401` (a record
+that cannot be written fails the request instead); the platform at sign-in and recovery, which have no proven actor, in the door's
+own transaction. Sign-in also writes the uniform `identity.AuthenticationFailed` and its event, so every count of failures sees
+the refusal as one.
+
 **`door.ActRefused` is the refused or failed act at a privileged door** (`P15-TSK-039`; `THREAT_MODEL.md` T38). Every
 operator and merchant door of Phases 7 to 10 declares `@RecordsRefusals`, and `RefusedActsAreRecordedTest` reads the
 controllers and fails on a new one without it. The record is written by the error contract, so every problem that
@@ -200,7 +214,8 @@ own evidence; for a merchant key it is the per-key limit ADR-0052 promised and `
 **Neither authentication action records *why* a failure failed.** Unknown identity, wrong password,
 suspended identity and an identity with no credential are deliberately not distinguished anywhere -
 a field that distinguishes them is a field somebody eventually maps to a response, and
-`INV-IDN-07` is then lost through the audit trail's own vocabulary.
+`INV-IDN-07` is then lost through the audit trail's own vocabulary. Staff refused on the public surface are the one exception,
+and it is a record of its own beside the uniform failure, `identity.PublicSurfaceRefused`, above (`P15-TSK-042`).
 
 **Deliberately few.** Authentication, session revocation, credential change and MFA enrolment
 are audited too and are *not* declared yet: each belongs to the task that builds it, where

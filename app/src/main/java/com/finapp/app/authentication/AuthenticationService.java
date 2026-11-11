@@ -1,6 +1,10 @@
 package com.finapp.app.authentication;
 
+import com.finapp.app.surface.Surface;
+import com.finapp.app.surface.SurfaceDoor;
+import com.finapp.app.surface.SurfaceRefusalMeters;
 import com.finapp.identity.AuthenticationThrottle;
+import com.finapp.identity.Authorization;
 import com.finapp.identity.CredentialVerifier;
 import com.finapp.identity.DeviceDescription;
 import com.finapp.identity.IdentityAuthentication;
@@ -113,7 +117,13 @@ public final class AuthenticationService {
     private final SessionIssue sessionIssue;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
+    private final Authorization authorization;
+    private final SurfaceRefusalMeters surfaceRefusals;
 
+    /**
+     * @param authorization who holds a role, and the record of a refusal on the public surface (`P15-TSK-042`)
+     * @param surfaceRefusals the meter of those refusals, moved after the transaction commits
+     */
     public AuthenticationService(
             CredentialVerifier verifier,
             AuthenticationThrottle throttle,
@@ -121,7 +131,9 @@ public final class AuthenticationService {
             SessionIssue sessionIssue,
             TransactionTemplate transactions,
             DataSource dataSource,
-            MeterRegistry meters) {
+            MeterRegistry meters,
+            Authorization authorization,
+            SurfaceRefusalMeters surfaceRefusals) {
         this.verifier = Objects.requireNonNull(verifier, "verifier must not be null");
         this.throttle = Objects.requireNonNull(throttle, "throttle must not be null");
         this.authentications =
@@ -129,6 +141,8 @@ public final class AuthenticationService {
         this.sessionIssue = Objects.requireNonNull(sessionIssue, "sessionIssue must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.authorization = Objects.requireNonNull(authorization, "authorization must not be null");
+        this.surfaceRefusals = Objects.requireNonNull(surfaceRefusals, "surfaceRefusals must not be null");
         Objects.requireNonNull(meters, "meters must not be null");
         this.authenticated =
                 meters.counter(AUTHENTICATION_COUNTER, "outcome", Outcome.AUTHENTICATED.tag());
@@ -147,21 +161,24 @@ public final class AuthenticationService {
      * @param device what the session should be labelled with, from the {@code User-Agent}. May be
      *     {@code null}. Never scored and never a reason to refuse: a header the person did not
      *     choose must not be able to fail their login ({@code P1-TSK-016})
+     * @param surface which edge served the request (`P15-TSK-042`). Where it does not admit staff, a role-holding identity
+     *     is refused with the answer a wrong password gets, after the same work, and before anything is counted
      */
     public Optional<AuthenticatedSession> authenticate(
-            AuthenticationRequest request, DeviceDescription device) {
+            AuthenticationRequest request, DeviceDescription device, Surface surface) {
         Objects.requireNonNull(request, "request must not be null");
+        Objects.requireNonNull(surface, "surface must not be null");
 
         // Normalisation happens here, once, so a capital letter finds the same row the unique
         // index claimed. A malformed identifier cannot reach this method: the boundary rejects it.
         LoginIdentifier login = new LoginIdentifier(request.loginIdentifier());
 
-        Optional<AuthenticatedSession> issued =
+        Attempt attempt =
                 transactions.execute(
                         status -> {
                             Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
                             try {
-                                return attempt(unitOfWork, login, request.password(), device);
+                                return attempt(unitOfWork, login, request.password(), device, surface);
                             } finally {
                                 // A no-op for a transaction-bound connection, and the correct call
                                 // regardless: closing it here would end the transaction this
@@ -169,22 +186,74 @@ public final class AuthenticationService {
                                 DataSourceUtils.releaseConnection(unitOfWork, dataSource);
                             }
                         });
-        Objects.requireNonNull(issued, "the transaction returned no outcome");
+        Objects.requireNonNull(attempt, "the transaction returned no outcome");
+        Optional<AuthenticatedSession> issued = attempt.issued();
         // The tag is derived from PRESENCE rather than computed alongside it, so the meter cannot
         // disagree with what the caller receives. Two sources of truth about one fact is how a
         // dashboard comes to show successes nobody got.
         (issued.isPresent() ? authenticated : refused).increment();
+        if (attempt.refusedOnSurface()) {
+            // Whether the password was the identity's is metered too: a proven refusal is a phished operator password, and a
+            // signal only the audit trail held would be found by whoever read it, not by an alert.
+            surfaceRefusals.recordSignIn(surface, attempt.proven());
+        }
         return issued;
+    }
+
+    /**
+     * What one attempt produced, whether it was staff refused on the surface, and if so whether the password was the identity's:
+     * read after the transaction commits.
+     */
+    private record Attempt(Optional<AuthenticatedSession> issued, boolean refusedOnSurface, boolean proven) {
+
+        static Attempt of(Optional<AuthenticatedSession> issued) {
+            return new Attempt(issued, false, false);
+        }
+
+        static Attempt refusedOnSurface(boolean proven) {
+            return new Attempt(Optional.empty(), true, proven);
+        }
     }
 
     // -----------------------------------------------------------------
 
     @SuppressWarnings("try") // The Scope is used for its close side effect.
-    private Optional<AuthenticatedSession> attempt(
+    private Attempt attempt(
             Connection unitOfWork,
             LoginIdentifier login,
             Sensitive<String> secret,
-            DeviceDescription device) {
+            DeviceDescription device,
+            Surface surface) {
+        // STAFF ON THE PUBLIC SURFACE (P15-TSK-042), decided before anything that writes.
+        //
+        // One read of the grants on EVERY attempt the surface does not admit staff on, whatever the identifier names, so
+        // the read itself says nothing. For staff, then the work a wrong password costs - one derivation - and nothing
+        // else: never the lock read, the counter moved or cleared, the credential upgraded or a session issued. A request on
+        // the public surface leaves a role-holder's lockout exactly as it found it, so nobody on the internet can lock out
+        // a named operator (T1 turned on T3), and a phished operator password signs in nowhere but the operator surface.
+        // Not verify(): a right password on an outdated credential would buy a second derivation there, the upgrade, and a
+        // clock would read "the password was right" off a refusal that must look like a wrong one.
+        //
+        // The answer is the wrong password's, from the same empty outcome, with the same uniform record and event. The
+        // reason is a record of its own, which says whether the password presented was the identity's: a correct
+        // operator password from the internet is a phished one, and nothing a client sees can tell.
+        if (!surface.admitsRoleHolders()) {
+            Optional<IdentityId> staff = authorization.roleHolderSigningInAs(unitOfWork, login);
+            if (staff.isPresent()) {
+                boolean proven = provenWithoutUpgrade(unitOfWork, staff.get(), secret);
+                try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
+                    authentications.failed(unitOfWork, login);
+                    authorization.recordPublicSurfaceRefusal(
+                            unitOfWork,
+                            staff.get(),
+                            SurfaceDoor.AUTHENTICATION.operation(),
+                            surface.tag(),
+                            "credential=" + (proven ? "proven" : "unproven"));
+                }
+                return Attempt.refusedOnSurface(proven);
+            }
+        }
+
         // VERIFICATION FIRST, UNCONDITIONALLY - the throttle is never consulted before it.
         //
         // The instinct is the opposite: check the lock, and refuse a locked account without paying
@@ -212,7 +281,7 @@ public final class AuthenticationService {
                 // right, which is the one thing an attacker is trying to learn.
                 if (throttle.isLocked(unitOfWork, identityId)) {
                     authentications.failed(unitOfWork, login);
-                    return Optional.empty();
+                    return Attempt.of(Optional.empty());
                 }
                 throttle.clear(unitOfWork, identityId);
 
@@ -223,14 +292,14 @@ public final class AuthenticationService {
                 SessionIssue.Issued issued = sessionIssue.issue(unitOfWork, identityId, device);
                 authentications.succeeded(unitOfWork, identityId, login, issued.session().id());
 
-                return Optional.of(
+                return Attempt.of(Optional.of(
                         new AuthenticatedSession(
                                 // The one unwrap on this path. The plaintext exists here and
                                 // nowhere else: Session holds only the hash, so nothing can hand it
                                 // back later and a customer who loses it authenticates again.
                                 issued.token().presentedValue().expose(),
                                 issued.session().assurance().name(),
-                                issued.session().idleExpiresAt()));
+                                issued.session().idleExpiresAt())));
             }
         }
 
@@ -253,7 +322,23 @@ public final class AuthenticationService {
             }
             authentications.failed(unitOfWork, login);
         }
-        return Optional.empty();
+        return Attempt.of(Optional.empty());
+    }
+
+    /**
+     * Whether {@code secret} is the identity's current password, for a refusal's record (`P15-TSK-042`): exactly one derivation
+     * on every path, as {@link #verify} costs a failure, and no upgrade of an outdated credential, which only a right password
+     * would trigger. A value {@code RawPassword} refuses costs the dummy derivation, as it does in {@link #verify}.
+     */
+    private boolean provenWithoutUpgrade(Connection unitOfWork, IdentityId identity, Sensitive<String> secret) {
+        RawPassword password;
+        try {
+            password = new RawPassword(secret);
+        } catch (IllegalArgumentException notAUsablePassword) {
+            verifier.verifyNothing();
+            return false;
+        }
+        return verifier.matchCurrent(unitOfWork, identity, password).isPresent();
     }
 
     /**
