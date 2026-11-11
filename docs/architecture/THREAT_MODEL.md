@@ -945,7 +945,9 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
 ("accept recommendations", at the end of wave B); each item's decision follows its options. *(This paragraph read
 "Item 7 ... awaits the owner" and "Items 9 and 10 ... are open" until then.)* **Items 11, 12, 17 and 18 were added on 2026-11-08, and the owner decided them on
 2026-11-09, accepting each recommendation** ("accept recommendations", at the end of wave C); each item's decision follows its
-options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)* **Items 21, 22, 23, 27 and 28 were added on 2026-11-09, and the owner decided them the same day, accepting each recommendation** ("accept recommendations", at the end of wave D); each item's decision follows its options. *(This paragraph read "Items 21, 27 and 28 ... await the owner" and "Item 22 ... awaits the owner" until then.)* **Items 31 to 34 were added on 2026-11-09 and await the owner.**
+options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the owner." until then.)* **Items 21, 22, 23, 27 and 28 were added on 2026-11-09, and the owner decided them the same day, accepting each recommendation** ("accept recommendations", at the end of wave D); each item's decision follows its options. *(This paragraph read "Items 21, 27 and 28 ... await the owner" and "Item 22 ... awaits the owner" until then.)* **Items 30 to 34 were added on 2026-11-09, and the owner decided them on 2026-11-11, accepting each recommendation**
+("accept recommendations", at the end of wave E); each item's decision follows its options. *(This paragraph read "Items 31 to 34
+were added on 2026-11-09 and await the owner." until then.)*
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1118,9 +1120,9 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
     **One row has been added since, and the owner accepted it the same day, as recommended** (2026-11-09, the static analysis on the tree with wave D merged): a
     fifty-seventh in (b), a statement field of the source-join census's generic join, handed a `private static final` text by each
     module, until 2027-06-30, as the others.
-    **Two more rows have been added since, and await the owner** (2026-11-10, the static analysis on the tree with wave E merged): the
+    **Two more rows have been added since, and the owner accepted them on 2026-11-11, as recommended** (2026-11-10, the static analysis on the tree with wave E merged): the
     key-ring retirement guard's statement, built from its own closed list of stamped columns, and the embedded configuration register's
-    read of its own classpath resource. *Recommendation*: accept both until 2027-06-30, as the others.
+    read of its own classpath resource, until 2027-06-30, as the others.
 18. **T10's and T37's residual: the tables the retention sweeps leave alone** *(added 2026-11-08 by the retention task's
    gate; numbered for the tasks that ran beside it)*. The audit archival is designed (`DATA_RETENTION.md` §3) and not
    built, so the audit table grows and no archive copy exists. Idempotency records and session rows are not swept: a sweep
@@ -1253,6 +1255,8 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
     accept it for Phase 15, with the alert, and let Phase 16 calibrate these from a load model. If the first real launch serves a market
     where carrier NAT is the norm, the change to make is to count sign-in's *failures* per source rather than its attempts. That has a real
     cost, because the count would then come after the derivation it exists to bound, so it needs its own decision.
+    **Decided 2026-11-11**: as recommended: (a) stays a `GAP` until the first real merchant gives the number; (b) is accepted for
+    Phase 15, Phase 16 calibrating the limits from a load model.
 31. **T6's and T29's residual: what a plan of the security modules cannot settle** *(added 2026-11-09 by the task that built them)*. Five
     things, none needing a decision before an account exists:
     (a) **Who installs a cluster's first controllers.** People hold two groups and no access policy, deliberately, so nobody can
@@ -1270,6 +1274,7 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
     (e) **A person's way in.** The baseline refuses access keys, so a person has no base credential for a shell session, and `GetSessionToken` needs one; the console assumes a role
     and has no `kubectl`. Nothing routes to the private endpoint or the database either. So break-glass, the read-only role and the bootstrap step are correct and cannot be
     used. It fails closed. *Recommendation*: workforce federation (C13) when a workforce identity provider exists, with a network route to the private endpoint planned beside it, and no sign-in path built before that.
+    **Decided 2026-11-11**: as recommended, each when an account exists; (e) stays a `GAP` until workforce federation (C13).
 
 32. **T34's residual: what a ring's rotation cannot hold by itself** *(added 2026-11-09 by the key-ring task)*. Three things.
 
@@ -1292,6 +1297,8 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
     wrong order loses nothing, because reads of the new version are refused until the replica that cannot read them has
     rolled. *Recommendation*: accept until `P15-TSK-017` applies manifests through a GitOps controller, which can hold the
     second change until the first has rolled.
+    **Decided 2026-11-11**: as recommended: (a) is `P15-TSK-020`'s, whose entry is widened; (b) waits for C12's purge decision; (c)
+    is accepted until `P15-TSK-017`.
 
 34. **T20's residual: a release that lengthens the session idle timeout** *(added 2026-11-09 by the configuration register's task)*.
     `SessionPolicy` is a constant, so no overlay can change it and a fleet holds two values only while a release that changes it rolls
@@ -1305,6 +1312,7 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
 
     *Recommendation*: **(a)**, reviewed the day the constant changes, and (b) as part of that change: nothing is planned to move the
     constant, and a column that protects against a change nobody is making waits at no cost. The register's section 6 states the behaviour.
+    **Decided 2026-11-11**: (a), (b) to come with the change that moves the constant.
 
 30. **T2's, T4's, T22's and T33's residual: which plugin enforced the policies** *(added 2026-11-09 by the rehearsal)*.
     The denials those rows name have run on one machine, whose Linux kernel (Docker Desktop's) has no `CONFIG_NFT_QUEUE`. kindnetd
@@ -1317,6 +1325,7 @@ options. *(This paragraph read "Item 11 was added on 2026-11-08 and awaits the o
 
     *Recommendation*: **(a)**. The job needs no machine anyone has to find, and every denial sits beside a control, so a plugin that
     enforces nothing goes red rather than green.
+    **Decided 2026-11-11**: (a); the first CI run of the `rehearsal` job is read for which engine answered.
 
 ## 7. Decided against
 

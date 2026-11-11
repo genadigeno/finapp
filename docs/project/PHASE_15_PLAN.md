@@ -62,6 +62,11 @@ dedicated backup account; the audit archive is locked in `COMPLIANCE` mode in pr
 period are named; the Kafka ACLs are applied by the pipeline role from inside the cluster's network; the EKS network policy agent stays in
 `standard` mode until a real cluster can measure `strict`; a connection limit or WAF goes in front of the edge. Phase 15 builds none of it.
 
+*The owner's decisions (2026-11-11, `THREAT_MODEL.md` §6 items 30 and 31), real-environment items:* the pipeline role installs a cluster's first
+controllers through one reviewed, removed access entry and makes the first fill of every secret entry; an organisation trail goes into
+`log-archive`; every key policy is applied to staging first; no person signs in to a real account until workforce federation (C13); the
+`rehearsal` job's first CI run is read for which network plugin answered. Phase 15 builds none of it.
+
 ### 1.2 Scope
 
 The owner's twelve areas: the production architecture assessment (§3), containerisation and deployment (§5), the
