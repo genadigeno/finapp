@@ -120,6 +120,115 @@ class ImageAdmissionTest {
     }
 
     @Test
+    @DisplayName("every repository name the registry module gives an image, in every environment and in its own test, meets both platform policies")
+    void everyNameTheRegistryGivesIsHeldToBothPolicies() {
+        String conventions = EvidenceCitations.read(root.resolve("infra/terraform/modules/conventions/main.tf"));
+        assertThat(conventions).as("the prefix is finapp-<environment>, which the names below are read through")
+                .containsPattern("name_prefix\\s*=\\s*\"finapp-\\$\\{var\\.environment\\}\"");
+        String registry = EvidenceCitations.read(root.resolve("infra/terraform/modules/registry/main.tf"));
+        assertThat(registry).as("a repository is the prefix and the image's name less finapp-, which the names below are read through")
+                .containsPattern("name\\s*=\\s*\"\\$\\{var\\.name_prefix\\}-\\$\\{trimprefix\\(each\\.key, \"finapp-\"\\)\\}\"");
+
+        Set<String> names = new TreeSet<>();
+        Path environments = root.resolve("infra/terraform/environments");
+        for (String environment : environments.toFile().list()) {
+            String main = EvidenceCitations.read(environments.resolve(environment).resolve("main.tf"));
+            Matcher declared = Pattern.compile("module \"conventions\" \\{[^}]*environment\\s*=\\s*\"([a-z0-9-]+)\"").matcher(main);
+            assertThat(declared.find()).as("%s declares its environment to the conventions", environment).isTrue();
+            Matcher overlay = Pattern.compile("deploy/overlays/([a-z0-9-]+)/kustomization\\.yaml").matcher(main);
+            assertThat(overlay.find()).as("%s reads its images from an overlay", environment).isTrue();
+            for (Object entry : (List<?>) documents("deploy/overlays/" + overlay.group(1) + "/kustomization.yaml").get(0).get("images")) {
+                String image = String.valueOf(((Map<?, ?>) entry).get("name"));
+                names.add("finapp-" + declared.group(1) + "-" + (image.startsWith("finapp-") ? image.substring("finapp-".length()) : image));
+            }
+        }
+        Matcher expected = Pattern.compile("\"finapp-[a-z-]+\"\\s*=\\s*\"(finapp-[a-z0-9-]+)\"")
+                .matcher(EvidenceCitations.read(root.resolve("infra/terraform/modules/registry/tests/registry.tftest.hcl")));
+        while (expected.find()) {
+            names.add(expected.group(1));
+        }
+        assertThat(names).as("the names were read: each environment's two, and the module test's")
+                .contains("finapp-production-app", "finapp-production-migrator", "finapp-staging-app", "finapp-staging-migrator");
+        for (String name : names) {
+            String reference = "account.registry.example/" + name + "@sha256:" + "a".repeat(64);
+            assertThat(matchingPolicies(reference))
+                    .as("%s, as an environment's registry names it: matched by no policy it is refused, and with no-match-policy: deny"
+                            + " so would every rollout and every rollback be", name)
+                    .isEqualTo(PLATFORM_POLICIES);
+        }
+    }
+
+    @Test
+    @DisplayName("every admission policy is in the one file: no policy.sigstore.dev document anywhere else under deploy/, and the root renders that file alone")
+    void everyAdmissionPolicyIsInTheOneFile() {
+        List<String> found = new ArrayList<>();
+        for (Path file : files("deploy", ".yaml", ".yml")) {
+            String relative = root.relativize(file).toString().replace('\\', '/');
+            for (Map<String, Object> document : documents(relative)) {
+                if (String.valueOf(document.get("apiVersion")).startsWith("policy.sigstore.dev/")) {
+                    Object metadata = document.get("metadata");
+                    found.add(relative + " " + document.get("kind") + " "
+                            + (metadata instanceof Map<?, ?> named ? named.get("name") : "?"));
+                }
+            }
+        }
+        assertThat(found).as("a fourth policy that passes everything, anywhere it could be rendered, opens both namespaces to any image")
+                .containsExactlyInAnyOrder(POLICIES + " ClusterImagePolicy finapp-images-signed",
+                        POLICIES + " ClusterImagePolicy finapp-images-attested", POLICIES + " ClusterImagePolicy " + EXCEPTION);
+
+        Map<String, Object> admission = document("deploy/admission/kustomization.yaml");
+        assertThat(admission).as("the root renders the file and nothing else: no patch, transformer, component or generator")
+                .containsOnlyKeys("apiVersion", "kind", "resources");
+        assertThat(String.valueOf(admission.get("resources"))).isEqualTo("[clusterimagepolicies.yaml]");
+        assertThat(root.resolve("deploy/admission").toFile().list())
+                .containsExactlyInAnyOrder("kustomization.yaml", "clusterimagepolicies.yaml");
+
+        for (Path kustomization : files("deploy", "kustomization.yaml")) {
+            String relative = root.relativize(kustomization).toString().replace('\\', '/');
+            if (relative.equals("deploy/admission/kustomization.yaml")) {
+                continue;
+            }
+            String text = EvidenceCitations.read(kustomization);
+            assertThat(text).as("%s: no other root includes the policies, where it could patch them", relative)
+                    .doesNotContainPattern("(?m)^\\s*-\\s*\\S*admission\\S*\\s*$");
+            assertThat(text).as("%s: no patch reaches an admission policy", relative)
+                    .doesNotContain("ClusterImagePolicy").doesNotContain("policy.sigstore.dev");
+        }
+    }
+
+    @Test
+    @DisplayName("no namespace opts out through the controller's own exclusion: no knative.dev label on any namespace or common label under deploy/")
+    void noNamespaceOptsOutThroughKnative() {
+        List<String> found = new ArrayList<>();
+        int namespaces = 0;
+        for (Path file : files("deploy", ".yaml", ".yml")) {
+            String relative = root.relativize(file).toString().replace('\\', '/');
+            for (Map<String, Object> document : documents(relative)) {
+                if ("Namespace".equals(document.get("kind"))) {
+                    namespaces++;
+                    Map<String, Object> metadata = map(document, "metadata");
+                    for (String field : List.of("labels", "annotations")) {
+                        if (metadata.get(field) instanceof Map<?, ?> entries) {
+                            entries.keySet().stream().map(String::valueOf).filter(key -> key.contains("knative.dev"))
+                                    .forEach(key -> found.add(relative + " " + metadata.get("name") + " " + key));
+                        }
+                    }
+                }
+                for (String field : List.of("commonLabels", "labels", "commonAnnotations")) {
+                    if (String.valueOf(document.get(field)).contains("knative.dev")) {
+                        found.add(relative + " " + field);
+                    }
+                }
+            }
+        }
+        assertThat(namespaces).as("the namespaces were read").isGreaterThanOrEqualTo(3);
+        assertThat(found)
+                .as("the controller adds webhooks.knative.dev/exclude DoesNotExist to its webhooks' selector, so that label, with any value,"
+                        + " takes a namespace out of admission")
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("the glob port matches as the controller's own glob.go and go-containerregistry do")
     void theGlobPortIsTheControllers() {
         assertThat(normalised("finapp-app@sha256:" + "a".repeat(64))).isEqualTo("index.docker.io/library/finapp-app@sha256:" + "a".repeat(64));
@@ -174,7 +283,9 @@ class ImageAdmissionTest {
 
         Map<String, Object> signed = policies.get("finapp-images-signed");
         Map<String, Object> attested = policies.get("finapp-images-attested");
-        assertThat(globs(signed)).containsExactlyInAnyOrder("**/finapp-app@sha256:*", "**/finapp-migrator@sha256:*")
+        assertThat(globs(signed))
+                .containsExactlyInAnyOrder("**/finapp-app@sha256:*", "**/finapp-migrator@sha256:*", "**/finapp-*-app@sha256:*",
+                        "**/finapp-*-migrator@sha256:*")
                 .as("both platform policies match the same images, so both apply to each").isEqualTo(globs(attested));
 
         Map<String, Object> signer = single(authorities(signed));
@@ -239,9 +350,14 @@ class ImageAdmissionTest {
                 .doesNotContain("permissions:").doesNotContain("secrets.");
         assertThat(body).as("it runs where it pays, and whenever what it reads changes")
                 .contains("deploy/").contains("infra/scripts/admission-check").contains("scanner-pins").contains("ci\\.yml");
+        assertThat(body).as("a pull request that changes the build logic or the wrapper changes what is signed")
+                .contains("build-logic/").contains("gradle/");
         assertThat(EvidenceCitations.read(root.resolve(WORKFLOW)))
                 .as("no job holds an OIDC token: keyless signing is not built, because no identity exists (THREAT_MODEL.md section 6 item 35)")
-                .doesNotContain("id-token");
+                .doesNotContain("id-token")
+                .as("CI builds what it signs and writes its SBOMs, and probes nothing: the developer's aids are never set")
+                .doesNotContain("ADMISSION_IMAGES").doesNotContain("ADMISSION_SBOM_DIR").doesNotContain("ADMISSION_PROBE")
+                .doesNotContain("ADMISSION_KEEP");
 
         String script = EvidenceCitations.read(root.resolve(SCRIPT));
         int verify = script.indexOf("step \"verify before deploy\"");
@@ -253,14 +369,23 @@ class ImageAdmissionTest {
                 .as("the keys are this run's, generated outside the repository and never uploaded to a log")
                 .contains("WORK=$(mktemp -d)").contains("-v \"$(dpath \"$WORK/keys\"):/keys\"")
                 .contains("generate-key-pair --output-key-prefix /keys/ci").contains("--tlog-upload=false")
-                .contains("SIGNING_PHRASE=$(od -An -N24 -tx1 /dev/urandom").contains("COSIGN_PASSWORD=${SIGNING_PHRASE}")
+                .contains("SIGNING_PHRASE=$(od -An -N24 -tx1 /dev/urandom").contains("COSIGN_PASSWORD=${SIGNING_PHRASE} docker run")
                 .contains("-e COSIGN_PASSWORD ").contains("rm -rf \"$WORK\"")
+                .doesNotContain("export COSIGN_PASSWORD")
                 .doesNotContain("$ROOT/build/admission/ci.key").doesNotContain("cp \"$WORK/keys/ci.key\"");
+        assertThat(script).as("a run's cluster is its own, and a cluster it did not create is never deleted")
+                .contains("CLUSTER=${ADMISSION_CLUSTER:-finapp-admission-$RUN}").contains("ART=${ADMISSION_ARTEFACTS:-$ROOT/build/admission/$RUN}")
+                .contains("a cluster named $CLUSTER already exists and is not this run's")
+                .contains("trap 'FAILED=2; finish' HUP INT PIPE TERM");
+        assertThat(script.split("delete cluster", -1)).as("one cluster deletion, in finish, of the cluster this run created").hasSize(2);
+        assertThat(script).as("images given are said to be given, in the provenance")
+                .contains("\"imagesSuppliedNotBuilt\": %s").contains("urn:finapp:builder:none-images-supplied");
         assertThat(script).as("every refusal sits beside its control, admitted outside the policy")
                 .contains("attempt \"$1-control\" \"$4\"").contains("CONTROL=finapp-admission-control");
         for (String refusal : List.of("refused \"app unsigned\"", "refused \"migrator unsigned\"", "refused \"app signed by another key\"",
                 "refused \"migrator signed by another key\"", "refused \"app signed, not attested\"", "refused \"init container unsigned\"",
                 "refused \"an image no policy names\"", "refused \"edge running another image\"", "admitted \"app signed\"",
+                "admitted \"app under an environment's name, signed\"", "refused \"app under an environment's name, unsigned\"",
                 "admitted \"migrator signed\"", "admitted \"init container signed\"", "admitted \"edge at Traefik's pinned digest\"",
                 "fail \"controller down: ADMITTED while no webhook could answer, so admission fails open\"")) {
             assertThat(script).as("the case %s", refusal).contains(refusal);
@@ -270,9 +395,11 @@ class ImageAdmissionTest {
         }
         assertThat(script).as("the probes it carries")
                 .contains("\"\" | warn | second-key | migrator-out | no-match-allow)");
-        assertThat(script).as("the policies applied are the committed file, and the chart is rendered from the committed values")
-                .contains("cp \"$ROOT/deploy/admission/clusterimagepolicies.yaml\"").contains("-f /values/values.yaml")
-                .contains("--set webhook.extraArgs.disable-tuf=true").contains("--no-hooks");
+        assertThat(script).as("the policies applied are the admission root as rendered, all of it, and the chart is rendered from the committed values")
+                .contains("render admission \"$WORK/render/admission/all.yaml\"")
+                .contains("kube apply -f - < \"$WORK/render/admission/applied.yaml\"")
+                .doesNotContain("cp \"$ROOT/deploy/admission/clusterimagepolicies.yaml\"")
+                .contains("-f /values/values.yaml").contains("--set webhook.extraArgs.disable-tuf=true").contains("--no-hooks");
     }
 
     @Test
@@ -293,23 +420,29 @@ class ImageAdmissionTest {
 
     private record Workload(String file, boolean testOnly, List<String> images) {}
 
-    /** Every workload in every overlay, its images after that overlay's image list, as Kustomize would render them. */
+    /**
+     * Every workload in every overlay, its images as Kustomize would render them: each overlay's {@code images} entry applied
+     * ({@code newName}, {@code newTag}, {@code digest}), and every image a patch writes (a JSON 6902 operation on an
+     * {@code /image} path, or an {@code image} anywhere in a patch's value) counted as a workload of that overlay's namespace.
+     */
     private static List<Workload> workloads() {
         List<Workload> found = new ArrayList<>();
-        Map<String, Map<String, String>> overlays = new LinkedHashMap<>();
+        Map<String, List<Map<?, ?>>> imageEntries = new LinkedHashMap<>();
         for (Path kustomization : files("deploy", "kustomization.yaml")) {
-            Map<String, Object> read = documents(root.relativize(kustomization).toString().replace('\\', '/')).get(0);
-            Map<String, String> digests = new TreeMap<>();
-            Object images = read.get("images");
-            if (images instanceof List<?> list) {
+            String relative = root.relativize(kustomization).toString().replace('\\', '/');
+            Map<String, Object> read = documents(relative).get(0);
+            List<Map<?, ?>> entries = new ArrayList<>();
+            if (read.get("images") instanceof List<?> list) {
                 for (Object entry : list) {
-                    Map<?, ?> image = (Map<?, ?>) entry;
-                    if (image.get("digest") != null) {
-                        digests.put(String.valueOf(image.get("name")), String.valueOf(image.get("digest")));
-                    }
+                    entries.add((Map<?, ?>) entry);
                 }
             }
-            overlays.put(root.relativize(kustomization.getParent()).toString().replace('\\', '/'), digests);
+            imageEntries.put(relative, entries);
+            String namespace = read.get("namespace") != null ? String.valueOf(read.get("namespace")) : namespaceAbove(kustomization);
+            List<String> patched = patchedImages(read);
+            if (!patched.isEmpty() && (namespace == null || OPTED_IN.contains(namespace))) {
+                found.add(new Workload(relative + " (patches)", false, patched));
+            }
         }
         for (Path file : files("deploy", ".yaml")) {
             String relative = root.relativize(file).toString().replace('\\', '/');
@@ -330,22 +463,99 @@ class ImageAdmissionTest {
                 Object labels = metadata.get("labels");
                 boolean testOnly = labels instanceof Map<?, ?> map && "true".equals(String.valueOf(map.get("finapp/test-only")));
                 List<String> raw = images(document);
-                // A base workload's bare name is given its digest by each overlay that lists it; the overlays agree on the name.
+                // Each overlay that lists an image's name renders it its own way; an image no overlay lists is rendered as written.
                 List<String> effective = new ArrayList<>();
                 for (String image : raw) {
-                    if (image.contains("@")) {
-                        effective.add(image);
-                        continue;
+                    String name = repositoryOf(image);
+                    boolean listed = false;
+                    for (List<Map<?, ?>> entries : imageEntries.values()) {
+                        for (Map<?, ?> entry : entries) {
+                            if (name.equals(String.valueOf(entry.get("name")))) {
+                                listed = true;
+                                effective.add(rendered(image, entry));
+                            }
+                        }
                     }
-                    overlays.values().stream().filter(digests -> digests.containsKey(image))
-                            .forEach(digests -> effective.add(image + "@" + digests.get(image)));
-                    assertThat(effective).as("%s names %s, which no overlay pins by digest", relative, image)
-                            .anySatisfy(each -> assertThat(each).startsWith(image + "@sha256:"));
+                    if (!listed) {
+                        effective.add(image);
+                    }
                 }
                 found.add(new Workload(relative, testOnly, effective));
             }
         }
         return found;
+    }
+
+    /** An image reference without its tag or digest: what a Kustomize {@code images} entry's {@code name} is matched against. */
+    private static String repositoryOf(String image) {
+        String withoutDigest = image.contains("@") ? image.substring(0, image.indexOf('@')) : image;
+        int slash = withoutDigest.lastIndexOf('/');
+        int colon = withoutDigest.lastIndexOf(':');
+        return colon > slash ? withoutDigest.substring(0, colon) : withoutDigest;
+    }
+
+    /** Kustomize's image transformer: {@code newName} replaces the name, {@code newTag} the tag, {@code digest} the digest. */
+    private static String rendered(String image, Map<?, ?> entry) {
+        String name = entry.get("newName") != null ? String.valueOf(entry.get("newName")) : repositoryOf(image);
+        String withoutDigest = image.contains("@") ? image.substring(0, image.indexOf('@')) : image;
+        String tag = withoutDigest.length() > repositoryOf(image).length() ? withoutDigest.substring(repositoryOf(image).length() + 1) : null;
+        if (entry.get("newTag") != null) {
+            tag = String.valueOf(entry.get("newTag"));
+        }
+        String digest = image.contains("@") ? image.substring(image.indexOf('@') + 1) : null;
+        if (entry.get("digest") != null) {
+            digest = String.valueOf(entry.get("digest"));
+            tag = null;
+        }
+        return name + (tag != null ? ":" + tag : "") + (digest != null ? "@" + digest : "");
+    }
+
+    /**
+     * Every image a kustomization's patches write: the value of a JSON 6902 operation whose path ends in {@code /image}, and any
+     * {@code image} key inside an operation's value or a strategic-merge patch.
+     */
+    private static List<String> patchedImages(Map<String, Object> kustomization) {
+        List<String> images = new ArrayList<>();
+        for (String key : List.of("patches", "patchesJson6902", "patchesStrategicMerge")) {
+            if (!(kustomization.get(key) instanceof List<?> patches)) {
+                continue;
+            }
+            for (Object patch : patches) {
+                Object body = patch instanceof Map<?, ?> entry ? entry.get("patch") : patch;
+                if (!(body instanceof String text)) {
+                    continue;
+                }
+                for (Object parsed : new Yaml(new SafeConstructor(new LoaderOptions())).loadAll(text)) {
+                    if (parsed instanceof List<?> operations) {
+                        for (Object operation : operations) {
+                            Map<?, ?> op = (Map<?, ?>) operation;
+                            if (String.valueOf(op.get("path")).endsWith("/image") && op.get("value") != null) {
+                                images.add(String.valueOf(op.get("value")));
+                            } else {
+                                collectImages(op.get("value"), images);
+                            }
+                        }
+                    } else {
+                        collectImages(parsed, images);
+                    }
+                }
+            }
+        }
+        return images;
+    }
+
+    private static void collectImages(Object node, List<String> images) {
+        if (node instanceof Map<?, ?> map) {
+            map.forEach((key, value) -> {
+                if ("image".equals(key) && value instanceof String image) {
+                    images.add(image);
+                } else {
+                    collectImages(value, images);
+                }
+            });
+        } else if (node instanceof List<?> list) {
+            list.forEach(value -> collectImages(value, images));
+        }
     }
 
     /** The {@code namespace:} of the nearest {@code kustomization.yaml} from the file's directory up to {@code deploy/}, if one states it. */
@@ -466,9 +676,10 @@ class ImageAdmissionTest {
         return matcher.group(1);
     }
 
-    private static List<Path> files(String directory, String suffix) {
+    private static List<Path> files(String directory, String... suffixes) {
         try (Stream<Path> walk = Files.walk(root.resolve(directory))) {
-            return walk.filter(Files::isRegularFile).filter(path -> path.getFileName().toString().endsWith(suffix)).sorted().toList();
+            return walk.filter(Files::isRegularFile)
+                    .filter(path -> Stream.of(suffixes).anyMatch(suffix -> path.getFileName().toString().endsWith(suffix))).sorted().toList();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

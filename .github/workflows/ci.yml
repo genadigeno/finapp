@@ -643,7 +643,10 @@ jobs:
   # registry or Sigstore identity exists (THREAT_MODEL.md section 6 item 35). So the job holds no
   # credential and no OIDC token: the key and its password are generated in a temporary directory
   # and die with the run, and nothing reaches a transparency log. It runs where it pays, as the
-  # rehearsal does: on master, nightly, and on a pull request that changes what it reads.
+  # rehearsal does: on master, nightly, and on a pull request that changes deploy/, the Dockerfile,
+  # migrator/, the build logic, the Gradle wrapper and catalogue, the script, the pins or this file.
+  # A change to the application's own code reaches it on master and nightly: what it proves is the
+  # signing and admission path, not the code inside the image.
   # ---------------------------------------------------------------------------
   admission:
     name: Signing, provenance and admission (kind)
@@ -661,7 +664,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|Dockerfile$|migrator/|infra/scripts/admission-check|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
+          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|Dockerfile$|migrator/|build-logic/|gradle/|infra/scripts/admission-check|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

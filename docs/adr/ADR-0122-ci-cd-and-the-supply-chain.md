@@ -40,7 +40,7 @@ compatibility check between releases.
      registry of the run's own, and signs each with cosign under a key pair generated for the run in a temporary directory
      outside the repository. Each gets two attestations, SLSA provenance v1 (the commit, the source, the Dockerfile's
      pinned bases, the builder) and the CycloneDX SBOM. `cosign verify` and `cosign verify-attestation` accept both images
-     before anything deploys them, and refuse an unsigned image, one signed by another key, and a signed one with no
+     before the job deploys them, and refuse an unsigned image, one signed by another key, and a signed one with no
      attestations, each by name. Nothing reaches a transparency log, and the job holds no secret and no OIDC token.
    - **Admission** is the Sigstore policy controller, pinned with its chart (`deploy/operators/policy-controller`):
      `no-match-policy: deny`, `failurePolicy: Fail`, two replicas, watching the namespaces labelled

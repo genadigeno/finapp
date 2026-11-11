@@ -2964,8 +2964,9 @@ the controller yet, and no real identity signs anything.)*
 `finapp` and `finapp-edge` (`deploy/namespaces`). Every pod there and every pod template is checked before it exists:
 Deployments, Jobs and their pods, init containers included. A debug container added to a running pod is checked too, by the controller's own registration of `pods/ephemeralcontainers` (read from its code, not exercised on `kind`). `deploy/admission` decides what passes:
 
-- `finapp-app` and `finapp-migrator`, from any registry, must carry the trusted authority's signature (`finapp-images-signed`)
-  and both attestations, SLSA provenance and the CycloneDX SBOM (`finapp-images-attested`);
+- `finapp-app` and `finapp-migrator`, and the names an environment's registry gives them (`finapp-<environment>-app`,
+  `-migrator`), from any registry, must carry the trusted authority's signature (`finapp-images-signed`) and both attestations,
+  SLSA provenance and the CycloneDX SBOM (`finapp-images-attested`);
 - the edge's Traefik passes by its one pinned digest (`finapp-edge-traefik`), the only exception;
 - anything else is refused (`no-match-policy: deny`), and so is everything while the controller cannot answer
   (`failurePolicy: Fail`).
@@ -2974,12 +2975,18 @@ Deployments, Jobs and their pods, init containers included. A debug container ad
 signs and attests them under a key of its own run, verifies them, then proves every case on a cluster of its own and deletes
 it. On a machine whose TLS is intercepted set `ADMISSION_CA_BUNDLE` (the chart pull and the node's pull of the controller)
 and `TRIVY_IMAGE` (§11.9). `ADMISSION_IMAGES="<app> <migrator>"` skips the build. Exit 0 green, 1 an assertion failed,
-2 it could not run. The artefacts are in `build/admission`: every case's answer, the policies applied, each image's
-provenance and SBOM, the digests, and the run's public key. The private key is never written there.
+2 it could not run. The artefacts are in `build/admission/<run>`: every case's answer, the policies applied, the webhook as
+registered, each image's provenance and SBOM, the digests, and the run's public key. The private key is never written there.
+Each run names its own cluster, registry and volume, so two runs never meet, and it refuses a cluster of its name that it did
+not create rather than delete it.
 
-**A rollout stalls and the new pods never appear.** Read the new ReplicaSet's events
-(`kubectl -n finapp describe rs <name>`). A `FailedCreate` naming `failed policy: finapp-images-signed` (or `-attested`)
-means the image is not signed (or not attested) by the identity the policy trusts. Read the image reference in the message:
+**The apply or the sync itself is denied.** This is the usual symptom: the controller checks a Deployment, a Job and every
+other pod template when it is written, so the change never lands. The answer reads
+`Error from server (BadRequest): ... admission webhook "policy.sigstore.dev" denied the request: validation failed: ...`,
+and GitOps shows the sync failed with it. A ReplicaSet's `FailedCreate` event with the same words comes only later, when a pod
+is created from a template admitted before: a scale-out, a rescheduled replica, or a policy changed since. Either way, a
+`failed policy: finapp-images-signed` (or `-attested`) means the image is not signed (or not attested) by the identity the
+policy trusts. Read the image reference in the message:
 - **A digest nobody promoted.** Someone wrote a digest into the overlay by hand. Revert the change. The running replicas are
   untouched: a refused ReplicaSet gets no pods, and the old one keeps serving.
 - **A digest that was promoted.** Its signature is missing from the signature repository, or was made under another
@@ -2992,8 +2999,11 @@ means the image is not signed (or not attested) by the identity the policy trust
 
 **Every pod creation in `finapp` fails with `failed calling webhook "policy.sigstore.dev"`.** The controller cannot answer.
 Admission is failing closed: nothing new starts, and nothing running stops. Look at `cosign-system`: are both replicas ready,
-and is their Service reachable? Bring the controller back. **Do not** set `failurePolicy: Ignore` or remove the namespace
-label to get a rollout through: either opens the namespace to any image, and the second is invisible in a rollout's diff.
+and is their Service reachable? Bring the controller back. **Do not** set `failurePolicy: Ignore`, remove the namespace
+label, or add the label `webhooks.knative.dev/exclude` to the namespace to get a rollout through. Each opens the namespace to
+any image, and the second and third are invisible in a rollout's diff. The controller adds
+`webhooks.knative.dev/exclude DoesNotExist` to its own selector, so that label, with any value, takes a namespace out of
+admission. `ImageAdmissionTest` refuses it on any namespace under `deploy/`.
 
 **Installing the controller in a new cluster: the order matters.** Its validating webhook is created with no rules, and the
 controller fills them in when it starts. Until then nothing is checked. So the order is:

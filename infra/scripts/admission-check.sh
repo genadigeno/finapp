@@ -11,6 +11,8 @@
 #
 #   app signed            the kind overlay's own Deployment, at the signed digest     admitted, and its pod created at that digest
 #   migrator signed       the kind overlay's own migrator Job, likewise                admitted, and its pod created at that digest
+#   environment name      the app under finapp-rehearsal-app, as an environment's      admitted signed; refused unsigned (control:
+#                         registry names it (finapp-<environment>-app)                 admitted outside)
 #   app/migrator unsigned the same object at an image nobody signed                    refused (control: admitted outside)
 #   app/migrator other    the same object at an image signed and attested by another key   refused (control: admitted outside)
 #   app unattested        signed by the trusted key, no attestation                    refused (control: admitted outside)
@@ -38,8 +40,11 @@
 # Needs:   Docker with buildx, kind (KIND, default `kind`), git, a JDK for Gradle, sha256sum, base64, od.
 # Env:     ADMISSION_IMAGES="<app image> <migrator image>" uses two local images instead of building this tree, and
 #          ADMISSION_SBOM_DIR a directory holding finapp-app.cdx.json and finapp-migrator.cdx.json instead of writing them (a
-#          developer's aids; CI sets neither, and a run that used them says so in its log); ADMISSION_CA_BUNDLE names a CA bundle for a machine whose TLS is intercepted (the chart pull, the
-#          node's pull of the controller); TRIVY_IMAGE likewise (OPERATIONS_RUNBOOK.md section 11.9); ADMISSION_KEEP keeps the cluster.
+#          developer's aids; CI sets neither, which ImageAdmissionTest holds, and the provenance of a run that used them says so);
+#          ADMISSION_CA_BUNDLE names a CA bundle for a machine whose TLS is intercepted (the chart pull, the node's pull of the
+#          controller); TRIVY_IMAGE likewise (OPERATIONS_RUNBOOK.md section 11.9); ADMISSION_KEEP keeps the cluster.
+# Names:   the cluster, the registry, the Trivy volume and the artefacts (build/admission/<run>) are this run's own, so two runs never
+#          meet; a cluster of the chosen name that already exists is refused, never deleted.
 # Exit:    0 every assertion held; 1 an assertion failed; 2 a step could not run. A step that cannot run never looks like a pass.
 set -eu
 
@@ -47,10 +52,13 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 # shellcheck source=infra/scanner-pins.sh
 . "$ROOT/infra/scanner-pins.sh"
 
-CLUSTER=${ADMISSION_CLUSTER:-finapp-admission}
+# One run's own names: two runs on one Docker host share no cluster, registry, volume or artefact directory, and a run deletes only
+# what it created.
+RUN="$$-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
+CLUSTER=${ADMISSION_CLUSTER:-finapp-admission-$RUN}
 NODE="$CLUSTER-control-plane"
 KIND_BIN=${KIND:-kind}
-ART=${ADMISSION_ARTEFACTS:-$ROOT/build/admission}
+ART=${ADMISSION_ARTEFACTS:-$ROOT/build/admission/$RUN}
 PROBE=${ADMISSION_PROBE:-}
 KEEP=${ADMISSION_KEEP:-}
 CA_BUNDLE=${ADMISSION_CA_BUNDLE:-}
@@ -99,7 +107,6 @@ log() {
 FAILED=0
 FINISHED=""
 CLUSTER_UP=""
-RUN="$$-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
 REGISTRY_NAME="finapp-admission-registry-$RUN"
 REGISTRY_UP=""
 PUSH="no-registry-yet"
@@ -137,7 +144,7 @@ finish() {
     log "RESULT: GREEN"
     exit 0
 }
-trap 'FAILED=2; finish' INT TERM
+trap 'FAILED=2; finish' HUP INT PIPE TERM
 trap 'status=$?; if [ -z "$FINISHED" ]; then [ "$status" = 0 ] || FAILED=2; finish; fi' EXIT
 
 cannot() {
@@ -271,7 +278,10 @@ sbom finapp-migrator "$MIGRATOR_LOCAL"
 # ---------------------------------------------------------------------------------------------------
 step "the cluster"
 dock pull --quiet "$KIND_NODE_IMAGE" >/dev/null || cannot "could not pull the node image"
-"$KIND_BIN" delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true
+# A cluster of this name that this run did not create is someone else's: never deleted, never reused.
+if "$KIND_BIN" get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
+    cannot "a cluster named $CLUSTER already exists and is not this run's"
+fi
 "$KIND_BIN" create cluster --name "$CLUSTER" --image "$KIND_NODE_IMAGE" --kubeconfig "$(dpath "$WORK/kubeconfig")" --wait 180s \
     >> "$ART/cluster.log" 2>&1 || cannot "the cluster did not come up: see cluster.log"
 CLUSTER_UP=1
@@ -329,16 +339,22 @@ push() {
 step "push"
 APP=$(push "$APP_LOCAL" finapp-app signed)
 MIGRATOR=$(push "$MIGRATOR_LOCAL" finapp-migrator signed)
-APP_UNSIGNED=$(push "$(variant app unsigned "$APP_LOCAL")" finapp-app unsigned)
+APP_UNSIGNED_LOCAL=$(variant app unsigned "$APP_LOCAL")
+APP_UNSIGNED=$(push "$APP_UNSIGNED_LOCAL" finapp-app unsigned)
 MIGRATOR_UNSIGNED=$(push "$(variant migrator unsigned "$MIGRATOR_LOCAL")" finapp-migrator unsigned)
 APP_OTHER=$(push "$(variant app other-key "$APP_LOCAL")" finapp-app other-key)
 MIGRATOR_OTHER=$(push "$(variant migrator other-key "$MIGRATOR_LOCAL")" finapp-migrator other-key)
 APP_UNATTESTED=$(push "$(variant app unattested "$APP_LOCAL")" finapp-app unattested)
+# The name an environment's registry gives the image (infra/terraform/modules/registry: finapp-<environment>-app), so that the policy's
+# environment glob is proven on a cluster: the same image signed under it, and the unsigned one beside it.
+APP_ENV=$(push "$APP_LOCAL" finapp-rehearsal-app signed)
+APP_ENV_UNSIGNED=$(push "$APP_UNSIGNED_LOCAL" finapp-rehearsal-app unsigned)
 {
     printf 'app.signed=%s\nmigrator.signed=%s\napp.unsigned=%s\nmigrator.unsigned=%s\n' "$APP" "$MIGRATOR" "$APP_UNSIGNED" "$MIGRATOR_UNSIGNED"
     printf 'app.other-key=%s\nmigrator.other-key=%s\napp.unattested=%s\n' "$APP_OTHER" "$MIGRATOR_OTHER" "$APP_UNATTESTED"
+    printf 'app.environment-name.signed=%s\napp.environment-name.unsigned=%s\n' "$APP_ENV" "$APP_ENV_UNSIGNED"
 } > "$ART/digests.txt"
-for ref in "$APP" "$MIGRATOR" "$APP_UNSIGNED" "$MIGRATOR_UNSIGNED" "$APP_OTHER" "$MIGRATOR_OTHER" "$APP_UNATTESTED"; do
+for ref in "$APP" "$MIGRATOR" "$APP_UNSIGNED" "$MIGRATOR_UNSIGNED" "$APP_OTHER" "$MIGRATOR_OTHER" "$APP_UNATTESTED" "$APP_ENV" "$APP_ENV_UNSIGNED"; do
     log "pushed $ref"
 done
 [ "$APP" != "$APP_UNSIGNED" ] && [ "$APP" != "$APP_OTHER" ] && [ "$APP" != "$APP_UNATTESTED" ] \
@@ -348,12 +364,12 @@ done
 # Keys, signatures, attestations: this run's, in its temporary directory.
 # ---------------------------------------------------------------------------------------------------
 step "keys"
-# Random per run. cosign reads it from the environment, handed to its container by name and never on a command line.
+# Random per run, and in the environment of the one docker client that starts each cosign container, never exported to the script's
+# other children and never on a command line. While a cosign container runs, its configuration holds it, readable by whoever can
+# inspect this host's containers, as the key files are by whoever can read $WORK: both die with the run.
 SIGNING_PHRASE=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
-COSIGN_PASSWORD=${SIGNING_PHRASE}
-export COSIGN_PASSWORD
 cosign() {
-    dock run --rm --network kind --user "$(id -u):$(id -g)" -e HOME=/tmp -e COSIGN_PASSWORD \
+    COSIGN_PASSWORD=${SIGNING_PHRASE} docker run --rm --network kind --user "$(id -u):$(id -g)" -e HOME=/tmp -e COSIGN_PASSWORD \
         -e COSIGN_REPOSITORY="$SIGNATURES" -v "$(dpath "$WORK/keys"):/keys" -v "$(dpath "$WORK/att"):/att:ro" \
         "$COSIGN_IMAGE" "$@"
 }
@@ -382,12 +398,20 @@ provenance() {
         builder="urn:finapp:builder:developer-machine"
         invocation="local-$RUN"
     fi
+    # Images given by ADMISSION_IMAGES were not built by this run, from this revision or by this builder: the statement says so, and
+    # names no builder, rather than claiming a build it did not see.
+    supplied=false
+    if [ -n "$IMAGES_GIVEN" ]; then
+        supplied=true
+        builder="urn:finapp:builder:none-images-supplied"
+    fi
     {
         printf '{\n  "buildDefinition": {\n'
         printf '    "buildType": "urn:finapp:build:image:v1",\n'
         printf '    "externalParameters": {"source": "%s", "revision": "%s", "treeDirty": %s, "dockerfile": "Dockerfile", "target": "%s", "image": "%s"},\n' \
             "$SOURCE" "$REVISION" "$DIRTY" "$target" "$image"
-        printf '    "internalParameters": {"sourceDateEpoch": "%s", "version": "%s"},\n' "$SOURCE_DATE_EPOCH" "$VERSION"
+        printf '    "internalParameters": {"sourceDateEpoch": "%s", "version": "%s", "imagesSuppliedNotBuilt": %s, "sbomSuppliedNotWritten": %s},\n' \
+            "$SOURCE_DATE_EPOCH" "$VERSION" "$supplied" "$( [ -n "$SBOMS_GIVEN" ] && echo true || echo false )"
         printf '    "resolvedDependencies": [\n      {"uri": "git+%s@%s", "digest": {"gitCommit": "%s"}}' "$SOURCE" "$REVISION" "$REVISION"
         for base in $bases; do
             # A package URL: pkg:docker/<name>@<tag>, a registry other than Docker Hub as its repository_url qualifier.
@@ -423,13 +447,14 @@ sign_and_attest() {
 step "sign and attest"
 sign_and_attest ci "$APP" finapp-app
 sign_and_attest ci "$MIGRATOR" finapp-migrator
+sign_and_attest ci "$APP_ENV" finapp-app
 sign_and_attest other "$APP_OTHER" finapp-app
 sign_and_attest other "$MIGRATOR_OTHER" finapp-migrator
 # shellcheck disable=SC2086
 cosign sign --key /keys/ci.key $SIGNING "$APP_UNATTESTED" >> "$ART/cosign.log" 2>&1 || cannot "could not sign $APP_UNATTESTED"
 
 # ---------------------------------------------------------------------------------------------------
-# cosign verify, before anything deploys: the two images accepted, the three plants refused by name.
+# cosign verify, before this run deploys anything: the two images accepted, the three plants refused by name.
 # ---------------------------------------------------------------------------------------------------
 step "verify before deploy"
 verified() {
@@ -460,6 +485,7 @@ refused_by_verify() {
 }
 verified "$APP" "the application image"
 verified "$MIGRATOR" "the migrator image"
+verified "$APP_ENV" "the application image under an environment's name"
 # shellcheck disable=SC2086
 refused_by_verify unsigned "no signatures found" cosign verify --key /keys/ci.pub $VERIFYING "$APP_UNSIGNED"
 # shellcheck disable=SC2086
@@ -507,6 +533,11 @@ until [ -n "$(kube get validatingwebhookconfiguration policy.sigstore.dev -o jso
     [ "$(date +%s)" -lt "$deadline" ] || fail "the controller's webhook never registered its rules"
     sleep 2
 done
+kube get validatingwebhookconfiguration policy.sigstore.dev -o yaml > "$ART/webhook-registered.yaml" 2>&1 || true
+grep -q 'policy.sigstore.dev/include' "$ART/webhook-registered.yaml" || fail "the registered webhook does not select the opted-in namespaces"
+if grep -q 'webhooks.knative.dev/exclude' "$ART/webhook-registered.yaml"; then
+    log "the registered selector also excludes a namespace labelled webhooks.knative.dev/exclude (the controller's own addition): ImageAdmissionTest refuses that label"
+fi
 pass "the controller is up from its pinned chart: two replicas of the pinned digest, its webhook's rules registered, failing closed"
 
 # ---------------------------------------------------------------------------------------------------
@@ -541,19 +572,23 @@ kube label namespace "$CONTROL" pod-security.kubernetes.io/enforce=restricted >>
 
 step "policies"
 mkdir -p "$WORK/render/admission"
-# Rendered, to prove the root renders; applied from the committed file itself (the root transforms nothing), with this run's authority
-# in the placeholders' place, so what runs is the committed text and nothing a renderer reformatted.
+# The root as Kustomize renders it is what is applied, with this run's authority in the placeholders' place: whatever the root holds
+# reaches the cluster, a fourth policy or a patch included, and this run answers for it.
 render admission "$WORK/render/admission/all.yaml"
 grep -q 'ADMISSION-AUTHORITY-PUBLIC-KEY' "$WORK/render/admission/all.yaml" || fail "the committed policies hold no placeholder for the authority: something real is committed"
-cp "$ROOT/deploy/admission/clusterimagepolicies.yaml" "$WORK/render/admission/committed.yaml"
 # The second-key probe: every authority named ci repeated whole as one named other, under the other key (any one authority suffices).
+# Kustomize renders an authority as a sequence item at two spaces under spec, its keys at four.
 awk -v probe="$PROBE" '
-    function flush(    i, line) {
-        for (i = 1; i <= n; i++) print buffer[i]
-        if (probe == "second-key") {
+    function flush(    i, line, ours) {
+        ours = 0
+        for (i = 1; i <= n; i++) {
+            print buffer[i]
+            if (buffer[i] ~ /^    name: ci$/) ours = 1
+        }
+        if (probe == "second-key" && ours) {
             for (i = 1; i <= n; i++) {
                 line = buffer[i]
-                sub(/- name: ci$/, "- name: other", line)
+                sub(/^    name: ci$/, "    name: other", line)
                 sub(/ADMISSION-AUTHORITY-PUBLIC-KEY/, "ADMISSION-OTHER-PUBLIC-KEY", line)
                 print line
             }
@@ -561,12 +596,14 @@ awk -v probe="$PROBE" '
         n = 0
         inside = 0
     }
-    inside && !/^      / { flush() }
-    /^    - name: ci$/ { inside = 1 }
+    inside && !/^    / && !/^  - / { flush() }
+    /^  authorities:$/ { print; listing = 1; next }
+    listing && /^  - / { if (inside) flush(); inside = 1 }
+    listing && !/^  - / && !/^    / { listing = 0 }
     inside { buffer[++n] = $0; next }
     { print }
     END { if (inside) flush() }
-' "$WORK/render/admission/committed.yaml" > "$WORK/render/admission/authorities.yaml"
+' "$WORK/render/admission/all.yaml" > "$WORK/render/admission/authorities.yaml"
 # The run's public key, indented under key.data as a literal block; the other probes' mutations.
 awk -v keyfile="$WORK/keys/ci.pub" -v otherfile="$WORK/keys/other.pub" -v signatures="$SIGNATURES" -v probe="$PROBE" '
     function block(file, indent,    line, text) {
@@ -575,23 +612,25 @@ awk -v keyfile="$WORK/keys/ci.pub" -v otherfile="$WORK/keys/other.pub" -v signat
         close(file)
         return text
     }
-    /data: ADMISSION-(AUTHORITY|OTHER)-PUBLIC-KEY/ {
+    /data: ADMISSION-(AUTHORITY|OTHER)-PUBLIC-KEY$/ {
         indent = $0
         sub(/data:.*/, "", indent)
         print indent "data: " block(($0 ~ /OTHER/) ? otherfile : keyfile, indent "  ")
         next
     }
-    /- oci: ADMISSION-SIGNATURE-REPOSITORY/ { sub(/ADMISSION-SIGNATURE-REPOSITORY/, signatures) }
+    /- oci: ADMISSION-SIGNATURE-REPOSITORY$/ { sub(/ADMISSION-SIGNATURE-REPOSITORY/, signatures) }
     probe == "warn" && /^  mode: enforce$/ { print "  mode: warn"; next }
-    probe == "migrator-out" && /glob: "\*\*\/finapp-migrator@sha256:\*"/ { next }
+    probe == "migrator-out" && /^  - glob: .*finapp-(\*-)?migrator@sha256/ { next }
     { print }
 ' "$WORK/render/admission/authorities.yaml" > "$WORK/render/admission/applied.yaml"
 case $PROBE in
-    second-key) [ "$(grep -c '^    - name: other$' "$WORK/render/admission/applied.yaml")" -eq 2 ] || cannot "the second-key probe did not apply" ;;
+    second-key) [ "$(grep -c '^    name: other$' "$WORK/render/admission/applied.yaml")" -eq 2 ] || cannot "the second-key probe did not apply" ;;
     warn) if grep -q '^  mode: enforce$' "$WORK/render/admission/applied.yaml"; then cannot "the warn probe did not apply"; fi ;;
-    migrator-out) if grep -qF 'glob: "**/finapp-migrator@sha256:*"' "$WORK/render/admission/applied.yaml"; then cannot "the migrator-out probe did not apply"; fi ;;
+    migrator-out) if grep -q 'glob: .*migrator' "$WORK/render/admission/applied.yaml"; then cannot "the migrator-out probe did not apply"; fi ;;
 esac
 if grep -q 'ADMISSION-' "$WORK/render/admission/applied.yaml"; then cannot "a placeholder was left in the policies"; fi
+[ "$(grep -c '^kind: ClusterImagePolicy$' "$WORK/render/admission/applied.yaml")" -eq 3 ] \
+    || fail "the admission root renders $(grep -c '^kind: ClusterImagePolicy$' "$WORK/render/admission/applied.yaml") policies, not the three: see policies-applied.yaml"
 cp "$WORK/render/admission/applied.yaml" "$ART/policies-applied.yaml"
 tries=0
 until kube apply -f - < "$WORK/render/admission/applied.yaml" >> "$ART/apply.log" 2>&1; do
@@ -671,12 +710,14 @@ attempt() {
     return 1
 }
 
-# pod_of <namespace> <selector>: the image of the first pod the controller created, within a minute.
-pod_image() {
+# pod_at <namespace> <selector> <image>: a pod the controller created whose first container runs exactly <image>, within a minute.
+# Matched on the image and not on the first pod listed, which may be an earlier case's, still going.
+pod_at() {
     deadline=$(( $(date +%s) + 60 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        image=$(kube -n "$1" get pods -l "$2" -o jsonpath='{.items[0].spec.containers[0].image}' 2>/dev/null || true)
-        [ -z "$image" ] || { printf '%s' "$image"; return 0; }
+        if kube -n "$1" get pods -l "$2" -o jsonpath='{range .items[*]}{.spec.containers[0].image}{"\n"}{end}' 2>/dev/null | grep -qxF -- "$3"; then
+            return 0
+        fi
         sleep 2
     done
     return 1
@@ -685,11 +726,11 @@ pod_image() {
 # admitted <case> <file> <namespace> <selector> <image>: taken, and a pod created at that image.
 admitted() {
     attempt "$1" "$2" || fail "$1: refused, and it must be admitted: $(tr '\n' ' ' < "$WORK/cases/$1.out" | cut -c1-300)"
-    image=$(pod_image "$3" "$4") || {
+    pod_at "$3" "$4" "$5" || {
         kube -n "$3" get events --sort-by=.lastTimestamp > "$ART/events-$1.txt" 2>&1 || true
-        fail "$1: the object was taken but no pod was created within a minute (its pods refused?): see events-$1.txt"
+        kube -n "$3" get pods -l "$4" -o wide > "$ART/pods-$1.txt" 2>&1 || true
+        fail "$1: the object was taken but no pod at $5 was created within a minute (its pods refused?): see events-$1.txt"
     }
-    [ "$image" = "$5" ] || fail "$1: the pod runs $image, not $5"
     pass "$1: admitted, its pod created at $5"
     kube delete -f - --wait=false < "$2" >> "$ART/apply.log" 2>&1 || true
 }
@@ -719,6 +760,11 @@ deployment case-app-signed finapp "$APP" > "$C/app-signed.yaml"
 admitted "app signed" "$C/app-signed.yaml" finapp app.kubernetes.io/name=finapp-app "$APP"
 job case-migrator-signed finapp "$MIGRATOR" > "$C/migrator-signed.yaml"
 admitted "migrator signed" "$C/migrator-signed.yaml" finapp job-name=case-migrator-signed "$MIGRATOR"
+deployment case-app-environment-name finapp "$APP_ENV" > "$C/app-environment.yaml"
+admitted "app under an environment's name, signed" "$C/app-environment.yaml" finapp app.kubernetes.io/name=finapp-app "$APP_ENV"
+deployment case-app-environment-unsigned finapp "$APP_ENV_UNSIGNED" > "$C/app-environment-unsigned.yaml"
+deployment case-app-environment-unsigned "$CONTROL" "$APP_ENV_UNSIGNED" > "$C/app-environment-unsigned-control.yaml"
+refused "app under an environment's name, unsigned" "$C/app-environment-unsigned.yaml" "$UNSIGNED_REASON" "$C/app-environment-unsigned-control.yaml"
 
 deployment case-app-unsigned finapp "$APP_UNSIGNED" > "$C/app-unsigned.yaml"
 deployment case-app-unsigned "$CONTROL" "$APP_UNSIGNED" > "$C/app-unsigned-control.yaml"

@@ -9,8 +9,15 @@
 # "signed AND attested" is two policies over the same globs. A glob is matched against the reference's full name, Docker Hub's as
 # index.docker.io/library/...; `**` is any characters, `*` any but `/`.
 #
-# THE TWO PLATFORM IMAGES, by repository name and never by registry: any image called finapp-app or finapp-migrator, from anywhere,
-# must carry the trusted authority's signature and both attestations. A third image of ours is refused until it is added here.
+# THE TWO PLATFORM IMAGES, by repository name and never by registry, in both the names they go by. As built, finapp-app and
+# finapp-migrator (the overlays' names, and the kind check's). In an environment's registry, finapp-<environment>-app and
+# finapp-<environment>-migrator: infra/terraform/modules/registry names each repository from the conventions' prefix, and
+# ImageAdmissionTest reads that naming and holds every name it yields to both platform policies. A glob that matches more only asks
+# more: any image so named, from anywhere, must carry the trusted authority's signature and both attestations. A third image of ours is
+# refused until it is added here.
+#
+# EVERY POLICY IS HERE. ImageAdmissionTest refuses a policy.sigstore.dev document anywhere else under deploy/, and anything in this
+# root but this file: a fourth policy that passed everything would open both namespaces to any image, and so would a patch to these.
 #
 # THE AUTHORITY is an environment's. Committed, it is a placeholder no key parses, so these policies as committed admit nothing:
 # infra/scripts/admission-check.sh puts its run's public key and its run's signature repository in their place on kind, and a real
@@ -30,6 +37,8 @@ spec:
   images:
     - glob: "**/finapp-app@sha256:*"
     - glob: "**/finapp-migrator@sha256:*"
+    - glob: "**/finapp-*-app@sha256:*"
+    - glob: "**/finapp-*-migrator@sha256:*"
   authorities:
     - name: ci
       key:
@@ -46,6 +55,8 @@ spec:
   images:
     - glob: "**/finapp-app@sha256:*"
     - glob: "**/finapp-migrator@sha256:*"
+    - glob: "**/finapp-*-app@sha256:*"
+    - glob: "**/finapp-*-migrator@sha256:*"
   authorities:
     - name: ci
       key:
