@@ -106,7 +106,9 @@ class TelemetryPipelineManifestsTest {
     void thePeersTierIsTheCollectorsAlone() {
         int peerRules = 0;
         for (Map<String, Object> policy : policies) {
-            Map<String, Object> labels = map(map(map(policy, "spec"), "podSelector"), "matchLabels");
+            // An empty selector - the default-deny's - selects the collector too.
+            Map<String, Object> selector = map(map(policy, "spec"), "podSelector");
+            Map<String, Object> labels = selector.containsKey("matchLabels") ? map(selector, "matchLabels") : Map.of();
             if (!labels.isEmpty() && !"telemetry-collector".equals(labels.get("finapp/role"))) {
                 continue;
             }
@@ -153,7 +155,10 @@ class TelemetryPipelineManifestsTest {
                 throw new java.io.UncheckedIOException(unreadable);
             }
         }
-        assertThat(read("infra/scripts/telemetry-check.sh")).contains("overlays/staging").contains("overlays/production")
+        assertThat(read("infra/scripts/telemetry-check.sh")).contains("for overlay in staging production; do")
+                .contains("kustomize build \"/repo/deploy/overlays/$overlay\"")
+                .contains("check \"the application's one telemetry endpoint on staging\"")
+                .contains("check \"the application's one telemetry endpoint on production\"")
                 .contains("obs_refused obs-endpoint-staging obs-endpoint");
     }
 
