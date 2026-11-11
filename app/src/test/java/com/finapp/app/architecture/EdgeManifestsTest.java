@@ -80,6 +80,29 @@ class EdgeManifestsTest {
     }
 
     @Test
+    @DisplayName("each edge states its own surface in the header the application reads, in the word the application reads, on every router (P15-TSK-042)")
+    void eachEdgeStatesItsSurface() {
+        Map<String, com.finapp.app.surface.Surface> edges = Map.of(
+                PUBLIC_EDGE, com.finapp.app.surface.Surface.PUBLIC,
+                OPERATOR_EDGE, com.finapp.app.surface.Surface.OPERATOR);
+        edges.forEach((file, surface) -> {
+            Map<String, Object> custom = map(map(map(map(map(yaml(read(file)), "http"), "middlewares"), "edge-headers"), "headers"),
+                    "customRequestHeaders");
+            assertThat(custom).as("%s: set, so the proxy replaces every value a client sent under the name", file)
+                    .containsEntry(com.finapp.app.surface.RequestSurfaces.HEADER, surface.tag());
+            assertThat(custom.keySet().stream().filter(name -> name.equalsIgnoreCase(com.finapp.app.surface.RequestSurfaces.HEADER)))
+                    .as("%s: one statement of it, so no second spelling can say otherwise", file).hasSize(1);
+        });
+        assertThat(com.finapp.app.surface.Surface.PUBLIC.admitsRoleHolders()).as("the public edge's word refuses staff").isFalse();
+        assertThat(com.finapp.app.surface.Surface.OPERATOR.admitsRoleHolders()).as("the operator edge's word admits them").isTrue();
+        for (String routes : List.of("deploy/edge/base/public-routes.yaml", "deploy/edge/base/operator-routes.yaml")) {
+            map(map(yaml(read(routes)), "http"), "routers").forEach((name, router) ->
+                    assertThat(stringList(((Map<?, ?>) router).get("middlewares"))).as("%s: %s marks its surface", routes, name)
+                            .contains("edge-headers"));
+        }
+    }
+
+    @Test
     @DisplayName("TLS ends at the edge: one TLS listener, no plain port, TLS 1.2 at least, no default certificate, and HSTS and the security headers on every route")
     void tlsEndsAtTheEdgeWithHsts() {
         assertThat(map(staticConfig, "entryPoints").keySet()).containsExactlyInAnyOrder("websecure", "management");

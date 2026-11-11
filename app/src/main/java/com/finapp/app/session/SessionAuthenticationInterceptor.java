@@ -80,6 +80,8 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
     @NonNull private final DataSource dataSource;
     @NonNull private final SessionPolicy policy;
     @NonNull private final com.finapp.identity.Authorization authorization;
+    @NonNull private final com.finapp.app.surface.RequestSurfaces surfaces;
+    @NonNull private final com.finapp.app.surface.SurfaceRefusalMeters surfaceRefusals;
 
     @Override
     public boolean preHandle(
@@ -106,9 +108,15 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         // a failed authentication writes an audit record that throwing would roll back. Presenting
         // a dead session is not an authentication attempt against a credential.
         RequiresPermission operatorAct = annotation(handlerMethod, RequiresPermission.class);
+        // A door that strengthens a session or what proves the identity, reached on a surface that does not admit staff
+        // (`P15-TSK-042`): the roles are read with the session, as an operator act's are, and only then - the operator
+        // surface and the single port pay nothing.
+        com.finapp.app.surface.Surface surface = surfaces.of(request);
+        com.finapp.app.surface.OperatorsRefusedOnPublic door =
+                surface.admitsRoleHolders() ? null : annotation(handlerMethod, com.finapp.app.surface.OperatorsRefusedOnPublic.class);
         Established established =
                 presentedToken(request)
-                        .flatMap(token -> authenticate(token, operatorAct != null))
+                        .flatMap(token -> authenticate(token, operatorAct != null || door != null))
                         .orElseThrow(
                                 () ->
                                         new ApiException(
@@ -122,7 +130,9 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         // role is EMPLOYEE; everything else a person does through a session is CUSTOMER, a role
         // holder on their own wallet or loan application included. The roles were read once, in
         // the session's own transaction, so the type and the permission below are the same
-        // instant's. A role granted or revoked mid-session is honoured on the next request.
+        // instant's. A role granted or revoked mid-session is honoured on the next request. The
+        // one other reading is a door refusing staff on the public surface (P15-TSK-042): there a
+        // role holder is refused, and the refusal's record is staff's.
         request.setAttribute(
                 SCOPE_ATTRIBUTE,
                 SecurityContext.enter(
@@ -137,6 +147,7 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         // before the permission is read: a refused step-up answers the same whatever the caller
         // holds.
         try {
+            refuseStaffOnThePublicSurface(door, surface, established);
             requireAssurance(request, handlerMethod, session);
             requirePermission(handlerMethod, established);
             request.setAttribute(CURRENT_SESSION, session);
@@ -253,6 +264,56 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         }
         String presented = header.substring(SCHEME.length()).strip();
         return presented.isEmpty() ? Optional.empty() : Optional.of(SessionToken.of(presented));
+    }
+
+    /**
+     * Refuses a role-holding identity at a door that strengthens its session or what proves it, on a surface that does not
+     * admit staff (`P15-TSK-042`; {@code THREAT_MODEL.md} T1, T3, T31).
+     *
+     * <p><strong>Before the handler, so before anything counts.</strong> The MFA step and the credential change count a wrong
+     * code or password against the identity's lockout; refusing here means nothing a request on the public surface does can
+     * move a role-holder's counter, rotate its session, begin or confirm a factor, or add a recovery channel.
+     *
+     * <p><strong>One answer, which names no role</strong>: {@code 401 identity.AuthenticationFailed}, the MFA step's and the
+     * credential change's own uniform failure. The record ({@code identity.PublicSurfaceRefused}) commits in a transaction of
+     * its own before the refusal is thrown; a record that cannot be written throws its own failure, answered {@code 500},
+     * never a {@code 401} the audit trail lacks. A {@code 401} is recorded by nothing else, so this is the one record.
+     */
+    private void refuseStaffOnThePublicSurface(
+            com.finapp.app.surface.OperatorsRefusedOnPublic door,
+            com.finapp.app.surface.Surface surface,
+            Established established) {
+        if (door == null) {
+            return;
+        }
+        Authorization.Standing standing =
+                established
+                        .standing()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a door's standing is read with its session"));
+        if (standing.roles().isEmpty()) {
+            return;
+        }
+        transactions.executeWithoutResult(
+                status -> {
+                    Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+                    try {
+                        authorization.recordPublicSurfaceRefusal(
+                                unitOfWork,
+                                established.session().identityId(),
+                                door.value().operation(),
+                                surface.tag(),
+                                "");
+                    } finally {
+                        DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+                    }
+                });
+        surfaceRefusals.record(door.value(), surface);
+        throw new ApiException(
+                com.finapp.identity.IdentityErrorCode.AUTHENTICATION_FAILED,
+                "A role-holding identity was refused on the " + surface.tag() + " surface at " + door.value().operation());
     }
 
     /**

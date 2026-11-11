@@ -52,6 +52,8 @@ public class MfaChallengeController {
 
     @NonNull private final MfaChallengeApplicationService challenges;
 
+    /** Staff elevate on the operator surface alone (`P15-TSK-042`): refused elsewhere by the session interceptor, before a code is counted. */
+    @com.finapp.app.surface.OperatorsRefusedOnPublic(com.finapp.app.surface.SurfaceDoor.MFA_CHALLENGE)
     @PostMapping
     public ElevatedSession elevateAssurance(
             @Valid @RequestBody MfaConfirmationRequest body, HttpServletRequest request) {

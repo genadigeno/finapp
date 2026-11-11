@@ -1,6 +1,9 @@
 package com.finapp.app.session;
 
+import com.finapp.app.surface.RequestSurfaces;
+import com.finapp.app.surface.SurfaceRefusalMeters;
 import com.finapp.identity.Authorization;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.finapp.identity.RoleAssignmentStore;
 import com.finapp.identity.RoleName;
 import com.finapp.identity.Session;
@@ -30,11 +33,29 @@ final class InterceptorHarness {
 
     private InterceptorHarness() {}
 
-    /** The real interceptor over {@code session}, its identity holding {@code roles}. */
+    /** The real interceptor over {@code session}, its identity holding {@code roles}, where nothing is deployed (the single port). */
     static SessionAuthenticationInterceptor interceptor(Session session, Set<RoleName> roles, AtomicInteger roleReads,
             List<String> events, List<AuditRecord> written, IdGenerator ids, Clock clock) {
+        return interceptor(session, roles, roleReads, events, written, ids, clock, new RequestSurfaces(true),
+                new SurfaceRefusalMeters(new SimpleMeterRegistry()));
+    }
+
+    /** The real interceptor, reading the surface as {@code surfaces} does (`P15-TSK-042`). */
+    static SessionAuthenticationInterceptor interceptor(Session session, Set<RoleName> roles, AtomicInteger roleReads,
+            List<String> events, List<AuditRecord> written, IdGenerator ids, Clock clock, RequestSurfaces surfaces,
+            SurfaceRefusalMeters meters) {
         return new SessionAuthenticationInterceptor(sessionsAnswering(session), transactions(events), new OneConnection(),
-                SessionPolicy.current(), authorization(roles, roleReads, events, written, ids, clock));
+                SessionPolicy.current(), authorization(roles, roleReads, events, written, ids, clock), surfaces, meters);
+    }
+
+    /** The real interceptor whose audit write fails: a refusal whose record cannot be written (`P15-TSK-042`). */
+    static SessionAuthenticationInterceptor interceptorWhoseAuditFails(Session session, Set<RoleName> roles,
+            RequestSurfaces surfaces, SurfaceRefusalMeters meters, IdGenerator ids, Clock clock) {
+        return new SessionAuthenticationInterceptor(sessionsAnswering(session), transactions(new java.util.ArrayList<>()),
+                new OneConnection(), SessionPolicy.current(),
+                new Authorization(roles(roles, new AtomicInteger()), ids, clock, (uow, record) -> {
+                    throw new IllegalStateException("the audit store is unreachable");
+                }), surfaces, meters);
     }
 
     /** The error contract's recorder over the same captures. */

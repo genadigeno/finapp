@@ -1864,7 +1864,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.6 Broker outage, consumer lag, a poison record, dead letters and replay | `-026`, `-028` | `-028`, `-032` |
 | 11.7 Rotation and revocation per secret class; a key compromise *(the cloud half written 2026-11-09, below; the fleet's half is `SECRET_MANAGEMENT.md` §5.1 and §5.2)* | `-016`, `-018`…`-020` | `-020` |
 | 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `P15-TSK-024` (instance down, stale gauges: written below, 2026-11-08), `P15-TSK-025` (burn rate and certificates: written below, 2026-11-08) | `-032` |
-| 11.9 A failing scan *(written 2026-11-08, below)*; a refused image | `P15-TSK-006` (the failing scan), `-007` (the refused image) | `-007` |
+| 11.9 A failing scan *(written 2026-11-08, below)*; a refused image *(§11.32 since 2026-11-11)* | `P15-TSK-006` (the failing scan), `P15-TSK-007` (the refused image, §11.32) | `P15-TSK-007` |
 | 11.10 Edge and abuse *(the break-glass half is §11.25, since 2026-11-09; this row read "Edge, abuse and break-glass" until then)* | `-011`, `-022` | `-032` |
 | 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
 | 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |
@@ -1878,6 +1878,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.30 Abuse limits: the doors' per-source limits, a door that refuses everyone, a store that cannot count, raising a limit, rotating the bucket key *(written 2026-11-09, below)* | `P15-TSK-022` | `-032` |
 | 11.29 Key rotation and key compromise: the field-level key rings and the callback window *(written 2026-11-09, below)* | `P15-TSK-019` | `-020` |
 | 11.31 Changing configuration: which class, which way, and `ConfigFingerprintDisagrees` *(written 2026-11-09, below)* | `P15-TSK-031` | `-032` |
+| 11.32 A refused image: signing, admission, the controller down, the install order, where signatures live *(written 2026-11-11, below)* | `P15-TSK-007` | `P15-TSK-007` (on `kind`: every case, each beside its control) |
 | 11.35 Restore, held until the platform's own checks pass on it; the restore rehearsal and its last record *(written 2026-11-11, below)* | `P15-TSK-030` | `P15-TSK-030` (the logical restore, on containers); the managed restore is `THREAT_MODEL.md` §6 item 38 |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
@@ -2870,6 +2871,12 @@ the controller pods do not start.
 
 **Failure and rollback.** An edge outage is refused traffic and nothing more: the application stays ready, and its schedules and consumers do not notice. Revert by the previous manifest digest; every route and limit is in the ConfigMap's hash, so a revert restores them together.
 
+**The operators' half: staff on the operator host alone** *(written by `P15-TSK-042`, 2026-11-11, from the code and its checks; not yet run on a cluster - the `kind` rehearsal's edge step asserts it from its next run)*. Each controller sets `X-Finapp-Surface` (`public-edge.yaml`, `operator-edge.yaml`, the `edge-headers` middleware), replacing whatever a client sent. The application refuses a role-holding identity - anyone holding a live role - at sign-in, the MFA step, a factor's enrolment and confirmation, the password change, a recovery channel's addition and recovery, unless the operator edge marked the request. The word is trusted only because `finapp-app-ingress` admits no pod but the two controllers to port 8080: a change to that policy that admits anything else makes the marker anybody's to write, and is a security change, not a network one. One exception is the policy's own: a pod cannot block its node, and on EKS the network policy agent admits the node's address on every port, so a host-network process on that node could write the marker; it could reach the operator routes directly as well, so the marker gives it nothing more, and keeping host-network workloads off the application's nodes is what bounds both.
+
+**Rolling it out, and back.** The edge first, then the application: an application that requires the marker must never meet an edge that does not send it. The order is always safe, because an application without this change ignores the header. To roll back, the application first, then the edge if at all; the header left on the edge harms nothing. Wherever nothing is deployed in front of the application - no edge network named (`FINAPP_EDGE_PROXIES` blank) and its database on loopback: a laptop, the test tiers - it needs no marker and the one port serves both surfaces, as before the edge. A deployment whose database is reached through a sidecar on 127.0.0.1 is still behind the edge, because its overlay names the edge network.
+
+**An operator cannot sign in.** First: are they on the operator host? On the public one their own password is refused with the same `401` as a wrong one, by design, and nothing is counted against their lockout there. Read `identity.PublicSurfaceRefused` for their identity (`platform.audit_record`, `target_id` the identity): `surface=public` means they used the public host; `credential=proven` on it means their correct password was presented from the internet: treat it as a phished credential to be replaced on the operator host, and the identity's sessions ended, not as a support ticket. `surface=unmarked` means the request reached the application with no usable marker: the edge was rolled after the application, or something other than the edge reached it. `finapp_identity_surface_refusal_total{kind="unmarked"}` rising across operators says the first; roll the edge forward (or the application back), and check `finapp-app-ingress` before anything else if the edge is as built. Customers are served throughout, so this is never an outage for them. An operator who only lost their password recovers on the operator host; the public host answers their recovery request `202` and does nothing. A staff member who banks on the platform with the same login cannot sign in from the internet to their own accounts either; they use them from the operator host, or keep a second, customer-only login (`THREAT_MODEL.md` section 6 item 39 (c)). `finapp_identity_surface_refusal_total{outcome="credential_proven"}` counts the refused sign-ins whose password was right: any increase is a phished credential.
+
 ### 11.30 Abuse limits - `finapp.abuse.requests`, `PublicDoorsRefusingMost` (`P15-TSK-022`)
 
 *(Written by `P15-TSK-022`, 2026-11-09, from the code and its tests. The counted case across real instances is owed to `P15-TST-002`; it has run on a scratch PostgreSQL by hand and on no cluster.)*
@@ -2954,6 +2961,78 @@ the controller pods do not start.
 **What this does not mean.** One node, one machine, three replicas plus a surge: load, chaos and ten instances are the storm's (`P15-TST-001`, postponed by the owner). The broker and the database are test-only copies. kindnetd has not answered yet: `THREAT_MODEL.md` section 6 item 30. No Prometheus runs in the cluster: cert-manager's series and a replica's scrape are read once by the rehearsal's own pod. The cooperative assignor's moving only what changes hands is counted by a test of the broker tier owed to `P15-TST-002`, and a refused broker credential failing readiness was not exercised. T40's acceptance rows were not created, because an offer needs the origination chain the rehearsal does not build: the forged address is measured on the per-source key, the same `request.getRemoteAddr()`. The numbers are from a loaded development machine.
 
 **CI's runner.** Nothing has run there. `ubuntu-latest` on a public repository is, by GitHub's published figures, 4 vCPUs and 16 GB. The application namespace's quota is 8 GiB, and the rest of the cluster comes on top of it (the node's own components, cert-manager, both edge controllers, the simulator, the client's JVM), so it should fit with little to spare, and a 7 GB runner would not. The job's first run is the test. It sits inside the workflow's `concurrency` group: a run in progress on `master` is not cancelled, but a newer push replaces one still waiting, so a rehearsal can be skipped between two pushes and the nightly run is what covers it.
+
+### 11.32 A refused image: signing, admission, and what to do when the cluster says no (`P15-TSK-007`)
+
+*(Written by `P15-TSK-007`, 2026-11-11, from `infra/scripts/admission-check.sh`, `deploy/admission` and
+`deploy/operators/policy-controller`. **Proven on `kind`** by that script: the last record is below. No real cluster runs
+the controller yet, and no real identity signs anything.)*
+
+**What is there.** The Sigstore policy controller, two replicas in `cosign-system`, installed from its pinned chart with
+`deploy/operators/policy-controller/values.yaml`. It watches the namespaces labelled `policy.sigstore.dev/include: "true"`:
+`finapp` and `finapp-edge` (`deploy/namespaces`). Every pod there and every pod template is checked before it exists:
+Deployments, Jobs and their pods, init containers included. A debug container added to a running pod is checked too, by the controller's own registration of `pods/ephemeralcontainers` (read from its code, not exercised on `kind`). `deploy/admission` decides what passes:
+
+- `finapp-app` and `finapp-migrator`, and the names an environment's registry gives them (`finapp-<environment>-app`,
+  `-migrator`), from any registry, must carry the trusted authority's signature (`finapp-images-signed`) and both attestations,
+  SLSA provenance and the CycloneDX SBOM (`finapp-images-attested`);
+- the edge's Traefik passes by its one pinned digest (`finapp-edge-traefik`), the only exception;
+- anything else is refused (`no-match-policy: deny`), and so is everything while the controller cannot answer
+  (`failurePolicy: Fail`).
+
+**Run the check.** `infra/scripts/admission-check.sh`, Docker and `kind` required, a JDK for the build. It builds both images,
+signs and attests them under a key of its own run, verifies them, then proves every case on a cluster of its own and deletes
+it. On a machine whose TLS is intercepted set `ADMISSION_CA_BUNDLE` (the chart pull and the node's pull of the controller)
+and `TRIVY_IMAGE` (§11.9). `ADMISSION_IMAGES="<app> <migrator>"` skips the build. Exit 0 green, 1 an assertion failed,
+2 it could not run. The artefacts are in `build/admission/<run>`: every case's answer, the policies applied, the webhook as
+registered, each image's provenance and SBOM, the digests, and the run's public key. The private key is never written there.
+Each run names its own cluster, registry and volume, so two runs never meet, and it refuses a cluster of its name that it did
+not create rather than delete it.
+
+**The apply or the sync itself is denied.** This is the usual symptom: the controller checks a Deployment, a Job and every
+other pod template when it is written, so the change never lands. The answer reads
+`Error from server (BadRequest): ... admission webhook "policy.sigstore.dev" denied the request: validation failed: ...`,
+and GitOps shows the sync failed with it. A ReplicaSet's `FailedCreate` event with the same words comes only later, when a pod
+is created from a template admitted before: a scale-out, a rescheduled replica, or a policy changed since. Either way, a
+`failed policy: finapp-images-signed` (or `-attested`) means the image is not signed (or not attested) by the identity the
+policy trusts. Read the image reference in the message:
+- **A digest nobody promoted.** Someone wrote a digest into the overlay by hand. Revert the change. The running replicas are
+  untouched: a refused ReplicaSet gets no pods, and the old one keeps serving.
+- **A digest that was promoted.** Its signature is missing from the signature repository, or was made under another
+  identity. Verify it from a workstation: `cosign verify --key <the environment's key>` for a key, or the identity flags for
+  keyless, pointing `COSIGN_REPOSITORY` at the environment's signature repository. Re-sign only through the pipeline, never
+  by hand.
+- **`no matching policies`.** The image is neither of the two platform images nor the pinned Traefik: a third image, a
+  sidecar, a debug container. Adding it is a change to `deploy/admission` and a review, never a label taken off the namespace.
+- **`must be an image digest`.** A tag reached the manifest. The overlays name digests; find who wrote the tag.
+
+**Every pod creation in `finapp` fails with `failed calling webhook "policy.sigstore.dev"`.** The controller cannot answer.
+Admission is failing closed: nothing new starts, and nothing running stops. Look at `cosign-system`: are both replicas ready,
+and is their Service reachable? Bring the controller back. **Do not** set `failurePolicy: Ignore`, remove the namespace
+label, or add the label `webhooks.knative.dev/exclude` to the namespace to get a rollout through. Each opens the namespace to
+any image, and the second and third are invisible in a rollout's diff. The controller adds
+`webhooks.knative.dev/exclude DoesNotExist` to its own selector, so that label, with any value, takes a namespace out of
+admission. `ImageAdmissionTest` refuses it on any namespace under `deploy/`.
+
+**Installing the controller in a new cluster: the order matters.** Its validating webhook is created with no rules, and the
+controller fills them in when it starts. Until then nothing is checked. So the order is:
+1. the controller, ready;
+2. `kubectl get validatingwebhookconfiguration policy.sigstore.dev -o jsonpath='{.webhooks[0].rules}'` not empty;
+3. `deploy/admission` applied, every policy `Ready`;
+4. only then the platform's namespaces and their workloads.
+
+The check waits for each of these the same way. `P15-TSK-017`'s delivery carries the order.
+
+**Where signatures live.** In a repository of their own per environment, cosign's tag-based form (`sha256-<digest>.sig` and
+`.att`), with mutable tags and no lifecycle rule. The image repositories keep immutable tags. A lifecycle rule on an image
+repository can never reach a signature; deleting a signature repository's objects refuses every image it signed.
+
+**What this does not cover.** The controller's own namespace, External Secrets' and `finapp-observability` are not watched:
+their images are pinned by digest in their manifests, and nothing at the cluster enforces it (`THREAT_MODEL.md` section 6
+item 35). The `kind` rehearsal (§11.28) deploys its own unsigned builds on a cluster with no controller. It rehearses the
+rollout, not admission, and its test-only database and broker would be refused by this policy.
+
+**The last record (2026-11-11).** On one machine (Docker Desktop, TLS intercepted, so `ADMISSION_CA_BUNDLE` and `TRIVY_IMAGE` set), Kubernetes v1.34.11 on `kind`. A full run built both images from the tree, wrote their SBOMs (111 and 31 components), signed and attested them under the run's key, verified both, and refused the three plants by name: `no signatures found`, `no matching signatures: invalid signature ...`, `no matching attestations`. Then every case answered as stated, 20 assertions, none failed. Both images were admitted at their signed digests. The unsigned and other-key images of each were refused by `finapp-images-signed`, and the unattested one by `finapp-images-attested`. The unsigned init container was refused, naming `initContainers[0]`, and the signed one admitted. An unnamed image was refused (`no matching policies`) in `finapp` and in `finapp-edge`, and Traefik was admitted at its pinned digest. While the controller was scaled to zero the signed app was refused (`failed calling webhook`), and it was admitted again once the controller was back. Every refusal's control was admitted in `finapp-admission-control`. The final bytes were run green again with that build's images and SBOMs, and each probe was run on them (`MUTATION_TESTING.md`). *(The review's fix round, the same day: a full run on its final bytes was green with 23 assertions, adding the application admitted under an environment's repository name and refused there unsigned; the registered webhook's selector read `webhooks.knative.dev/exclude DoesNotExist` beside `policy.sigstore.dev/include In [true]`.)* CI's `admission` job has not run yet.
 
 ### 11.35 Restore: held until the platform's own checks pass on it; the restore rehearsal and its last record (`P15-TSK-030`)
 

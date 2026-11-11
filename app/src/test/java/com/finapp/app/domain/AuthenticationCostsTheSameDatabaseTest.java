@@ -85,7 +85,7 @@ class AuthenticationCostsTheSameDatabaseTest {
     @Autowired private PlatformTransactionManager transactionManager;
 
     @Test
-    @DisplayName("all five failing paths perform exactly one derivation each")
+    @DisplayName("all seven failing paths perform exactly one derivation each, staff refused on the public surface included")
     void everyFailingPathDoesTheWork() throws SQLException {
         LoginIdentifier present = givenAnIdentityWithACredential();
         LoginIdentifier suspended = givenAnIdentityWithACredential();
@@ -102,6 +102,12 @@ class AuthenticationCostsTheSameDatabaseTest {
         // Skipping the derivation here would make "your guess was under eight characters" readable
         // from a clock - a third outcome on an endpoint that must have two.
         failures.put("a password the platform could never have stored", request(present, "abc"));
+        // P15-TSK-042: staff on the public surface, refused whatever the password. The right one must cost what a wrong one
+        // does, or the refusal of an operator reads from a clock as "the password was right".
+        LoginIdentifier staff = givenAnIdentityWithACredential();
+        grantARole(staff);
+        failures.put("a role-holder on the public surface, with its own password", request(staff, PASSWORD));
+        failures.put("a role-holder on the public surface, with a wrong password", request(staff, "not the password"));
 
         failures.forEach(
                 (cause, attempt) -> {
@@ -146,7 +152,8 @@ class AuthenticationCostsTheSameDatabaseTest {
         try (CorrelationContext.Scope ignored =
                 CorrelationContext.enter(
                         Correlation.startingWith(CorrelationId.generate(IDS)))) {
-            return serviceWith(deriver).authenticate(attempt, null);
+            // The public surface, where a customer signs in: every case reads the roles, as production does there.
+            return serviceWith(deriver).authenticate(attempt, null, com.finapp.app.surface.Surface.PUBLIC);
         }
     }
 
@@ -174,7 +181,26 @@ class AuthenticationCostsTheSameDatabaseTest {
                         new java.security.SecureRandom()),
                 template,
                 dataSource,
-                new SimpleMeterRegistry());
+                new SimpleMeterRegistry(),
+                new com.finapp.identity.Authorization(
+                        new com.finapp.identity.JdbcRoleAssignmentStore(IDS),
+                        IDS,
+                        CLOCK,
+                        new com.finapp.platform.audit.JdbcAuditWriter()),
+                new com.finapp.app.surface.SurfaceRefusalMeters(new SimpleMeterRegistry()));
+    }
+
+    /** A live role, granted by the identity to itself: the grant's author is a foreign key, and nothing here needs another. */
+    private void grantARole(LoginIdentifier login) throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            execute(
+                    app,
+                    "INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at)"
+                            + " VALUES (?, ?, 'KYC_REVIEWER', ?, now() - interval '1 hour')",
+                    IDS.next(),
+                    identityIdOf(app, login).value(),
+                    identityIdOf(app, login).value());
+        }
     }
 
     private static AuthenticationRequest request(LoginIdentifier login, String password) {

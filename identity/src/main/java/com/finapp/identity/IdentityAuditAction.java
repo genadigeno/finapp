@@ -239,6 +239,22 @@ public enum IdentityAuditAction implements AuditableAction {
             false),
 
     /**
+     * A role-holding identity was refused at a door that issues or strengthens a session, or changes what can prove the
+     * identity, because the request arrived on the public surface (`P15-TSK-042`; {@code THREAT_MODEL.md} T1, T3, T31).
+     *
+     * <p>Staff prove, strengthen and recover their access on the operator surface alone. On the public one the door answers
+     * its ordinary failure, so nothing in the response says the identity holds a role; this record is where the reason
+     * lives. One per refused request, a retry a second. Its summary names the operation by its route pattern and the
+     * surface the request arrived on ({@code public}, or {@code unmarked} where no usable marker came), and at sign-in
+     * whether the password presented was the identity's: a correct operator password from the internet is a phished
+     * one. Never the password, the code, the token or the session. No reason: nobody chose it.
+     */
+    PUBLIC_SURFACE_REFUSED(
+            "identity.PublicSurfaceRefused",
+            "A role-holding identity was refused on the public surface at a door that issues or strengthens its access.",
+            false),
+
+    /**
      * An administrator read which live holdings of a money-redirecting role have no enrolled factor (`P15-TSK-039`): the
      * check of the holdings that existed before the rule, which grants no role and revokes none. Written in the read's
      * own transaction. No reason: the read harms nobody and the review's procedure asks for it.
