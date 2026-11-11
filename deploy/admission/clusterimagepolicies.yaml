@@ -1,0 +1,83 @@
+# Admission verification (P15-TSK-007, ADR-0122 decision 3, C7; THREAT_MODEL.md T5, T27): what the Sigstore policy controller
+# admits into the namespaces that opt in (deploy/namespaces: finapp and finapp-edge carry policy.sigstore.dev/include). The controller
+# itself is installed from deploy/operators/policy-controller/values.yaml, which refuses an image no policy here matches
+# (no-match-policy: deny) and refuses when it cannot answer (failurePolicy: Fail).
+#
+# HOW THE CONTROLLER READS THESE (its own code, v0.15.1, read): every container of a pod or a pod template is checked, init and
+# ephemeral containers included; an image that is not a digest is refused; EVERY policy whose glob matches an image must pass, and
+# within one policy ANY one authority suffices. An authority that lists attestations verifies those and not the signature, so
+# "signed AND attested" is two policies over the same globs. A glob is matched against the reference's full name, Docker Hub's as
+# index.docker.io/library/...; `**` is any characters, `*` any but `/`.
+#
+# THE TWO PLATFORM IMAGES, by repository name and never by registry, in both the names they go by. As built, finapp-app and
+# finapp-migrator (the overlays' names, and the kind check's). In an environment's registry, finapp-<environment>-app and
+# finapp-<environment>-migrator: infra/terraform/modules/registry names each repository from the conventions' prefix, and
+# ImageAdmissionTest reads that naming and holds every name it yields to both platform policies. A glob that matches more only asks
+# more: any image so named, from anywhere, must carry the trusted authority's signature and both attestations. A third image of ours is
+# refused until it is added here.
+#
+# EVERY POLICY IS HERE. ImageAdmissionTest refuses a policy.sigstore.dev document anywhere else under deploy/, and anything in this
+# root but this file: a fourth policy that passed everything would open both namespaces to any image, and so would a patch to these.
+#
+# THE AUTHORITY is an environment's. Committed, it is a placeholder no key parses, so these policies as committed admit nothing:
+# infra/scripts/admission-check.sh puts its run's public key and its run's signature repository in their place on kind, and a real
+# environment's delivery puts the identity the owner ratifies (THREAT_MODEL.md section 6 item 35: keyless, from CI's own identity).
+# SIGNATURES live in a repository of their own (source.oci), tag-based (sha256-<digest>.sig and .att), so the image repositories keep
+# immutable tags and no lifecycle rule on them can ever reach a signature (the decision ADR-0122's note records).
+#
+# THE ONE EXCEPTION is finapp-edge-traefik: the edge's third-party proxy, which the build does not produce, admitted by its one pinned
+# digest and nothing else (ImageAdmissionTest holds it equal to TRAEFIK_DIGEST and to deploy/edge's controllers, and holds that no
+# other policy here admits without an authority).
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: finapp-images-signed
+spec:
+  mode: enforce
+  images:
+    - glob: "**/finapp-app@sha256:*"
+    - glob: "**/finapp-migrator@sha256:*"
+    - glob: "**/finapp-*-app@sha256:*"
+    - glob: "**/finapp-*-migrator@sha256:*"
+  authorities:
+    - name: ci
+      key:
+        data: ADMISSION-AUTHORITY-PUBLIC-KEY
+      source:
+        - oci: ADMISSION-SIGNATURE-REPOSITORY
+---
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: finapp-images-attested
+spec:
+  mode: enforce
+  images:
+    - glob: "**/finapp-app@sha256:*"
+    - glob: "**/finapp-migrator@sha256:*"
+    - glob: "**/finapp-*-app@sha256:*"
+    - glob: "**/finapp-*-migrator@sha256:*"
+  authorities:
+    - name: ci
+      key:
+        data: ADMISSION-AUTHORITY-PUBLIC-KEY
+      source:
+        - oci: ADMISSION-SIGNATURE-REPOSITORY
+      attestations:
+        - name: provenance
+          predicateType: https://slsa.dev/provenance/v1
+        - name: sbom
+          predicateType: https://cyclonedx.org/bom
+---
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: finapp-edge-traefik
+spec:
+  mode: enforce
+  images:
+    - glob: "index.docker.io/library/traefik@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a"
+  authorities:
+    - name: pinned-upstream-digest
+      static:
+        action: pass

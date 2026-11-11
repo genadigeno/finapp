@@ -214,6 +214,13 @@ public final class Rehearsal {
         return field(answer.body(), "sessionToken");
     }
 
+    /** A role-holder's sign-in, on the operator host: the public one refuses staff (P15-TSK-042). */
+    private String authenticateStaff(String login) throws IOException, InterruptedException {
+        Answer answer = expect("authenticate staff " + login, post(operatorBase, "/v1/authentications",
+                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + password() + "\"}", null, null), 201);
+        return field(answer.body(), "sessionToken");
+    }
+
     private String password() {
         return state.getProperty("password", PASSWORD);
     }
@@ -301,13 +308,16 @@ public final class Rehearsal {
         System.out.println("onboarded merchant, " + CUSTOMERS + " customers with wallets and cards");
     }
 
-    /** Enrols a TOTP factor for {@code who} and answers an elevated session; the factor's secret stays in this run's state. */
+    /**
+     * Enrols a TOTP factor for {@code who} and answers an elevated session; the factor's secret stays in this run's state. Staff, so on the
+     * operator host: since P15-TSK-042 a role-holder signs in, enrols and steps up there alone.
+     */
     private String enrol(String who) throws Exception {
-        String session = authenticate(state.getProperty(who + ".login"));
-        String secret = secretFrom(expect("mfa enrolment of " + who, post(publicBase, "/v1/me/mfa", null, session, null), 201).body());
+        String session = authenticateStaff(state.getProperty(who + ".login"));
+        String secret = secretFrom(expect("mfa enrolment of " + who, post(operatorBase, "/v1/me/mfa", null, session, null), 201).body());
         long step = currentStep();
-        expect("mfa confirmation of " + who, post(publicBase, "/v1/me/mfa/confirmation", "{\"code\":\"" + totp(secret, step - 1) + "\"}", session, null), 204);
-        Answer elevated = expect("elevation of " + who, post(publicBase, "/v1/authentications/mfa", "{\"code\":\"" + totp(secret, step) + "\"}", session, null), 200);
+        expect("mfa confirmation of " + who, post(operatorBase, "/v1/me/mfa/confirmation", "{\"code\":\"" + totp(secret, step - 1) + "\"}", session, null), 204);
+        Answer elevated = expect("elevation of " + who, post(operatorBase, "/v1/authentications/mfa", "{\"code\":\"" + totp(secret, step) + "\"}", session, null), 200);
         state.setProperty(who + ".totp", secret);
         state.setProperty(who + ".step", Long.toString(step));
         return field(elevated.body(), "sessionToken");
@@ -595,9 +605,9 @@ public final class Rehearsal {
         return fresh("operator");
     }
 
-    /** A code is consumed once per step (P1-TSK-018): a new elevation waits for a step the last one did not use. */
+    /** A code is consumed once per step (P1-TSK-018): a new elevation waits for a step the last one did not use. Staff, so on the operator host. */
     private String fresh(String who) throws Exception {
-        String session = authenticate(state.getProperty(who + ".login"));
+        String session = authenticateStaff(state.getProperty(who + ".login"));
         String secret = state.getProperty(who + ".totp");
         long last = Long.parseLong(state.getProperty(who + ".step", "0"));
         long step = currentStep();
@@ -605,7 +615,7 @@ public final class Rehearsal {
             pause(1000);
             step = currentStep();
         }
-        Answer elevated = expect("elevation", post(publicBase, "/v1/authentications/mfa",
+        Answer elevated = expect("elevation", post(operatorBase, "/v1/authentications/mfa",
                 "{\"code\":\"" + totp(secret, step) + "\"}", session, null), 200);
         state.setProperty(who + ".step", Long.toString(step));
         save();
@@ -652,6 +662,12 @@ public final class Rehearsal {
         System.out.println("edge operator-route-on-operator status=" + operator.status() + " body=" + operator.body().replaceAll("\\s+", " "));
         Answer actuator = get(publicBase, "/actuator/health", null);
         System.out.println("edge actuator-on-public status=" + actuator.status());
+        // P15-TSK-042: the operator's own password, on each host. Refused on the public one as a wrong password is, and counted nowhere.
+        String staff = "{\"loginIdentifier\":\"" + state.getProperty("operator.login") + "\",\"password\":\"" + password() + "\"}";
+        Answer staffOnPublic = post(publicBase, "/v1/authentications", staff, null, null);
+        System.out.println("edge operator-sign-in-on-public status=" + staffOnPublic.status() + " body=" + staffOnPublic.body().replaceAll("\\s+", " "));
+        Answer staffOnOperator = post(operatorBase, "/v1/authentications", staff, null, null);
+        System.out.println("edge operator-sign-in-on-operator status=" + staffOnOperator.status());
     }
 
     /**

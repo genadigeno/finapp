@@ -47,7 +47,11 @@ public class ContactChannelController {
      *
      * <p>202 with no body: the challenge went to the address, and in Phase 1 nothing delivers it.
      * Returning it here would hand it to whoever asked, so proving control would prove nothing.
+     *
+     * <p>Staff add a recovery channel on the operator surface alone (`P15-TSK-042`): a channel is where recovery sends its token,
+     * so adding one from the internet would set up a takeover. Refused elsewhere by the session interceptor.
      */
+    @com.finapp.app.surface.OperatorsRefusedOnPublic(com.finapp.app.surface.SurfaceDoor.CHANNEL_ADDITION)
     @PostMapping
     @RequiresSession
     @ResponseStatus(HttpStatus.ACCEPTED)

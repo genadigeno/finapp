@@ -1074,6 +1074,13 @@ grep -Eq 'edge operator-route-on-operator status=401 ' "$ART/edge.txt" \
 grep -q 'edge actuator-on-public status=404' "$ART/edge.txt" \
     && pass "the actuator is not on the public host" \
     || fail "the actuator on the public host: $(grep 'actuator-on-public' "$ART/edge.txt")"
+# P15-TSK-042: the edge's surface marker through the real controllers - an operator's own password refused on the public host, served on the operator host.
+grep -q 'edge operator-sign-in-on-public status=401 ' "$ART/edge.txt" \
+    && pass "an operator's own password is refused on the public host" \
+    || fail "the operator's sign-in on the public host: $(grep 'operator-sign-in-on-public' "$ART/edge.txt")"
+grep -q 'edge operator-sign-in-on-operator status=201' "$ART/edge.txt" \
+    && pass "an operator signs in on the operator host" \
+    || fail "the operator's sign-in on the operator host: $(grep 'operator-sign-in-on-operator' "$ART/edge.txt")"
 
 CM_POD_IP=$(kube -n cert-manager get pods -l app.kubernetes.io/component=controller -o jsonpath='{.items[0].status.podIP}')
 kube -n finapp-observability exec np-scraper -c probe -- curl -s --max-time 10 "http://$CM_POD_IP:9402/metrics" > "$ART/cert-manager-metrics.txt" 2>&1 \

@@ -1,0 +1,46 @@
+# The Sigstore policy controller's Helm values (P15-TSK-007, ADR-0122 decision 3, C2: Helm only to install pinned third-party
+# components). Installed into its own namespace, cosign-system, from the chart POLICY_CONTROLLER_CHART_* of infra/scanner-pins.sh (an
+# OCI artefact pinned by digest), rendered without its hooks: the chart's one hook, a post-delete lease cleanup, names an image by a
+# floating tag. The image below is POLICY_CONTROLLER_DIGEST (ImageAdmissionTest holds the two equal; the weekly pin job watches the
+# tag), not the chart's own default, which is an older release. infra/scripts/admission-check.sh installs exactly this on kind.
+#
+# WHAT IT DECIDES lives in deploy/admission. What these values decide is how it fails:
+# - no-match-policy: deny. An image in an opted-in namespace that no policy matches is refused, so the policies are an allow-list
+#   and the one exception there is the only image admitted without the trusted authority.
+# - failurePolicy: Fail. When the webhook cannot answer (down, slow, unreachable), the API server refuses the pod.
+# - Two replicas and a disruption budget, because the second rule makes the controller's availability every rollout's: while
+#   neither replica answers, no pod in the platform's namespaces can be created (those already running keep running).
+# - The namespaces it watches are the ones labelled policy.sigstore.dev/include: "true" (the chart's default selector), set on
+#   finapp and finapp-edge in deploy/namespaces. Its own namespace is not labelled, so it can always start.
+#
+# ONE GAP IT CANNOT CLOSE ITSELF: its validating webhook is created with no rules and fills them in when it starts. Until then,
+# nothing is checked. The order is therefore the controller, its rules, the policies, and only then the platform's namespaces
+# (OPERATIONS_RUNBOOK.md section 11.32).
+#
+# TUF: the controller initialises a TUF root from the public Sigstore mirror at start and stops if it cannot. A keyless authority
+# needs it; a key authority does not, so the kind check passes -disable-tuf on its own command line, never here.
+webhook:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/sigstore/policy-controller/policy-controller
+    version: sha256:0492bb264fb1d9bdc8e3f343ef542cc85b7dd7c7fd8d9524b453c2bd31a1d128
+    pullPolicy: IfNotPresent
+  failurePolicy: Fail
+  configData:
+    no-match-policy: deny
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  namespaceSelector:
+    matchExpressions:
+      - key: policy.sigstore.dev/include
+        operator: In
+        values: ["true"]
+  # Reference figures, as in deploy/base: memory request = limit.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi

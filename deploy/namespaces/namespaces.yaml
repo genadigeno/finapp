@@ -7,11 +7,16 @@
 #
 # NetworkPolicies select these by kubernetes.io/metadata.name, which the API server sets itself: a label someone could
 # add to another namespace would be a way in.
+#
+# ADMISSION (P15-TSK-007): finapp and finapp-edge carry policy.sigstore.dev/include, the label the policy controller's webhook selects,
+# so every pod in them is checked against deploy/admission. finapp-observability does not: what runs there is third-party telemetry,
+# which no policy names, and opting it in refuses all of it (THREAT_MODEL.md section 6 item 35 says what would let it in).
 apiVersion: v1
 kind: Namespace
 metadata:
   name: finapp
   labels:
+    policy.sigstore.dev/include: "true"
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: v1.34
     pod-security.kubernetes.io/audit: restricted
@@ -24,6 +29,7 @@ kind: Namespace
 metadata:
   name: finapp-edge
   labels:
+    policy.sigstore.dev/include: "true"
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: v1.34
     pod-security.kubernetes.io/audit: restricted

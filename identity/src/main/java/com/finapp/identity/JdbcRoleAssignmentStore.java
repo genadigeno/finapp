@@ -48,6 +48,53 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
     }
 
     @Override
+    public java.util.Optional<IdentityId> liveHolderByLogin(Connection unitOfWork, LoginIdentifier login) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(login, "login must not be null");
+        // ONE STATEMENT, whatever the identifier names (`P15-TSK-042`): an unknown identifier, a customer's and a
+        // role-holder's all run this read and nothing else, so the public sign-in's cost does not say which it was.
+        // `revoked_at IS NULL` in the statement, for liveRolesOf's reason.
+        String sql =
+                "SELECT signing_in.id FROM identity.identity signing_in"
+                        + " WHERE signing_in.login_identifier = ?"
+                        + " AND EXISTS (SELECT 1 FROM " + TABLE + " held"
+                        + " WHERE held.identity_id = signing_in.id AND held.revoked_at IS NULL)";
+        return holderBy(unitOfWork, sql, select -> select.setString(1, login.value()),
+                "Could not read whether a login identifier holds a role");
+    }
+
+    @Override
+    public java.util.Optional<IdentityId> liveHolderOfRecovery(Connection unitOfWork, RecoveryRequestId request) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(request, "request must not be null");
+        String sql =
+                "SELECT recovering.identity_id FROM identity.recovery_request recovering"
+                        + " WHERE recovering.id = ?"
+                        + " AND EXISTS (SELECT 1 FROM " + TABLE + " held"
+                        + " WHERE held.identity_id = recovering.identity_id AND held.revoked_at IS NULL)";
+        return holderBy(unitOfWork, sql, select -> select.setObject(1, request.value()),
+                "Could not read whether a recovery request's identity holds a role");
+    }
+
+    private interface Binding {
+        void bind(PreparedStatement select) throws SQLException;
+    }
+
+    private static java.util.Optional<IdentityId> holderBy(
+            Connection unitOfWork, String sql, Binding binding, String failure) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            binding.bind(select);
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next()
+                        ? java.util.Optional.of(IdentityId.of(rows.getObject(1, java.util.UUID.class)))
+                        : java.util.Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new IdentityStorageException(DatabaseFailure.describe(failure, e));
+        }
+    }
+
+    @Override
     public java.util.List<FactorlessHolding> holdingsWithoutFactor(Connection unitOfWork, Set<RoleName> roles, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(roles, "roles must not be null");

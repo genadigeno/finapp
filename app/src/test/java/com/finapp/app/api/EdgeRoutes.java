@@ -37,11 +37,10 @@ import org.springframework.web.method.HandlerMethod;
  * reviewed line.
  *
  * <p><strong>The operator surface also serves the doors that issue a session.</strong> {@link #OPERATOR_SESSION_DOORS} names the
- * controllers that issue, elevate, list and end one, so an operator can do all of that from the internal network. It
- * does not keep operators off the internet: the same doors stay public because a customer needs them, nothing yet refuses a
- * role-holding identity there, and a phished operator password can sign in, elevate, enrol a factor or change the
- * password from the public host. Using that session on an operator route still needs the internal network. That residual is
- * {@code THREAT_MODEL.md} section 6 item 22.
+ * controllers that issue, elevate, list and end one, and those that recover an account and name its recovery channel, so an
+ * operator can do all of that from the internal network. The same doors stay public because a customer needs them; what keeps
+ * staff off them there is the application (`P15-TSK-042`): each edge marks the surface a request arrived on, and a
+ * role-holding identity is refused at those doors unless the operator edge marked it.
  */
 final class EdgeRoutes {
 
@@ -85,9 +84,13 @@ final class EdgeRoutes {
         }
     }
 
-    /** The controllers that issue, elevate, list and end a session: the only public routes served on the operator host too. */
+    /**
+     * The controllers that issue, elevate, list and end a session, and since `P15-TSK-042` those that recover an account and name
+     * its recovery channel, which staff may do on the operator surface alone: the only public routes served on the operator host too.
+     */
     static final Set<String> OPERATOR_SESSION_DOORS =
-            Set.of("AuthenticationController", "MfaChallengeController", "MfaController", "SessionController", "CredentialController");
+            Set.of("AuthenticationController", "MfaChallengeController", "MfaController", "SessionController", "CredentialController",
+                    "RecoveryController", "ContactChannelController");
 
     /** One route, and every fact about it the two rendered files need. */
     record EdgeRoute(String method, String template, Surface surface, Tier tier, boolean sessionDoor) {
