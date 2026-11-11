@@ -1334,7 +1334,7 @@ were added on 2026-11-09 and await the owner." until then.)*
     enforces nothing goes red rather than green.
     **Decided 2026-11-11**: (a); the first CI run of the `rehearsal` job is read for which engine answered.
 
-36. **T7's, T22's and T34's residuals: what the rotation rehearsal leaves** *(added 2026-11-11 by the rotation rehearsal)*. Three things.
+36. **T6's, T7's, T22's and T34's residuals: what the rotation rehearsal leaves** *(added 2026-11-11 by the rotation rehearsal)*. Four things.
 
     *(a) ADR-0032's rotation policy for a customer's credential, and its "older than X" report.* ADR-0032 gave Phase 15 both, and no
     register row held either. Built: a customer's credential changes when its holder changes it, which ends every other session, and its
@@ -1355,6 +1355,12 @@ were added on 2026-11-09 and await the owner." until then.)*
     (`SECRET_MANAGEMENT.md` section 5.1), but the window is the provider's to hold: the simulated provider verifies no credential, so a
     rotation against it would pass whatever was sent. *Recommendation*: rehearse each against the provider's own sandbox when a real
     provider is connected, which plan section 1.1 defers with every real provider.
+
+    *(d) Three classes not rotated on the cluster* (T6). The migrator's credential (between releases: the role's password and the store
+    change, and the next Job reads it), the source-bucket key (one store change and a roll, every source starting a fresh window once)
+    and the master credential (the managed service's own mechanism). None moves money or needs a window, and the first two use steps the
+    rehearsal ran for other classes. *Recommendation*: rehearse the first two in the operations rehearsal's run of runbook section 11.7,
+    and leave the master credential to the environment, as section 5.1 of `SECRET_MANAGEMENT.md` does.
 
 ## 7. Decided against
 

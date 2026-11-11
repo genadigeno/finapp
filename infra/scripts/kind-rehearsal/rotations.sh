@@ -27,7 +27,8 @@
 #
 # NOTHING GENERATED IS KEPT. Every password, SCRAM user's password, key and the store's contents live in $WORK and in the cluster, both
 # removed at exit; the artefacts hold counts, verdicts, timings and check values (which are published values, not secrets). Passwords
-# reach PostgreSQL as SCRAM verifiers computed in the client, and the broker through a file written from standard input in its /tmp.
+# reach PostgreSQL as SCRAM verifiers computed in the client; the broker's crosses kubectl on standard input and reaches kafka-configs as
+# its argument inside the test-only broker's own container, whose output stays out of the artefacts.
 #
 # REHEARSAL_ROTATIONS selects and orders them (default: all, as above). REHEARSAL_PROBE `grant-missing` plants an alternating user missing
 # one grant before the grant census; `hmac-previous-dropped` stores the new secret with a previous one that is not the old.
@@ -429,16 +430,14 @@ acl_set_of() {
 }
 
 scram_add() {
-    # scram_add <user> <password>: through a file written from standard input in the broker's /tmp, removed at once.
-    printf 'SCRAM-SHA-512=[iterations=8192,password=%s]\n' "$2" | kube -n finapp exec -i finapp-kafka-0 -c kafka -- /bin/sh -c 'umask 077; cat > /tmp/rotation-scram.properties' \
-        || fail "the SCRAM file could not be written"
-    if kafka_admin kafka-configs.sh --alter --add-config-file /tmp/rotation-scram.properties --entity-type users --entity-name "$1" >> "$ART/kafka.log" 2>&1; then
-        added=0
+    # scram_add <user> <password>: the password crosses kubectl on standard input and reaches kafka-configs as its argument inside the
+    # test-only broker's own container, as the harness's first user reaches kafka-storage there. kafka-configs refuses a SCRAM credential
+    # from --add-config-file, and echoes what it refuses, so its output stays in the run's directory and never reaches an artefact.
+    if printf '%s\n' "$2" | kube -n finapp exec -i finapp-kafka-0 -c kafka -- /bin/sh -c 'IFS= read -r secret; exec /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9094 --alter --add-config "SCRAM-SHA-512=[iterations=8192,password=$secret]" --entity-type users --entity-name "$1"' scram "$1" > "$WORK/scram.out" 2>&1; then
+        rm -f "$WORK/scram.out"
     else
-        added=1
+        fail "the SCRAM user $1 could not be added ($(grep -c . "$WORK/scram.out") lines of output, kept out of the artefacts)"
     fi
-    kube -n finapp exec finapp-kafka-0 -c kafka -- rm -f /tmp/rotation-scram.properties >> "$ART/kafka.log" 2>&1 || true
-    [ "$added" = 0 ] || fail "the SCRAM user $1 could not be added: see kafka.log"
 }
 
 scram_remove() {

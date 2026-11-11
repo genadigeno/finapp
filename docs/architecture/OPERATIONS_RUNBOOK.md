@@ -1878,6 +1878,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.30 Abuse limits: the doors' per-source limits, a door that refuses everyone, a store that cannot count, raising a limit, rotating the bucket key *(written 2026-11-09, below)* | `P15-TSK-022` | `-032` |
 | 11.29 Key rotation and key compromise: the field-level key rings and the callback window *(written 2026-11-09, below)* | `P15-TSK-019` | `-020` |
 | 11.31 Changing configuration: which class, which way, and `ConfigFingerprintDisagrees` *(written 2026-11-09, below)* | `P15-TSK-031` | `-032` |
+| 11.33 Rotations rehearsed on `kind`: running them, reading them, the last record *(written 2026-11-11, below)* | `P15-TSK-020` | `P15-TSK-020` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -1902,6 +1903,8 @@ row.)*
 *(Added 2026-11-09 by `P15-TSK-031`: §11.31 below is written, from the register, the overlays and `infra/prometheus/rules/platform.yml`; not yet rehearsed.)*
 
 *(Added 2026-11-09 by `P15-TSK-016`: §11.7 below is written, the cloud half; no account exists to run it.)*
+
+*(Added 2026-11-11 by `P15-TSK-020`: §11.33 below records the rotations rehearsed on one `kind` cluster: rows 11.7 (its fleet half), 11.26 (the renewed certificate) and 11.29 have now run there, each under the workload with its rollback; §11.33 says what that does and does not mean.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
@@ -2223,7 +2226,7 @@ There is no raw `UPDATE` in this procedure, and none is needed.
 
 ### 11.7 Rotation and revocation: the cloud half (`P15-TSK-016`)
 
-*Written from `modules/security`, and never run: no account exists. `P15-TSK-020` rehearses the fleet's half on `kind`, and key rings are
+*Written from `modules/security`, and never run: no account exists. The fleet's half has been rehearsed on `kind` (section 11.33), and key rings are
 `P15-TSK-019`'s.* Each class's method and the sync and the roll are `SECRET_MANAGEMENT.md` §5.1 and §5.2; this is what happens in the account around them.
 
 **First fill: every entry needs a value before the first sync, once.** Terraform creates the entries empty and never holds a value. Under
@@ -2865,7 +2868,7 @@ overlay names (for staging and production the Terraform environment's `cidr_bloc
 client's own address must survive to the controller, which the staging and production overlays' `preserve_client_ip.enabled=true` target-group attribute asks for on their `ip` targets (`kind`'s NodePort uses `externalTrafficPolicy: Local`, which does nothing for an `ip` target); without it, every client appears as the load balancer and shares one per-source limit and one recorded address.
 
 **A renewed certificate.** The Secret and the routes are one projected volume, and the file provider watches its directory. The kubelet's swap of the volume reloads the certificate without a restart; `edge-check.sh`
-proves that swap on the pinned image. A real cluster's is `P15-TSK-020`'s rehearsal. No `Certificate`, issuer, hostname or TLS Secret is committed for staging or production: until a real environment provides the Secret,
+proves that swap on the pinned image. A real kubelet's swap of a Secret cert-manager renewed early has run on `kind` under the workload, and the restoring of the previous certificate (section 11.33): served each time with no controller restarted. No `Certificate`, issuer, hostname or TLS Secret is committed for staging or production: until a real environment provides the Secret,
 the controller pods do not start.
 
 **Failure and rollback.** An edge outage is refused traffic and nothing more: the application stays ready, and its schedules and consumers do not notice. Revert by the previous manifest digest; every route and limit is in the ConfigMap's hash, so a revert restores them together.
