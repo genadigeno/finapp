@@ -34,7 +34,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  * {@code admission} job. What it reads is committed here, and this class holds the committed files on every build:
  *
  * <ul>
- *   <li>every image a workload under {@code deploy/} runs in a namespace that opts in is matched as intended - the two
+ *   <li>every image a workload under {@code deploy/} runs in a namespace that opts in, or in one it cannot read, is matched as intended - the two
  *       platform images by both platform policies, the edge's proxy by the one exception - read from every manifest and
  *       every overlay's image list, through a port of the controller's own glob matching that is itself tested here;
  *   <li>exactly one exception, and it is one digest: Traefik's pin, equal to the edge's own;
@@ -253,7 +253,8 @@ class ImageAdmissionTest {
                 .as("the keys are this run's, generated outside the repository and never uploaded to a log")
                 .contains("WORK=$(mktemp -d)").contains("-v \"$(dpath \"$WORK/keys\"):/keys\"")
                 .contains("generate-key-pair --output-key-prefix /keys/ci").contains("--tlog-upload=false")
-                .contains("COSIGN_PASSWORD=$(od -An -N24 -tx1 /dev/urandom").contains("rm -rf \"$WORK\"")
+                .contains("SIGNING_PHRASE=$(od -An -N24 -tx1 /dev/urandom").contains("COSIGN_PASSWORD=${SIGNING_PHRASE}")
+                .contains("-e COSIGN_PASSWORD ").contains("rm -rf \"$WORK\"")
                 .doesNotContain("$ROOT/build/admission/ci.key").doesNotContain("cp \"$WORK/keys/ci.key\"");
         assertThat(script).as("every refusal sits beside its control, admitted outside the policy")
                 .contains("attempt \"$1-control\" \"$4\"").contains("CONTROL=finapp-admission-control");
@@ -312,7 +313,7 @@ class ImageAdmissionTest {
         }
         for (Path file : files("deploy", ".yaml")) {
             String relative = root.relativize(file).toString().replace('\\', '/');
-            if (relative.endsWith("kustomization.yaml") || relative.startsWith("deploy/operators/") || relative.startsWith("deploy/observability/")) {
+            if (relative.endsWith("kustomization.yaml")) {
                 continue;
             }
             for (Map<String, Object> document : documents(relative)) {
@@ -320,6 +321,12 @@ class ImageAdmissionTest {
                     continue;
                 }
                 Map<String, Object> metadata = map(document, "metadata");
+                // Its namespace: its own, or the nearest root's above it. A base that states none is rendered into a namespace by
+                // its overlays, and counts as watched: a workload whose namespace cannot be read is held to the policy, not let off.
+                String namespace = metadata.get("namespace") != null ? String.valueOf(metadata.get("namespace")) : namespaceAbove(file);
+                if (namespace != null && !OPTED_IN.contains(namespace)) {
+                    continue;
+                }
                 Object labels = metadata.get("labels");
                 boolean testOnly = labels instanceof Map<?, ?> map && "true".equals(String.valueOf(map.get("finapp/test-only")));
                 List<String> raw = images(document);
@@ -339,6 +346,21 @@ class ImageAdmissionTest {
             }
         }
         return found;
+    }
+
+    /** The {@code namespace:} of the nearest {@code kustomization.yaml} from the file's directory up to {@code deploy/}, if one states it. */
+    private static String namespaceAbove(Path file) {
+        Path deploy = root.resolve("deploy");
+        for (Path directory = file.getParent(); directory != null && directory.startsWith(deploy); directory = directory.getParent()) {
+            Path kustomization = directory.resolve("kustomization.yaml");
+            if (Files.isRegularFile(kustomization)) {
+                Object namespace = documents(root.relativize(kustomization).toString().replace('\\', '/')).get(0).get("namespace");
+                if (namespace != null) {
+                    return String.valueOf(namespace);
+                }
+            }
+        }
+        return null;
     }
 
     @SuppressWarnings("unchecked")

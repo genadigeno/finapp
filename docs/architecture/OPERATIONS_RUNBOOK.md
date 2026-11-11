@@ -2962,7 +2962,7 @@ the controller yet, and no real identity signs anything.)*
 **What is there.** The Sigstore policy controller, two replicas in `cosign-system`, installed from its pinned chart with
 `deploy/operators/policy-controller/values.yaml`. It watches the namespaces labelled `policy.sigstore.dev/include: "true"`:
 `finapp` and `finapp-edge` (`deploy/namespaces`). Every pod there and every pod template is checked before it exists:
-Deployments, Jobs and their pods, init containers and debug containers included. `deploy/admission` decides what passes:
+Deployments, Jobs and their pods, init containers included. A debug container added to a running pod is checked too, by the controller's own registration of `pods/ephemeralcontainers` (read from its code, not exercised on `kind`). `deploy/admission` decides what passes:
 
 - `finapp-app` and `finapp-migrator`, from any registry, must carry the trusted authority's signature (`finapp-images-signed`)
   and both attestations, SLSA provenance and the CycloneDX SBOM (`finapp-images-attested`);
@@ -3013,7 +3013,8 @@ their images are pinned by digest in their manifests, and nothing at the cluster
 item 35). The `kind` rehearsal (§11.28) deploys its own unsigned builds on a cluster with no controller. It rehearses the
 rollout, not admission, and its test-only database and broker would be refused by this policy.
 
-**The last record (2026-11-11).** RECORD-PLACEHOLDER
+**The last record (2026-11-11).** On one machine (Docker Desktop, TLS intercepted, so `ADMISSION_CA_BUNDLE` and `TRIVY_IMAGE` set), Kubernetes v1.34.11 on `kind`. A full run built both images from the tree, wrote their SBOMs (111 and 31 components), signed and attested them under the run's key, verified both, and refused the three plants by name: `no signatures found`, `no matching signatures: invalid signature ...`, `no matching attestations`. Then every case answered as stated, 20 assertions, none failed. Both images were admitted at their signed digests. The unsigned and other-key images of each were refused by `finapp-images-signed`, and the unattested one by `finapp-images-attested`. The unsigned init container was refused, naming `initContainers[0]`, and the signed one admitted. An unnamed image was refused (`no matching policies`) in `finapp` and in `finapp-edge`, and Traefik was admitted at its pinned digest. While the controller was scaled to zero the signed app was refused (`failed calling webhook`), and it was admitted again once the controller was back. Every refusal's control was admitted in `finapp-admission-control`. The final bytes were run green again with that build's images and SBOMs, and each probe was run on them (`MUTATION_TESTING.md`). CI's `admission` job has not run yet.
+
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

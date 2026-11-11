@@ -348,7 +348,9 @@ done
 # Keys, signatures, attestations: this run's, in its temporary directory.
 # ---------------------------------------------------------------------------------------------------
 step "keys"
-COSIGN_PASSWORD=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+# Random per run. cosign reads it from the environment, handed to its container by name and never on a command line.
+SIGNING_PHRASE=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+COSIGN_PASSWORD=${SIGNING_PHRASE}
 export COSIGN_PASSWORD
 cosign() {
     dock run --rm --network kind --user "$(id -u):$(id -g)" -e HOME=/tmp -e COSIGN_PASSWORD \
@@ -388,7 +390,14 @@ provenance() {
         printf '    "internalParameters": {"sourceDateEpoch": "%s", "version": "%s"},\n' "$SOURCE_DATE_EPOCH" "$VERSION"
         printf '    "resolvedDependencies": [\n      {"uri": "git+%s@%s", "digest": {"gitCommit": "%s"}}' "$SOURCE" "$REVISION" "$REVISION"
         for base in $bases; do
-            printf ',\n      {"uri": "pkg:docker/%s", "digest": {"sha256": "%s"}}' "${base%@*}" "${base##*@sha256:}"
+            # A package URL: pkg:docker/<name>@<tag>, a registry other than Docker Hub as its repository_url qualifier.
+            reference=${base%@*}
+            name=${reference%:*}
+            case ${name%%/*} in
+                *.*) purl="pkg:docker/${name#*/}@${reference##*:}?repository_url=${name%%/*}" ;;
+                *) purl="pkg:docker/$name@${reference##*:}" ;;
+            esac
+            printf ',\n      {"uri": "%s", "digest": {"sha256": "%s"}}' "$purl" "${base##*@sha256:}"
         done
         printf '\n    ]\n  },\n  "runDetails": {\n'
         printf '    "builder": {"id": "%s"},\n' "$builder"
