@@ -751,7 +751,13 @@ census() {
     expected_payouts=$(( $(flow_ok_count payout) + SMOKE_PAYOUTS ))
     # Every top-up credits one wallet: 5.00 in a smoke, 0.05 in the workload. Transfers move money between the same wallets and a checkout is paid by card.
     expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} ))
-    lag_settled "$label" || fail "census $label: a partition is unowned or lagging: see consumer-groups-$label.txt"
+    if ! lag_settled "$label"; then
+        # Each replica's last lines, kept before the cluster goes: a loop stuck on one record says why only in its own log.
+        for pod in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name 2>/dev/null); do
+            kube -n finapp logs "$pod" --tail=600 > "$ART/lagging-$label-${pod##*/}.log" 2>&1 || true
+        done
+        fail "census $label: a partition is unowned or lagging: see consumer-groups-$label.txt and lagging-$label-*.log"
+    fi
     # A consumer's inbox row can trail the outbox by a poll: the check waits for it, bounded, and what it last read is the verdict.
     lost_deadline=$(( $(date +%s) + 180 ))
     while :; do
