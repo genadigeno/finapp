@@ -1,6 +1,12 @@
 package com.finapp.app.recovery;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.finapp.app.surface.RequestSurfaces;
+import com.finapp.platform.api.ApiException;
+import com.finapp.platform.api.PlatformErrorCode;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import com.finapp.app.surface.Surface;
 import com.finapp.app.surface.SurfaceRefusalMeters;
@@ -75,14 +81,45 @@ class RecoveryOnPublicSurfaceTest {
     }
 
     @Test
-    @DisplayName("a role-holder's completion on the public surface is refused before its token is judged: nothing spent, nothing replaced")
+    @DisplayName("a role-holder's completion on the public surface, and behind the edge with no marker, is refused before its token is judged: nothing spent, nothing replaced")
     void staffCompletionIsRefused() {
+        for (Surface refusing : java.util.List.of(Surface.PUBLIC, Surface.UNMARKED)) {
+            RecoveryWorld world = new RecoveryWorld(true);
+            assertThat(world.complete(refusing)).as("%s: one answer, a wrong token's", refusing).isFalse();
+            assertThat(world.recoveryCalls).as("%s: the token is never presented to the store", refusing).isEmpty();
+            assertThat(world.written).singleElement().satisfies(record -> assertThat(record.changeSummary())
+                    .contains("operation=POST /v1/recoveries/{id}/completion surface=" + refusing.tag()));
+            assertThat(world.refusals("recovery_completion", refusing.tag())).isEqualTo(1.0);
+        }
+    }
+
+    @Test
+    @DisplayName("the controller hands the service the surface its own request carries, at both doors: marked public, staff are refused;"
+            + " marked operator, they recover")
+    void theControllerPassesTheRequestsSurface() {
         RecoveryWorld world = new RecoveryWorld(true);
-        assertThat(world.complete(Surface.UNMARKED)).as("one answer, a wrong token's").isFalse();
-        assertThat(world.recoveryCalls).as("the token is never presented to the store").isEmpty();
-        assertThat(world.written).singleElement().satisfies(record ->
-                assertThat(record.changeSummary()).contains("operation=POST /v1/recoveries/{id}/completion surface=unmarked"));
-        assertThat(world.refusals("recovery_completion", "unmarked")).isEqualTo(1.0);
+        RecoveryController controller = new RecoveryController(world.service(), new RequestSurfaces(false));
+        world.inAFlow(() -> controller.initiateRecovery(new RecoveryInitiationRequest("someone"), marked("public")));
+        assertThat(world.recoveryCalls).isEmpty();
+        String id = RecoveryRequestId.next(IDS).value().toString();
+        RecoveryCompletionRequest completion =
+                new RecoveryCompletionRequest(Sensitive.of("a-token"), Sensitive.of("a new password of length"));
+        assertThatThrownBy(() -> world.inAFlow(() -> controller.completeRecovery(id, completion, marked("public"))))
+                .isInstanceOfSatisfying(ApiException.class,
+                        refused -> assertThat(refused.errorCode()).isEqualTo(PlatformErrorCode.FORBIDDEN));
+        assertThat(world.recoveryCalls).isEmpty();
+        assertThat(world.written).extracting(record -> record.changeSummary().orElseThrow())
+                .containsExactly("operation=POST /v1/recoveries surface=public",
+                        "operation=POST /v1/recoveries/{id}/completion surface=public");
+
+        world.inAFlow(() -> controller.initiateRecovery(new RecoveryInitiationRequest("someone"), marked("operator")));
+        assertThat(world.recoveryCalls).as("the operator edge's request reaches the store").containsExactly("cancelLiveFor", "initiate");
+    }
+
+    private static MockHttpServletRequest marked(String surface) {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/v1/recoveries");
+        request.addHeader(RequestSurfaces.HEADER, surface);
+        return request;
     }
 
     @Test

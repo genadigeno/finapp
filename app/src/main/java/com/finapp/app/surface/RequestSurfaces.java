@@ -13,7 +13,8 @@ import java.util.Objects;
  * did not come from an edge as built, and is read as no marker at all: {@link Surface#UNMARKED} where an edge must be in front,
  * {@link Surface#SINGLE_PORT} where nothing is deployed. An unusable marker can never read as the operator surface.
  *
- * <p>The header's name is matched as Tomcat matches every name, ignoring case and nothing else: {@code X_Finapp_Surface} is a
+ * <p>The header's name is matched by the container, through {@code getHeaders}: Tomcat's {@code MimeHeaders} compares a name
+ * byte for byte ignoring ASCII case, and folds nothing else, so {@code X_Finapp_Surface} is a
  * different header, never read here, whatever a proxy would make of it.
  *
  * <p>Immutable, built once from the environment, the same on every replica: there is no state to share.
@@ -26,9 +27,9 @@ public final class RequestSurfaces {
     private final boolean nothingDeployed;
 
     /**
-     * @param nothingDeployed whether this instance runs where nothing is deployed in front of it - the database entirely on
-     *     loopback, {@code DatabaseEndpoint.isEntirelyLoopback} - so its own port is both surfaces. False everywhere else, and
-     *     false for a database address nobody could read
+     * @param nothingDeployed whether this instance runs where nothing is deployed in front of it - no edge network named and the
+     *     database entirely on loopback ({@code SurfaceBeans.nothingDeployed}) - so its own port is both surfaces. False everywhere
+     *     else, and false for a database address nobody could read
      */
     public RequestSurfaces(boolean nothingDeployed) {
         this.nothingDeployed = nothingDeployed;

@@ -150,8 +150,15 @@ final class SignInWorld {
         return written.stream().map(record -> record.operation().code()).toList();
     }
 
-    double refusals(String kind) {
-        return registry.get("finapp.identity.surface.refusal").tag("type", "authentication").tag("kind", kind).counter().count();
+    /** Sign-in's refusals on {@code kind}, by whether the password was the identity's ({@code credential_proven}, {@code credential_unproven}). */
+    double refusals(String kind, String outcome) {
+        return registry.get("finapp.identity.surface.refusal").tag("type", "authentication").tag("kind", kind).tag("outcome", outcome)
+                .counter().count();
+    }
+
+    /** The service, for a controller built in front of it. */
+    AuthenticationService service() {
+        return service;
     }
 
     @SuppressWarnings("unchecked")

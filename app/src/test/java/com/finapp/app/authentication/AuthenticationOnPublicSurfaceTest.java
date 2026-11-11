@@ -1,6 +1,7 @@
 package com.finapp.app.authentication;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.surface.Surface;
 import com.finapp.app.surface.SurfaceRefusalMeters;
@@ -53,8 +54,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import com.finapp.app.surface.RequestSurfaces;
+import com.finapp.identity.IdentityErrorCode;
+import com.finapp.platform.api.ApiException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
@@ -97,7 +102,8 @@ class AuthenticationOnPublicSurfaceTest {
         assertThat(refusal.actor().type()).as("no proven actor on this door").isEqualTo(ActorType.SYSTEM);
         assertThat(refusal.changeSummary()).contains("operation=POST /v1/authentications surface=public credential=proven");
         assertThat(refusal.changeSummary().orElseThrow()).doesNotContain(PASSWORD);
-        assertThat(world.refusals("public")).isEqualTo(1.0);
+        assertThat(world.refusals("public", "credential_proven")).as("the phished password is counted as one").isEqualTo(1.0);
+        assertThat(world.refusals("public", "credential_unproven")).isZero();
         assertThat(world.roleReads).hasValue(1);
     }
 
@@ -132,6 +138,8 @@ class AuthenticationOnPublicSurfaceTest {
         assertThat(world.written).filteredOn(record -> record.operation() == IdentityAuditAction.PUBLIC_SURFACE_REFUSED)
                 .allSatisfy(record -> assertThat(record.changeSummary()).hasValueSatisfying(
                         summary -> assertThat(summary).endsWith("credential=unproven")));
+        assertThat(world.refusals("public", "credential_unproven")).isEqualTo(LockoutPolicy.current().threshold() + 3.0);
+        assertThat(world.refusals("public", "credential_proven")).as("no wrong password is counted as a phished one").isZero();
     }
 
     @Test
@@ -184,7 +192,30 @@ class AuthenticationOnPublicSurfaceTest {
         assertThat(world.signIn(operator, PASSWORD, Surface.UNMARKED)).isEmpty();
         assertThat(world.statementsNaming(LOCKOUT_TABLE)).isEmpty();
         assertThat(world.written.get(1).changeSummary()).hasValueSatisfying(summary -> assertThat(summary).contains("surface=unmarked"));
-        assertThat(world.refusals("unmarked")).isEqualTo(1.0);
+        assertThat(world.refusals("unmarked", "credential_proven")).isEqualTo(1.0);
     }
 
+    @Test
+    @DisplayName("the controller hands the service the surface its own request carries: staff marked public refused 401, marked operator signed in")
+    @SuppressWarnings("try") // The Scope is used for its close side effect.
+    void theControllerPassesTheRequestsSurface() {
+        SignInWorld world = new SignInWorld();
+        SignInWorld.Person operator = world.staff();
+        AuthenticationController controller = new AuthenticationController(world.service(), new RequestSurfaces(false));
+        AuthenticationRequest attempt = new AuthenticationRequest(operator.login().value(), Sensitive.of(PASSWORD));
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            assertThatThrownBy(() -> controller.authenticate(attempt, marked("public"))).isInstanceOfSatisfying(ApiException.class,
+                    refused -> assertThat(refused.errorCode()).isEqualTo(IdentityErrorCode.AUTHENTICATION_FAILED));
+            assertThat(world.written.get(1).changeSummary()).hasValueSatisfying(summary -> assertThat(summary).contains("surface=public"));
+            assertThat(controller.authenticate(attempt, marked("operator"))).as("the same staff member, the operator edge's request")
+                    .isNotNull();
+        }
+        assertThat(world.sessionsIssued).hasValue(1);
+    }
+
+    private static MockHttpServletRequest marked(String surface) {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/v1/authentications");
+        request.addHeader(RequestSurfaces.HEADER, surface);
+        return request;
+    }
 }

@@ -318,8 +318,9 @@ published contract. A role-holding identity signs in, steps up, enrols and confi
 channel and recovers on the operator surface alone; on the public surface each of those doors answers it with its ordinary failure
 (`ERROR_CONTRACT.md`, the identity section), counts nothing against its lockout and changes nothing. Customers are answered on both
 surfaces as before. Behind the edge, a request with no usable marker is treated as the public surface's; where nothing is deployed in
-front of the application (its database on loopback) the one port serves both, as it did before the edge. A role-holder is any
-identity holding a live role, read from the grants on every request.
+front of the application (no edge network named and its database on loopback) the one port serves both, as it did before the edge. A
+role-holder is any identity holding a live role, read from the grants on every request, so a staff member who is also a customer with
+the same login signs in on the operator surface only, their own accounts included.
 
 ## 9. What is deliberately not decided here
 

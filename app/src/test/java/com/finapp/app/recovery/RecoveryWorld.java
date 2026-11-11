@@ -93,7 +93,20 @@ final class RecoveryWorld {
     }
 
     double refusals(String type, String kind) {
-        return registry.get("finapp.identity.surface.refusal").tag("type", type).tag("kind", kind).counter().count();
+        return registry.get("finapp.identity.surface.refusal").tag("type", type).tag("kind", kind).tag("outcome", "refused").counter()
+                .count();
+    }
+
+    /** The service, for a controller built in front of it. */
+    RecoveryApplicationService service() {
+        return service;
+    }
+
+    /** Runs {@code work} inside a correlation scope, as the correlation filter would. */
+    void inAFlow(Runnable work) {
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            work.run();
+        }
     }
 
     @SuppressWarnings("unchecked")

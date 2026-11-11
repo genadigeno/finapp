@@ -614,6 +614,13 @@ surface_seen "the public host, no marker sent" public "$PUBLIC/v1/me"
 surface_seen "the public host, a session door" public -X POST -H 'X-Finapp-Surface: operator' "$PUBLIC/v1/authentications"
 surface_seen "the operator host, a client claiming the public surface" operator -X POST -H 'X-Finapp-Surface: public' "$OPERATOR/v1/authentications"
 surface_seen "the operator host, no marker sent" operator -X POST "$OPERATOR/v1/recoveries"
+# A hop-by-hop strip: a client naming the marker in its Connection header asks every proxy to drop it on the way. Over HTTP/1.1, where a
+# Connection header is legal, the backend must still see the edge's one value on each host, not none and not the client's.
+surface_seen "the public host, the marker named hop-by-hop" public --http1.1 -H 'Connection: X-Finapp-Surface' "$PUBLIC/v1/me"
+surface_seen "the public host, a forged marker named hop-by-hop" public --http1.1 -H 'Connection: keep-alive, X-Finapp-Surface' \
+    -H 'X-Finapp-Surface: operator' "$PUBLIC/v1/me"
+surface_seen "the operator host, the marker named hop-by-hop" operator --http1.1 -X POST -H 'Connection: X-Finapp-Surface' \
+    "$OPERATOR/v1/authentications"
 
 client sh -c 'head -c 1048576 /dev/zero > /tmp/one-mib; head -c 3145728 /dev/zero > /tmp/three-mib; head -c 1900000 /dev/zero > /tmp/almost-two'
 

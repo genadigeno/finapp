@@ -193,16 +193,25 @@ public final class AuthenticationService {
         // dashboard comes to show successes nobody got.
         (issued.isPresent() ? authenticated : refused).increment();
         if (attempt.refusedOnSurface()) {
-            surfaceRefusals.record(SurfaceDoor.AUTHENTICATION, surface);
+            // Whether the password was the identity's is metered too: a proven refusal is a phished operator password, and a
+            // signal only the audit trail held would be found by whoever read it, not by an alert.
+            surfaceRefusals.recordSignIn(surface, attempt.proven());
         }
         return issued;
     }
 
-    /** What one attempt produced, and whether it was staff refused on the surface: read after the transaction commits. */
-    private record Attempt(Optional<AuthenticatedSession> issued, boolean refusedOnSurface) {
+    /**
+     * What one attempt produced, whether it was staff refused on the surface, and if so whether the password was the identity's:
+     * read after the transaction commits.
+     */
+    private record Attempt(Optional<AuthenticatedSession> issued, boolean refusedOnSurface, boolean proven) {
 
         static Attempt of(Optional<AuthenticatedSession> issued) {
-            return new Attempt(issued, false);
+            return new Attempt(issued, false, false);
+        }
+
+        static Attempt refusedOnSurface(boolean proven) {
+            return new Attempt(Optional.empty(), true, proven);
         }
     }
 
@@ -241,7 +250,7 @@ public final class AuthenticationService {
                             surface.tag(),
                             "credential=" + (proven ? "proven" : "unproven"));
                 }
-                return new Attempt(Optional.empty(), true);
+                return Attempt.refusedOnSurface(proven);
             }
         }
 

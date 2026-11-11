@@ -39,10 +39,11 @@ http:
           # a tunnel past every rule in this file.
           Upgrade: ""
           # WHICH SURFACE THIS IS (P15-TSK-042). Set, not added: the proxy replaces every value a client sent under this name, in any
-          # case and any number of times, so the application reads one value and it is this edge's. Staff are refused at the doors
-          # that sign in, step up, enrol, change a password or recover on this surface. The word is believed only because
-          # finapp-app-ingress admits nothing but the two controllers to the application's port. edge-check.sh proves the
-          # replacement on the pinned proxy; EdgeManifestsTest holds the name and the word to the application's.
+          # case, any number of times, or named in Connection, so the application reads one value and it is this edge's. Staff are
+          # refused at the doors that sign in, step up, enrol, change a password or recover on this surface. The word is believed only
+          # because finapp-app-ingress admits no pod but the two controllers to the application's port (a host-network process on
+          # the pod's node is the policy's own exception, and could reach the operator routes directly anyway). edge-check.sh proves
+          # the replacement on the pinned proxy; EdgeManifestsTest holds the name and the word to the application's.
           X-Finapp-Surface: public
 
     # Above the application's own limit, so the application answers its own 413 and the edge only stops the gross case. Every

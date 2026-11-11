@@ -70,7 +70,8 @@ class RequestSurfacesTest {
     }
 
     @Test
-    @DisplayName("the header's name is matched as Tomcat matches every name, ignoring case and nothing else")
+    @DisplayName("the header's name is read through getHeaders, ignoring case and folding nothing else: here a mock request's map;"
+            + " on a server Tomcat's MimeHeaders, which compares names the same way")
     void theNameIsCaseInsensitive() {
         MockHttpServletRequest lower = new MockHttpServletRequest("POST", "/v1/authentications");
         lower.addHeader("x-finapp-surface", "operator");
@@ -85,8 +86,8 @@ class RequestSurfacesTest {
     }
 
     @Test
-    @DisplayName("the switch is the database's address: on loopback nothing is deployed, anywhere else or unreadable an edge must have marked the request")
-    void theSwitchIsTheDatabasesAddress() {
+    @DisplayName("the switch: the single port only with no edge network named and the database on loopback; anywhere else, or unreadable, an edge must have marked the request")
+    void theSwitchIsNoEdgeAndALoopbackDatabase() {
         SurfaceBeans beans = new SurfaceBeans();
         assertThat(beans.requestSurfaces(database("jdbc:postgresql://127.0.0.1:5432/finapp")).nothingDeployed()).isTrue();
         assertThat(beans.requestSurfaces(database("jdbc:postgresql://localhost:15432/finapp")).nothingDeployed()).isTrue();
@@ -98,18 +99,43 @@ class RequestSurfacesTest {
     }
 
     @Test
-    @DisplayName("the refusal meter has its sixteen series before the first request, and a surface admitting staff refuses nobody")
+    @DisplayName("a database reached through a loopback sidecar behind the edge is a deployment: an edge network named refuses staff an unmarked request")
+    void aLoopbackSidecarBehindTheEdgeIsADeployment() {
+        SurfaceBeans beans = new SurfaceBeans();
+        // As production's own file states it: the overlay's variable behind the property, blank by default.
+        MockEnvironment behindTheEdge = database("jdbc:postgresql://127.0.0.1:6432/finapp")
+                .withProperty(SurfaceBeans.EDGE_NETWORK, "${FINAPP_EDGE_PROXIES:}")
+                .withProperty("FINAPP_EDGE_PROXIES", "10.10.0.0/16");
+        RequestSurfaces surfaces = beans.requestSurfaces(behindTheEdge);
+        assertThat(surfaces.nothingDeployed()).as("a cloud SQL proxy or a PgBouncer on 127.0.0.1, the edge network named").isFalse();
+        assertThat(surfaces.of(new MockHttpServletRequest("POST", "/v1/authentications"))).isEqualTo(Surface.UNMARKED);
+
+        MockEnvironment laptop = database("jdbc:postgresql://127.0.0.1:6432/finapp")
+                .withProperty(SurfaceBeans.EDGE_NETWORK, "${FINAPP_EDGE_PROXIES:}");
+        assertThat(beans.requestSurfaces(laptop).nothingDeployed()).as("the variable unset: the default is blank, as on a laptop").isTrue();
+    }
+
+    @Test
+    @DisplayName("the refusal meter has its eighteen series before the first request, sign-in's split by whether the password was the identity's, and a surface admitting staff refuses nobody")
     void theMeterIsEagerAndClosed() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         SurfaceRefusalMeters meters = new SurfaceRefusalMeters(registry);
-        assertThat(registry.find("finapp.identity.surface.refusal").counters()).hasSize(SurfaceDoor.values().length * 2);
-        meters.record(SurfaceDoor.AUTHENTICATION, Surface.UNMARKED);
-        assertThat(registry.get("finapp.identity.surface.refusal").tag("type", "authentication").tag("kind", "unmarked").counter().count())
-                .isEqualTo(1.0);
-        assertThatThrownBy(() -> meters.record(SurfaceDoor.AUTHENTICATION, Surface.OPERATOR))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> meters.record(SurfaceDoor.AUTHENTICATION, Surface.SINGLE_PORT))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(registry.find("finapp.identity.surface.refusal").counters()).hasSize((SurfaceDoor.values().length - 1) * 2 + 2 * 2);
+        meters.recordSignIn(Surface.UNMARKED, false);
+        meters.recordSignIn(Surface.PUBLIC, true);
+        meters.record(SurfaceDoor.MFA_CHALLENGE, Surface.PUBLIC);
+        assertThat(count(registry, "authentication", "unmarked", "credential_unproven")).isEqualTo(1.0);
+        assertThat(count(registry, "authentication", "public", "credential_proven")).as("the phished password's own series").isEqualTo(1.0);
+        assertThat(count(registry, "authentication", "public", "credential_unproven")).isZero();
+        assertThat(count(registry, "mfa_challenge", "public", "refused")).isEqualTo(1.0);
+        assertThatThrownBy(() -> meters.record(SurfaceDoor.AUTHENTICATION, Surface.PUBLIC))
+                .as("a sign-in refusal must say whether the password was right").isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> meters.recordSignIn(Surface.OPERATOR, true)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> meters.record(SurfaceDoor.RECOVERY, Surface.SINGLE_PORT)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static double count(SimpleMeterRegistry registry, String type, String kind, String outcome) {
+        return registry.get("finapp.identity.surface.refusal").tag("type", type).tag("kind", kind).tag("outcome", outcome).counter().count();
     }
 
     private static MockHttpServletRequest marked(String... values) {
