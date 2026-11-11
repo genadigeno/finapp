@@ -12,7 +12,7 @@
 #       while it was active would be refused with nothing having said so, because a version dropped off the top leaves no hole. It
 #       must leave through ring.retired-versions, so that KeyRingRetirementGuard reads the real tables first;
 #   (3) anything that reads like a ring setting in a shape this script does not read: a spelling Spring still binds, a dotted
-#       property, any YAML file. Silence would be the failure;
+#       property, any YAML file, check values included, and a check value it cannot parse. Silence would be the failure;
 #   (4) a published check value changed or removed for a version still held (P15-TSK-020, THREAT_MODEL.md section 6 item 32 (a)):
 #       the replica refuses a stored value that differs from its check value, and the one way round that is to publish the new
 #       value's, which is exactly what makes every row under the old value unreadable. A version's value and its check value never
@@ -29,10 +29,15 @@
 # Exit status: 0 nothing moved out of order; 1 refused; 2 usage, or the base could not be read, so nothing is proved.
 set -eu
 
-# Anything that reads like a ring setting, however spelled. The first character stops "spring" matching.
-SHAPE='(^|[^a-z])ring[._-]*(active[._-]*version|retired[._-]*versions|versions)'
-# The one form this script reads, and the form Spring binds to the three properties from a configMapGenerator literal.
-CANONICAL='^[[:space:]]*-[[:space:]]*FINAPP_[A-Z0-9_]+_RING_(ACTIVEVERSION|VERSIONS|RETIREDVERSIONS)=[0-9, ]*[[:space:]]*$'
+# Anything that reads like a ring setting, however spelled, check values among them (P15-TSK-020's review: the legacy
+# _RING_CHECK_VALUES, a dotted or camel-cased property, any separator). Matched without regard to case. The first character stops
+# "spring" matching.
+SHAPE='(^|[^a-z])ring[._-]*(active[._-]*version|retired[._-]*versions|versions|check[._-]*values)'
+# The one form this script reads, and the form Spring binds to the four properties from a configMapGenerator literal: versions as
+# numbers, a check value as version:sixteen lower-case hexadecimal digits. A ring setting in any other form, a check value it could
+# not parse among them, is refused rather than read as nothing.
+CANONICAL_RING='^[[:space:]]*-[[:space:]]*FINAPP_[A-Z0-9_]+_RING_(ACTIVEVERSION|VERSIONS|RETIREDVERSIONS)=[0-9, ]*[[:space:]]*$'
+CANONICAL_CHECK='^[[:space:]]*-[[:space:]]*FINAPP_[A-Z0-9_]+_RING_CHECKVALUES=[[:space:]]*([0-9]+:[0-9a-f]{16}[[:space:]]*(,[[:space:]]*[0-9]+:[0-9a-f]{16}[[:space:]]*)*)?$'
 
 yaml_files() {
     (cd "$1" && find deploy -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null) | sort
@@ -78,7 +83,7 @@ compare() {
     head=$2
     status=0
     for file in $(yaml_files "$head"); do
-        offending=$(grep -Ei "$SHAPE" "$head/$file" | grep -Ev '^[[:space:]]*#' | grep -Ev "$CANONICAL" || true)
+        offending=$(grep -Ei "$SHAPE" "$head/$file" | grep -Ev '^[[:space:]]*#' | grep -Ev "$CANONICAL_RING" | grep -Ev "$CANONICAL_CHECK" || true)
         if [ -n "$offending" ]; then
             echo "$file: a ring setting in a shape this check cannot read: $offending" >&2
             status=1
@@ -170,6 +175,14 @@ self_test() {
     plant check-value-of-a-held-version-removed 1 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_CHECKVALUES=1:552d40876e6d9748'
     plant base-check-value-changed-with-one-version 1 "$f" 'FINAPP_DOC_RING_CHECKVALUES=1:552d40876e6d9748' 'FINAPP_DOC_RING_CHECKVALUES=1:5daa68abe4ec79b0'
     plant check-value-of-a-retired-version-dropped 0 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" 'FINAPP_DOC_RING_VERSIONS=2|FINAPP_DOC_RING_ACTIVEVERSION=2|FINAPP_DOC_RING_RETIREDVERSIONS=1|FINAPP_DOC_RING_CHECKVALUES=2:0ec936eb254d5bcf'
+    # Every other spelling Spring binds to check-values, and a value this script could not parse (P15-TSK-020's review): refused,
+    # because a check value read as nothing would let rule (4) pass a change it exists to stop.
+    plant check-values-in-the-legacy-spelling 1 "$f" 'NOT_A_RING=1' 'FINAPP_DOC_RING_CHECK_VALUES=1:552d40876e6d9748'
+    plant check-values-as-a-dotted-property 1 "$f" 'NOT_A_RING=1' 'finapp.doc.ring.check-values=1:552d40876e6d9748'
+    plant check-values-camel-cased 1 "$f" 'NOT_A_RING=1' 'finapp.doc.ring.checkValues=1:552d40876e6d9748'
+    plant check-values-in-upper-case-hex 1 "$f" 'NOT_A_RING=1' 'FINAPP_DOC_RING_CHECKVALUES=1:552D40876E6D9748,2:0EC936EB254D5BCF'
+    plant check-value-with-no-version 1 "$f" 'NOT_A_RING=1' 'FINAPP_DOC_RING_CHECKVALUES=552d40876e6d9748'
+    plant check-value-too-short 1 "$f" 'NOT_A_RING=1' 'FINAPP_DOC_RING_CHECKVALUES=1:552d4087'
 
     if [ "$failures" -ne 0 ]; then
         echo "!!   $failures plant(s) not refused for their reason" >&2

@@ -147,6 +147,31 @@ class RoleBootstrapTest {
         assertThat(new RoleBootstrap.Standing(true, false, false, false, false, false, false, 0).violations(1)).containsExactly("0 role membership(s)");
     }
 
+    @Test
+    @DisplayName("a role able to use an alternating user's rights, or a carrier's through any chain of roles, stops the step; a superuser and an ADMIN-only creator do not (P15-TSK-020's review)")
+    void aMemberOfAnAlternatingUserStopsTheStep() {
+        for (String alternate : List.of("finapp_app_a", "finapp_app_b", "finapp_reporting_a", "finapp_reporting_b")) {
+            Catalogue memberOfAlternate = Catalogue.present().user(alternate, "bi_user");
+            List<String> executed = new ArrayList<>();
+            assertThatThrownBy(() -> RoleBootstrap.apply(master(executed, memberOfAlternate), RoleBootstrap.passwords(passwords())))
+                    .as("a member of %s", alternate)
+                    .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("bi_user can use " + alternate + "'s rights");
+            assertThat(executed).as("nothing committed").doesNotContain("COMMIT");
+        }
+        Catalogue throughAChain = Catalogue.present().user("finapp_reporting", "bi_user");
+        assertThatThrownBy(() -> RoleBootstrap.apply(master(new ArrayList<>(), throughAChain), RoleBootstrap.passwords(passwords())))
+                .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("bi_user can use finapp_reporting's rights");
+
+        assertThat(RoleBootstrap.USERS_OF)
+                .as("the server answers through every chain of memberships, not the catalogue's direct rows")
+                .contains("pg_catalog.pg_has_role(r.oid, t.oid, 'USAGE')")
+                .contains("pg_catalog.pg_has_role(r.oid, t.oid, 'SET')")
+                .doesNotContain("pg_auth_members")
+                .as("a superuser needs no membership and is the local server's own master; ADMIN alone is neither USAGE nor SET")
+                .contains("NOT r.rolsuper")
+                .doesNotContain("'MEMBER'");
+    }
+
     private static int indexStartingWith(List<String> executed, String prefix) {
         for (int i = 0; i < executed.size(); i++) {
             if (executed.get(i).startsWith(prefix)) {

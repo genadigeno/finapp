@@ -99,16 +99,31 @@ variable "provisioning_stage" {
 }
 
 variable "scram_user_slots" {
-  description = "Each rotating principal's live SCRAM users (P15-TSK-020, add-roll-remove): primary, alternate, or both while a fleet rolls from one to the other. A principal not named has its primary user alone. Each user has its own AmazonMSK_ entry and exactly the principal's ACLs."
-  type        = map(set(string))
+  description = "Each rotating principal's SCRAM users (P15-TSK-020, add-roll-remove), as slot => stage: primary, alternate, or both while a fleet rolls from one to the other. Stage \"entry\" plans the user's AmazonMSK_ entry alone, to be filled; stage \"associated\" also associates it with the cluster and gives it exactly the principal's ACLs. A principal not named has { primary = \"associated\" }, every principal's state outside a rotation."
+  type        = map(map(string))
   default     = {}
 
   validation {
     condition = alltrue([
       for principal, slots in var.scram_user_slots :
-      contains(keys(yamldecode(file(var.topic_catalogue_path)).principals), principal) && length(slots) > 0 && alltrue([for slot in slots : contains(["primary", "alternate"], slot)])
+      contains(keys(yamldecode(file(var.topic_catalogue_path)).principals), principal)
     ])
-    error_message = "Each key is a principal of the catalogue, and each holds primary, alternate or both: a principal with no user would hold no credential at all."
+    error_message = "Each key is a principal of the catalogue."
+  }
+
+  validation {
+    condition = alltrue([
+      for principal, slots in var.scram_user_slots :
+      alltrue([for slot, stage in slots : contains(["primary", "alternate"], slot) && contains(["entry", "associated"], stage)])
+    ])
+    error_message = "Each slot is primary or alternate, and each stage is entry or associated."
+  }
+
+  validation {
+    condition = alltrue([
+      for principal, slots in var.scram_user_slots : length([for slot, stage in slots : slot if stage == "associated"]) > 0
+    ])
+    error_message = "Each principal keeps at least one associated user: a principal with none would hold no credential the brokers accept."
   }
 }
 

@@ -57,25 +57,30 @@ locals {
   # A role in the catalogue is a SCRAM user here. The name is derived, so ACLs can name it without reading
   # the secret; the secret's "username" must be exactly this (README.md).
   #
-  # A principal's live users (P15-TSK-020, SECRET_MANAGEMENT.md section 5.1's add-roll-remove): its primary user, and during a
-  # rotation its alternate too, each with its own entry and exactly the principal's ACLs, because an ACL names a user and a fleet
-  # half rolled is authenticating as both. The second user exists with its grants before the fleet rolls (one apply), the
-  # application's entries are pointed at it and the fleet rolls, and then the old user leaves (a second apply). A principal
-  # absent from scram_user_slots has its primary user alone, which is every principal's state outside a rotation.
+  # A principal's users (P15-TSK-020, SECRET_MANAGEMENT.md section 5.1's add-roll-remove): its primary user, and during a rotation
+  # its alternate too, each with its own entry, because an ACL names a user and a fleet half rolled is authenticating as both. A user
+  # is staged as the principals are: "entry" plans its entry alone, which a person then fills, because this module associates no
+  # entry before it holds a value (the stage brokers below; AWS's and the provider's pages are silent on what an empty one does,
+  # and their own example fills it first); "associated" associates it with the cluster and gives it exactly
+  # the principal's ACLs, before the fleet is pointed at it. Then the fleet rolls, and the old user leaves (README.md). A principal
+  # absent from scram_user_slots has { primary = "associated" }, which is every principal's state outside a rotation.
   scram_slots = {
-    for principal in keys(local.catalogue.principals) : principal => lookup(var.scram_user_slots, principal, toset(["primary"]))
+    for principal in keys(local.catalogue.principals) : principal => lookup(var.scram_user_slots, principal, { primary = "associated" })
   }
   scram_user_entries = flatten([
     for principal, slots in local.scram_slots : [
-      for slot in slots : {
-        key       = slot == "primary" ? principal : "${principal}-alternate"
-        principal = principal
-        username  = slot == "primary" ? "${var.name_prefix}-${principal}" : "${var.name_prefix}-${principal}-alternate"
+      for slot, stage in slots : {
+        key        = slot == "primary" ? principal : "${principal}-alternate"
+        principal  = principal
+        username   = slot == "primary" ? "${var.name_prefix}-${principal}" : "${var.name_prefix}-${principal}-alternate"
+        associated = stage == "associated"
       }
     ]
   ])
-  scram_users        = { for user in local.scram_user_entries : user.key => user.username }
-  scram_principal_of = { for user in local.scram_user_entries : user.key => user.principal }
+  # Every user with an entry; the users associated with the cluster; and theirs alone, the ACLs.
+  scram_users            = { for user in local.scram_user_entries : user.key => user.username }
+  scram_associated_users = { for user in local.scram_user_entries : user.key => user.username if user.associated }
+  scram_principal_of     = { for user in local.scram_user_entries : user.key => user.principal if user.associated }
 
   principals_exist = var.provisioning_stage != "brokers"
 
@@ -226,12 +231,17 @@ resource "aws_msk_cluster" "this" {
 # Entries without values: the name MSK requires, the customer-managed key it requires, and the policy that
 # lets it read them. No aws_secretsmanager_secret_version here or anywhere: no secret value enters state
 # (ADR-0121 decision 3). What fills them is a real environment's secret store, before stage principals.
+#
+# Deleted at once when its user leaves (P15-TSK-020): a revoked credential's deletion is the point of removing it, and a rotation
+# re-creates the same name the next time round (primary, alternate, primary), which an entry still in its recovery window would hold
+# for up to 30 days, the provider's default. 0 is the provider's documented value for deletion without recovery.
 resource "aws_secretsmanager_secret" "scram" {
   for_each = local.scram_users
 
-  name        = "AmazonMSK_${each.value}"
-  description = "SCRAM-SHA-512 credential of the ${each.key} principal on ${var.name_prefix}'s brokers. JSON with username and password; the username is exactly ${each.value}."
-  kms_key_id  = var.scram_kms_key_arn
+  name                    = "AmazonMSK_${each.value}"
+  description             = "SCRAM-SHA-512 credential of the ${each.key} principal on ${var.name_prefix}'s brokers. JSON with username and password; the username is exactly ${each.value}."
+  kms_key_id              = var.scram_kms_key_arn
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_policy" "scram" {
@@ -250,12 +260,13 @@ resource "aws_secretsmanager_secret_policy" "scram" {
   })
 }
 
-# Absent at stage brokers: associating a secret that holds no value fails.
+# Absent at stage brokers: associating a secret that holds no value fails. For the same reason a rotating principal's new user
+# joins the list only once it is staged "associated", after its entry is filled. This resource owns the cluster's whole list.
 resource "aws_msk_scram_secret_association" "this" {
   count = local.principals_exist ? 1 : 0
 
   cluster_arn     = aws_msk_cluster.this.arn
-  secret_arn_list = [for principal in sort(keys(local.scram_users)) : aws_secretsmanager_secret.scram[principal].arn]
+  secret_arn_list = [for user in sort(keys(local.scram_associated_users)) : aws_secretsmanager_secret.scram[user].arn]
 
   depends_on = [aws_secretsmanager_secret_policy.scram]
 }

@@ -102,12 +102,17 @@ final class RoleBootstrap {
             + " JOIN pg_catalog.pg_roles u ON u.oid = m.member WHERE u.rolname = ? ORDER BY g.rolname";
 
     /**
-     * Who can use a carrier's rights by membership. A member holding only {@code ADMIN} is a creator's bookkeeping (a managed
-     * master that is not a superuser is given it on every role it creates) and uses none of them.
+     * Who can use a role's rights by membership, directly or through any chain of roles: every role but the one named and a
+     * superuser (who needs no membership) that the server says may use them without {@code SET ROLE} ({@code USAGE}) or may
+     * {@code SET ROLE} to it ({@code SET}). Asked of a carrier and of each alternating user, so a member of an alternating user
+     * is seen through either path: as a user of the carrier when it inherits, as a user of the alternate when it may set to it.
+     * A member holding only {@code ADMIN} is a creator's bookkeeping (a managed master that is not a superuser is given it on
+     * every role it creates) and has neither.
      */
-    static final String USERS_OF = "SELECT u.rolname FROM pg_catalog.pg_auth_members m"
-            + " JOIN pg_catalog.pg_roles g ON g.oid = m.roleid JOIN pg_catalog.pg_roles u ON u.oid = m.member"
-            + " WHERE g.rolname = ? AND (m.inherit_option OR m.set_option) ORDER BY u.rolname";
+    static final String USERS_OF = "SELECT r.rolname FROM pg_catalog.pg_roles r, pg_catalog.pg_roles t"
+            + " WHERE t.rolname = ? AND r.oid <> t.oid AND NOT r.rolsuper"
+            + " AND (pg_catalog.pg_has_role(r.oid, t.oid, 'USAGE') OR pg_catalog.pg_has_role(r.oid, t.oid, 'SET'))"
+            + " ORDER BY r.rolname";
 
     private RoleBootstrap() {}
 
@@ -259,30 +264,31 @@ final class RoleBootstrap {
     }
 
     /**
-     * Each alternating user holds exactly one membership, its carrier's, with exactly the options above; and nobody but a
-     * carrier's own alternating users can use its rights by membership. Anything else stops the step before it commits.
+     * Each alternating user holds exactly one membership, its carrier's, with exactly the options above; nobody but a carrier's
+     * own alternating users can use its rights by membership, directly or through another role; and nobody at all can use an
+     * alternating user's, which are its carrier's. Anything else stops the step before it commits.
      */
     static void verifyMemberships(Connection master) throws SQLException {
-        Set<String> carriers = new java.util.TreeSet<>();
+        Map<String, Set<String>> allowedUsers = new java.util.TreeMap<>();
         for (Role role : ROLES) {
             if (!role.alternate()) {
                 continue;
             }
-            carriers.add(role.carrier());
             List<Membership> held = memberships(master, role.name());
             if (!held.equals(List.of(new Membership(role.carrier(), true, false, false)))) {
                 throw new RefusedConfiguration("the alternating user " + role.name() + " holds " + held + " where it must hold"
                         + " exactly membership of " + role.carrier() + " " + MEMBERSHIP_OPTIONS
                         + ": its rights must be the carrier's grants and nothing else, so a person has to look at how it got that");
             }
+            allowedUsers.computeIfAbsent(role.carrier(), carrier -> new HashSet<>()).add(role.name());
+            allowedUsers.put(role.name(), Set.of());
         }
-        for (String carrier : carriers) {
-            Set<String> allowed = new HashSet<>();
-            ROLES.stream().filter(role -> carrier.equals(role.carrier())).forEach(role -> allowed.add(role.name()));
-            for (String user : usersOf(master, carrier)) {
-                if (!allowed.contains(user)) {
-                    throw new RefusedConfiguration("the role " + user + " can use " + carrier + "'s rights by membership and is not"
-                            + " one of its alternating users: it holds the carrier's every grant, so a person has to look at how it got that");
+        for (Map.Entry<String, Set<String>> target : allowedUsers.entrySet()) {
+            for (String user : usersOf(master, target.getKey())) {
+                if (!target.getValue().contains(user)) {
+                    throw new RefusedConfiguration("the role " + user + " can use " + target.getKey() + "'s rights by membership,"
+                            + " directly or through another role, and is not one of a carrier's alternating users: it holds "
+                            + "a carrier's every grant, so a person has to look at how it got that");
                 }
             }
         }

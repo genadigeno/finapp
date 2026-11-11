@@ -1,12 +1,16 @@
 -- An alternating user holds exactly its carrier's rights (P15-TSK-020; SECRET_MANAGEMENT.md section 5.1, database-fleet-credential).
 --
 -- Run by kind-rehearsal/rotations.sh as the test-only server's superuser, with :carrier and :alternate set, on a database every migration
--- has reached. Three verdicts, each `PASS|FAIL|what|detail`:
+-- has reached. Four verdicts, each `PASS|FAIL|what|detail`:
 --   1. every (object, privilege) pair of the database answers the same for the alternate as for the carrier: every relation and sequence,
 --      every column that carries a grant of its own, every schema, every function, the database itself; the carrier holding at least one,
 --      so an empty comparison is not a pass. A user missing one grant is one differing pair, and it is named;
 --   2. no grant names the alternate: its rights come by membership alone, so a later migration's grant reaches it with nothing to copy;
---   3. its one membership is the carrier's, inheriting, unable to SET ROLE, unable to hand it on.
+--   3. its one membership is the carrier's, inheriting, unable to SET ROLE, unable to hand it on;
+--   4. nobody else can use its rights, nor the carrier's but the carrier's own two alternating users (<carrier>_a and _b, as the
+--      bootstrap names them), directly or through any chain of roles, as the server answers it (USAGE or SET): a member of an
+--      alternate holds the carrier's every grant. A superuser is not counted, needing no membership; a member holding ADMIN alone,
+--      a managed master's bookkeeping on the roles it creates, has neither (RoleBootstrap.USERS_OF asks the same).
 \set ON_ERROR_STOP on
 
 WITH relations AS (
@@ -81,3 +85,13 @@ SELECT CASE WHEN count(*) = 1 AND bool_and(g.rolname = :'carrier' AND m.inherit_
        coalesce(string_agg(g.rolname || ' inherit=' || m.inherit_option || ' set=' || m.set_option || ' admin=' || m.admin_option, '; '), 'no membership')
   FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles g ON g.oid = m.roleid
  WHERE m.member = :'alternate'::regrole;
+
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END,
+       'nobody else can use ' || :'alternate' || '''s rights, nor ' || :'carrier' || '''s but its alternating users, through any chain of roles',
+       count(*) || ' other roles can: ' || coalesce(string_agg(r.rolname, ', ' ORDER BY r.rolname), 'none')
+  FROM pg_catalog.pg_roles r
+ WHERE NOT r.rolsuper
+   AND ((r.rolname NOT IN (:'carrier', :'carrier' || '_a', :'carrier' || '_b')
+         AND (pg_catalog.pg_has_role(r.oid, :'carrier', 'USAGE') OR pg_catalog.pg_has_role(r.oid, :'carrier', 'SET')))
+     OR (r.rolname <> :'alternate'
+         AND (pg_catalog.pg_has_role(r.oid, :'alternate', 'USAGE') OR pg_catalog.pg_has_role(r.oid, :'alternate', 'SET'))));

@@ -568,12 +568,18 @@ jobs:
   rehearsal:
     name: Kubernetes rehearsal (kind, ${{ matrix.scope }})
     runs-on: ubuntu-latest
-    timeout-minutes: 150
-    # P15-TSK-020: the release's walk and the credential and certificate rotations, each on a cluster and a runner of its own.
+    timeout-minutes: ${{ matrix.timeout }}
+    # P15-TSK-020: the release's walk and the credential and certificate rotations, each on a cluster and a runner of its own. The
+    # rotations' leg has its own bound: its rotations alone measured about 110 minutes on a development machine (OPERATIONS_RUNBOOK.md
+    # section 11.33), before the image build and the deploy.
     strategy:
       fail-fast: false
       matrix:
-        scope: [release, rotations]
+        include:
+          - scope: release
+            timeout: 150
+          - scope: rotations
+            timeout: 240
     steps:
       - name: Check out, with the history N - 1 is built from
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

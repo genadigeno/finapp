@@ -196,7 +196,13 @@ class KindRehearsalContractTest {
                 .contains("grants_census before").contains("signs in as finapp_app_a, every pod not yet rolled as finapp_app")
                 .contains("ALTER ROLE finapp_app PASSWORD NULL");
         assertThat(read("infra/scripts/kind-rehearsal/grants.sql")).contains("holds exactly the rights of").contains("is named by no grant of its own")
-                .contains("inheriting, without SET or ADMIN");
+                .contains("inheriting, without SET or ADMIN")
+                .as("nobody else able to use an alternate's rights, or its carrier's, through any chain of roles (the review's I1)")
+                .contains("through any chain of roles").contains("pg_catalog.pg_has_role(r.oid, :'alternate', 'SET')")
+                .contains("pg_catalog.pg_has_role(r.oid, :'carrier', 'USAGE')");
+        assertThat(rotations).as("four verdicts for each of the four alternates").contains("= 16 ] || fail \"the grant census printed");
+        assertThat(rotations).as("the operator's chart pinned by its archive's sha256, a mismatch refused")
+                .contains("ESO_CHART_SHA256=").contains("[ \"$eso_chart_sha\" = \"$ESO_CHART_SHA256\" ] || fail");
         assertThat(rotations).as("Kafka: the second user with exactly the first's ACLs before the roll, the first's credential and ACLs removed after it")
                 .contains("cmp -s \"$WORK/acls-old.txt\" \"$WORK/acls-new.txt\"").contains("scram_remove \"$old_user\"").contains("kafka_acls remove \"$old_user\"");
         assertThat(rotations).as("the callback window: no delivery refused through the rolls, and the window closing itself with nothing restarted")
@@ -212,8 +218,9 @@ class KindRehearsalContractTest {
         assertThat(rotations).as("the store and every generated value stay in the run's temporary directory").contains("STORE=\"$WORK/store\"")
                 .doesNotContain("cp \"$STORE").doesNotContain("$ART/store");
         String workflow = read(".github/workflows/ci.yml");
-        assertThat(workflow).as("CI runs both scopes, each on its own runner").contains("scope: [release, rotations]")
-                .contains("REHEARSAL_SCOPE: ${{ matrix.scope }}");
+        assertThat(workflow).as("CI runs both scopes, each on its own runner, the rotations' with a bound of its own")
+                .contains("          - scope: release\n            timeout: 150").contains("          - scope: rotations\n            timeout: 240")
+                .contains("timeout-minutes: ${{ matrix.timeout }}").contains("REHEARSAL_SCOPE: ${{ matrix.scope }}");
     }
 
     @Test

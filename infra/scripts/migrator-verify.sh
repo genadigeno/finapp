@@ -6,7 +6,7 @@
 #   the bootstrap   creates the three roles with the local script's attributes, hashed client-side, the database's grants
 #                   and PUBLIC revoked, and their four alternating users (P15-TSK-020) with no password, each a member of its
 #                   carrier alone; run again it changes nothing but a role setting found missing; a role holding a right it
-#                   must not is refused. The one role setting, read from the register, is on finapp_app and its two
+#                   must not is refused, and so is a third role able to use an alternating user's rights (ADMIN alone is not). The one role setting, read from the register, is on finapp_app and its two
 #                   alternating users alone, new and existing.
 #   the build's     ./gradlew flywayMigrate into one database, the image into another: every schema's history identical
 #   equal           (rank, version, description, type, script, checksum, installed_by, success) and pg_dump --schema-only
@@ -202,12 +202,27 @@ code=0
 bootstrap finapp_build > "$WORK/bootstrap3.log" 2>&1 || code=$?
 expect_exit 12 "$code" "a bootstrap finding a role with a right it must not hold" "$WORK/bootstrap3.log"
 sql postgres 'ALTER ROLE finapp_reporting NOCREATEDB' >/dev/null
+# A third role able to use an alternating user's rights, which are its carrier's: inheriting them, or able to SET ROLE to it. Either
+# stops the step, and the refusal names it; an ADMIN-only member, a creator's bookkeeping, does not.
+for options in 'INHERIT TRUE, SET FALSE' 'INHERIT FALSE, SET TRUE'; do
+    sql postgres "CREATE ROLE finapp_verify_member NOLOGIN; GRANT finapp_app_a TO finapp_verify_member WITH $options" >/dev/null
+    code=0
+    bootstrap finapp_build > "$WORK/bootstrap-member.log" 2>&1 || code=$?
+    expect_exit 12 "$code" "a bootstrap finding a member of an alternating user ($options)" "$WORK/bootstrap-member.log"
+    grep -q 'finapp_verify_member can use' "$WORK/bootstrap-member.log" || fail "the refusal does not name the member of the alternating user ($options)"
+    sql postgres 'DROP ROLE finapp_verify_member' >/dev/null
+done
+sql postgres "CREATE ROLE finapp_verify_member NOLOGIN; GRANT finapp_app_a TO finapp_verify_member WITH INHERIT FALSE, SET FALSE, ADMIN TRUE" >/dev/null
+code=0
+bootstrap finapp_build > "$WORK/bootstrap-admin.log" 2>&1 || code=$?
+expect_exit 0 "$code" "a bootstrap finding an ADMIN-only member of an alternating user" "$WORK/bootstrap-admin.log"
+sql postgres 'DROP ROLE finapp_verify_member' >/dev/null
 for db in finapp_image finapp_race; do
     code=0
     bootstrap "$db" > "$WORK/bootstrap-$db.log" 2>&1 || code=$?
     expect_exit 0 "$code" "the bootstrap of $db" "$WORK/bootstrap-$db.log"
 done
-echo "three roles created with the local script's attributes, SCRAM-hashed, grants as the local script's, and their four alternating users with no password, each a member of its carrier alone; idempotent; a wrong role refused"
+echo "three roles created with the local script's attributes, SCRAM-hashed, grants as the local script's, and their four alternating users with no password, each a member of its carrier alone; idempotent; a wrong role refused, and a member of an alternating user refused"
 
 echo "== the build's flywayMigrate into one database"
 FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$PORT/finapp_build" FINAPP_DB_MIGRATOR_USER=finapp_migrator \

@@ -170,8 +170,11 @@ for role in finapp_app_a finapp_app_b finapp_reporting_a finapp_reporting_b; do
 done
 pass "the bootstrap step run again with N: every role present or created, the alternating users among them, nothing else changed"
 
-# The operator, from the chart at the pinned version with the committed values.
+# The operator, from the chart at the pinned version with the committed values. Its repository is a classic Helm repository, which
+# prints no digest the way cert-manager's and the policy controller's OCI charts do, so the archive's own sha256 is the pin: the one
+# every run of this record pulled for 2.14.0. A version change moves both together.
 ESO_CHART_VERSION=${ESO_VERSION#v}
+ESO_CHART_SHA256=0a6d9e91b1ff50adfdbf24b50b582babfa7c5b7df42b21974ca4b3fb88ee5e34
 eso_chart="$WORK/eso-chart"
 mkdir -p "$eso_chart"
 if [ -n "$CA_BUNDLE" ]; then
@@ -181,7 +184,9 @@ else
 fi
 dock run --rm "$@" -v "$(dpath "$eso_chart"):/chart" "$HELM_IMAGE" pull external-secrets --repo https://charts.external-secrets.io --version "$ESO_CHART_VERSION" --destination /chart > "$ART/eso-helm.log" 2>&1 \
     || cannot "the External Secrets chart could not be pulled: see eso-helm.log"
-printf 'external-secrets chart %s sha256 %s\n' "$ESO_CHART_VERSION" "$(sha256sum "$eso_chart"/external-secrets-*.tgz | cut -c1-64)" | tee -a "$ART/rehearsal.log" > "$ART/eso-chart.txt"
+eso_chart_sha=$(sha256sum "$eso_chart/external-secrets-$ESO_CHART_VERSION.tgz" | cut -c1-64)
+printf 'external-secrets chart %s sha256 %s\n' "$ESO_CHART_VERSION" "$eso_chart_sha" | tee -a "$ART/rehearsal.log" > "$ART/eso-chart.txt"
+[ "$eso_chart_sha" = "$ESO_CHART_SHA256" ] || fail "the External Secrets chart $ESO_CHART_VERSION is not the pinned sha256 $ESO_CHART_SHA256: see eso-chart.txt"
 dock run --rm -v "$(dpath "$eso_chart"):/chart" -v "$(dpath "$ROOT/deploy/operators/external-secrets"):/values:ro" "$HELM_IMAGE" template external-secrets \
     "/chart/external-secrets-$ESO_CHART_VERSION.tgz" --namespace external-secrets -f /values/values.yaml > "$WORK/eso.yaml" 2>> "$ART/eso-helm.log" \
     || cannot "the External Secrets chart could not be rendered: see eso-helm.log"
@@ -273,11 +278,11 @@ grants_census() {
     for pair in finapp_app:finapp_app_a finapp_app:finapp_app_b finapp_reporting:finapp_reporting_a finapp_reporting:finapp_reporting_b; do
         psql_query -v "carrier=${pair%%:*}" -v "alternate=${pair#*:}" -f - < "$DIR/grants.sql" >> "$ART/grants-$1.txt" 2>&1 || fail "the grant census could not run: see grants-$1.txt"
     done
-    [ "$(grep -c '^\(PASS\|FAIL\)|' "$ART/grants-$1.txt")" = 12 ] || fail "the grant census printed $(grep -c '^\(PASS\|FAIL\)|' "$ART/grants-$1.txt") verdicts where four users have three each: see grants-$1.txt"
+    [ "$(grep -c '^\(PASS\|FAIL\)|' "$ART/grants-$1.txt")" = 16 ] || fail "the grant census printed $(grep -c '^\(PASS\|FAIL\)|' "$ART/grants-$1.txt") verdicts where four users have four each: see grants-$1.txt"
     if grep -q '^FAIL' "$ART/grants-$1.txt"; then
         fail "grants $1: $(grep '^FAIL' "$ART/grants-$1.txt" | tr '\n' ';' | cut -c1-700)"
     fi
-    pass "grants $1: each of the four alternating users holds exactly its carrier's rights, by its one membership, and no grant names it ($(grep -m1 'pairs compared' "$ART/grants-$1.txt" | cut -d'|' -f3 | cut -c1-80))"
+    pass "grants $1: each of the four alternating users holds exactly its carrier's rights, by its one membership, no grant names it, and nobody else can use its rights or its carrier's ($(grep -m1 'pairs compared' "$ART/grants-$1.txt" | cut -d'|' -f3 | cut -c1-80))"
 }
 
 plant_missing_grant() {

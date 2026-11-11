@@ -24,12 +24,17 @@ output "settings_the_service_sets_itself" {
 }
 
 output "scram_users" {
-  description = "Each live SCRAM user, keyed by its principal (its alternate, during a rotation, as <principal>-alternate): the username its secret must hold."
+  description = "Each SCRAM user with an entry, keyed by its principal (its alternate, during a rotation, as <principal>-alternate): the username its secret must hold."
   value       = local.scram_users
 }
 
+output "scram_associated_users" {
+  description = "The SCRAM users associated with the cluster, keyed as scram_users: those the brokers accept and the ACLs name. A user staged \"entry\" is in scram_users and not here."
+  value       = local.scram_associated_users
+}
+
 output "scram_secret_names" {
-  description = "Each live SCRAM user's Secrets Manager entry, by name, keyed as scram_users."
+  description = "Each SCRAM user's Secrets Manager entry, by name, keyed as scram_users."
   value       = { for user, secret in aws_secretsmanager_secret.scram : user => secret.name }
 }
 
