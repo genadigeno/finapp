@@ -91,8 +91,8 @@ exporter is configured. Several gaps remain:
    - **The asynchronous legs as spans.** The relay's publication (`outbox.publish`) and each handled event (`inbox.handle`) are spans in the envelope's
      correlation and causation, recorded in `app` around the platform's own publisher and handlers; nothing in `platform` changed.
    - **The reconciliation leg: the correction to "one trace".** A run decides an item in the ingesting file's correlation, and its domain spans open
-     before the leg restores even that (recorded at `P8-DOC-001`). So no span joins the run to the payment: the payment's legs are one correlation,
-     the file's upload and attestation another, the intake's spans carry the file's id, the run's the source; the stored chain (expectation, allocation,
+     before the leg restores even that (recorded at `P8-DOC-001`). So no span joins the run to the payment: each of the payment's requests is a correlation
+     the platform mints (ADR-0034) holding its own legs, the file's upload and attestation two more, the intake's spans carry the file's id, the run's the source; the stored chain (expectation, allocation,
      item, run) joins them, as `PHASE_8_PLAN.md` §15 decided the durable trace would. `THREAT_MODEL.md` section 6 item 37 holds the choice.
    - **Backends.** Tempo 2.10 and Loki 3.7 on `kind` and in compose; a real environment's backends and their identity are not chosen.
 

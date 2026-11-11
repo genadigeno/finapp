@@ -1345,8 +1345,9 @@ were added on 2026-11-09 and await the owner." until then.)*
       operator surface's identity; **(ii)** a managed tracing and logging service, reached by the collector as one more exporter; **(iii)**
       decide nothing until an environment exists.
     - **(b) The reconciliation leg.** A run decides an item in the ingesting file's correlation, and its domain spans open before the leg
-      restores even that. So no span joins a reconciliation run to the payment it settles: the payment's legs are one correlation (the
-      request, the provider call, the posting, the outbox, every consumer), the file's upload and attestation another, the intake's spans
+      restores even that. So no span joins a reconciliation run to the payment it settles: each of the payment's requests is a correlation the
+      platform mints (ADR-0034) holding its own legs (the request, the provider call, the posting, the outbox, every consumer), the file's upload and
+      attestation are two more, the intake's spans
       carry the file's identifier and the run's the source, and the stored chain (expectation, allocation, item, run) is the join, as
       `PHASE_8_PLAN.md` section 15 decided the durable trace would be. The options: **(i)** keep the stored chain as the join; **(ii)** open
       the settlement and reconciliation spans inside the correlation each leg restores, and record a marker span in the expectation's
