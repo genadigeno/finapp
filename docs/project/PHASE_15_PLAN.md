@@ -75,6 +75,11 @@ migrator credential and the source-bucket key rotated in runbook section 11.7's 
 announces one; a managed restore rehearsed, with GL = ledger over a locked period on it, before the environment holds a customer's money.
 Phase 15 builds none of it.
 
+*The owner's decision (2026-11-11, `THREAT_MODEL.md` §6 item 37 (a)), a real-environment item:* a real environment's trace and log
+back ends are Tempo and Loki in its cluster on the infrastructure module's `traces` and `logs` buckets, each with a workload identity
+reaching its own bucket alone, read by operators through the operator surface's identity, at seven and thirty-one days unless a
+jurisdiction says otherwise.
+
 ### 1.2 Scope
 
 The owner's twelve areas: the production architecture assessment (§3), containerisation and deployment (§5), the

@@ -31,6 +31,7 @@ commit and the date; do not delete the entry.
 | PI-019 | `POSTPONED` | P15-TSK-002's ruling, by the owner (2026-11-08) | payments - a transfer can pre-empt an in-flight instant execution the platform cannot yet name; required before production use |
 | PI-020 | `POSTPONED` | the privileged access review, by the owner (2026-11-08) | identity - one identity may hold both roles of a propose/approve pair; required before production use |
 | PI-021 | `POSTPONED` | `P15-TSK-038`'s census, by the owner (2026-11-09) | payments - routing's version in force and the dispute door judged on an instance's clock; required before production use |
+| PI-022 | `POSTPONED` | `P15-TSK-023`'s gate, by the owner (2026-11-11) | observability - an amount printed into an exception's message or a builder's generated form, which a pod's console keeps; required before production use |
 
 ---
 
@@ -512,3 +513,11 @@ commit and the date; do not delete the entry.
 - **Consequence until fixed:** bounded by the skew. Routing selects a rail and prices nothing; the dispute deadline is set by the network in days.
 - **Fix:** move each read to the database's clock with its next change, one read each, as the card fee version's was (`P15-TSK-038`'s treatment).
 - **Owner of the fix:** the next change to either, and in any case before production use.
+
+## PI-022 — An amount printed into an exception's message, which the console keeps
+
+- **Status:** `POSTPONED` (owner, 2026-11-11, accepting `THREAT_MODEL.md` section 6 item 37 (c)'s recommendation). **Required before production use.**
+- **What:** read with ASM's analyser, thirteen production classes (`Money` itself, the merchant fee, FX conversion and refund classes among them) put an amount into an exception's message for a state that must not happen, or into a Lombok builder's generated form; `BigDecimal` figures appear in other messages the analyser cannot tell from any number. `MoneyReachesNoTextSinkTest#theTextResidueIsHeld` holds the set as its thirty-eight findings, per method and per instruction, so it cannot grow unnoticed.
+- **Consequence until fixed:** such a message reaches no error body and no exported span, but an unhandled one is printed with its stack trace. The collector scrubs `Money`'s string form from the shipped record; the pod's console keeps it for the node's log rotation.
+- **Fix:** rewrite each message to name the rule and the currency, never the figure, and suppress the two builders' generated forms: sixteen classes' messages and the tests that read them. The residue list then empties, and the test holds it empty.
+- **Owner of the fix:** one small remediation entry before production use.
