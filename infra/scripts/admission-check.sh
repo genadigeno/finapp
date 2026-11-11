@@ -36,8 +36,9 @@
 #
 # Usage:   infra/scripts/admission-check.sh
 # Needs:   Docker with buildx, kind (KIND, default `kind`), git, a JDK for Gradle, sha256sum, base64, od.
-# Env:     ADMISSION_IMAGES="<app image> <migrator image>" uses two local images instead of building this tree (a developer's aid;
-#          CI never sets it); ADMISSION_CA_BUNDLE names a CA bundle for a machine whose TLS is intercepted (the chart pull, the
+# Env:     ADMISSION_IMAGES="<app image> <migrator image>" uses two local images instead of building this tree, and
+#          ADMISSION_SBOM_DIR a directory holding finapp-app.cdx.json and finapp-migrator.cdx.json instead of writing them (a
+#          developer's aids; CI sets neither, and a run that used them says so in its log); ADMISSION_CA_BUNDLE names a CA bundle for a machine whose TLS is intercepted (the chart pull, the
 #          node's pull of the controller); TRIVY_IMAGE likewise (OPERATIONS_RUNBOOK.md section 11.9); ADMISSION_KEEP keeps the cluster.
 # Exit:    0 every assertion held; 1 an assertion failed; 2 a step could not run. A step that cannot run never looks like a pass.
 set -eu
@@ -54,6 +55,7 @@ PROBE=${ADMISSION_PROBE:-}
 KEEP=${ADMISSION_KEEP:-}
 CA_BUNDLE=${ADMISSION_CA_BUNDLE:-}
 IMAGES_GIVEN=${ADMISSION_IMAGES:-}
+SBOMS_GIVEN=${ADMISSION_SBOM_DIR:-}
 
 case $PROBE in
     "" | warn | second-key | migrator-out | no-match-allow) ;;
@@ -89,8 +91,9 @@ mkdir -p "$ART"
 : > "$ART/admission.log"
 : > "$ART/assertions.tsv"
 
+# To standard error, so that a line logged inside a command substitution reaches the log and the terminal, not the value.
 log() {
-    printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$ART/admission.log"
+    printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$ART/admission.log" >&2
 }
 
 FAILED=0
@@ -99,6 +102,7 @@ CLUSTER_UP=""
 RUN="$$-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
 REGISTRY_NAME="finapp-admission-registry-$RUN"
 REGISTRY_UP=""
+PUSH="no-registry-yet"
 TRIVY_VOLUME="finapp-admission-trivy-$RUN"
 # Outside the repository: the private keys and their password live here, and only here.
 WORK=$(mktemp -d)
@@ -117,7 +121,9 @@ finish() {
     fi
     [ -z "$REGISTRY_UP" ] || dock rm -f "$REGISTRY_NAME" >/dev/null 2>&1
     dock volume rm -f "$TRIVY_VOLUME" >/dev/null 2>&1
-    dock image ls --format '{{.Repository}}:{{.Tag}}' | grep -E "^(finapp-admission-variant-$RUN|127\.0\.0\.1:[0-9]+/finapp-)" \
+    # What this run built and tagged; images it was given are the caller's.
+    dock image ls --format '{{.Repository}}:{{.Tag}}' \
+        | grep -E "^(finapp-admission-variant-$RUN-|finapp-(app|migrator):admission-$RUN\$|$PUSH/finapp-)" \
         | while read -r image; do dock image rm -f "$image" >/dev/null 2>&1; done
     rm -rf "$WORK"
     if [ "$FAILED" -eq 2 ]; then
@@ -228,17 +234,25 @@ variant() {
 # Each image's SBOM, CycloneDX, written by the pinned Trivy from the saved image (it needs Trivy's Java database, downloaded into a volume
 # this run owns). What the SBOM must list is image-scan.sh's assertion; here it is the predicate the attestation carries.
 step "the SBOMs"
-dock volume create "$TRIVY_VOLUME" >/dev/null || cannot "could not create the Trivy volume"
 trivy() {
     dock run --rm -v "$TRIVY_VOLUME:/cache" -v "$(dpath "$WORK/att"):/work" "$TRIVY_IMAGE" "$@"
 }
-tries=0
-until trivy image --cache-dir /cache --download-java-db-only --no-progress >> "$ART/sbom.log" 2>&1; do
-    tries=$((tries + 1))
-    [ "$tries" -lt 3 ] || cannot "Trivy's Java database could not be downloaded: see sbom.log"
-    sleep 20
-done
+if [ -z "$SBOMS_GIVEN" ]; then
+    dock volume create "$TRIVY_VOLUME" >/dev/null || cannot "could not create the Trivy volume"
+    tries=0
+    until trivy image --cache-dir /cache --download-java-db-only --no-progress >> "$ART/sbom.log" 2>&1; do
+        tries=$((tries + 1))
+        [ "$tries" -lt 3 ] || cannot "Trivy's Java database could not be downloaded: see sbom.log"
+        sleep 20
+    done
+fi
 sbom() {
+    if [ -n "$SBOMS_GIVEN" ]; then
+        cp "$SBOMS_GIVEN/$1.cdx.json" "$WORK/att/$1.cdx.json" || cannot "no $1.cdx.json in $SBOMS_GIVEN"
+        cp "$WORK/att/$1.cdx.json" "$ART/sbom-$1.cdx.json"
+        log "the SBOM of $2: given, $(grep -c '"purl"' "$WORK/att/$1.cdx.json") components (not written by this run)"
+        return 0
+    fi
     dock save "$2" -o "$(dpath "$WORK/att/$1.tar")" || cannot "could not save $2"
     trivy image --cache-dir /cache --skip-db-update --skip-java-db-update --offline-scan --no-progress --timeout 30m \
         --format cyclonedx --input "/work/$1.tar" --output "/work/$1.cdx.json" >> "$ART/sbom.log" 2>&1 \
@@ -269,7 +283,16 @@ fi
 log "cluster up: $(kube version -o json 2>/dev/null | sed -n 's/.*"gitVersion": *"\(v[^"]*\)".*/\1/p' | tail -1)"
 
 step "the registry"
-dock run -d --name "$REGISTRY_NAME" --network kind -p 127.0.0.1::5000 "$REGISTRY_IMAGE" >/dev/null || cannot "the registry did not start"
+# Published on a loopback port named here, not one Docker picks: Docker Desktop's daemon cannot push to a port it allocated itself
+# (measured: "connection refused"), and a named one it can. A port already taken refuses the start, and the next is tried.
+dock pull --quiet "$REGISTRY_IMAGE" >/dev/null || cannot "could not pull the registry image"
+tries=0
+until dock run -d --name "$REGISTRY_NAME" --network kind -p "127.0.0.1:$(( 20000 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 20000 )):5000" \
+    "$REGISTRY_IMAGE" >> "$ART/cluster.log" 2>&1; do
+    dock rm -f "$REGISTRY_NAME" >/dev/null 2>&1 || true
+    tries=$((tries + 1))
+    [ "$tries" -lt 10 ] || cannot "the registry did not start on any of ten ports: see cluster.log"
+done
 REGISTRY_UP=1
 REGISTRY_IP=$(dock inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "$REGISTRY_NAME")
 case $REGISTRY_IP in
@@ -459,7 +482,9 @@ images=$(sed -n 's/^ *image: *"\{0,1\}\([^" ]*\)"\{0,1\} *$/\1/p' "$WORK/control
 [ "$images" = "$CONTROLLER_REF" ] || fail "the rendered controller runs '$images', not exactly the pinned $CONTROLLER_REF"
 grep -q 'no-match-policy: *"\{0,1\}deny' "$WORK/controller.yaml" || [ "$PROBE" = no-match-allow ] \
     || fail "the rendered controller does not refuse an image no policy matches"
-grep -q 'failurePolicy: Fail' "$WORK/controller.yaml" || fail "the rendered controller's webhook does not fail closed"
+# Every webhook the chart renders fails closed, the image webhooks' from the committed values: one Ignore anywhere is a door.
+grep -q 'failurePolicy: Fail' "$WORK/controller.yaml" || fail "the rendered controller's webhooks state no failure policy"
+if grep -q 'failurePolicy: Ignore' "$WORK/controller.yaml"; then fail "a rendered webhook of the controller fails open (failurePolicy: Ignore)"; fi
 cp "$WORK/controller.yaml" "$ART/controller-rendered.yaml"
 kube create namespace cosign-system >> "$ART/apply.log" 2>&1 || cannot "could not create the controller's namespace"
 # The node pulls the controller itself, by digest, as it would from any registry.
@@ -666,15 +691,19 @@ refused() {
         kube delete -f - --wait=false < "$2" >> "$ART/apply.log" 2>&1 || true
         fail "$1: ADMITTED, and it must be refused$(grep -i warning "$WORK/cases/$1.out" | head -1 | cut -c1-200 | sed 's/^/ - /')"
     fi
-    grep -qF -- "$3" "$WORK/cases/$1.out" || fail "$1: refused, but not by the policy: the answer never says '$3': $(tr '\n' ' ' < "$WORK/cases/$1.out" | cut -c1-300)"
+    grep -qF 'admission webhook "policy.sigstore.dev" denied the request' "$WORK/cases/$1.out" \
+        || fail "$1: refused, but not by the policy controller: $(tr '\n' ' ' < "$WORK/cases/$1.out" | cut -c1-300)"
+    grep -qF -- "$3" "$WORK/cases/$1.out" || fail "$1: refused, but not for its reason: the answer never says '$3': $(tr '\n' ' ' < "$WORK/cases/$1.out" | cut -c1-300)"
     attempt "$1-control" "$4" || fail "$1: its control was refused too, so the refusal proves nothing: $(tr '\n' ' ' < "$WORK/cases/$1-control.out" | cut -c1-300)"
     kube delete -f - --wait=false < "$4" >> "$ART/apply.log" 2>&1 || true
     pass "$1: refused ($(grep -oF -- "$3" "$WORK/cases/$1.out" | head -1)), its control admitted outside the policy"
 }
 
 C="$WORK/cases"
-SIGNED_POLICY='failed policy: finapp-images-signed'
-ATTESTED_POLICY='failed policy: finapp-images-attested'
+# What the controller says, read from its answers: the authority's own failure, after the policy's name.
+UNSIGNED_REASON='no signatures found'
+OTHER_KEY_REASON='no matching signatures: invalid signature'
+UNATTESTED='failed policy: finapp-images-attested'
 
 step "the cases"
 deployment case-app-signed finapp "$APP" > "$C/app-signed.yaml"
@@ -684,25 +713,25 @@ admitted "migrator signed" "$C/migrator-signed.yaml" finapp job-name=case-migrat
 
 deployment case-app-unsigned finapp "$APP_UNSIGNED" > "$C/app-unsigned.yaml"
 deployment case-app-unsigned "$CONTROL" "$APP_UNSIGNED" > "$C/app-unsigned-control.yaml"
-refused "app unsigned" "$C/app-unsigned.yaml" "$SIGNED_POLICY" "$C/app-unsigned-control.yaml"
+refused "app unsigned" "$C/app-unsigned.yaml" "$UNSIGNED_REASON" "$C/app-unsigned-control.yaml"
 job case-migrator-unsigned finapp "$MIGRATOR_UNSIGNED" > "$C/migrator-unsigned.yaml"
 job case-migrator-unsigned "$CONTROL" "$MIGRATOR_UNSIGNED" > "$C/migrator-unsigned-control.yaml"
-refused "migrator unsigned" "$C/migrator-unsigned.yaml" "$SIGNED_POLICY" "$C/migrator-unsigned-control.yaml"
+refused "migrator unsigned" "$C/migrator-unsigned.yaml" "$UNSIGNED_REASON" "$C/migrator-unsigned-control.yaml"
 
 deployment case-app-other-key finapp "$APP_OTHER" > "$C/app-other.yaml"
 deployment case-app-other-key "$CONTROL" "$APP_OTHER" > "$C/app-other-control.yaml"
-refused "app signed by another key" "$C/app-other.yaml" "$SIGNED_POLICY" "$C/app-other-control.yaml"
+refused "app signed by another key" "$C/app-other.yaml" "$OTHER_KEY_REASON" "$C/app-other-control.yaml"
 job case-migrator-other-key finapp "$MIGRATOR_OTHER" > "$C/migrator-other.yaml"
 job case-migrator-other-key "$CONTROL" "$MIGRATOR_OTHER" > "$C/migrator-other-control.yaml"
-refused "migrator signed by another key" "$C/migrator-other.yaml" "$SIGNED_POLICY" "$C/migrator-other-control.yaml"
+refused "migrator signed by another key" "$C/migrator-other.yaml" "$OTHER_KEY_REASON" "$C/migrator-other-control.yaml"
 
 deployment case-app-unattested finapp "$APP_UNATTESTED" > "$C/app-unattested.yaml"
 deployment case-app-unattested "$CONTROL" "$APP_UNATTESTED" > "$C/app-unattested-control.yaml"
-refused "app signed, not attested" "$C/app-unattested.yaml" "$ATTESTED_POLICY" "$C/app-unattested-control.yaml"
+refused "app signed, not attested" "$C/app-unattested.yaml" "$UNATTESTED" "$C/app-unattested-control.yaml"
 
 job case-init-unsigned finapp "$MIGRATOR" "$APP_UNSIGNED" > "$C/init-unsigned.yaml"
 job case-init-unsigned "$CONTROL" "$MIGRATOR" "$APP_UNSIGNED" > "$C/init-unsigned-control.yaml"
-refused "init container unsigned" "$C/init-unsigned.yaml" "$SIGNED_POLICY" "$C/init-unsigned-control.yaml"
+refused "init container unsigned" "$C/init-unsigned.yaml" "spec.template.spec.initContainers[0].image" "$C/init-unsigned-control.yaml"
 job case-init-signed finapp "$MIGRATOR" "$APP" > "$C/init-signed.yaml"
 admitted "init container signed" "$C/init-signed.yaml" finapp job-name=case-init-signed "$MIGRATOR"
 
