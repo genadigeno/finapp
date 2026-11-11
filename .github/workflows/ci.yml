@@ -373,6 +373,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Rule (5) (P15-TSK-017) reads an environment's smoke records through infra/scripts/Promotion.java, the one reader of that format.
+      - name: Read the pinned Java version from the version catalog
+        id: toolchain
+        run: |
+          version=$(grep -E '^javaToolchain[[:space:]]*=' gradle/libs.versions.toml | cut -d'"' -f2)
+          if [ -z "$version" ]; then
+            echo "::error::javaToolchain not found in gradle/libs.versions.toml"
+            exit 1
+          fi
+          echo "java-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
       - name: The check refuses what it exists to refuse
         run: ./infra/scripts/key-ring-activation-check.sh --self-test
 
@@ -757,7 +774,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|Dockerfile$|migrator/|build-logic/|gradle/|infra/scripts/admission-check|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
+          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|Dockerfile$|migrator/|build-logic/|gradle/|infra/scripts/(admission-check|promote|Promotion)|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

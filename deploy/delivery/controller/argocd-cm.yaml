@@ -1,0 +1,58 @@
+# What the delivery needs of the GitOps controller's own configuration (P15-TSK-017; OPERATIONS_RUNBOOK.md section 11.36). Not synced
+# by any Application, and never applied over the controller's argocd-cm: the pipeline role merges these keys into it when it installs
+# the controller (THREAT_MODEL.md section 6 item 31), and a change here is a change to that install.
+#
+# Without the two health checks below the waves order nothing. Argo CD waits for a wave to be healthy before the next, but it judges
+# an Application healthy as soon as it exists (that assessment was removed from its defaults in 1.8), and it ships no check for an
+# ExternalSecret, which would then count as healthy once applied, before the operator wrote its Secret. Each check below answers
+# Healthy only on the positive fact, and Progressing otherwise, so an object nobody has reconciled yet holds its wave rather than
+# passing it.
+#
+# Tracking by annotation, the controller's default named so that no install changes it: the annotation's value is the Application's
+# name and the object's, so it never changes after an object is adopted, and a change to an ExternalSecret's metadata makes the
+# operator read the store again (SECRET_MANAGEMENT.md section 3.5). Renaming an Application rewrites it on every object, every
+# ExternalSecret included: do not.
+#
+# Written from Argo CD's documentation (read 2026-11-12) and never run here: no controller has been installed on a cluster in this
+# repository. The first rehearsal of a promotion through a controller is OPERATIONS_RUNBOOK.md section 11.36's to record.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  application.resourceTrackingMethod: annotation
+  # An Application is healthy when it is synced to its source and its own resources are healthy; degraded when they are.
+  resource.customizations.health.argoproj.io_Application: |
+    hs = {}
+    hs.status = "Progressing"
+    hs.message = "waiting for the Application to be synced and healthy"
+    if obj.status ~= nil and obj.status.health ~= nil and obj.status.sync ~= nil then
+      if obj.status.health.status == "Degraded" then
+        hs.status = "Degraded"
+        hs.message = obj.status.health.message or "the Application is degraded"
+      elseif obj.status.sync.status == "Synced" and obj.status.health.status == "Healthy" then
+        hs.status = "Healthy"
+        hs.message = ""
+      end
+    end
+    return hs
+  # An ExternalSecret is healthy when the operator reports it Ready, which it does only once its Secret is written whole.
+  resource.customizations.health.external-secrets.io_ExternalSecret: |
+    hs = {}
+    hs.status = "Progressing"
+    hs.message = "waiting for the ExternalSecret to be Ready"
+    if obj.status ~= nil and obj.status.conditions ~= nil then
+      for _, condition in ipairs(obj.status.conditions) do
+        if condition.type == "Ready" then
+          if condition.status == "True" then
+            hs.status = "Healthy"
+            hs.message = condition.message or ""
+          elseif condition.status == "False" then
+            hs.status = "Degraded"
+            hs.message = condition.message or "the ExternalSecret is not Ready"
+          end
+        end
+      end
+    end
+    return hs

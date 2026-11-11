@@ -1,0 +1,53 @@
+# Production's root: the one object a person-free bootstrap creates by hand, and the project it alone belongs to (P15-TSK-017,
+# ADR-0122 decision 4; OPERATIONS_RUNBOOK.md section 11.36). The pipeline role applies it once, after the controllers and the admission
+# webhook's rules are in place (section 11.32's order; THREAT_MODEL.md section 6 item 31), and everything else follows from the
+# repository: the root syncs deploy/delivery/production, which holds the platform's project and four Applications in their waves.
+#
+# THIS IS THE SHAPE, NOT THE ENVIRONMENT'S COPY. A real environment's root also carries, as kustomize patches of the Applications it
+# renders, what must never be committed here (P15-TSK-016's decision; SECRET_MANAGEMENT.md section 3.5): the two reader ServiceAccounts'
+# role ARNs and the three SecretStores' region (from the root module's secret_reader_role_arns output), the images' registry
+# (finapp-production-app and -migrator in that account's registry, an images newName and never a digest: the digest is the overlay's)
+# and the admission policies' authority and signature repository. That copy is held with the environment's delivery configuration,
+# under the environment's own access control and two-person review, and nothing here can see it.
+#
+# Its own project lets it write Applications and projects in argocd and nothing else, so a change below can never reach the cluster's
+# own objects through it.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: finapp-delivery
+  namespace: argocd
+spec:
+  description: The root alone - the platform's project and Applications, synced from this repository
+  sourceRepos:
+    - https://github.com/genadigeno/finapp.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: argoproj.io
+      kind: Application
+    - group: argoproj.io
+      kind: AppProject
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finapp-production
+  namespace: argocd
+spec:
+  project: finapp-delivery
+  source:
+    repoURL: https://github.com/genadigeno/finapp.git
+    targetRevision: master
+    path: deploy/delivery/production
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - FailOnSharedResource=true

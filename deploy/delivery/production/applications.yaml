@@ -1,0 +1,115 @@
+# Production's four releases, in the order a cluster takes them (P15-TSK-017, ADR-0122 decision 4, C8; OPERATIONS_RUNBOOK.md sections
+# 11.32 and 11.36). Synced by production's root Application (deploy/delivery/roots/production.yaml), whose sync waves order these:
+#
+#   0  finapp-admission    deploy/admission: the image policies, before any namespace they watch holds a pod
+#   1  finapp-namespaces   deploy/namespaces: the three namespaces with their Pod Security and admission labels. Never Argo CD's
+#                          CreateNamespace, which would create finapp with neither (DeliveryManifestsTest refuses it)
+#   2  finapp              deploy/overlays/production: the application's release, itself ordered by deploy/components/delivery-order
+#   3  finapp-edge         deploy/edge/overlays/production: traffic is admitted once the release it routes to is healthy
+#
+# A wave waits for the one before only because the controller's configuration judges an Application healthy when it is synced and
+# healthy (deploy/delivery/controller/argocd-cm.yaml): Argo CD removed that judgement from its defaults in 1.8.
+#
+# HOW A CHANGE REACHES PRODUCTION. A merge to master that a second person approved (.github/CODEOWNERS on every path below); the
+# controller pulls it. No CI credential reaches this cluster: CI holds a read-only token and no environment (THREAT_MODEL.md T30).
+# Self-heal puts back what a person changed by hand; prune removes what the repository no longer names, after everything else
+# (PruneLast), except the namespaces, which are never pruned: one removed from the repository must not take its contents with it.
+# No retry: a failed migration is fixed forward, never run again by the controller, and Argo CD does not re-attempt a
+# commit whose sync failed. A rollback is a revert pull request through infra/scripts/promote.sh, never Argo CD's own rollback, which
+# would leave the repository saying one thing and the cluster another.
+#
+# No finalizer: deleting an Application leaves what it applied running.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finapp-admission
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: finapp
+  source:
+    repoURL: https://github.com/genadigeno/finapp.git
+    targetRevision: master
+    path: deploy/admission
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PruneLast=true
+      - FailOnSharedResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finapp-namespaces
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: finapp
+  source:
+    repoURL: https://github.com/genadigeno/finapp.git
+    targetRevision: master
+    path: deploy/namespaces
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finapp
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - FailOnSharedResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finapp
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: finapp
+  source:
+    repoURL: https://github.com/genadigeno/finapp.git
+    targetRevision: master
+    path: deploy/overlays/production
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PruneLast=true
+      - FailOnSharedResource=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finapp-edge
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: finapp
+  source:
+    repoURL: https://github.com/genadigeno/finapp.git
+    targetRevision: master
+    path: deploy/edge/overlays/production
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finapp-edge
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PruneLast=true
+      - FailOnSharedResource=true

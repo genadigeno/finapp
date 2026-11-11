@@ -1,0 +1,33 @@
+# The one Argo CD project the platform's Applications belong to (P15-TSK-017, ADR-0122 decision 4, C8; OPERATIONS_RUNBOOK.md section
+# 11.36). One per cluster: staging and production are separate accounts and clusters, so each controller holds its own copy, synced by
+# that environment's root Application from deploy/delivery/<environment>.
+#
+# WHAT IT BOUNDS, whatever a later change to an Application's source says: one repository, the platform's two namespaces, and of what
+# is not in a namespace only the Namespaces and the admission policies. No Secret is ever applied from here: a committed Secret is
+# refused by the manifest policy, and here too, so a credential can only come from the store. A ClusterRole, a webhook or a CRD from
+# this project is refused: the controllers are installed by the pipeline role, outside every Application (THREAT_MODEL.md section 6
+# item 31), and nothing here can widen what they hold.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: finapp
+  namespace: argocd
+spec:
+  description: The platform's admission policies, namespaces, application and edge, synced from this repository alone
+  sourceRepos:
+    - https://github.com/genadigeno/finapp.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: finapp
+    - server: https://kubernetes.default.svc
+      namespace: finapp-edge
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: policy.sigstore.dev
+      kind: ClusterImagePolicy
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: Secret
+  orphanedResources:
+    warn: true

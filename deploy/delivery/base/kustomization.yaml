@@ -1,0 +1,6 @@
+# What every environment's delivery holds alike (P15-TSK-017): the project its Applications belong to.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - project.yaml

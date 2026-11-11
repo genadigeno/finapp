@@ -1,0 +1,63 @@
+# The order a GitOps sync applies a release in (P15-TSK-017, ADR-0122 decision 4; OPERATIONS_RUNBOOK.md section 11.36): the order the
+# kind rehearsal runs by script and recorded (section 11.28), as Argo CD's sync waves. Included by the staging and production overlays,
+# which Argo CD syncs; the kind overlay is applied by the rehearsal in the same order and carries none of this. DeliveryManifestsTest
+# holds the waves to the rehearsal's order.
+#
+# Argo CD applies a sync wave by wave, lowest first, and starts the next only when everything in the one before is synced and healthy;
+# a hook's wave is healthy when the hook succeeded, and a hook that fails fails the sync, so nothing after it is applied.
+#
+#   -3  what the release's pods need to exist and to be held: accounts, roles, network policies, quota, the stores, the Services
+#   -2  the two ExternalSecrets, healthy only when Ready (deploy/delivery/controller/argocd-cm.yaml): the Secrets exist before anything reads them
+#   -1  the migrator Job, a Sync hook awaited: one per release, recreated by name (BeforeHookCreation, so the immutable template can change)
+#    0  the configuration, the Deployment and its autoscaler: the rollout, under the strategy deploy/base sets
+#
+# NOT A PRESYNC HOOK, although the plan says one. Argo CD applies a PreSync hook before everything in the Sync phase, on the first sync
+# too: the migrator would start before its ServiceAccount, its Secret and the network policies that hold it existed, and on any later
+# sync before the release's own change to them. In wave -1 of the Sync phase it is still a hook, still awaited, still the end of a sync
+# that it fails, and it runs after what it needs. No window is accepted.
+#
+# An annotation here is metadata of the ExternalSecrets too, and a change to an ExternalSecret's metadata makes the operator read the
+# store again (SECRET_MANAGEMENT.md section 3.5): these values are fixed, so that happens once, when an environment first adopts them.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - target:
+      kind: (ServiceAccount|Role|RoleBinding|NetworkPolicy|ResourceQuota|LimitRange|SecretStore|Service|PodDisruptionBudget)
+    patch: |-
+      apiVersion: v1
+      kind: Placeholder
+      metadata:
+        name: placeholder
+        annotations:
+          argocd.argoproj.io/sync-wave: "-3"
+  - target:
+      kind: ExternalSecret
+    patch: |-
+      apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      metadata:
+        name: placeholder
+        annotations:
+          argocd.argoproj.io/sync-wave: "-2"
+  - target:
+      kind: Job
+      name: finapp-migrator
+    patch: |-
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: finapp-migrator
+        annotations:
+          argocd.argoproj.io/hook: Sync
+          argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+          argocd.argoproj.io/sync-wave: "-1"
+  - target:
+      kind: (ConfigMap|Deployment|HorizontalPodAutoscaler)
+    patch: |-
+      apiVersion: v1
+      kind: Placeholder
+      metadata:
+        name: placeholder
+        annotations:
+          argocd.argoproj.io/sync-wave: "0"

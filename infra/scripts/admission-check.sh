@@ -494,6 +494,46 @@ refused_by_verify other-key "no matching signatures" cosign verify --key /keys/c
 refused_by_verify unattested "no matching attestations" cosign verify-attestation --key /keys/ci.pub $VERIFYING --type slsaprovenance1 "$APP_UNATTESTED"
 
 # ---------------------------------------------------------------------------------------------------
+# The promotion's own check (P15-TSK-017, infra/scripts/promote.sh verify), against this run's registry and signature repository: the
+# signed pair accepted, built from this revision; an unsigned image, one signed by another key, one with no attestation, a tag and the
+# right image named with another commit, each refused by name. The public key alone is handed over, in a directory of its own.
+# ---------------------------------------------------------------------------------------------------
+mkdir -p "$WORK/trust"
+cp "$WORK/keys/ci.pub" "$WORK/trust/ci.pub"
+promote_verify() {
+    PROMOTE_KEY="$WORK/trust/ci.pub" PROMOTE_SIGNATURES="$SIGNATURES" PROMOTE_DOCKER_NETWORK=kind PROMOTE_LOCAL_REGISTRY=1 \
+        "$ROOT/infra/scripts/promote.sh" verify "$@"
+}
+promoted() {
+    if output=$(promote_verify "$1" "$REVISION" 2>&1); then
+        printf '%s\n' "$output" >> "$ART/promotion.log"
+        pass "the promotion accepts $2: signed, both attestations naming its digest, built from $REVISION"
+    else
+        printf '%s\n' "$output" >> "$ART/promotion.log"
+        fail "the promotion refused $2, which is signed and attested: see promotion.log"
+    fi
+}
+# promotion_refused <plant> <reason> <reference> [revision]: promote.sh must refuse, with status 1, AND say why.
+promotion_refused() {
+    label=$1 reason=$2
+    set +e
+    output=$(promote_verify "$3" "${4:-$REVISION}" 2>&1)
+    status=$?
+    set -e
+    printf '%s\n' "$output" >> "$ART/promotion.log"
+    [ "$status" -eq 1 ] || fail "promotion plant $label: status $status, where a refusal is 1: see promotion.log"
+    printf '%s\n' "$output" | grep -qF -- "$reason" || fail "promotion plant $label was refused, but not for its reason: it never says '$reason'"
+    pass "promotion plant $label refused: $(printf '%s\n' "$output" | grep -F -m 1 -- "$reason" | cut -c1-140)"
+}
+promoted "$APP" "the application image"
+promoted "$MIGRATOR" "the migrator image"
+promotion_refused unsigned "has no signature" "$APP_UNSIGNED"
+promotion_refused other-key "has no signature" "$APP_OTHER"
+promotion_refused unattested "has no slsaprovenance1 attestation" "$APP_UNATTESTED"
+promotion_refused tag "a tag is never promoted" "$REG/finapp-app:signed"
+promotion_refused another-commit "says it was built from" "$APP" ffffffffffffffffffffffffffffffffffffffff
+
+# ---------------------------------------------------------------------------------------------------
 # The controller, from its pinned chart and the committed values.
 # ---------------------------------------------------------------------------------------------------
 step "the policy controller"

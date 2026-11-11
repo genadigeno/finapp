@@ -377,6 +377,9 @@ YAML
     plant_on schema-type "$DEPLOYMENT" 's/^  revisionHistoryLimit: 10$/  revisionHistoryLimit: ten/'
     plant render-broken
     mutate render-broken "$PRODUCTION" 's|^  - \.\./\.\./base$|  - ../../base-that-is-not-there|'
+    # The delivery's Applications against Argo CD's schema (P15-TSK-017): a sync policy misspelled is refused, not read as none.
+    plant delivery-schema-typo ../delivery/production
+    mutate delivery-schema-typo delivery/production/applications.yaml 's/^    automated:$/    automatic:/'
 
     plant_namespace_security
 }
@@ -1068,6 +1071,15 @@ in_container() {
                 append_namespaces /repo/deploy "/scratch/rendered/$overlay.yaml"
                 printf 'overlay: %s\n' "$overlay" > "/scratch/rendered/$overlay.data.yaml"
             done
+            # The delivery (P15-TSK-017): each environment's project and Applications, and, read as committed, the roots and the
+            # controller's configuration, which no Kustomize root holds. Schema-checked like everything else that reaches a cluster.
+            for environment in staging production; do
+                kustomize build "/repo/deploy/delivery/$environment" > "/scratch/rendered/delivery-$environment.yaml"
+            done
+            : > /scratch/rendered/delivery-committed.yaml
+            for file in /repo/deploy/delivery/roots/*.yaml /repo/deploy/delivery/controller/*.yaml; do
+                { printf -- '---\n'; cat "$file"; } >> /scratch/rendered/delivery-committed.yaml
+            done
             ;;
         plants)
             plant_all
@@ -1206,8 +1218,9 @@ KUBECONFORM_IMAGE="${KUBECONFORM_IMAGE:-${KUBECONFORM_REPOSITORY}@${KUBECONFORM_
 CONFTEST_IMAGE="${CONFTEST_IMAGE:-${CONFTEST_REPOSITORY}@${CONFTEST_DIGEST}}"
 
 SCHEMAS="https://raw.githubusercontent.com/yannh/kubernetes-json-schema/${KUBERNETES_SCHEMAS_COMMIT}/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json"
-# ExternalSecret and SecretStore are custom kinds, read from their own catalogue at one commit. A kind with no schema stays an
-# error here: an object no schema reads is an object nothing checks.
+# ExternalSecret and SecretStore are custom kinds, read from their own catalogue at one commit, and so are the delivery's Argo CD
+# Application and AppProject (P15-TSK-017), from the same commit. A kind with no schema stays an error here: an object no schema reads
+# is an object nothing checks.
 CRD_SCHEMAS="https://raw.githubusercontent.com/datreeio/CRDs-catalog/${ESO_CRD_SCHEMAS_COMMIT}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
 
 if ! docker info >/dev/null 2>&1; then
@@ -1307,6 +1320,9 @@ check "the kind rehearsal's generated Secrets" in_kustomize kind-secrets
 for overlay in $OVERLAYS; do
     check "kubeconform $overlay" kubeconform_on "/scratch/rendered/$overlay.yaml"
     check "the policies on $overlay" conftest_on "/scratch/rendered/$overlay.yaml" "/scratch/rendered/$overlay.data.yaml"
+done
+for delivery in delivery-staging delivery-production delivery-committed; do
+    check "kubeconform $delivery" kubeconform_on "/scratch/rendered/$delivery.yaml"
 done
 
 refused stream-empty stream-empty
@@ -1615,6 +1631,7 @@ refused minted-volume security-token
 schema_refused schema-typo "revisionHistoryLimits"
 schema_refused schema-type "revisionHistoryLimit"
 render_refused render-broken "base-that-is-not-there"
+schema_refused delivery-schema-typo "/spec/syncPolicy"
 
 if [ "$status" -eq 0 ]; then
     echo "ok   every check green, every plant refused for its reason"
