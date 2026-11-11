@@ -193,10 +193,23 @@ load_tagged() {
             dock pull --platform linux/amd64 "$source_ref" >/dev/null || cannot "could not pull $source_ref"
         fi
     fi
-    dock save --platform linux/amd64 "$source_ref" -o "$(dpath "$WORK/image.tar")" 2>/dev/null || dock save "$source_ref" -o "$(dpath "$WORK/image.tar")" \
-        || cannot "could not save $source_ref"
-    dock exec -i "$NODE" ctr -n k8s.io images import --platform linux/amd64 - < "$WORK/image.tar" >> "$ART/images.log" 2>&1 \
-        || cannot "could not import $source_ref into the node"
+    if dock save --platform linux/amd64 "$source_ref" -o "$(dpath "$WORK/image.tar")" 2>/dev/null; then
+        dock exec -i "$NODE" ctr -n k8s.io images import --platform linux/amd64 - < "$WORK/image.tar" >> "$ART/images.log" 2>&1 \
+            || cannot "could not import $source_ref into the node"
+    elif [ -n "${3:-}" ]; then
+        # Docker Desktop's image store can refuse to save one platform of an index it holds - "does not provide the specified platform"
+        # while its own listing shows that platform's content (seen for Loki and kube-router, P15-TSK-023) - and saved whole the index
+        # names the blobs of platforms never pulled, which the node's import cannot find. The node then pulls its own platform of the
+        # pinned digest itself, and the tag names the same image.
+        dock exec "$NODE" ctr -n k8s.io images pull --platform linux/amd64 "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
+            || cannot "the node could not pull $1@$3"
+        dock exec "$NODE" ctr -n k8s.io images tag --force "$(normalized "$1")@$3" "$(normalized "$source_ref")" >> "$ART/images.log" 2>&1 \
+            || cannot "could not name $1@$3 as $source_ref in the node"
+    else
+        dock save "$source_ref" -o "$(dpath "$WORK/image.tar")" || cannot "could not save $source_ref"
+        dock exec -i "$NODE" ctr -n k8s.io images import --platform linux/amd64 - < "$WORK/image.tar" >> "$ART/images.log" 2>&1 \
+            || cannot "could not import $source_ref into the node"
+    fi
     rm -f "$WORK/image.tar"
     if [ -n "${3:-}" ]; then
         dock exec "$NODE" ctr -n k8s.io images tag --force "$(normalized "$source_ref")" "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
