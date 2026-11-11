@@ -181,6 +181,8 @@ database, and nothing the platform runs as may log in to it until the platform's
 are `NOLOGIN` before anything is restored and are released only on a pass, so every replica, schedule, consumer and door is
 refused by the database itself, however many replicas there are (`OPERATIONS_RUNBOOK.md` §11.35). A logical restore restarts the
 transaction counter below the restored rows' `xid8` values, which ledger `V034`'s walk compares, so a self-managed restore moves
-the counter's epoch past them before anything runs; a managed server cannot, so with this decision's managed PostgreSQL a restore
-is physical (point in time or snapshot), which carries the counter, and a logical restore into a managed instance is refused by
-the census check (`THREAT_MODEL.md` §6 item 38). Rehearsed on containers only; the managed restore has never run.
+the counter's epoch past them before anything runs. A managed server gives no one its stopped data directory, so it cannot, and a
+logical restore into a managed instance would be refused by the census check. The recommendation, which awaits the owner
+(`THREAT_MODEL.md` §6 item 38), is that with this decision's managed PostgreSQL a restore be physical (point in time or snapshot),
+which carries the counter; nothing here decides it. Rehearsed on containers from a seeded source (2026-11-11); the restore of a
+`kind` rehearsal's database and the managed restore have not run.

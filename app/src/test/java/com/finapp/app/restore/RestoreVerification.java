@@ -15,10 +15,19 @@ import com.finapp.accounting.reporting.GlBalances;
 import com.finapp.accounting.reporting.PinnedMapping;
 import com.finapp.app.FinappApplication;
 import com.finapp.app.accounting.GlSnapshots;
+import com.finapp.app.accounting.ProductSourceProofs;
+import com.finapp.app.reconciliation.PositionProof;
 import com.finapp.app.restore.RestoreVerdicts.PeriodJudgement;
 import com.finapp.app.restore.RestoreVerdicts.SourceReading;
 import com.finapp.app.restore.RestoreVerdicts.Verdict;
+import com.finapp.bnpl.BnplProofs;
+import com.finapp.fx.FxBooksProof;
+import com.finapp.ledger.JdbcLedgerAccountStore;
+import com.finapp.ledger.JdbcPositionBreakdown;
 import com.finapp.ledger.TrialBalance;
+import com.finapp.lending.LendingCapitalProof;
+import com.finapp.lending.LendingProofs;
+import com.finapp.merchant.MerchantPayable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -30,6 +39,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -64,7 +74,8 @@ import org.springframework.context.ConfigurableApplicationContext;
  * <p>It connects as the identity the script names in {@code FINAPP_DB_APP_USER}: the restore's administrator, because the platform's
  * roles cannot log in to a restored database until this has passed.
  *
- * <p>Exit {@code 0} every check passed, {@code 1} one failed, {@code 2} it could not run. The report's last line is {@code EXIT|<code>}, so
+ * <p>Exit {@code 0} every check passed, {@code 1} one failed, {@code 2} it could not run. After the verdicts, one {@code SUBJECTS|<proof>|…}
+ * line per proof says how many subjects it judged, a description that decides nothing. The report's last line is {@code EXIT|<code>}, so
  * a report cut short is seen to be.
  */
 public final class RestoreVerification {
@@ -104,7 +115,8 @@ public final class RestoreVerification {
     static int run(Path report) {
         write(report, List.of());
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(FinappApplication.class)
-                .properties("spring.main.banner-mode=off", "server.port=0")
+                // No web server: the command opens no port, so nothing can reach the context it holds as the administrator.
+                .properties("spring.main.banner-mode=off", "spring.main.web-application-type=none")
                 .run()) {
             DataSource dataSource = context.getBean(DataSource.class);
             if (!"on".equals(scalar(dataSource, READ_ONLY))) {
@@ -127,6 +139,7 @@ public final class RestoreVerification {
             List<String> lines = new ArrayList<>();
             lines.add("CHECKS|" + RestoreVerdicts.CHECKS.size());
             verdicts.stream().map(Verdict::line).forEach(lines::add);
+            subjects(context, snapshots).forEach((proof, judged) -> lines.add("SUBJECTS|" + proof.name() + "|" + judged));
             lines.forEach(System.out::println);
             write(report, lines);
             return verdicts.stream().allMatch(Verdict::passed) ? 0 : 1;
@@ -179,6 +192,44 @@ public final class RestoreVerification {
             }
         }
         return readings;
+    }
+
+    /**
+     * How many subjects each proof judged, which a verdict does not say: a proof complete with no discrepancy over no rows passes as
+     * surely as one over thousands. Each product proof's own report, read once more on a snapshot of the same held database (nothing can
+     * write to it), counted and never judged here; the projection's are the accounts its census covers, those with lines or a projection
+     * row. Description only: a count that cannot be read is reported as such and decides nothing.
+     */
+    private static Map<SourceProofs.Proof, String> subjects(ConfigurableApplicationContext context, GlSnapshots snapshots) {
+        Map<SourceProofs.Proof, String> counted = new EnumMap<>(SourceProofs.Proof.class);
+        for (SourceProofs.Proof proof : SourceProofs.Proof.values()) {
+            counted.put(proof, "unread");
+        }
+        try {
+            snapshots.read(connection -> {
+                LendingProofs.Reading lending = context.getBean(LendingProofs.class).prove(connection);
+                counted.put(SourceProofs.Proof.LOAN_SUBLEDGER, lending.accounts().size() + " loan accounts");
+                counted.put(SourceProofs.Proof.LOAN_REPLAY, lending.accounts().size() + " loan accounts");
+                counted.put(SourceProofs.Proof.LENDING_CAPITAL,
+                        context.getBean(LendingCapitalProof.class).prove(connection).currencies().size() + " currencies");
+                BnplProofs.Reading bnpl = context.getBean(BnplProofs.class).prove(connection);
+                counted.put(SourceProofs.Proof.BNPL_SUBLEDGER, bnpl.obligations().size() + " obligations");
+                counted.put(SourceProofs.Proof.BNPL_THREE_WAY, bnpl.currencies().size() + " currencies");
+                counted.put(SourceProofs.Proof.FX_BOOKS, context.getBean(FxBooksProof.class).prove(connection).lines().size() + " book lines");
+                PositionProof.Report position = context.getBean(PositionProof.class).sweep(connection);
+                counted.put(SourceProofs.Proof.POSITION, position.verdicts().size() + " positions, " + position.suspenseVerdicts().size()
+                        + " suspense and " + position.cashVerdicts().size() + " cash verdicts");
+                counted.put(SourceProofs.Proof.MERCHANT_PAYABLE, ProductSourceProofs.merchantPayables(
+                        new MerchantPayable(new JdbcLedgerAccountStore(), new JdbcPositionBreakdown())).apply(connection).size()
+                        + " merchant payables");
+                counted.put(SourceProofs.Proof.PROJECTION, count(connection, "SELECT count(*) FROM (SELECT ledger_account_id FROM ledger.journal_line"
+                        + " UNION SELECT ledger_account_id FROM ledger.account_balance) accounts") + " ledger accounts");
+                return null;
+            });
+        } catch (RuntimeException unreadable) {
+            System.err.println("   the subjects could not all be counted: " + unreadable.getClass().getName());
+        }
+        return counted;
     }
 
     // ------------------------------------------------------------------ the census

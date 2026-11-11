@@ -86,7 +86,8 @@ public final class RestoreRehearsalSeed {
         }
         int exit = 0;
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(FinappApplication.class)
-                .properties("spring.main.banner-mode=off", "server.port=0")
+                // No web server: the command opens no port, so nothing but this method reaches the context it holds.
+                .properties("spring.main.banner-mode=off", "spring.main.web-application-type=none")
                 .run()) {
             seed(context, Path.of(args[0]));
         } catch (RuntimeException | Error failure) {

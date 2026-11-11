@@ -84,13 +84,29 @@ class RestoreRehearsalScriptTest {
     void theBackupIsNeverPlainAtRest() {
         assertThat(harness).contains("WORK=$(mktemp -d)").contains("trap cleanup EXIT").contains("rm -rf \"$WORK\"");
         assertThat(harness).containsPattern("--format=custom\\R(?s).*\\| MSYS_NO_PATHCONV=1 openssl enc -e -aes-256-cbc");
-        assertThat(function("restore")).contains("decrypt backup | dock exec -i");
+        assertThat(function("restore")).contains("decrypt backup | admin_dock exec -i");
         assertThat(harness).contains("= PGDMP ]").contains("a plaintext dump is at rest");
         assertThat(harness).as("the key is generated for the run").contains("openssl rand -hex 32 > \"$WORK/backup.key\"");
         assertThat(harness).as("the artefacts never hold the backup").doesNotContainPattern("\\$ART/[^\" ]*\\.enc");
         assertThat(function("digests_hold")).as("a damaged file is refused before it is decrypted").contains("does not match its digest");
         assertThat(function("restore")).as("pg_restore's output, which can quote a row, stays in the work directory")
                 .contains("> \"$WORK/restore-$label.log\" 2>&1").doesNotContain("$ART/restore-");
+        assertThat(harness).as("the manifest's plaintext is removed from the source as it is copied out")
+                .contains("cat /tmp/manifest-$part && rm -f /tmp/manifest-$part").contains("rm -rf \"$WORK/manifest\"");
+    }
+
+    @Test
+    @DisplayName("no password reaches a command line or docker inspect: Docker copies each from the environment, the servers read a file")
+    void noPasswordIsOnACommandLine() {
+        assertThat(harness).as("docker is never handed a password's value as an argument")
+                .doesNotContainPattern("--env [A-Z_]*PASSWORD=").doesNotContainPattern("-e [A-Z_]*PASSWORD=");
+        assertThat(function("admin_dock")).contains("PGPASSWORD=\"${generated_for_admin}\" MSYS_NO_PATHCONV=1 docker \"$@\"");
+        assertThat(function("server")).contains("--env POSTGRES_PASSWORD_FILE=/run/finapp-admin").doesNotContain("POSTGRES_PASSWORD=");
+        assertThat(function("login")).contains("PGPASSWORD=\"${3}\" MSYS_NO_PATHCONV=1 docker exec --env PGPASSWORD ");
+        assertThat(harness).as("an interrupted or orphaned run still removes the key and the containers")
+                .contains("trap cleanup EXIT").contains("trap 'exit 2' INT TERM HUP PIPE");
+        assertThat(harness).as("the PostgreSQL the rehearsal runs is the kind overlay's, by digest")
+                .contains("IMAGE=\"postgres:$POSTGRES_VERSION@$POSTGRES_DIGEST\"").contains("deploy/overlays/kind/postgres.yaml");
     }
 
     @Test
@@ -106,15 +122,27 @@ class RestoreRehearsalScriptTest {
     }
 
     @Test
-    @DisplayName("every plant runs by default and is refused by exactly the checks it names and by no other: five checks each alone,"
-            + " and the phase gate's removed journal line by every check that reads the lines")
+    @DisplayName("every sequence is read in the backup's session and compared with the restore's, at or past it, so one restored behind"
+            + " is refused rather than left for an insert to find")
+    void everySequenceIsComparedWithTheBackups() {
+        assertThat(harness).as("read in the snapshot's session, into the manifest")
+                .contains("\"\\\\o /tmp/manifest-sequences\" \"$SEQUENCES_SQL;\"");
+        assertThat(function("compare")).contains("sql \"$1\" \"$SEQUENCES_SQL\" > \"$WORK/sequences-$2\"")
+                .as("each restored value against the manifest's").contains("' \"$WORK/sequences-$2\" \"$WORK/manifest/sequences\")")
+                .contains("if [ -z \"$behind\" ]; then");
+    }
+
+    @Test
+    @DisplayName("every plant runs by default and is refused by exactly the checks it names and by no other: nine checks each alone,"
+            + " a dropped grant by the catalogue and the schema, and the phase gate's removed journal line by every check that reads the lines")
     void everyPlantIsRefusedByItsOwnCheckAlone() {
         Matcher defaults = Pattern.compile("PLANTS=\\$\\{RESTORE_PLANTS:-([a-z -]+)}").matcher(harness);
         assertThat(defaults.find()).as("the default plants were read").isTrue();
         Set<String> plants = new TreeSet<>(List.of(defaults.group(1).trim().split(" +")));
         assertThat(plants).containsExactlyInAnyOrder("unbalanced-entry", "balance-disagrees", "missing-row", "grant-dropped",
-                "counter-not-moved", "journal-line-removed");
-        // The checks a run answers: the verification's catalogue, and the three the script's compare() reports itself, read from it.
+                "role-altered", "trigger-dropped", "sequence-behind", "history-checksum", "gl-rule-repointed", "counter-not-moved",
+                "journal-line-removed");
+        // The checks a run answers: the verification's catalogue, and the ones the script's compare() reports itself, read from it.
         Set<String> checks = new TreeSet<>(RestoreVerdicts.CHECKS);
         Matcher scripted = Pattern.compile("echo \"PASS\\|([^|\"]+)\\|").matcher(function("compare"));
         int own = 0;
@@ -122,7 +150,10 @@ class RestoreRehearsalScriptTest {
             checks.add(scripted.group(1));
             own++;
         }
-        assertThat(own).as("compare() reports flywayValidate, the counts and the catalogue").isEqualTo(3);
+        Matcher compared = Pattern.compile("(?m)^COMPARED=([0-9]+)$").matcher(harness);
+        assertThat(compared.find()).as("the harness states how many verdicts compare() writes").isTrue();
+        assertThat(own).as("compare() reports flywayValidate, the counts, the catalogue, the schema and the sequences")
+                .isEqualTo(5).isEqualTo(Integer.parseInt(compared.group(1)));
         String expected = function("expected_check");
         Set<String> named = new TreeSet<>();
         Set<String> alone = new TreeSet<>();
@@ -138,9 +169,10 @@ class RestoreRehearsalScriptTest {
             assertThat(function("plant")).as("plant %s is planted", plant).containsPattern("(?m)^\\s*" + Pattern.quote(plant) + "\\)");
         }
         assertThat(named).as("no two plants expect the same refusal").hasSize(plants.size());
-        assertThat(alone).as("five checks are each shown refusing a plant on their own")
+        assertThat(alone).as("nine checks are each shown refusing a plant on their own")
                 .containsExactlyInAnyOrder("trial balance per currency", "projection check", "row counts equal to the source's",
-                        "catalogue equal to the source's", "source-join census");
+                        "catalogue equal to the source's", "schema equal to the source's", "sequences at or past the source's",
+                        "flywayValidate", "GL = ledger per period", "source-join census");
         assertThat(harness).as("refused by that check alone").contains("if [ \"$failing\" != \"$expected\" ]; then")
                 .contains("where only [$expected] must refuse it");
         assertThat(harness).as("a plant that did not land is not a refusal").contains("did not land whole");
@@ -155,6 +187,9 @@ class RestoreRehearsalScriptTest {
         assertThat(backup).isGreaterThan(source);
         assertThat(function("verify")).contains("options=-c%20default_transaction_read_only%3Don")
                 .as("a report as long as the catalogue it states").contains("= \"$checks\" ]");
+        String verify = function("verify");
+        assertThat(verify.indexOf("rm -f \"$ART/verification-$2.txt\"")).as("an earlier run's report is removed before the command runs")
+                .isNotNegative().isLessThan(verify.indexOf("command_run RestoreVerification"));
         assertThat(function("compare")).contains("default_transaction_read_only%3Don").contains("flywayValidate");
     }
 
@@ -164,6 +199,10 @@ class RestoreRehearsalScriptTest {
         String workflow = EvidenceCitations.read(root.resolve(".github/workflows/ci.yml"));
         assertThat(workflow).contains("  restore-rehearsal:").contains("run: ./infra/scripts/restore-rehearsal.sh")
                 .contains("path: build/restore-rehearsal/").contains("src/main/resources/db/migration/");
+        assertThat(workflow).as("and when what the rehearsal reads changes: the pins, the chart, the launcher, the code it calls")
+                .contains("|^gradle/libs\\.versions\\.toml$").contains("|^infra/scripts/kind-rehearsal/gl-mapping\\.json$")
+                .contains("|^app/build\\.gradle\\.kts$").contains("|^deploy/overlays/kind/postgres\\.yaml$")
+                .contains("|^(accounting|ledger|accounts|transfers|lending|bnpl|fx|merchant)/src/main/java/");
         assertThat(harness).as("the artefacts CI keeps are the ones the run writes")
                 .contains("ART=${RESTORE_ARTEFACTS:-$ROOT/build/restore-rehearsal}");
     }

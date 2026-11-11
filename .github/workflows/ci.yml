@@ -638,10 +638,12 @@ jobs:
   # planted in a restore of its own and refused by exactly the checks that must see it.
   #
   # Docker and a JDK, no cluster. It runs on master, nightly and on a pull request that
-  # changes a migration (what a restore must carry), the harness, its commands or the
-  # role script. It holds no credential: every password and both backup keys are generated
-  # per run into a temporary directory the script removes. Its artefacts are logs and
-  # verdicts, never the backup.
+  # changes a migration (what a restore must carry), the harness, its commands, the role
+  # script, the PostgreSQL pin or version, the GL chart the seed activates, the build
+  # script that launches the commands, or the production code the commands call. It holds
+  # no credential: every password and the one backup key are generated per run, the key in
+  # a temporary directory the script removes. Its artefacts are logs and verdicts, never
+  # the backup.
   # ---------------------------------------------------------------------------
   restore-rehearsal:
     name: Restore rehearsal
@@ -662,7 +664,7 @@ jobs:
             exit 0
           fi
           git fetch --no-tags --depth=1 origin "$BASE"
-          if git diff --name-only "origin/$BASE" HEAD | grep -Eq '(^[a-z]+/src/main/resources/db/migration/|^infra/scripts/restore-rehearsal|^app/src/test/java/com/finapp/app/restore/|^infra/postgres/|^\.github/workflows/ci\.yml$)'; then
+          if git diff --name-only "origin/$BASE" HEAD | grep -Eq '(^[a-z]+/src/main/resources/db/migration/|^infra/scripts/restore-rehearsal|^app/src/test/java/com/finapp/app/restore/|^infra/postgres/|^\.github/workflows/ci\.yml$|^gradle/libs\.versions\.toml$|^infra/scripts/kind-rehearsal/gl-mapping\.json$|^app/build\.gradle\.kts$|^deploy/overlays/kind/postgres\.yaml$|^(accounting|ledger|accounts|transfers|lending|bnpl|fx|merchant)/src/main/java/|^app/src/main/java/com/finapp/app/(accounting|ledger|reconciliation)/)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
