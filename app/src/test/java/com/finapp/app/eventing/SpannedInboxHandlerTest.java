@@ -22,13 +22,13 @@ import org.junit.jupiter.api.Test;
 /**
  * The inbox leg of a flow, as a span (`P15-TSK-023`, ADR-0124 decision 8): every handled event recorded as {@code inbox.handle} in the
  * correlation the receiver entered - the envelope's, caused by the event - so the asynchronous leg is found by the flow's own id; the
- * handler's identity (consumer name, topic, type, idempotence) its own, and its failure its own.
+ * handler's identity (consumer name, topic, type) its own, no idempotence claimed by the wrapper, and its failure its own.
  */
 @DisplayName("each handled event is a span in the envelope's correlation, and the handler is otherwise untouched (P15-TSK-023)")
 class SpannedInboxHandlerTest {
 
     @Test
-    @DisplayName("the handler runs inside an inbox.handle span started in the receiver's correlation; every other method is the handler's")
+    @DisplayName("the handler runs inside an inbox.handle span started in the receiver's correlation; its name, topic and type are the handler's")
     @SuppressWarnings("try")
     void aHandledEventIsASpanOfItsFlow() {
         Recording spans = new Recording();
@@ -38,7 +38,7 @@ class SpannedInboxHandlerTest {
         assertThat(spanned.consumerName()).isEqualTo("payments.planted");
         assertThat(spanned.topic()).isEqualTo("finapp.payments");
         assertThat(spanned.eventType()).isEqualTo("payments.PaymentCaptured");
-        assertThat(spanned.naturallyIdempotent()).isTrue();
+        assertThat(spanned.naturallyIdempotent()).as("the wrapper claims nothing: the replay door reads the handler beans").isFalse();
 
         Correlation envelope = new Correlation(CorrelationId.of("payment-flow-1"), CausationId.of("event-1"));
         try (CorrelationContext.Scope scope = CorrelationContext.enter(envelope)) {

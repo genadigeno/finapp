@@ -11,7 +11,9 @@ import java.util.Objects;
  * An inbox handler recorded as the flow's asynchronous leg (`P15-TSK-023`, ADR-0124 decision 8): the receiver has already entered
  * the envelope's correlation and causation when it calls {@link #handle}, so the span the platform's processor stamps joins the
  * flow that published the event, across Kafka. No attribute: the span's name and the flow's ids are the whole of what it says.
- * Every other method is the handler's own, unchanged - its consumer name, topic and type decide its group and its dedupe key.
+ * Its consumer name, topic and type are the handler's own, unchanged: they decide its group and its dedupe key. It claims no
+ * natural idempotency, and need not carry the handler's: only the receiver holds this wrapper, and the replay door reads the
+ * handler beans themselves (`EventingBeans`), where a claim is a reviewed change (`DeadLetterWiringTest`).
  */
 final class SpannedInboxHandler implements InboxEventHandler {
 
@@ -43,11 +45,6 @@ final class SpannedInboxHandler implements InboxEventHandler {
     @Override
     public String eventType() {
         return handler.eventType();
-    }
-
-    @Override
-    public boolean naturallyIdempotent() {
-        return handler.naturallyIdempotent();
     }
 
     @Override
