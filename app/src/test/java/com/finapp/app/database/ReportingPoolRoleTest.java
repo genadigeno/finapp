@@ -39,6 +39,15 @@ class ReportingPoolRoleTest {
         assertThatThrownBy(() -> build(settings("finapp_migrator"))).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("a role that writes (finapp_migrator)");
         assertThatThrownBy(() -> build(settings("postgres"))).isInstanceOf(IllegalStateException.class);
+        // P15-TSK-020: a fleet that has rotated signs in as an alternating user, and the application's role and the other
+        // alternate hold every right it does. None of them may be the reporting user, whichever the writer is today.
+        for (String writer : new String[] {"finapp_app", "finapp_app_a", "FINAPP_APP_B"}) {
+            assertThatThrownBy(() -> build(settings(writer).withProperty("spring.datasource.username", "finapp_app_b")))
+                    .as(writer).isInstanceOf(IllegalStateException.class).hasMessageContaining("Refusing to start");
+        }
+        try (ReportingPool pool = build(settings("finapp_reporting_a").withProperty("spring.datasource.username", "finapp_app_a"))) {
+            assertThat(pool.username()).as("the reporting role's own alternate starts").isEqualTo("finapp_reporting_a");
+        }
     }
 
     @Test

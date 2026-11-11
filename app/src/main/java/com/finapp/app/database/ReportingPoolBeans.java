@@ -29,8 +29,12 @@ class ReportingPoolBeans {
     /** Where the writer's driver properties live - {@code sslmode} among them, when it is not in the URL. */
     static final String WRITER_DRIVER_PROPERTIES = "spring.datasource.hikari.data-source-properties";
 
-    /** Roles that write, whatever a deployment calls its application role: the migrator and the superuser. */
-    static final Set<String> WRITING_ROLES = Set.of("finapp_migrator", "postgres");
+    /**
+     * Roles that write, whatever a deployment calls its application role: the migrator and the superuser; and since
+     * `P15-TSK-020` the application's role and both of its alternating users, because a fleet that has rotated signs in as one
+     * of them and the others hold every one of its rights, so the writer's own name alone no longer covers its family.
+     */
+    static final Set<String> WRITING_ROLES = Set.of("finapp_migrator", "postgres", "finapp_app", "finapp_app_a", "finapp_app_b");
 
     @Bean(destroyMethod = "close")
     ReportingPool reportingPool(Environment environment) {
