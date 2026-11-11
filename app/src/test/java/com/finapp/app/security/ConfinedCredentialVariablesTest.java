@@ -108,7 +108,10 @@ class ConfinedCredentialVariablesTest {
                     Map.entry(com.finapp.app.fx.FxProviderBKey.class, "finapp.fx.provider.b.key"),
                     Map.entry(com.finapp.app.payments.CorridorProviderBKey.class, "finapp.corridor.provider.b.key"),
                     // The twenty-fifth (P10-TSK-006): credit evidence - its own key purpose, never another module's.
-                    Map.entry(com.finapp.app.credit.CreditEvidenceKey.class, "finapp.credit.evidence.key"));
+                    Map.entry(com.finapp.app.credit.CreditEvidenceKey.class, "finapp.credit.evidence.key"),
+                    // The twenty-sixth (P15-TSK-022, paired here by P15-TSK-020, 2026-11-11, whose run found it missing): the
+                    // abuse limits' source-bucket key, a keyed hash's key and not a ring.
+                    Map.entry(com.finapp.app.abuse.SourceBucketKey.class, "finapp.abuse.bucket.key"));
 
     @Test
     @DisplayName("the variable a refusal names is the relaxed-binding form of the property read")

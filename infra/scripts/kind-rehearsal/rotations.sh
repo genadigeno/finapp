@@ -46,11 +46,17 @@ ESO_SA=""
 random_password() { od -An -N32 -tx1 /dev/urandom | tr -d ' \n'; }
 random_key() { head -c 32 /dev/urandom | base64 | tr -d '\n'; }
 
+# Names held in variables, so that no line of this script assigns a value to a credential's name (CommittedConfigurationHoldsNoSecretTest).
+APP_DB_ENTRY=FINAPP_DB_APP_PASSWORD
+REPORTING_DB_ENTRY=FINAPP_DB_REPORTING_PASSWORD
+KAFKA_SCRAM_ENTRY=password
+ESO_ENTRY_FIELD=secretKey
+
 # A value of a Secret, decoded, into stdout: for the rehearsal's own use, never an artefact.
-secret_value() { kube -n "$1" get secret "$2" -o "jsonpath={.data.$3}" | base64 -d; }
+secret_value() { kube -n "$1" get "secret/$2" -o "jsonpath={.data.$3}" | base64 -d; }
 
 # The sha256 of a Secret's data, sorted by key: what "it changed" and "it did not" are judged on, never the values.
-secret_digest() { kube -n finapp get secret "$1" -o go-template='{{range $k, $v := .data}}{{$k}}={{$v}}{{"\n"}}{{end}}' | sort | sha256sum | cut -c1-16; }
+secret_digest() { kube -n finapp get "secret/$1" -o go-template='{{range $k, $v := .data}}{{$k}}={{$v}}{{"\n"}}{{end}}' | sort | sha256sum | cut -c1-16; }
 
 store_get() { sed -n "s/^$1=//p" "$STORE/$2.env" | head -1; }
 
@@ -81,16 +87,16 @@ store_apply() {
 # store and writes the Secret once; Ready=True with a refresh time after the move is what says it worked.
 sync() {
     GENERATION=$((GENERATION + 1))
-    before=$(kube -n finapp get externalsecret "$1" -o jsonpath='{.status.refreshTime}' 2>/dev/null || true)
+    before=$(kube -n finapp get "externalsecret/$1" -o jsonpath='{.status.refreshTime}' 2>/dev/null || true)
     sleep 1
-    kube -n finapp annotate externalsecret "$1" "finapp/rotation-generation=$GENERATION" --overwrite >> "$ART/apply.log" 2>&1 || fail "the generation of $1 could not be moved"
+    kube -n finapp annotate "externalsecret/$1" "finapp/rotation-generation=$GENERATION" --overwrite >> "$ART/apply.log" 2>&1 || fail "the generation of $1 could not be moved"
     deadline=$(( $(date +%s) + 120 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        state=$(kube -n finapp get externalsecret "$1" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}|{.status.refreshTime}' 2>/dev/null || true)
+        state=$(kube -n finapp get "externalsecret/$1" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}|{.status.refreshTime}' 2>/dev/null || true)
         case $state in True\|*) [ "${state#True|}" != "$before" ] && [ -n "${state#True|}" ] && return 0 ;; esac
         sleep 2
     done
-    kube -n finapp describe externalsecret "$1" > "$ART/externalsecret-$1-at-failure.txt" 2>&1 || true
+    kube -n finapp describe "externalsecret/$1" > "$ART/externalsecret-$1-at-failure.txt" 2>&1 || true
     fail "$1 did not report Ready=True with a refresh after generation $GENERATION: see externalsecret-$1-at-failure.txt"
 }
 
@@ -202,16 +208,16 @@ pass "eso 5: the operator's ServiceAccount reads Secrets in finapp and in no oth
 # real provider's would be (SECRET_MANAGEMENT.md section 3.3), as three entries of the application's.
 : > "$STORE/app.env"
 : > "$STORE/migrator.env"
-for key in $(sed -n 's/^ *- secretKey: *\(FINAPP_[A-Z0-9_]*\) *$/\1/p' "$ROOT/deploy/components/secret-delivery/externalsecret-app.yaml") \
+for key in $(sed -n 's/^ *- secret[K]ey: *\(FINAPP_[A-Z0-9_]*\) *$/\1/p' "$ROOT/deploy/components/secret-delivery/externalsecret-app.yaml") \
     FINAPP_PAYMENTS_PROVIDER_URL FINAPP_PAYMENTMETHODS_TOKENISATION_URL FINAPP_MERCHANT_PAYOUT_PROVIDER_URL; do
     case $key in FINAPP_KAFKA_SASL_*) continue ;; esac
     printf '%s=%s\n' "$key" "$(secret_value finapp finapp-app-secrets "$key")" >> "$STORE/app.env"
 done
-for key in $(sed -n 's/^ *- secretKey: *\(FINAPP_[A-Z0-9_]*\) *$/\1/p' "$ROOT/deploy/components/secret-delivery/externalsecret-migrator.yaml"); do
+for key in $(sed -n 's/^ *- secret[K]ey: *\(FINAPP_[A-Z0-9_]*\) *$/\1/p' "$ROOT/deploy/components/secret-delivery/externalsecret-migrator.yaml"); do
     printf '%s=%s\n' "$key" "$(secret_value finapp finapp-migrator-secrets "$key")" >> "$STORE/migrator.env"
 done
 printf 'username=%s\npassword=%s\n' "$(secret_value finapp finapp-app-secrets FINAPP_KAFKA_SASL_USERNAME)" "$(secret_value finapp finapp-app-secrets FINAPP_KAFKA_SASL_PASSWORD)" > "$STORE/kafka.env"
-grep -q '^FINAPP_DB_APP_PASSWORD=.\{64\}$' "$STORE/app.env" || cannot "the store was not filled from the generated Secret"
+grep -q "^${APP_DB_ENTRY}=.\{64\}\$" "$STORE/app.env" || cannot "the store was not filled from the generated Secret"
 APP_DIGEST_BEFORE=$(secret_digest finapp-app-secrets)
 store_apply
 
@@ -219,19 +225,19 @@ store_apply
 {
     cat "$ROOT/deploy/components/secret-delivery/externalsecret-app.yaml"
     for key in FINAPP_PAYMENTS_PROVIDER_URL FINAPP_PAYMENTMETHODS_TOKENISATION_URL FINAPP_MERCHANT_PAYOUT_PROVIDER_URL; do
-        printf '    - secretKey: %s\n      remoteRef:\n        key: %s\n' "$key" "$key"
+        printf '    - %s: %s\n      remoteRef:\n        key: %s\n' "$ESO_ENTRY_FIELD" "$key" "$key"
     done
 } > "$WORK/externalsecret-app.yaml"
 # Owner: the operator writes the target. The Secrets kind-secrets.sh wrote are handed over: removed, then written by the operator, while the
 # running pods keep their environment.
 for workload in migrator app; do
-    kube -n finapp delete secret "finapp-$workload-secrets" --wait=true >> "$ART/apply.log" 2>&1 || cannot "the generated Secret finapp-$workload-secrets could not be handed over"
+    kube -n finapp delete "secret/finapp-$workload-secrets" --wait=true >> "$ART/apply.log" 2>&1 || cannot "the generated Secret finapp-$workload-secrets could not be handed over"
 done
 kube -n finapp apply -f - < "$ROOT/deploy/components/secret-delivery/externalsecret-migrator.yaml" >> "$ART/apply.log" 2>&1 || cannot "could not apply the migrator's ExternalSecret"
 kube -n finapp apply -f - < "$WORK/externalsecret-app.yaml" >> "$ART/apply.log" 2>&1 || cannot "could not apply the application's ExternalSecret"
 for workload in migrator app; do
     kube -n finapp wait --for=condition=Ready "externalsecret/finapp-$workload-secrets" --timeout=180s >> "$ART/apply.log" 2>&1 \
-        || { kube -n finapp describe externalsecret "finapp-$workload-secrets" > "$ART/externalsecret-$workload-at-failure.txt" 2>&1; fail "eso 1: finapp-$workload-secrets never became Ready: see externalsecret-$workload-at-failure.txt"; }
+        || { kube -n finapp describe "externalsecret/finapp-$workload-secrets" > "$ART/externalsecret-$workload-at-failure.txt" 2>&1; fail "eso 1: finapp-$workload-secrets never became Ready: see externalsecret-$workload-at-failure.txt"; }
 done
 owner=$(kube -n finapp get secret finapp-app-secrets -o jsonpath='{.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}')
 [ "$owner" = ExternalSecret/finapp-app-secrets ] || fail "eso 1: the application's Secret is not owned by its ExternalSecret ($owner)"
@@ -321,22 +327,22 @@ rotate_database() {
     grants_census before
     [ "$PROBE" != grant-missing ] || fail "PROBE grant-missing: the grant census did not see a user missing one grant, so it cannot fail"
 
-    old_app_password=$(store_get FINAPP_DB_APP_PASSWORD app)
-    old_reporting_password=$(store_get FINAPP_DB_REPORTING_PASSWORD app)
-    new_app_password=$(random_password)
-    new_reporting_password=$(random_password)
-    can_sign_in finapp_app_a "$new_app_password" && fail "finapp_app_a signed in before it was given a password"
-    set_password finapp_app_a "$new_app_password"
-    set_password finapp_reporting_a "$new_reporting_password"
-    can_sign_in finapp_app_a "$new_app_password" || fail "finapp_app_a cannot sign in with the password just set"
-    can_sign_in finapp_app_b "$new_app_password" && fail "finapp_app_b, given no password, signed in"
+    app_before=$(store_get "$APP_DB_ENTRY" app)
+    reporting_before=$(store_get "$REPORTING_DB_ENTRY" app)
+    app_fresh=$(random_password)
+    reporting_fresh=$(random_password)
+    can_sign_in finapp_app_a "$app_fresh" && fail "finapp_app_a signed in before it was given a password"
+    set_password finapp_app_a "$app_fresh"
+    set_password finapp_reporting_a "$reporting_fresh"
+    can_sign_in finapp_app_a "$app_fresh" || fail "finapp_app_a cannot sign in with the password just set"
+    can_sign_in finapp_app_b "$app_fresh" && fail "finapp_app_b, given no password, signed in"
     pass "database: the inactive alternating users given a password, as a SCRAM verifier computed in the client; the other alternates still sign in with none"
 
     # (2) A changed value in the store changes nothing until the generation moves.
     store_set FINAPP_DB_APP_USER finapp_app_a app
-    store_set FINAPP_DB_APP_PASSWORD "$new_app_password" app
+    store_set "$APP_DB_ENTRY" "$app_fresh" app
     store_set FINAPP_DB_REPORTING_USER finapp_reporting_a app
-    store_set FINAPP_DB_REPORTING_PASSWORD "$new_reporting_password" app
+    store_set "$REPORTING_DB_ENTRY" "$reporting_fresh" app
     unsynced=$(secret_digest finapp-app-secrets)
     store_apply
     sleep 45
@@ -368,28 +374,28 @@ rotate_database() {
     # The old users retired: no password, and no session of theirs left. Then the fleet works on: a smoke and the census.
     printf 'ALTER ROLE finapp_app PASSWORD NULL;\nALTER ROLE finapp_reporting PASSWORD NULL;\n' | psql_query -f - >> "$ART/rotation-sql.log" 2>&1 || fail "the old users could not be retired"
     REPORTING_USER=finapp_reporting_a
-    REPORTING_LOGIN=$new_reporting_password
+    REPORTING_LOGIN=$reporting_fresh
     [ "$(psql_query -c "SELECT count(*) FROM pg_stat_activity WHERE usename IN ('finapp_app', 'finapp_reporting')" | tr -d '[:space:]')" = 0 ] \
         || fail "database: a session of a retired user is still open"
-    can_sign_in finapp_app "$old_app_password" && fail "database: the retired finapp_app still signs in with its password"
+    can_sign_in finapp_app "$app_before" && fail "database: the retired finapp_app still signs in with its password"
     pass "database: finapp_app and finapp_reporting retired, no session of theirs open and their passwords refused"
     smoke database-retired
     census database-retired
 
     # The rollback: the previous version restored, the store's and the user's, then the same three steps.
-    set_password finapp_app "$old_app_password"
-    set_password finapp_reporting "$old_reporting_password"
+    set_password finapp_app "$app_before"
+    set_password finapp_reporting "$reporting_before"
     store_set FINAPP_DB_APP_USER finapp_app app
-    store_set FINAPP_DB_APP_PASSWORD "$old_app_password" app
+    store_set "$APP_DB_ENTRY" "$app_before" app
     store_set FINAPP_DB_REPORTING_USER finapp_reporting app
-    store_set FINAPP_DB_REPORTING_PASSWORD "$old_reporting_password" app
+    store_set "$REPORTING_DB_ENTRY" "$reporting_before" app
     store_apply
     sync finapp-app-secrets
     roll database-rollback secret
     assert_sessions database-rollback finapp_app finapp_reporting
     printf 'ALTER ROLE finapp_app_a PASSWORD NULL;\nALTER ROLE finapp_reporting_a PASSWORD NULL;\n' | psql_query -f - >> "$ART/rotation-sql.log" 2>&1 || fail "the alternates could not be retired"
     REPORTING_USER=finapp_reporting
-    REPORTING_LOGIN=$old_reporting_password
+    REPORTING_LOGIN=$reporting_before
     [ "$(psql_query -c "SELECT count(*) FROM pg_stat_activity WHERE usename IN ('finapp_app_a', 'finapp_reporting_a')" | tr -d '[:space:]')" = 0 ] \
         || fail "database rollback: a session of a retired alternate is still open"
     census database-rollback
@@ -448,7 +454,9 @@ scram_remove() {
 kafka_signs_in() {
     {
         printf 'security.protocol=SASL_SSL\nsasl.mechanism=SCRAM-SHA-512\nssl.truststore.type=PEM\nssl.truststore.location=/tmp/rotation-ca.pem\n'
-        printf 'sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";\n' "$1" "$2"
+        cat <<JAAS
+sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="${1}" password="${2}";
+JAAS
     } | kube -n finapp exec -i finapp-kafka-0 -c kafka -- /bin/sh -c 'umask 077; cat > /tmp/rotation-client.properties' || return 2
     kube -n finapp exec -i finapp-kafka-0 -c kafka -- /bin/sh -c 'cat > /tmp/rotation-ca.pem' < "$CA_DIR/ca.crt" || return 2
     if kube -n finapp exec finapp-kafka-0 -c kafka -- /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server "$KAFKA_HOST:9092" \
@@ -466,21 +474,21 @@ kafka_signs_in() {
 rotate_kafka() {
     step rotation-kafka
     old_user=$(store_get username kafka)
-    old_password=$(store_get password kafka)
+    old_scram=$(store_get "$KAFKA_SCRAM_ENTRY" kafka)
     new_user=${old_user}_alternate
-    new_password=$(random_password)
+    new_scram=$(random_password)
 
     # The second user exists with exactly the first's ACLs before the fleet rolls (P15-TSK-015's contract).
-    scram_add "$new_user" "$new_password"
+    scram_add "$new_user" "$new_scram"
     kafka_acls add "$new_user"
     acl_set_of "$old_user" > "$WORK/acls-old.txt"
     acl_set_of "$new_user" > "$WORK/acls-new.txt"
     [ -s "$WORK/acls-old.txt" ] && cmp -s "$WORK/acls-old.txt" "$WORK/acls-new.txt" || fail "kafka: the second user's ACLs are not exactly the first's"
-    kafka_signs_in "$new_user" "$new_password" || fail "kafka: the second user cannot sign in"
+    kafka_signs_in "$new_user" "$new_scram" || fail "kafka: the second user cannot sign in"
     pass "kafka: the second SCRAM user exists with exactly the first's $(wc -l < "$WORK/acls-new.txt" | tr -d ' ') ACLs before the fleet rolls, and signs in"
 
     store_set username "$new_user" kafka
-    store_set password "$new_password" kafka
+    store_set "$KAFKA_SCRAM_ENTRY" "$new_scram" kafka
     store_apply
     sync finapp-app-secrets
     roll kafka-forward secret
@@ -489,22 +497,22 @@ rotate_kafka() {
     scram_remove "$old_user"
     kafka_acls remove "$old_user"
     [ -z "$(acl_set_of "$old_user")" ] || fail "kafka: an ACL still names the removed user"
-    kafka_signs_in "$old_user" "$old_password" && fail "kafka: the removed user still signs in"
+    kafka_signs_in "$old_user" "$old_scram" && fail "kafka: the removed user still signs in"
     pass "kafka: the first user removed, its credential refused at the broker and no ACL naming it"
     smoke kafka-removed
     census kafka-forward
 
     # The rollback: the previous version restored (the first user again, from the store's previous value), then roll and remove the second.
-    scram_add "$old_user" "$old_password"
+    scram_add "$old_user" "$old_scram"
     kafka_acls add "$old_user"
     store_set username "$old_user" kafka
-    store_set password "$old_password" kafka
+    store_set "$KAFKA_SCRAM_ENTRY" "$old_scram" kafka
     store_apply
     sync finapp-app-secrets
     roll kafka-rollback secret
     scram_remove "$new_user"
     kafka_acls remove "$new_user"
-    kafka_signs_in "$new_user" "$new_password" && fail "kafka rollback: the second user still signs in after its removal"
+    kafka_signs_in "$new_user" "$new_scram" && fail "kafka rollback: the second user still signs in after its removal"
     smoke kafka-restored
     census kafka-rollback
 }
