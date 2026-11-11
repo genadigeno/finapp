@@ -1,5 +1,5 @@
 # The telemetry pipeline's steps of the kind rehearsal (P15-TSK-023, ADR-0124 decisions 1 and 8). Sourced by infra/scripts/kind-rehearsal.sh, whose
-# helpers it uses (kube, log, pass, fail, cannot, psql_query, client, probe_pod, must_reach, must_not_reach, load_tagged, render_overlay); every
+# helpers it uses (dock, kube, log, pass, fail, cannot, psql_query, client, probe_pod, must_reach, must_not_reach, load_tagged, normalized, render_overlay); every
 # result is in the run's artefacts, under telemetry-*.
 #
 #   telemetry_deploy    the collector, Tempo, Loki and Prometheus of deploy/observability/overlays/kind, before N rolls out, so N exports from its start
@@ -25,11 +25,27 @@ urlencode() {
         -e 's/+/%2B/g' -e 's/\[/%5B/g' -e 's/\]/%5D/g'
 }
 
+telemetry_image() {
+    # telemetry_image <repository> <version> <digest>: into the node as load_tagged puts it there, except an image whose configuration names no
+    # platform (Loki's, built with Nix): `docker save --platform` refuses it, and saved whole it names the blobs of the platforms the host never
+    # pulled, which the node's import cannot find. The node pulls that one itself, its own platform of the pinned digest, under both names.
+    dock image inspect "$1:$2" >/dev/null 2>&1 || { dock pull --platform linux/amd64 "$1@$3" >/dev/null && dock tag "$1@$3" "$1:$2"; } \
+        || cannot "could not pull $1@$3"
+    if [ -n "$(dock image inspect --format '{{.Architecture}}' "$1:$2" 2>/dev/null)" ]; then
+        load_tagged "$1" "$2" "$3"
+        return
+    fi
+    dock exec "$NODE" ctr -n k8s.io images pull --platform linux/amd64 "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
+        || cannot "the node could not pull $1@$3"
+    dock exec "$NODE" ctr -n k8s.io images tag --force "$(normalized "$1")@$3" "$(normalized "$1:$2")" >> "$ART/images.log" 2>&1 \
+        || cannot "could not name $1@$3 as $1:$2 in the node"
+}
+
 telemetry_deploy() {
-    load_tagged "$COLLECTOR_REPOSITORY" "$COLLECTOR_VERSION" "$COLLECTOR_DIGEST"
-    load_tagged "$TEMPO_REPOSITORY" "$TEMPO_VERSION" "$TEMPO_DIGEST"
-    load_tagged "$LOKI_REPOSITORY" "$LOKI_VERSION" "$LOKI_DIGEST"
-    load_tagged "$PROMETHEUS_REPOSITORY" "$PROMETHEUS_VERSION" "$PROMETHEUS_DIGEST"
+    telemetry_image "$COLLECTOR_REPOSITORY" "$COLLECTOR_VERSION" "$COLLECTOR_DIGEST"
+    telemetry_image "$TEMPO_REPOSITORY" "$TEMPO_VERSION" "$TEMPO_DIGEST"
+    telemetry_image "$LOKI_REPOSITORY" "$LOKI_VERSION" "$LOKI_DIGEST"
+    telemetry_image "$PROMETHEUS_REPOSITORY" "$PROMETHEUS_VERSION" "$PROMETHEUS_DIGEST"
     render_overlay observability observability/overlays/kind
     apply_files "$WORK/render/observability/all.yaml"
     for deployment in finapp-tempo finapp-loki finapp-prometheus finapp-collector; do
