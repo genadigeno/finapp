@@ -74,6 +74,11 @@ public final class Rehearsal {
     }
 
     public static void main(String[] args) throws Exception {
+        if ("scram-verifier".equals(args[1])) {
+            // Needs no run directory and no edge: a computation over standard input alone (P15-TSK-020).
+            System.out.println(scramVerifier(new String(System.in.readAllBytes(), StandardCharsets.US_ASCII).strip()));
+            return;
+        }
         Rehearsal rehearsal = new Rehearsal(Path.of(args[0]));
         switch (args[1]) {
             case "prepare" -> rehearsal.prepare();
@@ -87,7 +92,6 @@ public final class Rehearsal {
             case "map-gl" -> rehearsal.mapGl();
             case "gl-check" -> rehearsal.glCheck();
             // P15-TSK-020: the rotations.
-            case "scram-verifier" -> System.out.println(scramVerifier(new String(System.in.readAllBytes(), StandardCharsets.US_ASCII).strip()));
             case "enrol-person" -> rehearsal.enrolPerson(args[2]);
             case "elevate" -> rehearsal.elevate(args[2], Integer.parseInt(args[3]));
             case "callbacks" -> rehearsal.callbacks(args[2]);

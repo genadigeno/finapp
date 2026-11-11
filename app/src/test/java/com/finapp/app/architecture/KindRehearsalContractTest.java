@@ -179,6 +179,44 @@ class KindRehearsalContractTest {
     }
 
     @Test
+    @DisplayName("the rotations scope rehearses each rotation the entry names under the workload, with its census and its rollback, and keeps nothing it generates (P15-TSK-020)")
+    void theRotationsAssertWhatTheEntryNames() {
+        String rotations = read("infra/scripts/kind-rehearsal/rotations.sh");
+        assertThat(harness).as("a scope of the harness, after N is deployed and smoked")
+                .contains("SCOPE=${REHEARSAL_SCOPE:-release}").contains(". \"$DIR/rotations.sh\"");
+        assertThat(rotations).as("every roll is the rollout's, so zero failed requests, the budget and an operator at the peak are asserted on each")
+                .contains("rollout \"$1\" \"generation=$GENERATION\" \"\" no").contains("rollout \"$1\" \"config=$CONFIGURATION\" \"\" no");
+        assertThat(rotations).as("each rotation and its rollback followed by the census")
+                .contains("census database-forward").contains("census database-retired").contains("census database-rollback")
+                .contains("census kafka-forward").contains("census kafka-rollback")
+                .contains("census callback-forward").contains("census callback-rollback")
+                .contains("census key-listed").contains("census key-active").contains("census key-rollback")
+                .contains("census certificate");
+        assertThat(rotations).as("the database: each alternate holds exactly its carrier's rights, the half-rolled fleet on both, the old users retired")
+                .contains("grants_census before").contains("signs in as finapp_app_a, every pod not yet rolled as finapp_app")
+                .contains("ALTER ROLE finapp_app PASSWORD NULL");
+        assertThat(read("infra/scripts/kind-rehearsal/grants.sql")).contains("holds exactly the rights of").contains("is named by no grant of its own")
+                .contains("inheriting, without SET or ADMIN");
+        assertThat(rotations).as("Kafka: the second user with exactly the first's ACLs before the roll, the first's credential and ACLs removed after it")
+                .contains("cmp -s \"$WORK/acls-old.txt\" \"$WORK/acls-new.txt\"").contains("scram_remove \"$old_user\"").contains("kafka_acls remove \"$old_user\"");
+        assertThat(rotations).as("the callback window: no delivery refused through the rolls, and the window closing itself with nothing restarted")
+                .contains("assert_callbacks callback-new").contains("[ \"$after_old\" = \"0|30\" ]").contains("pods-before-close.txt");
+        assertThat(rotations).as("the key: listed with check values, a replaced value refused at start, a v1 row read after, a v2 row after the pointer moved back")
+                .contains("FINAPP_MFA_RING_CHECKVALUES").contains("does not give its published check value")
+                .contains("client elevate operator 3").contains("client elevate rotated 3");
+        assertThat(rotations).as("the certificate renewed early and reloaded with no controller restarted, the previous one restored the same way")
+                .contains("ManuallyTriggered").contains("edge-pods-before.txt").contains("wait_served \"$previous\"");
+        assertThat(rotations).as("the operator on a cluster: its five observations")
+                .contains("eso 1:").contains("eso 2:").contains("eso 3:").contains("eso 4:").contains("eso 5:");
+        assertThat(harness + rotations).as("the entry's probes").contains("hmac-previous-dropped").contains("grant-missing");
+        assertThat(rotations).as("the store and every generated value stay in the run's temporary directory").contains("STORE=\"$WORK/store\"")
+                .doesNotContain("cp \"$STORE").doesNotContain("$ART/store");
+        String workflow = read(".github/workflows/ci.yml");
+        assertThat(workflow).as("CI runs both scopes, each on its own runner").contains("scope: [release, rotations]")
+                .contains("REHEARSAL_SCOPE: ${{ matrix.scope }}");
+    }
+
+    @Test
     @DisplayName("CI runs the rehearsal on master, nightly and when deploy/ changes, and keeps the artefacts")
     void ciRunsTheRehearsal() {
         String workflow = read(".github/workflows/ci.yml");

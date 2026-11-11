@@ -318,7 +318,7 @@ class ConfinedKeyRingTest {
     @DisplayName("a check-value list that does not parse, or names a version twice or one not held, refuses without echoing it")
     void aMalformedCheckValueListRefuses() {
         String good = KeyRing.checkValueOf(bytes(1));
-        for (String malformed : new String[] {"1", "1:", "1:" + good + ":x", "x:" + good, "1:" + good.substring(2), "1:" + good + ",",
+        for (String malformed : new String[] {"7", "7:", "1:" + good + ":x", "x:" + good, "1:" + good.substring(2), "1:" + good + ",",
                 "1:" + good.replace(good.charAt(0), 'z'), "c2VjcmV0"}) {
             MockEnvironment environment = environment().withProperty("finapp.test.ring.check-values", malformed);
             assertThatThrownBy(() -> ring(environment)).as("the list [%s]", malformed).isInstanceOf(IllegalStateException.class)

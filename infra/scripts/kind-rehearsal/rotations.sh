@@ -419,8 +419,13 @@ kafka_acls() {
         || fail "the groups' ACLs could not be ${action}ed for $user"
 }
 
+# Every ACL naming the user, as resource|operation|permission, one per line, sorted: two users' sets compare line for line.
 acl_set_of() {
-    kafka_admin kafka-acls.sh --list --principal "User:$1" 2>/dev/null | sed -n "s/.*ResourcePattern(\(.*\))\`*:.*/\1/p; s/.*(principal=User:$1, host=\*, operation=\([A-Z_]*\), permissionType=ALLOW).*/  op \1/p" | sort
+    kafka_admin kafka-acls.sh --list --principal "User:$1" 2>/dev/null | awk -v who="principal=User:$1," '
+        /ResourcePattern\(/ { resource = $0; sub(/.*ResourcePattern\(/, "", resource); sub(/\)`?:.*$/, "", resource) }
+        index($0, who) { operation = $0; sub(/.*operation=/, "", operation); sub(/,.*/, "", operation)
+                         permission = $0; sub(/.*permissionType=/, "", permission); sub(/\).*/, "", permission)
+                         print resource "|" operation "|" permission }' | sort
 }
 
 scram_add() {
@@ -447,7 +452,7 @@ kafka_signs_in() {
         printf 'sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";\n' "$1" "$2"
     } | kube -n finapp exec -i finapp-kafka-0 -c kafka -- /bin/sh -c 'umask 077; cat > /tmp/rotation-client.properties' || return 2
     kube -n finapp exec -i finapp-kafka-0 -c kafka -- /bin/sh -c 'cat > /tmp/rotation-ca.pem' < "$CA_DIR/ca.crt" || return 2
-    if kube -n finapp exec finapp-kafka-0 -c kafka -- timeout 60 /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server "$KAFKA_HOST:9092" \
+    if kube -n finapp exec finapp-kafka-0 -c kafka -- /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server "$KAFKA_HOST:9092" \
         --command-config /tmp/rotation-client.properties > "$WORK/kafka-signin.out" 2>&1; then
         signed=0
     else
@@ -473,7 +478,7 @@ rotate_kafka() {
     acl_set_of "$new_user" > "$WORK/acls-new.txt"
     [ -s "$WORK/acls-old.txt" ] && cmp -s "$WORK/acls-old.txt" "$WORK/acls-new.txt" || fail "kafka: the second user's ACLs are not exactly the first's"
     kafka_signs_in "$new_user" "$new_password" || fail "kafka: the second user cannot sign in"
-    pass "kafka: the second SCRAM user exists with exactly the first's $(grep -c ' op ' "$WORK/acls-new.txt") ACLs before the fleet rolls, and signs in"
+    pass "kafka: the second SCRAM user exists with exactly the first's $(wc -l < "$WORK/acls-new.txt" | tr -d ' ') ACLs before the fleet rolls, and signs in"
 
     store_set username "$new_user" kafka
     store_set password "$new_password" kafka
@@ -484,7 +489,7 @@ rotate_kafka() {
     # Remove the old: its credential and every ACL naming it. A replica still on it could neither produce nor consume from here.
     scram_remove "$old_user"
     kafka_acls remove "$old_user"
-    [ -z "$(acl_set_of "$old_user" | grep ' op ' || true)" ] || fail "kafka: an ACL still names the removed user"
+    [ -z "$(acl_set_of "$old_user")" ] || fail "kafka: an ACL still names the removed user"
     kafka_signs_in "$old_user" "$old_password" && fail "kafka: the removed user still signs in"
     pass "kafka: the first user removed, its credential refused at the broker and no ACL naming it"
     smoke kafka-removed
@@ -553,7 +558,8 @@ burst() {
     printf '%s\n' "$2" > "$CLIENT/burst-key"
     line=$(client callbacks-burst "$1" "$3" 2>> "$ART/client.log" | tail -1)
     rm -f "$CLIENT/burst-key"
-    log "$line"
+    # To the log alone: this function's standard output is its answer.
+    log "$line" >&2
     printf '%s|%s\n' "$(printf '%s' "$line" | sed -n 's/.* accepted=\([0-9]*\).*/\1/p')" "$(printf '%s' "$line" | sed -n 's/.* refused=\([0-9]*\).*/\1/p')"
 }
 
@@ -754,9 +760,13 @@ rotate_certificate() {
     assert_flows_ran certificate-renewal
     pass "certificate: renewed early by cert-manager and served $took s after the Secret changed, with no edge controller restarted and zero failed requests"
 
-    # The rollback: the previous certificate restored into the Secret, served the same way; then whatever cert-manager does is recorded.
+    # The rollback: the previous certificate restored into the Secret and served the same way. cert-manager reissues over a certificate
+    # whose key is not its current request's, so the person restoring one stops its controller first, and starts it again after; what it
+    # does then is recorded. The edge's own reload is what this asserts.
     start_workload certificate-rollback
     sleep 8
+    kube -n cert-manager scale deployment cert-manager --replicas=0 >> "$ART/apply.log" 2>&1 || fail "certificate rollback: cert-manager's controller could not be stopped"
+    kube -n cert-manager rollout status deployment cert-manager --timeout=120s >> "$ART/apply.log" 2>&1 || true
     {
         printf '{"data":{'
         printf '"tls.crt":"%s","tls.key":"%s","ca.crt":"%s"' "$(cat "$WORK/edge-previous/tls.crt")" "$(cat "$WORK/edge-previous/tls.key")" "$(cat "$WORK/edge-previous/ca.crt")"
@@ -764,10 +774,12 @@ rotate_certificate() {
     } | kube -n finapp-edge patch secret finapp-edge-public-tls --type=merge --patch-file /dev/stdin >> "$ART/apply.log" 2>&1 || fail "certificate: the previous certificate could not be restored"
     took=$(wait_served "$previous" 300) || fail "certificate rollback: the previous certificate was not served within 300 s"
     pass "certificate rollback: the previous certificate restored and served $took s later, with no edge controller restarted"
-    sleep 60
+    kube -n cert-manager scale deployment cert-manager --replicas=1 >> "$ART/apply.log" 2>&1 || fail "certificate rollback: cert-manager's controller could not be started again"
+    kube -n cert-manager rollout status deployment cert-manager --timeout=180s >> "$ART/apply.log" 2>&1 || fail "certificate rollback: cert-manager's controller did not come back"
+    sleep 90
     after=$(secret_serial)
     if [ "$after" = "$previous" ]; then
-        log "certificate rollback: cert-manager left the restored certificate in place for 60 s"
+        log "certificate rollback: cert-manager, started again, left the restored certificate in place for 90 s"
         printf 'certificate rollback: cert-manager kept the restored certificate\n' > "$ART/certificate-after-rollback.txt"
     else
         log "certificate rollback: cert-manager issued again over the restored certificate: under cert-manager a rollback is a re-issue"

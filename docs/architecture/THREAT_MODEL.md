@@ -1284,7 +1284,9 @@ were added on 2026-11-09 and await the owner." until then.)*
     same version and fail at each other's authentication tags, indistinguishable from tampering. The runbook forbids it
     (section 11.29). A per-version check value in the ring's non-secret configuration, a short keyed digest of a fixed
     label, would refuse the replica at startup, at the cost of a value a person must publish. *Recommendation*: add it
-    when `P15-TSK-020` writes the first version's value on a cluster, which is the first act that can get this wrong.
+    when the rotation rehearsal writes the first version's value on a cluster, which is the first act that can get this wrong.
+    *(Built 2026-11-11 by the rotation rehearsal, and seen refusing on a cluster: T34's rows. What it leaves, a ring of one
+    version with no check value, is item 36 (b).)*
 
     *(b) Credit's ring cannot retire a version from this code.* `credit.credit_evidence.key_version` is not readable by the
     application's role, so a retirement on that ring refuses at startup, always. Retiring needs a one-line grant of that
@@ -1297,7 +1299,7 @@ were added on 2026-11-09 and await the owner." until then.)*
     wrong order loses nothing, because reads of the new version are refused until the replica that cannot read them has
     rolled. *Recommendation*: accept until `P15-TSK-017` applies manifests through a GitOps controller, which can hold the
     second change until the first has rolled.
-    **Decided 2026-11-11**: as recommended: (a) is `P15-TSK-020`'s, whose entry is widened; (b) waits for C12's purge decision; (c)
+    **Decided 2026-11-11**: as recommended: (a) is the rotation rehearsal's, whose entry was widened; (b) waits for C12's purge decision; (c)
     is accepted until `P15-TSK-017`.
 
 34. **T20's residual: a release that lengthens the session idle timeout** *(added 2026-11-09 by the configuration register's task)*.
@@ -1326,6 +1328,28 @@ were added on 2026-11-09 and await the owner." until then.)*
     *Recommendation*: **(a)**. The job needs no machine anyone has to find, and every denial sits beside a control, so a plugin that
     enforces nothing goes red rather than green.
     **Decided 2026-11-11**: (a); the first CI run of the `rehearsal` job is read for which engine answered.
+
+36. **T7's, T22's and T34's residuals: what the rotation rehearsal leaves** *(added 2026-11-11 by the rotation rehearsal)*. Three things.
+
+    *(a) ADR-0032's rotation policy for a customer's credential, and its "older than X" report.* ADR-0032 gave Phase 15 both, and no
+    register row held either. Built: a customer's credential changes when its holder changes it, which ends every other session, and its
+    derivation moves to current parameters on its next successful use. Not built: a schedule, and the report. What the report would
+    watch is a database disclosure's cost (T7): a credential under weaker parameters is cheaper to guess offline. *Recommendation*: no
+    scheduled rotation of a customer's credential, which changes on the holder's act or on suspected compromise; and the report as the
+    count of credentials under parameters older than current policy, the upgrade's convergence, postponed until the first change of
+    parameters, because until then every credential is under the first ones and it would read zero.
+
+    *(b) A ring of one version with no check value* (T34). A replica refuses a stored value that does not give its published check value,
+    for every version of a ring holding more than one (a second version listed without one for each refuses) and for any version given
+    one. A ring of one version with none starts as it always has, so a base key overwritten in the store before the first rotation is
+    still found only by its first row failing. The first fill now publishes one (`OPERATIONS_RUNBOOK.md` section 11.7), but nothing
+    requires it. *Recommendation*: require one for every held version off loopback once a real environment exists, so that a replica
+    cannot start without one; until then, publish it at each environment's first fill.
+
+    *(c) A provider's API credential and a report source's* (T22). Their method is the callback secret's, two valid during a window
+    (`SECRET_MANAGEMENT.md` section 5.1), but the window is the provider's to hold: the simulated provider verifies no credential, so a
+    rotation against it would pass whatever was sent. *Recommendation*: rehearse each against the provider's own sandbox when a real
+    provider is connected, which plan section 1.1 defers with every real provider.
 
 ## 7. Decided against
 

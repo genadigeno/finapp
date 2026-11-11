@@ -80,8 +80,13 @@ Inputs: `name_prefix`, `vpc_id`, `private_subnet_ids_by_zone`, `client_security_
 - **A broker outage**: `OPERATIONS_RUNBOOK.md` §11.6 has both halves, the application's and the managed service's.
 - **A posture change**: edit `infra/kafka/broker.properties`. A plan creates a configuration revision, and MSK rolls the
   brokers when it is applied, one at a time, waiting for each to catch up.
-- **Rotating a SCRAM credential**: ADR-0123's order of add, roll, remove applies, and is `P15-TSK-020`'s to rehearse. An ACL names a
-  SCRAM user, so a second user for rotation needs its grants too.
+- **Rotating a SCRAM credential**: ADR-0123's order of add, roll, remove. An ACL names a SCRAM user, so the second user needs its
+  grants before the fleet rolls onto it: set `scram_user_slots = { application = ["primary", "alternate"] }` and apply, which plans
+  `<prefix>-application-alternate` with its own `AmazonMSK_` entry, its association and exactly the principal's ACLs (the security
+  module's reader may already read that entry); fill the entry; point the application's two `FINAPP_KAFKA_SASL_…` entries at it by an
+  overlay patch, sync and roll (`SECRET_MANAGEMENT.md` §5.2); then `{ application = ["alternate"] }` and apply, which removes the old
+  user, its entry, its association and its ACLs. The next rotation goes back the same way to `primary`. The order and the census
+  around it have run on `kind` against a test-only broker (`OPERATIONS_RUNBOOK.md` §11.33); nothing has run on MSK.
 - **Before relying on this**: run the checks (`OPERATIONS_RUNBOOK.md` §11.13). Changing the Kafka provider's pin means
   regenerating this directory's lock file with both roots'.
 
