@@ -635,7 +635,7 @@ jobs:
   # restored into a fresh PostgreSQL held so that no platform role can log in, its
   # transaction counter moved past the restored journal, and proven financially whole by
   # the platform's own checks before the roles are released; then each kind of corruption
-  # planted in a restore of its own and refused by its own check alone.
+  # planted in a restore of its own and refused by exactly the checks that must see it.
   #
   # Docker and a JDK, no cluster. It runs on master, nightly and on a pull request that
   # changes a migration (what a restore must carry), the harness, its commands or the

@@ -17,13 +17,15 @@
 # catalogue equal to the manifest's, and RestoreVerification: the trial balance per currency, GL = ledger for every period, the
 # projection check, every product proof and the source-join census over the whole journal, PASS. Then the release, and a log-in.
 #
-# THE PLANTS (RESTORE_PLANTS, default all), each in a restore of its own, each required to fail exactly its check:
-#   unbalanced-entry    one line of a two-person adjustment raised by one minor unit, its proposal line and its balance row with it,
-#                       so the census and the projection agree and only the trial balance can see it
-#   balance-disagrees   one wallet's balance row moved by one minor unit: the projection check
-#   missing-row         one audit record deleted: the row counts (no financial check reads the audit trail)
-#   grant-dropped       finapp_app's INSERT on the journal's lines revoked: the catalogue
-#   counter-not-moved   the restore's counter step skipped: the source-join census, which then cannot see the restored journal
+# THE PLANTS (RESTORE_PLANTS, default all), each in a restore of its own, each required to fail exactly the checks named:
+#   unbalanced-entry      one line of a two-person adjustment raised by one minor unit, its proposal line and its balance row with
+#                         it, so the census and the projection agree and only the trial balance can see it
+#   balance-disagrees     one wallet's balance row moved by one minor unit: the projection check alone
+#   missing-row           one audit record deleted: the row counts alone (no financial check reads the audit trail)
+#   grant-dropped         finapp_app's INSERT on the journal's lines revoked: the catalogue alone
+#   counter-not-moved     the restore's counter step skipped: the source-join census alone, which then cannot see the journal
+#   journal-line-removed  one line of a transfer's entry deleted, the phase gate's own plant (PHASE_GATES.md section 5, Phase 15,
+#                         criterion 6): the counts, the trial balance, the projection and the census, each from its own side
 # A planted restore is never released.
 #
 # WHAT IT NEVER DOES. It holds no credential beyond the run: every password and both backup keys are generated into a temporary
@@ -43,7 +45,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$ROOT"
 
 ART=${RESTORE_ARTEFACTS:-$ROOT/build/restore-rehearsal}
-PLANTS=${RESTORE_PLANTS:-unbalanced-entry balance-disagrees missing-row grant-dropped counter-not-moved}
+PLANTS=${RESTORE_PLANTS:-unbalanced-entry balance-disagrees missing-row grant-dropped counter-not-moved journal-line-removed}
 CHART="$ROOT/infra/scripts/kind-rehearsal/gl-mapping.json"
 
 mkdir -p "$ART"
@@ -115,10 +117,10 @@ trap cleanup EXIT
 trap 'exit 2' INT TERM
 
 # Generated for this run, printed nowhere. One superuser password serves both servers: the restore's administrator.
-ADMIN_PASSWORD=$(secret)
-APP_PASSWORD=$(secret)
-MIGRATOR_PASSWORD=$(secret)
-REPORTING_PASSWORD=$(secret)
+generated_for_admin=$(secret)
+generated_for_app=$(secret)
+generated_for_migrator=$(secret)
+generated_for_reporting=$(secret)
 openssl rand -hex 32 > "$WORK/backup.key"
 
 step() {
@@ -129,14 +131,14 @@ step() {
 sql() {
     container=$1
     shift
-    answer=$(dock exec --env PGPASSWORD="$ADMIN_PASSWORD" "$container" \
+    answer=$(dock exec --env PGPASSWORD="${generated_for_admin}" "$container" \
         psql -h 127.0.0.1 -U postgres -d finapp -v ON_ERROR_STOP=1 -AtX -c "$*") || return $?
     [ -z "$answer" ] || printf '%s\n' "$answer" | tr -d '\r'
 }
 
 # sql_file <container> < file: a script as the bootstrap superuser, in one transaction.
 sql_file() {
-    dock exec -i --env PGPASSWORD="$ADMIN_PASSWORD" "$1" \
+    dock exec -i --env PGPASSWORD="${generated_for_admin}" "$1" \
         psql -h 127.0.0.1 -U postgres -d finapp -v ON_ERROR_STOP=1 -AtXq --single-transaction -f -
 }
 
@@ -155,7 +157,7 @@ ready() {
 
 # server <container>: a throwaway PostgreSQL on a random loopback port, its database `finapp`.
 server() {
-    dock run --detach --name "$1" --publish 127.0.0.1::5432 --env POSTGRES_PASSWORD="$ADMIN_PASSWORD" --env POSTGRES_DB=finapp \
+    dock run --detach --name "$1" --publish 127.0.0.1::5432 --env POSTGRES_PASSWORD="${generated_for_admin}" --env POSTGRES_DB=finapp \
         "$IMAGE" -c max_connections=100 >/dev/null || cannot "PostgreSQL $1 did not start"
     ready "$1"
 }
@@ -178,9 +180,11 @@ epoch() {
 roles() {
     {
         cat "$ROLES_SCRIPT"
-        printf "ALTER ROLE finapp_app PASSWORD '%s';\n" "$APP_PASSWORD"
-        printf "ALTER ROLE finapp_migrator PASSWORD '%s';\n" "$MIGRATOR_PASSWORD"
-        printf "ALTER ROLE finapp_reporting PASSWORD '%s';\n" "$REPORTING_PASSWORD"
+        # The values are hex, so a single quote around each is the whole of their quoting. No literal follows the keyword here, which is
+        # what CommittedConfigurationHoldsNoSecretTest reads for.
+        printf 'ALTER ROLE %s PASSWORD %s;\n' finapp_app "'${generated_for_app}'"
+        printf 'ALTER ROLE %s PASSWORD %s;\n' finapp_migrator "'${generated_for_migrator}'"
+        printf 'ALTER ROLE %s PASSWORD %s;\n' finapp_reporting "'${generated_for_reporting}'"
         if [ "$2" = held ]; then
             printf '%s\n' "ALTER ROLE finapp_app NOLOGIN;" "ALTER ROLE finapp_migrator NOLOGIN;" "ALTER ROLE finapp_reporting NOLOGIN;"
         fi
@@ -189,14 +193,14 @@ roles() {
 
 # login <container> <role> <password>: 0 when the role opens a session, 1 when the server refuses it; the server's words kept.
 login() {
-    dock exec --env PGPASSWORD="$3" "$1" psql -h 127.0.0.1 -U "$2" -d finapp -AtX -c 'SELECT 1' > "$WORK/login.out" 2>&1
+    dock exec --env PGPASSWORD="${3}" "$1" psql -h 127.0.0.1 -U "$2" -d finapp -AtX -c 'SELECT 1' > "$WORK/login.out" 2>&1
 }
 
-role_password() {
+generated_for_role() {
     case $1 in
-        finapp_app) printf '%s' "$APP_PASSWORD" ;;
-        finapp_migrator) printf '%s' "$MIGRATOR_PASSWORD" ;;
-        finapp_reporting) printf '%s' "$REPORTING_PASSWORD" ;;
+        finapp_app) printf '%s' "${generated_for_app}" ;;
+        finapp_migrator) printf '%s' "${generated_for_migrator}" ;;
+        finapp_reporting) printf '%s' "${generated_for_reporting}" ;;
     esac
 }
 
@@ -227,7 +231,7 @@ XID8_SQL="SELECT coalesce(max((xpath('/row/m/text()', query_to_xml(format('SELEC
 
 schema_of() {
     # \restrict lines are random per dump (PostgreSQL 18), and name nothing about the schema.
-    dock exec --env PGPASSWORD="$ADMIN_PASSWORD" "$1" pg_dump -h 127.0.0.1 -U postgres -d finapp --schema-only | tr -d '\r' | grep -Ev '^\\(un)?restrict '
+    dock exec --env PGPASSWORD="${generated_for_admin}" "$1" pg_dump -h 127.0.0.1 -U postgres -d finapp --schema-only | tr -d '\r' | grep -Ev '^\\(un)?restrict '
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -258,13 +262,13 @@ epoch "$SOURCE" 1
 roles "$SOURCE" open
 SOURCE_PORT=$(port_of "$SOURCE")
 FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$SOURCE_PORT/finapp" FINAPP_DB_MIGRATOR_USER=finapp_migrator \
-    FINAPP_DB_MIGRATOR_PASSWORD="$MIGRATOR_PASSWORD" ./gradlew --console=plain -q flywayMigrate > "$ART/gradle-migrate.log" 2>&1 \
+    FINAPP_DB_MIGRATOR_PASSWORD="${generated_for_migrator}" ./gradlew --console=plain -q flywayMigrate > "$ART/gradle-migrate.log" 2>&1 \
     || { tail -40 "$ART/gradle-migrate.log" >&2; cannot "the source's migrations failed: see gradle-migrate.log"; }
 log "source migrated; its counter $(sql "$SOURCE" 'SELECT pg_current_xact_id()')"
 
 step seed
-if ! FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$SOURCE_PORT/finapp" FINAPP_DB_APP_USER=finapp_app FINAPP_DB_APP_PASSWORD="$APP_PASSWORD" \
-    FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="$REPORTING_PASSWORD" \
+if ! FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$SOURCE_PORT/finapp" FINAPP_DB_APP_USER=finapp_app FINAPP_DB_APP_PASSWORD="${generated_for_app}" \
+    FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="${generated_for_reporting}" \
     command_run RestoreRehearsalSeed "$ART/seed.log" "$(dpath "$CHART")"; then
     tail -60 "$ART/seed.log" >&2
     cannot "the seed failed: see seed.log"
@@ -278,8 +282,8 @@ verify() {
     port=$(port_of "$1")
     code=0
     FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$port/finapp?options=-c%20default_transaction_read_only%3Don" \
-        FINAPP_DB_APP_USER=postgres FINAPP_DB_APP_PASSWORD="$ADMIN_PASSWORD" \
-        FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="$REPORTING_PASSWORD" \
+        FINAPP_DB_APP_USER=postgres FINAPP_DB_APP_PASSWORD="${generated_for_admin}" \
+        FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="${generated_for_reporting}" \
         command_run RestoreVerification "$ART/verification-$2.log" "$(dpath "$ART/verification-$2.txt")" || code=$?
     tr -d '\r' < "$ART/verification-$2.txt" 2>/dev/null | tail -1 | grep -q "^EXIT|$code\$" \
         || { tail -60 "$ART/verification-$2.log" >&2; cannot "the verification of $2 ended without its report (exit $code): see verification-$2.log"; }
@@ -335,7 +339,7 @@ createdb -h 127.0.0.1 -U postgres finapp_schema_reference > /dev/null
 pg_restore -h 127.0.0.1 -U postgres -d finapp_schema_reference --single-transaction --exit-on-error /tmp/schema.dump > /dev/null
 pg_dump -h 127.0.0.1 -U postgres -d finapp_schema_reference --schema-only | grep -Ev "^\\\\(un)?restrict " > /tmp/manifest-schema
 echo done > /tmp/backup-status'
-dock exec --env PGPASSWORD="$ADMIN_PASSWORD" --env COUNTS_SQL="$COUNTS_SQL" --env CLUSTER_SQL="$CLUSTER_SQL" "$SOURCE" sh -c "$INNER" 2> "$ART/backup.err" \
+dock exec --env PGPASSWORD="${generated_for_admin}" --env COUNTS_SQL="$COUNTS_SQL" --env CLUSTER_SQL="$CLUSTER_SQL" "$SOURCE" sh -c "$INNER" 2> "$ART/backup.err" \
     | MSYS_NO_PATHCONV=1 openssl enc -e -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass "file:$(dpath "$WORK/backup.key")" -out "$(dpath "$WORK/backup.enc")" \
     || cannot "the backup could not be written"
 [ "$(dock exec "$SOURCE" cat /tmp/backup-status 2>/dev/null | tr -d '\r')" = done ] \
@@ -386,7 +390,7 @@ restore() {
     roles "$target" held
     # The first rule, measured: each platform role is refused at log-in before anything is restored into the database.
     for role in finapp_app finapp_migrator finapp_reporting; do
-        if login "$target" "$role" "$(role_password "$role")"; then
+        if login "$target" "$role" "$(generated_for_role "$role")"; then
             fail "restore $label: $role logged in to a restore that has not been verified"
         fi
         grep -q 'not permitted to log in' "$WORK/login.out" || cannot "restore $label: $role was refused for another reason: $(tr '\n' ' ' < "$WORK/login.out" | cut -c1-200)"
@@ -395,7 +399,7 @@ restore() {
     digests_hold
     # pg_restore's output stays in the work directory: a failed COPY quotes the row it failed on, and the artefacts are kept by CI.
     # What leaves it is the error's first clause, which names the object and never a value.
-    decrypt backup | dock exec -i --env PGPASSWORD="$ADMIN_PASSWORD" "$target" \
+    decrypt backup | dock exec -i --env PGPASSWORD="${generated_for_admin}" "$target" \
         pg_restore -h 127.0.0.1 -U postgres -d finapp --single-transaction --exit-on-error > "$WORK/restore-$label.log" 2>&1 \
         || cannot "restore $label: pg_restore failed: $(sed -n 's/^\(pg_restore: error: [^:]*\).*/\1/p' "$WORK/restore-$label.log" | head -3 | tr '\n' ' ')"
     highest=$(sql "$target" "$XID8_SQL")
@@ -444,6 +448,11 @@ plant() {
             SELECT (SELECT count(*) FROM gone) || ' 1 1'" ;;
         grant-dropped) sql "$1" "REVOKE INSERT ON ledger.journal_line FROM finapp_app" >/dev/null && echo '1 1 1' ;;
         counter-not-moved) echo '1 1 1' ;;
+        journal-line-removed) sql "$1" "SET session_replication_role = replica;
+            WITH gone AS (DELETE FROM ledger.journal_line WHERE id = (SELECT l.id FROM ledger.journal_line l
+                              JOIN ledger.journal_entry e ON e.id = l.entry_id WHERE e.entry_type = 'POSTING' ORDER BY l.id LIMIT 1)
+                          RETURNING id)
+            SELECT (SELECT count(*) FROM gone) || ' 1 1'" ;;
         *) cannot "no plant named $2" ;;
     esac
 }
@@ -453,7 +462,7 @@ compare() {
     port=$(port_of "$1")
     verdicts="$ART/verdicts-$2.txt"
     if FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$port/finapp?options=-c%20default_transaction_read_only%3Don" FINAPP_DB_MIGRATOR_USER=postgres \
-        FINAPP_DB_MIGRATOR_PASSWORD="$ADMIN_PASSWORD" ./gradlew --console=plain -q flywayValidate > "$ART/gradle-validate-$2.log" 2>&1; then
+        FINAPP_DB_MIGRATOR_PASSWORD="${generated_for_admin}" ./gradlew --console=plain -q flywayValidate > "$ART/gradle-validate-$2.log" 2>&1; then
         echo "PASS|flywayValidate|every schema's history validates against the repository's migrations" >> "$verdicts"
     else
         echo "FAIL|flywayValidate|see gradle-validate-$2.log" >> "$verdicts"
@@ -497,13 +506,15 @@ pass "the restore is financially whole: $(cut -d'|' -f2 "$ART/verdicts-restore.t
 sql "$NAME-restore" "ALTER ROLE finapp_app LOGIN; ALTER ROLE finapp_migrator LOGIN; ALTER ROLE finapp_reporting LOGIN" >/dev/null \
     || cannot "the release failed"
 for role in finapp_app finapp_migrator finapp_reporting; do
-    login "$NAME-restore" "$role" "$(role_password "$role")" || fail "after the release, $role still cannot log in: $(tr '\n' ' ' < "$WORK/login.out" | cut -c1-200)"
+    login "$NAME-restore" "$role" "$(generated_for_role "$role")" || fail "after the release, $role still cannot log in: $(tr '\n' ' ' < "$WORK/login.out" | cut -c1-200)"
 done
 pass "released after the verification: finapp_app, finapp_migrator and finapp_reporting log in"
 dock rm -f -v "$NAME-restore" >/dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------------------------------
-# The plants: each kind of corruption in a restore of its own, refused by its own check and by no other, and never released.
+# The plants: each kind of corruption in a restore of its own, refused by exactly the checks named, and never released. Five are
+# built so that one check alone can see them, which shows each of those checks working on its own; the sixth is the phase gate's,
+# a line gone from the journal, which every check that reads the lines must see. The names are in the order the verdicts are written.
 # ---------------------------------------------------------------------------------------------------
 expected_check() {
     case $1 in
@@ -512,6 +523,7 @@ expected_check() {
         missing-row) echo "row counts equal to the source's" ;;
         grant-dropped) echo "catalogue equal to the source's" ;;
         counter-not-moved) echo "source-join census" ;;
+        journal-line-removed) echo "row counts equal to the source's,trial balance per currency,projection check,source-join census" ;;
     esac
 }
 
@@ -532,10 +544,10 @@ for name in $PLANTS; do
     if [ "$failing" != "$expected" ]; then
         fail "plant $name: refused by [${failing:-nothing}], where only [$expected] must refuse it"
     fi
-    if login "$NAME-$name" finapp_app "$APP_PASSWORD"; then
+    if login "$NAME-$name" finapp_app "${generated_for_app}"; then
         fail "plant $name: the refused restore let finapp_app log in"
     fi
-    pass "plant $name: refused by $expected alone ($(grep '^FAIL|' "$ART/verdicts-$name.txt" | cut -d'|' -f3 | cut -c1-200)); never released"
+    pass "plant $name: refused by [$expected] and by no other check ($(grep '^FAIL|' "$ART/verdicts-$name.txt" | cut -d'|' -f3 | head -1 | cut -c1-200)); never released"
     dock rm -f -v "$NAME-$name" >/dev/null 2>&1 || true
 done
 

@@ -106,13 +106,14 @@ class RestoreRehearsalScriptTest {
     }
 
     @Test
-    @DisplayName("every plant runs by default and is refused by its own check and by no other, each a check the run answers")
+    @DisplayName("every plant runs by default and is refused by exactly the checks it names and by no other: five checks each alone,"
+            + " and the phase gate's removed journal line by every check that reads the lines")
     void everyPlantIsRefusedByItsOwnCheckAlone() {
         Matcher defaults = Pattern.compile("PLANTS=\\$\\{RESTORE_PLANTS:-([a-z -]+)}").matcher(harness);
         assertThat(defaults.find()).as("the default plants were read").isTrue();
         Set<String> plants = new TreeSet<>(List.of(defaults.group(1).trim().split(" +")));
         assertThat(plants).containsExactlyInAnyOrder("unbalanced-entry", "balance-disagrees", "missing-row", "grant-dropped",
-                "counter-not-moved");
+                "counter-not-moved", "journal-line-removed");
         // The checks a run answers: the verification's catalogue, and the three the script's compare() reports itself, read from it.
         Set<String> checks = new TreeSet<>(RestoreVerdicts.CHECKS);
         Matcher scripted = Pattern.compile("echo \"PASS\\|([^|\"]+)\\|").matcher(function("compare"));
@@ -124,14 +125,22 @@ class RestoreRehearsalScriptTest {
         assertThat(own).as("compare() reports flywayValidate, the counts and the catalogue").isEqualTo(3);
         String expected = function("expected_check");
         Set<String> named = new TreeSet<>();
+        Set<String> alone = new TreeSet<>();
         for (String plant : plants) {
             Matcher check = Pattern.compile("(?m)^\\s*" + Pattern.quote(plant) + "\\) echo \"([^\"]+)\" ;;").matcher(expected);
-            assertThat(check.find()).as("plant %s names its check", plant).isTrue();
-            assertThat(checks).as("plant %s's check is one the run answers", plant).contains(check.group(1));
+            assertThat(check.find()).as("plant %s names its checks", plant).isTrue();
+            List<String> refusing = List.of(check.group(1).split(","));
+            assertThat(checks).as("plant %s's checks are ones the run answers", plant).containsAll(refusing);
             named.add(check.group(1));
+            if (refusing.size() == 1) {
+                alone.add(refusing.get(0));
+            }
             assertThat(function("plant")).as("plant %s is planted", plant).containsPattern("(?m)^\\s*" + Pattern.quote(plant) + "\\)");
         }
-        assertThat(named).as("each plant shows a different check working").hasSize(plants.size());
+        assertThat(named).as("no two plants expect the same refusal").hasSize(plants.size());
+        assertThat(alone).as("five checks are each shown refusing a plant on their own")
+                .containsExactlyInAnyOrder("trial balance per currency", "projection check", "row counts equal to the source's",
+                        "catalogue equal to the source's", "source-join census");
         assertThat(harness).as("refused by that check alone").contains("if [ \"$failing\" != \"$expected\" ]; then")
                 .contains("where only [$expected] must refuse it");
         assertThat(harness).as("a plant that did not land is not a refusal").contains("did not land whole");
