@@ -635,6 +635,17 @@ rotate_callback() {
 # ---------------------------------------------------------------------------------------------------
 # A field-level key: the MFA ring.
 # ---------------------------------------------------------------------------------------------------
+# new_person <who>: registered through the edge, made an ACTIVE customer in SQL as the harness's fixtures are (a person still in
+# onboarding cannot sign in), then given a TOTP factor through the edge.
+new_person() {
+    client register-person "$1" >> "$ART/client.log" 2>&1 || return 1
+    login=$(sed -n "s/^$1\\.login=//p" "$CLIENT/state.properties")
+    [ -n "$login" ] || return 1
+    printf "UPDATE party.customer SET status = 'ACTIVE', status_changed_at = GREATEST(now(), opened_at) WHERE party_id IN (SELECT party_id FROM identity.identity WHERE login_identifier = '%s');\n" "$login" \
+        | psql_query -f - >> "$ART/seed.log" 2>&1 || return 1
+    client enrol-person "$1" >> "$ART/client.log" 2>&1
+}
+
 enrolment_version() {
     psql_query -c "SELECT e.key_version FROM identity.mfa_enrolment e JOIN identity.identity i ON i.id = e.identity_id WHERE i.login_identifier = '$(sed -n "s/^$1\\.login=//p" "$CLIENT/state.properties")' ORDER BY e.key_version DESC LIMIT 1" | tr -d '[:space:]'
 }
@@ -689,7 +700,7 @@ rotate_key() {
     # Step 2: active.
     config_set FINAPP_MFA_RING_ACTIVEVERSION 2
     roll key-active config
-    client enrol-person rotated >> "$ART/client.log" 2>&1 || fail "key: a person could not enrol a factor with version 2 active"
+    new_person rotated || fail "key: a person could not enrol a factor with version 2 active"
     [ "$(enrolment_version rotated)" = 2 ] || fail "key: the factor enrolled with version 2 active is under version $(enrolment_version rotated)"
     client elevate operator 3 >> "$ART/client.log" 2>&1 || fail "key: the operator's version 1 factor could not be read after the rotation"
     client elevate rotated 3 >> "$ART/client.log" 2>&1 || fail "key: the version 2 factor could not be read"
@@ -700,7 +711,7 @@ rotate_key() {
     config_set FINAPP_MFA_RING_ACTIVEVERSION 1
     roll key-rollback config
     client elevate rotated 3 >> "$ART/client.log" 2>&1 || fail "key rollback: the version 2 row could not be read with the pointer moved back"
-    client enrol-person after-rollback >> "$ART/client.log" 2>&1 || fail "key rollback: a person could not enrol a factor"
+    new_person after-rollback || fail "key rollback: a person could not enrol a factor"
     [ "$(enrolment_version after-rollback)" = 1 ] || fail "key rollback: the factor enrolled after the pointer moved back is under version $(enrolment_version after-rollback)"
     pass "key rollback: the pointer moved back with version 2 still listed: a version 2 row read under active version 1, and a new row under version 1"
     census key-rollback

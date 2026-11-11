@@ -384,6 +384,9 @@ if [ -n "$REUSING" ]; then
     # A development aid, for a run that is being debugged: the images stay loaded and only what the run deploys is thrown away.
     CLUSTER_UP=1
     log "reusing the cluster $CLUSTER: its namespaces are removed first"
+    # A rotations run (P15-TSK-020) leaves ExternalSecrets whose finalizer only the operator clears: removed while it still runs, or the
+    # namespace never finishes terminating.
+    kube -n finapp delete externalsecrets.external-secrets.io --all --ignore-not-found --wait=true --timeout=120s >> "$ART/cluster.log" 2>&1 || true
     kube delete namespace finapp finapp-edge finapp-observability finapp-rehearsal cert-manager --ignore-not-found --wait=true --timeout=300s >> "$ART/cluster.log" 2>&1 \
         || cannot "the cluster's namespaces could not be removed"
 else

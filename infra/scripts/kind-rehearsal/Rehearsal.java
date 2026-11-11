@@ -92,6 +92,7 @@ public final class Rehearsal {
             case "map-gl" -> rehearsal.mapGl();
             case "gl-check" -> rehearsal.glCheck();
             // P15-TSK-020: the rotations.
+            case "register-person" -> rehearsal.registerPerson(args[2]);
             case "enrol-person" -> rehearsal.enrolPerson(args[2]);
             case "elevate" -> rehearsal.elevate(args[2], Integer.parseInt(args[3]));
             case "callbacks" -> rehearsal.callbacks(args[2]);
@@ -690,15 +691,20 @@ public final class Rehearsal {
         return mac.doFinal(text.getBytes(StandardCharsets.UTF_8));
     }
 
-    /** A new person with a TOTP factor: the factor's secret is encrypted under whichever key version the replica that took the enrolment had active. */
-    private void enrolPerson(String who) throws Exception {
+    /** A new person, registered: the shell makes the customer ACTIVE in SQL, as the fixtures are, before the person can sign in. */
+    private void registerPerson(String who) throws Exception {
         String login = someLogin(who);
         expect("register " + who, register(login), 201);
         state.setProperty(who + ".login", login);
         save();
+        System.out.println("registered " + who + " login=" + login);
+    }
+
+    /** A TOTP factor for a registered, active person: its secret is encrypted under whichever key version the replica that took the enrolment had active. */
+    private void enrolPerson(String who) throws Exception {
         enrol(who);
         save();
-        System.out.println("enrolled " + who + " login=" + login);
+        System.out.println("enrolled " + who);
     }
 
     /** Elevations of one person, each a fresh TOTP step: every one decrypts that person's factor on whichever replica takes it. */
