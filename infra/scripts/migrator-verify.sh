@@ -207,7 +207,7 @@ for db in finapp_image finapp_race; do
     bootstrap "$db" > "$WORK/bootstrap-$db.log" 2>&1 || code=$?
     expect_exit 0 "$code" "the bootstrap of $db" "$WORK/bootstrap-$db.log"
 done
-echo "three roles created with the local script's attributes, SCRAM-hashed, grants as the local script's; idempotent; a wrong role refused"
+echo "three roles created with the local script's attributes, SCRAM-hashed, grants as the local script's, and their four alternating users with no password, each a member of its carrier alone; idempotent; a wrong role refused"
 
 echo "== the build's flywayMigrate into one database"
 FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$PORT/finapp_build" FINAPP_DB_MIGRATOR_USER=finapp_migrator \
