@@ -49,28 +49,40 @@ import org.springframework.web.bind.annotation.RestController;
 public class RecoveryController {
 
     @NonNull private final RecoveryApplicationService recoveries;
+    @NonNull private final com.finapp.app.surface.RequestSurfaces surfaces;
 
-    /** Begins recovery. Always 202. */
+    /**
+     * Begins recovery. Always 202.
+     *
+     * <p>Staff recover on the operator surface alone (`P15-TSK-042`): elsewhere a role-holding identity's request is refused
+     * before anything is cancelled or created, and answered the same 202.
+     */
     @com.finapp.app.abuse.SourceLimited(com.finapp.app.abuse.Door.RECOVERY)
+    @com.finapp.app.surface.OperatorsRefusedOnPublic(com.finapp.app.surface.SurfaceDoor.RECOVERY)
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public void initiateRecovery(@Valid @RequestBody RecoveryInitiationRequest request) {
-        recoveries.initiate(new LoginIdentifier(request.loginIdentifier()));
+    public void initiateRecovery(
+            @Valid @RequestBody RecoveryInitiationRequest request, jakarta.servlet.http.HttpServletRequest http) {
+        recoveries.initiate(new LoginIdentifier(request.loginIdentifier()), surfaces.of(http));
     }
 
     /**
      * Completes it.
      *
      * <p>A malformed identifier is refused exactly as a wrong token is: telling a caller their
-     * identifier was at least well-formed is a free bit for anybody probing.
+     * identifier was at least well-formed is a free bit for anybody probing. So is a role-holding identity's request off
+     * the operator surface (`P15-TSK-042`), before its token is judged, so nothing is spent.
      */
     @com.finapp.app.abuse.SourceLimited(com.finapp.app.abuse.Door.RECOVERY_COMPLETION)
+    @com.finapp.app.surface.OperatorsRefusedOnPublic(com.finapp.app.surface.SurfaceDoor.RECOVERY_COMPLETION)
     @PostMapping("/{id}/completion")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void completeRecovery(
-            @PathVariable String id, @Valid @RequestBody RecoveryCompletionRequest request) {
+            @PathVariable String id,
+            @Valid @RequestBody RecoveryCompletionRequest request,
+            jakarta.servlet.http.HttpServletRequest http) {
         if (!recoveries.complete(
-                requestId(id), request.token(), password(request))) {
+                requestId(id), request.token(), password(request), surfaces.of(http))) {
             throw new ApiException(
                     PlatformErrorCode.FORBIDDEN, "A recovery completion was refused");
         }

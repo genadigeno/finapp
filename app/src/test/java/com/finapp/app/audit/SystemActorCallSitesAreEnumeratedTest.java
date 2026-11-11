@@ -75,7 +75,9 @@ class SystemActorCallSitesAreEnumeratedTest {
                     "The FAILURE BRANCH of POST /v1/authentications. There may be no identity at all"
                         + " - the login identifier may name nobody - so there is nothing to"
                         + " attribute to, and naming a guessed identity would put an unproven claim"
-                        + " in a permanent record. The SUCCESS BRANCH of this same method"
+                        + " in a permanent record. So is staff's refusal on the public surface"
+                        + " (P15-TSK-042): answered as a failure, recorded as one, and its own"
+                        + " record names the identity as its TARGET. The SUCCESS BRANCH of this same method"
                         + " establishes Actor(identityId, CUSTOMER) from the identity it just"
                         + " proved, which is asserted separately below because this enumeration is"
                         + " at METHOD granularity and cannot see which branch called."),

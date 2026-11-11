@@ -57,6 +57,8 @@ public class CredentialController {
 
     @NonNull private final ChangePasswordService changes;
 
+    /** Staff change their password on the operator surface alone (`P15-TSK-042`): refused elsewhere, before it is counted. */
+    @com.finapp.app.surface.OperatorsRefusedOnPublic(com.finapp.app.surface.SurfaceDoor.CREDENTIAL_CHANGE)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public AuthenticatedSession changePassword(

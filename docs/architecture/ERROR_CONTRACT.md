@@ -160,6 +160,23 @@ refused by the first interceptor before any actor is proven; a `413` from `Reque
 renderer. `409 api.IdempotencyInProgress` is the same request's retry, not a refusal, and is not recorded either
 (`AUDITABLE_ACTIONS.md`).
 
+**Staff on the public surface get each door's ordinary failure** (`P15-TSK-042`; `API_CONVENTIONS.md` §8a). A role-holding identity
+signs in, steps up, enrols and confirms a factor, changes its password, names a recovery channel and recovers on the operator surface
+alone. On the public one (or behind the edge with no usable surface marker) the answer names no role:
+
+| Door | Answer to a role-holder on the public surface |
+|---|---|
+| `POST /v1/authentications` | `401 identity.AuthenticationFailed`, byte-identical to a wrong password and after the same one derivation, whether or not the password was right |
+| `POST /v1/authentications/mfa`, `POST /v1/me/credential` | `401 identity.AuthenticationFailed`, each door's own uniform failure |
+| `POST /v1/me/mfa`, `POST /v1/me/mfa/confirmation`, `POST /v1/me/channels` | `401 identity.AuthenticationFailed`: new on these routes, which otherwise answer a customer's own refusals as before |
+| `POST /v1/recoveries` | `202`, unchanged: the one answer for every outcome |
+| `POST /v1/recoveries/{id}/completion` | `403 api.Forbidden`, the one refusal of every refused token |
+
+Nothing is counted against the identity's lockout, and nothing is issued, rotated, enrolled, added, created or spent. Each refusal has
+its `identity.PublicSurfaceRefused` record; at a session door it commits in a transaction of its own before the `401`, and a record that
+cannot be written answers `500 api.InternalError` instead, so this `401`, unlike the one the paragraph above says leaves no row, always
+has its record. A customer, and staff on the operator surface, are answered exactly as before.
+
 **`identity.FactorRequiredForRole`** (`P15-TSK-039`; `PRIVILEGED_ACCESS_REVIEW.md` §6): `POST /v1/identities/{id}/roles` for
 a role that can redirect a merchant's money - today `MERCHANT_ADMINISTRATOR` and `LEDGER_OPERATOR`, read from what each
 role grants - while the subject has no confirmed factor. Nothing is granted; the subject enrols and the administrator

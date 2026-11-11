@@ -154,6 +154,46 @@ public final class Authorization {
                 Optional.empty());
     }
 
+    /**
+     * The identity signing in as {@code login}, when it holds a live role now (`P15-TSK-042`): for a door that knows only
+     * what the caller typed. One statement whatever the identifier names.
+     */
+    public Optional<IdentityId> roleHolderSigningInAs(Connection unitOfWork, LoginIdentifier login) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        return assignments.liveHolderByLogin(unitOfWork, Objects.requireNonNull(login, "login must not be null"));
+    }
+
+    /** The identity a recovery request was made for, when it holds a live role now (`P15-TSK-042`). */
+    public Optional<IdentityId> roleHolderRecovering(Connection unitOfWork, RecoveryRequestId request) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        return assignments.liveHolderOfRecovery(unitOfWork, Objects.requireNonNull(request, "request must not be null"));
+    }
+
+    /**
+     * Records that a role-holding identity was refused on the public surface (`P15-TSK-042`;
+     * {@link IdentityAuditAction#PUBLIC_SURFACE_REFUSED}).
+     *
+     * @param operation the door as {@code <METHOD> <route pattern>}: never a path's values
+     * @param surface where the request arrived: {@code public}, or {@code unmarked} where no usable marker came
+     * @param detail anything further the door may say, such as whether the presented password was the identity's; empty
+     *     for none, and never a secret
+     */
+    public void recordPublicSurfaceRefusal(
+            Connection unitOfWork, IdentityId identityId, String operation, String surface, String detail) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(operation, "operation must not be null");
+        Objects.requireNonNull(surface, "surface must not be null");
+        Objects.requireNonNull(detail, "detail must not be null");
+
+        audit(
+                unitOfWork,
+                identityId,
+                IdentityAuditAction.PUBLIC_SURFACE_REFUSED,
+                AuditOutcome.FAILED,
+                "operation=" + operation + " surface=" + surface + (detail.isEmpty() ? "" : " " + detail),
+                Optional.empty());
+    }
+
     /** The live holdings of a role that needs a factor whose holder has none (`P15-TSK-039`). */
     public List<RoleAssignmentStore.FactorlessHolding> holdingsWithoutFactor(Connection unitOfWork, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");

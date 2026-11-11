@@ -77,6 +77,7 @@ import org.springframework.web.bind.annotation.RestController;
 class AuthenticationController {
 
     @NonNull private final AuthenticationService authentications;
+    @NonNull private final com.finapp.app.surface.RequestSurfaces surfaces;
 
     /**
      * Authenticates a person and issues their session.
@@ -84,14 +85,18 @@ class AuthenticationController {
      * <p>{@code @ResponseStatus} rather than a {@code ResponseEntity}, because only the annotation
      * reaches the published contract - the defect {@code P1-TSK-006} found when springdoc published
      * {@code "200": "OK"} for an endpoint that has never returned 200.
+     *
+     * <p>Staff sign in on the operator surface alone (`P15-TSK-042`): the surface goes to the service, which refuses a
+     * role-holding identity elsewhere with this same {@code 401}, after the same work, counting nothing.
      */
     @com.finapp.app.abuse.SourceLimited(com.finapp.app.abuse.Door.AUTHENTICATION)
+    @com.finapp.app.surface.OperatorsRefusedOnPublic(com.finapp.app.surface.SurfaceDoor.AUTHENTICATION)
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     AuthenticatedSession authenticate(
             @Valid @RequestBody AuthenticationRequest request, HttpServletRequest http) {
         return authentications
-                .authenticate(request, device(http))
+                .authenticate(request, device(http), surfaces.of(http))
                 .orElseThrow(
                         () ->
                                 // One code, no detail beyond its title, for every reason an
