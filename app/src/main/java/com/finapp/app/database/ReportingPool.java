@@ -7,6 +7,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Report generation's own connections, as {@code finapp_reporting} (`P15-TSK-021`; {@code PHASE_15_PLAN.md} C13;
@@ -178,7 +179,20 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
      * @param registry the application's meter registry, which the pool's {@code hikaricp.connections.*} join once it starts
      */
     public ReportingPool(String jdbcUrl, Map<String, String> transport, String username, String password, int size, MeterRegistry registry) {
+        this(jdbcUrl, Optional.empty(), transport, username, password, size, registry);
+    }
+
+    /**
+     * As above, with the writer's driver class where one is configured ({@code spring.datasource.driver-class-name}) -
+     * the same database reached through the same driver, rather than whichever one {@code DriverManager} resolves for
+     * the URL. None is configured in any shipped setting, so the platform resolves by URL for both pools (`P15-REM-005`).
+     *
+     * @param driverClassName the writer's driver class, or empty to resolve the driver from the URL
+     */
+    public ReportingPool(String jdbcUrl, Optional<String> driverClassName, Map<String, String> transport, String username,
+            String password, int size, MeterRegistry registry) {
         Objects.requireNonNull(jdbcUrl, "jdbcUrl");
+        Objects.requireNonNull(driverClassName, "driverClassName");
         Objects.requireNonNull(transport, "transport");
         Objects.requireNonNull(username, "username");
         Objects.requireNonNull(password, "password");
@@ -191,6 +205,7 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
         HikariDataSource built = new HikariDataSource();
         built.setPoolName("finapp-reporting");
         built.setJdbcUrl(jdbcUrl);
+        driverClassName.ifPresent(built::setDriverClassName);
         built.setUsername(username);
         built.setPassword(password);
         built.setMaximumPoolSize(size);
