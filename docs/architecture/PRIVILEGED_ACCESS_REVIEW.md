@@ -105,10 +105,12 @@ assignment is `THREAT_MODEL.md` §6 owner item 9. Four-eyes inside one role (`LO
 by identity at the act.
 
 **Granting.** Only `ROLE_ASSIGN` (the `ADMINISTRATOR`) grants or revokes a role; an administrator cannot grant a role
-to their own identity (`IdentityAdministration`'s `SELF`); every grant and revocation is `identity.RoleAssigned`, with
-the actor, the target, the role and a required reason. The grant is `POST /v1/identities/{id}/roles` (`granted=<role>`); the
-revocation, since `P15-TSK-032`, is `DELETE /v1/identities/{id}/roles/{role}` with a reason, on a `MULTI_FACTOR` session
-(`revoked=<role>`), refused for oneself and for the last active identity holding a role that can grant roles. *(Until then
+to their own identity, nor revoke one from it (`IdentityAdministration`'s `SELF`); every grant and revocation is
+`identity.RoleAssigned`, with the actor, the target, the role and a required reason. The grant is
+`POST /v1/identities/{id}/roles` (`granted=<role>`). A role is revoked, since `P15-TSK-032`, through
+`DELETE /v1/identities/{id}/roles/{role}` with a reason, on a `MULTI_FACTOR` session (`revoked=<role>`, with `lastRole` and the
+sessions it ended), which refuses to take a role that can grant roles from the last `ACTIVE` identity holding one
+(`409 identity.LastRoleGranter`), so the platform never leaves nobody able to grant. *(Until then
 no door revoked a role: `Authorization.revoke` existed and nothing reachable called it, so a role could be ended only by
 suspending the whole identity or by a write around the door.)*
 

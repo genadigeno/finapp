@@ -22,23 +22,32 @@ import org.junit.jupiter.api.Test;
  * The runbook's rehearsal count is the runbook's own (`P15-TSK-032`; {@code PHASE_GATES.md} §5 Phase 15 criterion 4: "the count
  * is reported per section"; {@code OPERATIONS_RUNBOOK.md} section 11.38).
  *
- * <p>Section 11.38 holds one row per runbook section: every numbered {@code ##} section of §1-§10 ({@code 3b} among them), every
- * {@code ###} subsection of §11, and every unnumbered {@code ##} section ("Provider callbacks are hints"). Each row names its owning
- * module, how many of its procedures were rehearsed out of how many it holds, where, on what date and on what commit, and, where
- * nothing or not everything was rehearsed, why, from a closed list. The headings are read from the runbook itself, so a section a
- * later change adds with no row turns this red, which is criterion 4's intent at the phase's exit.
+ * <p>Section 11.38 holds one row per runbook section. What a section is, read from the headings: every numbered {@code ##}
+ * section from 1 to 10 ({@code 3b} among them) and every unnumbered {@code ##} section ("Provider callbacks are hints") is one;
+ * a numbered {@code ##} section from 11 on is a container, and each {@code ###} under it, numbered or not, is one. Any other
+ * heading at those two levels is refused as unclassified, so a heading form this test was not written for asks for a decision
+ * rather than escaping the count. Each row names its owning modules; how many of its procedures were rehearsed, how many read
+ * against the code, and how many it holds; where, on what date, on what commit and in which run; and, where nothing or not
+ * everything was rehearsed, why, from a closed list.
  *
- * <p><strong>What it holds now and what once filled.</strong> The rehearsals are counted from the {@code kind} runs at the task's
- * gate. Until {@code P15-TSK-032}'s entry reads {@code COMPLETE} a cell may read {@code pending}; every cell that is filled is
- * judged as strictly before the gate as after it, and from the gate no cell may read {@code pending}. The table's shape, a row
- * per section and no row for a section that does not exist, holds from the first commit.
+ * <p><strong>What it holds, and what it does not.</strong> It holds the table's form against the runbook: a row per section and
+ * none for a section that does not exist, an owner that is a module, a count that accounts for every procedure, a date that
+ * parses, a commit that is hexadecimal, a reason from the closed list. <strong>It is not evidence that anything was
+ * rehearsed</strong>: a row saying so is a person's statement, and the run's own record, in the section it rehearsed, is what
+ * says what was asserted. A commit is not checked to exist, and a date is not checked against the run.
  *
- * <p>A procedure is counted by the section's own words; this test holds a floor under the count, the section's sub-headings one
- * level down, so a sub-heading added with no change to its row's count is refused. It cannot hold that a record is true: the
- * record is a run's, and the runbook section that holds it says what the run asserted.
+ * <p><strong>Before and after the gate.</strong> The rehearsals are counted from the {@code kind} runs at the task's gate. Until
+ * {@code P15-TSK-032}'s entry reads {@code COMPLETE} a row's cells may read {@code pending}; a filled row is judged as strictly
+ * before the gate as after it, and from the gate no cell may read {@code pending}. The entry's status must be read as one this
+ * test knows: an entry missing, or a header it cannot read, fails rather than leaving {@code pending} allowed for good.
+ *
+ * <p><strong>The floor.</strong> A procedure is counted by the section's own words; what this test holds under that count is
+ * the section's sub-headings one level down: a row may not count fewer procedures than its section has sub-headings, so a
+ * sub-heading added with its row unchanged is refused. A procedure added as a paragraph moves no floor, and nothing here can see
+ * it.
  */
 @Tag("architecture")
-@DisplayName("the runbook's rehearsal count holds a row per section, each rehearsed or saying why not (P15-TSK-032)")
+@DisplayName("the runbook's rehearsal count holds a row per section, each procedure rehearsed or read, and says why not (P15-TSK-032)")
 class RunbookRehearsalCountTest {
 
     private static final String RUNBOOK = "docs/architecture/OPERATIONS_RUNBOOK.md";
@@ -52,65 +61,86 @@ class RunbookRehearsalCountTest {
     private static final String PENDING = "pending";
     private static final String NONE = "—";
 
+    /** The statuses an entry's header may read for this test to know whether the gate has passed. */
+    private static final Set<String> KNOWN_STATUSES = Set.of("PLANNED", "READY", "IN_PROGRESS", "COMPLETE");
+
     /** Why a section may stand unrehearsed, the closed list section 11.38 states. */
     private static final Set<String> REASONS = Set.of("no account", "Phase 16 drill", "real provider", "real person");
 
     /** Where a rehearsal may run (criterion 4: on {@code kind} or compose; the containers of the checks and the restore). */
     private static final Set<String> PLACES = Set.of("kind", "compose", "containers");
 
-    private static final Pattern HEADING = Pattern.compile("^(#{1,6}) ");
-    private static final Pattern DOMAIN_HEADING =Pattern.compile("^## ([0-9]+[a-z]?)\\. ");
-    private static final Pattern PLATFORM_HEADING = Pattern.compile("^### (11\\.[0-9]+(?:\\.[0-9]+)?[a-z]?) ");
-    private static final Pattern UNNUMBERED_HEADING = Pattern.compile("^## ([A-Z][^(0-9][^(]*?)(?: \\(.*)?$");
-    private static final Pattern COUNT = Pattern.compile("^(pending|[0-9]+) / ([0-9]+)$");
-    private static final Pattern COMMIT = Pattern.compile("^`[0-9a-f]{7,40}`$");
+    private static final List<String> COLUMNS = List.of("Section", "Owner", "Rehearsed", "Read", "Procedures", "Where", "Date",
+            "Commit", "Run", "Procedure only because");
+
+    private static final Pattern HEADING = Pattern.compile("^(#{1,6}) (.*)$");
+    private static final Pattern NUMBERED_TOP = Pattern.compile("^([0-9]+)([a-z]?)\\. \\S");
+    private static final Pattern NUMBERED_SUB = Pattern.compile("^([0-9]+\\.[0-9]+(?:\\.[0-9]+)?[a-z]?) \\S");
+    private static final Pattern TITLED = Pattern.compile("^([A-Z][^(]*?)(?: \\(.*)?$");
+    private static final Pattern COMMITS = Pattern.compile("^`[0-9a-f]{7,40}`(?:, `[0-9a-f]{7,40}`)*$");
+    private static final Pattern RUN = Pattern.compile("^`[^`|]+`$");
     private static final Pattern OWNER = Pattern.compile("`([a-z]+)`");
     private static final Pattern MODULE = Pattern.compile("(?m)^include\\(\"([a-z]+)\"\\)");
 
-    private static String runbook;
     private static Map<String, Integer> sections;
+    private static List<String> unclassified;
     private static Map<String, Row> rows;
     private static Set<String> modules;
+    private static String status;
     private static boolean complete;
 
     /** One row of the count, as written. */
-    private record Row(String section, String owner, String count, String where, String date, String commit, String reason) {
+    private record Row(String section, String owner, String rehearsed, String read, String procedures, String where, String date,
+            String commit, String run, String reason) {
 
         boolean pending() {
-            return count.startsWith(PENDING);
+            return PENDING.equals(rehearsed) || PENDING.equals(read);
         }
 
-        int rehearsed() {
-            return Integer.parseInt(parts().group(1));
+        int rehearsedCount() {
+            return count(rehearsed, "rehearsed");
         }
 
-        int procedures() {
-            return Integer.parseInt(parts().group(2));
+        int readCount() {
+            return count(read, "read");
         }
 
-        private Matcher parts() {
-            Matcher parts = COUNT.matcher(count);
-            assertThat(parts.matches()).as("§%s's count `%s` reads `<rehearsed> / <procedures>`", section, count).isTrue();
-            return parts;
+        int procedureCount() {
+            return count(procedures, "procedures");
+        }
+
+        private int count(String cell, String column) {
+            assertThat(cell).as("§%s's %s is a count", section, column).matches("[0-9]+");
+            return Integer.parseInt(cell);
         }
 
         boolean domain() {
-            return !section.startsWith("11.") && Character.isDigit(section.charAt(0));
+            Matcher number = NUMBERED_TOP.matcher(section + ". x");
+            return number.find() && Integer.parseInt(number.group(1)) <= 10;
         }
     }
 
     @BeforeAll
     static void readTheRunbook() {
         Path root = EvidenceCitations.repositoryRoot();
-        runbook = EvidenceCitations.read(root.resolve(RUNBOOK)).replace("\r\n", "\n");
-        sections = sections(runbook);
+        String runbook = EvidenceCitations.read(root.resolve(RUNBOOK)).replace("\r\n", "\n");
+        unclassified = new ArrayList<>();
+        sections = sections(runbook, unclassified);
         rows = rows(record(runbook));
         modules = new TreeSet<>();
         Matcher module = MODULE.matcher(EvidenceCitations.read(root.resolve(SETTINGS)));
         while (module.find()) {
             modules.add(module.group(1));
         }
-        complete = "COMPLETE".equals(EvidenceCitations.backlogStatuses(root.resolve(BACKLOG)).get(TASK));
+        status = EvidenceCitations.backlogStatuses(root.resolve(BACKLOG)).get(TASK);
+        complete = "COMPLETE".equals(status);
+    }
+
+    @Test
+    @DisplayName("every heading at the section levels is one this test classifies: a section, a container or a sub-heading")
+    void everyHeadingIsClassified() {
+        assertThat(unclassified).as("headings this test does not classify: decide what they are, and change the test with them")
+                .isEmpty();
     }
 
     @Test
@@ -133,35 +163,40 @@ class RunbookRehearsalCountTest {
             }
             assertThat(owners).as("§%s names an owner", row.section()).isNotEmpty();
             assertThat(modules).as("§%s's owners are modules of the build", row.section()).containsAll(owners);
-            assertThat(row.procedures()).as("§%s counts its procedures", row.section()).isPositive();
-            assertThat(row.procedures()).as("§%s counts no fewer procedures than its sub-headings", row.section())
+            assertThat(row.procedureCount()).as("§%s counts its procedures", row.section()).isPositive();
+            assertThat(row.procedureCount()).as("§%s counts no fewer procedures than its sub-headings", row.section())
                     .isGreaterThanOrEqualTo(sections.get(row.section()));
         }
     }
 
     @Test
-    @DisplayName("a filled row is rehearsed where criterion 4 allows, dated and on a commit, or says why not from the closed list")
-    void everyFilledRowIsRehearsedOrSaysWhyNot() {
+    @DisplayName("a filled row accounts for every procedure, rehearsed or read; a rehearsal says where, when, on what and which"
+            + " run; a section rehearsed nowhere says why from the closed list")
+    void everyFilledRowAccountsForEveryProcedure() {
         int judged = 0;
         for (Row row : rows.values()) {
             assertThat(row.reason()).as("§%s's reason", row.section()).isIn(union(REASONS, Set.of(NONE)));
             if (row.pending()) {
+                assertThat(List.of(row.rehearsed(), row.read())).as("§%s is pending whole", row.section()).containsOnly(PENDING);
                 continue;
             }
             judged++;
-            int rehearsed = row.rehearsed();
-            assertThat(rehearsed).as("§%s rehearses no more procedures than it holds", row.section()).isLessThanOrEqualTo(row.procedures());
+            int rehearsed = row.rehearsedCount();
+            assertThat(rehearsed + row.readCount()).as("§%s: every procedure rehearsed or read, none that nobody looked at",
+                    row.section()).isEqualTo(row.procedureCount());
             if (rehearsed == 0) {
                 assertThat(row.reason()).as("§%s, rehearsed nowhere, says why from the closed list", row.section()).isIn(REASONS);
-                assertThat(List.of(row.where(), row.date(), row.commit())).as("§%s names no run", row.section()).containsOnly(NONE);
+                assertThat(List.of(row.where(), row.date(), row.commit(), row.run())).as("§%s names no run", row.section())
+                        .containsOnly(NONE);
                 continue;
             }
             for (String place : row.where().split(", ")) {
                 assertThat(place).as("§%s was rehearsed on kind, compose or containers", row.section()).isIn(PLACES);
             }
-            assertThat(date(row)).as("§%s's date", row.section()).isNotNull();
-            assertThat(row.commit()).as("§%s's commit", row.section()).matches(COMMIT);
-            if (rehearsed == row.procedures()) {
+            assertThat(date(row)).as("§%s's date parses", row.section()).isNotNull();
+            assertThat(row.commit()).as("§%s's commits", row.section()).matches(COMMITS);
+            assertThat(row.run()).as("§%s's run", row.section()).matches(RUN);
+            if (rehearsed == row.procedureCount()) {
                 assertThat(row.reason()).as("§%s, rehearsed whole, owes no reason", row.section()).isEqualTo(NONE);
             }
         }
@@ -175,19 +210,20 @@ class RunbookRehearsalCountTest {
         assertThat(domain).as("the domain sections' rows").hasSize(11);
         for (Row row : domain) {
             if (!row.pending()) {
-                assertThat(row.rehearsed()).as("§%s's sample", row.section()).isPositive();
+                assertThat(row.rehearsedCount()).as("§%s's sample", row.section()).isPositive();
             }
         }
     }
 
     @Test
-    @DisplayName("once the task's entry is COMPLETE no cell reads pending: the counts are the runs', filled at the gate")
-    void nothingIsPendingOnceTheTaskIsComplete() {
+    @DisplayName("the task's status is read, and once it is COMPLETE no cell reads pending: the counts are the runs', filled at the gate")
+    void theStatusIsReadAndNothingIsPendingOnceComplete() {
+        assertThat(status).as("%s's entry header in %s, read as a status this test knows", TASK, BACKLOG).isIn(KNOWN_STATUSES);
         if (!complete) {
             return;
         }
         for (Row row : rows.values()) {
-            assertThat(List.of(row.count(), row.where(), row.date(), row.commit()))
+            assertThat(List.of(row.rehearsed(), row.read(), row.where(), row.date(), row.commit(), row.run()))
                     .as("§%s is filled at the gate", row.section())
                     .noneMatch(cell -> cell.contains(PENDING));
         }
@@ -195,11 +231,18 @@ class RunbookRehearsalCountTest {
 
     // ------------------------------------------------------------------------------------ reading
 
-    /** Each section's name, mapped to its sub-headings one level down; fenced blocks are not headings. */
-    private static Map<String, Integer> sections(String text) {
+    /**
+     * Each section's name, mapped to its sub-headings one level down. A numbered {@code ##} from 1 to 10, or an unnumbered one,
+     * is a section; a numbered {@code ##} from 11 on is a container whose {@code ###} children are sections; a {@code ###} under a
+     * section is a sub-heading. Fenced blocks are not headings. A level-2 or level-3 heading that fits none of these, or a second
+     * level-1 heading, is unclassified.
+     */
+    private static Map<String, Integer> sections(String text, List<String> unclassified) {
         Map<String, Integer> found = new LinkedHashMap<>();
         String open = null;
-        int level = 0;
+        int openLevel = 0;
+        boolean inContainer = false;
+        boolean titled = false;
         boolean fenced = false;
         for (String line : text.split("\n", -1)) {
             if (line.startsWith("```")) {
@@ -210,34 +253,65 @@ class RunbookRehearsalCountTest {
             if (fenced || !heading.find()) {
                 continue;
             }
-            int depth = heading.group(1).length();
-            String name = sectionName(line);
+            int level = heading.group(1).length();
+            String title = heading.group(2);
+            if (level == 1) {
+                if (titled) {
+                    unclassified.add(line);
+                }
+                titled = true;
+                continue;
+            }
+            if (open != null && level <= openLevel) {
+                open = null;
+            }
+            String name = null;
+            if (level == 2) {
+                inContainer = false;
+                Matcher numbered = NUMBERED_TOP.matcher(title);
+                Matcher named = TITLED.matcher(title);
+                if (numbered.find()) {
+                    if (Integer.parseInt(numbered.group(1)) <= 10) {
+                        name = numbered.group(1) + numbered.group(2);
+                    } else if (numbered.group(2).isEmpty()) {
+                        inContainer = true;
+                    } else {
+                        unclassified.add(line);
+                    }
+                } else if (named.find()) {
+                    name = named.group(1).strip();
+                } else {
+                    unclassified.add(line);
+                }
+            } else if (level == 3 && inContainer) {
+                Matcher numbered = NUMBERED_SUB.matcher(title);
+                Matcher named = TITLED.matcher(title);
+                if (numbered.find()) {
+                    name = numbered.group(1);
+                } else if (named.find()) {
+                    name = named.group(1).strip();
+                } else {
+                    unclassified.add(line);
+                }
+                if (RECORD.equals(name)) {
+                    name = null;
+                    open = null;
+                    continue;
+                }
+            } else if (open != null && level == openLevel + 1) {
+                found.merge(open, 1, Integer::sum);
+                continue;
+            } else if (level <= 3 && open == null && !inContainer) {
+                unclassified.add(line);
+                continue;
+            }
             if (name != null) {
                 assertThat(found.put(name, 0)).as("the section %s is headed once", name).isNull();
                 open = name;
-                level = depth;
-            } else if (open != null && depth <= level) {
-                open = null;
-            } else if (open != null && depth == level + 1) {
-                found.merge(open, 1, Integer::sum);
+                openLevel = level;
             }
         }
         return found;
-    }
-
-    /** The row's name for a heading that counts as a section, or null. */
-    private static String sectionName(String line) {
-        Matcher domain = DOMAIN_HEADING.matcher(line);
-        if (domain.find()) {
-            int number = Integer.parseInt(domain.group(1).replaceAll("[a-z]", ""));
-            return number >= 1 && number <= 10 ? domain.group(1) : null;
-        }
-        Matcher platform = PLATFORM_HEADING.matcher(line);
-        if (platform.find()) {
-            return RECORD.equals(platform.group(1)) ? null : platform.group(1);
-        }
-        Matcher unnumbered = UNNUMBERED_HEADING.matcher(line);
-        return unnumbered.find() ? unnumbered.group(1).strip() : null;
     }
 
     /** Section 11.38, from its heading to the next of its level or above. */
@@ -263,17 +337,17 @@ class RunbookRehearsalCountTest {
             if (!inTable) {
                 inTable = "Section".equals(cells.get(0));
                 if (inTable) {
-                    assertThat(cells).as("the count table's columns").containsExactly("Section", "Owner", "Rehearsed / procedures",
-                            "Where", "Date", "Commit", "Procedure only because");
+                    assertThat(cells).as("the count table's columns").isEqualTo(COLUMNS);
                 }
                 continue;
             }
             if (cells.get(0).matches("-+")) {
                 continue;
             }
-            assertThat(cells).as("a count row has seven cells: %s", line).hasSize(7);
+            assertThat(cells).as("a count row has %d cells: %s", COLUMNS.size(), line).hasSize(COLUMNS.size());
             String section = cells.get(0).replaceFirst("^§", "");
-            Row row = new Row(section, cells.get(1), cells.get(2), cells.get(3), cells.get(4), cells.get(5), cells.get(6));
+            Row row = new Row(section, cells.get(1), cells.get(2), cells.get(3), cells.get(4), cells.get(5), cells.get(6),
+                    cells.get(7), cells.get(8), cells.get(9));
             assertThat(read.put(section, row)).as("§%s has one row", section).isNull();
         }
         assertThat(read).as("section %s's count table was read", RECORD).isNotEmpty();
