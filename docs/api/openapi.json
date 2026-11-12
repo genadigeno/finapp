@@ -6773,7 +6773,7 @@
             }
           }
         },
-        "description": "[409] This role cannot be revoked from the last active identity that can grant roles.",
+        "description": "[409] This would leave no active identity that can grant roles.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"

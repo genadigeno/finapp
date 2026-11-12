@@ -138,7 +138,7 @@ visible rather than quietly approximated.
 | `identity.AuthenticationFailed` | 401 | Authentication failed. |
 | `identity.AssuranceRequired` | 403 | This operation requires a stronger authentication. |
 | `identity.FactorRequiredForRole` | 409 | This role cannot be granted until its holder has enrolled a second factor. |
-| `identity.LastRoleGranter` | 409 | This role cannot be revoked from the last active identity that can grant roles. |
+| `identity.LastRoleGranter` | 409 | This would leave no active identity that can grant roles. |
 | `identity.VerifiedChannelAlreadyExists` | 409 | The account already has a verified contact channel of this kind. |
 
 **One code for every reason an authentication can fail** (`P1-TSK-010`, `INV-IDN-07`): unknown
@@ -179,20 +179,24 @@ cannot be written answers `500 api.InternalError` instead, so this `401`, unlike
 has its record. A customer, and staff on the operator surface, are answered exactly as before.
 
 **`identity.FactorRequiredForRole`** (`P15-TSK-039`; `PRIVILEGED_ACCESS_REVIEW.md` §6): `POST /v1/identities/{id}/roles` for
-a role that can redirect a merchant's money - today `MERCHANT_ADMINISTRATOR` and `LEDGER_OPERATOR`, read from what each
-role grants - while the subject has no confirmed factor. Nothing is granted; the subject enrols and the administrator
+a role that can redirect a merchant's money - today `MERCHANT_ADMINISTRATOR` and `LEDGER_OPERATOR` - or, since `P15-TSK-032`,
+one that grants roles or suspends identities - `ADMINISTRATOR` - read from what each role grants, while the subject has no
+confirmed factor. Nothing is granted; the subject enrols and the administrator
 retries. Only the administrator learns the subject has no factor, and `ROLE_ASSIGN` already answers whether the subject
 exists. A holding that predates the rule is named by `GET /v1/operator/access-review/factorless-holdings`, never revoked by
 it: the review revokes one, with a reason, through the door below.
 
 **`identity.LastRoleGranter`** (`P15-TSK-032`): `DELETE /v1/identities/{id}/roles/{role}` for a role that can grant roles -
-today `ADMINISTRATOR`, read from what each role grants - from the last `ACTIVE` identity holding one. Nothing is revoked;
-the administrator grants the role to a second person and retries. A suspended holder does not count. Two administrators
-revoking each other's role at once are told this once: the door reads every live holding of such a role locked, in one
-statement, so the second reads the first's revocation. The door's other answers mirror the grant's: `204` when the role
-was revoked and when the identity did not hold it (a retry after a lost answer changes nothing), `422
-api.ValidationFailed` for one's own identity, `404 api.NotFound` for an identifier that names nobody, `400
-api.MalformedRequest` for a role the path cannot name, and `403 identity.AssuranceRequired` below `MULTI_FACTOR`.
+today `ADMINISTRATOR`, read from what each role grants - from the last `ACTIVE` identity holding one, and `POST
+/v1/identities/{id}/suspension` of that identity. Nothing is revoked or suspended; the administrator grants the role to a
+second person and retries. A suspended holder does not count. Two administrators revoking or suspending each other at once
+are told this once: each locks every live holding of such a role, in key order, and counts afterwards in a statement of its
+own, so the second counts what the first committed. Risk's automated suspension is not bound by it. The revocation's other
+answers mirror the grant's: `204` when the role was revoked and when the identity did not hold it (a retry after a lost
+answer changes nothing), `422 api.ValidationFailed` for one's own identity, `404 api.NotFound` for an identifier that names
+nobody, `400 api.MalformedRequest` for a role the path cannot name. **Every identity administration door steps up**: the
+grant, the revocation, the suspension and the reinstatement answer `403 identity.AssuranceRequired` below `MULTI_FACTOR`,
+before the permission is read.
 
 **Not `api.Unauthenticated`, deliberately.** That code means *authentication is required* — a
 protected route reached with no credentials at all. Here credentials **were** presented and were not

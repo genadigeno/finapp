@@ -161,6 +161,9 @@ lost answer among them - records nothing. Its refusals are recorded as the grant
 `identity.AuthorizationDenied`, a session below `MULTI_FACTOR` as `identity.StepUpRefused`, and every other refusal the door
 answers - oneself, nobody, the last identity able to grant roles (`identity.LastRoleGranter`) - as `door.ActRefused`, the door
 declaring `@RecordsRefusals`. A revocation recorded before this release (none was made through a door) says `revoked=<ROLE>` alone.
+Since the same task's item 42 (d) and (e), the suspension and reinstatement doors declare `@RecordsRefusals` too and step up
+(`MULTI_FACTOR`): an administrator's suspension refused because it would take the last identity able to grant roles writes no
+`identity.IdentitySuspended`, only that door's `door.ActRefused`; risk's automated suspension is not bound by the rule.
 
 **Why MFA enrolment is two actions rather than one** (`P1-TSK-017`). *Started* and *confirmed* are
 different facts about the account: the first says somebody was offered a secret, the second says

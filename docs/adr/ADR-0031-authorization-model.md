@@ -177,9 +177,13 @@ is recorded (`door.ActRefused`), beside the denial and the refused step-up this 
 through a door, `DELETE /v1/identities/{id}/roles/{role}`: `ROLE_ASSIGN`, as the grant (the permission always read "grant or
 revoke"), on a `MULTI_FACTOR` session, with a required reason, idempotent in effect (a role not held answers as a revocation
 did, and writes nothing). Three rules beside the permission, all in the domain: the not-self rule of every administrative act;
-**the last `ACTIVE` identity holding a role that can grant roles keeps it** (`identity.LastRoleGranter`), read with every live
-holding of such a role locked in one statement, so two revocations of the last two holders cannot both land; and **the last
-live role revoked ends every session the identity holds**, in the revocation's transaction - the mirror of a first role's
-grant, because a session is not bound to the surface that issued it. The grant's own read of whether a role is the first now
-locks the rows it read, so a revocation and a grant of the same identity serialise. A permission's meaning, and its
-resolution per request, are unchanged.
+**the last `ACTIVE` identity holding a role that can grant roles keeps it** (`identity.LastRoleGranter`), counted by a statement
+of its own after every live holding of such a role is locked `FOR UPDATE` in key order, so two revocations of the last two
+holders cannot both land; and **the last live role revoked ends every session the identity holds**, in the revocation's
+transaction - the mirror of a first role's grant, because a session is not bound to the surface that issued it. Every grant and
+revocation of one identity first takes `FOR NO KEY UPDATE` on that identity's row, and reads its roles after it, so a
+revocation and a grant of the same identity serialise and each reads what the other committed. The same task's item 42 (d) and
+(e), decided under the same word: an administrator's suspension keeps the last-granter rule too (risk's automated suspension
+does not: a compromised last administrator stays suspendable); the grant, the suspension and the reinstatement step up to
+`MULTI_FACTOR` as the revocation does; and `ADMINISTRATOR` needs an enrolled factor before it is granted. A permission's meaning,
+and its resolution per request, are unchanged.
