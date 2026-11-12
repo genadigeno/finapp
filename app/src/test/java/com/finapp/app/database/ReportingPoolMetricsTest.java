@@ -10,7 +10,6 @@ import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.Driver;
-import java.sql.DriverManager;
 import java.sql.DriverPropertyInfo;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -21,8 +20,6 @@ import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
@@ -32,6 +29,11 @@ import org.springframework.mock.env.MockEnvironment;
  * pool-metrics binder never finds it, and until this it had no {@code hikaricp_*} series at all - the platform's pool rules excluded a
  * {@code pool="finapp-reporting"} nothing emitted. Hermetic: a stub driver stands in for PostgreSQL, counting every connection asked of it,
  * and answers the capability check, or refuses it as a role that can write would be refused.
+ *
+ * <p><strong>Reached by its class name, never through {@code DriverManager}</strong> (`P15-REM-005`): the pools are given the stub as the
+ * writer's driver class ({@code spring.datasource.driver-class-name}), which HikariCP instantiates itself. Registering it with
+ * {@code DriverManager}, as this test first did, is acquiring a database in {@code TestTier}'s reading, and put a hermetic test in the
+ * database tier's signature ({@code TestTaxonomyTest}).
  */
 @DisplayName("the reporting pool's hikaricp meters are the writer pool's, from its start, and building it opens nothing (P15-TSK-032, item 42 (l))")
 class ReportingPoolMetricsTest {
@@ -42,25 +44,13 @@ class ReportingPoolMetricsTest {
     private static final List<String> READ_BY_THE_RULES = List.of("hikaricp_connections_active", "hikaricp_connections_max",
             "hikaricp_connections_pending");
 
-    private static final StubDriver DRIVER = new StubDriver();
-
-    @BeforeAll
-    static void register() throws SQLException {
-        DriverManager.registerDriver(DRIVER);
-    }
-
-    @AfterAll
-    static void deregister() throws SQLException {
-        DriverManager.deregisterDriver(DRIVER);
-    }
-
     @Test
     @DisplayName("building the pool opens no connection and registers nothing yet: the pool is lazy, and its meters arrive with its start")
     void buildingThePoolOpensNothing() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
-        int before = DRIVER.connections.get();
+        int before = StubDriver.CONNECTIONS.get();
         try (ReportingPool pool = new ReportingPoolBeans().reportingPool(settings("open"), registry)) {
-            assertThat(DRIVER.connections.get()).as("no connection asked of the database").isEqualTo(before);
+            assertThat(StubDriver.CONNECTIONS.get()).as("no connection asked of the database").isEqualTo(before);
             assertThat(reportingMeters(registry)).as("nothing registered before the pool starts").isEmpty();
             assertThat(pool.size()).isEqualTo(1);
         }
@@ -96,9 +86,9 @@ class ReportingPoolMetricsTest {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         try (ReportingPool pool = new ReportingPoolBeans().reportingPool(settings("refuse"), registry)) {
             for (int attempt = 1; attempt <= 3; attempt++) {
-                int before = DRIVER.connections.get();
+                int before = StubDriver.CONNECTIONS.get();
                 assertThatExceptionOfType(SQLException.class).as("attempt %s", attempt).isThrownBy(pool::open);
-                assertThat(DRIVER.connections.get()).as("attempt %s asked the database", attempt).isGreaterThan(before);
+                assertThat(StubDriver.CONNECTIONS.get()).as("attempt %s asked the database", attempt).isGreaterThan(before);
                 assertThat(reportingMeters(registry)).as("attempt %s left no meter behind", attempt).isEmpty();
             }
             assertThat(registry.getMeters()).as("and no meter of any pool").noneMatch(meter -> meter.getId().getName().startsWith("hikaricp"));
@@ -110,6 +100,7 @@ class ReportingPoolMetricsTest {
     private static MockEnvironment settings(String mode) {
         return new MockEnvironment()
                 .withProperty("spring.datasource.url", "jdbc:finapp-reporting-stub:" + mode)
+                .withProperty("spring.datasource.driver-class-name", StubDriver.class.getName())
                 .withProperty("spring.datasource.username", "finapp_app")
                 .withProperty(ReportingPool.USERNAME_PROPERTY, "finapp_reporting")
                 .withProperty(ReportingPool.LOGIN_PROPERTY, "supplied-by-the-test")
@@ -130,6 +121,7 @@ class ReportingPoolMetricsTest {
         try (HikariDataSource writer = new HikariDataSource()) {
             writer.setPoolName("writer-as-boot-binds-it");
             writer.setJdbcUrl("jdbc:finapp-reporting-stub:open");
+            writer.setDriverClassName(StubDriver.class.getName());
             writer.setMetricRegistry(registry);
             try (Connection connection = writer.getConnection()) {
                 assertThat(connection).isNotNull();
@@ -141,17 +133,19 @@ class ReportingPoolMetricsTest {
     /**
      * A JDBC driver for {@code jdbc:finapp-reporting-stub:open} and {@code ...:refuse}: every connection counted, every call answered as an
      * idle PostgreSQL connection would answer it, and in {@code refuse} the pool's first statement - the capability check - raised.
+     * Public, with a public no-argument constructor, because HikariCP instantiates it by name; the count is the class's, as every
+     * instance HikariCP makes is one more door to the same stub.
      */
-    private static final class StubDriver implements Driver {
+    public static final class StubDriver implements Driver {
 
-        private final AtomicInteger connections = new AtomicInteger();
+        static final AtomicInteger CONNECTIONS = new AtomicInteger();
 
         @Override
         public Connection connect(String url, Properties info) {
             if (!acceptsURL(url)) {
                 return null;
             }
-            connections.incrementAndGet();
+            CONNECTIONS.incrementAndGet();
             boolean refuse = url.endsWith(":refuse");
             return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[] {Connection.class},
                     (proxy, method, args) -> switch (method.getName()) {

@@ -2408,6 +2408,20 @@ Phase 15), criteria 4 and 11 `PARTIAL`. The ten-instance question: **`UNKNOWN` a
 counted rehearsal (three replicas on `kind`, the migrator at ten), the ten-way database cases (PI-023), the storm (PI-004) and the
 final-tree run (PI-024) open; no counted run failed.*
 
+*Status (the Phase 15 completion gate, 2026-11-12 - the Phase 15 → 16 transition, Part A,
+[`reviews/PHASE_15_TO_16_TRANSITION.md`](reviews/PHASE_15_TO_16_TRANSITION.md)): **Phase 15 `COMPLETE`, confirmed with its
+recorded deviations**, the owner having accepted the exit review's A-G on 2026-11-12. By the owner's rule the gate ran named
+test classes only - no database, Kafka, cluster or container - and rested on the exit review's rulings, the `kind` rehearsal
+records and its own reading of the manifests, `Dockerfile`, CI workflow, Terraform tree and code; eighteen of the review's
+`PASS` rulings were spot-checked against the tree, and the items it never named were ruled (Redis `N/A`, the platform using
+none; the autoscaler `PARTIAL`, never seen scaling and bounded at seven by the connection budget; mTLS `N/A` by decision, C9).
+**No CRITICAL; one IMPORTANT** - `TestTaxonomyTest` red on master, so CI's `build` job red - **repaired inside the gate**
+(`P15-REM-005`, its probe caught on the new bytes); six `MINOR`, two of them `PLANNED` remediation entries (`P15-REM-006`, `-007`).
+Each clause above holds as the exit review ruled it; the recorded deviations stand as described. **The multi-instance
+question as the transition asked it** - instances added, removed, restarted or replaced during active financial workloads -
+**`PASS`**, counted at three replicas with the census green after every step and by design at N; **`UNKNOWN` at ten**, the owner's
+accepted deviation B, not upgraded. **Universal criterion 7** `NOT MET` by the owner's choice (PI-023).*
+
 ### Phase 16 — Scale, Resilience and Disaster Recovery
 - Load test at target volume with financial invariants asserted **during** load, not only
   after.
