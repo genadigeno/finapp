@@ -267,6 +267,14 @@ load_settlement() {
     psql_query -c "SELECT capture_provider_reference, captured_amount_minor FROM payments.payment_attempt
         WHERE status = 'CAPTURED' AND rail = 'card' AND created_at >= to_timestamp($LOAD_FROM) ORDER BY created_at" > "$WORK/load-captures.txt" \
         || cannot "the load's captures could not be read for the settlement file"
+    # The settlement door's screen refuses a whole file holding a digit run of 13 to 19 across single dashes or spaces that is Luhn-valid
+    # (ConservativeScreen: a card number), and the simulator's references are UUIDs, whose digit groups now and then make one (the fourth run
+    # was refused at line 313 for psp_cap-20720108-5146-4...). A capture whose reference holds any such run, Luhn or not, is left out of the
+    # file and counted; it stays an open expectation, as an unreported capture does.
+    awk -F'|' 'NF == 2 { flat = $1; gsub(/[- ]/, "", flat)
+        if (flat ~ /[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/) next; print }' "$WORK/load-captures.txt" > "$WORK/load-captures-kept.txt"
+    LOAD_SETTLEMENT_LEFT_OUT=$(( $(grep -c '|' "$WORK/load-captures.txt" || true) - $(grep -c '|' "$WORK/load-captures-kept.txt" || true) ))
+    mv "$WORK/load-captures-kept.txt" "$WORK/load-captures.txt"
     tag=$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
     remittance=$(( 10000000 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') ))
     awk -F'|' -v day="$day" -v tag="$tag" -v remittance="$remittance" '
@@ -287,7 +295,7 @@ SQL
     client settle-file "$day" load-settlement.csv >> "$LOAD_ART/settlement.log" 2>&1 || fail "settlement: the file could not be delivered: see load/settlement.log"
     LOAD_SETTLEMENT_FILE=$(sed -n 's/^settlement file=\([^ ]*\) .*/\1/p' "$LOAD_ART/settlement.log" | tail -1)
     [ -n "$LOAD_SETTLEMENT_FILE" ] || fail "settlement: no file id came back: see load/settlement.log"
-    log "settlement: $LOAD_SETTLEMENT_LINES captures in one PSP file, uploaded and attested at mid-run"
+    log "settlement: $LOAD_SETTLEMENT_LINES captures in one PSP file, uploaded and attested at mid-run ($LOAD_SETTLEMENT_LEFT_OUT left out, their references shaped like a card number)"
 }
 
 # ---------------------------------------------------------------------------------------------------
