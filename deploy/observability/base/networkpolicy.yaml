@@ -39,6 +39,21 @@ spec:
       ports:
         - protocol: TCP
           port: 4318
+    # The platform's own components on their own receiver, 4319 (P16-TSK-003): the edge's controllers' own log and access log, and the
+    # cluster watcher's records of the migrator Job. Never the application's 4318, and the application never on this one.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-edge
+          podSelector:
+            matchLabels:
+              finapp/role: ingress-controller
+        - podSelector:
+            matchLabels:
+              finapp/role: cluster-watch
+      ports:
+        - protocol: TCP
+          port: 4319
     # The peers' routed spans: the second tier.
     - from:
         - podSelector:
@@ -117,6 +132,57 @@ spec:
       ports:
         - protocol: TCP
           port: 8888
+    # The cluster watcher's gauges (P16-TSK-003): the migrator Job's state.
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: cluster-watch
+      ports:
+        - protocol: TCP
+          port: 8889
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# The cluster watcher (P16-TSK-003): reached by the scraper on its exporter alone; it reaches its resolver and the collector's platform
+# receiver. The API server it reads is not named: a pod reaches its own node's API server under kube-router whatever this says (measured on
+# kind), an address committed here would be real or wrong, and a real environment's overlay names it (cluster-watch-workload.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-cluster-watch
+spec:
+  podSelector:
+    matchLabels:
+      finapp/role: cluster-watch
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              finapp/role: metrics-scraper
+      ports:
+        - protocol: TCP
+          port: 8889
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: telemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4319
     - to:
         - namespaceSelector:
             matchLabels:

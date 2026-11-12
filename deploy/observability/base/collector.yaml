@@ -25,6 +25,12 @@
 # decides. A peer joining or leaving moves a share of the trace ids: a trace in flight at that moment can be split, which costs at worst
 # a partial trace and never a request. Logs are never sampled and need no routing.
 #
+# THE PLATFORM'S OWN LINES (P16-TSK-003; THREAT_MODEL.md section 6 item 43 (b), decided 2026-11-12): the edge's controllers (their own log and
+# their access log), the cluster watcher (the migrator Job's records) and this collector itself send log records to a receiver of their
+# own, 4319, never the application's 4318, and a pipeline of their own scrubs them: what each source writes is not what the application
+# writes, so it has its own allow-list (transform/scrub-platform), and the same card-number and amount scrub. observability.rego holds who
+# may reach 4319 and that every pipeline taking from outside scrubs.
+#
 # WHAT IT NEVER DOES. It decides nothing about money and holds nothing durable: a restart loses the batches in memory. It holds no
 # credential. Its endpoints are the environment's: TEMPO_ENDPOINT and LOKI_ENDPOINT come from the overlay, COLLECTOR_PEERS and POD_IP
 # from the Deployment.
@@ -38,6 +44,11 @@ receivers:
     protocols:
       http:
         endpoint: ${env:POD_IP}:4318
+  # The platform's own components: the edge's controllers, the cluster watcher and this collector's own log.
+  otlp/platform:
+    protocols:
+      http:
+        endpoint: ${env:POD_IP}:4319
   # The peers' routed spans: the second tier.
   otlp/peers:
     protocols:
@@ -83,6 +94,45 @@ processors:
           - replace_pattern(body, "(^|[^0-9A-Za-z_]|\\\\[nrt])(?:\\d{13,19}|\\d{4}(?:[ .-]\\d{4}){3}|\\d{4}[ .-]\\d{6}[ .-]\\d{5}|\\d{4}[ .-]\\d{6}[ .-]\\d{4})\\b", "$$1[scrubbed]")
           - replace_pattern(body, "(^|[^0-9A-Za-z_]|\\\\[nrt])\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "$$1[scrubbed]")
           - replace_all_patterns(attributes, "value", "(^|[^0-9A-Za-z_]|\\\\[nrt])(?:\\d{13,19}|\\d{4}(?:[ .-]\\d{4}){3}|\\d{4}[ .-]\\d{6}[ .-]\\d{5}|\\d{4}[ .-]\\d{6}[ .-]\\d{4})\\b", "$$1[scrubbed]")
+
+  # THE SECOND NET FOR THE PLATFORM'S OWN LINES (P16-TSK-003). The resource as the application's (the host, the process and its arguments
+  # dropped: the edge's SDK sends all three); then, per record, what its source may keep, by name:
+  # - the edge's access line: what the request was and how it ended (method, status, router, service, entry point, durations, sizes, protocol,
+  #   TLS version), never the client's address or port, the backend's address, the host, a user name or a query string (the proxy drops
+  #   every query string before it sends, and anything from a ? or a # is cut here again); the path only where a route matched it, since an
+  #   unrouted request's path is the caller's own text; and its body, the whole JSON line with everything dropped here, replaced by a line
+  #   made of what was kept;
+  # - the edge's own log, this collector's and the watcher's: the component and the error;
+  # - the migrator Job's records, as the cluster watcher reduced them: the pod, the Job, the container's exit code and reason, an event's
+  #   reason and type and the object it is about.
+  # The edge's SDK names its pod only as host.name, which a pod's hostname is: kept as k8s.pod.name. Then the card-number and amount scrub
+  # of the application's pipeline, on every body and every kept value.
+  transform/scrub-platform:
+    error_mode: ignore
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["k8s.pod.name"], attributes["host.name"]) where attributes["k8s.pod.name"] == nil and attributes["service.name"] == "finapp-edge"
+          - keep_keys(attributes, ["service.name", "service.namespace", "service.version", "k8s.pod.name", "k8s.namespace.name", "deployment.environment.name", "telemetry.sdk.name", "telemetry.sdk.language", "telemetry.sdk.version"])
+      - context: scope
+        statements:
+          - keep_keys(attributes, [])
+      - context: log
+        statements:
+          - delete_key(attributes, "RequestPath") where attributes["RouterName"] == nil
+          - replace_pattern(attributes["RequestPath"], "[?#].*$", "")
+          - set(body, Format("%v %v %v %v", [attributes["RequestMethod"], attributes["DownstreamStatus"], attributes["RouterName"], attributes["Duration"]])) where attributes["DownstreamStatus"] != nil
+          - keep_keys(attributes, ["RequestMethod", "RequestPath", "RequestProtocol", "RequestScheme", "DownstreamStatus", "DownstreamContentSize", "OriginStatus", "OriginContentSize", "RequestContentSize", "Duration", "OriginDuration", "Overhead", "RetryAttempts", "RouterName", "ServiceName", "entryPointName", "TLSVersion", "TLSCipher", "routerName", "serviceName", "providerName", "middlewareName", "otelcol.component.id", "otelcol.component.kind", "otelcol.signal", "error", "k8s.pod.name", "k8s.job.name", "k8s.container.exit_code", "k8s.container.reason", "k8s.event.reason", "k8s.event.type", "k8s.object.kind", "k8s.object.name"])
+          - replace_pattern(body, "(^|[^0-9A-Za-z_]|\\\\[nrt])(?:\\d{13,19}|\\d{4}(?:[ .-]\\d{4}){3}|\\d{4}[ .-]\\d{6}[ .-]\\d{5}|\\d{4}[ .-]\\d{6}[ .-]\\d{4})\\b", "$$1[scrubbed]")
+          - replace_pattern(body, "(^|[^0-9A-Za-z_]|\\\\[nrt])\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "$$1[scrubbed]")
+          - replace_all_patterns(attributes, "value", "(^|[^0-9A-Za-z_]|\\\\[nrt])(?:\\d{13,19}|\\d{4}(?:[ .-]\\d{4}){3}|\\d{4}[ .-]\\d{6}[ .-]\\d{5}|\\d{4}[ .-]\\d{6}[ .-]\\d{4})\\b", "$$1[scrubbed]")
+          - replace_all_patterns(attributes, "value", "(^|[^0-9A-Za-z_]|\\\\[nrt])\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "$$1[scrubbed]")
+          # The edge's own log writes a client's address into its text (a refused handshake, a request it could not read): every IPv4 and
+          # IPv6 address in an edge record is cut, a backend's with them. The others' lines name only the cluster's own pods and Services.
+          - replace_pattern(body, "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b", "[address]") where resource.attributes["service.name"] == "finapp-edge"
+          - replace_pattern(body, "(?i)\\[?(?:[0-9a-f]{0,4}:){3,7}[0-9a-f]{0,4}\\]?", "[address]") where resource.attributes["service.name"] == "finapp-edge"
+          - replace_all_patterns(attributes, "value", "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b", "[address]") where resource.attributes["service.name"] == "finapp-edge"
+          - replace_all_patterns(attributes, "value", "(?i)\\[?(?:[0-9a-f]{0,4}:){3,7}[0-9a-f]{0,4}\\]?", "[address]") where resource.attributes["service.name"] == "finapp-edge"
 
   # Names the environment on what leaves, so two environments on one backend never read as one fleet.
   resource/environment:
@@ -180,8 +230,23 @@ exporters:
 service:
   extensions: [health_check]
   telemetry:
+    # Its own lines leave by its own platform receiver, on its own address (inside the pod, so no policy is crossed and no peer is needed),
+    # and are scrubbed and exported like the edge's (P16-TSK-003). A failed export of them is a warning on the console, which it also ships:
+    # one line per failed batch, bounded by the batch and the queue, never a loop that grows.
+    resource:
+      attributes:
+        - name: service.name
+          value: finapp-collector
+        - name: k8s.pod.name
+          value: ${env:HOSTNAME}
     logs:
       level: warn
+      processors:
+        - batch:
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                endpoint: http://${env:POD_IP}:4319/v1/logs
     metrics:
       level: basic
       readers:
@@ -202,4 +267,8 @@ service:
     logs:
       receivers: [otlp]
       processors: [memory_limiter, transform/scrub, resource/environment, batch]
+      exporters: [otlp_http/loki]
+    logs/platform:
+      receivers: [otlp/platform]
+      processors: [memory_limiter, transform/scrub-platform, resource/environment, batch]
       exporters: [otlp_http/loki]

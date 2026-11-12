@@ -61,12 +61,33 @@ providers:
     directory: /etc/finapp-edge/dynamic
     watch: true
 
+# OTLP logs are still experimental in the pinned proxy: the flag is what turns on the two otlp blocks below (P16-TSK-003).
+experimental:
+  otlpLogs: true
+
 # ERROR, because the kubelet's timestamped directory is read a second time under watch and every object warns once per load.
+# Shipped to the collector's platform receiver (P16-TSK-003; THREAT_MODEL.md section 6 item 43 (b)), never the application's 4318.
 log:
   level: ERROR
+  otlp:
+    serviceName: finapp-edge
+    http:
+      endpoint: http://finapp-collector.finapp-observability.svc.cluster.local:4319/v1/logs
 
+# The access log, shipped the same way (P16-TSK-003). Every request header is dropped and every query string too, before anything leaves
+# the proxy, its console included: a query can carry an identifier or a token, and the routes take none. dualOutput keeps the console's copy
+# while the collector is away, as the kubelet keeps it; the export is asynchronous and bounded, so a collector away costs a request nothing.
+# What the collector keeps of a line, and what it drops by name (the client's and the backend's addresses, the host), is
+# deploy/observability/base/collector.yaml's transform/scrub-platform.
 accessLog:
   format: json
+  dualOutput: true
   fields:
     headers:
       defaultMode: drop
+    queryParameters:
+      defaultMode: drop
+  otlp:
+    serviceName: finapp-edge
+    http:
+      endpoint: http://finapp-collector.finapp-observability.svc.cluster.local:4319/v1/logs

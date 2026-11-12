@@ -71,6 +71,10 @@ spec:
             - name: otlp-http
               containerPort: 4318
               protocol: TCP
+            # The platform's own components (P16-TSK-003): the edge's controllers and the cluster watcher.
+            - name: otlp-platform
+              containerPort: 4319
+              protocol: TCP
             - name: otlp-peers
               containerPort: 4317
               protocol: TCP
@@ -117,7 +121,9 @@ spec:
           configMap:
             name: finapp-collector-config
 ---
-# What the application's replicas export to: OTLP over HTTP alone. The Deployment's endpoint names this Service.
+# What the application's replicas export to: OTLP over HTTP alone. The Deployment's endpoint names this Service. And, on a port of its own,
+# what the platform's own components export to (P16-TSK-003): the edge's controllers and the cluster watcher; NetworkPolicy keeps each port
+# to its senders.
 apiVersion: v1
 kind: Service
 metadata:
@@ -129,6 +135,10 @@ spec:
     - name: otlp-http
       port: 4318
       targetPort: otlp-http
+      protocol: TCP
+    - name: otlp-platform
+      port: 4319
+      targetPort: otlp-platform
       protocol: TCP
 ---
 # The load-balancing tier's view of its peers: every collector's own address, ready or not, so a trace id's owner is the same on every peer.

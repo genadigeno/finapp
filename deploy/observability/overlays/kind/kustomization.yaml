@@ -56,26 +56,26 @@ configMapGenerator:
       - rules/telemetry.yml
 
 patches:
-  # The quota follows the backends (deploy/observability/base/resourcequota.yaml shows the collector's sum). Each of Tempo, Loki, Prometheus
-  # and Alertmanager is one replica, Recreate, with no PodDisruptionBudget: at worst its pod and one replacing it after an eviction, 2 pods
-  # each. 5 + 4 x 2 = 13 pods; cpu 500m + 2 x (100m + 100m + 100m + 50m) requested and 5 + 2 x (1 + 1 + 1 + 0.5) limited; memory
-  # 2560Mi + 2 x (384Mi + 384Mi + 512Mi + 128Mi), requests equal to limits.
+  # The quota follows the backends (deploy/observability/base/resourcequota.yaml shows the collector's and the cluster watcher's sum). Each of
+  # Tempo, Loki, Prometheus and Alertmanager is one replica, Recreate, with no PodDisruptionBudget: at worst its pod and one replacing it after
+  # an eviction, 2 pods each. 8 + 4 x 2 = 16 pods; cpu 800m + 2 x (100m + 100m + 100m + 50m) requested and 8 + 2 x (1 + 1 + 1 + 0.5) limited;
+  # memory 3328Mi + 2 x (384Mi + 384Mi + 512Mi + 128Mi), requests equal to limits.
   - target:
       kind: ResourceQuota
       name: finapp-observability
     patch: |-
       - op: replace
         path: /spec/hard/pods
-        value: "13"
+        value: "16"
       - op: replace
         path: /spec/hard/requests.cpu
-        value: 1200m
+        value: 1500m
       - op: replace
         path: /spec/hard/requests.memory
-        value: 5376Mi
+        value: 6144Mi
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "12"
+        value: "15"
       - op: replace
         path: /spec/hard/limits.memory
-        value: 5376Mi
+        value: 6144Mi

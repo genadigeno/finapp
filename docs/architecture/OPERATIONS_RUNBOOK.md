@@ -1955,6 +1955,8 @@ together, leaves nothing serving, and makes every group rebalance on the way bac
 | 11.38 The platform rehearsals: the record and the count per section *(written 2026-11-12, below)* | `-032` | — (a record; `RunbookRehearsalCountTest` holds its form) | `platform` |
 | 11.39 A row that fails every tick: a corrupt id that stalls a sweep, a row at a sweep's head, a rematch residual *(written 2026-11-12, below)* | `-032` | `-032` | `payments`, `merchant`, `reconciliation`, `risk` |
 | 11.40 Database failover: what the fleet does and what a person does *(written 2026-11-12, below; procedure only, the drill is Phase 16's)* | `-032` | `-032` (a database restart on `kind`, never a failover) | `platform` |
+| 11.41 The migrator Job watched: a failed or overdue Job, the watcher blind, a run's lines in Loki *(written 2026-11-12, below)* | `P16-TSK-003` | `P16-TSK-003` (a small `kind` cluster with no application stack) | `platform` |
+| 11.42 The edge watched: its error ratio, an edge unscraped, the platform's own lines in Loki *(written 2026-11-12, below)* | `P16-TSK-003` | `P16-TSK-003` (containers) | `platform` |
 
 The table's rows are the plan's; the sections below them are numbered as written, not in this order. Rows 11.2, 11.3 and 11.5
 are written under 11.36 and 11.35, and row 11.10 under 11.26 and 11.30. *(The owner column added 2026-11-12, `P15-TSK-032`:
@@ -3236,6 +3238,8 @@ latest; the run, as its record names it.
 | §11.37 | `identity`, `accounting` | 2 | 4 | 6 | kind | 2026-11-12 | `5078e612`, `ca4c323a` | `dev3 and dev5, the signals scope's development runs` | postponed by the owner (PI-024) |
 | §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.40 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
+| §11.41 | `platform` | 3 | 1 | 4 | kind | 2026-11-12 | `722365ad`, `d8f907c4` | `§11.41's runs 1 and 2` | — |
+| §11.42 | `platform` | 4 | 0 | 4 | containers, kind | 2026-11-12 | `d8f907c4` | `§11.42's record` | — |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3417,6 +3421,140 @@ taken, and the abuse table empty after. It does not show a standby taking over, 
 stopped server resets its connections), or anything of the managed service's own. **The last record**: not run. The
 `incidents` scope's database-restart step holds the `kind` half above and never ran (`POSTPONED_ISSUES.md` PI-024); the failover itself is a Phase
 16 drill.
+
+### 11.41 The migrator Job watched: `MigratorJobFailed`, `MigratorJobOverdue`, `ClusterWatchBlind`; a run's lines in Loki (`P16-TSK-003`)
+
+*(Written by `P16-TSK-003`, 2026-11-12, from `infra/prometheus/rules/platform.yml`'s `platform-components` group, the cluster watcher
+(`deploy/observability/base/cluster-watch.yaml`), the migrator Job (`deploy/base/migrator-job.yaml`) and the runs recorded below.
+`THREAT_MODEL.md` section 6 item 43 (b), decided 2026-11-12.)*
+
+**What watches the Job.** A migrator Job's state lives in the API server alone, so the platform reads it through one component that may
+ask: the **cluster watcher**, one replica of the pinned collector image in `finapp-observability`, the only pod of the platform's
+namespaces that holds a Kubernetes credential. It lists and watches, in `finapp` alone, what its receiver needs and the namespace's events
+(`deploy/base/rbac-cluster-watch.yaml`: no Secret, no ConfigMap, no `pods/log`, no write), publishes each Job's pods - failed, active,
+succeeded and wanted - to the scraper (job `finapp-cluster-watch`), and sends the migrator Job's records to the collector. A Job is read
+by its **name**: the next release's Job replaces a failed one under the same name, and the rules let the newest Job's state decide. A
+deleted Job's state is still read for a minute (the exporter's `metric_expiration`).
+
+**A failing migration holds a release, never money.** The migrator runs before the rollout (ADR-0120 decision 1); while it fails, the old
+release keeps serving on the schema it had, a release's migrations being expand-only or carrying a contract marker
+(`DATA_MIGRATIONS.md` §4.1). Nothing here is fixed by retrying the Job by hand: a migration that failed is fixed forward (§11.4).
+
+| Alert | What it means | First response |
+|---|---|---|
+| `MigratorJobFailed` (page) | A migrator pod failed and no other is running or has succeeded, for two minutes: a migration or a validation failed (exit 10), the configuration, identity or credential was refused (exit 12), three transient failures used the Job's `backoffLimit`, or the deadline killed a pod that hung. A transient failure retried inside the Job's backoff (10 s, then 20 s) does not fire. | Read the run's own lines (below): its result line names the schema and the failure. Exit 10: §11.4, a forward fix in a new release. Exit 12: the variable, the role or the credential its line names, fixed in the environment and never by a weaker check (§11.4; §11.7 for a credential). Transient three times: the database itself (§11.40; the pool alerts say whether the fleet sees it too). Through the delivery, the failed Sync hook stopped the sync: §11.36. |
+| `MigratorJobOverdue` (page) | No migrator Job has succeeded for longer than its own deadline allows (`activeDeadlineSeconds` 900 s, the watcher's collection, the scrape and the evaluation, with a minute to spare: 17 minutes). Above all the Job **whose pod was never created** - a quota refusing it (§11.14), admission refusing its image (§11.32), an image that cannot be pulled - which fails by its deadline with no failed pod, so `MigratorJobFailed` cannot see it; also a pod that hung on a lock until the deadline killed it. | Read the Job's events (below): `FailedCreate` names the refusal - a quota, a policy, an account - and the pod's events an image or a mount. Fix that, then the release again. A pod that hung: what it waited on (its last lines; §11.4) and whether a second Job ran beside it. |
+| `ClusterWatchBlind` (ticket) | The watcher publishes nothing about `finapp` for fifteen minutes where a deployed fleet is scraped: it is down, unscraped, or refused by the API server - its Role gone from the application's release, its egress to the API server not named in a real environment. The two Job alerts are silent for the wrong reason. | Under read-only, its pod in `finapp-observability` and its own lines (`{service_name="finapp-cluster-watch"}` in Loki, or `kubectl logs`): a `forbidden` names the kind it may not list. Its Role and binding are `finapp`'s release's, so a release that dropped them is the cause; restore them by a release. While it lasts, check every release's migrator Job by hand (`kubectl -n finapp get job finapp-migrator`). |
+
+**A run's lines and the Job's story, in Loki.** `{service_name="finapp-migrator"}`, on the environment's own Loki, holds:
+
+- **a failed run's last lines**, as its pod's status keeps them (`terminationMessagePolicy: FallbackToLogsOnError`: at most the last 80
+  lines or 2 KiB of a container that exited non-zero), each record carrying `k8s_pod_name`, `k8s_job_name`, `k8s_container_exit_code` and
+  `k8s_container_reason`. The migrator's lines carry no row data, URL or statement (`MigratorMainTest`), and the collector scrubs a card
+  number's shape and an amount on its way. One record per status update of the pod, so the same lines arrive up to three times, and
+  again whenever the watcher restarts;
+- **the Job's and its pods' events**: `FailedCreate`, `SuccessfulCreate`, the `FailJob` rule that matched, `DeadlineExceeded`,
+  `BackoffLimitExceeded`, a pod's image and mount failures, each with `k8s_event_reason`, `k8s_event_type`, `k8s_object_kind` and
+  `k8s_object_name`.
+
+A **successful** run's lines are not shipped: the status keeps nothing for an exit 0, and the image cannot ship its own output
+(`THREAT_MODEL.md` section 6 item 47 (b)). They stay on the node with the Job's pods for its `ttlSecondsAfterFinished` (24 hours):
+`kubectl -n finapp logs job/finapp-migrator` under read-only.
+
+**What this does not cover.** The managed database's own state (item 43 (a)); a real environment's API server egress for the watcher,
+which an observability overlay per environment names (item 43 (c)); the delivery's own view of the hook (§11.36).
+
+**The record** (2026-11-12, `P16-TSK-003`; a `kind` cluster of one node with kube-router as the policy engine and **no application
+stack** - no lock needed, the full harness being another task's that wave; `kind` v0.33.0, node `v1.34.11`; the images loaded from this
+machine's own store, none pulled).
+
+- **Measured before the design.** The watcher under the namespace's default-deny with an egress rule for its resolver alone reached the
+  API server. Given list and watch on jobs, deployments, pods and events alone, `k8s_cluster` logged a refusal every few seconds for each
+  of services, replicationcontrollers, cronjobs, replicasets, resourcequotas, statefulsets, daemonsets and horizontalpodautoscalers;
+  given those too, none - the Role names exactly these. A Job failing exit 10 under the base's `podFailurePolicy` was published as
+  `k8s_job_failed_pods` 1, active 0, succeeded 0, wanted 1. **A Job whose pod a quota of zero pods refused** (deadline 45 s) failed by
+  `DeadlineExceeded` with failed 0, active 0, succeeded 0, which is why `MigratorJobOverdue` exists. A deleted Job's series stayed in the
+  exporter beside its successor's (its five-minute default, since set to one).
+- **Run 1** (19:22-19:44Z; the manifests at `722365ad`). The kind overlay of `deploy/observability` as committed, with one exception:
+  its Loki ran as a container of the pinned image beside the node (this machine's Docker cannot save that image for the node's store), so
+  the collector named it and one experiment-only policy let the collector reach it on 3100. The base's Role and binding, rendered from the
+  application's kind overlay. The migrator Job rendered from the same overlay, its image's entrypoint replaced by the prometheus image's
+  shell printing migrator-shaped lines - a card number and an amount among them - and exiting 10, and its `envFrom` removed (no Secret
+  there). Its pod was first refused (`FailedCreate`: no `finapp-migrator` account on that cluster), then waited on a missing mount; given
+  both, it exited 10 at 19:35. **`MigratorJobOverdue`** pending from 19:26:49 and **firing at 19:43:49**, seventeen minutes with no Job
+  succeeded; **`MigratorJobFailed`** pending 19:34:34 and **firing 19:36:34**; each at Alertmanager's `placeholder-page`. Loki held 27
+  records under `{service_name="finapp-migrator"}` - the Job's and its pod's events (`FailedCreate`, `SuccessfulCreate`, `Scheduled`,
+  `FailedMount`, `Pulled`, `Created`, `Started`, `PodFailurePolicy`) and the failed run's lines three times, `k8s_container_exit_code`
+  10, the card number and the amount `[scrubbed]` - and 22 under `finapp-collector` and 20 under `finapp-cluster-watch` (the watcher's
+  own warnings: its reduction indexed a pod's body that was already a message); the card number and the amount in no record of any
+  stream.
+- **Run 2** (19:46-19:49Z; the watcher's reduction revised to read an object's kind once). The same planted Job, created 19:46:11 and
+  failed by its `FailJob` rule at 19:46:16: **`MigratorJobFailed` pending 19:46:34, firing 19:48:34**. Nine records under the migrator's
+  stream (six events, the run's lines three times, scrubbed); the watcher's own log empty; no needle.
+- **Read, not run**: `ClusterWatchBlind`, which reads a deployed fleet's scrape, and that cluster scraped none.
+
+### 11.42 The edge watched: `EdgeErrorRatioHigh`, `EdgeUnscraped`; the platform's own lines in Loki (`P16-TSK-003`)
+
+*(Written by `P16-TSK-003`, 2026-11-12, from `infra/prometheus/rules/platform.yml`'s `platform-components` group, the edge's static files
+(`deploy/edge/base/traefik.yaml`, `traefik-operator.yaml`), their scrape Services (`deploy/edge/base/scrape-services.yaml`), the
+collector's platform pipeline (`deploy/observability/base/collector.yaml`) and the runs recorded below. `THREAT_MODEL.md` section 6 item 43
+(b), decided 2026-11-12.)*
+
+**What is read.** Each controller's counters on its management port, 8081, which stays off every Service: the scraper finds each
+controller of each edge by DNS on a headless Service of that edge's naming the TLS port alone (job `finapp-edge`, `edge="public"` or
+`"operator"`), ready or not. The ratio is the edge's - its two controllers' counters summed before dividing - on the TLS listener
+(`entrypoint="websecure"`); a 5xx there is the application's own (`HttpServerErrorsHigh` reads those on the replicas) or the edge's (a
+replica refusing, gone or too slow: 502, 503, 504), which no replica counts.
+
+| Alert | What it means | First response |
+|---|---|---|
+| `EdgeErrorRatioHigh` (page) | Over 1.44% of an edge's requests answered 5xx over both the last hour and the last five minutes, for two minutes: `SLOS.md`'s fast pair at the budget of the transfer, payment, merchant and authentication availability objectives (0.001), a reference value Phase 16's load model recalibrates. A burst the hour does not carry does not page. | Which: the edge's lines (below), `DownstreamStatus` against `OriginStatus` - the same code from the replica is the application's (its own alerts and §11.21), a 502, 503 or 504 the replica never answered is the edge's way to the fleet: the replicas' readiness (§11.8), the NetworkPolicy admitting the controllers (§11.26), a replica past the edge's `responseHeaderTimeout`. Never restart the controllers to clear it. |
+| `EdgeUnscraped` (page) | No controller of an edge answers its scrape for five minutes, or that edge has no controller to scrape at all, where a deployed fleet is scraped: the edge is down, or it cannot be seen. Either way `EdgeErrorRatioHigh` counts nothing there: a client refused at the load balancer is no 5xx. One controller of two down does not fire; the other serves. | Under read-only, `kubectl -n finapp-edge get pods -o wide` and `describe`: crash-looping (a static file or a certificate it cannot read: §11.26), unschedulable, or evicted. Controllers up and still unscraped: the scraper's flow (`finapp-edge`'s policy admits `finapp/role: metrics-scraper` on 8081) and the scrape Services. |
+
+**The platform's own lines, in Loki.** Each source sends to the collector's **platform receiver**, 4319 - never the application's 4318 -
+and a pipeline of its own scrubs them (`transform/scrub-platform`), so what leaves is what an operator needs and nothing a source wrote
+about anybody:
+
+- `{service_name="finapp-edge"}`: each controller's access line and its own log (at `ERROR`). An access line keeps what the request was
+  and how it ended - `RequestMethod`, `RequestPath` where a route matched it, `RouterName`, `ServiceName`, `entryPointName`,
+  `DownstreamStatus`, `OriginStatus`, `Duration`, `OriginDuration`, sizes, protocol and TLS version - and its line is rebuilt from those
+  (`GET 502 public-door@file 3430534`). Never the client's address or port, the host it named, the backend's address, a user name, a
+  header (dropped at the proxy) or a query string (dropped at the proxy, and cut again here); an unrouted request's path is the caller's
+  own text and is dropped. The proxy's own log writes a client's address into its text (`http: TLS handshake error from ...`): every
+  address in an edge record reads `[address]`. The controller is `k8s_pod_name`. The console keeps its own copy too (`dualOutput`),
+  for the collector's absence;
+- `{service_name="finapp-collector"}` and `{service_name="finapp-cluster-watch"}`: the collectors' and the watcher's own lines, at
+  `warn`, each sent to its own platform receiver;
+- `{service_name="finapp-migrator"}`: §11.41.
+
+**Not shipped**: Tempo's, Loki's, Prometheus's and Alertmanager's own lines on `kind` and in compose. None of the four can export OTLP,
+and a node agent reading the kubelet's files is refused by Pod Security `restricted`; they are the reference back ends, and a real
+environment's back ends bring their own (`THREAT_MODEL.md` section 6 item 37 (a), item 47 (a)). `kubectl logs` reads them.
+
+**What this does not cover.** A real environment's load balancer or WAF in front of the edge (item 32 (b)); a controller lost or rolled
+under traffic (`P16-TSK-005`, `P16-TSK-020`); the edge's SLO of its own, which `-029` decides with the load model.
+
+**The record** (2026-11-12, `P16-TSK-003`; on containers of the pinned images, from this machine's own store).
+
+- **The edge watched** (19:49-19:59Z). The pinned proxy with the committed static file's `experimental`, `log` and `accessLog` blocks
+  as written, a plain listener named `websecure` and one route whose backend does not exist (so every `/v1` request answers 502); the
+  pinned Prometheus loading the committed `platform.yml` and scraping the proxy's management port as kind's `finapp-edge` job does
+  (`edge="public"`); the committed collector; Loki; Alertmanager with the committed routing. **`up{job="finapp-edge"}` 1.** About one
+  request every two seconds, 89 answering 502 and every tenth an unrouted 404 carrying a card number, each with a query and a header
+  that must not leave: **`EdgeErrorRatioHigh` pending 19:50:50, firing 19:52:50** at `placeholder-page`. Loki held 86 records under
+  `{service_name="finapp-edge"}`, each with its router, status, path and durations as fields and its line rebuilt
+  (`GET 502 public-door@file 1129771927`), the unrouted ones `GET 404 <nil> ...` with no path, `k8s_pod_name` the controller's; none
+  held the client's address, the query, the header, the unrouted path, the card number or the backend's name. The proxy's console kept
+  its own copy (`dualOutput`), with no query. **The proxy stopped at 19:53:35: `EdgeUnscraped` pending 19:53:50, firing 19:58:50**, at
+  `placeholder-page`.
+- **`infra/scripts/edge-check.sh`**, CI's, over the full static files with TLS and the generated routes: the pinned proxy's own lines
+  through the committed collector to a stand-in back end. **Its first run found the client's address** in the proxy's own log
+  (`http: TLS handshake error from <address>:<port>`, a record whose body is the proxy's message): the collector now cuts every address
+  from an edge record, and the next run read `TLS handshake error from [address]` and no needle, with the router, the routed path and the
+  status kept. With the collector replaced by a stand-in that takes every connection and answers nothing, 30 requests each answered, the
+  slowest in 171, 54, 32 and 95 ms over four runs; the final run (begun 20:23Z) green whole, 146 checks.
+- **The platform's own lines.** `{service_name="finapp-collector"}` held the collectors' warnings on `kind` (§11.41's runs) and on these
+  containers, each with its `k8s_pod_name`; the watcher's on `kind`'s first run.
 
 ### 11.13 Infrastructure code: running the Terraform checks, and changing a pin
 

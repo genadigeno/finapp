@@ -9,6 +9,8 @@ namespace: finapp-edge
 resources:
   - controllers.yaml
   - networkpolicy.yaml
+  # Each edge's controllers found by the scraper (P16-TSK-003): headless, the TLS port alone named.
+  - scrape-services.yaml
   # The namespace's quota at its worst moment (THREAT_MODEL.md section 6 item 43 (c)): every overlay renders the same controllers.
   - resourcequota.yaml
 
