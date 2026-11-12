@@ -571,12 +571,19 @@ secret_of finapp-rehearsal finapp-simulator-tls "keystore.p12=$CA_DIR/simulator.
 printf '#!/bin/sh\nMSYS_NO_PATHCONV=1 exec docker exec -i "%s" kubectl --kubeconfig=/etc/kubernetes/admin.conf "$@"\n' "$NODE" > "$WORK/bin/kubectl"
 chmod +x "$WORK/bin/kubectl"
 SIM_URL="https://$SIM_HOST:8443"
+EXTRA_PROVIDER_NAMES="FINAPP_PAYMENTS_PROVIDER_URL FINAPP_PAYMENTMETHODS_TOKENISATION_URL FINAPP_MERCHANT_PAYOUT_PROVIDER_URL"
+if [ -n "$AUDITED" ]; then
+    # The platform scopes (P15-TSK-032) rehearse sections 2 and 4, which need a reference rate and an FX provider: the simulator serves
+    # both, and only these scopes name them, so the release's and the rotations' runs keep their measured shape.
+    EXTRA_PROVIDER_NAMES="$EXTRA_PROVIDER_NAMES FINAPP_FX_REFERENCE_URL FINAPP_FX_PROVIDER_URL"
+fi
 PATH="$WORK/bin:$PATH" \
     FINAPP_DB_URL="jdbc:postgresql://$PG_HOST:5432/finapp?sslmode=verify-full&sslrootcert=/etc/finapp-local-ca/ca.crt" \
     FINAPP_DB_APP_USER=finapp_app FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_MIGRATOR_USER=finapp_migrator FINAPP_DB_MASTER_USER=finapp \
     FINAPP_KAFKA_BOOTSTRAPSERVERS="$KAFKA_HOST:9092" FINAPP_KAFKA_SASL_USERNAME=finapp_app \
     FINAPP_PAYMENTS_PROVIDER_URL="$SIM_URL" FINAPP_PAYMENTMETHODS_TOKENISATION_URL="$SIM_URL" FINAPP_MERCHANT_PAYOUT_PROVIDER_URL="$SIM_URL" \
-    KIND_SECRETS_EXTRA_APP_NAMES="FINAPP_PAYMENTS_PROVIDER_URL FINAPP_PAYMENTMETHODS_TOKENISATION_URL FINAPP_MERCHANT_PAYOUT_PROVIDER_URL" \
+    FINAPP_FX_REFERENCE_URL="$SIM_URL" FINAPP_FX_PROVIDER_URL="$SIM_URL" \
+    KIND_SECRETS_EXTRA_APP_NAMES="$EXTRA_PROVIDER_NAMES" \
     sh "$ROOT/infra/scripts/kind-secrets.sh" apply finapp >> "$ART/apply.log" 2>&1 || cannot "kind-secrets.sh apply failed: see apply.log"
 
 step simulator
