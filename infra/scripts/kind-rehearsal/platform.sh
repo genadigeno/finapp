@@ -519,7 +519,7 @@ incidents_broker() {
 incidents_dead_letters() {
     # Section 11.6, a poison record: a malformed record on a consumed topic, parked after its budgets, discarded by two persons.
     printf 'this is not an event\n' | kube -n finapp exec -i finapp-kafka-0 -c kafka -- /opt/kafka/bin/kafka-console-producer.sh \
-        --bootstrap-server localhost:9094 --topic finapp.transfers >> "$ART/kafka.log" 2>&1 || fail "the poison record could not be produced"
+        --bootstrap-server localhost:9094 --topic finapp.payments >> "$ART/kafka.log" 2>&1 || fail "the poison record could not be produced"
     fires InboxDeadLetterParked placeholder-page 900 "11.6, a poison record parked"
     client dead-letters parked >> "$ART/platform-client.log" 2>&1 || fail "11.6: the queue could not be read"
     PARK=$(sed -n 's/^platform dead-letters parked kind=INBOX_RECORD .*park=\([^ ]*\).*/\1/p' "$ART/platform-client.log" | head -1)
@@ -759,18 +759,19 @@ patch deployments --subresource=scale: yes'
         [ "$(date +%s)" -lt "$deadline" ] || fail "11.25: the fleet did not stop"
         sleep 5
     done
-    group=finapp.accounting
+    group=$(kafka_admin kafka-consumer-groups.sh --list 2>/dev/null | grep '^finapp\.' | sort | head -1)
+    [ -n "$group" ] || fail "11.1.1: no consumer group of the application to set"
     kafka_admin kafka-consumer-groups.sh --group "$group" --reset-offsets --all-topics --to-datetime "$RESET_FROM" --execute > "$ART/group-reset.txt" 2>&1 \
         || fail "11.1.1: the group's offsets could not be set: see group-reset.txt"
     incident_note pipeline reset-offsets "group $group" "section 11.1.1's new-group step, to $RESET_FROM" done
-    duplicates_before=$(psql_query -c "SELECT count(*) FROM platform.inbox_message WHERE consumer LIKE 'accounting%'" | tr -d '[:space:]')
+    duplicates_before=$(psql_query -c "SELECT count(*) FROM platform.inbox_message WHERE consumer LIKE '${group#finapp.}%'" | tr -d '[:space:]')
     fires FinappTargetsAbsent placeholder-page 900 "11.8, the fleet gone from the scrape"
     bg -n finapp scale deployment/finapp-app --replicas=3 >> "$ART/break-glass-scale.txt" 2>&1 || fail "11.25: the holder could not start the fleet"
     incident_note holder scale "deployment finapp-app to 3" "the autoscaler's minimum" done
     ready_three 900 || fail "11.25: the fleet did not come back"
     clears FinappTargetsAbsent 600 "11.8"
     lag_settled group-reset || fail "11.1.1: the reset group did not catch up"
-    duplicates_after=$(psql_query -c "SELECT count(*) FROM platform.inbox_message WHERE consumer LIKE 'accounting%'" | tr -d '[:space:]')
+    duplicates_after=$(psql_query -c "SELECT count(*) FROM platform.inbox_message WHERE consumer LIKE '${group#finapp.}%'" | tr -d '[:space:]')
     [ "$duplicates_after" = "$duplicates_before" ] || log "11.1.1: the reset group's inbox grew by $((duplicates_after - duplicates_before)) records: events published during the stop"
     pass "11.1.1: a group's offsets set with no member, the replayed window absorbed by the inbox"
     # The credential ends by itself: after its expiry the same certificate is refused.
@@ -865,14 +866,19 @@ SQL
 incidents_poisoned_rows() {
     # Section 11.39 (P15-TSK-002's three rows): a non-v7 payment attempt in a candidate state. The card sweep fails every tick on every
     # instance with one WARN line; nothing is concluded meanwhile; the row's removal is the plant's teardown.
-    SOURCE_ATTEMPT=$(psql_query -c "SELECT id FROM payments.payment_attempt ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')
-    [ -n "$SOURCE_ATTEMPT" ] || cannot "no payment attempt to copy"
+    # A copy of a captured card attempt, under a v4 id, put back in flight at the capture's dispatch: every unique reference made new, so
+    # the only thing wrong with the row is the id no domain writer could mint.
+    SOURCE_ATTEMPT=$(psql_query -c "SELECT id FROM payments.payment_attempt WHERE status = 'CAPTURED' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')
+    [ -n "$SOURCE_ATTEMPT" ] || cannot "no captured payment attempt to copy"
     POISON=$(psql_query -c "SELECT gen_random_uuid()" | tr -d '[:space:]')
-    psql_query -f - >> "$ART/plants.log" 2>&1 <<SQL || { log "11.39: the non-v7 attempt could not be planted: see plants.log"; return 0; }
+    psql_query -f - >> "$ART/plants.log" 2>&1 <<SQL || fail "11.39: the non-v7 attempt could not be planted: see plants.log"
 \set ON_ERROR_STOP on
 INSERT INTO payments.payment_attempt SELECT (jsonb_populate_record(NULL::payments.payment_attempt,
-    to_jsonb(a) || jsonb_build_object('id', '$POISON', 'status', 'DISPATCHED', 'idempotency_key', 'rehearsal-poison-$POISON',
-    'provider_reference', 'rehearsal-poison-$POISON'))).* FROM payments.payment_attempt a WHERE a.id = '$SOURCE_ATTEMPT';
+    to_jsonb(a) || jsonb_build_object('id', '$POISON', 'status', 'CAPTURE_DISPATCHED',
+        'auth_reference', 'poison-a-$POISON', 'capture_reference', 'poison-c-$POISON',
+        'auth_provider_reference', 'poison-pa-$POISON', 'capture_provider_reference', NULL,
+        'void_reference', NULL, 'void_provider_reference', NULL, 'end_to_end_reference', NULL, 'scheme_reference', NULL,
+        'failure_reason', NULL))).* FROM payments.payment_attempt a WHERE a.id = '$SOURCE_ATTEMPT';
 SQL
     POISONED_AT=$(date +%s)
     sleep 240
