@@ -140,9 +140,10 @@ list held five since `P15-TSK-039`)*:
    asked this question as if it had one.
 
 The review is a human procedure: the owner sets its cadence and its reviewer, and a leaver's roles are revoked on the
-day they leave. Its first performance was rehearsed on `kind` over the rehearsal's own identities (below), with the runbook's
-break-glass (`OPERATIONS_RUNBOOK.md` §11.25) and compromise procedures (§11.12, "A compromised operator credential"); its first
-performance over a real environment's holders needs that environment (`THREAT_MODEL.md` §6 item 42 (c)).
+day they leave. Its first performance is rehearsed on `kind` over the rehearsal's own identities (recorded below once
+run), with the runbook's break-glass (`OPERATIONS_RUNBOOK.md` §11.25) and compromise procedures (§11.12, "A compromised
+operator credential"); its first performance over a real environment's holders needs that environment (`THREAT_MODEL.md`
+§6 item 42 (c)).
 
 **What one performance writes down.** A performance is a record, kept with this document's history, that a second person can
 check against the authoritative rows without asking the reviewer anything:
@@ -230,7 +231,8 @@ There is no standing emergency identity in the application, and none is created.
   bootstrap step (`P15-TSK-004`) in the secret store (`P15-TSK-018`).
 
 The runbook's procedures for both are `OPERATIONS_RUNBOOK.md` §11.25 (break-glass beneath the application) and §11.12 (an
-incident, its approver and roles, and a compromised operator credential), written and rehearsed by `P15-TSK-032`. *(Read
+incident, its approver and roles, and a compromised operator credential), written by `P15-TSK-032` and rehearsed by its
+`kind` runs, each section's last record saying what ran. *(Read
 "(`OPERATIONS_RUNBOOK.md` 11.10)" until 2026-11-12: row 11.10 of the runbook's plan was never written under that number.)*
 
 ## 8. Report generation reads, and cannot write

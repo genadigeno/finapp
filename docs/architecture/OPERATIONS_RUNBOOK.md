@@ -2712,7 +2712,7 @@ procedure.
 | The value | Where it parks, and its break | Its exits today |
 |---|---|---|
 | **A credit no party on the platform owns** (an inbound payment naming no account: the sender's to have back, return-to-sender) | `SUSPENSE_UNMATCHED`; `UNKNOWN_EXTERNAL` | Its evidence; a four-eyes `TRANSFER_TO_ACCOUNT` once an owner on the platform is identified; a four-eyes `RECOGNISE_GAIN` only past the rule set's `gain_min_age_days` (90 in every source's version 1), refused before it (`reconciliation.GainNotYetEligible`) |
-| **A payout returned to a merchant closed since** | `SUSPENSE_UNMATCHED`; at the line's grace, `REVERSAL_MISMATCH`, cause `RETURN_NOT_APPLICABLE`, HIGH (the close closed the payable's ledger account) | Its evidence (the provider's own claw-back naming the line); a `TRANSFER_TO_ACCOUNT` to an `ACTIVE` payable in the currency, which a closed merchant does not have: refused at the proposal, `422 reconciliation.ResolutionTargetRefused`. **Never a gain**: the type admits none, the value is the merchant's |
+| **A payout returned to a merchant closed since** | `SUSPENSE_UNMATCHED`; at the line's grace, `REVERSAL_MISMATCH`, cause `RETURN_NOT_APPLICABLE`, HIGH (the close closed the payable's ledger account) | Its evidence (the provider's own claw-back naming the line); a four-eyes `TRANSFER_TO_ACCOUNT` to an `ACTIVE` payable in the currency, which a closed merchant does not have: refused at the proposal, `422 reconciliation.ResolutionTargetRefused`. **Never a gain**: the type admits none, the value is the merchant's |
 | **A corridor return for a customer closed since** | `SUSPENSE_UNMATCHED`; `REVERSAL_MISMATCH(RETURN_NOT_APPLICABLE)`, HIGH | Its evidence; a four-eyes `TRANSFER_TO_ACCOUNT` to the customer's wallet in the item's currency, which records the return too (ADR-0079 §6): refused while the wallet is closed, as above. **Never a gain** |
 
 **What a person does, for each.**
@@ -2739,7 +2739,7 @@ procedure.
 **Beside them: a book refund to a payer wallet closed since** (Phase 7 residue #40). The operator's refund door,
 `POST /v1/payments/{id}/refund` (`PAYMENT_REFUND`), completes a book refund in its own transaction, the credit to the payer's
 wallet among it; with the wallet closed the ledger refuses the line, and the door answers `409 ledger.AccountNotPostable` with
-nothing written: no refund, no hold, no posting. The refusal is recorded (`door.ActRefused`, naming that code). **Nothing parks:
+nothing written: no refund, no hold, no posting. The refusal is recorded (`door.ActRefused`, its summary starting `code=ledger.AccountNotPostable, status=409`). **Nothing parks:
 the value is still the merchant's, in its payable**, where the merchant's next payout takes it; the platform's books owe the
 closed customer nothing, so no break, suspense item or alert follows it, and this paragraph is its only procedure. So: confirm
 from the refusal and the wallet's account that it is the closed wallet and nothing else; do not retry, and never reach the
@@ -2985,7 +2985,8 @@ character as text, so a corrupt id is `substr(id::text, 15, 1) <> '7'`: a full r
 #### (a) A corrupt id stalls a whole sweep
 
 The card sweep lists its candidates by rehydrating their typed ids before its per-row containment starts, so one
-`payments.payment_attempt.id` that is not a UUIDv7 throws in the listing: the whole tick fails, **on every instance, every
+`payments.payment_attempt.id` that is not a UUIDv7, on a row the sweep would take (dispatched or unknown past its bound), throws
+in the listing: the whole tick fails, **on every instance, every
 tick**, and no candidate is reached. The same holds for the withdrawal, dispute-answer, return and pay-in initiation sweeps,
 for the opening position's walk over payout returns, for risk's monitoring sweep (a customer account whose ledger `owner_ref` is
 not a v7 rolls back each batch with its watermark) and for the rescreening enumeration (one party).
@@ -3093,7 +3094,9 @@ earlier decision (`application.yaml`'s note). A read replica or another region (
 
 **The `kind` restart, and what it shows.** On `kind` the database is one PostgreSQL pod whose data lives in an `emptyDir`
 (`deploy/overlays/kind/postgres.yaml`): **deleting that pod deletes the database**, so the rehearsal restarts its container in
-place (the pod, and its data, kept). It shows readiness down and back on every replica with none restarted, claims lapsing and
+place (the pod, and its data, kept), and by killing the server rather than shutting it down: PostgreSQL empties an unlogged table
+after a crash and keeps it across a clean shutdown, and a standby promoted by a failover never held an unlogged table's rows. It
+shows readiness down and back on every replica with none restarted, claims lapsing and
 taken, and the abuse table empty after. It does not show a standby taking over, an endpoint moving, a connection black-holed (a
 stopped server resets its connections), or anything of the managed service's own. **The last record**: not yet run.
 
