@@ -339,11 +339,13 @@ signals_domain() {
     client fx-conversion before-source >> "$ART/platform-client.log" 2>&1 || fail "section 4: the conversion could not run"
     TRADE=$(sed -n 's/^platform fx-conversion before-source status=20[01] trade=\([^ ]*\).*/\1/p' "$ART/platform-client.log" | tail -1)
     [ -n "$TRADE" ] || fail "section 4: no conversion was made: $(grep '^platform fx-conversion' "$ART/platform-client.log")"
-    fires ReconciliationRuleSetMissing placeholder-ticket 1500 "11.24 and section 3, the FX source's rule set missing"
+    # Per source: fx-sim-b's and the corridors' sources stay without a rule set here (section 3b is the corridor's pricing policy, not
+    # its sources' rule sets), so the alert is read for the source this procedure activates, fx-sim-a's, and for no other.
+    fires ReconciliationRuleSetMissing placeholder-ticket 1500 "11.24 and section 3, the FX source's rule set missing" ',source="fx-sim-a.trade-report"'
     client fx-cover "$TRADE" >> "$ART/platform-client.log" 2>&1 || true
     grep '^platform fx-cover ' "$ART/platform-client.log" | tail -1 > "$WORK/cover-before.txt"
     activation activate-fx-source "section 3, the FX source's rule set v1"
-    clears ReconciliationRuleSetMissing 300 "section 3"
+    clears ReconciliationRuleSetMissing 300 "section 3" ',source="fx-sim-a.trade-report"'
     deadline=$(( $(date +%s) + 600 ))
     until client fx-cover "$TRADE" 2>/dev/null | tee -a "$ART/platform-client.log" | grep -q 'booked=yes'; do
         [ "$(date +%s)" -lt "$deadline" ] || fail "section 4: the cover was not booked within 600 s of the rule set: before $(cat "$WORK/cover-before.txt")"
@@ -361,9 +363,9 @@ signals_domain() {
     fires BnplTermsNoneActive placeholder-ticket 1500 "section 8.1, the alert armed before any terms"
     activation activate-bnpl "section 8.1, the BNPL terms"
     clears BnplTermsNoneActive 300 "section 8.1"
-    fires RiskPolicyNoneActive placeholder-page 900 "section 9.1, judging expected and no policy active"
+    fires RiskPolicyNoneActive placeholder-page 900 "section 9.1, judging expected and no policy active" ',operation="TRANSFER"'
     activation activate-risk "section 9.1, a risk policy version"
-    clears RiskPolicyNoneActive 300 "section 9.1"
+    clears RiskPolicyNoneActive 300 "section 9.1" ',operation="TRANSFER"'
     census domain
 }
 
