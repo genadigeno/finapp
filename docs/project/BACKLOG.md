@@ -29163,7 +29163,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's check list widened.
 - **Risk**: Low. **Cx**: S.
 
-**P16-TSK-005 — The edge, PostgreSQL and the broker rolled and rolled back on `kind` (`THREAT_MODEL.md` §6 item 43 (f))** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
+**P16-TSK-005 — The edge, PostgreSQL and the broker rolled and rolled back on `kind` (`THREAT_MODEL.md` §6 item 43 (f))** — `IN_PROGRESS` (2026-11-12, designed: a `rolls` scope of the harness, the test-only data tier on volume claims so a roll keeps its data, PostgreSQL's pair 18.6 and 18.4 because no newer patch is published, the probe the entry's break with a slow start; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: as decided 2026-11-12, in the first wave. The three `kind` steps that need no account: each component changes
   version under a workload and comes back.
 - **Affected components**: the `kind` harness (a step per component), `deploy/edge/`, `deploy/overlays/kind/postgres.yaml`,
