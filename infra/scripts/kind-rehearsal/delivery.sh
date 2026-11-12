@@ -478,6 +478,9 @@ for workload in migrator app; do
     kube -n finapp delete "secret/finapp-$workload-secrets" --wait=true >> "$ART/apply.log" 2>&1 || cannot "the generated Secret finapp-$workload-secrets could not be handed over"
 done
 
+# store_entry <entry> <store>: one entry's value from the run's store file, for this script's own use.
+store_entry() { sed -n "s/^$1=//p" "$STORE/$2.env" | head -1; }
+
 # delivery_store <withheld key or none>: the three stores, their entries through standard input alone.
 delivery_store() {
     for store in app migrator; do
@@ -491,7 +494,7 @@ delivery_store() {
     done
     {
         printf 'apiVersion: external-secrets.io/v1\nkind: SecretStore\nmetadata:\n  name: finapp-app-kafka-store\n  namespace: finapp\nspec:\n  provider:\n    fake:\n      data:\n'
-        printf "        - key: application\n          value: '{\"username\":\"%s\",\"password\":\"%s\"}'\n" "$(sed -n 's/^username=//p' "$STORE/kafka.env")" "$(sed -n 's/^password=//p' "$STORE/kafka.env")"
+        printf "        - key: application\n          value: '{\"username\":\"%s\",\"password\":\"%s\"}'\n" "$(store_entry username kafka)" "$(store_entry password kafka)"
     } | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "the store finapp-app-kafka-store could not be written"
 }
 delivery_store "$HELD_KEY"
