@@ -2386,7 +2386,9 @@ are `PHASE_15_PLAN.md`'s, a bare `-nnn` meaning `P15-TSK-nnn`):
 - **The database pass (exit item)** — `P15-TST-002` on the final tree: every module's `databaseTest`, own-container and
   `kafkaTest` tiers run fresh once (PI-012); PI-013's and PI-014's regression cases green after `-033`; PI-014's remaining
   suites classified and green or postponed again by the owner; PI-015's struck rows performed again or struck for good
-  with a reason; counts read from the JUnit XML. **Owners**: `-033`, `P15-TST-002`.
+  with a reason; counts read from the JUnit XML. **Owners**: `-033`, `P15-TST-002`. *(Postponed by the owner, 2026-11-12,
+  `POSTPONED_ISSUES.md` PI-023, past the project's phases with the storm: the exit records this item as not met, a deviation the
+  owner chose.)*
 
 ### Phase 16 — Scale, Resilience and Disaster Recovery
 - Load test at target volume with financial invariants asserted **during** load, not only
