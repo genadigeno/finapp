@@ -376,9 +376,11 @@ dock exec "$NODE" crictl pull "$ESO_REPOSITORY@$ESO_DIGEST" >> "$ART/images.log"
 kube apply --server-side -f - < "$CONTROLLERS/external-secrets.yaml" >> "$ART/apply.log" 2>&1 || cannot "could not apply the operator"
 kube -n external-secrets rollout status deployment/external-secrets --timeout=240s >> "$ART/apply.log" 2>&1 || fail "the operator did not become ready"
 kube create namespace argocd >> "$ART/apply.log" 2>&1 || cannot "could not create Argo CD's namespace"
-for image in "$ARGOCD_REPOSITORY@$ARGOCD_DIGEST" "$ARGOCD_DEX_REPOSITORY@$ARGOCD_DEX_DIGEST" "$ARGOCD_REDIS_REPOSITORY@$ARGOCD_REDIS_DIGEST"; do
-    dock exec "$NODE" crictl pull "$image" >> "$ART/images.log" 2>&1 || cannot "the node could not pull $image: see images.log"
-done
+# Loaded as the harness loads its pinned images (pulled on the host by digest, imported into the node): the node's own pull of Argo CD's
+# image from quay.io timed out on a development machine.
+load_tagged "$ARGOCD_REPOSITORY" "$ARGOCD_VERSION" "$ARGOCD_DIGEST"
+load_tagged "$ARGOCD_DEX_REPOSITORY" "$ARGOCD_DEX_VERSION" "$ARGOCD_DEX_DIGEST"
+load_tagged "$ARGOCD_REDIS_REPOSITORY" "$ARGOCD_REDIS_VERSION" "$ARGOCD_REDIS_DIGEST"
 # The install's order (deploy/delivery/controller/default-project.yaml says why): the definitions, then the restricted default project, then
 # everything else. In one stream the project is refused, its kind not yet known, and the controller creates an open one when it starts.
 awk 'BEGIN{n=0} /^---$/{n++; next} {doc[n] = doc[n] $0 "\n"} END{for (i = 0; i <= n; i++) if (doc[i] ~ /\nkind: CustomResourceDefinition\n/ || doc[i] ~ /^kind: CustomResourceDefinition\n/) printf "---\n%s", doc[i]}' \
@@ -503,7 +505,7 @@ secret_of finapp-edge finapp-edge-operator-tls "tls.crt=$CA_DIR/edge-operator.cr
 cp "$CA_DIR/ca.crt" "$CLIENT/edge-ca.crt"
 
 # The smoke's Prometheus, test-only: the replicas' management port, read through the scrape the release's policy admits.
-dock exec "$NODE" crictl pull "$PROMETHEUS_IMAGE" >> "$ART/images.log" 2>&1 || cannot "the node could not pull Prometheus"
+load_tagged "$PROMETHEUS_REPOSITORY" "$PROMETHEUS_VERSION" "$PROMETHEUS_DIGEST"
 cat <<YAML | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "the smoke's Prometheus could not be applied"
 apiVersion: v1
 kind: ServiceAccount
