@@ -3294,8 +3294,15 @@ break-glass group, §11.25) syncs the same revision once, by hand. **Then the ro
 root's sync applied the release's Application and waits on its health, and if the hold failed it there (its operation names the release's
 Application as the failed resource, at a time before the release's sync by hand), the same person syncs the root once, by hand, at the same
 revision, **after** the release shows synced and healthy and not before: a root synced while the release is still held fails again at the same
-wave. A root still running needs nothing; it goes on by itself. A root failed on anything else, or after the release was healthy, is a fault of
-its own: read it, never sync past it. Write each manual sync into the incident's record (§11.12). Wave −1 **the migrator Job, a
+wave. A root still running needs nothing; it goes on by itself, which is what it did both times on `kind` (2026-11-12: Running through the
+hold, `Synced` and `Healthy` minutes after the release was). A root failed on anything else, or after the release was healthy, is a fault of
+its own: read it, never sync past it. **How: through Argo CD's API**, its CLI (`argocd app sync <application> --revision <commit>`) or its UI,
+**never by writing the Application's `.operation` by hand**. Argo CD's API server fills a sync's options from the Application's own policy
+when the request names none; a raw `.operation` patch skips it, so the sync runs without them: no `PruneLast`, no `FailOnSharedResource`, no
+`RespectIgnoreDifferences`. On `kind` that wrote each store's committed provider over the entries the environment had put there, unseen
+until the next change made an `ExternalSecret` read its store again and fail its wave (seen 2026-11-12 in the rehearsal's own sync by hand,
+since corrected; on a small cluster the same operation without the options emptied a store under `ignoreDifferences` and with the
+Application's options copied in kept it). Write each manual sync into the incident's record (§11.12). Wave −1 **the migrator Job, a
 `Sync` hook awaited**; wave 0 the
 configuration, the Deployment and its autoscaler. A hook that fails fails the sync: a failed migration leaves the old replicas serving and
 the new Deployment never applied. **It is not a `PreSync` hook**, though the plan said one: Argo CD applies a `PreSync` hook before everything
@@ -3303,7 +3310,10 @@ in the Sync phase, on the first sync too, so the migrator would start before its
 hold it exist. No window is accepted.
 
 **Rules every Application keeps.** Automated sync with self-heal: a hand change is put back, while the Application's last sync succeeded
-(below). Prune last, and never for the namespaces. **No `CreateNamespace`**: it would create `finapp` with neither its Pod Security nor its
+(below). **What self-heal does not see**: under Argo CD v3.6.1 on `kind` (2026-11-12), a `kubectl rollout restart` of the release's
+Deployment left the Application `Synced` for five minutes, self-heal did not take the template's `kubectl.kubernetes.io/restartedAt`
+annotation back, and the fleet rolled once (the Deployment's revision 1 to 2). A field the release does not state is outside the comparison,
+so neither the repository nor Argo CD's history records such a restart; §11's rule against it stands for its own reasons. Prune last, and never for the namespaces. **No `CreateNamespace`**: it would create `finapp` with neither its Pod Security nor its
 admission labels (`DeliveryManifestsTest` refuses it). **No retry**, stated as `retry.limit: 0`: a failed migration is fixed forward. Left out, it
 is not none: Argo CD v3.6.1 retried an automated sync whose Application stated no retry five times, with backoff, before ending it `Failed`
 (seen on `kind`); a retry is the sync operation run again, its hook with it (read, not seen: the run's retries stopped before the hook).

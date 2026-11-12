@@ -131,6 +131,20 @@ class DeliveryRehearsalContractTest {
     }
 
     @Test
+    @DisplayName("a sync by hand carries the Application's own sync options, as Argo CD's API server fills them, and the stores are read after it: they keep the environment's entries")
+    void aSyncByHandCarriesTheApplicationsOptions() {
+        assertThat(delivery).contains("options=$(argo application \"$1\" '{.spec.syncPolicy.syncOptions}')")
+                .contains("case $options in *RespectIgnoreDifferences=true*) ;;")
+                .contains("\\\"sync\\\":{\\\"revision\\\":\\\"$2\\\",\\\"syncOptions\\\":$options}}}");
+        assertThat(delivery).as("the stores counted after the release's sync by hand, before anything reads them again")
+                .contains("kube -n finapp get secretstore \"finapp-$store-store\" -o jsonpath='{range .spec.provider.fake.data[*]}{.key}{\"\\n\"}{end}'")
+                .contains("it wrote the committed provider over the environment's");
+        int synced = delivery.indexOf("manual_sync finapp \"$PROMOTED_COMMIT\" first-release");
+        assertThat(delivery.indexOf("it wrote the committed provider over the environment's")).isGreaterThan(synced)
+                .isLessThan(delivery.indexOf("step delivery-first-release"));
+    }
+
+    @Test
     @DisplayName("the migrator Sync hook is awaited: created after the ExternalSecrets are Ready, the Deployment applied only after it completed")
     void theMigratorHookIsAwaited() {
         assertThat(delivery).contains("the migrator hook started before the application's ExternalSecret was Ready")

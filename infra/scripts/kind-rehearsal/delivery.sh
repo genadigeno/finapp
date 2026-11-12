@@ -130,7 +130,8 @@ synced() {
                 ;;
             "$commit|Failed|"* | "$commit|Error|"*)
                 printf '%s\t%s\t%s\tfailed after %s\n' "$label" "$app" "$commit" "$(( $(date +%s) - pushed ))" >> "$ART/latency.tsv"
-                record "$label: $app's sync of $commit FAILED, $(( $(date +%s) - pushed )) s after the push"
+                kube -n argocd get application "$app" -o yaml > "$ART/application-$app-$label.yaml" 2>&1 || true
+                record "$label: $app's sync of $commit FAILED, $(( $(date +%s) - pushed )) s after the push ($(argo application "$app" '{.status.operationState.message}'))"
                 return 1
                 ;;
         esac
@@ -905,10 +906,15 @@ retries=$(argo application finapp '{.status.operationState.retryCount}')
 pass "an ExternalSecret not Ready stopped its wave: the sync Failed there, for $(( $(date +%s) - HOLD_FROM )) s no migrator Job, no Deployment, not retried"
 
 # manual_sync <application> <revision> <label>: section 11.36's one sync of the same revision by hand, by a person holding Argo CD's sync on
-# that Application (here written as Argo CD's own client writes it: the Application's operation). 0 when it succeeded.
+# that Application, written as Argo CD's API server writes it for its CLI and UI: the Application's operation, carrying the Application's
+# own sync options. The server fills them in when a request names none; an operation written without them is a sync without
+# RespectIgnoreDifferences, and on kind it wrote the stores' committed provider over the entries the environment had put there (run5,
+# 2026-11-12). 0 when it succeeded.
 manual_sync() {
+    options=$(argo application "$1" '{.spec.syncPolicy.syncOptions}')
+    case $options in *RespectIgnoreDifferences=true*) ;; *) cannot "the Application $1 states no RespectIgnoreDifferences for its sync by hand to carry ('$options')" ;; esac
     kube -n argocd patch application "$1" --type merge \
-        -p "{\"operation\":{\"initiatedBy\":{\"username\":\"finapp-rehearsal-person\"},\"sync\":{\"revision\":\"$2\"}}}" >> "$ART/apply.log" 2>&1 \
+        -p "{\"operation\":{\"initiatedBy\":{\"username\":\"finapp-rehearsal-person\"},\"sync\":{\"revision\":\"$2\",\"syncOptions\":$options}}}" >> "$ART/apply.log" 2>&1 \
         || cannot "a sync of $1 by hand could not be started"
     asked=$(date +%s)
     deadline=$((asked + 1500))
@@ -937,6 +943,13 @@ ready_at=$(kube -n finapp get externalsecret finapp-app-secrets -o jsonpath='{.s
 record "the ExternalSecret turned Ready at $ready_at, $(( $(date -u -d "$ready_at" +%s) - KEY_ADDED )) s after the store gained the key"
 manual_sync finapp "$PROMOTED_COMMIT" first-release || fail "the release's sync by hand, once the store held its key, did not succeed"
 RELEASE_SYNCED=$(date +%s)
+# The stores keep what the environment put in them: a sync by hand that wrote the committed provider over them goes unseen until an
+# ExternalSecret reads its store again (run5's freshness step), so it is read here.
+for store in app migrator app-kafka; do
+    held=$(kube -n finapp get secretstore "finapp-$store-store" -o jsonpath='{range .spec.provider.fake.data[*]}{.key}{"\n"}{end}' | grep -c .)
+    case $store in app-kafka) wanted_entries=1 ;; *) wanted_entries=$(grep -c . "$STORE/$store.env") ;; esac
+    [ "$held" = "$wanted_entries" ] || fail "the release's sync by hand left the store finapp-$store-store $held entries of $wanted_entries: it wrote the committed provider over the environment's"
+done
 # The root's own sync applied the release's Application and waits on its health. If it ended Failed at the release's wave during the hold,
 # section 11.36's recovery: the person who synced the release syncs the root once, by hand, at the same revision, now that the release is
 # synced and healthy. That is the one sync by hand the root is given here: a root failed on anything else, or after the release was
