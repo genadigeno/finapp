@@ -1013,7 +1013,8 @@ were added on 2026-11-09 and await the owner." until then.)* **Items 35, 36, 38 
 2026-11-11 and awaits the owner." and "Item 38 was added on 2026-11-11 by the restore rehearsal and awaits the owner." until then.)*
 **Item 37 was added on 2026-11-11 with (a) to (c), which the owner decided with the rest; the telemetry pipeline's review added (d) to
 (f) the same day, after the owner's word, and the owner decided them on 2026-11-12, accepting each recommendation.** *(This sentence
-read "... and they await the owner." until then.)*
+read "... and they await the owner." until then.)* **Item 40 was added on 2026-11-12 by the delivery's task and decided the same
+day under the owner's standing word for waves G and H ("start H after G, accept all recommendations"), as recommended.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1709,6 +1710,10 @@ read "... and they await the owner." until then.)*
     refuses every pod of that digest, and the grant to the signing role alone is a repository policy, which needs an account. The image
     repositories' untagged-expiry rule stays out until a promotion lands under an immutable tag, which is the pipeline role's
     cross-account copy (`OPERATIONS_RUNBOOK.md` §11.36).
+
+    **Decided 2026-11-12**: (a') as recommended, under the owner's standing word for waves G and H: `IMMUTABLE_WITH_EXCLUSION` for
+    `sha256-*` on the signature repositories, AWS-0031 accepted on them alone until 2027-06-30, as built; who may push there stays
+    item 35 (d).
 
 ## 7. Decided against
 
