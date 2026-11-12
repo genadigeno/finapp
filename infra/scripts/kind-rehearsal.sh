@@ -69,10 +69,12 @@ ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 # What the run rehearses: `release` (the default, P15-TSK-012's walk from N - 1 to N and back) or `rotations` (P15-TSK-020: release N alone,
 # then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
 SCOPE=${REHEARSAL_SCOPE:-release}
-case $SCOPE in release | rotations | signals | incidents) ;; delivery | rolls) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery or rolls, not $SCOPE" >&2; exit 2 ;; esac
+case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; rolls) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery or rolls, not $SCOPE" >&2; exit 2 ;; esac
 # Every scope but `release` deploys release N alone: the steps below that name N - 1 deploy N.
 N_ONLY=""
-case $SCOPE in rotations | signals | incidents | delivery | rolls) N_ONLY=1 ;; esac
+case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
+# The rolls scope (P16-TSK-005) as well.
+[ "$SCOPE" != rolls ] || N_ONLY=1
 # The platform scopes' API audit log (Q12): only they write one.
 AUDITED=""
 case $SCOPE in signals | incidents) AUDITED=1 ;; esac

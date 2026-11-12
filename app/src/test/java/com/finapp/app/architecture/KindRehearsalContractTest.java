@@ -230,7 +230,7 @@ class KindRehearsalContractTest {
     void theRollsAssertWhatTheEntryNames() {
         String rolls = read(ROLLS);
         assertThat(harness).as("a scope of the harness, on release N alone, after N is deployed and smoked")
-                .contains("delivery | rolls) ;;").contains("rotations | signals | incidents | delivery | rolls) N_ONLY=1")
+                .contains("delivery) ;; rolls) ;;").contains("[ \"$SCOPE\" != rolls ] || N_ONLY=1")
                 .contains("if [ \"$SCOPE\" = rolls ]; then\n    # shellcheck source=infra/scripts/kind-rehearsal/rolls.sh\n    . \"$DIR/rolls.sh\"");
         assertThat(harness).as("the other image of each pair loaded into the node by its digest")
                 .contains("load_tagged \"$TRAEFIK_ROLL_REPOSITORY\" \"$TRAEFIK_ROLL_VERSION\" \"$TRAEFIK_ROLL_DIGEST\"")
