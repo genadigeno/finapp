@@ -61,7 +61,7 @@ class FirstRoleEndsSessionsTest {
     void aFirstRoleEndsEverySession() {
         assertThat(assign(RoleName.KYC_REVIEWER)).isEqualTo(IdentityAdministration.RoleGrant.GRANTED);
 
-        assertThat(calls).containsExactly("liveRolesOf", "assign KYC_REVIEWER", "revokeAllFor " + SUBJECT,
+        assertThat(calls).containsExactly("lockForRoleChange", "liveRolesOf", "assign KYC_REVIEWER", "revokeAllFor " + SUBJECT,
                 "audit identity.SessionRevoked", "audit identity.RoleAssigned");
         assertThat(written).filteredOn(record -> record.operation() == IdentityAuditAction.IDENTITY_ROLE_ASSIGNED)
                 .singleElement().satisfies(record -> {
@@ -181,6 +181,11 @@ class FirstRoleEndsSessionsTest {
                 RoleAssignmentStore.class.getClassLoader(), new Class<?>[] {RoleAssignmentStore.class}, (proxy, method, args) -> {
                     assertThat(args[0]).as("%s on the grant's unit of work", method.getName()).isSameAs(UNIT_OF_WORK);
                     switch (method.getName()) {
+                        // P15-TSK-032: the identity's lock, taken before the read, so a revocation of it waits for the grant.
+                        case "lockForRoleChange" -> {
+                            calls.add("lockForRoleChange");
+                            return null;
+                        }
                         case "liveRolesOf" -> {
                             calls.add("liveRolesOf");
                             return Set.copyOf(live);

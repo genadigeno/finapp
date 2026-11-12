@@ -114,6 +114,10 @@ public final class IdentityRiskActions implements IdentityActions {
                     case NOT_ACTIVE -> now(uow, identity.id()) == IdentityStatus.SUSPENDED ? ActionOutcome.ALREADY
                             : ActionOutcome.REFUSED;
                     case NOT_FOUND, SELF -> ActionOutcome.REFUSED;
+                    // Unreachable: the last-administrator rule binds an administrator's suspension alone (P15-TSK-032). A
+                    // compromised last administrator must still be suspendable by risk: security wins over availability here.
+                    case LAST_ROLE_GRANTER -> throw new IllegalStateException(
+                            "risk's suspension is not bound by the last-administrator rule");
                 }))
                 .orElse(ActionOutcome.REFUSED));
     }

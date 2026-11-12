@@ -88,12 +88,21 @@ public final class RefusedActs {
     /** A declared provider's, a settlement source's or a rail's code: {@code FxProviderDeclaration}'s and {@code RailId}'s shape. */
     private static final Pattern A_DECLARED_CODE = Pattern.compile("[a-z][a-z0-9-]{0,31}");
 
+    /**
+     * A role, as the role doors' path names it (`P15-TSK-032`): exactly one of {@link com.finapp.identity.RoleName}'s names, a
+     * closed set read from the code, so a refused revocation says which role and nothing a caller typed beside it.
+     */
+    private static final Pattern A_ROLE = Pattern.compile(java.util.Arrays.stream(com.finapp.identity.RoleName.values())
+            .map(role -> Pattern.quote(role.name()))
+            .collect(Collectors.joining("|")));
+
     /** A route's variables that name a code, by the name the route gives them, and the only shape each is written in. */
     private static final Map<String, Pattern> NAMED_CODES = Map.of(
             "pair", Pattern.compile("[A-Z]{3}-[A-Z]{3}"),
             "corridor", Pattern.compile("[A-Z]{3}-[A-Z]{3}-[A-Z]{2}"),
             "code", A_DECLARED_CODE,
-            "rail", A_DECLARED_CODE);
+            "rail", A_DECLARED_CODE,
+            "role", A_ROLE);
 
     @NonNull private final TransactionTemplate transactions;
     @NonNull private final DataSource dataSource;

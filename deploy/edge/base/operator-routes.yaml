@@ -9,6 +9,7 @@ http:
         (Method(`POST`) && Path(`/v1/authentications`))
         || (Method(`POST`) && Path(`/v1/authentications/mfa`))
         || (Method(`POST`) && PathRegexp(`^/v1/identities/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/roles$`))
+        || (Method(`DELETE`) && PathRegexp(`^/v1/identities/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/roles/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
         || (Method(`DELETE`) && PathRegexp(`^/v1/identities/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/suspension$`))
         || (Method(`POST`) && PathRegexp(`^/v1/identities/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/suspension$`))
         || (Method(`GET`) && PathRegexp(`^/v1/kyc/cases/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))

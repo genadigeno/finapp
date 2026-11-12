@@ -75,6 +75,9 @@ class IdentityAdministrationDatabaseTest {
     private static final String REINSTATEMENT_REASON =
             "{\"reason\":\"incident closed, ticket OPS-9921\"}";
 
+    /** A role's revocation (`P15-TSK-032`): its own ticket, so no other record can satisfy an assertion about it. */
+    private static final String REVOCATION_REASON = "{\"reason\":\"the incident closed, ticket OPS-8812\"}";
+
     private static final String PASSWORD = "a-long-enough-password-for-administration";
 
     @LocalServerPort private int port;
@@ -146,6 +149,9 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         String session = givenASessionFor(admin);
         IdentityId subject = givenAnIdentity();
+        // ADMINISTRATOR needs its holder to have enrolled a factor (P15-TSK-032, item 42 (e)).
+        assertThat(post(rolesOf(subject), session, adminRole()).statusCode()).as("no factor yet").isEqualTo(409);
+        givenAConfirmedFactorFor(subject);
 
         assertThat(post(rolesOf(subject), session, adminRole()).statusCode()).isEqualTo(204);
         assertThat(auditOf("identity.RoleAssigned", subject, admin)).contains("OPS-4417");
@@ -416,7 +422,7 @@ class IdentityAdministrationDatabaseTest {
     void aFirstRoleEndsTheGranteesSessions() throws Exception {
         IdentityId admin = givenAnAdministrator();
         IdentityId subject = givenAnIdentity();
-        String asACustomer = givenASessionFor(subject);
+        String asACustomer = givenAPasswordSessionFor(subject);
         String steppedUp = givenASessionAt(subject, AssuranceLevel.MULTI_FACTOR);
         assertThat(get("/sessions", asACustomer).statusCode()).as("precondition: the customer's session serves").isEqualTo(200);
         assertThat(get("/sessions", steppedUp).statusCode()).as("precondition: so does the stepped-up one").isEqualTo(200);
@@ -450,6 +456,237 @@ class IdentityAdministrationDatabaseTest {
         assertThat(get("/sessions", asStaff).statusCode()).as("a second role and a retry end nothing").isEqualTo(200);
         assertThat(summariesOf("identity.RoleAssigned", subject, admin)).contains("granted=ACCOUNTANT, firstRole=false")
                 .contains("granted=KYC_REVIEWER, firstRole=true, sessionsRevoked=0");
+    }
+
+    // -----------------------------------------------------------------
+    // A role taken away, and the last one ending what the holder held (P15-TSK-032)
+
+    @Test
+    @DisplayName("P15-TSK-032: the last role revoked ends every session its former holder held, on the very next request, both"
+            + " records written; a retry answers the same and records and ends nothing more; a session issued after serves")
+    void theLastRoleRevokedEndsTheSessions() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        String steppedUp = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
+        IdentityId subject = givenAnIdentity();
+        assertThat(post(rolesOf(subject), givenASessionFor(admin), reviewerRole()).statusCode()).isEqualTo(204);
+        String asStaff = givenASessionAt(subject, AssuranceLevel.MULTI_FACTOR);
+        assertThat(get("/sessions", asStaff).statusCode()).as("precondition: the staff session serves").isEqualTo(200);
+
+        assertThat(delete(roleOf(subject, "KYC_REVIEWER"), steppedUp, REVOCATION_REASON).statusCode()).isEqualTo(204);
+
+        // The SAME token: issued at a door that knew the identity was staff, and not bound to the surface that issued it.
+        assertThat(get("/sessions", asStaff).statusCode()).as("the staff session ended at the last role's revocation").isEqualTo(401);
+        assertThat(liveHoldingsOf(subject)).isZero();
+        assertThat(auditOf("identity.RoleAssigned", subject, admin)).as("the reason on the record").contains("OPS-8812");
+        assertThat(summariesOf("identity.RoleAssigned", subject, admin))
+                .contains("revoked=KYC_REVIEWER, lastRole=true, sessionsRevoked=1");
+        assertThat(summariesOf("identity.SessionRevoked", subject, admin)).as("the administrator decided it")
+                .contains("sessionsRevoked=1");
+
+        long recorded = auditCountOf("identity.RoleAssigned", subject);
+        String asACustomer = givenASessionFor(subject);
+        assertThat(delete(roleOf(subject, "KYC_REVIEWER"), steppedUp, REVOCATION_REASON).statusCode())
+                .as("a retry after a lost answer must not look like a failure").isEqualTo(204);
+        assertThat(auditCountOf("identity.RoleAssigned", subject)).as("and records nothing more").isEqualTo(recorded);
+        assertThat(get("/sessions", asACustomer).statusCode()).as("nor ends the customer's session issued since").isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("P15-TSK-032: a role revoked beside another ends nothing - the sessions serve what the identity still is")
+    void aRoleRevokedBesideAnotherEndsNoSession() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        String steppedUp = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
+        IdentityId subject = givenAnIdentity();
+        assertThat(post(rolesOf(subject), givenASessionFor(admin), reviewerRole()).statusCode()).isEqualTo(204);
+        assertThat(post(rolesOf(subject), givenASessionFor(admin), "{\"role\":\"ACCOUNTANT\",\"reason\":\"OPS-6203 finance desk\"}")
+                .statusCode()).isEqualTo(204);
+        String asStaff = givenASessionFor(subject);
+
+        assertThat(delete(roleOf(subject, "ACCOUNTANT"), steppedUp, REVOCATION_REASON).statusCode()).isEqualTo(204);
+
+        assertThat(get("/sessions", asStaff).statusCode()).isEqualTo(200);
+        assertThat(liveHoldingsOf(subject)).isEqualTo(1);
+        assertThat(summariesOf("identity.RoleAssigned", subject, admin)).contains("revoked=ACCOUNTANT, lastRole=false");
+    }
+
+    @Test
+    @DisplayName("P15-TSK-032: the revocation steps up, refuses oneself, names nobody 404 and an unknown role 400, refuses a caller"
+            + " with no role, and leaves the role held through every refusal")
+    void theRevocationsRefusals() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        String steppedUp = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
+        IdentityId subject = givenAnIdentity();
+        assertThat(post(rolesOf(subject), givenASessionFor(admin), reviewerRole()).statusCode()).isEqualTo(204);
+
+        String onAPassword = givenAPasswordSessionFor(admin);
+        HttpResponse<String> revocationOnAPassword = delete(roleOf(subject, "KYC_REVIEWER"), onAPassword, REVOCATION_REASON);
+        assertThat(revocationOnAPassword.statusCode()).as("not a stolen password's act").isEqualTo(403);
+        assertThat(revocationOnAPassword.body()).contains("identity.AssuranceRequired");
+        // Item 42 (e), decided: nor a grant, a suspension or a reinstatement.
+        assertThat(post(rolesOf(subject), onAPassword, "{\"role\":\"ACCOUNTANT\",\"reason\":\"OPS-6203 finance desk\"}").body())
+                .contains("identity.AssuranceRequired");
+        assertThat(post(suspensionOf(subject), onAPassword, REASON).body()).contains("identity.AssuranceRequired");
+        assertThat(delete(suspensionOf(subject), onAPassword, REINSTATEMENT_REASON).body()).contains("identity.AssuranceRequired");
+        assertThat(statusOf(subject)).isEqualTo("ACTIVE");
+        assertThat(delete(roleOf(admin, "ADMINISTRATOR"), steppedUp, REVOCATION_REASON).statusCode())
+                .as("every administrative record names two parties").isEqualTo(422);
+        assertThat(delete(roleOf(IdentityId.of(IDS.next()), "KYC_REVIEWER"), steppedUp, REVOCATION_REASON).statusCode())
+                .isEqualTo(404);
+        HttpResponse<String> unknownRole = delete("/identities/" + subject.value() + "/roles/SUPERUSER", steppedUp, REVOCATION_REASON);
+        assertThat(unknownRole.statusCode()).isEqualTo(400);
+        assertThat(unknownRole.body()).doesNotContain("api.InternalError");
+        assertThat(delete(roleOf(subject, "KYC_REVIEWER"), steppedUp, "{}").statusCode()).as("a reason is required").isEqualTo(422);
+
+        IdentityId caller = givenAnIdentity();
+        long before = denialsFor(caller);
+        assertThat(delete(roleOf(subject, "KYC_REVIEWER"), givenASessionAt(caller, AssuranceLevel.MULTI_FACTOR), REVOCATION_REASON)
+                .statusCode()).as("a valid session is not a role").isEqualTo(403);
+        assertThat(denialsFor(caller) - before).isEqualTo(1);
+
+        assertThat(liveHoldingsOf(subject)).isEqualTo(1);
+        assertThat(liveHoldingsOf(admin)).isEqualTo(1);
+    }
+
+    /**
+     * Two revocations of one identity's last two roles at once, through the domain on two connections: the identity's lock makes
+     * the second wait and read the first's revocation, so the sessions end exactly once - by the second, the one that took the
+     * last role - and the records say so. Without the lock each would read the other's role still live and neither would end
+     * them. Deterministic, as {@link #aGrantAndARevocationOfOneIdentitySerialise} is: the first is held open after its
+     * revocation, the second is seen waiting behind it, and only then does the first commit - so the two always overlap.
+     */
+    @Test
+    @DisplayName("P15-TSK-032: two revocations of an identity's last two roles at once - both land, and the sessions end once, by the"
+            + " one that took the last")
+    void twoRevocationsOfTheLastTwoRolesEndTheSessionsOnce() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        IdentityId subject = givenAnIdentity();
+        grantBypassingTheRule(subject, admin, RoleName.KYC_REVIEWER);
+        grantBypassingTheRule(subject, admin, RoleName.ACCOUNTANT);
+        String asStaff = givenASessionFor(subject);
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        CorrelationContext.Scope correlation =
+                CorrelationContext.enter(Correlation.startingWith(CorrelationId.of(UUID.randomUUID().toString())));
+        SecurityContext.Scope actor = SecurityContext.enter(
+                new com.finapp.platform.security.Actor(admin.value().toString(), com.finapp.platform.security.ActorType.EMPLOYEE));
+        try (Connection first = DatabaseRoles.application()) {
+            first.setAutoCommit(false);
+            assertThat(administration.revokeRole(first, subject, RoleName.KYC_REVIEWER, admin, "the incident closed, OPS-8812"))
+                    .isEqualTo(IdentityAdministration.RoleRevocation.REVOKED);
+
+            java.util.concurrent.Future<IdentityAdministration.RoleRevocation> second =
+                    pool.submit(() -> revokeAsTheDoorDoes(null, subject, RoleName.ACCOUNTANT, admin));
+            awaitBlockedBehind(first, second);
+            first.commit();
+
+            assertThat(second.get(30, java.util.concurrent.TimeUnit.SECONDS))
+                    .isEqualTo(IdentityAdministration.RoleRevocation.REVOKED);
+        } finally {
+            actor.close();
+            correlation.close();
+            pool.shutdownNow();
+        }
+
+        assertThat(liveHoldingsOf(subject)).isZero();
+        assertThat(get("/sessions", asStaff).statusCode()).isEqualTo(401);
+        String summaries = summariesOf("identity.RoleAssigned", subject, admin);
+        assertThat(summaries).containsOnlyOnce("lastRole=true, sessionsRevoked=1").containsOnlyOnce("lastRole=false");
+    }
+
+    /**
+     * A grant and a revocation of one identity at once (`P15-TSK-032`): the grant holds the identity's lock, uncommitted; the
+     * revocation of the identity's other role waits for it, then reads the granted role and so ends nothing - the identity is
+     * staff throughout. The store's half is {@code RoleAssignmentConcurrencyDatabaseTest#theIdentitysLockSerialisesItsRoleChanges}.
+     */
+    @Test
+    @DisplayName("P15-TSK-032: a revocation racing a grant to the same identity waits for the grant, reads its role, and ends nothing")
+    void aGrantAndARevocationOfOneIdentitySerialise() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        IdentityId subject = givenAnIdentity();
+        grantBypassingTheRule(subject, admin, RoleName.KYC_REVIEWER);
+        String asStaff = givenASessionFor(subject);
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        CorrelationContext.Scope correlation =
+                CorrelationContext.enter(Correlation.startingWith(CorrelationId.of(UUID.randomUUID().toString())));
+        SecurityContext.Scope actor = SecurityContext.enter(
+                new com.finapp.platform.security.Actor(admin.value().toString(), com.finapp.platform.security.ActorType.EMPLOYEE));
+        try (Connection granting = DatabaseRoles.application()) {
+            granting.setAutoCommit(false);
+            assertThat(administration.assignRole(granting, subject, RoleName.ACCOUNTANT, admin, "OPS-6203 finance desk"))
+                    .isEqualTo(IdentityAdministration.RoleGrant.GRANTED);
+
+            java.util.concurrent.Future<IdentityAdministration.RoleRevocation> revoking =
+                    pool.submit(() -> revokeAsTheDoorDoes(null, subject, RoleName.KYC_REVIEWER, admin));
+            awaitBlockedBehind(granting, revoking);
+            granting.commit();
+
+            assertThat(revoking.get(30, java.util.concurrent.TimeUnit.SECONDS))
+                    .isEqualTo(IdentityAdministration.RoleRevocation.REVOKED);
+        } finally {
+            actor.close();
+            correlation.close();
+            pool.shutdownNow();
+        }
+
+        assertThat(summariesOf("identity.RoleAssigned", subject, admin))
+                .contains("granted=ACCOUNTANT, firstRole=false").contains("revoked=KYC_REVIEWER, lastRole=false");
+        assertThat(get("/sessions", asStaff).statusCode()).as("staff throughout: nothing ended").isEqualTo(200);
+        assertThat(liveHoldingsOf(subject)).isEqualTo(1);
+    }
+
+    /** The door's domain call on a connection of its own, under the scopes the door runs in, committed. */
+    private IdentityAdministration.RoleRevocation revokeAsTheDoorDoes(
+            java.util.concurrent.CyclicBarrier start, IdentityId subject, RoleName role, IdentityId admin) throws Exception {
+        CorrelationContext.Scope correlation =
+                CorrelationContext.enter(Correlation.startingWith(CorrelationId.of(UUID.randomUUID().toString())));
+        SecurityContext.Scope actor = SecurityContext.enter(
+                new com.finapp.platform.security.Actor(admin.value().toString(), com.finapp.platform.security.ActorType.EMPLOYEE));
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            if (start != null) {
+                start.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            }
+            IdentityAdministration.RoleRevocation outcome =
+                    administration.revokeRole(app, subject, role, admin, "the incident closed, OPS-8812");
+            app.commit();
+            return outcome;
+        } finally {
+            actor.close();
+            correlation.close();
+        }
+    }
+
+    /** A session active and waiting on a lock {@code holder}'s session holds, awaited about 30 s. */
+    private static void awaitBlockedBehind(Connection holder, java.util.concurrent.Future<?> racer) throws Exception {
+        int blocker;
+        try (PreparedStatement select = holder.prepareStatement("SELECT pg_backend_pid()");
+                ResultSet row = select.executeQuery()) {
+            row.next();
+            blocker = row.getInt(1);
+        }
+        for (int attempt = 0; attempt < 1500; attempt++) {
+            if (racer.isDone()) {
+                throw new AssertionError("the racer finished while the holder held its lock: " + racer.get());
+            }
+            try (Connection observer = DatabaseRoles.application();
+                    PreparedStatement select = observer.prepareStatement("SELECT count(*) FROM pg_stat_activity"
+                            + " WHERE ? = ANY (pg_blocking_pids(pid)) AND state = 'active' AND wait_event_type = 'Lock'")) {
+                select.setInt(1, blocker);
+                try (ResultSet row = select.executeQuery()) {
+                    row.next();
+                    if (row.getLong(1) >= 1) {
+                        return;
+                    }
+                }
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("no session waiting on a lock behind session " + blocker + " within about 30 s");
+    }
+
+    private static String roleOf(IdentityId subject, String role) {
+        return "/identities/" + subject.value() + "/roles/" + role;
     }
 
     // -----------------------------------------------------------------
@@ -672,6 +909,7 @@ class IdentityAdministrationDatabaseTest {
     void aRepeatedGrantIsSuccess() throws Exception {
         String session = givenASessionFor(givenAnAdministrator());
         IdentityId subject = givenAnIdentity();
+        givenAConfirmedFactorFor(subject); // ADMINISTRATOR needs one (P15-TSK-032)
 
         assertThat(post(rolesOf(subject), session, adminRole()).statusCode()).isEqualTo(204);
         assertThat(post(rolesOf(subject), session, adminRole()).statusCode())
@@ -721,7 +959,7 @@ class IdentityAdministrationDatabaseTest {
         grantBypassingTheRule(notNamed, admin, RoleName.KYC_REVIEWER);
         String session = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
 
-        assertThat(get("/operator/access-review/factorless-holdings", givenASessionFor(admin)).statusCode())
+        assertThat(get("/operator/access-review/factorless-holdings", givenAPasswordSessionFor(admin)).statusCode())
                 .as("a list of money-role holders with no second factor is not served on a password alone")
                 .isEqualTo(403);
         String before = get("/operator/access-review/factorless-holdings", session).body();
@@ -997,7 +1235,16 @@ class IdentityAdministrationDatabaseTest {
         return admin;
     }
 
+    /**
+     * A {@code MULTI_FACTOR} session (`P15-TSK-032`): every administrative door here steps up since item 42 (e), so a session
+     * that should reach a door's permission check - or be refused by it - has stepped up. A customer's plain session, and one
+     * a step-up refuses, is {@link #givenAPasswordSessionFor}'s.
+     */
     private String givenASessionFor(IdentityId identity) throws SQLException {
+        return givenASessionAt(identity, AssuranceLevel.MULTI_FACTOR);
+    }
+
+    private String givenAPasswordSessionFor(IdentityId identity) throws SQLException {
         return givenASessionAt(identity, AssuranceLevel.PASSWORD);
     }
 

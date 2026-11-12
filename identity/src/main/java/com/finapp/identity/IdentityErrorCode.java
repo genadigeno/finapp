@@ -66,6 +66,22 @@ public enum IdentityErrorCode implements ErrorCode {
             "This role cannot be granted until its holder has enrolled a second factor."),
 
     /**
+     * A revocation or an administrator's suspension would leave no {@code ACTIVE} identity holding a role that can grant
+     * roles (`P15-TSK-032`).
+     *
+     * <p>Granting a role needs {@code ROLE_ASSIGN}, and only a role holding it can give it back: with nobody left holding it,
+     * nobody can grant, revoke, suspend or reinstate through the platform again, and the remedy is the out-of-band database
+     * step of {@code README.md} §5e. <strong>409</strong>: the request is well-formed and the administrator may make it; it
+     * conflicts with who holds the role now, and repeating it changes nothing until a second person is granted the role.
+     * Nothing was revoked or suspended. Read after every such holding is locked, so two administrators revoking or suspending
+     * each other at once are told this once, never both acted on. Risk's automated suspension is not bound by it.
+     */
+    LAST_ROLE_GRANTER(
+            "identity.LastRoleGranter",
+            409,
+            "This would leave no active identity that can grant roles."),
+
+    /**
      * A verification would give the identity a second verified contact channel of that kind
      * (`X-TSK-004`, {@code INV-IDN-06}).
      *

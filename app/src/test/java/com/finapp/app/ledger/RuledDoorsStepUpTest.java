@@ -25,7 +25,8 @@ import org.junit.jupiter.api.Test;
 /**
  * The access review's two step-up rulings, on the doors (`P15-TSK-039`; {@code PRIVILEGED_ACCESS_REVIEW.md} §6): a payout
  * destination's proposal and approval, and Phase 9's approvals, restarts and reversals, need {@code MULTI_FACTOR}, as does the
- * read that lists who holds a money role with no factor. The real
+ * read that lists who holds a money role with no factor - and, since `P15-TSK-032` (its Q1 and item 42 (e), decided), the four
+ * identity administration doors: a role's grant and revocation, a suspension and a reinstatement. The real
  * interceptor over each real handler, as {@code ApprovalAssuranceTest} does. A real session row at the real doors is the
  * endpoint database suites', owed.
  */
@@ -52,7 +53,13 @@ class RuledDoorsStepUpTest {
                 door(CorridorAdministrationController.class, "approveCorridorEnableRequest", RoleName.FX_CONTROLLER),
                 door(FxTradeReversalController.class, "proposeFxTradeReversal", RoleName.LEDGER_OPERATOR),
                 door(FxTradeReversalController.class, "approveFxTradeReversal", RoleName.LEDGER_OPERATOR),
-                door(AccessReviewController.class, "listFactorlessHoldings", RoleName.ADMINISTRATOR));
+                door(AccessReviewController.class, "listFactorlessHoldings", RoleName.ADMINISTRATOR),
+                // P15-TSK-032: a role's revocation (the design's Q1, decided), and - item 42 (e), decided - the grant, the
+                // suspension and the reinstatement: no administrative act on a password alone.
+                door(com.finapp.app.administration.IdentityAdministrationController.class, "revokeRole", RoleName.ADMINISTRATOR),
+                door(com.finapp.app.administration.IdentityAdministrationController.class, "assignRole", RoleName.ADMINISTRATOR),
+                door(com.finapp.app.administration.IdentityAdministrationController.class, "suspendIdentity", RoleName.ADMINISTRATOR),
+                door(com.finapp.app.administration.IdentityAdministrationController.class, "reinstateIdentity", RoleName.ADMINISTRATOR));
     }
 
     @Test

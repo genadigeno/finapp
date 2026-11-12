@@ -25,6 +25,47 @@ public interface RoleAssignmentStore<T> {
     Set<RoleName> liveRolesOf(T unitOfWork, IdentityId identityId);
 
     /**
+     * Takes the lock every change to an identity's roles takes first (`P15-TSK-032`): its row in {@code identity.identity},
+     * {@code FOR NO KEY UPDATE}, until the caller's transaction ends. A grant and a revocation of one identity therefore never
+     * interleave: the second waits for the first to commit, and its next statement, under {@code READ COMMITTED}, reads the
+     * roles the first left. Without it a grant reading a role a concurrent revocation is removing would call its own role a
+     * second one, while the revocation, not seeing the uncommitted grant, would call the removed role the last - and two
+     * revocations of an identity's last two roles would each see the other's role still live, and neither end the sessions.
+     *
+     * <p>{@code NO KEY UPDATE}, not {@code UPDATE}: a session's insert, whose foreign key takes {@code KEY SHARE} on the row, is
+     * not held back by a role change, only by a bulk session revocation's own {@code FOR UPDATE} ({@link
+     * SessionStore#revokeAllFor}), as before. A suspension's status write takes {@code NO KEY UPDATE} too, so it and a role
+     * change of the same identity serialise as well. An identity that does not exist locks nothing; the caller has read it.
+     * Readers that decide nothing - the interceptor, the public doors - take no lock.
+     */
+    void lockForRoleChange(T unitOfWork, IdentityId identityId);
+
+    /**
+     * Locks every live holding of {@code roles}, each row {@code FOR UPDATE} until the caller's transaction ends, in the primary
+     * key's order (`P15-TSK-032`): the lock a revocation of a granting role and an administrator's suspension of a holder take
+     * before they count who else can grant roles, the one lock that spans identities. Two of them lock the same rows in the same
+     * order, so they never deadlock on them: the second waits for the first to commit.
+     *
+     * <p><strong>It reads nothing a caller decides by.</strong> The statement that waited answers from the snapshot it began
+     * with: PostgreSQL re-checks only the rows another transaction updated, so a holder's status joined to it would be the
+     * status before a suspension that committed while it waited. The count is {@link #activeHoldingsOf}, a statement of its
+     * own taken after this one returns.
+     */
+    void lockHoldingsOf(T unitOfWork, Set<RoleName> roles);
+
+    /**
+     * Every live holding of {@code roles} whose identity is {@code ACTIVE}, read by a statement of its own (`P15-TSK-032`). After
+     * {@link #lockHoldingsOf}, under {@code READ COMMITTED}, it sees every revocation and suspension that committed while the
+     * lock waited, and none can commit after it until the caller's transaction ends: each of them takes the same lock first.
+     * A grant committed later is not seen, which errs towards "last", the refusing side; risk's automated suspension takes no
+     * such lock (it is not bound by the rule).
+     */
+    Set<Holding> activeHoldingsOf(T unitOfWork, Set<RoleName> roles);
+
+    /** One live holding: who, which role. */
+    record Holding(IdentityId identityId, RoleName role) {}
+
+    /**
      * The identity signing in as {@code login}, if it holds a live role now (`P15-TSK-042`): one statement, whatever the
      * identifier names, so an unknown identifier, a customer's and a role-holder's cost the same read.
      *
@@ -63,7 +104,8 @@ public interface RoleAssignmentStore<T> {
      * Revokes a role.
      *
      * <p>Conditional on the assignment still being live, and the row count is the outcome — so two
-     * instances revoking at once produce one transition and one audit record.
+     * instances revoking at once produce one transition and one audit record. The revocation door takes
+     * {@link #lockForRoleChange} first, so its decision and this write see the same rows.
      *
      * <p>The row is <strong>marked, never deleted</strong>: the application role holds no
      * {@code DELETE}, and a role somebody held for a month is a fact about the past that an

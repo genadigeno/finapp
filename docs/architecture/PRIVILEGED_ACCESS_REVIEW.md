@@ -34,7 +34,10 @@ enters the decision. A **first** role - the identity held no live role - ends ev
 grant's own transaction, so a session a customer stepped up from the internet never serves a member of staff: the grantee
 signs in again on the operator surface (`P15-TSK-043`; `FirstRoleEndsSessionsTest`, `IdentityAdministrationDatabaseTest`,
 owed). A further role granted mid-session is honoured on the next request; a role revoked mid-session stops working on the
-next request, as `INV-IDN-03` requires, and ends no session: the identity's sessions then serve what it is. A role holder acting on their own wallet, payment or loan
+next request, as `INV-IDN-03` requires. A role revoked beside another ends no session: the identity's sessions then serve what
+it is, staff. The **last** live role revoked ends every session the identity holds, in the revocation's own transaction, so a
+session issued at the operator surface never serves a person who is staff no more: they sign in again as a customer
+(`P15-TSK-032`; `LastRoleEndsSessionsTest`, `IdentityAdministrationDatabaseTest`, owed). A role holder acting on their own wallet, payment or loan
 application is a customer in that act. Operator acts recorded before `P15-TSK-021` read `CUSTOMER` and stay as written
 (history is append-only; the `*_by_type` columns are frozen by trigger). An idempotency scope keys a person once,
 whatever population a request types them in (`Actor.keyedType`), so a retry crossing a role change or the release that
@@ -179,8 +182,9 @@ credential, a channel's value or a factor.
 
 ## 6. Step-up and refused attempts
 
-36 handlers declare `@RequiresAssurance(MULTI_FACTOR)`, every one on the method: Phase 13's risk doors, Phase 14's
-accounting, ledger and write-off approvals, the dead-letter doors, the rulings below and §5's check. About thirty operations demand
+40 handlers declare `@RequiresAssurance(MULTI_FACTOR)`, every one on the method: Phase 13's risk doors, Phase 14's
+accounting, ledger and write-off approvals, the dead-letter doors, the rulings below, §5's check and the four identity
+administration doors - a role's grant and revocation, a suspension and a reinstatement (`P15-TSK-032`). About thirty operations demand
 the step-up themselves - a bank-account registration, a withdrawal, a wallet payment, the lending and BNPL doors - some
 only when the caller has a factor, by one component (`ConditionalStepUp`). Not every four-eyes door steps up: a break's
 resolution and the mapping activation are `P14-REM-001`'s and `P14-REM-002`'s. **Every refused privileged
@@ -197,7 +201,8 @@ refusal whose record cannot be written is answered `500`, never without its reco
    move or redirect money that is not the operator's. **Built:** a grant of a role holding any of those three is refused
    `409 identity.FactorRequiredForRole` until the subject has a confirmed factor (`RoleGrantNeedsAFactorTest`), and the
    destination's proposal and approval declare `MULTI_FACTOR` unconditionally. Today's roles are `MERCHANT_ADMINISTRATOR`
-   and `LEDGER_OPERATOR`; the rule reads the grants, so a permission moved to another role takes it along. A holding
+   and `LEDGER_OPERATOR`, and since `P15-TSK-032` `ADMINISTRATOR` (it grants roles and suspends identities: see the third
+   ruling below); the rule reads the grants, so a permission moved to another role takes it along. A holding
    from before the rule is **named, not revoked**: §5 question 5. Until it is resolved, such a holder still cannot act
    on a destination (no factor, no `MULTI_FACTOR` session), and can still pay a merchant out on a password: the review
    closes that, not a migration.
@@ -208,10 +213,23 @@ refusal whose record cannot be written is answered `500`, never without its reco
    one person's act on the session they hold: stopping is the fail-safe direction and a restart still needs a second
    person, stepped up. An `FX_CONTROLLER` with no enrolled factor, who could approve on a password until now, is refused
    `403 identity.AssuranceRequired` at these doors, and §5's check does not name that role: enrolment is self-service
-   (`POST /v1/me/mfa`). `RuledDoorsStepUpTest` holds the eight doors and §5's check; the permission register pins them
-   (`RoutePermissionRegisterTest#everyRuledRouteDeclaresMultiFactor`).
+   (`POST /v1/me/mfa`). `RuledDoorsStepUpTest` holds the eight doors, §5's check and the third ruling's four doors; the
+   permission register pins them (`RoutePermissionRegisterTest#everyRuledRouteDeclaresMultiFactor`).
 
-**Declared doors judge the level before the permission**, as every declared door does: at those nine, a caller on a
+**A third ruling** (`P15-TSK-032`; its design's Q1 and `THREAT_MODEL.md` §6 item 42 (e), decided under the owner's standing
+word, 2026-11-12): **no identity administration on a password alone.** A role's grant (`POST /v1/identities/{id}/roles`), its
+revocation (`DELETE /v1/identities/{id}/roles/{role}`), a suspension (`POST /v1/identities/{id}/suspension`) and a reinstatement
+(`DELETE` on it) declare `MULTI_FACTOR`, and `ADMINISTRATOR` joins the roles that need an enrolled factor before they are
+granted. Both halves are needed: a password alone may enrol an identity's *first* factor (`MfaEnrolmentService.begin`; a
+second one needs a `MULTI_FACTOR` session once one is confirmed), so a step-up rule alone would let a factorless
+administrator's stolen password enrol the thief's factor and pass every one of these doors. **The tension, recorded
+knowingly**: the second ruling keeps "what stops a change" quick - a kill switch's stop needs no step-up - and a suspension
+and a revocation are the stop direction for a person's access. They step up anyway: each also takes access away from
+someone else, so a stolen password could suspend every other administrator, and for an administrator with a factor the
+step-up costs seconds. A factorless administrator from before the rule cannot act at these doors until they enrol, which is
+self-service, and §5's check names them.
+
+**Declared doors judge the level before the permission**, as every declared door does: at those thirteen, a caller on a
 password session is told to step up whether or not they hold the permission. It denies a stolen password a way to learn
 which roles the account holds. The conditional copies moved into `ConditionalStepUp` kept their call sites, so what a
 refused caller learns there, and which refusal is recorded first, did not change.

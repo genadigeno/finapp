@@ -149,6 +149,22 @@ suspension does. The reason is the grant's, on `identity.RoleAssigned`. Both are
 revocation before the grant's record, so a grant on the record always ended what it had to. `PRIVILEGED_ACCESS_REVIEW.md` §5
 question 6 reads `firstRole=true`. A grant recorded before this release says `granted=<ROLE>` alone.
 
+**A revocation is `identity.RoleAssigned` too, and the last role ends the sessions** (`P15-TSK-032`; `DELETE
+/v1/identities/{id}/roles/{role}`, `ROLE_ASSIGN` on a `MULTI_FACTOR` session). The action's description already covered a role
+removed; no new action was registered. Its summary is `revoked=<ROLE>, lastRole=true, sessionsRevoked=<n>` when the role was the
+identity's last live one, and `revoked=<ROLE>, lastRole=false` otherwise; for a last role the revocation also writes its own
+`identity.SessionRevoked` (`sessionsRevoked=<n>`, the identity its target, the administrator its actor) when `n` > 0, before the
+revocation's record, both in the revocation's transaction, so a revocation on the record always ended what it had to. The reason is
+required and is the revocation's. The actor is the administrator, the target the identity, the correlation the request's, the
+outcome `SUCCEEDED`; the record is written only when a live row was marked, so a revocation of a role not held - a retry after a
+lost answer among them - records nothing. Its refusals are recorded as the grant's are: a missing permission as
+`identity.AuthorizationDenied`, a session below `MULTI_FACTOR` as `identity.StepUpRefused`, and every other refusal the door
+answers - oneself, nobody, the last identity able to grant roles (`identity.LastRoleGranter`) - as `door.ActRefused`, the door
+declaring `@RecordsRefusals`. A revocation recorded before this release (none was made through a door) says `revoked=<ROLE>` alone.
+Since the same task's item 42 (d) and (e), the suspension and reinstatement doors declare `@RecordsRefusals` too and step up
+(`MULTI_FACTOR`): an administrator's suspension refused because it would take the last identity able to grant roles writes no
+`identity.IdentitySuspended`, only that door's `door.ActRefused`; risk's automated suspension is not bound by the rule.
+
 **Why MFA enrolment is two actions rather than one** (`P1-TSK-017`). *Started* and *confirmed* are
 different facts about the account: the first says somebody was offered a secret, the second says
 somebody **proved they hold it**, and only the second changes what can authenticate. Recording only
