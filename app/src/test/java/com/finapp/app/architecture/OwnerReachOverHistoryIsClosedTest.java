@@ -145,8 +145,10 @@ class OwnerReachOverHistoryIsClosedTest {
     @DisplayName("the walk read the whole chain: every module with migrations, the tables and triggers the recount found")
     void theGuardReadTheChain() {
         assertThat(modulesRead).as("the modules with migrations").isGreaterThanOrEqualTo(21);
-        assertThat(TABLES).as("reconciliation's 33 tables and settlement's 13 at the least").hasSizeGreaterThanOrEqualTo(331);
-        assertThat(TABLES.stream().filter(table -> table.startsWith("reconciliation."))).hasSize(33);
+        assertThat(TABLES).as("reconciliation's 34 tables and settlement's 13 at the least").hasSizeGreaterThanOrEqualTo(331);
+        // 34 since reconciliation V025 (P16-TSK-017): rematch_fault, an operational record updated in place, refusing no DELETE by
+        // trigger and granting the application none, so it adds no table to the TRUNCATE rule below. The recount was 33 before.
+        assertThat(TABLES.stream().filter(table -> table.startsWith("reconciliation."))).hasSize(34);
         assertThat(TABLES.stream().filter(table -> table.startsWith("settlement."))).hasSize(13);
         assertThat(refusing("DELETE")).as("the row triggers refusing DELETE").hasSizeGreaterThanOrEqualTo(259);
         assertThat(FUNCTIONS).as("every function's latest definition").hasSizeGreaterThanOrEqualTo(400);
