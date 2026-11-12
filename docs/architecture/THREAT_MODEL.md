@@ -1940,11 +1940,13 @@ recommended; its parts (d) and (e) were built the same day.**
       procedure written into the incident's record (§11.12), and the same revision synced once more by a reviewed manual sync,
       §11.36's one exception, which runbook §11.4 states.
 
-    *Recommendation*: **(iii)**. N − 1 serves on a schema the failed migration did not touch, so no money is at risk while production
-    waits; (i) still ends at (iii) whenever its fix misses a row; and (ii) widens the migrator's reach over financial data to answer a
-    case that one reviewed, recorded human act answers. Its cost is that production takes no release until a person can reach the
-    data, which is item 31 (e)'s way in. **Decided 2026-11-12** under the owner's standing word ("accept all recommendations", waves G
-    and H): as recommended.
+    *Recommendation*: **(i) and (ii), (i) first**, with (iii) the way back meanwhile. (i) as a build rule: a tightening migration is
+    added `NOT VALID` with its `VALIDATE` in a later release, or its contract marker names the data fix that precedes it in the same
+    release, so a failure on data no environment checked stops appearing in production alone. (ii) as one reviewed SQL file run with a
+    reason and the incident's id, audited, built with the first real environment beside item 31 (e)'s way in; until then a failure (i)
+    did not prevent ends at (iii). **Decided 2026-11-12** under the owner's standing word ("accept all recommendations", waves G and H):
+    as recommended. **Built 2026-11-12**: (i), the build refusing a tightening migration that is neither `NOT VALID` nor marked with the
+    data fix preceding it. (ii) is deferred to the first real environment.
 
 ## 7. Decided against
 
