@@ -96,7 +96,7 @@ jobs:
           echo "java-version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ steps.toolchain.outputs.java-version }}
@@ -149,7 +149,7 @@ jobs:
           echo "java-version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ steps.toolchain.outputs.java-version }}
@@ -257,7 +257,7 @@ jobs:
           echo "java-version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ steps.toolchain.outputs.java-version }}
@@ -385,7 +385,7 @@ jobs:
           echo "java-version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ steps.toolchain.outputs.java-version }}
@@ -428,7 +428,7 @@ jobs:
           echo "java-version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ steps.toolchain.outputs.java-version }}
@@ -515,7 +515,7 @@ jobs:
           echo "java-version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ steps.toolchain.outputs.java-version }}
@@ -587,7 +587,7 @@ jobs:
           echo "java-version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ steps.toolchain.outputs.java-version }}
@@ -672,7 +672,7 @@ jobs:
 
       - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
         if: steps.gate.outputs.run == 'true'
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ steps.toolchain.outputs.java-version }}
@@ -757,7 +757,7 @@ jobs:
 
       - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
         if: steps.gate.outputs.run == 'true'
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ steps.toolchain.outputs.java-version }}
@@ -833,7 +833,7 @@ jobs:
 
       - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
         if: steps.gate.outputs.run == 'true'
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ steps.toolchain.outputs.java-version }}
