@@ -44,8 +44,12 @@ class AlertCatalogueTest {
     private static final String PINS = "infra/scanner-pins.sh";
     private static final String WORKFLOW = ".github/workflows/ci.yml";
 
-    /** The rule files this task wrote whole: each states its aggregation per rule. */
-    private static final Set<String> STATED_FILES = Set.of("slo.yml", "correctness.yml", "flows.yml", "platform.yml");
+    /** The rule files this task wrote whole, and the telemetry stack's own (`P15-TSK-032`): each states its aggregation per rule. */
+    private static final Set<String> STATED_FILES = Set.of("slo.yml", "correctness.yml", "flows.yml", "platform.yml", "telemetry.yml");
+
+    /** Where kind's Prometheus loads every rule file from (`P15-TSK-032`): a byte-for-byte copy, kustomize reading no file outside it. */
+    private static final String KIND_RULES = "deploy/observability/overlays/kind/rules/";
+    private static final String KIND_KUSTOMIZATION = "deploy/observability/overlays/kind/kustomization.yaml";
 
     private static final Pattern SECTIONS =
             Pattern.compile("OPERATIONS_RUNBOOK\\.md,? sections? ([0-9]+(?:\\.[0-9]+)*(?:(?:, | and )[0-9]+(?:\\.[0-9]+)*)*)");
@@ -241,6 +245,36 @@ class AlertCatalogueTest {
         }
         assertThat(RepositoryPaths.read(DEPLOYED_ALERTMANAGER)).isEqualTo(RepositoryPaths.read(COMPOSE_ALERTMANAGER));
         assertThat(RepositoryPaths.read("infra/prometheus/prometheus.yml")).contains("alerting:").contains("alertmanager:9093");
+    }
+
+    @Test
+    @DisplayName("kind's Prometheus loads every rule file as committed: its copy holds each file byte for byte and nothing else, the overlay"
+            + " lists each, and deploy/'s Alertmanager is generated from the committed routing (P15-TSK-032)")
+    void kindLoadsEveryRuleFileAsCommitted() throws IOException {
+        Set<String> source = new TreeSet<>();
+        try (Stream<Path> files = Files.list(rulesDirectory())) {
+            files.map(path -> path.getFileName().toString()).filter(name -> name.endsWith(".yml")).forEach(source::add);
+        }
+        Set<String> copied = new TreeSet<>();
+        try (Stream<Path> files = Files.list(RepositoryPaths.locate(KIND_RULES + "slo.yml").getParent())) {
+            files.map(path -> path.getFileName().toString()).forEach(copied::add);
+        }
+        assertThat(copied).as("kind's copy is every rule file and only those: copy a new or changed rule file into %s", KIND_RULES)
+                .isEqualTo(source);
+        for (String file : source) {
+            assertThat(RepositoryPaths.read(KIND_RULES + file)).as("%s%s is infra/prometheus/rules/%s byte for byte: copy it", KIND_RULES, file, file)
+                    .isEqualTo(RepositoryPaths.read("infra/prometheus/rules/" + file));
+        }
+        String kustomization = RepositoryPaths.read(KIND_KUSTOMIZATION).replace("\r\n", "\n");
+        Matcher listed = Pattern.compile("(?m)^      - rules/(\\S+)$").matcher(kustomization);
+        Set<String> generated = new TreeSet<>();
+        while (listed.find()) {
+            generated.add(listed.group(1));
+        }
+        assertThat(generated).as("the rules ConfigMap lists every file").isEqualTo(source);
+        assertThat(kustomization).contains("  - name: finapp-prometheus-rules\n").contains("  - ../../alertmanager\n");
+        assertThat(RepositoryPaths.read("deploy/observability/alertmanager/kustomization.yaml").replace("\r\n", "\n"))
+                .contains("  - name: finapp-alertmanager-config\n    files:\n      - alertmanager.yml\n");
     }
 
     @Test

@@ -56,8 +56,9 @@ groups:
           description: "No target of the finapp-collector job has existed for 5 minutes: the collectors are gone, or the scrape lost them. See OPERATIONS_RUNBOOK.md section 11.34."
       - alert: TelemetryExportFailing
         # Aggregation: sum by (job, instance, exporter) - per collector and exporter, the series' address and path labels summed away
-        # A collector dropped spans or log records after its retries ran out (sixty seconds against a back end, five against a peer): the back
-        # end or the peer refused them or could not be reached. Any drop in ten minutes; an old count never.
+        # A collector dropped spans or log records after its retries ran out (sixty seconds against Tempo or Loki, the load-balancing
+        # exporter's own against a peer): the back end or the peer refused them or could not be reached. Any drop in ten minutes; an old
+        # count never.
         expr: >-
           sum by (job, instance, exporter) (increase(otelcol_exporter_send_failed_spans[10m])) > 0
           or sum by (job, instance, exporter) (increase(otelcol_exporter_send_failed_log_records[10m])) > 0
