@@ -23,6 +23,18 @@
 #
 # THE SCOPES (REHEARSAL_SCOPE). `release`, the default: the walk above. `rotations` (P15-TSK-020): release N alone, then every rotation
 # of kind-rehearsal/rotations.sh (REHEARSAL_ROTATIONS selects some), each under the workload, with the census after it and its rollback.
+# `signals` and `incidents` (P15-TSK-032, OPERATIONS_RUNBOOK.md section 11.38): release N alone, the API server writing an audit log, then the
+# runbook's procedures of kind-rehearsal/platform.sh, each against its planted condition, with the census after each group. `signals` holds
+# the activation gates of sections 1-10 and the alerts a plant raises without stopping anything; `incidents` holds the outages, the rolls,
+# break-glass and the incident itself.
+#
+# `delivery` (P15-TSK-032): the data tier, the simulator and the topics as above, and then nothing of this script's own release: Argo CD,
+# installed from what infra/scripts/controller-check.sh renders, syncs deploy/overlays/staging through a rehearsal root, promote.sh writes
+# each pair and the smoke reads the result (kind-rehearsal/delivery.sh, OPERATIONS_RUNBOOK.md section 11.36).
+#
+# A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
+# common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
+# that a kept cluster is what it is used against, and refused whenever CI is set: a record is only ever of a whole run.
 #
 # Usage:   infra/scripts/kind-rehearsal.sh
 # Needs:   Docker with buildx, kind (KIND, default `kind`), git, openssl, a JDK for Gradle, sha256sum, tar, base64.
@@ -52,7 +64,28 @@ ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 # What the run rehearses: `release` (the default, P15-TSK-012's walk from N - 1 to N and back) or `rotations` (P15-TSK-020: release N alone,
 # then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
 SCOPE=${REHEARSAL_SCOPE:-release}
-case $SCOPE in release | rotations) ;; *) echo "?? REHEARSAL_SCOPE is release or rotations, not $SCOPE" >&2; exit 2 ;; esac
+case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents or delivery, not $SCOPE" >&2; exit 2 ;; esac
+# Every scope but `release` deploys release N alone: the steps below that name N - 1 deploy N.
+N_ONLY=""
+case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
+# The platform scopes' API audit log (Q12): only they write one.
+AUDITED=""
+case $SCOPE in signals | incidents) AUDITED=1 ;; esac
+
+# The development mode (Q11): never in CI, never against a cluster the run will delete.
+STEPS=${REHEARSAL_STEPS:-}
+if [ -n "$STEPS" ]; then
+    [ -z "${CI:-}" ] || { echo "?? REHEARSAL_STEPS is a development mode, refused under CI: a record is only ever of a whole run" >&2; exit 2; }
+    [ "$KEEP" = 1 ] || { echo "?? REHEARSAL_STEPS needs REHEARSAL_KEEP=1: it is run against a kept cluster" >&2; exit 2; }
+fi
+
+# wanted <step>: whether a scope's own step runs. Every one does, unless REHEARSAL_STEPS names some.
+wanted() {
+    [ -z "$STEPS" ] && return 0
+    case " $STEPS " in *" $1 "*) return 0 ;; esac
+    log "skipping $1: not in REHEARSAL_STEPS"
+    return 1
+}
 
 KIND_NODE_IMAGE="$KIND_NODE_REPOSITORY:$KIND_NODE_VERSION@$KIND_NODE_DIGEST"
 KUSTOMIZE_IMAGE="$KUSTOMIZE_REPOSITORY:$KUSTOMIZE_VERSION@$KUSTOMIZE_DIGEST"
@@ -385,7 +418,7 @@ wait_job() {
 step build-images
 if [ -z "${REHEARSAL_SKIP_BUILD:-}" ]; then
     build_tree "$ROOT" n
-    [ -n "${REHEARSAL_REUSE_NMINUS1:-}" ] || [ "$SCOPE" = rotations ] || build_nminus1
+    [ -n "${REHEARSAL_REUSE_NMINUS1:-}" ] || [ -n "$N_ONLY" ] || build_nminus1
 elif [ -n "${REHEARSAL_NMINUS1_REF:-}" ]; then
     # A reused build still has to say which tree N - 1 was: the hold step reads it, and without it reports itself not exercised.
     printf '%s\n' "$REHEARSAL_NMINUS1_REF" > "$ART/nminus1.ref"
@@ -408,7 +441,44 @@ if [ -n "$REUSING" ]; then
 else
 dock pull --quiet "$KIND_NODE_IMAGE" >/dev/null || cannot "could not pull the node image"
 "$KIND_BIN" delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true
-"$KIND_BIN" create cluster --name "$CLUSTER" --image "$KIND_NODE_IMAGE" --config "$(dpath "$DIR/kind-cluster.yaml")" \
+CLUSTER_CONFIG="$DIR/kind-cluster.yaml"
+if [ -n "$AUDITED" ]; then
+    # The platform scopes (Q12): the committed cluster, its API server writing kind-rehearsal/audit-policy.yaml's log. The policy is mounted
+    # from the artefacts, which outlive the run, so a kept cluster's API server can still restart; it holds no value of any kind.
+    mkdir -p "$ART/audit-policy"
+    cp "$DIR/audit-policy.yaml" "$ART/audit-policy/policy.yaml"
+    CLUSTER_CONFIG="$WORK/kind-cluster.yaml"
+    {
+        cat "$DIR/kind-cluster.yaml"
+        cat <<YAML
+    extraMounts:
+      - hostPath: $(dpath "$ART/audit-policy")
+        containerPath: /etc/kubernetes/audit-policy
+        readOnly: true
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            audit-policy-file: /etc/kubernetes/audit-policy/policy.yaml
+            audit-log-path: /var/log/kubernetes/audit/audit.log
+            audit-log-maxsize: "200"
+            audit-log-maxbackup: "3"
+          extraVolumes:
+            - name: audit-policy
+              hostPath: /etc/kubernetes/audit-policy
+              mountPath: /etc/kubernetes/audit-policy
+              readOnly: true
+              pathType: DirectoryOrCreate
+            - name: audit-log
+              hostPath: /var/log/kubernetes/audit
+              mountPath: /var/log/kubernetes/audit
+              readOnly: false
+              pathType: DirectoryOrCreate
+YAML
+    } > "$CLUSTER_CONFIG"
+fi
+"$KIND_BIN" create cluster --name "$CLUSTER" --image "$KIND_NODE_IMAGE" --config "$(dpath "$CLUSTER_CONFIG")" \
     --kubeconfig "$(dpath "$WORK/kubeconfig")" --wait 180s >> "$ART/cluster.log" 2>&1 || cannot "the cluster did not come up: see cluster.log"
 CLUSTER_UP=1
 fi
@@ -440,7 +510,7 @@ step images-loaded
 if [ -n "$REUSING" ]; then
     IMAGE_APP_N=$(ref_of_built finapp-app:rehearsal-n)
     IMAGE_MIGRATOR_N=$(ref_of_built finapp-migrator:rehearsal-n)
-    if [ "$SCOPE" = rotations ]; then
+    if [ -n "$N_ONLY" ]; then
         IMAGE_APP_NM1=$IMAGE_APP_N
         IMAGE_MIGRATOR_NM1=$IMAGE_MIGRATOR_N
     else
@@ -459,8 +529,9 @@ load_tagged "$TRAEFIK_REPOSITORY" "$TRAEFIK_VERSION" "$TRAEFIK_DIGEST"
 load_tagged "$CURL_REPOSITORY" "$CURL_VERSION" "$CURL_DIGEST"
 IMAGE_APP_N=$(load_built finapp-app:rehearsal-n)
 IMAGE_MIGRATOR_N=$(load_built finapp-migrator:rehearsal-n)
-if [ "$SCOPE" = rotations ]; then
-    # Rotations are rehearsed on release N alone: the first deployment is N's, so every step below that names N - 1 deploys N.
+if [ -n "$N_ONLY" ]; then
+    # Rotations, the platform's procedures and the delivery are rehearsed on release N alone: the first deployment is N's, so every
+    # step below that names N - 1 deploys N.
     IMAGE_APP_NM1=$IMAGE_APP_N
     IMAGE_MIGRATOR_NM1=$IMAGE_MIGRATOR_N
 else
@@ -504,12 +575,19 @@ secret_of finapp-rehearsal finapp-simulator-tls "keystore.p12=$CA_DIR/simulator.
 printf '#!/bin/sh\nMSYS_NO_PATHCONV=1 exec docker exec -i "%s" kubectl --kubeconfig=/etc/kubernetes/admin.conf "$@"\n' "$NODE" > "$WORK/bin/kubectl"
 chmod +x "$WORK/bin/kubectl"
 SIM_URL="https://$SIM_HOST:8443"
+EXTRA_PROVIDER_NAMES="FINAPP_PAYMENTS_PROVIDER_URL FINAPP_PAYMENTMETHODS_TOKENISATION_URL FINAPP_MERCHANT_PAYOUT_PROVIDER_URL"
+if [ -n "$AUDITED" ]; then
+    # The platform scopes (P15-TSK-032) rehearse sections 2 and 4, which need a reference rate and an FX provider: the simulator serves
+    # both, and only these scopes name them, so the release's and the rotations' runs keep their measured shape.
+    EXTRA_PROVIDER_NAMES="$EXTRA_PROVIDER_NAMES FINAPP_FX_REFERENCE_URL FINAPP_FX_PROVIDER_URL"
+fi
 PATH="$WORK/bin:$PATH" \
     FINAPP_DB_URL="jdbc:postgresql://$PG_HOST:5432/finapp?sslmode=verify-full&sslrootcert=/etc/finapp-local-ca/ca.crt" \
     FINAPP_DB_APP_USER=finapp_app FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_MIGRATOR_USER=finapp_migrator FINAPP_DB_MASTER_USER=finapp \
     FINAPP_KAFKA_BOOTSTRAPSERVERS="$KAFKA_HOST:9092" FINAPP_KAFKA_SASL_USERNAME=finapp_app \
     FINAPP_PAYMENTS_PROVIDER_URL="$SIM_URL" FINAPP_PAYMENTMETHODS_TOKENISATION_URL="$SIM_URL" FINAPP_MERCHANT_PAYOUT_PROVIDER_URL="$SIM_URL" \
-    KIND_SECRETS_EXTRA_APP_NAMES="FINAPP_PAYMENTS_PROVIDER_URL FINAPP_PAYMENTMETHODS_TOKENISATION_URL FINAPP_MERCHANT_PAYOUT_PROVIDER_URL" \
+    FINAPP_FX_REFERENCE_URL="$SIM_URL" FINAPP_FX_PROVIDER_URL="$SIM_URL" \
+    KIND_SECRETS_EXTRA_APP_NAMES="$EXTRA_PROVIDER_NAMES" \
     sh "$ROOT/infra/scripts/kind-secrets.sh" apply finapp >> "$ART/apply.log" 2>&1 || cannot "kind-secrets.sh apply failed: see apply.log"
 
 step simulator
@@ -550,7 +628,15 @@ fi
 for file in "$A"/*.yaml; do
     case $(basename "$file") in
         all.yaml | Deployment.finapp-app.yaml | HorizontalPodAutoscaler.finapp-app.yaml | Job.finapp-migrator.yaml) ;;
-        *) apply_files "$file" ;;
+        *)
+            # The delivery scope (P15-TSK-032): only what the environment brings, the test-only data tier; the release is Argo CD's, and
+            # the two data-tier policies, which staging renders under the same names, reach a cluster through it.
+            if [ "$SCOPE" = delivery ]; then
+                case $(basename "$file") in NetworkPolicy.finapp-app-data-tier.yaml | NetworkPolicy.finapp-migrator-data-tier.yaml) continue ;; esac
+                grep -q 'finapp/test-only: "true"' "$file" || continue
+            fi
+            apply_files "$file"
+            ;;
     esac
 done
 {
@@ -627,6 +713,9 @@ kafka_admin kafka-acls.sh --add --allow-principal "User:$application_user" --ope
     || cannot "could not grant the consumer groups"
 log "$(printf '%s\n' "$topics" | wc -l) topics created with $partitions partitions and the application's ACLs"
 
+# The delivery scope (P15-TSK-032) deploys nothing of its own from here to the census: the bootstrap, the release and the edge are Argo CD's
+# and the pipeline role's, in kind-rehearsal/delivery.sh, which is sourced once the census and the client below are defined.
+if [ "$SCOPE" != delivery ]; then
 step bootstrap-roles
 sed "s#MIGRATOR_IMAGE#$IMAGE_MIGRATOR_NM1#; s#PROBE_IMAGE#$CURL_IMAGE#" "$DIR/bootstrap-job.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the bootstrap Job"
 wait_job finapp finapp-role-bootstrap 300 role-bootstrap
@@ -700,6 +789,7 @@ done
 kube -n finapp-edge get secret finapp-edge-local-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > "$CLIENT/edge-ca.crt"
 [ -s "$CLIENT/edge-ca.crt" ] || fail "the edge's local CA could not be read"
 pass "the edge is up: two controllers per surface, reading their certificates at mode 0440 through fsGroup"
+fi
 
 NODE_IP=$(dock inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "$NODE")
 [ -n "$NODE_IP" ] || cannot "the node has no address on the kind network"
@@ -818,6 +908,14 @@ census() {
     fi
     pass "census $label green"
 }
+
+# The delivery scope (P15-TSK-032) ends here: everything from the controllers to the last census is kind-rehearsal/delivery.sh's.
+if [ "$SCOPE" = delivery ]; then
+    # shellcheck source=infra/scripts/kind-rehearsal/delivery.sh
+    . "$DIR/delivery.sh"
+    step end
+    finish
+fi
 
 # ---------------------------------------------------------------------------------------------------
 # Smoke, then the hold, then N - 1 on N's schema.
@@ -1440,6 +1538,15 @@ migrations_between() {
 if [ "$SCOPE" = rotations ]; then
     # shellcheck source=infra/scripts/kind-rehearsal/rotations.sh
     . "$DIR/rotations.sh"
+    step end
+    finish
+fi
+
+# The platform scopes (P15-TSK-032) stop it here too: N is deployed, smoked, its census green, the cluster suites passed, the telemetry
+# pipeline up with every committed rule loaded and Alertmanager routing them.
+if [ "$SCOPE" = signals ] || [ "$SCOPE" = incidents ]; then
+    # shellcheck source=infra/scripts/kind-rehearsal/platform.sh
+    . "$DIR/platform.sh"
     step end
     finish
 fi

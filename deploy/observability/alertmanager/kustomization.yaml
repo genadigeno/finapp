@@ -1,0 +1,10 @@
+# The committed routing as a ConfigMap (P15-TSK-032): alertmanager.yml beside this file, unchanged, which AlertCatalogueTest holds equal to
+# compose's. kind's overlay renders it with its test-only Alertmanager; a real environment's overlay may render it with its own. Its receivers
+# are placeholders that send nothing, so the Alertmanager that reads it needs no egress at all.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configMapGenerator:
+  - name: finapp-alertmanager-config
+    files:
+      - alertmanager.yml

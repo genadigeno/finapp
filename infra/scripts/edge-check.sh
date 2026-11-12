@@ -119,6 +119,33 @@ plant_all() {
     edge_plant_on edge-surface-wrong-word edge/base/operator-edge.yaml 's/X-Finapp-Surface: operator$/X-Finapp-Surface: public/'
     edge_plant_on edge-surface-router-unmarked "$PUBLIC_ROUTES" '1,/middlewares: \[edge-headers, /s/middlewares: \[edge-headers, /middlewares: [/'
 
+    # A person's role under deploy/edge (P15-TSK-032's review): finapp.rego's RBAC rules hold this stream too, and a person's binding is
+    # admitted in finapp and finapp-observability alone, so one rendered into finapp-edge is refused.
+    edge_plant edge-person-role
+    { printf -- '---\n'; cat; } >> "$PLANTS/edge-person-role/deploy/$CONTROLLERS" <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: finapp-read-only
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-read-only
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-read-only
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-read-only
+YAML
+
     edge_plant_on edge-sticky "$PUBLIC_EDGE" 's/^        passHostHeader: false$/        passHostHeader: false\n        sticky:\n          cookie: {}/'
     edge_plant_on edge-reuse "$PUBLIC_EDGE" 's/maxIdleConnsPerHost: -1/maxIdleConnsPerHost: 200/'
 
@@ -319,6 +346,7 @@ edge_refused edge-operator-no-allowlist edge-routes-operator
 edge_refused edge-surface-unstated edge-surface
 edge_refused edge-surface-wrong-word edge-surface
 edge_refused edge-surface-router-unmarked edge-surface
+edge_refused edge-person-role rbac-human-namespace
 edge_refused edge-sticky edge-no-affinity
 edge_refused edge-reuse edge-no-affinity
 edge_refused edge-management-port edge-service-port

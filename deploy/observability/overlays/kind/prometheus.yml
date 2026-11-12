@@ -1,14 +1,30 @@
 # The deployed scrape, on kind (P15-TSK-023). What a deployed environment's Prometheus must keep, and every rule reads: the job name `finapp`
 # (`up{job="finapp"}` in platform.yml and every SLO), an `env` naming the environment (`ConfigFingerprintDisagrees` counts per env), and no
 # `env="local"` (that is how `CertificateExpirySeriesAbsent` tells compose from a deployment). The lending, BNPL and risk switches as compose
-# labels them, because no rehearsal offers those products.
+# labels them, because no rehearsal offers those products until it activates them.
 #
 # DISCOVERY BY DNS, NOT BY THE KUBERNETES API: the headless Service finapp-app-scrape (deploy/base) names the API port alone, so the management port stays
 # off every Service, and the scraper needs no token, no role and no route to the API server. publishNotReadyAddresses keeps an unready replica
 # a target, so `InstanceDown` still sees it.
+#
+# THE ALERTS (P15-TSK-032): every committed rule file is loaded from /etc/prometheus-rules (the overlay's rules/, a copy of
+# infra/prometheus/rules held equal by AlertCatalogueTest), and what fires goes to the Alertmanager beside it, whose routing is the committed
+# deploy/observability/alertmanager/alertmanager.yml. A deployed environment also keeps job `finapp-collector` (telemetry.yml's collector
+# rules), and `finapp-tempo` and `finapp-loki` where it scrapes its back ends (the ingest rules are silent where it does not).
+#
+# CHANGED BY RELOAD, NOT BY RESTART: this file is the ConfigMap finapp-prometheus-config, mounted as a directory so an edit reaches the pod
+# (the kubelet projects it within a minute or two), and Prometheus is started with --web.enable-lifecycle so a rehearsal can POST /-/reload
+# through the API server's proxy and keep its TSDB and every alert's for (OPERATIONS_RUNBOOK.md section 11.34). The lifecycle endpoints are
+# unauthenticated: kind only, never in another overlay.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+rule_files:
+  - /etc/prometheus-rules/*.yml
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["finapp-alertmanager.finapp-observability.svc.cluster.local:9093"]
 scrape_configs:
   - job_name: finapp
     metrics_path: /actuator/prometheus
@@ -26,12 +42,37 @@ scrape_configs:
         replacement: "false"
       - target_label: risk_judging
         replacement: "false"
+  # Every collector by its own address, ready or not, through the peers' headless Service: scaled to zero, the job has no target at all
+  # (TelemetryCollectorsAbsent), and one collector down is that collector's (TelemetryCollectorDown).
   - job_name: finapp-collector
     dns_sd_configs:
       - names: ["finapp-collector-peers.finapp-observability.svc.cluster.local"]
         type: A
         port: 8888
         refresh_interval: 15s
+    relabel_configs:
+      - target_label: env
+        replacement: kind
+  # The reference back ends' own counters, by their Services: one replica each, and a Service with no endpoint is a target that fails its
+  # scrape (TelemetryBackendDown), never one that vanishes.
+  - job_name: finapp-tempo
+    static_configs:
+      - targets: ["finapp-tempo.finapp-observability.svc.cluster.local:3200"]
+    relabel_configs:
+      - target_label: env
+        replacement: kind
+  - job_name: finapp-loki
+    static_configs:
+      - targets: ["finapp-loki.finapp-observability.svc.cluster.local:3100"]
+    relabel_configs:
+      - target_label: env
+        replacement: kind
+  # cert-manager's controller, for the certificate rules (platform.yml: CertificateExpiringSoon, CertificateExpiring and
+  # CertificateExpirySeriesAbsent, which fires an hour after the rules load where no expiry series is stored). Its chart's Service, port 9402;
+  # one controller on kind, so the Service is the controller.
+  - job_name: cert-manager
+    static_configs:
+      - targets: ["cert-manager.cert-manager.svc.cluster.local:9402"]
     relabel_configs:
       - target_label: env
         replacement: kind

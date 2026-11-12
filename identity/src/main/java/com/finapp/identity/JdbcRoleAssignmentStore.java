@@ -48,6 +48,69 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
     }
 
     @Override
+    public void lockForRoleChange(Connection unitOfWork, IdentityId identityId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(identityId, "identityId must not be null");
+
+        // The identity's own row, FOR NO KEY UPDATE (`P15-TSK-032`): every grant and revocation of this identity takes it first,
+        // so they serialise and each reads the roles the other committed. NO KEY: a session insert's foreign key (KEY SHARE)
+        // passes; JdbcSessionStore's bulk revocation still takes FOR UPDATE on the same row to hold issuance back.
+        try (PreparedStatement lock = unitOfWork.prepareStatement(
+                "SELECT 1 FROM identity.identity WHERE id = ? FOR NO KEY UPDATE")) {
+            lock.setObject(1, identityId.value());
+            lock.executeQuery().close();
+        } catch (SQLException e) {
+            throw new IdentityStorageException(
+                    DatabaseFailure.describe("Could not lock identity " + identityId + " for a role change", e));
+        }
+    }
+
+    @Override
+    public void lockHoldingsOf(Connection unitOfWork, Set<RoleName> roles) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(roles, "roles must not be null");
+
+        // Every live holding of the roles, locked FOR UPDATE in the primary key's order (`P15-TSK-032`): two revocations or
+        // suspensions lock the same rows in the same order, so the second waits on the first. Nothing is read from it: the
+        // statement that waited answers from its starting snapshot, so the count is activeHoldingsOf's, a statement of its own.
+        String sql =
+                "SELECT id FROM " + TABLE + " WHERE revoked_at IS NULL AND role_name = ANY (?) ORDER BY id FOR UPDATE";
+        try (PreparedStatement lock = unitOfWork.prepareStatement(sql)) {
+            lock.setArray(1, unitOfWork.createArrayOf("text", roles.stream().map(RoleName::name).toArray()));
+            lock.executeQuery().close();
+        } catch (SQLException e) {
+            throw new IdentityStorageException(DatabaseFailure.describe("Could not lock the holdings of " + roles, e));
+        }
+    }
+
+    @Override
+    public Set<Holding> activeHoldingsOf(Connection unitOfWork, Set<RoleName> roles) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(roles, "roles must not be null");
+
+        // A fresh statement, after lockHoldingsOf (`P15-TSK-032`): under READ COMMITTED it sees every revocation and suspension
+        // committed while the lock waited, the holder's status included.
+        String sql =
+                "SELECT held.identity_id, held.role_name FROM " + TABLE + " held"
+                        + " JOIN identity.identity holder ON holder.id = held.identity_id"
+                        + " WHERE held.revoked_at IS NULL AND held.role_name = ANY (?) AND holder.status = 'ACTIVE'";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setArray(1, unitOfWork.createArrayOf("text", roles.stream().map(RoleName::name).toArray()));
+            try (ResultSet rows = select.executeQuery()) {
+                Set<Holding> holdings = new java.util.HashSet<>();
+                while (rows.next()) {
+                    holdings.add(new Holding(
+                            IdentityId.of(rows.getObject("identity_id", java.util.UUID.class)),
+                            RoleName.valueOf(rows.getString("role_name"))));
+                }
+                return Set.copyOf(holdings);
+            }
+        } catch (SQLException e) {
+            throw new IdentityStorageException(DatabaseFailure.describe("Could not read the active holdings of " + roles, e));
+        }
+    }
+
+    @Override
     public java.util.Optional<IdentityId> liveHolderByLogin(Connection unitOfWork, LoginIdentifier login) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(login, "login must not be null");

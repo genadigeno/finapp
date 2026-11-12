@@ -27,7 +27,7 @@ class ReportingPoolTransportTest {
                 .withProperty(ReportingPoolBeans.WRITER_DRIVER_PROPERTIES + ".sslmode", "verify-full")
                 .withProperty(ReportingPoolBeans.WRITER_DRIVER_PROPERTIES + ".sslrootcert", "/etc/finapp/root.crt");
 
-        try (ReportingPool pool = new ReportingPoolBeans().reportingPool(environment)) {
+        try (ReportingPool pool = new ReportingPoolBeans().reportingPool(environment, new io.micrometer.core.instrument.simple.SimpleMeterRegistry())) {
             assertThat(pool.driverProperty("sslmode")).isEqualTo("verify-full");
             assertThat(pool.driverProperty("sslrootcert")).isEqualTo("/etc/finapp/root.crt");
             // Its own settings still hold after the writer's are applied.
@@ -42,7 +42,7 @@ class ReportingPoolTransportTest {
         MockEnvironment environment =
                 reportingSettings().withProperty("spring.datasource.url", "jdbc:postgresql://127.0.0.1:5432/finapp");
 
-        try (ReportingPool pool = new ReportingPoolBeans().reportingPool(environment)) {
+        try (ReportingPool pool = new ReportingPoolBeans().reportingPool(environment, new io.micrometer.core.instrument.simple.SimpleMeterRegistry())) {
             assertThat(pool.driverProperty("sslmode")).isNull();
             assertThat(pool.driverProperty("ApplicationName")).isEqualTo("finapp");
         }

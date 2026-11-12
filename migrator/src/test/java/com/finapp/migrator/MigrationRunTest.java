@@ -150,7 +150,7 @@ class MigrationRunTest {
     }
 
     @Test
-    @DisplayName("a lock timeout inside a non-transactional migration is NOT retried: Flyway has already written its failed row")
+    @DisplayName("a lock timeout inside a non-transactional migration is NOT retried: what it did stays, and a retry trips over it")
     void aNonTransactionalMigrationIsNotRetried() {
         assertThat(FailureClass.of(failedMigration(false, "55P03"))).isEqualTo(FailureClass.DEFINITE);
         assertThat(FailureClass.of(failedMigration(true, "55P03"))).isEqualTo(FailureClass.LOCK_CONTENTION);

@@ -19,11 +19,12 @@ import org.springframework.web.bind.annotation.RestController;
  * The check of the holdings the factor rule found standing (`P15-TSK-039`; {@code PRIVILEGED_ACCESS_REVIEW.md} §5 and §6).
  *
  * <p>Refusing a grant says nothing about a role held since before the rule. This names them: each live holding of a role
- * that can redirect a merchant's money whose holder has no enrolled factor. It revokes nothing, and no migration does
- * either: a role a person holds is theirs until someone decides otherwise, with a reason, and the review is where that
- * is decided. The administrator's read, because {@code ROLE_ASSIGN} is the permission that acts on the answer; recorded,
- * and on a {@code MULTI_FACTOR} session: the answer is a list of money-role holders with no second factor, which a stolen
- * password must not be enough to read.
+ * that needs an enrolled factor ({@code RoleName.requiresEnrolledFactor}: one that can redirect a merchant's money, and since
+ * `P15-TSK-032` {@code ADMINISTRATOR} and the risk desk's approver) whose holder has none. It revokes nothing, and no
+ * migration does either: a role a person holds is theirs until someone decides otherwise, with a reason, and the review is
+ * where that is decided. The administrator's read, because {@code ROLE_ASSIGN} is the permission that acts on the answer;
+ * recorded, and on a {@code MULTI_FACTOR} session: the answer is a list of privileged holders with no second factor, which
+ * a stolen password must not be enough to read.
  */
 @RestController
 @RequestMapping(path = "/operator/access-review", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -35,7 +36,7 @@ public class AccessReviewController {
 
     @NonNull private final IdentityAdministrationService administration;
 
-    /** The live holdings of a money-redirecting role with no enrolled factor, oldest first. */
+    /** The live holdings of a role that needs an enrolled factor, by a holder with none, oldest first. */
     @GetMapping("/factorless-holdings")
     @RequiresPermission(PermissionName.ROLE_ASSIGN)
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)

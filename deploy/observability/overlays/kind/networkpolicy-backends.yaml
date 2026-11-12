@@ -1,6 +1,11 @@
 # kind's flows to its reference backends (P15-TSK-023), on top of the base's default-deny: the collectors to Tempo's OTLP port and Loki's HTTP
-# port, and each backend admitting the collectors alone. The rehearsal reads the backends through the API server's proxy, which is node
-# traffic no policy can refuse, so no reader is named.
+# port, and each backend admitting the collectors alone. The rehearsal reads the backends through the API server's proxy, which is node traffic
+# no policy can refuse, so no reader is named.
+#
+# AND THE ALERTS' FLOWS (P15-TSK-032): the scraper to Tempo's and Loki's own counters, to cert-manager's controller for the certificate rules,
+# and to Alertmanager, each by label and on its metrics or API port alone; Alertmanager admitting the scraper alone and reaching nothing. Every
+# flow here is one observability.rego admits by name ([obs-scraper-egress], [obs-store-ingress]); a flow not on its lists is refused, and
+# infra/scripts/telemetry-check.sh plants one of each.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -46,6 +51,14 @@ spec:
       ports:
         - protocol: TCP
           port: 4317
+    # Its own counters, for TelemetryBackendDown and TraceIngestStopped: the HTTP port, which also serves its query API.
+    - from:
+        - podSelector:
+            matchLabels:
+              finapp/role: metrics-scraper
+      ports:
+        - protocol: TCP
+          port: 3200
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -66,3 +79,83 @@ spec:
       ports:
         - protocol: TCP
           port: 3100
+    # Its own counters, for TelemetryBackendDown and LogIngestStopped: the one port Loki serves.
+    - from:
+        - podSelector:
+            matchLabels:
+              finapp/role: metrics-scraper
+      ports:
+        - protocol: TCP
+          port: 3100
+---
+# The scraper's flows on kind beyond the base's (the application, the edge, the collectors, DNS): policies add, so this widens the base's by
+# exactly these four.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-scraper-to-backends
+spec:
+  podSelector:
+    matchLabels:
+      finapp/role: metrics-scraper
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: trace-store
+      ports:
+        - protocol: TCP
+          port: 3200
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: log-store
+      ports:
+        - protocol: TCP
+          port: 3100
+    # Alertmanager's own port, which its Service answers as 9093 (backends.yaml says why the pod is not on 9093).
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: alert-router
+      ports:
+        - protocol: TCP
+          port: 9193
+    # cert-manager's controller alone, on its metrics port: never the webhook (10250) or the cainjector, which carry the same metrics port
+    # and nothing a rule reads. Namespace and pod in one entry; two entries would be OR.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cert-manager
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cert-manager
+              app.kubernetes.io/component: controller
+      ports:
+        - protocol: TCP
+          port: 9402
+---
+# Alertmanager: Prometheus sends it alerts, the rehearsal reads it through the API server's proxy (node traffic), and it reaches nothing - its
+# receivers are placeholders. A real receiver's integration is a deliberate change to this policy, refused by [obs-egress] if it names an
+# address block, and to observability.rego.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-alert-router
+spec:
+  podSelector:
+    matchLabels:
+      finapp/role: alert-router
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              finapp/role: metrics-scraper
+      ports:
+        - protocol: TCP
+          port: 9193

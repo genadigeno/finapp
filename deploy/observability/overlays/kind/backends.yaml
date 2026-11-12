@@ -1,5 +1,5 @@
-# The reference backends on kind, test-only (P15-TSK-023; ADR-0124 decision 1): Tempo for traces, Loki for logs, Prometheus for the scrape.
-# One replica each, their data on the pod's own disk and gone with the cluster: a rehearsal's evidence is what infra/scripts/kind-rehearsal.sh
+# The reference backends on kind, test-only (P15-TSK-023; ADR-0124 decision 1): Tempo for traces, Loki for logs, Prometheus for the scrape,
+# and (P15-TSK-032) Alertmanager for what Prometheus raises from the committed rules. One replica each, their data on the pod's own disk and gone with the cluster: a rehearsal's evidence is what infra/scripts/kind-rehearsal.sh
 # reads out of them during the run. A real environment's backends are not chosen yet (the entry's exclusion), and none of these is a pattern
 # for one. Each at the restricted profile, tokenless, by digest; the rehearsal reads them through the API server's proxy, which is node traffic.
 apiVersion: v1
@@ -229,6 +229,10 @@ spec:
             - --config.file=/etc/prometheus/prometheus.yml
             - --storage.tsdb.path=/prometheus
             - --storage.tsdb.retention.time=6h
+            # POST /-/reload re-reads the scrape and the rules without a restart, so a rehearsal keeps the TSDB and every alert's for
+            # (P15-TSK-032). The lifecycle endpoints (/-/reload, /-/quit) are unauthenticated: kind only, and the scraper is reached by
+            # nothing but its node.
+            - --web.enable-lifecycle
           ports:
             - name: http
               containerPort: 9090
@@ -252,16 +256,22 @@ spec:
             httpGet: {path: /-/ready, port: http}
             periodSeconds: 5
             failureThreshold: 3
+          # Every rule file evaluated every 15 s and two back ends' counters beside the fleet's (P15-TSK-032): more than the scrape alone.
           resources:
             requests:
               cpu: 100m
-              memory: 384Mi
+              memory: 512Mi
             limits:
               cpu: "1"
-              memory: 384Mi
+              memory: 512Mi
           volumeMounts:
+            # A directory, never a subPath: an edit of the ConfigMap reaches the pod only so.
             - name: config
               mountPath: /etc/prometheus
+              readOnly: true
+            # Beside the configuration, not inside it: a mount point inside a read-only ConfigMap mount cannot be created.
+            - name: rules
+              mountPath: /etc/prometheus-rules
               readOnly: true
             - name: data
               mountPath: /prometheus
@@ -269,6 +279,9 @@ spec:
         - name: config
           configMap:
             name: finapp-prometheus-config
+        - name: rules
+          configMap:
+            name: finapp-prometheus-rules
         - name: data
           emptyDir:
             sizeLimit: 1Gi
@@ -283,4 +296,104 @@ spec:
   ports:
     - name: http
       port: 9090
+      targetPort: http
+---
+# Alertmanager (P15-TSK-032): the committed routing, unchanged, so a rehearsal reads an alert at its receiver - placeholder-page or
+# placeholder-ticket by its severity - as a deployed environment would route it. The receivers send nothing, so this pod has no egress at all.
+# One replica, its gossip off: a single Alertmanager has no peer to find.
+#
+# IT LISTENS ON 9193, AND ITS SERVICE ANSWERS ON 9093. Alertmanager's own port is the broker's to every policy here: observability.rego and
+# TelemetryPipelineManifestsTest refuse an egress rule naming 9093 in this namespace, because no pod of the pipeline may reach the data tier. A
+# NetworkPolicy names the pod's port, so the scraper's rule names 9193 and nothing names 9093 but this Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-alertmanager
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-alertmanager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-alertmanager
+        finapp/role: alert-router
+        app.kubernetes.io/part-of: finapp
+        finapp/test-only: "true"
+    spec:
+      serviceAccountName: finapp-telemetry-store
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alertmanager
+          image: docker.io/prom/alertmanager@sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+            - --storage.path=/alertmanager
+            - --web.listen-address=:9193
+            - --cluster.listen-address=
+          ports:
+            - name: http
+              containerPort: 9193
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet: {path: /-/healthy, port: http}
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: {path: /-/healthy, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /-/ready, port: http}
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+              readOnly: true
+            - name: data
+              mountPath: /alertmanager
+      volumes:
+        - name: config
+          configMap:
+            name: finapp-alertmanager-config
+        - name: data
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-alertmanager
+spec:
+  selector:
+    app.kubernetes.io/name: finapp-alertmanager
+  ports:
+    - name: http
+      port: 9093
       targetPort: http

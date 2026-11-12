@@ -172,3 +172,20 @@ role is `PRIVILEGED_ACCESS_REVIEW.md`.
 resolved per request; what changed is who may be given the role. Holdings that stood before the rule are named by a
 recorded read and not revoked by a migration. Every refused or failed act at an operator's or a merchant's door of Phases 7 to 10
 is recorded (`door.ActRefused`), beside the denial and the refused step-up this ADR's boundary already records.
+
+**Dated note (2026-11-12, `P15-TSK-032`; its design's Q1, decided under the owner's standing word).** A role is now taken away
+through a door, `DELETE /v1/identities/{id}/roles/{role}`: `ROLE_ASSIGN`, as the grant (the permission always read "grant or
+revoke"), on a `MULTI_FACTOR` session, with a required reason, idempotent in effect (a role not held answers as a revocation
+did, and writes nothing). Three rules beside the permission, all in the domain: the not-self rule of every administrative act;
+**the last `ACTIVE` identity holding a role that can grant roles keeps it** (`identity.LastRoleGranter`), counted by a statement
+of its own after every live holding of such a role is locked `FOR UPDATE` in key order, so two revocations of the last two
+holders cannot both land; and **the last live role revoked ends every session the identity holds**, in the revocation's
+transaction - the mirror of a first role's grant, because a session is not bound to the surface that issued it. Every grant and
+revocation of one identity first takes `FOR NO KEY UPDATE` on that identity's row, and reads its roles after it, so a
+revocation and a grant of the same identity serialise and each reads what the other committed. The same task's item 42 (d) and
+(e), decided under the same word: an administrator's suspension keeps the last-granter rule too (risk's automated suspension
+does not: a compromised last administrator stays suspendable); the grant, the suspension and the reinstatement step up to
+`MULTI_FACTOR` as the revocation does; and `ADMINISTRATOR` - and, under the same word, the risk desk's approver
+(`RISK_CASE_APPROVE`), since risk's exempt suspension can take every administrator - needs an enrolled factor before it is
+granted. A permission's meaning,
+and its resolution per request, are unchanged.

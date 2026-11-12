@@ -1,6 +1,7 @@
 package com.finapp.app.database;
 
 import com.finapp.app.security.DatabaseEndpoint;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -36,8 +37,9 @@ class ReportingPoolBeans {
      */
     static final Set<String> WRITING_ROLES = Set.of("finapp_migrator", "postgres", "finapp_app", "finapp_app_a", "finapp_app_b");
 
+    /** The registry is the application's, so the pool's {@code hikaricp.connections.*} are scraped beside the writer's (item 42 (l)). */
     @Bean(destroyMethod = "close")
-    ReportingPool reportingPool(Environment environment) {
+    ReportingPool reportingPool(Environment environment, MeterRegistry registry) {
         String username = required(environment, ReportingPool.USERNAME_PROPERTY);
         refuseAWritingRole(username, writerUsername(environment));
         return new ReportingPool(
@@ -47,7 +49,8 @@ class ReportingPoolBeans {
                         .orElse(Map.of()),
                 username,
                 required(environment, ReportingPool.LOGIN_PROPERTY),
-                Integer.parseInt(required(environment, ReportingPool.POOL_SIZE_PROPERTY)));
+                Integer.parseInt(required(environment, ReportingPool.POOL_SIZE_PROPERTY)),
+                registry);
     }
 
     /**

@@ -343,7 +343,8 @@ class DenyByDefaultDatabaseTest {
             + " CUSTOMER; staff refused beyond their role EMPLOYEE - in platform.audit_record")
     void theOperatorActorIsTyped() throws Exception {
         IdentityId administrator = givenAnIdentity();
-        String session = givenASessionFor(administrator);
+        // MULTI_FACTOR: the grant's door steps up since P15-TSK-032 (item 42 (e)).
+        String session = givenASessionAt(administrator, AssuranceLevel.MULTI_FACTOR);
         givenTheRole(administrator, RoleName.ADMINISTRATOR);
         IdentityId subject = givenAnIdentity();
         HttpResponse<String> granted = post("/identities/" + subject.value() + "/roles",
@@ -468,6 +469,10 @@ class DenyByDefaultDatabaseTest {
     }
 
     private String givenASessionFor(IdentityId identity) throws SQLException {
+        return givenASessionAt(identity, AssuranceLevel.PASSWORD);
+    }
+
+    private String givenASessionAt(IdentityId identity, AssuranceLevel assurance) throws SQLException {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
         String plaintext = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
@@ -477,7 +482,7 @@ class DenyByDefaultDatabaseTest {
                         CLOCK,
                         identity,
                         SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD,
+                        assurance,
                         SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);

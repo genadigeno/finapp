@@ -158,7 +158,7 @@ class ReportingPoolCapabilityDatabaseTest {
     @DisplayName("the positive control: finapp_reporting opens, reads, and the check ran on its connection")
     void theReportingRoleOpens() throws SQLException {
         try (ReportingPool pool = new ReportingPool(DatabaseRoles.required("finapp.db.url"), Map.of(),
-                        DatabaseRoles.required("finapp.db.reporting.user"), DatabaseRoles.required("finapp.db.reporting.password"), 1);
+                        DatabaseRoles.required("finapp.db.reporting.user"), DatabaseRoles.required("finapp.db.reporting.password"), 1, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
                 Connection connection = pool.open();
                 Statement read = connection.createStatement();
                 ResultSet rows = read.executeQuery("SELECT count(*) FROM ledger.journal_entry")) {
@@ -184,14 +184,14 @@ class ReportingPoolCapabilityDatabaseTest {
     }
 
     private static void assertRefused(String role, String password, String reason) throws SQLException {
-        try (ReportingPool pool = new ReportingPool(DatabaseRoles.required("finapp.db.url"), Map.of(), role, password, 1)) {
+        try (ReportingPool pool = new ReportingPool(DatabaseRoles.required("finapp.db.url"), Map.of(), role, password, 1, new io.micrometer.core.instrument.simple.SimpleMeterRegistry())) {
             assertThatExceptionOfType(SQLException.class).as(role).isThrownBy(pool::open)
                     .satisfies(refused -> assertThat(messages(refused)).as(role).contains(reason));
         }
     }
 
     private static void assertOpens(String role, String password) throws SQLException {
-        try (ReportingPool pool = new ReportingPool(DatabaseRoles.required("finapp.db.url"), Map.of(), role, password, 1);
+        try (ReportingPool pool = new ReportingPool(DatabaseRoles.required("finapp.db.url"), Map.of(), role, password, 1, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
                 Connection connection = pool.open();
                 Statement read = connection.createStatement();
                 ResultSet one = read.executeQuery("SELECT 1")) {

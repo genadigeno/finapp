@@ -15,7 +15,9 @@ import rego.v1
 
 import data.main
 
-reused_prefixes := {"[security-", "[resources-", "[images-digest]", "[probes-present]", "[no-secret-", "[no-test-only]", "[no-cronjob]"}
+# "[rbac-" since P15-TSK-032's review: a person's role added under deploy/edge is held by the rules that hold the application's, and a
+# person's binding in finapp-edge is refused ([rbac-human-namespace]: finapp and finapp-observability alone).
+reused_prefixes := {"[security-", "[resources-", "[images-digest]", "[probes-present]", "[no-secret-", "[no-test-only]", "[no-cronjob]", "[rbac-"}
 
 deny contains msg if {
 	some msg in main.deny

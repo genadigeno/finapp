@@ -38,6 +38,10 @@ configMapGenerator:
       - FINAPP_PAYMENTS_PROVIDER_TIMEOUT=PT15S
       - FINAPP_PAYMENTMETHODS_TOKENISATION_TIMEOUT=PT15S
       - FINAPP_MERCHANT_PAYOUT_PROVIDER_TIMEOUT=PT15S
+      # The reference rates and the FX provider, named to the application in the platform rehearsals alone (P15-TSK-032): the same
+      # simulator, and the same handshake, which the reference client pays on every poll (measured: its 5 s default timed out).
+      - FINAPP_FX_REFERENCE_TIMEOUT=PT15S
+      - FINAPP_FX_PROVIDER_TIMEOUT=PT15S
       # One client on one address is every customer of the rehearsal, so the two doors its workload walks through are opened. The doors it never calls keep
       # their reference numbers: the recovery door is what the forged-address step counts on.
       - FINAPP_ABUSE_REGISTRATION_LIMIT=1000000

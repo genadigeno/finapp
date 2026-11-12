@@ -357,6 +357,25 @@ jobs:
         run: ./infra/scripts/telemetry-check.sh
 
   # ---------------------------------------------------------------------------
+  # The controllers' own manifests (P15-TSK-032; OPERATIONS_RUNBOOK.md section
+  # 11.36): Argo CD's install manifest and the External Secrets chart, each fetched
+  # at its pinned bytes, rendered as a cluster receives them, and held to the named
+  # list of cluster roles, bindings and Secret namespaces; each rule refuses a plant
+  # in the same run. No credential and no cluster: it renders and reads.
+  # ---------------------------------------------------------------------------
+  controllers:
+    name: Controller manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Render Argo CD and the External Secrets chart, hold them to the named list, and prove every rule refuses its plant
+        # The same script a developer runs; the pins live in infra/scanner-pins.sh.
+        run: ./infra/scripts/controller-check.sh
+
+  # ---------------------------------------------------------------------------
   # A key ring's version is activated only in a change after one that listed it
   # (P15-TSK-019, ADR-0123): compares this change with its base, so a replica is
   # never asked to read a version nothing told it to hold. Its own job because a
@@ -613,6 +632,13 @@ jobs:
       - name: Run the image against a throwaway database
         run: ./infra/scripts/migrator-verify.sh
 
+      # P15-TSK-032: OPERATIONS_RUNBOOK.md section 11.4 rehearsed on the image this job built - a migration failing on its data,
+      # stopped, run again, refused below an applied version and fixed forward; and, on the image and on the developer's Gradle
+      # path, the migration outside a transaction the build refuses: no history row, a leftover every later run trips over,
+      # no finish under Flyway's own lock, and only the owner's drop and a migration corrected into a transaction as a way out.
+      - name: Rehearse a failed migration on the image
+        run: ./infra/scripts/migration-failure-rehearsal.sh
+
   # ---------------------------------------------------------------------------
   # The kind rehearsal (P15-TSK-012, ADR-0120): the platform on a real Kubernetes API as
   # three replicas, the migration Job, smoke through the real edge, a rolling update from
@@ -641,6 +667,19 @@ jobs:
             timeout: 150
           - scope: rotations
             timeout: 240
+          # P15-TSK-032 (OPERATIONS_RUNBOOK.md section 11.38): the runbook's procedures against their planted conditions, nightly only
+          # (the design's Q10). Each waits for its rules' own `for:` - the longest 80 minutes - so neither belongs on a push.
+          - scope: signals
+            timeout: 330
+            nightly: only
+          - scope: incidents
+            timeout: 300
+            nightly: only
+          # P15-TSK-032: Argo CD on the cluster, syncing staging's overlay through a rehearsal root; promote.sh, the smoke, a rollback, a
+          # failed hook and its way back (OPERATIONS_RUNBOOK.md section 11.36). Nightly only (and by hand), as the design decided.
+          - scope: delivery
+            timeout: 180
+            nightly: true
     steps:
       - name: Check out, with the history N - 1 is built from
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -652,8 +691,13 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
+          NIGHTLY: ${{ matrix.nightly }}
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|infra/scripts/kind-rehearsal|infra/scripts/kind-secrets|infra/scripts/KeyCheckValue\.java$|infra/postgres/|infra/kafka/|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
+          if [ "$NIGHTLY" = only ] && [ "$EVENT" != schedule ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$NIGHTLY" = true ] && [ "$EVENT" != schedule ] && [ "$EVENT" != workflow_dispatch ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|infra/scripts/kind-rehearsal|infra/scripts/kind-secrets|infra/scripts/KeyCheckValue\.java$|infra/postgres/|infra/kafka/|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

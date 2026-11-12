@@ -14,7 +14,9 @@ import rego.v1
 
 import data.main
 
-reused_prefixes := {"[security-", "[resources-", "[images-digest]", "[probes-present]", "[no-secret-", "[no-test-only]", "[no-cronjob]"}
+# "[rbac-" since P15-TSK-032 (item 42 (k)): a person's roles here are held by the rules that hold the application's - no secrets, no wildcard,
+# no way inside a pod, no escalate, bind or impersonate, each role's own group, a person's binding in finapp and finapp-observability alone.
+reused_prefixes := {"[security-", "[resources-", "[images-digest]", "[probes-present]", "[no-secret-", "[no-test-only]", "[no-cronjob]", "[rbac-"}
 
 deny contains msg if {
 	some msg in main.deny
@@ -202,6 +204,168 @@ scraper_reaches_the_application if {
 deny contains "[obs-scraper] no policy lets a pod labelled finapp/role: metrics-scraper reach the application's management port, and nothing else on that rule" if {
 	pipeline_rendered
 	not scraper_reaches_the_application
+}
+
+# ------------------------------------------------------------------------------------------- what the scraper reaches, and who reaches a backend
+
+# P15-TSK-032: the scraper reads the alerts' inputs and sends what fires to Alertmanager, so it reaches more than the application. Every flow
+# is named here, each target by its peer exactly and with the ports it answers on: a metrics port, Alertmanager's API, DNS. Every egress rule
+# of a policy that may select the scraper is one of these, every peer of the rule the same target and every port that target's. A target added
+# to the scrape is added here in the same review, and a widened peer (cert-manager's whole namespace, its webhook's port) is refused.
+scrape_targets := [
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "finapp"}}, "podSelector": {"matchLabels": {"app.kubernetes.io/name": "finapp-app"}}}, "ports": {["TCP", 8081]}},
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "finapp-edge"}}, "podSelector": {"matchLabels": {"finapp/role": "ingress-controller"}}}, "ports": {["TCP", 8081]}},
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "telemetry-collector"}}}, "ports": {["TCP", 8888]}},
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "trace-store"}}}, "ports": {["TCP", 3200]}},
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "log-store"}}}, "ports": {["TCP", 3100]}},
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "alert-router"}}}, "ports": {["TCP", 9193]}},
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "cert-manager"}}, "podSelector": {"matchLabels": {"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}}}, "ports": {["TCP", 9402]}},
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}, "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}, "ports": {["UDP", 53], ["TCP", 53]}},
+]
+
+# The labels a rendered workload of this namespace carries on its pods, by role; the role alone where none is rendered.
+pod_labels(role) := labels if {
+	some doc in main.of_kind("Deployment")
+	in_namespace(doc)
+	labels := object.get(object.get(object.get(doc.spec, "template", {}), "metadata", {}), "labels", {})
+	labels["finapp/role"] == role
+} else := {"finapp/role": role}
+
+# A policy reaches a pod by what it selects: an empty selector, one whose every label the pod carries, or one with expressions, read as
+# selecting it.
+may_select(policy, labels) if {
+	selector := main.section(policy.spec, "podSelector")
+	count(main.list_of(selector, "matchExpressions")) > 0
+}
+
+may_select(policy, labels) if {
+	selector := main.section(policy.spec, "podSelector")
+	count(main.list_of(selector, "matchExpressions")) == 0
+	every key, value in main.section(selector, "matchLabels") {
+		labels[key] == value
+	}
+}
+
+reaches_a_scrape_target(rule) if {
+	some target in scrape_targets
+	count(main.list_of(rule, "to")) > 0
+	every peer in main.list_of(rule, "to") {
+		peer == target.peer
+	}
+	main.ports_within(rule, target.ports)
+}
+
+deny contains msg if {
+	some policy in main.of_kind("NetworkPolicy")
+	in_namespace(policy)
+	may_select(policy, pod_labels("metrics-scraper"))
+	some rule in main.list_of(policy.spec, "egress")
+	not reaches_a_scrape_target(rule)
+	msg := sprintf("[obs-scraper-egress] %s lets the scraper reach something other than a scrape target's own port, Alertmanager or DNS", [main.label(policy)])
+}
+
+# Who may reach a backend, and on which port: the collectors on its ingest port and the scraper on its counters' port; Alertmanager the
+# scraper alone; and the scraper itself nobody (P15-TSK-032's review): on kind it runs with --web.enable-lifecycle, whose /-/reload and
+# /-/quit answer anyone who reaches it, so only its node (the API server's proxy) may. Each peer exactly a role of this namespace.
+store_admits := {
+	"trace-store": [{"role": "telemetry-collector", "ports": {["TCP", 4317]}}, {"role": "metrics-scraper", "ports": {["TCP", 3200]}}],
+	"log-store": [{"role": "telemetry-collector", "ports": {["TCP", 3100]}}, {"role": "metrics-scraper", "ports": {["TCP", 3100]}}],
+	"alert-router": [{"role": "metrics-scraper", "ports": {["TCP", 9193]}}],
+	"metrics-scraper": [],
+}
+
+admitted_to_store(rule, role) if {
+	some admitted in store_admits[role]
+	count(main.list_of(rule, "from")) > 0
+	every peer in main.list_of(rule, "from") {
+		peer == {"podSelector": {"matchLabels": {"finapp/role": admitted.role}}}
+	}
+	main.ports_within(rule, admitted.ports)
+}
+
+deny contains msg if {
+	some role, _ in store_admits
+	some policy in main.of_kind("NetworkPolicy")
+	in_namespace(policy)
+	may_select(policy, pod_labels(role))
+	some rule in main.list_of(policy.spec, "ingress")
+	not admitted_to_store(rule, role)
+	msg := sprintf("[obs-store-ingress] %s admits to the %s a peer or a port its list does not name", [main.label(policy), role])
+}
+
+# ------------------------------------------------------------------------------------------- a person's break-glass here evicts
+
+# P15-TSK-032 (THREAT_MODEL.md section 6 item 42 (k)): in this namespace break-glass is one act, a pod evicted, which the collector's
+# PodDisruptionBudget admits one at a time. finapp.rego's closed list admits deleting a pod and changing a replica count in the application's
+# namespace; here neither. Read from every role the break-glass group is bound to here, and from any role here of its name.
+break_glass_here contains role if {
+	some binding in main.rbac_bindings
+	in_namespace(binding)
+	some subject in main.list_of(binding, "subjects")
+	subject.kind == "Group"
+	subject.name == "finapp-break-glass"
+	some role in main.rbac_roles
+	main.binds(binding, role)
+}
+
+break_glass_here contains role if {
+	some role in main.rbac_roles
+	in_namespace(role)
+	role.metadata.name == "finapp-break-glass"
+}
+
+deny contains msg if {
+	some role in break_glass_here
+	some rule in main.list_of(role, "rules")
+	some verb in main.list_of(rule, "verbs")
+	not verb in {"get", "list", "watch"}
+	some resource in main.list_of(rule, "resources")
+	not [verb, resource] == ["create", "pods/eviction"]
+	msg := sprintf("[obs-break-glass-evictions] %s may %s %s: in finapp-observability break-glass evicts a pod and writes nothing else", [main.label(role), verb, resource])
+}
+
+# ------------------------------------------------------------------------------------------- a person's roles here, exactly
+
+# P15-TSK-032's review: finapp.rego's rules refuse what no person may hold anywhere (a Secret, a wildcard, a way inside a pod); here a
+# person holds exactly these, triple by triple, and a role of any other name nothing. Every role a person can hold in this namespace: one a
+# binding here gives a group or a user, and any role here no listed controller holds. A ConfigMap, a Service or a Role patched in by an
+# overlay is refused, as is a read added to break-glass.
+person_triples := {
+	"finapp-read-only": {
+		["", "pods", "get"], ["", "pods", "list"], ["", "pods", "watch"],
+		["", "pods/log", "get"], ["", "pods/log", "list"], ["", "pods/log", "watch"],
+		["", "events", "get"], ["", "events", "list"], ["", "events", "watch"],
+		["apps", "deployments", "get"], ["apps", "deployments", "list"], ["apps", "deployments", "watch"],
+	},
+	"finapp-break-glass": {["", "pods/eviction", "create"]},
+}
+
+person_roles_here contains role if {
+	some binding in main.rbac_bindings
+	in_namespace(binding)
+	some subject in main.list_of(binding, "subjects")
+	not main.is_service_account(subject)
+	some role in main.rbac_roles
+	main.binds(binding, role)
+}
+
+person_roles_here contains role if {
+	some role in main.human_roles
+	in_namespace(role)
+}
+
+allowed_for_a_person(role, triple) if {
+	triple in object.get(person_triples, role.metadata.name, set())
+}
+
+deny contains msg if {
+	some role in person_roles_here
+	some rule in main.list_of(role, "rules")
+	some group in main.list_of(rule, "apiGroups")
+	some resource in main.list_of(rule, "resources")
+	some verb in main.list_of(rule, "verbs")
+	not allowed_for_a_person(role, [group, resource, verb])
+	msg := sprintf("[obs-person-reads] %s gives a person %v %v in API group %v: in finapp-observability a person holds pods, their logs, Deployments and events to read, and break-glass an eviction, nothing else", [main.label(role), verb, resource, group])
 }
 
 # ------------------------------------------------------------------------------------------- the application's one endpoint

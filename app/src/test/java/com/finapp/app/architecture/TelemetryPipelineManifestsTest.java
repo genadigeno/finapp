@@ -187,6 +187,11 @@ class TelemetryPipelineManifestsTest {
         assertThat(fromTheApplication).as("traces and logs").isEqualTo(2);
         assertThat(stringList(map(pipelines, "traces/ingress").get("exporters"))).containsExactly("load_balancing");
         assertThat(map(map(collector, "exporters"), "load_balancing")).containsEntry("routing_key", "traceID");
+        // P15-TSK-032's review: the tier's own retry and queue re-route a failed batch to the peers the resolver knows by then, so a peer
+        // starting, leaving or not yet resolved costs no span; without them each was a drop and a ticket at every rollout.
+        Map<String, Object> balancing = map(map(collector, "exporters"), "load_balancing");
+        assertThat(map(balancing, "retry_on_failure")).containsEntry("enabled", true).containsEntry("max_elapsed_time", "120s");
+        assertThat(map(balancing, "sending_queue")).containsEntry("enabled", true);
         assertThat(stringList(map(pipelines, "traces/sampling").get("processors"))).contains("tail_sampling");
         assertThat(config).contains("name: errors").contains("name: slow").contains("name: writes").contains("name: asynchronous-legs");
     }
@@ -249,7 +254,7 @@ class TelemetryPipelineManifestsTest {
         assertThat(read(BASE + "collector-workload.yaml")).contains("opentelemetry-collector-contrib@" + pin(pins, "COLLECTOR_DIGEST"));
         String backends = read(KIND + "backends.yaml");
         assertThat(backends).contains("grafana/tempo@" + pin(pins, "TEMPO_DIGEST")).contains("grafana/loki@" + pin(pins, "LOKI_DIGEST"))
-                .contains("prom/prometheus@" + pin(pins, "PROMETHEUS_DIGEST"));
+                .contains("prom/prometheus@" + pin(pins, "PROMETHEUS_DIGEST")).contains("prom/alertmanager@" + pin(pins, "ALERTMANAGER_DIGEST"));
         for (String tool : List.of("COLLECTOR", "TEMPO", "LOKI")) {
             assertThat(read("infra/scripts/check-pinned-images.sh")).contains("\"$" + tool + "_REPOSITORY\"").contains("\"$" + tool + "_DIGEST\"");
         }
@@ -278,6 +283,105 @@ class TelemetryPipelineManifestsTest {
     }
 
     @Test
+    @DisplayName("kind's Prometheus loads every rule file from its own mount and sends to the Alertmanager beside it, which listens off the"
+            + " broker's port and routes as committed; it reloads on a POST, on kind alone, from a ConfigMap of a fixed name; it scrapes the"
+            + " back ends and cert-manager's controller, and its policy reaches that controller alone (P15-TSK-032)")
+    @SuppressWarnings("unchecked")
+    void kindRaisesAndRoutesTheAlerts() throws IOException {
+        Map<String, Object> prometheus = yaml(read(KIND + "prometheus.yml"));
+        assertThat(stringList(prometheus.get("rule_files"))).containsExactly("/etc/prometheus-rules/*.yml");
+        Map<String, Object> manager = cast(((List<Object>) map(prometheus, "alerting").get("alertmanagers")).get(0));
+        Map<String, Object> targets = cast(((List<Object>) manager.get("static_configs")).get(0));
+        assertThat(stringList(targets.get("targets"))).containsExactly("finapp-alertmanager.finapp-observability.svc.cluster.local:9093");
+        Map<String, String> jobs = new java.util.TreeMap<>();
+        for (Object job : (List<Object>) prometheus.get("scrape_configs")) {
+            Map<String, Object> scrape = cast(job);
+            jobs.put(String.valueOf(scrape.get("job_name")), String.valueOf(scrape.get("static_configs")));
+        }
+        assertThat(jobs).containsKeys("finapp", "finapp-collector", "finapp-tempo", "finapp-loki", "cert-manager");
+        assertThat(jobs.get("cert-manager")).contains("cert-manager.cert-manager.svc.cluster.local:9402");
+
+        List<Map<String, Object>> backends = yamlAll(read(KIND + "backends.yaml"));
+        Map<String, Object> scraper = pod(backends, "finapp-prometheus");
+        Map<String, Object> container = cast(((List<Object>) scraper.get("containers")).get(0));
+        assertThat(stringList(container.get("args"))).contains("--config.file=/etc/prometheus/prometheus.yml", "--web.enable-lifecycle");
+        List<Map<String, Object>> mounts = (List<Map<String, Object>>) container.get("volumeMounts");
+        assertThat(mounts).as("directories, never a subPath: an edited ConfigMap reaches the pod only so")
+                .allSatisfy(mount -> assertThat(mount).doesNotContainKey("subPath"))
+                .anySatisfy(mount -> assertThat(mount).containsEntry("name", "rules").containsEntry("mountPath", "/etc/prometheus-rules"))
+                .anySatisfy(mount -> assertThat(mount).containsEntry("name", "config").containsEntry("mountPath", "/etc/prometheus"));
+        assertThat(String.valueOf(scraper.get("volumes"))).contains("name=finapp-prometheus-rules").contains("name=finapp-prometheus-config");
+        assertThat(read(KIND + "kustomization.yaml")).contains("  - name: finapp-prometheus-config\n    files:\n      - prometheus.yml\n"
+                + "    options:\n      disableNameSuffixHash: true\n");
+
+        Map<String, Object> router = pod(backends, "finapp-alertmanager");
+        Map<String, Object> alertmanager = cast(((List<Object>) router.get("containers")).get(0));
+        assertThat(stringList(alertmanager.get("args"))).contains("--config.file=/etc/alertmanager/alertmanager.yml", "--web.listen-address=:9193",
+                "--cluster.listen-address=");
+        assertThat(String.valueOf(alertmanager.get("ports"))).contains("containerPort=9193").doesNotContain("9093");
+        assertThat(String.valueOf(router.get("volumes"))).contains("name=finapp-alertmanager-config");
+        Map<String, Object> service = backends.stream().filter(document -> "Service".equals(document.get("kind"))
+                && "finapp-alertmanager".equals(map(document, "metadata").get("name"))).findFirst().orElseThrow();
+        assertThat(String.valueOf(map(service, "spec").get("ports"))).contains("port=9093").contains("targetPort=http");
+
+        // The lifecycle endpoints are unauthenticated: the flag is kind's, and no other manifest under deploy/ carries it.
+        try (Stream<Path> files = Files.walk(root.resolve("deploy"))) {
+            for (Path file : files.filter(Files::isRegularFile).toList()) {
+                String relative = root.relativize(file).toString().replace('\\', '/');
+                if (!relative.equals(KIND + "backends.yaml")) {
+                    assertThat(read(relative).lines().filter(line -> !line.strip().startsWith("#"))).as(relative)
+                            .noneMatch(line -> line.contains("enable-lifecycle"));
+                }
+            }
+        }
+
+        Map<String, Object> reach = policies.stream().filter(policy -> "finapp-scraper-to-backends".equals(map(policy, "metadata").get("name")))
+                .findFirst().orElseThrow();
+        assertThat(String.valueOf(map(reach, "spec").get("egress")))
+                .contains("{namespaceSelector={matchLabels={kubernetes.io/metadata.name=cert-manager}}, podSelector={matchLabels="
+                        + "{app.kubernetes.io/name=cert-manager, app.kubernetes.io/component=controller}}}")
+                .contains("port=9402").contains("port=9193").doesNotContain("port=9093");
+    }
+
+    private static Map<String, Object> pod(List<Map<String, Object>> documents, String deployment) {
+        Map<String, Object> found = documents.stream().filter(document -> "Deployment".equals(document.get("kind"))
+                && deployment.equals(map(document, "metadata").get("name"))).findFirst().orElseThrow();
+        return map(map(map(found, "spec"), "template"), "spec");
+    }
+
+    @Test
+    @DisplayName("a person reads the pipeline's pods, their logs, Deployments and events, and break-glass here evicts a pod and nothing else,"
+            + " each role bound to its own group, rendered by the pipeline's release and held by finapp.rego's rules (P15-TSK-032, item 42 (k))")
+    void aPersonReadsHereAndBreakGlassEvicts() {
+        Map<String, Map<String, Object>> roles = new java.util.TreeMap<>();
+        Map<String, Map<String, Object>> bindings = new java.util.TreeMap<>();
+        for (Map<String, Object> document : yamlAll(read(BASE + "rbac-humans.yaml"))) {
+            Map<String, Object> metadata = map(document, "metadata");
+            assertThat(metadata).as("stated, so the committed file says whose role it is").containsEntry("namespace", "finapp-observability");
+            ("Role".equals(document.get("kind")) ? roles : bindings).put(String.valueOf(metadata.get("name")), document);
+        }
+        assertThat(roles.keySet()).containsExactly("finapp-break-glass", "finapp-read-only");
+        assertThat(roles.get("finapp-read-only").get("rules")).isEqualTo(List.of(
+                Map.of("apiGroups", List.of(""), "resources", List.of("pods", "pods/log", "events"), "verbs", List.of("get", "list", "watch")),
+                Map.of("apiGroups", List.of("apps"), "resources", List.of("deployments"), "verbs", List.of("get", "list", "watch"))));
+        assertThat(roles.get("finapp-break-glass").get("rules")).isEqualTo(List.of(
+                Map.of("apiGroups", List.of(""), "resources", List.of("pods/eviction"), "verbs", List.of("create"))));
+        assertThat(bindings.keySet()).containsExactly("finapp-break-glass", "finapp-read-only");
+        for (Map.Entry<String, Map<String, Object>> binding : bindings.entrySet()) {
+            assertThat(map(binding.getValue(), "roleRef")).containsEntry("kind", "Role").containsEntry("name", binding.getKey());
+            assertThat(binding.getValue().get("subjects")).isEqualTo(List.of(
+                    Map.of("apiGroup", "rbac.authorization.k8s.io", "kind", "Group", "name", binding.getKey())));
+        }
+        assertThat(read(BASE + "kustomization.yaml")).contains("  - rbac-humans.yaml");
+        assertThat(read(POLICY)).contains("\"[rbac-\"}").contains("[obs-break-glass-evictions]").contains("[obs-person-reads]");
+        // The eviction break-glass makes is admitted for an unready collector too, or both unready would refuse it with 429 for ever.
+        Map<String, Object> budget = yamlAll(read(BASE + "collector-workload.yaml")).stream()
+                .filter(document -> "PodDisruptionBudget".equals(document.get("kind"))).findFirst().orElseThrow();
+        assertThat(map(budget, "spec")).containsEntry("maxUnavailable", 1).containsEntry("unhealthyPodEvictionPolicy", "AlwaysAllow");
+        assertThat(read("infra/scripts/manifest-policy/finapp.rego")).contains("person_namespaces := {\"finapp\", \"finapp-observability\"}");
+    }
+
+    @Test
     @DisplayName("every policy id in observability.rego is refused by a plant, and every plant is refused: read from the two files, never a list here")
     void everyPolicyIsRefusedByAPlant() {
         Set<String> ruleIds = new TreeSet<>();
@@ -302,7 +406,8 @@ class TelemetryPipelineManifestsTest {
         assertThat(refusedIds).as("every rule is refused by a plant").containsAll(ruleIds);
         refusedIds.removeAll(ruleIds);
         assertThat(refusedIds).as("the rest are finapp.rego's, reused")
-                .containsExactlyInAnyOrder("security-token", "images-digest", "security-non-root", "probes-present");
+                .containsExactlyInAnyOrder("security-token", "images-digest", "security-non-root", "probes-present", "rbac-human-namespace",
+                        "rbac-human-secrets", "rbac-human-subresource");
         assertThat(refusedPlants).as("every plant is refused and every refusal has its plant").isEqualTo(planted);
     }
 

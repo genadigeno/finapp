@@ -47,9 +47,14 @@ telemetry_deploy() {
     telemetry_image "$TEMPO_REPOSITORY" "$TEMPO_VERSION" "$TEMPO_DIGEST"
     telemetry_image "$LOKI_REPOSITORY" "$LOKI_VERSION" "$LOKI_DIGEST"
     telemetry_image "$PROMETHEUS_REPOSITORY" "$PROMETHEUS_VERSION" "$PROMETHEUS_DIGEST"
+    # Alertmanager (P15-TSK-032): loaded as the others are, never pulled by the node itself through an intercepted TLS.
+    telemetry_image "$ALERTMANAGER_REPOSITORY" "$ALERTMANAGER_VERSION" "$ALERTMANAGER_DIGEST"
     render_overlay observability observability/overlays/kind
-    apply_files "$WORK/render/observability/all.yaml"
-    for deployment in finapp-tempo finapp-loki finapp-prometheus finapp-collector; do
+    # Server-side (P15-TSK-032): the rules' ConfigMap, every committed rule file, is past what client-side apply can keep in its
+    # last-applied annotation (262,144 bytes) once it grows; server-side apply keeps none.
+    kube apply --server-side --force-conflicts -f - < "$WORK/render/observability/all.yaml" >> "$ART/apply.log" 2>&1 \
+        || cannot "could not apply the telemetry pipeline: see apply.log"
+    for deployment in finapp-tempo finapp-loki finapp-prometheus finapp-alertmanager finapp-collector; do
         kube -n finapp-observability rollout status "deployment/$deployment" --timeout=300s >> "$ART/apply.log" 2>&1 \
             || fail "$deployment did not become ready"
     done

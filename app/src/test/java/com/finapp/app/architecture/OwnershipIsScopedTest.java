@@ -4365,6 +4365,20 @@ class OwnershipIsScopedTest {
                                         + " safer path would describe the caller that needs no"
                                         + " protection.")),
                     Map.entry(
+                            "com.finapp.identity.JdbcRoleAssignmentStore.lockForRoleChange",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P15-TSK-032. The FOR NO KEY UPDATE every grant and revocation"
+                                        + " of one identity takes on its row first, so they serialise."
+                                        + " The identifier comes from the URL of POST"
+                                        + " /v1/identities/{id}/roles or DELETE"
+                                        + " /v1/identities/{id}/roles/{role} and names SOMEBODY ELSE,"
+                                        + " as findById's does. What stands in for the missing ownership"
+                                        + " predicate: @RequiresPermission(ROLE_ASSIGN) at the boundary"
+                                        + " (RoutePermissionRegisterTest), and IdentityAdministration"
+                                        + " refusing subject.equals(actor) before the lock is taken"
+                                        + " (LastRoleEndsSessionsTest, RoleGrantNeedsAFactorTest).")),
+                    Map.entry(
                             "com.finapp.identity.JdbcRecoveryRequestStore.consume",
                             new Entry(
                                     Scope.BEARER_SCOPED,

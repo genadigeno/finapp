@@ -205,7 +205,9 @@ class RefusedActsTest {
         for (String[] door : List.of(
                 new String[] {"/switches/pairs/EUR-USD", "pair=EUR-USD"},
                 new String[] {"/switches/corridors/EUR-USD-US", "corridor=EUR-USD-US"},
-                new String[] {"/switches/providers/fx-sim-a", "code=fx-sim-a"})) {
+                new String[] {"/switches/providers/fx-sim-a", "code=fx-sim-a"},
+                // P15-TSK-032: a refused revocation says which role.
+                new String[] {"/switches/roles/LEDGER_OPERATOR", "role=LEDGER_OPERATOR"})) {
             written.clear();
             door(recorder()).perform(post(door[0])).andReturn();
             assertThat(written).singleElement().satisfies(record -> assertThat(record.changeSummary())
@@ -222,7 +224,12 @@ class RefusedActsTest {
                 new String[] {"/switches/corridors/EUR-USD-USA", "EUR-USD-USA", "corridor=(not an id)"},
                 new String[] {"/switches/providers/" + "x4111111111111111", "x4111111111111111", "code=(not an id)"},
                 new String[] {"/switches/providers/Ada-Lovelace", "Ada-Lovelace", "code=(not an id)"},
-                new String[] {"/switches/providers/" + "a".repeat(33), "a".repeat(33), "code=(not an id)"})) {
+                new String[] {"/switches/providers/" + "a".repeat(33), "a".repeat(33), "code=(not an id)"},
+                // P15-TSK-032: a role is one of RoleName's names, exactly - not a near spelling, not a card number.
+                new String[] {"/switches/roles/SUPERUSER", "SUPERUSER", "role=(not an id)"},
+                new String[] {"/switches/roles/ledger_operator", "ledger_operator", "role=(not an id)"},
+                new String[] {"/switches/roles/LEDGER_OPERATORX", "LEDGER_OPERATORX", "role=(not an id)"},
+                new String[] {"/switches/roles/4111111111111111", "4111111111111111", "role=(not an id)"})) {
             written.clear();
             door(recorder()).perform(post(door[0])).andReturn();
             assertThat(written).singleElement().satisfies(record -> assertThat(record.changeSummary())
@@ -391,6 +398,12 @@ class RefusedActsTest {
         @PostMapping("/switches/providers/{code}")
         @RecordsRefusals
         public void provider(@PathVariable("code") String code) {
+            throw refusal("notfound");
+        }
+
+        @PostMapping("/switches/roles/{role}")
+        @RecordsRefusals
+        public void role(@PathVariable("role") String role) {
             throw refusal("notfound");
         }
 

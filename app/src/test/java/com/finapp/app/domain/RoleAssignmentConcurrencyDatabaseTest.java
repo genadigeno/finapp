@@ -250,6 +250,220 @@ class RoleAssignmentConcurrencyDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The revocation's locked read (P15-TSK-032)
+
+    /**
+     * Two administrators revoking each other's {@code ADMINISTRATOR} at once, the store's half: the second revocation's read
+     * waits for the first's transaction and then reads the row the first revoked as gone. That is what lets
+     * {@code IdentityAdministration.revokeRole} refuse the last of the two ({@code LastRoleGranterTest} holds the rule over a
+     * read that waited). Relative to whoever else holds the role in this shared database: the case reads only its own two.
+     */
+    @Test
+    @DisplayName("P15-TSK-032: the second revocation's lock of the granting holdings waits for the first, and its count after the"
+            + " lock reads the role the first revoked as gone")
+    void theSecondRevocationReadsTheFirst() throws Exception {
+        IdentityId first = givenAnAdministrator();
+        IdentityId second = givenAnAdministrator();
+        java.util.Set<RoleName> granting = java.util.Set.of(RoleName.ADMINISTRATOR);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (SimulatedInstance one = SimulatedInstance.inAgreementWithTheServer();
+                SimulatedInstance other = SimulatedInstance.inAgreementWithTheServer()) {
+            roles.lockHoldingsOf(one.connection(), granting);
+            assertThat(roles.activeHoldingsOf(one.connection(), granting)).contains(holding(first), holding(second));
+
+            Future<java.util.Set<RoleAssignmentStore.Holding>> secondRead = pool.submit(() -> {
+                roles.lockHoldingsOf(other.connection(), granting);
+                return roles.activeHoldingsOf(other.connection(), granting);
+            });
+            awaitBlockedBehind(one.connection(), secondRead);
+
+            assertThat(roles.revoke(one.connection(), first, RoleName.ADMINISTRATOR, second, one.clock().instant())).isTrue();
+            one.commit();
+
+            assertThat(secondRead.get(30, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("the first's revocation, committed while this waited, is read")
+                    .contains(holding(second)).doesNotContain(holding(first));
+            other.rollback();
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /**
+     * The review's pitfall, pinned on PostgreSQL (`P15-TSK-032`'s fix round): a suspension that commits while a locking statement
+     * waits is not seen by that statement - PostgreSQL re-checks only rows another transaction <em>updated</em>, and the
+     * suspension updated the holder's identity row, not the locked role row, so a status joined to the locking statement is the
+     * status at its start. The count taken by a statement of its own after the lock sees it. This is what the fresh count is for:
+     * with the status read in the locking statement, two administrators suspending each other at once would each count the
+     * other active, and both would land.
+     */
+    @Test
+    @DisplayName("P15-TSK-032: a suspension committed while the holdings lock waited is unseen by the locking statement's own join,"
+            + " and seen by the count after it")
+    void theCountAfterTheLockSeesASuspensionTheLockingStatementCannot() throws Exception {
+        IdentityId suspending = givenAnAdministrator();
+        IdentityId suspended = givenAnAdministrator();
+        java.util.Set<RoleName> granting = java.util.Set.of(RoleName.ADMINISTRATOR);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (SimulatedInstance one = SimulatedInstance.inAgreementWithTheServer();
+                SimulatedInstance other = SimulatedInstance.inAgreementWithTheServer()) {
+            roles.lockHoldingsOf(one.connection(), granting);
+            execute(one.connection(), "UPDATE identity.identity SET status = 'SUSPENDED', status_changed_at = now() WHERE id = ?",
+                    suspended.value());
+
+            // The single statement the review found: the holder's status joined to the lock.
+            Future<java.util.Map<IdentityId, String>> joined = pool.submit(() -> {
+                java.util.Map<IdentityId, String> statuses = new java.util.HashMap<>();
+                try (PreparedStatement lock = other.connection().prepareStatement(
+                        "SELECT held.identity_id, holder.status FROM identity.role_assignment held"
+                                + " JOIN identity.identity holder ON holder.id = held.identity_id"
+                                + " WHERE held.revoked_at IS NULL AND held.role_name = 'ADMINISTRATOR'"
+                                + " ORDER BY held.id FOR UPDATE OF held")) {
+                    try (ResultSet rows = lock.executeQuery()) {
+                        while (rows.next()) {
+                            statuses.put(IdentityId.of(rows.getObject(1, UUID.class)), rows.getString(2));
+                        }
+                    }
+                }
+                return statuses;
+            });
+            awaitBlockedBehind(one.connection(), joined);
+            one.commit();
+
+            assertThat(joined.get(30, java.util.concurrent.TimeUnit.SECONDS).get(suspended))
+                    .as("the status at the statement's start, not the suspension it waited for").isEqualTo("ACTIVE");
+            assertThat(roles.activeHoldingsOf(other.connection(), granting))
+                    .as("a statement of its own after the lock sees the suspension")
+                    .contains(holding(suspending)).doesNotContain(holding(suspended));
+            other.rollback();
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("P15-TSK-032: the granting holdings read leaves out a suspended holder's, and reads only the roles asked")
+    void aSuspendedHolderIsNotActive() throws Exception {
+        IdentityId active = givenAnAdministrator();
+        IdentityId suspended = givenAnAdministrator();
+        IdentityId reviewer = givenAnIdentity();
+        try (SimulatedInstance granting = SimulatedInstance.inAgreementWithTheServer()) {
+            assertThat(roles.assign(granting.connection(), reviewer, RoleName.KYC_REVIEWER, reviewer,
+                    granting.clock().instant())).isTrue();
+            granting.commit();
+        }
+        try (Connection app = DatabaseRoles.application()) {
+            execute(app, "UPDATE identity.identity SET status = 'SUSPENDED', status_changed_at = now() WHERE id = ?",
+                    suspended.value());
+        }
+
+        try (SimulatedInstance reading = SimulatedInstance.inAgreementWithTheServer()) {
+            roles.lockHoldingsOf(reading.connection(), java.util.Set.of(RoleName.ADMINISTRATOR));
+            java.util.Set<RoleAssignmentStore.Holding> read =
+                    roles.activeHoldingsOf(reading.connection(), java.util.Set.of(RoleName.ADMINISTRATOR));
+            assertThat(read).contains(holding(active)).doesNotContain(holding(suspended))
+                    .doesNotContain(new RoleAssignmentStore.Holding(reviewer, RoleName.KYC_REVIEWER));
+            assertThat(read).allSatisfy(holding -> assertThat(holding.role()).isEqualTo(RoleName.ADMINISTRATOR));
+            assertThat(roles.liveRolesOf(reading.connection(), suspended)).as("a suspended identity still holds its role")
+                    .containsExactly(RoleName.ADMINISTRATOR);
+            reading.rollback();
+        }
+    }
+
+    /**
+     * The lock every grant and revocation of one identity takes first: the second waits for the first's commit, and its next
+     * read sees what the first left. {@code IdentityAdministrationDatabaseTest#aGrantAndARevocationOfOneIdentitySerialise} holds
+     * it through the domain. A session insert's foreign key takes {@code KEY SHARE} on the same row, which the lock lets through.
+     */
+    @Test
+    @DisplayName("P15-TSK-032: the identity's lock serialises its role changes - the second waits, then reads the first's revocation"
+            + " - and holds no session issuance back")
+    void theIdentitysLockSerialisesItsRoleChanges() throws Exception {
+        IdentityId identity = givenAnIdentity();
+        try (SimulatedInstance granting = SimulatedInstance.inAgreementWithTheServer()) {
+            assertThat(roles.assign(granting.connection(), identity, RoleName.KYC_REVIEWER, identity,
+                    granting.clock().instant())).isTrue();
+            granting.commit();
+        }
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (SimulatedInstance revoking = SimulatedInstance.inAgreementWithTheServer();
+                SimulatedInstance changing = SimulatedInstance.inAgreementWithTheServer()) {
+            roles.lockForRoleChange(revoking.connection(), identity);
+            assertThat(roles.liveRolesOf(revoking.connection(), identity)).containsExactly(RoleName.KYC_REVIEWER);
+
+            Future<java.util.Set<RoleName>> read = pool.submit(() -> {
+                roles.lockForRoleChange(changing.connection(), identity);
+                return roles.liveRolesOf(changing.connection(), identity);
+            });
+            awaitBlockedBehind(revoking.connection(), read);
+
+            try (Connection issuing = DatabaseRoles.application()) {
+                execute(issuing, "SET lock_timeout = '2s'");
+                try (PreparedStatement keyShare = issuing.prepareStatement(
+                        "SELECT 1 FROM identity.identity WHERE id = ? FOR KEY SHARE")) {
+                    keyShare.setObject(1, identity.value());
+                    assertThat(keyShare.executeQuery().next()).as("a session insert's foreign key lock passes the role change's")
+                            .isTrue();
+                }
+            }
+
+            assertThat(roles.revoke(revoking.connection(), identity, RoleName.KYC_REVIEWER, identity,
+                    revoking.clock().instant())).isTrue();
+            revoking.commit();
+
+            assertThat(read.get(30, java.util.concurrent.TimeUnit.SECONDS)).as("the revoked role, read after it committed")
+                    .isEmpty();
+            changing.rollback();
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private static RoleAssignmentStore.Holding holding(IdentityId identity) {
+        return new RoleAssignmentStore.Holding(identity, RoleName.ADMINISTRATOR);
+    }
+
+    private IdentityId givenAnAdministrator() throws Exception {
+        IdentityId identity = givenAnIdentity();
+        try (SimulatedInstance granting = SimulatedInstance.inAgreementWithTheServer()) {
+            assertThat(roles.assign(granting.connection(), identity, RoleName.ADMINISTRATOR, identity,
+                    granting.clock().instant())).isTrue();
+            granting.commit();
+        }
+        return identity;
+    }
+
+    /**
+     * A session active and waiting on a lock that {@code holder}'s session holds, awaited about 30 s (the
+     * {@code BnplCollectionLedgerDatabaseTest} read, observed as the application role the waiter connects as, which is what
+     * lets it see the wait event). A racer that finished never waited, and says so.
+     */
+    private static void awaitBlockedBehind(Connection holder, Future<?> racer) throws Exception {
+        int blocker;
+        try (PreparedStatement select = holder.prepareStatement("SELECT pg_backend_pid()");
+                ResultSet row = select.executeQuery()) {
+            row.next();
+            blocker = row.getInt(1);
+        }
+        for (int attempt = 0; attempt < 1500; attempt++) {
+            if (racer.isDone()) {
+                throw new AssertionError("the second read finished while the first held its rows: " + racer.get());
+            }
+            try (Connection observer = DatabaseRoles.application();
+                    PreparedStatement select = observer.prepareStatement("SELECT count(*) FROM pg_stat_activity"
+                            + " WHERE ? = ANY (pg_blocking_pids(pid)) AND state = 'active' AND wait_event_type = 'Lock'")) {
+                select.setInt(1, blocker);
+                try (ResultSet row = select.executeQuery()) {
+                    row.next();
+                    if (row.getLong(1) >= 1) {
+                        return;
+                    }
+                }
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("no session waiting on a lock behind session " + blocker + " within about 30 s");
+    }
 
     private interface InstanceWork {
         Void run(SimulatedInstance instance) throws Exception;

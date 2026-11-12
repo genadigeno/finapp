@@ -75,7 +75,9 @@ class DeliveryManifestsTest {
                         .containsEntry("namespace", entry.getKey().equals("finapp-edge") ? "finapp-edge" : "finapp");
                 Map<String, Object> policy = map(spec, "syncPolicy");
                 assertThat(policy).as("%s: no retry - a failed migration is fixed forward, never run again by the controller", name)
-                        .containsOnlyKeys("automated", "syncOptions");
+                        .containsOnlyKeys("automated", "syncOptions", "retry");
+                // Stated, because absent is not none: Argo CD 3.6.1 retries an automated sync that states no retry (P15-TSK-032's kind run).
+                assertThat(map(policy, "retry")).as("%s: retry.limit 0, stated", name).containsExactly(Map.entry("limit", 0));
                 Map<String, Object> automated = map(policy, "automated");
                 assertThat(automated).as(name).containsEntry("selfHeal", true)
                         .containsEntry("prune", !entry.getKey().equals("finapp-namespaces"));
@@ -118,6 +120,12 @@ class DeliveryManifestsTest {
             assertThat(waves.get("finapp-admission")).isLessThan(waves.get("finapp-namespaces"));
             assertThat(waves.get("finapp-namespaces")).isLessThan(waves.get("finapp"));
             assertThat(waves.get("finapp")).isLessThan(waves.get("finapp-edge"));
+            // The projects before every Application: in one wave the root created an Application before its project, whose first sync
+            // then failed for want of it and, with no retry, stayed failed (P15-TSK-032's kind run).
+            for (String project : List.of("deploy/delivery/base/project.yaml", "deploy/delivery/base/project-cluster.yaml")) {
+                int wave = Integer.parseInt(String.valueOf(map(map(documents(project).get(0), "metadata"), "annotations").get("argocd.argoproj.io/sync-wave")));
+                assertThat(waves.values()).as("%s comes before every Application", project).allSatisfy(applicationWave -> assertThat(wave).isLessThan(applicationWave));
+            }
 
             List<Map<String, Object>> roots = documents("deploy/delivery/roots/" + environment + ".yaml");
             Map<String, Object> rootApplication = roots.stream().filter(document -> "Application".equals(document.get("kind"))).findFirst().orElseThrow();

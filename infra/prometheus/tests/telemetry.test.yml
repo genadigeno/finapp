@@ -1,0 +1,729 @@
+# promtool unit tests for infra/prometheus/rules/telemetry.yml (P15-TSK-032; THREAT_MODEL.md section 6 item 37 (d) (i)). CI runs every file here
+# through promtool (infra/scripts/alert-rules-check.sh). Each rule fires on its planted series and is silent while healthy, over two
+# collectors where the rule is per collector: only the sick one tickets. The series are the ones the pinned Prometheus stores from the
+# pinned collector, Tempo and Loki (infra/prometheus/telemetry-series.txt), with their labels: the exporter series carry server.address,
+# which the rules sum away, and every collector publishes otelcol_process_uptime, in seconds, which the counter rules read.
+#
+# The counter rules are tested five ways, the review lesson of P15-TSK-043 among them: a count that rises; a series born above zero
+# (send_failed and enqueue_failed do not exist before the first failure), on a collector running for hours and after one restarted in
+# place; an old count through a failed scrape's staleness marker and through a six-minute gap, and an old count to a Prometheus with no
+# history (silent: an `x offset 10m` term would ticket them); and a healthy collector. The load-balancing tier's peer changes are tested
+# as measured on the pinned image (OPERATIONS_RUNBOOK.md section 11.34): silent at a first apply and across a roll, ticketing outside one.
+
+rule_files:
+  - ../rules/telemetry.yml
+
+evaluation_interval: 1m
+
+tests:
+  # TelemetryExportFailing: collector a's Tempo exporter drops two more spans at 31 m after an old drop; collector b holds an old count. Only
+  # a tickets, for its exporter alone; ten minutes after the last drop, nothing new, silent.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '7200+60x50'
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '7200+60x50'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo", "server.address"="finapp-tempo.finapp-observability.svc.cluster.local", "server.port"="4317"}'
+        values: '1x30 3x20'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.2:8888", exporter="otlp_grpc/tempo", "server.address"="finapp-tempo.finapp-observability.svc.cluster.local", "server.port"="4317"}'
+        values: '1x50'
+      - series: 'otelcol_exporter_sent_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo", "server.address"="finapp-tempo.finapp-observability.svc.cluster.local", "server.port"="4317"}'
+        values: '0+10x50'
+    alert_rule_test:
+      - eval_time: 33m
+        alertname: TelemetryExportFailing
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.1:8888
+              exporter: otlp_grpc/tempo
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.1:8888 is dropping what otlp_grpc/tempo cannot deliver"
+              description: "otlp_grpc/tempo on 10.0.0.1:8888 dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+      - eval_time: 45m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+
+  # TelemetryExportFailing, the first failure: on a collector running for two hours, the Loki exporter's series is born at 20 m already at
+  # two, as the collector writes it, which increase() cannot read; the second term tickets while the series is younger than the ten
+  # minutes, and stops once it is not.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '7200+60x50'
+      - series: 'otelcol_exporter_send_failed_log_records{job="finapp-collector", instance="10.0.0.2:8888", exporter="otlp_http/loki", "server.address"="finapp-loki.finapp-observability.svc.cluster.local", "server.port"="3100", "url.path"="/otlp/v1/logs"}'
+        values: '_x20 2x30'
+      - series: 'otelcol_exporter_sent_log_records{job="finapp-collector", instance="10.0.0.2:8888", exporter="otlp_http/loki", "server.address"="finapp-loki.finapp-observability.svc.cluster.local", "server.port"="3100", "url.path"="/otlp/v1/logs"}'
+        values: '0+4x50'
+    alert_rule_test:
+      - eval_time: 22m
+        alertname: TelemetryExportFailing
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.2:8888
+              exporter: otlp_http/loki
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.2:8888 is dropping what otlp_http/loki cannot deliver"
+              description: "otlp_http/loki on 10.0.0.2:8888 dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+      - eval_time: 35m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+
+  # TelemetryExportFailing, the review's case (P15-TSK-032's fix round): a collector restarted in place at 31 m had dropped 500 spans in its
+  # last life; its failure series is born again at 46 m already at 40, a burst after the restart. increase() reads nothing (the old life is
+  # outside the window) and an hour of history would call the series old: the count against the collector's own uptime series sees it born.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '0+60x30 0+60x35'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo"}'
+        values: '500x30 _x15 40x20'
+    alert_rule_test:
+      - eval_time: 47m
+        alertname: TelemetryExportFailing
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.1:8888
+              exporter: otlp_grpc/tempo
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.1:8888 is dropping what otlp_grpc/tempo cannot deliver"
+              description: "otlp_grpc/tempo on 10.0.0.1:8888 dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+      - eval_time: 58m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+
+  # TelemetryExportFailing, the opposite case the review asked for: an old count, unchanged for the whole run, through a failed scrape's
+  # staleness marker on one collector and a six-minute gap on the other, each collector's uptime series losing the same samples. Ten minutes
+  # after each, the count is still old and nothing new was dropped: silent.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '7200+60x5 stale 7560+60x20'
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '7200+60x5 _x6 7920+60x20'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo"}'
+        values: '1x5 stale 1x20'
+      - series: 'otelcol_exporter_send_failed_log_records{job="finapp-collector", instance="10.0.0.2:8888", exporter="otlp_http/loki"}'
+        values: '1x5 _x6 1x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+      - eval_time: 21m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+
+  # TelemetryExportFailing, an old count to a Prometheus with no history (kind's restarts it at every rule change): the count and the
+  # collector's uptime series begin together, the collector two hours old. Silent from the first evaluation.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '7200+60x20'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo"}'
+        values: '3x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+
+  # TelemetryExportFailing and TelemetryExportQueueFull, healthy: two collectors exporting, no failure series at all (the collector writes
+  # none before the first failure), queues near empty: silent.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '7200+60x30'
+      - series: 'otelcol_exporter_sent_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo"}'
+        values: '0+50x30'
+      - series: 'otelcol_exporter_sent_log_records{job="finapp-collector", instance="10.0.0.2:8888", exporter="otlp_http/loki"}'
+        values: '0+80x30'
+      - series: 'otelcol_exporter_queue_size{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo", data_type="traces"}'
+        values: '0 1 0 2 0 0 1 0x23'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: TelemetryExportQueueFull
+        exp_alerts: []
+
+  # TelemetryExportFailing, kind's first apply as measured without the load-balancing tier's retry (the owner's rulings, 2026-11-12): two
+  # collectors started together, neither able to resolve the peers' name at first, each dropping every span its tier is given until its
+  # resolver reads the name - born at 15 s, about 200 spans each, the last at 45 s - its set of peers first read at 45 s. Excluded while each
+  # collector is younger than 780 s, and silent after, the old count never ticketing: silent at every evaluation.
+  - interval: 15s
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '0+15x100'
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '0+15x100'
+      - series: 'otelcol_loadbalancer_num_backend_updates{job="finapp-collector", instance="10.0.0.1:8888", resolver="dns"}'
+        values: '_x3 1x97'
+      - series: 'otelcol_loadbalancer_num_backend_updates{job="finapp-collector", instance="10.0.0.2:8888", resolver="dns"}'
+        values: '_x3 1x97'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="load_balancing"}'
+        values: '_ 15 64 137 201x96'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.2:8888", exporter="load_balancing"}'
+        values: '_ 8 70 152 202x96'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+      - eval_time: 24m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+
+  # TelemetryExportFailing, a roll seen from the survivor, the review's case: a collector running for two hours whose set of peers changes at
+  # 20 m (one peer gone, another come) and whose load-balancing tier drops spans in that minute and the next, inside its retry budget. Excluded
+  # for 780 s from the change, by which time the drops are outside the ten minutes: silent throughout. A Tempo drop on the same collector in
+  # the same minute still tickets.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '7200+60x40'
+      - series: 'otelcol_loadbalancer_num_backend_updates{job="finapp-collector", instance="10.0.0.1:8888", resolver="dns"}'
+        values: '1x19 2x21'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="load_balancing"}'
+        values: '_x20 4 6x19'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo"}'
+        values: '_x20 3x20'
+    alert_rule_test:
+      - eval_time: 21m
+        alertname: TelemetryExportFailing
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.1:8888
+              exporter: otlp_grpc/tempo
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.1:8888 is dropping what otlp_grpc/tempo cannot deliver"
+              description: "otlp_grpc/tempo on 10.0.0.1:8888 dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+      - eval_time: 32m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+      - eval_time: 34m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+      - eval_time: 39m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+
+  # TelemetryExportFailing, the load-balancing tier failing outside a peer change: a collector whose peers never resolve drops from its start,
+  # excluded while young and ticketing once its uptime passes 780 s; one running for two hours, its set unchanged, whose tier starts dropping
+  # at 10 m tickets at once; one whose set last changed at 5 m and whose tier drops at 20 m tickets too.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '0+60x30'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="load_balancing"}'
+        values: '_ 5+5x29'
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '7200+60x30'
+      - series: 'otelcol_loadbalancer_num_backend_updates{job="finapp-collector", instance="10.0.0.2:8888", resolver="dns"}'
+        values: '1x30'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.2:8888", exporter="load_balancing"}'
+        values: '_x10 3+4x20'
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.3:8888"}'
+        values: '7200+60x30'
+      - series: 'otelcol_loadbalancer_num_backend_updates{job="finapp-collector", instance="10.0.0.3:8888", resolver="dns"}'
+        values: '1x4 2x26'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.3:8888", exporter="load_balancing"}'
+        values: '_x20 2x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: TelemetryExportFailing
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: TelemetryExportFailing
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.2:8888
+              exporter: load_balancing
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.2:8888 is dropping what load_balancing cannot deliver"
+              description: "load_balancing on 10.0.0.2:8888 dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+      - eval_time: 21m
+        alertname: TelemetryExportFailing
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.1:8888
+              exporter: load_balancing
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.1:8888 is dropping what load_balancing cannot deliver"
+              description: "load_balancing on 10.0.0.1:8888 dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.2:8888
+              exporter: load_balancing
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.2:8888 is dropping what load_balancing cannot deliver"
+              description: "load_balancing on 10.0.0.2:8888 dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.3:8888
+              exporter: load_balancing
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.3:8888 is dropping what load_balancing cannot deliver"
+              description: "load_balancing on 10.0.0.3:8888 dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+
+  # TelemetryExportFailing, Tempo and Loki at any age: a collector two minutes old whose Tempo and Loki exporters drop tickets for both at
+  # once - the load-balancing tier's exclusion is that exporter's alone.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '0+60x20'
+      - series: 'otelcol_exporter_send_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo"}'
+        values: '_x2 4x18'
+      - series: 'otelcol_exporter_send_failed_log_records{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_http/loki"}'
+        values: '_x2 2+2x18'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: TelemetryExportFailing
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.1:8888
+              exporter: otlp_grpc/tempo
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.1:8888 is dropping what otlp_grpc/tempo cannot deliver"
+              description: "otlp_grpc/tempo on 10.0.0.1:8888 dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.1:8888
+              exporter: otlp_http/loki
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.1:8888 is dropping what otlp_http/loki cannot deliver"
+              description: "otlp_http/loki on 10.0.0.1:8888 dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+
+  # TelemetryExportQueueFull: collector b's Loki queue refuses records from 31 m, after an old refusal; a holds an old count. Only b tickets.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '7200+60x50'
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '7200+60x50'
+      - series: 'otelcol_exporter_enqueue_failed_log_records{job="finapp-collector", instance="10.0.0.2:8888", exporter="otlp_http/loki"}'
+        values: '7x30 7+40x20'
+      - series: 'otelcol_exporter_enqueue_failed_log_records{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_http/loki"}'
+        values: '3x50'
+    alert_rule_test:
+      - eval_time: 33m
+        alertname: TelemetryExportQueueFull
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.2:8888
+              exporter: otlp_http/loki
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The sending queue of otlp_http/loki on 10.0.0.2:8888 is full"
+              description: "otlp_http/loki on 10.0.0.2:8888 refused telemetry at a full sending queue in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+
+  # TelemetryExportQueueFull, the first refusal: the Tempo exporter's series born at 20 m already at six on a collector two hours old; the
+  # second term tickets while the series is younger than the ten minutes.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '7200+60x50'
+      - series: 'otelcol_exporter_enqueue_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo"}'
+        values: '_x20 6x30'
+    alert_rule_test:
+      - eval_time: 24m
+        alertname: TelemetryExportQueueFull
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.1:8888
+              exporter: otlp_grpc/tempo
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The sending queue of otlp_grpc/tempo on 10.0.0.1:8888 is full"
+              description: "otlp_grpc/tempo on 10.0.0.1:8888 refused telemetry at a full sending queue in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+      - eval_time: 35m
+        alertname: TelemetryExportQueueFull
+        exp_alerts: []
+
+  # TelemetryExportQueueFull, the opposite case: an old count through a staleness marker and through a six-minute gap, each collector's
+  # uptime series losing the same samples: silent.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '7200+60x5 stale 7560+60x20'
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '7200+60x5 _x6 7920+60x20'
+      - series: 'otelcol_exporter_enqueue_failed_spans{job="finapp-collector", instance="10.0.0.1:8888", exporter="otlp_grpc/tempo"}'
+        values: '1x5 stale 1x20'
+      - series: 'otelcol_exporter_enqueue_failed_log_records{job="finapp-collector", instance="10.0.0.2:8888", exporter="otlp_http/loki"}'
+        values: '1x5 _x6 1x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: TelemetryExportQueueFull
+        exp_alerts: []
+      - eval_time: 21m
+        alertname: TelemetryExportQueueFull
+        exp_alerts: []
+
+  # TelemetryReceiverRefusing: collector a's application-facing receiver refuses log records from 31 m (its memory limiter); b accepts
+  # everything, its refused series at zero as the collector writes it from the first request. Only a tickets, for that receiver.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '7200+60x50'
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '7200+60x50'
+      - series: 'otelcol_receiver_refused_log_records{job="finapp-collector", instance="10.0.0.1:8888", receiver="otlp", transport="http"}'
+        values: '0x30 0+25x20'
+      - series: 'otelcol_receiver_accepted_log_records{job="finapp-collector", instance="10.0.0.1:8888", receiver="otlp", transport="http"}'
+        values: '0+100x30 3000x20'
+      - series: 'otelcol_receiver_refused_log_records{job="finapp-collector", instance="10.0.0.2:8888", receiver="otlp", transport="http"}'
+        values: '0x50'
+      - series: 'otelcol_receiver_refused_spans{job="finapp-collector", instance="10.0.0.2:8888", receiver="otlp/peers", transport="grpc"}'
+        values: '0x50'
+    alert_rule_test:
+      - eval_time: 33m
+        alertname: TelemetryReceiverRefusing
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.1:8888
+              receiver: otlp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.1:8888 is refusing telemetry at otlp"
+              description: "otlp on 10.0.0.1:8888 refused telemetry in the last 10 minutes, so its senders dropped it. See OPERATIONS_RUNBOOK.md section 11.34."
+
+  # TelemetryReceiverRefusing, the first request refused: a collector started at 20 m under a backlog whose memory limiter refused its very
+  # first spans, so the refused series is born above zero with the collector itself; the second term tickets while the collector is younger
+  # than the ten minutes, and stops once it is not.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '_x20 0+60x30'
+      - series: 'otelcol_receiver_refused_spans{job="finapp-collector", instance="10.0.0.2:8888", receiver="otlp", transport="http"}'
+        values: '_x20 2x30'
+      - series: 'otelcol_receiver_accepted_spans{job="finapp-collector", instance="10.0.0.2:8888", receiver="otlp", transport="http"}'
+        values: '_x20 0+10x30'
+    alert_rule_test:
+      - eval_time: 22m
+        alertname: TelemetryReceiverRefusing
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.2:8888
+              receiver: otlp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The collector 10.0.0.2:8888 is refusing telemetry at otlp"
+              description: "otlp on 10.0.0.2:8888 refused telemetry in the last 10 minutes, so its senders dropped it. See OPERATIONS_RUNBOOK.md section 11.34."
+      - eval_time: 35m
+        alertname: TelemetryReceiverRefusing
+        exp_alerts: []
+
+  # TelemetryReceiverRefusing, the opposite cases: an old refusal count through a staleness marker and through a six-minute gap, each
+  # collector's uptime series losing the same samples, and a healthy collector whose refused series stays at zero while it accepts: silent.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '7200+60x5 stale 7560+60x20'
+      - series: 'otelcol_process_uptime{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '7200+60x5 _x6 7920+60x20'
+      - series: 'otelcol_receiver_refused_log_records{job="finapp-collector", instance="10.0.0.1:8888", receiver="otlp", transport="http"}'
+        values: '1x5 stale 1x20'
+      - series: 'otelcol_receiver_refused_spans{job="finapp-collector", instance="10.0.0.2:8888", receiver="otlp", transport="http"}'
+        values: '1x5 _x6 1x20'
+      - series: 'otelcol_receiver_refused_spans{job="finapp-collector", instance="10.0.0.1:8888", receiver="otlp/peers", transport="grpc"}'
+        values: '0x5 stale 0x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: TelemetryReceiverRefusing
+        exp_alerts: []
+      - eval_time: 21m
+        alertname: TelemetryReceiverRefusing
+        exp_alerts: []
+
+  # TelemetryCollectorDown: collector a's scrapes fail from 6 m; b answers. Only a tickets, once held five minutes; one failed scrape on b
+  # alone never does.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '1x5 0x15'
+      - series: 'up{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '1x8 0 1x11'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: TelemetryCollectorDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: TelemetryCollectorDown
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              instance: 10.0.0.1:8888
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A collector cannot be scraped: 10.0.0.1:8888"
+              description: "The collector 10.0.0.1:8888 has failed its scrapes for 5 minutes, so its own counters are blind too. See OPERATIONS_RUNBOOK.md section 11.34."
+
+  # TelemetryCollectorsAbsent: the collectors scaled to zero, so the peers' DNS names no target and no up series exists, while the application
+  # is scraped: it tickets after five minutes, and TelemetryCollectorDown cannot see it.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="finapp", instance="10.0.1.1:8081"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: TelemetryCollectorsAbsent
+        exp_alerts:
+          - exp_labels:
+              job: finapp-collector
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "No collector is being scraped"
+              description: "No target of the finapp-collector job has existed for 5 minutes: the collectors are gone, or the scrape lost them. See OPERATIONS_RUNBOOK.md section 11.34."
+      - eval_time: 6m
+        alertname: TelemetryCollectorDown
+        exp_alerts: []
+
+  # TelemetryCollectorsAbsent, the opposite case: one collector up and one down is a down collector, not an absent job: silent.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="finapp-collector", instance="10.0.0.1:8888"}'
+        values: '1x10'
+      - series: 'up{job="finapp-collector", instance="10.0.0.2:8888"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: TelemetryCollectorsAbsent
+        exp_alerts: []
+
+  # TelemetryBackendDown: Tempo scaled to zero from 6 m, its Service answering nothing; Loki answers, and an application instance down is
+  # another rule's. Only Tempo tickets.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="finapp-tempo", instance="finapp-tempo.finapp-observability.svc.cluster.local:3200"}'
+        values: '1x5 0x15'
+      - series: 'up{job="finapp-loki", instance="finapp-loki.finapp-observability.svc.cluster.local:3100"}'
+        values: '1x20'
+      - series: 'up{job="finapp", instance="10.0.1.1:8081"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: TelemetryBackendDown
+        exp_alerts:
+          - exp_labels:
+              job: finapp-tempo
+              instance: finapp-tempo.finapp-observability.svc.cluster.local:3200
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The telemetry back end finapp-tempo cannot be scraped"
+              description: "finapp-tempo (finapp-tempo.finapp-observability.svc.cluster.local:3200) has failed its scrapes for 5 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+
+  # TelemetryBackendDown, the opposite case: both back ends answer: silent.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="finapp-tempo", instance="finapp-tempo.finapp-observability.svc.cluster.local:3200"}'
+        values: '1x20'
+      - series: 'up{job="finapp-loki", instance="finapp-loki.finapp-observability.svc.cluster.local:3100"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: TelemetryBackendDown
+        exp_alerts: []
+
+  # TraceIngestStopped: two collectors keep traces all along; Tempo, scraped and up, receives spans until 10 m and then none (an exporter
+  # taken out of the pipeline, an endpoint pointing elsewhere: the collectors' own counters see no failure). After fifteen minutes with no
+  # span received and ten more held, it tickets.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_processor_tail_sampling_global_count_traces_sampled{job="finapp-collector", instance="10.0.0.1:8888", decision="sampled", sampled="true"}'
+        values: '0+3x50'
+      - series: 'otelcol_processor_tail_sampling_global_count_traces_sampled{job="finapp-collector", instance="10.0.0.2:8888", decision="sampled", sampled="true"}'
+        values: '0+2x50'
+      - series: 'tempo_distributor_spans_received_total{job="finapp-tempo", instance="finapp-tempo.finapp-observability.svc.cluster.local:3200", tenant="single-tenant"}'
+        values: '0+12x10 120x40'
+      - series: 'up{job="finapp-tempo", instance="finapp-tempo.finapp-observability.svc.cluster.local:3200"}'
+        values: '1x50'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: TraceIngestStopped
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: TraceIngestStopped
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "Tempo is receiving none of the traces the collectors keep"
+              description: "The collectors kept traces in the last 15 minutes and Tempo's distributor received no span, for 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+
+  # TraceIngestStopped, the opposite cases: Tempo receiving while the collectors keep traces; and the collectors keeping traces where no
+  # Tempo is scraped at all (a managed back end): silent both.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_processor_tail_sampling_global_count_traces_sampled{job="finapp-collector", instance="10.0.0.1:8888", decision="sampled", sampled="true"}'
+        values: '0+3x50'
+      - series: 'tempo_distributor_spans_received_total{job="finapp-tempo", instance="finapp-tempo.finapp-observability.svc.cluster.local:3200", tenant="single-tenant"}'
+        values: '0+12x50'
+      - series: 'up{job="finapp-tempo", instance="finapp-tempo.finapp-observability.svc.cluster.local:3200"}'
+        values: '1x50'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: TraceIngestStopped
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_processor_tail_sampling_global_count_traces_sampled{job="finapp-collector", instance="10.0.0.1:8888", decision="sampled", sampled="true"}'
+        values: '0+3x50'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: TraceIngestStopped
+        exp_alerts: []
+
+  # TraceIngestStopped, the review's case (P15-TSK-032's fix round): Tempo restarts after twenty minutes down under sparse traffic. The
+  # collectors keep nothing while it is down, then one trace at 46 m, which Tempo receives at 47 m: its counter exists again from that push,
+  # born at one and unchanged after. increase() reads nothing; the series born in the window is the receipt. Silent throughout, and silent
+  # once the kept trace leaves the window.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_processor_tail_sampling_global_count_traces_sampled{job="finapp-collector", instance="10.0.0.1:8888", decision="sampled", sampled="true"}'
+        values: '0+1x20 20x25 21x30'
+      - series: 'tempo_distributor_spans_received_total{job="finapp-tempo", instance="finapp-tempo.finapp-observability.svc.cluster.local:3200", tenant="single-tenant"}'
+        values: '0+1x19 _x27 1x30'
+      - series: 'up{job="finapp-tempo", instance="finapp-tempo.finapp-observability.svc.cluster.local:3200"}'
+        values: '1x19 0x20 1x37'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: TraceIngestStopped
+        exp_alerts: []
+      - eval_time: 58m
+        alertname: TraceIngestStopped
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: TraceIngestStopped
+        exp_alerts: []
+
+  # LogIngestStopped: the collectors take log records in all along; Loki, scaled to zero at 10 m, is still a target (down) and receives
+  # nothing. It tickets after its wait; TelemetryBackendDown beside it.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_receiver_accepted_log_records{job="finapp-collector", instance="10.0.0.1:8888", receiver="otlp", transport="http"}'
+        values: '0+30x50'
+      - series: 'otelcol_receiver_accepted_log_records{job="finapp-collector", instance="10.0.0.2:8888", receiver="otlp", transport="http"}'
+        values: '0+25x50'
+      - series: 'loki_distributor_lines_received_total{job="finapp-loki", instance="finapp-loki.finapp-observability.svc.cluster.local:3100", format="otlp", tenant="fake", is_internal_stream="false"}'
+        values: '0+55x10 _x40'
+      - series: 'up{job="finapp-loki", instance="finapp-loki.finapp-observability.svc.cluster.local:3100"}'
+        values: '1x10 0x40'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: LogIngestStopped
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "Loki is receiving none of the log records the collectors take in"
+              description: "The collectors took log records in over the last 15 minutes and Loki's distributor received no line, for 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+      - eval_time: 40m
+        alertname: TelemetryBackendDown
+        exp_alerts:
+          - exp_labels:
+              job: finapp-loki
+              instance: finapp-loki.finapp-observability.svc.cluster.local:3100
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The telemetry back end finapp-loki cannot be scraped"
+              description: "finapp-loki (finapp-loki.finapp-observability.svc.cluster.local:3100) has failed its scrapes for 5 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+
+  # LogIngestStopped, the opposite cases: Loki receiving while the collectors take records in; and no record taken in at all (an idle
+  # application), Loki receiving nothing either: silent both.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_receiver_accepted_log_records{job="finapp-collector", instance="10.0.0.1:8888", receiver="otlp", transport="http"}'
+        values: '0+30x50'
+      - series: 'loki_distributor_lines_received_total{job="finapp-loki", instance="finapp-loki.finapp-observability.svc.cluster.local:3100", format="otlp", tenant="fake", is_internal_stream="false"}'
+        values: '0+30x50'
+      - series: 'up{job="finapp-loki", instance="finapp-loki.finapp-observability.svc.cluster.local:3100"}'
+        values: '1x50'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: LogIngestStopped
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_receiver_accepted_log_records{job="finapp-collector", instance="10.0.0.1:8888", receiver="otlp", transport="http"}'
+        values: '500x50'
+      - series: 'loki_distributor_lines_received_total{job="finapp-loki", instance="finapp-loki.finapp-observability.svc.cluster.local:3100", format="otlp", tenant="fake", is_internal_stream="false"}'
+        values: '500x50'
+      - series: 'up{job="finapp-loki", instance="finapp-loki.finapp-observability.svc.cluster.local:3100"}'
+        values: '1x50'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: LogIngestStopped
+        exp_alerts: []
+
+  # LogIngestStopped, the review's case: Loki restarts after twenty minutes down under sparse traffic; the collectors take one record in at
+  # 46 m, which Loki receives at 47 m, its counter born at one and unchanged after. The series born in the window is the receipt: silent.
+  - interval: 1m
+    input_series:
+      - series: 'otelcol_receiver_accepted_log_records{job="finapp-collector", instance="10.0.0.1:8888", receiver="otlp", transport="http"}'
+        values: '0+1x20 20x25 21x30'
+      - series: 'loki_distributor_lines_received_total{job="finapp-loki", instance="finapp-loki.finapp-observability.svc.cluster.local:3100", format="otlp", tenant="fake", is_internal_stream="false"}'
+        values: '0+1x19 _x27 1x30'
+      - series: 'up{job="finapp-loki", instance="finapp-loki.finapp-observability.svc.cluster.local:3100"}'
+        values: '1x19 0x20 1x37'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: LogIngestStopped
+        exp_alerts: []
+      - eval_time: 58m
+        alertname: LogIngestStopped
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: LogIngestStopped
+        exp_alerts: []

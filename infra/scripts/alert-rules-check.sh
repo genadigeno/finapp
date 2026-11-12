@@ -9,11 +9,14 @@
 #   amtool check-config     compose's configuration and the one deploy/ carries
 #   amtool config routes    a page reaches the paging receiver and a ticket the ticket receiver
 #
-# THEN TWO CHECKS AGAIN, OVER A PLANT THEY MUST REFUSE. A check that is wired but cannot fail reads as assurance it does not
+# THEN THREE CHECKS AGAIN, OVER A PLANT THEY MUST REFUSE. A check that is wired but cannot fail reads as assurance it does not
 # give, so each run copies what it checks, plants one defect per copy and requires the check to fail and to name it:
 #
 #   no-trial-balance   the alert LedgerTrialBalanceNonZero removed   promtool test rules, naming the alert
 #   bad-routing        a route naming a receiver that does not exist amtool check-config
+#   offset-term        TelemetryExportFailing's "born in the window" promtool test rules, naming the alert: its silent cases
+#                      term written as `x unless x offset 10m`       (an old count through a staleness marker and a gap, and
+#                      (P15-TSK-032)                                 one to a Prometheus with no history) fire
 #
 # SAME BYTES HERE AND IN CI: both tools are images pinned by digest in infra/scanner-pins.sh. PROMETHEUS_IMAGE and
 # ALERTMANAGER_IMAGE override an image for a machine whose TLS is intercepted (dependency-scan.sh allows the same); CI never sets them.
@@ -85,6 +88,21 @@ prometheus '
     case "$output" in
         *LedgerTrialBalanceNonZero*) echo "ok no-trial-balance refused by promtool test rules" ;;
         *) echo "!!   plant no-trial-balance refused for another reason:"; echo "$output"; exit 1 ;;
+    esac
+'
+prometheus '
+    rm -rf /tmp/plant && cp -R /prom /tmp/plant
+    sed "s/(otelcol_exporter_send_failed_spans > 0 and count_over_time(otelcol_exporter_send_failed_spans\[10m\]) < on(job, instance) group_left count_over_time(otelcol_process_uptime\[10m\]))/(otelcol_exporter_send_failed_spans > 0 unless otelcol_exporter_send_failed_spans offset 10m)/" /prom/rules/telemetry.yml > /tmp/plant/rules/telemetry.yml
+    if cmp -s /prom/rules/telemetry.yml /tmp/plant/rules/telemetry.yml; then
+        echo "!!   plant offset-term was not planted: the term is gone or rewritten"; exit 1
+    fi
+    cd /tmp/plant/tests
+    if output=$(promtool test rules telemetry.test.yml 2>&1); then
+        echo "!!   plant offset-term was ACCEPTED: promtool passed with an offset term that pages an old count"; exit 1
+    fi
+    case "$output" in
+        *TelemetryExportFailing*) echo "ok offset-term refused by promtool test rules" ;;
+        *) echo "!!   plant offset-term refused for another reason:"; echo "$output"; exit 1 ;;
     esac
 '
 alertmanager '

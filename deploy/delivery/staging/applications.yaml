@@ -22,8 +22,9 @@
 # read-only token and no environment (THREAT_MODEL.md T30).
 # Self-heal puts back what a person changed by hand; prune removes what the repository no longer names, after everything else
 # (PruneLast), except the namespaces, which are never pruned: one removed from the repository must not take its contents with it.
-# No retry: a failed migration is fixed forward, never run again by the controller, and Argo CD does not re-attempt a
-# commit whose sync failed. A rollback is a revert pull request through infra/scripts/promote.sh, never Argo CD's own rollback, which
+# No retry, stated as `retry.limit: 0`: a failed migration is fixed forward, never run again by the controller. Stated, because
+# leaving it out is not none: Argo CD 3.6.1 retried an automated sync that stated no retry five times (seen on kind, P15-TSK-032,
+# 2026-11-12), and a retry is the whole sync again, its hook with it. Argo CD does not re-attempt a commit whose sync failed. A rollback is a revert pull request through infra/scripts/promote.sh, never Argo CD's own rollback, which
 # would leave the repository saying one thing and the cluster another.
 #
 # No finalizer: deleting an Application leaves what it applied running.
@@ -44,6 +45,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: finapp
   syncPolicy:
+    retry:
+      limit: 0
     automated:
       prune: true
       selfHeal: true
@@ -68,6 +71,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: finapp
   syncPolicy:
+    retry:
+      limit: 0
     automated:
       prune: false
       selfHeal: true
@@ -91,6 +96,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: finapp
   syncPolicy:
+    retry:
+      limit: 0
     automated:
       prune: true
       selfHeal: true
@@ -115,6 +122,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: finapp-edge
   syncPolicy:
+    retry:
+      limit: 0
     automated:
       prune: true
       selfHeal: true

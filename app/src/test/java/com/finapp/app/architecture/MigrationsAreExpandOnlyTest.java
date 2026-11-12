@@ -131,6 +131,46 @@ class MigrationsAreExpandOnlyTest {
         assertThat(outcome.refusals().stream().filter(refusal -> refusal.file().equals(file)).toList()).isEmpty();
     }
 
+    /**
+     * Migrations above the floor that tighten an older table or domain with neither {@code NOT VALID} nor a named data fix, each
+     * with the reason it may stand (`P15-TSK-032`). They are applied, so never edited: this list is how one stands, and the test
+     * holds it equal to what the rule refuses, so it can neither keep a stale entry nor grow without a version and a reason. Empty
+     * when the rule was written: no migration above the floor tightened an old table.
+     */
+    private static final Map<String, String> GRANDFATHERED = Map.of();
+
+    @Test
+    @DisplayName("every tightening since the last release leaves the old rows to a later release or names its data fix, and nothing"
+            + " stands but the grandfathered list (P15-TSK-032)")
+    void everyTighteningSinceTheLastReleaseNamesItsDataFix() throws IOException {
+        Outcome outcome = MigrationLint.tightenings(root, committed);
+        assertThat(outcome.filesRead()).as("the migrations above the floor were read").isNotEmpty()
+                .containsExactlyInAnyOrderElementsOf(MigrationLint.check(root, committed).filesRead());
+        assertThat(outcome.refusals().stream().map(refusal -> refusal.module() + "/" + refusal.file()).distinct().toList())
+                .as("a tightening over old rows passes in production's data only by luck: NOT VALID now and VALIDATE in a later"
+                        + " release, or a data fix of this release named in its marker (DATA_MIGRATIONS.md section 4.1); %s",
+                        outcome.refusals())
+                .containsExactlyInAnyOrderElementsOf(GRANDFATHERED.keySet());
+    }
+
+    @Test
+    @DisplayName("a real tightening over old rows is refused once the floor stands just below it: accounting V012's CHECKs on V005's table")
+    void aRealTighteningOverOldRowsIsRefusedAboveItsFloor() throws IOException {
+        SortedMap<String, SchemaVersion> floors = new TreeMap<>(head);
+        floors.put("accounting", SchemaVersion.parse("11"));
+
+        Outcome outcome = MigrationLint.tightenings(root, new Floor(MigrationLint.NO_RELEASE, floors));
+        assertThat(outcome.refusals())
+                .filteredOn(refusal -> refusal.module().equals("accounting") && refusal.file().startsWith("V012"))
+                .as("its two CHECKs, in one ALTER TABLE, each for its reason")
+                .hasSize(2)
+                .allSatisfy(refusal -> {
+                    assertThat(refusal.rule()).isEqualTo(Refused.TIGHTENED_OVER_OLD_ROWS);
+                    assertThat(refusal.statement()).startsWith("ALTER TABLE ACCOUNTING . VALUATION_RATE_SET ADD CONSTRAINT")
+                            .contains("(a CHECK judges every row)").contains("its contract marker names no data fix");
+                });
+    }
+
     @Test
     @DisplayName("the marker's form is the one DATA_MIGRATIONS.md section 4.1 fixes for the promotion script")
     void theMarkerFormIsTheDocumentedOne() {

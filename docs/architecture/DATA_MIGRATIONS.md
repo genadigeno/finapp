@@ -120,7 +120,7 @@ the applied counts of the concurrent runs sum to the number of migrations, and t
 |---|---|---|
 | `0` | Every schema is at the latest migration: applied now, or nothing to apply | Succeeds; the rollout may start |
 | `10` | A migration or a validation failed. It would fail the same way again | `FailJob`: no retry; §11.4 of the runbook |
-| `11` | A lock was not granted within the bound, or the database was unavailable | Retried, up to `backoffLimit` |
+| `11` | A lock was not granted within the bound, or the database was unavailable: the first connection is first tried ten times, ten seconds apart (`FirstConnection`: 90 s to 190 s a pod, within the deadline below across every pod; `P15-TSK-032`, because a new pod's first connections are refused until the cluster's network policy reaches its address), and only a refused or unanswered connection is tried again, never a credential, a database that is not there or a TLS refusal | Retried, up to `backoffLimit` |
 | `12` | The configuration or identity was refused; a credential the server refused; a database that is not there; a TLS connection that cannot be verified (the CA bundle, its path, the host). Nothing ran | `FailJob` |
 | others | The JVM's own (`1` uncaught, `3` out of memory) or a killed container's (`137`, `143`) | Retried, up to `backoffLimit` |
 
@@ -145,6 +145,19 @@ the applied counts of the concurrent runs sum to the number of migrations, and t
 migration that cannot run in a transaction (`executeInTransaction=false`, for `CREATE INDEX CONCURRENTLY`; none exists today)
 leaves a failed row, and then `validateOnMigrate` refuses every later run until it is dealt with. Either way the way out is
 forward, never `clean`: runbook §11.4.
+
+*(Corrected 2026-11-12, `P15-TSK-032`, by its rehearsal on the image and on Gradle: **on this Flyway and PostgreSQL's default
+transactional lock, a failed migration outside a transaction leaves no row either.** Flyway writes the failed row inside the
+transaction that holds its lock, and that transaction rolls back; the effect stays (an `INVALID` index), unrecorded, and every
+later run trips over it ("already exists"). On rows that allow it, `CREATE INDEX CONCURRENTLY` waits for Flyway's own
+lock-holding transaction: the image's `lock_timeout` ends it after 3 s, and Gradle's task waits with no bound. The failed row
+the paragraph above describes arises only with the lock taken per session, which neither the build nor the image does. So
+**the build now refuses a migration that would run outside a transaction**: `EveryMigrationRunsInATransactionTest`, in the
+migrator module, reads every script with the pinned Flyway's own scanner and PostgreSQL parser and refuses each form that version
+accepts (a statement it runs outside a transaction, a `<script>.conf` saying `executeInTransaction=false`, and the setting made for
+every script: a `flyway` block, a `gradle.properties` key, a Flyway configuration file, the runner's own configuration), until the
+migrator gains a reviewed mode for one. `infra/scripts/migration-failure-rehearsal.sh` rehearses §11.4's cases; the runbook holds
+the record.)*
 
 ### 2.2 The one-time bootstrap step: the deployed roles
 
@@ -190,7 +203,10 @@ Migration checksum mismatch for migration version 001
 This is not an obstacle to work around with `flywayRepair`. `flywayRepair` rewrites the
 history table to match the files — it makes the symptom disappear without making the
 database correct. Use it only when the *files* are known-good and the history is known-bad
-(for example, after a failed non-transactional migration), and record why.
+(for example, after a failed non-transactional migration), and record why. *(2026-11-12,
+`P15-TSK-032`: that example does not arise on this repository's configuration - on PostgreSQL's
+default transactional lock a failed migration writes no row - and the build refuses such a
+migration; §2.1's note.)*
 
 ### 3.2 Forward-only
 
@@ -305,13 +321,18 @@ marker's claim is true: that release N − 1 runs on release N's schema is `P15-
 **The contract marker, whose form is fixed here for `P15-TSK-017`'s promotion script.** One `--` line starting at column 0
 in the file's header, before its first statement, matching exactly:
 
-`^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\.[0-9]+\.[0-9]+); waives=([A-Z_]+(?:,[A-Z_]+)*); reason=(\S.*)$`
+`^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\.[0-9]+\.[0-9]+)(?=; waives=|; data-fix=)(?:; waives=([A-Z_]+(?:,[A-Z_]+)*))?(?:; data-fix=V([0-9]+(?:[._][0-9]+)*))?; reason=(\S.*)$`
 
 For example:
 
 ```sql
 -- finapp-contract: first-conforming-release=1.4.0; waives=DROP; reason=the last writer of legacy_status went in 1.4.0
+-- finapp-contract: first-conforming-release=ANY; waives=CHECK; data-fix=V0041; reason=V0041 raises every negative ceiling to zero
+-- finapp-contract: first-conforming-release=ANY; data-fix=V0057; reason=V0057 leaves no account without a code before the copy
 ```
+
+*(The optional `; data-fix=V<version>` was added 2026-11-12 by `P15-TSK-032`, below, and beside it `waives` may be left out;
+every marker written without them reads as before, and the promotion script reads the same form.)*
 
 - **`first-conforming-release`** names the first release whose code conforms to this migration. A release is named by the
   Gradle `version` it was built with (`/actuator/info` publishes it), compared as a version. A marker names a release, never a
@@ -330,6 +351,88 @@ For example:
   `MALFORMED_MARKER`.
 - It cannot waive `UNREADABLE` (a file that cannot be read to its end), `NOT_A_MIGRATION` (a file in the directory that is
   not a `V<version>__<name>.sql` directly in it, which the migrator image would not stage), or a marker's own refusals.
+- **`data-fix`** names the migration that brings old rows into line before this file's tightening judges them: the next rule.
+  `waives` cannot name `TIGHTENED_OVER_OLD_ROWS`; only `data-fix` answers it. A marker that answers only old rows, such as a
+  copy's, leaves `waives` out (`first-conforming-release=ANY; data-fix=V<version>; reason=…`): it waives nothing for release
+  N − 1. A marker carries `waives`, `data-fix` or both; one with neither is `MALFORMED_MARKER`.
+
+#### Enforced: a tightening over old rows names its data fix, or leaves the old rows to a later release (`P15-TSK-032`)
+
+*(Added 2026-11-12, `THREAT_MODEL.md` §6 item 42 (j), decided under the owner's standing word; widened the same day by its review
+to copies, to what the expand-only lint cannot read, and to the forms marked below.)* A tightening judges every row the table
+already holds. It passes in the build and in staging, on their rows, and can fail on production's alone; and then staging, which
+has applied it, refuses any fix with a lower version (`outOfOrder = false`), so production has no forward fix at all and stays on
+the release before (`OPERATIONS_RUNBOOK.md` §11.4, "In production"). `MigrationsAreExpandOnlyTest` holds this second rule over
+every module's migrations above the floor, through `MigrationLint.tightenings`, and `TighteningsOverOldRowsTest` holds it on planted
+files, through the same path. A refusal is `TIGHTENED_OVER_OLD_ROWS`.
+
+**What a tightening is**, on a table or domain **older than the migration's release**:
+
+- an added `CHECK`, foreign key, unique constraint, `PRIMARY KEY`, `EXCLUDE` or `CREATE UNIQUE INDEX`; PostgreSQL 18's
+  `ADD CONSTRAINT … NOT NULL <column>`; `SET NOT NULL`;
+- a column added `NOT NULL` with no default; with a `CHECK` or `PRIMARY KEY` of its own, or typed by a domain with a `CHECK` or
+  `NOT NULL`; `GENERATED ALWAYS AS (…) STORED`, whose expression is computed for every row; `UNIQUE NULLS NOT DISTINCT`; and
+  `UNIQUE` or `REFERENCES` when the old rows receive a value, from a default, an identity or serial, or a stored expression (with
+  none they receive a null, which neither judges);
+- a type change `USING` an expression, or to a domain with a `CHECK` or `NOT NULL`;
+- a domain's new `CHECK` or `NOT NULL`, or its `SET NOT NULL`; a domain's constraint is known however it came, with the domain or
+  added later;
+- a `VALIDATE CONSTRAINT`;
+- **a copy of old rows**: `INSERT … SELECT` or `INSERT … TABLE`, `UPDATE … FROM`, `MERGE`, `CREATE TABLE … AS` or `SELECT … INTO`
+  that reads anything not certainly new (a table at or below the floor, a view, a common table expression's name). It makes its
+  target old for the rest of the release, so a constraint added to it afterwards is judged as on any old table; and into a table
+  of this release that already carries a `CHECK`, `UNIQUE`, `PRIMARY KEY`, foreign key, `NOT NULL` or generated column, or takes
+  them through `LIKE` or `INHERITS`, the copy itself is the tightening. Renaming the old table aside and creating its name again
+  is this case;
+- **what the expand-only lint cannot vouch for**, which a `waives` answers for release N − 1 and not for the rows: a statement it
+  classes `OPAQUE_BLOCK` (a `DO` block, a top-level call of a function this module defined), `UNRECOGNISED` (for example
+  `ATTACH PARTITION`, which scans the partition, or `ALTER COLUMN … SET EXPRESSION`, which recomputes every row) or
+  `ALTERED_CONSTRAINT` (PostgreSQL 18's `ALTER CONSTRAINT … ENFORCED` checks every row), when it is on an old object. **What an
+  opaque block touches cannot be read, so it counts as old: the lint fails closed.** So does an unrecognised statement whose
+  object it cannot read. Such a statement is refused here whatever it does; one that judges no row needs the lint taught its
+  form, not a marker.
+
+**Older than the release** reads the floor as the expand-only lint does: the release is the migrations above the module's line. A
+table, domain, sequence, index or view one of them certainly created (as the same-file exemption above counts certainty) is new
+and exempt until old rows reach it: a copy, a rename of an old table onto its name, an old partition attached to it, or, for a
+domain, an old table's column taking it. Every other one is old. **While no release has been cut** (`release: "none"`), the lines
+still divide the files and every table at or below them counts as old: staging, every developer's database and every rehearsal
+already hold rows in those tables, and a tightening left unjudged until the first cut would be found by it.
+
+**Such a tightening passes in one of these ways:**
+
+1. **`NOT VALID`, named, then validated by a later release.** `ADD CONSTRAINT <name> CHECK (…) NOT VALID`, `ADD CONSTRAINT <name>
+   FOREIGN KEY (…) … NOT VALID`, PostgreSQL 18's `ADD CONSTRAINT <name> NOT NULL <column> NOT VALID`, and a domain's `ADD
+   CONSTRAINT <name> CHECK (…) NOT VALID` judge new writes at once and leave the old rows alone. **A `NOT VALID` constraint must be
+   named**: its `VALIDATE CONSTRAINT <name>` is matched by that name, and the validation of one added without a name is refused.
+   The validation passes only in a migration of a **later** release than the one that added it; validated in the same release it
+   is a tightening like any other. **While the floor says `none`, "a later release" means a migration above the floor after the
+   floor has next been recorded past the one that added it**: until then the lint reads both as one release. The release between
+   is the time to find and fix what the old rows hold: the validation can still fail on a row nobody fixed, so its release should
+   carry the fix too, named as in 4 when it does.
+2. **`SET NOT NULL` over a proof.** `SET NOT NULL`, and PostgreSQL 18's `ADD CONSTRAINT … NOT NULL` without `NOT VALID`, pass once
+   a valid, enforced `CHECK (<column> IS NOT NULL)` stands on that column, from which PostgreSQL proves the column without a scan:
+   one validated as in 1, or one created valid, with its table or by an earlier release or with a named data fix; or once a
+   not-null constraint on the column has been validated as in 1. Once a constraint or column of the table is dropped, or a
+   constraint altered, the lint takes the proof as gone. *(Corrected 2026-11-12: this said `SET NOT NULL` has no `NOT VALID`
+   form. PostgreSQL 18, the version this repository runs, adds a not-null constraint `NOT VALID`; and `SET NOT NULL` on a column
+   whose not-null constraint is invalid validates it, scanning, so it is refused until that constraint has been validated.)*
+3. **`UNIQUE USING INDEX` on an index an earlier release built.** `ADD CONSTRAINT <name> UNIQUE USING INDEX <index>` judges no row
+   the index's build did not, when a migration at or below the floor built `<index>` unique. Built by this release, the index's
+   own `CREATE UNIQUE INDEX` is the tightening. `PRIMARY KEY USING INDEX` sets its columns `NOT NULL`, scanning, and stays one.
+4. **A named data fix.** The file's contract marker carries `data-fix=V<version>`: a migration of the **same release**, of a lower
+   version, that writes rows (`INSERT`, `UPDATE`, `DELETE` or `MERGE`). Wherever the release runs, production included, the fix runs
+   first. A version that is not lower, not in the release, or names a migration writing no row is refused. The lint holds that a
+   fix is named and comes first; what it fixes is the marker's reason, a person's statement. A unique constraint or index
+   otherwise has no `NOT VALID` form and no other way: it takes this one.
+
+**What it does not claim.** It reads statements, not data: a named fix that misses a row, or a validation in a later release over a
+row nobody fixed, fails as before, and the rule makes that the rare case rather than the usual one. A type change with no `USING`
+and to no constrained domain (a narrowed `varchar`, say) can fail on old rows too and is not judged here; the expand-only lint
+already asks a marker of it. A statement that reads an old table only to filter is counted a copy all the same.
+
+**Grandfathered: none.** No migration above the floor tightened an old object when the rule was written, nor when it was widened;
+the test holds the list (empty) so it cannot grow without a named version and a reason.
 
 **The promotion script's rule (`P15-TSK-017`).** A rollback to release R is refused when any migration above R's own newest
 version in that module carries a marker naming a release newer than R. Past such a marker the way back is a forward fix.
@@ -384,7 +487,13 @@ failure rolls back. Two exceptions matter:
 
 - `CREATE INDEX CONCURRENTLY` cannot run inside a transaction. It needs a migration marked
   non-transactional, and such a migration can leave an invalid index behind if it fails,
-  which must be found and dropped before retrying.
+  which must be found and dropped before retrying. *(Since 2026-11-12, `P15-TSK-032`: **the build
+  refuses one** - `EveryMigrationRunsInATransactionTest`, §2.1's note - until the migrator gains a
+  reviewed mode for it. On this Flyway's default PostgreSQL lock such a migration cannot finish on
+  the image (it waits for Flyway's own lock-holding transaction until `lock_timeout`), and a failure
+  leaves its invalid index with no history row, which only a person can drop. Build an index in the
+  migration's transaction, as ledger `V029` does; an index a large live table needs built
+  `CONCURRENTLY` waits for that mode.)*
 - `ALTER TABLE` variants that rewrite the table take an `ACCESS EXCLUSIVE` lock for the
   duration. On a large ledger table that is an outage. Prefer the expand/contract path.
 

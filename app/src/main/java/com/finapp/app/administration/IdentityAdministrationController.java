@@ -75,10 +75,17 @@ public class IdentityAdministrationController {
      * request carries a reason, and a suspension is a thing that happened rather than a value that
      * changed. It is also where reinstatement attaches — {@link #reinstateIdentity} deletes this
      * subresource (`P1-TSK-032`).
+     *
+     * <p><strong>On a {@code MULTI_FACTOR} session</strong> (`P15-TSK-032`, item 42 (e) as decided): a stolen administrator's
+     * password must not be enough to suspend every other administrator. The last {@code ACTIVE} identity that can grant roles
+     * is never suspended here ({@code 409 identity.LastRoleGranter}); risk's automated suspension, another door, is not bound by
+     * that rule. Its refusals are recorded, as the role doors' are.
      */
     @PostMapping("/{id}/suspension")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(PermissionName.IDENTITY_SUSPEND)
+    @com.finapp.app.session.RequiresAssurance(com.finapp.identity.AssuranceLevel.MULTI_FACTOR)
+    @com.finapp.app.session.RecordsRefusals
     public void suspendIdentity(
             @PathVariable String id,
             @Valid @RequestBody SuspensionRequest body,
@@ -107,6 +114,11 @@ public class IdentityAdministrationController {
                             PlatformErrorCode.CONFLICT,
                             "The identity was not ACTIVE when the suspension was attempted",
                             "this identity is not active");
+            case LAST_ROLE_GRANTER ->
+                    throw new ApiException(
+                            com.finapp.identity.IdentityErrorCode.LAST_ROLE_GRANTER,
+                            "A suspension would have left no active identity holding a role that can grant roles",
+                            "grant the administrator role to another person first.");
         }
     }
 
@@ -125,10 +137,15 @@ public class IdentityAdministrationController {
      * <p><strong>Sessions are not restored.</strong> The suspension revoked them and revocations
      * do not un-happen ({@code INV-HIST-01}); the person logs in again, which re-proves the
      * credential rather than resurrecting a bearer token in whoever's hands last held it.
+     *
+     * <p><strong>On a {@code MULTI_FACTOR} session</strong> (`P15-TSK-032`, item 42 (e) as decided): a quiet reinstatement is how
+     * an accomplice undoes an incident response, and a password alone must not be enough for it. Its refusals are recorded.
      */
     @DeleteMapping("/{id}/suspension")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(PermissionName.IDENTITY_SUSPEND)
+    @com.finapp.app.session.RequiresAssurance(com.finapp.identity.AssuranceLevel.MULTI_FACTOR)
+    @com.finapp.app.session.RecordsRefusals
     public void reinstateIdentity(
             @PathVariable String id,
             @Valid @RequestBody ReinstatementRequest body,
@@ -165,10 +182,15 @@ public class IdentityAdministrationController {
         }
     }
 
-    /** Grants a role. */
+    /**
+     * Grants a role. On a {@code MULTI_FACTOR} session (`P15-TSK-032`, item 42 (e) as decided): it is the act by which every
+     * other authorization decision can be widened, and since the revocation steps up, the grant - the more dangerous direction
+     * - does too. {@code ADMINISTRATOR} needs its holder to have enrolled a factor, as the money roles do.
+     */
     @PostMapping("/{id}/roles")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(PermissionName.ROLE_ASSIGN)
+    @com.finapp.app.session.RequiresAssurance(com.finapp.identity.AssuranceLevel.MULTI_FACTOR)
     @com.finapp.app.session.RecordsRefusals
     public void assignRole(
             @PathVariable String id,
@@ -196,8 +218,52 @@ public class IdentityAdministrationController {
             case FACTOR_REQUIRED ->
                     throw new ApiException(
                             com.finapp.identity.IdentityErrorCode.FACTOR_REQUIRED_FOR_ROLE,
-                            "A role that can redirect a merchant's money was granted to an identity with no factor",
+                            "A role needing a factor - one that can redirect a merchant's money, administer identities or approve"
+                                    + " a risk case's action - was"
+                                    + " granted to an identity with no factor",
                             "this role needs its holder to enrol a second factor first.");
+        }
+    }
+
+    /**
+     * Takes a role from an identity (`P15-TSK-032`): {@code DELETE} on the role the grant created, the reason in the body
+     * ({@link RoleRevocationRequest}). The permission is {@code ROLE_ASSIGN}, the grant's - "grant or revoke a role" - and the
+     * session must have stepped up to {@code MULTI_FACTOR}, the decided Q1: a revocation of the last role ends every session
+     * its holder has, and of a granting role it can lock others out of administration, so a stolen password must not be
+     * enough. On the operator surface, as every permission-guarded route is. Its refusals are recorded as the grant's are.
+     */
+    @DeleteMapping("/{id}/roles/{role}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RequiresPermission(PermissionName.ROLE_ASSIGN)
+    @com.finapp.app.session.RequiresAssurance(com.finapp.identity.AssuranceLevel.MULTI_FACTOR)
+    @com.finapp.app.session.RecordsRefusals
+    public void revokeRole(
+            @PathVariable String id,
+            @PathVariable com.finapp.identity.RoleName role,
+            @Valid @RequestBody RoleRevocationRequest body,
+            HttpServletRequest request) {
+
+        IdentityAdministration.RoleRevocation outcome =
+                administration.revokeRole(subject(id), role, actor(request), body.reason());
+
+        switch (outcome) {
+            case REVOKED, NOT_HELD -> {
+                // Idempotent in effect, as the grant is: the caller asked for the identity not to hold the role, and it
+                // does not. A retry after a lost answer must not look like a failure.
+            }
+            case SELF ->
+                    throw new ApiException(
+                            PlatformErrorCode.VALIDATION_FAILED,
+                            "An administrator named themselves as the subject of a role revocation",
+                            "an administrator cannot revoke a role from their own identity");
+            case NOT_FOUND ->
+                    throw new ApiException(
+                            PlatformErrorCode.NOT_FOUND, "No identity matched the given identifier");
+            case LAST_ROLE_GRANTER ->
+                    throw new ApiException(
+                            com.finapp.identity.IdentityErrorCode.LAST_ROLE_GRANTER,
+                            "A revocation would have left no active identity holding a role that can grant roles",
+                            "grant this role to another person first.");
         }
     }
 

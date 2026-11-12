@@ -514,7 +514,11 @@ circularity is deliberate rather than an oversight, and the two alternatives wer
   production, permanently, with credentials nobody chose.
 
 So the first grant is made out of band by an operator with database access, against an identity that
-has already registered normally:
+has already registered normally **and enrolled a second factor** (`POST /v1/me/mfa`, then
+`POST /v1/me/mfa/confirmation`, on its own session - since `P15-TSK-032` every identity administration door
+needs a `MULTI_FACTOR` session, and the door that grants `ADMINISTRATOR` refuses a holder with no factor; an
+administrator written in here without one reaches no administrative door until they enrol, and the access
+review's check names them). Then sign in on the operator host and step up (`POST /v1/authentications/mfa`):
 
 ```bash
 docker compose exec postgres psql -U finapp_migrator -d finapp -c "INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at) SELECT gen_random_uuid(), i.id, 'ADMINISTRATOR', i.id, now() FROM identity.identity i WHERE i.login_identifier = 'REPLACE_ME'"
@@ -523,7 +527,19 @@ docker compose exec postgres psql -U finapp_migrator -d finapp -c "INSERT INTO i
 **The consequence is recorded rather than hidden: that first assignment has no actor in the audit
 trail**, because no authenticated actor performed it — `assigned_by` names the subject itself, which
 is the one self-grant the platform contains and the reason `IdentityAdministration` refuses every
-later one. Every subsequent assignment names two parties.
+later one. Every subsequent assignment names two parties. An administrator's revocation
+(`DELETE /v1/identities/{id}/roles/{role}`) and suspension (`POST /v1/identities/{id}/suspension`) refuse to
+take the last active identity holding `ADMINISTRATOR` (`identity.LastRoleGranter`), so administrators acting
+alone, or two of them at once, never leave the platform with no administrator. **Risk's automated suspension is
+not bound by that** - a compromised last administrator must stay suspendable - and takes none of the rule's
+locks, so it can leave none: by suspending the last one, or by suspending one of the last two while an
+administrator suspends or revokes the other (each commits before seeing the other). The way back is the same
+either way. First, risk's own `REINSTATE_IDENTITY`, which lifts a suspension risk made inside the platform: a
+risk case opened and the action proposed, then approved by a second analyst on a stepped-up session. Failing
+that - or for a suspension an administrator made, which risk does not lift - this out-of-band step: a role
+inserted for an active identity, or the suspended one restored in full, `UPDATE identity.identity SET status =
+'ACTIVE', suspension_cause = NULL, status_changed_at = now() WHERE id = ...` (identity `V024` refuses an
+active row that keeps its cause). Its sessions stay ended; the person signs in again.
 
 An operator doing this is a privileged-access event in its own right, and Phase 15 owns the controls
 for that (`CURRENT_STATE.md` §Known Architectural Debt).
