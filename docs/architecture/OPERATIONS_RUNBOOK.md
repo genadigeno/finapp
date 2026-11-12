@@ -2046,7 +2046,7 @@ A rollback replica starts on a schema newer than the one it was built for, and g
 
 ### 11.4 A failed migration (forward fix only) (`P15-TSK-004`; the compatibility half `P15-TSK-005`)
 
-*(Written by `P15-TSK-004`, 2026-11-08; **not yet rehearsed** - `P15-TSK-032` rehearses it.)*
+*(Written by `P15-TSK-004`, 2026-11-08; **rehearsed on containers** by `P15-TSK-032`, 2026-11-12, with `infra/scripts/migration-failure-rehearsal.sh`, the record at the end of this section. The rehearsal showed that the case of a migration outside a transaction was written wrong for this Flyway and PostgreSQL, and that case is rewritten below from what it showed. Read "**not yet rehearsed** - `P15-TSK-032` rehearses it" until then.)*
 
 A failed migration stops the release before any replica changes. The old release keeps serving on the schema it had: the
 rollout has not started, a release's migrations are expand-only or carry a contract marker (the build holds that, `DATA_MIGRATIONS.md` §4.1), and the failed
@@ -2054,6 +2054,11 @@ one has either not happened at all or, in the second case below, left the schema
 `flywayRepair` to make the symptom go away** (`DATA_MIGRATIONS.md` §3.1).
 
 First read `<schema>.flyway_schema_history` for the failing schema, and the Job's log.
+
+**What the Job's log says.** `finapp-migrator schema=<schema> attempts=1 failure=DEFINITE`, the exception, and
+`finapp-migrator result=FAILED schema=<schema>`, exit `10`. The Job does not retry it (§11.1b): run again with nothing fixed, it fails
+the same way and applies nothing. The run stops at that schema, so the schemas after it in the order are not reached and their
+migrations of the release are still pending too. The server's detail of a failing row is not in the log.
 
 **No row for the migration (the usual case).** Every migration in this repository runs in a transaction, and on PostgreSQL a
 failed one is rolled back and leaves no history row. Nothing happened. The next run tries it again. So the question is why it
@@ -2066,18 +2071,44 @@ failed:
   **lower version than the failed one and higher than the last applied**, which fixes the data, and release that. In the
   environments that already applied the failed one, `outOfOrder = false` would refuse it, so such a fix is only possible while
   every environment is behind the failed version; otherwise fix the data by an audited operational procedure and re-run the Job.
+  The refusal reads `Detected resolved migration not applied to database: <version>`, exit `10`.
 
-**A row with `success = false`.** Only a migration that cannot run in a transaction (`executeInTransaction=false`) writes one, and
-none exists today. Its effect may be partial: for `CREATE INDEX CONCURRENTLY`, an `INVALID` index stays behind and must be dropped
-first. Every later run refuses at validation until the row is dealt with, so this is the one case for `flywayRepair`, with the
-files known good and the reason recorded (`DATA_MIGRATIONS.md` §3.1).
+**A migration outside a transaction: the build refuses one, so this case cannot arise while that rule holds.** Flyway runs a
+migration outside a transaction when a statement cannot run inside one (`CREATE INDEX CONCURRENTLY` and the others its PostgreSQL
+parser names) or a `<script>.conf` says `executeInTransaction=false`. `EveryMigrationRunsInATransactionTest` (in the migrator module)
+reads every script with the pinned Flyway's own parser and refuses each such form, and the setting made for every script, until
+the migrator gains a reviewed mode for one (`THREAT_MODEL.md` §6 item 42 (b)). Build an index in the migration's transaction, as
+ledger `V029` does. What such a migration does, as rehearsed on the pinned Flyway 13.7.0 with PostgreSQL's default transactional
+lock (neither the build nor the image changes it):
+
+- **A failure leaves no row** in the history, failed or not: Flyway writes its failed row inside the transaction that holds its lock,
+  and that transaction rolls back. Its effect stays: `CREATE INDEX CONCURRENTLY` leaves an `INVALID` index
+  (`SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid`).
+- **Every later run trips over that leftover**: `relation "<index>" already exists`, exit `10`. `flywayValidate` calls the migration
+  pending, not failed, and `flywayRepair` has no failed row to remove and changes nothing.
+- **On rows that allow it, it still cannot finish**: the statement waits for every open transaction, Flyway's own lock-holding one
+  among them. On the image the session's `lock_timeout` ends it after 3 s (`canceling statement due to lock timeout`, exit `10`), the
+  index `INVALID` again and no row; on a developer's Gradle task it waits with no bound until someone cancels it.
+- **The way out**: the schema's owner drops the leftover, with a bound on its lock (`SET lock_timeout = '3s'; DROP INDEX
+  <schema>.<index>;`), and the migration, applied nowhere, is corrected to build its index in its transaction; the next run applies it,
+  valid. In a deployed environment nobody can drop it today, because no person reaches a terminal there (`THREAT_MODEL.md` §6 item 31
+  (e)): which is why the build refuses the migration rather than leave this procedure to be performed.
+- **`flywayRepair`** belongs to a configuration this repository does not have: with the lock taken per session, as Flyway advises for
+  such migrations, a failure would leave a `success = false` row that refuses every later run at validation until it is repaired, with
+  the files known good and the reason recorded (`DATA_MIGRATIONS.md` §3.1). Nothing here has run that configuration.
+
+*(This paragraph read, until 2026-11-12: "**A row with `success = false`.** Only a migration that cannot run in a transaction
+(`executeInTransaction=false`) writes one, and none exists today. Its effect may be partial ... Every later run refuses at validation
+until the row is dealt with, so this is the one case for `flywayRepair` ...". The rehearsal showed no such row is written here.)*
 
 **The compatibility half: what the earlier migrations of the same release did.** Each migration commits on its own, so a Job that
 fails at its fourth has applied its first three, and they stay. Whichever failed, the schema is now part way to the new release.
 Replicas of the release in service are unaffected, because every one of those three is expand-only or carries a contract marker
 that names a release already out. Replicas of the new release, if any has started, stay unready: the failed migration's schema is
-older than their build expects. **There is nothing to roll back**: the old image is what is serving, so there is no digest to
-revert, and the forward fix is the only way.
+older than their build expects. The guard's own read, `platform.applied_migration_versions()` as the application's role, shows the
+schema at its last applied migration and never a failed one (rehearsed; the replica's side is §11.28's `hold` step on `kind`).
+**There is nothing to roll back**: the old image is what is serving, so there is no digest to revert, and the forward fix is the only
+way.
 
 **Whichever it is**, the application release has not started. After a fix, run the Job again; it applies what is pending and nothing
 else.

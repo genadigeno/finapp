@@ -105,8 +105,9 @@ class MigrationFailureRehearsalTest {
     @DisplayName("where the migration had applied, a fix below it is refused at validation: outOfOrder=false, as section 11.4 says")
     void aFixBelowAnAppliedVersionIsRefusedWhereTheMigrationApplied() {
         String nMinusOne = step("release N - 1:");
-        int copied = nMinusOne.indexOf("CREATE DATABASE finapp_ahead TEMPLATE finapp_release");
-        assertThat(copied).as("another environment, copied at N - 1").isNotNegative();
+        int copied = nMinusOne.indexOf("sql postgres \"CREATE DATABASE $database TEMPLATE finapp_release\"");
+        assertThat(nMinusOne).as("another environment, copied at N - 1").contains("for database in finapp_ahead finapp_outside; do");
+        assertThat(copied).isNotNegative();
         assertThat(nMinusOne.indexOf("INSERT INTO ledger.rehearsal_limit")).as("before the rows the CHECK refuses").isGreaterThan(copied);
         String ahead = step("ahead:");
         assertThat(ahead).contains("expect_exit 0 \"$code\" \"release N where no row violates the CHECK\"")
@@ -275,14 +276,20 @@ class MigrationFailureRehearsalTest {
         assertThat(rehearsed).as("after the image is built and verified").isGreaterThan(verified);
     }
 
-    /** The text of one step, from its {@code echo "== <name>} line to the next step's. */
+    /** The text of one step, from its {@code echo "== <name>} line to the next step's, or to the next section's rule. */
     private static String step(String name) {
         String opening = "echo \"== " + name;
         int start = harness.indexOf(opening);
         assertThat(start).as("the harness has a step %s", name).isNotNegative();
         assertThat(harness.indexOf(opening, start + 1)).as("one step named %s", name).isNegative();
-        int end = harness.indexOf("\necho \"== ", start + opening.length());
-        return harness.substring(start, end < 0 ? harness.length() : end);
+        int end = harness.length();
+        for (String next : new String[] {"\necho \"== ", "\n# ====="}) {
+            int at = harness.indexOf(next, start + opening.length());
+            if (at >= 0) {
+                end = Math.min(end, at);
+            }
+        }
+        return harness.substring(start, end);
     }
 
     /** The body of the shell function {@code name}, from its line to the first closing brace at column one. */
