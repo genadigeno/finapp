@@ -67,6 +67,11 @@ nothing else.
 - **R5 (W4)**: W4 states no merchant payout frequency, so merchant payouts are not in the model. A daily payout per merchant
   would add about 2,000 payouts a day, small beside the rest. It is the owner's to add.
 
+**The owner's decision (2026-11-13, "accept recommendations, start wave B"):** W7 as read from the code's event writers (§3.2: about 7.3 events per money
+movement, about 3.2 million a day) replaces the plan's estimate of 4; R1 stands (W6's 5,000 are loan decisions, each BNPL
+purchase carrying its own); R5 stands (merchant payouts out of the model until W4 states a frequency). R2–R4 remain readings the
+owner may change.
+
 ---
 
 ## 3. Per operation: the proposed production target

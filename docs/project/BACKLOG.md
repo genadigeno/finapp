@@ -29224,7 +29224,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.26's roll procedure and §11.28's record.
 - **Risk**: Medium (machine load). **Cx**: M.
 
-**P16-TSK-006 — The load harness: k6 through the real edge, invariants sampled during load (ADR-0126, C5)** — `PLANNED`
+**P16-TSK-006 — The load harness: k6 through the real edge, invariants sampled during load (ADR-0126, C5)** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, "accept recommendations, start wave B"; its one dependency, `P16-TSK-001`, `COMPLETE`)
 - **Objective**: one reproducible way to drive every profile of `PHASE_16_PLAN.md` §5.1 through the deployed platform's real edge,
   with the financial invariants read while the load runs.
 - **Affected components**:
@@ -29598,7 +29598,7 @@ on none:
 - **Operational documentation**: a runbook section on a shedding platform.
 - **Risk**: High. **Cx**: L.
 
-**P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `PLANNED`
+**P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, "accept recommendations, start wave B"; its one dependency, `P16-TSK-001`, `COMPLETE`)
 - **Objective**: as decided 2026-11-12. A sweep's failed tick is metered and paged (item 42 (i) (i)), and each listing skips and
   counts a row it cannot rehydrate ((ii); the corrupt card attempt debt row). A row failing every tick gains a failure count and a
   backoff (the poisoned-row debt row). A rematch residual faulting every tick gains a durable exclusion (the rematch debt row).

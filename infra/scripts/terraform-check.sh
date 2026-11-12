@@ -472,10 +472,11 @@ tflint_on() {
         "$TFLINT_IMAGE" --recursive --chdir="$1" --config="$1/.tflint.hcl" --no-color
 }
 
+# --disable-telemetry: no anonymous usage data leaves a run (the owner, 2026-11-13), as in manifest-check.sh.
 trivy_on() {
     MSYS_NO_PATHCONV=1 docker run --rm \
         -v "$DIR:/repo/infra:ro" -v "$REPO/deploy:/repo/deploy:ro" -v "$REPO/docs:/repo/docs:ro" -v "$VOLUME:/scratch:ro" \
-        "$TRIVY_IMAGE" config --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --quiet "$1"
+        "$TRIVY_IMAGE" config --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --quiet --disable-telemetry --skip-version-check "$1"
 }
 
 status=0

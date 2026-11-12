@@ -2176,7 +2176,9 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     the manifests until the scanner reads nothing, the start script's credential through a mounted file and the timeout through the
     Deployment's environment, which moves the same values to where Trivy does not look. *Recommendation*: **(i)**. (ii) lowers no risk,
     it changes only what the scanner sees, and a rule that is satisfied by hiding a value from it is the habit this net exists to catch.
-    *Awaiting the owner* (2026-11-12).
+    **Decided 2026-11-13** by the owner ("accept recommendations, start wave B"): **(i)**, both carried until 2027-06-30, the manifests unchanged.
+
+    *(Read "*Awaiting the owner* (2026-11-12)." until the owner's decision of 2026-11-13.)*
 
 ## 7. Decided against
 

@@ -103,6 +103,7 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM
 dock volume create "$VOLUME" >/dev/null
 
+# Every call passes --disable-telemetry: no anonymous usage data leaves a run (the owner, 2026-11-13).
 trivy() {
     dock run --rm -v "$VOLUME:/cache" -v "$WORK:/work" -v "$ROOT/infra/trivy:/accepted:ro" \
         -v "$ROOT/$SBOMS:/sboms" "$TRIVY_IMAGE" "$@"
@@ -112,7 +113,7 @@ trivy() {
 # included, so a plant cannot pass or fail for a reason the real scan does not share.
 scan() {
     trivy image --cache-dir /cache --skip-db-update --skip-java-db-update --skip-check-update --no-progress \
-        --timeout "$TIMEOUT" \
+        --disable-telemetry --skip-version-check --timeout "$TIMEOUT" \
         --scanners vuln,secret,misconfig --image-config-scanners misconfig,secret \
         --severity "$SEVERITY" --exit-code "$FOUND" \
         --ignorefile /accepted/accepted-findings.yaml \
@@ -147,7 +148,7 @@ echo "== the vulnerability databases, this run's own"
 # scan still cannot run without one: after the third failure this script exits 2 and the job is red, never green.
 download() {
     for attempt in 1 2 3; do
-        if trivy image --cache-dir /cache "$1" --no-progress; then
+        if trivy image --cache-dir /cache "$1" --no-progress --disable-telemetry --skip-version-check; then
             return 0
         fi
         echo "-- the database download failed, attempt $attempt of 3" >&2
@@ -166,7 +167,7 @@ sbom_of() {
     name=$(printf '%s' "${image%:*}" | tr '/' '_')
     out="$SBOMS/$name.cdx.json"
     trivy image --cache-dir /cache --skip-db-update --skip-java-db-update --no-progress --timeout "$TIMEOUT" \
-        --format cyclonedx --output "/sboms/$name.cdx.json" --input "/work/$tar" \
+        --disable-telemetry --skip-version-check --format cyclonedx --output "/sboms/$name.cdx.json" --input "/work/$tar" \
         || cannot "the SBOM of $image could not be written"
     [ -s "$out" ] || fail "the SBOM of $image is empty: $out"
 
