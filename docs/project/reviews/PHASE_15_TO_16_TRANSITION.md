@@ -211,6 +211,10 @@ financial workloads?" → `PASS`.**
   owner accepted these on 2026-11-12 as **deviation B - "`UNKNOWN` at ten"** - with ten instances at load written into Phase 16.
   This gate's `PASS` answers the question asked - instances changing under a financial workload - on counted runs; **it is not a
   `PASS` at ten, and it does not replace B**.
+- **The owner's ruling on this reading** (2026-11-12, asked at the merge, since the transition's prompt says `UNKNOWN` keeps
+  the phase open): **`PASS`**, as counted at three replicas for instances added, removed, restarted and replaced, with ten
+  instances deviation B and Phase 16's ten-instance load task closing it (with the pooler or budget change the seven-replica
+  ceiling needs, `P15-REM-007`).
 
 ## PART 7 — financial safety
 
