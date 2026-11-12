@@ -72,6 +72,9 @@ CONFIG=observability/base/collector.yaml
 APP=base/deployment.yaml
 BACKENDS=observability/overlays/kind/networkpolicy-backends.yaml
 PEOPLE=observability/base/rbac-humans.yaml
+BASE_KUST=observability/base/kustomization.yaml
+KIND_KUST=observability/overlays/kind/kustomization.yaml
+STORES=observability/overlays/kind/backends.yaml
 
 plant_all() {
     # The general hardening, reused from finapp.rego, on the collector.
@@ -104,7 +107,7 @@ plant_all() {
     obs_plant_on obs-logs-from-anywhere "$BACKENDS" '/name: finapp-log-store/,/name: finapp-scraper-to-backends/s/^  ingress:$/  ingress:\n    - from:\n        - namespaceSelector: {}\n      ports:\n        - protocol: TCP\n          port: 3100/'
     obs_plant_on obs-alerts-from-collector "$BACKENDS" '/name: finapp-alert-router/,$s/finapp\/role: metrics-scraper/finapp\/role: telemetry-collector/'
     # The scraper reachable at all (the review's MINOR 7): on kind its lifecycle endpoints answer anyone who reaches its port.
-    obs_plant_on obs-scraper-reachable "$POLICY" '/name: finapp-metrics-scraper/,$s/^  egress:$/  ingress:\n    - from:\n        - podSelector:\n            matchLabels:\n              finapp\/role: telemetry-collector\n      ports:\n        - protocol: TCP\n          port: 9090\n  egress:/'
+    obs_plant_on obs-scraper-reachable "$POLICY" '/name: finapp-metrics-scraper/,/^---$/s/^  egress:$/  ingress:\n    - from:\n        - podSelector:\n            matchLabels:\n              finapp\/role: telemetry-collector\n      ports:\n        - protocol: TCP\n          port: 9090\n  egress:/'
 
     # A person's roles here (P15-TSK-032, item 42 (k)), held by finapp.rego's rules through this stream and by observability.rego: a person's
     # binding in a third namespace (through the namespaces root, which no transformer rewrites), the read-only role reading Secrets, and
@@ -206,6 +209,24 @@ YAML
 
     # The second net taken out of a pipeline.
     obs_plant_on obs-scrub-removed "$CONFIG" '1,/processors: \[memory_limiter, transform\/scrub, resource\/environment, batch\]/s/processors: \[memory_limiter, transform\/scrub, resource\/environment, batch\]/processors: [memory_limiter, resource\/environment, batch]/'
+
+    # The platform's own lines (P16-TSK-003): their receiver's senders, their own net, and the cluster watcher's reach and token.
+    obs_plant_on obs-platform-from-app "$POLICY" '/^    # The platform.s own components on their own receiver/,/^          port: 4319$/s/^              finapp\/role: ingress-controller$/              finapp\/role: ingress-controller\n        - namespaceSelector:\n            matchLabels:\n              kubernetes.io\/metadata.name: finapp\n          podSelector:\n            matchLabels:\n              app.kubernetes.io\/name: finapp-app/'
+    obs_plant_on obs-platform-any-edge-pod "$POLICY" '/^    # The platform.s own components on their own receiver/,/^          port: 4319$/{/^          podSelector:$/,/^              finapp\/role: ingress-controller$/d}'
+    obs_plant_on obs-platform-scrub-removed "$CONFIG" 's/processors: \[memory_limiter, transform\/scrub-platform, resource\/environment, batch\]/processors: [memory_limiter, resource\/environment, batch]/'
+    obs_plant_on obs-watch-egress-to-app "$POLICY" '/^  name: finapp-cluster-watch$/,$s/^  egress:$/  egress:\n    - to:\n        - namespaceSelector:\n            matchLabels:\n              kubernetes.io\/metadata.name: finapp\n          podSelector:\n            matchLabels:\n              app.kubernetes.io\/name: finapp-app\n      ports:\n        - protocol: TCP\n          port: 8080/'
+    obs_plant_on obs-watch-reachable "$POLICY" '/^  name: finapp-cluster-watch$/,$s/^              finapp\/role: metrics-scraper$/              finapp\/role: telemetry-collector/'
+    obs_plant_on obs-token-for-another-account observability/base/cluster-watch-workload.yaml 's/serviceAccountName: finapp-cluster-watch/serviceAccountName: finapp-collector/'
+    # The namespace's quota (P16-TSK-004; THREAT_MODEL.md section 6 item 43 (c)): removed, short, a back end rolled with a surge the quota does
+    # not admit, and a rollout the count cannot size, each refused. Accepted: a second Tempo replica and the quota raised by the same
+    # arithmetic (Recreate with no PodDisruptionBudget: 2 replicas, 2 more replacing them after a drain), so the count is shown right.
+    obs_plant_on obs-quota-absent "$BASE_KUST" '/^  - resourcequota.yaml$/d'
+    obs_plant_on obs-quota-cpu-short "$KIND_KUST" 's/^        value: 1500m$/        value: 1400m/'
+    obs_plant_on obs-store-surges "$STORES" '1,/^    type: Recreate$/s/^    type: Recreate$/    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 1\n      maxUnavailable: 0/'
+    obs_plant_on obs-collector-surge-percent "$WORKLOAD" '1,/maxSurge: 1$/s/maxSurge: 1$/maxSurge: 50%/'
+    obs_plant obs-quota-follows-a-second-store
+    obs_mutate obs-quota-follows-a-second-store "$STORES" '1,/^  replicas: 1$/s/^  replicas: 1$/  replicas: 2/'
+    obs_mutate obs-quota-follows-a-second-store "$KIND_KUST" 's/^        value: "16"$/        value: "18"/; s/^        value: 1500m$/        value: 1700m/; s/^        value: 6144Mi$/        value: 6912Mi/; s/^        value: "15"$/        value: "17"/'
 }
 
 in_container() {
@@ -345,6 +366,17 @@ obs_refused() {
     fi
 }
 
+obs_accepted() {
+    # obs_accepted <plant>: a plant the policies must let through, so a rule cannot pass its plants by refusing everything.
+    if output=$(conftest_on "/scratch/obs-plants/$1/rendered.yaml" "/scratch/obs-plants/$1/overlay.yaml" 2>&1); then
+        echo "ok   plant $1 accepted"
+    else
+        printf '%s\n' "$output"
+        echo "!!   plant $1 was refused, and must not be"
+        status=1
+    fi
+}
+
 check "the application's, the namespaces' and the pipeline's kind overlays render as one stream" in_kustomize render
 check "the plants are planted and rendered" in_kustomize plants
 check "kubeconform kind" kubeconform_on /scratch/rendered/kind.yaml
@@ -383,6 +415,17 @@ obs_refused obs-peers-from-anywhere obs-collector-peers
 obs_refused obs-ingress-portless obs-collector-ingress
 obs_refused obs-egress-portless obs-egress
 obs_refused obs-scrub-removed obs-scrub
+obs_refused obs-platform-from-app obs-platform-ingress
+obs_refused obs-platform-any-edge-pod obs-platform-ingress
+obs_refused obs-platform-scrub-removed obs-scrub
+obs_refused obs-watch-egress-to-app obs-cluster-watch-egress
+obs_refused obs-watch-reachable obs-store-ingress
+obs_refused obs-token-for-another-account security-token
+obs_refused obs-quota-absent obs-quota
+obs_refused obs-quota-cpu-short obs-quota-compute
+obs_refused obs-store-surges obs-quota-pods
+obs_refused obs-collector-surge-percent obs-quota-sizing
+obs_accepted obs-quota-follows-a-second-store
 
 # ---------------------------------------------------------------------------------------------------
 # The second net, through the real collector.
@@ -429,10 +472,15 @@ service:
 YAML
 
 cp "$ROOT/deploy/observability/base/collector.yaml" "$CONFIGS/collector.yaml"
-# The probe's configuration: the committed one with the scrubbing processor taken out of every pipeline, nothing else changed.
-sed 's/transform\/scrub, //' "$ROOT/deploy/observability/base/collector.yaml" > "$CONFIGS/probe.yaml"
+# The probe's configuration: the committed one with both scrubbing processors taken out of every pipeline, the application's and the
+# platform's own (P16-TSK-003), nothing else changed.
+sed -e 's/transform\/scrub, //' -e 's/transform\/scrub-platform, //' "$ROOT/deploy/observability/base/collector.yaml" > "$CONFIGS/probe.yaml"
 if cmp -s "$CONFIGS/collector.yaml" "$CONFIGS/probe.yaml"; then
     echo "!!   the probe was not planted: no pipeline names transform/scrub"
+    status=1
+fi
+if grep -q 'transform/scrub-platform, ' "$CONFIGS/probe.yaml" || ! grep -q 'transform/scrub-platform, ' "$CONFIGS/collector.yaml"; then
+    echo "!!   the probe was not planted: the platform's pipeline names no transform/scrub-platform, or still does in the probe"
     status=1
 fi
 
@@ -574,6 +622,157 @@ if sweep "$RUN-probe" "check-probe" "$PROBE_TRACE"; then
         echo "ok   the probe is red: without the scrub the collector exported $(printf '%s' "$found" | tr '\n' ' ')"
     else
         echo "!!   the probe stayed green: with the scrub removed the needles still did not come out, so the check cannot see a leak"
+        status=1
+    fi
+else
+    status=1
+fi
+
+# ---------------------------------------------------------------------------------------------------
+# The platform's own lines (P16-TSK-003): the same collectors, the platform receiver on 4319.
+# ---------------------------------------------------------------------------------------------------
+# An edge's access line as the pinned proxy sends it (the whole JSON line as the body, every field an attribute, its host and process in the
+# resource), routed and unrouted, and a migrator Job's record as the cluster watcher sends it. The needles are what the platform's net drops
+# by name - the client's address, the host the client named, the backend's address, a user name, an unrouted path (the caller's own text), a
+# query string, the process's arguments, a node - and what it scrubs by shape, a card number and an amount in a migrator's line.
+CLIENT=198.51.100.77
+CLIENT6=2001:db8::77
+EDGE_HOST=needle-edge-host.invalid
+BACKEND=needle-backend.invalid
+EDGE_USER=needle-edge-user
+UNROUTED=needle-unrouted-path
+QUERY_NEEDLE=needle-in-a-query
+ARGS=needle-process-argument
+NODE=needle-node-name
+MIGRATOR_AMOUNT="6234.18 EUR"
+ROUTER=public-machine@file
+EDGE_POD=finapp-edge-public-7c9d8b6f5-x2k4q
+
+access_line() {
+    # access_line <path> <router or empty> <status>: the JSON line the proxy writes, escaped for an OTLP string value.
+    router_field=""
+    [ -n "$2" ] && router_field=",\\\"RouterName\\\":\\\"$2\\\",\\\"ServiceName\\\":\\\"finapp-app@file\\\""
+    printf '{\\"ClientAddr\\":\\"%s:51152\\",\\"ClientHost\\":\\"%s\\",\\"ClientUsername\\":\\"%s\\",\\"DownstreamStatus\\":%s,\\"Duration\\":3430534,\\"RequestHost\\":\\"%s\\",\\"RequestMethod\\":\\"GET\\",\\"RequestPath\\":\\"%s\\"%s,\\"ServiceURL\\":\\"http://%s:8080\\",\\"entryPointName\\":\\"websecure\\"}' \
+        "$CLIENT" "$CLIENT" "$EDGE_USER" "$3" "$EDGE_HOST" "$1" "$router_field" "$BACKEND"
+}
+
+access_record() {
+    # access_record <path> <router or empty> <status>
+    now=$(date +%s)000000000
+    router_attributes=""
+    [ -n "$2" ] && router_attributes=",{\"key\":\"RouterName\",\"value\":{\"stringValue\":\"$2\"}},{\"key\":\"ServiceName\",\"value\":{\"stringValue\":\"finapp-app@file\"}},{\"key\":\"ServiceURL\",\"value\":{\"stringValue\":\"http://$BACKEND:8080\"}}"
+    cat <<JSON
+{"timeUnixNano":"$now","severityNumber":9,"severityText":"info","body":{"stringValue":"$(access_line "$1" "$2" "$3")"},
+ "attributes":[
+  {"key":"ClientHost","value":{"stringValue":"$CLIENT"}},
+  {"key":"ClientAddr","value":{"stringValue":"$CLIENT:51152"}},
+  {"key":"ClientUsername","value":{"stringValue":"$EDGE_USER"}},
+  {"key":"RequestHost","value":{"stringValue":"$EDGE_HOST"}},
+  {"key":"RequestMethod","value":{"stringValue":"GET"}},
+  {"key":"RequestPath","value":{"stringValue":"$1"}},
+  {"key":"DownstreamStatus","value":{"intValue":"$3"}},
+  {"key":"Duration","value":{"intValue":"3430534"}},
+  {"key":"entryPointName","value":{"stringValue":"websecure"}}$router_attributes]}
+JSON
+}
+
+platform_body() {
+    now=$(date +%s)000000000
+    cat <<JSON
+{"resourceLogs":[
+ {"resource":{"attributes":[
+   {"key":"service.name","value":{"stringValue":"finapp-edge"}},
+   {"key":"host.name","value":{"stringValue":"$EDGE_POD"}},
+   {"key":"process.command_args","value":{"stringValue":"traefik --configFile=$ARGS"}}]},
+  "scopeLogs":[{"scope":{"name":"traefik"},"logRecords":[
+   $(access_record "/v1/merchant/payouts/$PAYMENT?ref=$QUERY_NEEDLE" "$ROUTER" 502),
+   $(access_record "/$UNROUTED/$PAN" "" 404),
+   {"timeUnixNano":"$now","severityNumber":17,"severityText":"error",
+    "body":{"stringValue":"http: TLS handshake error from $CLIENT:51152: EOF, and from [$CLIENT6]:51153"},
+    "attributes":[{"key":"error","value":{"stringValue":"read tcp $CLIENT:51152: connection reset by peer"}},
+     {"key":"entryPointName","value":{"stringValue":"websecure"}}]}]}]},
+ {"resource":{"attributes":[
+   {"key":"service.name","value":{"stringValue":"finapp-migrator"}},
+   {"key":"k8s.node.name","value":{"stringValue":"$NODE"}}]},
+  "scopeLogs":[{"scope":{"name":"k8s_objects"},"logRecords":[{
+   "timeUnixNano":"$now","severityNumber":9,
+   "body":{"stringValue":"finapp-migrator schema=ledger attempts=1 failure=MIGRATION card $PAN for $MIGRATOR_AMOUNT\\nfinapp-migrator result=MIGRATION_FAILED schema=ledger"},
+   "attributes":[
+    {"key":"k8s.job.name","value":{"stringValue":"finapp-migrator"}},
+    {"key":"k8s.container.exit_code","value":{"intValue":"10"}},
+    {"key":"k8s.node.name","value":{"stringValue":"$NODE"}}]}]}]}]}
+JSON
+}
+
+platform_needles_in() {
+    for needle in "$CLIENT" "$CLIENT6" "$EDGE_HOST" "$BACKEND" "$EDGE_USER" "$UNROUTED" "$QUERY_NEEDLE" "$ARGS" "$NODE" "$PAN" "6234.18"; do
+        if printf '%s' "$1" | grep -qF -- "$needle"; then
+            printf '%s\n' "$needle"
+        fi
+    done
+}
+
+platform_sweep() {
+    # platform_sweep <collector>: post the platform's records to 4319, then wait for the sink to print the routed line's router.
+    answer=$(docker run --rm --network "$NETWORK" "$CURL_IMAGE" -sS -o /dev/null -w '%{http_code}' \
+        -H 'Content-Type: application/json' --data-binary "$(platform_body)" "http://$1:4319/v1/logs" || true)
+    if [ "$answer" != 200 ]; then
+        echo "!!   $1 did not take the platform's records on 4319 (answered $answer)"
+        return 1
+    fi
+    deadline=$(( $(date +%s) + 30 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if exported | grep -qF -- "MIGRATION_FAILED" && exported | grep -qF -- "$ROUTER"; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "!!   the platform's records did not reach the sink in 30 s; the collector and the sink said:"
+    docker logs "$1" 2>&1 | grep -v deprecated | tail -15
+    exported | tail -15
+    return 1
+}
+
+# The sink is restarted empty between the two, so what each sweep finds is its own collector's.
+restart_sink() {
+    docker rm -f "$RUN-sink" >/dev/null 2>&1
+    docker run -d --name "$RUN-sink" --network "$NETWORK" --network-alias "$RUN-sink" -v "$(dpath "$CONFIGS"):/cfg:ro" \
+        "$COLLECTOR_IMAGE" --config /cfg/sink.yaml >/dev/null
+    sleep 3
+}
+
+echo "==   the committed collector, the platform's own lines: the needles go in on 4319, none comes out, every kept field does"
+restart_sink
+if platform_sweep "$RUN-collector"; then
+    output=$(exported)
+    found=$(platform_needles_in "$output")
+    if [ -n "$found" ]; then
+        echo "!!   needles exported from the platform's own lines: $(printf '%s' "$found" | tr '\n' ' ')"
+        status=1
+    else
+        missing=""
+        for control in "/v1/merchant/payouts/$PAYMENT" "$ROUTER" "GET 502 $ROUTER" "DownstreamStatus" "finapp-migrator result=MIGRATION_FAILED" "[scrubbed]" "k8s.job.name" "$EDGE_POD" "TLS handshake error from [address]"; do
+            printf '%s' "$output" | grep -qF -- "$control" || missing="$missing $control"
+        done
+        if [ -n "$missing" ]; then
+            echo "!!   the platform's net dropped what it must keep:$missing"
+            status=1
+        else
+            echo "ok   no needle exported from the edge's or the migrator's records; the routed path, its router and status, the migrator's result and the scrub marks are"
+        fi
+    fi
+else
+    status=1
+fi
+
+echo "==   THE PROBE, the platform's own lines: transform/scrub-platform removed, and the needles must come out"
+restart_sink
+if platform_sweep "$RUN-probe"; then
+    found=$(platform_needles_in "$(exported)")
+    if printf '%s' "$found" | grep -qF -- "$CLIENT" && printf '%s' "$found" | grep -qF -- "$PAN" && printf '%s' "$found" | grep -qF -- "$UNROUTED"; then
+        echo "ok   the probe is red: without the platform's net the collector exported $(printf '%s' "$found" | tr '\n' ' ')"
+    else
+        echo "!!   the platform probe stayed green: with its net removed the needles still did not come out, so the check cannot see a leak"
         status=1
     fi
 else

@@ -205,6 +205,10 @@ capacity, and the production target is never presented as measured.
 - **W6** 5,000 credit decisions a day; 50,000 active loans with 2,000 repayments a day on average and 30% of a month's dues on
   its first day; 20,000 BNPL purchases and 15,000 instalments a day.
 - **W7** Each money movement writes four outbox events on average (read from the catalogues, `P15-TSK-027`, by `-001`).
+  *(Erratum, 2026-11-12, Phase 16's first task: read from the code's event writers, a money movement writes **≈ 7.3** events
+  on the target's mix, not four: a transfer 3, a card or checkout payment 9, a top-up or a withdrawal 6, a lending instalment 4,
+  a BNPL pay-in-4 purchase 17, a BNPL instalment 4. The counts, their sources and the readings R1–R5 where W1–W8 leave a gap
+  are `docs/architecture/CAPACITY_MODEL.md` §2 and §3.2.)*
 - **W8** Payloads: commands under 4 KiB; responses under 16 KiB; settlement files up to the platform's file bound; the request
   bound 1 MiB (`RequestSizeLimitFilter`).
 
@@ -239,6 +243,17 @@ The burst column is what the **spike** and **burst** profiles of §5.1 drive; th
 average the **normal** profile. The proposed production peak is modest — about 30 money movements and 60 reads a second
 across the platform — and the honest finding to expect is that a development machine's `kind` may carry it while a single
 node's CPU, not the architecture, is the first limit; `-007` measures and reports whichever it is.
+
+*(Erratum, 2026-11-12, Phase 16's first task, which carries this table into `docs/architecture/CAPACITY_MODEL.md` §3.1. Three
+corrections; the model is right where they differ. **(1)** Events produced read ≈ 3,213,000 a day (37.2 a second on average,
+89.3 at peak, 268 in a burst), not 1,400,000, and ledger postings ≈ 434,000 a day (5.0, 12.1, 36.2), not 600,000, from W7 as
+read (§4.2's erratum) and the sign-ins, loan decisions and settlement lines that also write events. **(2)** The "concurrent
+clients at peak" column stated no assumption of W1–W8; its figures sit near the peak rate times about 18 s, a closed model's
+think time the open-model harness does not use (ADR-0126). The model replaces it with the requests in flight at peak by
+Little's law, the peak rate times the latency target: about 3 for transfers, 11 for payments, 17 for reads. **(3)** The target
+moves money about 10.5 times a second at peak and 31 in a burst, against 56 reads at peak: "about 30 money movements and 60 reads a
+second" mixed the burst's movements with the peak's reads. The model also reads W6's 5,000 credit decisions as loan decisions
+only, every BNPL purchase carrying its own (R1), for the owner to confirm.)*
 
 ---
 
@@ -633,6 +648,12 @@ seven checks counted, and its result written in the experiment register. What al
 | 13 | A provider returns a delayed success after an internal timeout | `app/src/test/java/com/finapp/app/payments/PaymentAmbiguityDemonstrationDatabaseTest.java#timeoutThenSuccessAtCapture` [db]; `app/src/test/java/com/finapp/app/payments/PaymentWebhookTransitionDatabaseTest.java#lateAndOutOfOrderReportsAreEvidenceOnly` [db] | Real delivery delays | The simulator times out, then sends success 5 min later, after the sweep's inquiry and after a resolved failure |
 | 14 | A service redeployed while transactions are in progress | `app/src/test/java/com/finapp/app/lifecycle/ShutdownOrderTest.java#theRealOrder` [slice]; the `kind` release scope, green 2026-11-09 at three replicas (`OPERATIONS_RUNBOOK.md` §11.28) | Ten replicas; the final tree (PI-024) | E26 at ten |
 | 15 | A recovery process replays previously processed messages | `platform/src/test/java/com/finapp/platform/deadletter/DeadLetterDatabaseTest.java#tenReplaysOneRequeue` [db]; `platform/src/test/java/com/finapp/platform/deadletter/DeadLetterDatabaseTest.java#aReplayPastTheWindowIsRefused` [db] | A replay after a restore (§11.35 step 6 never ran) | The restore drill's broker step: groups reset to the restore instant, the window replayed, every effect once |
+
+*(Erratum, 2026-11-12, Phase 16's first task, read from each test's own tags when the table was carried into
+`docs/architecture/RESILIENCE_EXPERIMENTS.md` §4.1, whose guard now holds every label: `BnplOutboxAtomicityDatabaseTest` starts
+its own container, so scenario 3 cites it `[own-container]`, not `[db]`; `HealthEndpointTest` is a Spring slice, `[slice]`,
+which needs no database and runs per task as the `[hermetic]` label meant. Each scenario is registered there as its own
+experiment, `F01`…`F15`, composing the experiments of §9.2 this column names.)*
 
 ---
 

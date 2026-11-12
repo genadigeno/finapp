@@ -382,9 +382,17 @@ class ConfigurationRegisterIsCompleteTest {
         }
     }
 
+    /**
+     * Named for what it holds (`P15-REM-004` (f), 2026-11-12; until then {@code everyFinancialRowAnswersTheMixedFleetQuestion}):
+     * that a {@code FINANCIAL} row states a mixed-fleet answer of some substance and an {@code OPERATIONAL} one states none. Whether
+     * a statement <em>answers</em> - that replicas holding two values for a rollout's length cannot misjudge money - is a person's
+     * reading at the change's review, which the second person on a {@code FINANCIAL} change is for ({@code THREAT_MODEL.md}
+     * section 6 item 4); no form of words here could hold it.
+     */
     @Test
-    @DisplayName("a FINANCIAL row says why a mixed fleet is safe, an OPERATIONAL one says nothing, and no statement is the empty answer")
-    void everyFinancialRowAnswersTheMixedFleetQuestion() {
+    @DisplayName("a FINANCIAL row states a mixed-fleet answer of sixty characters or more and never the empty one, an OPERATIONAL row states"
+            + " none: that the statement is there, not that it answers, which is the change's review")
+    void everyFinancialRowStatesAMixedFleetAnswer() {
         List<String> wrong = new ArrayList<>();
         for (ConfigurationRegister.Row row : rows) {
             boolean financial = row.klass().equals(ConfigurationRegister.FINANCIAL);

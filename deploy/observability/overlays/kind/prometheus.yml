@@ -53,6 +53,33 @@ scrape_configs:
     relabel_configs:
       - target_label: env
         replacement: kind
+  # The edges' controllers (P16-TSK-003; platform.yml's EdgeErrorRatioHigh and EdgeUnscraped): each controller by its own address, ready or
+  # not, through its edge's headless scrape Service (deploy/edge/base/scrape-services.yaml), on the management port, where the proxy publishes
+  # its counters. `edge` is the Service's edge, so the ratio is per edge and summed over its controllers; with every controller of an edge
+  # gone, that edge has no target at all, which EdgeUnscraped reads too.
+  - job_name: finapp-edge
+    dns_sd_configs:
+      - names: ["finapp-edge-public-scrape.finapp-edge.svc.cluster.local", "finapp-edge-operator-scrape.finapp-edge.svc.cluster.local"]
+        type: A
+        port: 8081
+        refresh_interval: 15s
+    relabel_configs:
+      - source_labels: [__meta_dns_name]
+        regex: finapp-edge-(public|operator)-scrape\..*
+        target_label: edge
+      - target_label: env
+        replacement: kind
+  # The cluster watcher (P16-TSK-003; platform.yml's MigratorJobFailed, MigratorJobOverdue and ClusterWatchBlind): the migrator Job's state,
+  # read from the API server by the one pod here that may, through its headless Service.
+  - job_name: finapp-cluster-watch
+    dns_sd_configs:
+      - names: ["finapp-cluster-watch.finapp-observability.svc.cluster.local"]
+        type: A
+        port: 8889
+        refresh_interval: 15s
+    relabel_configs:
+      - target_label: env
+        replacement: kind
   # The reference back ends' own counters, by their Services: one replica each, and a Service with no endpoint is a target that fails its
   # scrape (TelemetryBackendDown), never one that vanishes.
   - job_name: finapp-tempo

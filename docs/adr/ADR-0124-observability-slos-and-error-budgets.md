@@ -117,6 +117,25 @@ exporter is configured. Several gaps remain:
    - **On `kind`.** Prometheus loads every committed rule file and sends to an Alertmanager running the committed routing, so an alert can be read at
      its receiver on a real cluster and not only in `promtool`'s cases.
 
+   *(As built by `P16-TSK-003`, 2026-11-12, the platform's own components watched, `THREAT_MODEL.md` section 6 item 43 (b) as the owner decided it;
+   decisions 1 and 5 are unchanged, and this note records where the one egress and the second net were widened and the one credential added.)*
+   - **The platform's own lines.** The edge's controllers (their own log and their access log, Traefik's experimental OTLP log export), the cluster
+     watcher and each collector itself send log records to a second receiver of the collector's, 4319, never the application's 4318, and a pipeline
+     of their own scrubs them (`transform/scrub-platform`): what each source writes is not what the application writes, so each keeps its fields
+     by name, and the application's card-number and amount scrub runs on every body and value. The proxy drops every header and query string before
+     it sends; the collector drops the client's and the backend's addresses, an unrouted path and the edge's whole JSON body, and cuts an address
+     from an edge record's text. Logs remain unsampled. Kind's back ends' own lines (Tempo, Loki, Prometheus, Alertmanager) are not shipped: none
+     exports OTLP, and the node agent the correction above refused is still refused (`THREAT_MODEL.md` section 6 item 47 (a)).
+   - **One reader of the API server.** A migrator Job's state lives in the API server alone, and its image cannot ship its own output, so the
+     cluster watcher - the pinned collector image again, `k8s_cluster` and `k8s_objects`, one replica in `finapp-observability` - lists and watches
+     `finapp`'s kinds and events through a Role the application's own release grants, publishes each Job's pods to the scraper and ships the
+     migrator's failed-run lines (the kubelet's `FallbackToLogsOnError`) and the Job's events. It is the first workload of the platform's
+     namespaces with a Kubernetes credential, the policy's one listed controller account; nothing else holds a token.
+   - **The rules.** `infra/prometheus/rules/platform.yml`'s `platform-components` group, owned by `platform`: a migrator Job failed and a Job not
+     succeeded past its own deadline (one whose pod was never created fails with no failed pod, measured on `kind`), each a page; the watcher blind,
+     a ticket; the edge's 5xx ratio on the SLO fast pair, and an edge none of whose controllers answers, each a page. `OPERATIONS_RUNBOOK.md`
+     §11.41 and §11.42.
+
 ## Alternatives Considered
 
 ### A vendor agent per signal

@@ -376,6 +376,29 @@ edge_port_is_tls(port) if {
 	port.targetPort == "https"
 }
 
+# Every other Service selecting a controller is a scrape's (P16-TSK-003): headless, so it carries no traffic, and naming the TLS port alone, so
+# the management port - the counters and /ping - stays off every Service while the scraper reaches it by address.
+selects_a_controller(doc) if {
+	some name in controller_names
+	doc.spec.selector["app.kubernetes.io/name"] == name
+}
+
+scrape_service_holds(doc) if {
+	doc.spec.clusterIP == "None"
+	count(doc.spec.ports) > 0
+	every port in doc.spec.ports {
+		port.targetPort == "https"
+	}
+}
+
+deny contains msg if {
+	some doc in main.of_kind("Service")
+	not doc.metadata.name in controller_names
+	selects_a_controller(doc)
+	not scrape_service_holds(doc)
+	msg := sprintf("[edge-scrape-service] %s selects a controller and is not headless on the TLS port alone: the management port stays off every Service", [main.label(doc)])
+}
+
 load_balancer_scheme(doc) := doc.metadata.annotations["service.beta.kubernetes.io/aws-load-balancer-scheme"]
 
 deny contains msg if {
@@ -472,4 +495,26 @@ operator_network_is_internal if {
 
 deny contains "[edge-network] the operator controller's TLS listener is not limited to the internal ranges" if {
 	not operator_network_is_internal
+}
+
+# ------------------------------------------------------------------------------------------- the quota (P16-TSK-004)
+
+# THREAT_MODEL.md section 6 item 43 (c), decided 2026-11-12: one quota in finapp-edge, equal to the namespace's worst moment in pods, CPU and
+# memory, counted by finapp.rego's worst_moment (its comment says how, and why finapp's own formula does not hold here).
+edge_namespace := "finapp-edge"
+
+deny contains sprintf("[edge-quota] %s", [msg]) if {
+	some msg in main.quota_presence_findings(edge_namespace)
+}
+
+deny contains sprintf("[edge-quota-sizing] %s", [msg]) if {
+	some msg in main.quota_sizing_findings(edge_namespace)
+}
+
+deny contains sprintf("[edge-quota-pods] %s", [msg]) if {
+	some msg in main.quota_pods_findings(edge_namespace)
+}
+
+deny contains sprintf("[edge-quota-compute] %s", [msg]) if {
+	some msg in main.quota_compute_findings(edge_namespace)
 }

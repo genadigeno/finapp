@@ -77,6 +77,7 @@ PUBLIC_EDGE=edge/base/public-edge.yaml
 PRODUCTION_EDGE=edge/overlays/production/kustomization.yaml
 PRODUCTION_APP=overlays/production/kustomization.yaml
 KUST=edge/base/kustomization.yaml
+QUOTA=edge/base/resourcequota.yaml
 
 plant_all() {
     # The general hardening, reused from finapp.rego, on a controller.
@@ -150,6 +151,9 @@ YAML
     edge_plant_on edge-reuse "$PUBLIC_EDGE" 's/maxIdleConnsPerHost: -1/maxIdleConnsPerHost: 200/'
 
     edge_plant_on edge-management-port "$CONTROLLERS" '1,/targetPort: https/s/targetPort: https/targetPort: management/'
+    # The scrape's Services (P16-TSK-003): the management port named on one, or one given a cluster address, each refused.
+    edge_plant_on edge-scrape-on-management edge/base/scrape-services.yaml '1,/targetPort: https/s/targetPort: https/targetPort: management/'
+    edge_plant_on edge-scrape-not-headless edge/base/scrape-services.yaml '1,/clusterIP: None/{/clusterIP: None/d}'
     edge_plant_on edge-operator-public "$PRODUCTION_EDGE" 's/aws-load-balancer-scheme: internal$/aws-load-balancer-scheme: internet-facing/'
     edge_plant_on edge-no-source-address edge/overlays/kind/kustomization.yaml '/name: finapp-edge-public/,/value: Local/{/op: add/{N;N;/externalTrafficPolicy/d}}' kind
     edge_plant_on edge-no-preserve "$PRODUCTION_EDGE" '1,/target-group-attributes/{/target-group-attributes/d}'
@@ -190,6 +194,29 @@ spec:
   selfSigned: {}
 YAML
     edge_mutate edge-local-ca "$PRODUCTION_EDGE" 's|^  - \.\./\.\./base$|  - ../../base\n  - ca.yaml|'
+
+    # The namespace's quota (P16-TSK-004; THREAT_MODEL.md section 6 item 43 (c)). Its removal is the entry's probe; each rule then refuses a
+    # quota that is not the namespace's worst moment. A third public replica is the planted rollout the quota no longer admits. Two plants that
+    # change a controller's shape AND the quota by the same arithmetic must pass, one for each branch of a rollout's count (finapp.rego's
+    # worst_moment), so the count is shown right and not only different.
+    edge_plant_on edge-quota-absent "$KUST" '/^  - resourcequota.yaml$/d'
+    edge_plant_on edge-quota-scoped "$QUOTA" 's/^  hard:$/  scopes: [NotBestEffort]\n  hard:/'
+    # A second quota, otherwise the first's equal, so the one thing wrong with it is that there are two.
+    edge_plant edge-quota-second
+    sed -e 's/^  name: finapp-edge$/  name: finapp-edge-second/' "/repo/deploy/$QUOTA" | { printf -- '---\n'; cat; } >> "$PLANTS/edge-quota-second/deploy/$QUOTA"
+    edge_plant_on edge-quota-pods-short "$QUOTA" 's/^    pods: "10"$/    pods: "9"/'
+    edge_plant_on edge-quota-memory-widened "$QUOTA" 's/^    limits.memory: 5120Mi$/    limits.memory: 6144Mi/'
+    edge_plant_on edge-third-replica "$CONTROLLERS" '1,/^  replicas: 2$/s/^  replicas: 2$/  replicas: 3/'
+    edge_plant_on edge-surge-percent "$CONTROLLERS" '1,/maxSurge: 1$/s/maxSurge: 1$/maxSurge: 25%/'
+    # Accepted: the third replica waiting out the grace, so one pod at most terminates at a time: min(2 x 3, 3 + 2 x 1 + 0) + 1 = 6, beside
+    # the operator's 5: 11 pods, each 100m and 1 CPU, 512Mi.
+    edge_plant edge-quota-follows-a-settled-rollout
+    edge_mutate edge-quota-follows-a-settled-rollout "$CONTROLLERS" '1,/^  replicas: 2$/s/^  replicas: 2$/  replicas: 3\n  minReadySeconds: 45/'
+    edge_mutate edge-quota-follows-a-settled-rollout "$QUOTA" 's/"10"$/"11"/; s/^    requests.cpu: "1"$/    requests.cpu: 1100m/; s/ 5120Mi$/ 5632Mi/'
+    # Accepted: the third replica with no minReadySeconds, so every old pod may be terminating beside the new: 2 x 3 + 1 = 7, beside 5: 12.
+    edge_plant edge-quota-follows-a-stacked-rollout
+    edge_mutate edge-quota-follows-a-stacked-rollout "$CONTROLLERS" '1,/^  replicas: 2$/s/^  replicas: 2$/  replicas: 3/'
+    edge_mutate edge-quota-follows-a-stacked-rollout "$QUOTA" 's/"10"$/"12"/; s/^    requests.cpu: "1"$/    requests.cpu: 1200m/; s/ 5120Mi$/ 6144Mi/'
 }
 
 in_container() {
@@ -246,7 +273,7 @@ CERTS=$(mktemp -d)
 status=0
 
 cleanup() {
-    docker rm -f "$RUN-public" "$RUN-operator" "$RUN-spool" "$RUN-backend" "$RUN-client" >/dev/null 2>&1 || true
+    docker rm -f "$RUN-public" "$RUN-operator" "$RUN-spool" "$RUN-backend" "$RUN-client" "$RUN-collector" "$RUN-sink" "$RUN-hung" >/dev/null 2>&1 || true
     docker network rm "$NETWORK" >/dev/null 2>&1 || true
     docker volume rm -f "$VOLUME" "$VOLUME-public" "$VOLUME-operator" >/dev/null 2>&1 || true
     rm -rf "$CERTS"
@@ -305,6 +332,17 @@ edge_refused() {
     fi
 }
 
+edge_accepted() {
+    # edge_accepted <plant>: a plant the policies must let through, so a rule cannot pass its plants by refusing everything.
+    if output=$(conftest_on "/scratch/edge-plants/$1/rendered.yaml" "/scratch/edge-plants/$1/overlay.yaml" 2>&1); then
+        echo "ok   plant $1 accepted"
+    else
+        printf '%s\n' "$output"
+        echo "!!   plant $1 was refused, and must not be"
+        status=1
+    fi
+}
+
 check "every overlay renders, the application's and the edge's" in_kustomize render
 check "the plants are planted and rendered" in_kustomize plants
 
@@ -350,6 +388,8 @@ edge_refused edge-person-role rbac-human-namespace
 edge_refused edge-sticky edge-no-affinity
 edge_refused edge-reuse edge-no-affinity
 edge_refused edge-management-port edge-service-port
+edge_refused edge-scrape-on-management edge-scrape-service
+edge_refused edge-scrape-not-headless edge-scrape-service
 edge_refused edge-operator-public edge-operator-internal
 edge_refused edge-no-source-address edge-source-address
 edge_refused edge-no-preserve edge-source-address
@@ -360,6 +400,15 @@ edge_refused edge-operator-internet edge-network
 edge_refused edge-proxies-absent edge-proxies
 edge_refused edge-proxies-wide edge-proxies
 edge_refused edge-local-ca edge-local-ca
+edge_refused edge-quota-absent edge-quota
+edge_refused edge-quota-scoped edge-quota
+edge_refused edge-quota-second edge-quota
+edge_refused edge-quota-pods-short edge-quota-pods
+edge_refused edge-quota-memory-widened edge-quota-compute
+edge_refused edge-third-replica edge-quota-pods
+edge_refused edge-surge-percent edge-quota-sizing
+edge_accepted edge-quota-follows-a-settled-rollout
+edge_accepted edge-quota-follows-a-stacked-rollout
 
 # ---------------------------------------------------------------------------------------------------
 # The routing: the committed files, in the pinned proxy.
@@ -470,6 +519,46 @@ layout "$VOLUME-operator" operator-routes.yaml operator-edge.yaml operator
 
 docker run -d --name "$RUN-backend" --network "$NETWORK" --network-alias finapp-app.finapp.svc.cluster.local \
     "$WHOAMI_IMAGE" --port 8080 --verbose >/dev/null
+# The controllers ship their own log and their access log to the collector's platform receiver (P16-TSK-003): the committed collector runs
+# under the name the static files name, with a sink standing in for its back ends that prints everything it receives, so what the proxy
+# really sends is read where the collector has scrubbed it (the section after the routing, below).
+COLLECTOR_IMAGE="${COLLECTOR_REPOSITORY}@${COLLECTOR_DIGEST}"
+# A path as Docker on this host takes it: Git Bash's /tmp is not a path Docker Desktop can mount. Unchanged on Linux, where CI runs.
+dpath() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+cat > "$CERTS/sink.yaml" <<'YAML'
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        logs_url_path: /otlp/v1/logs
+exporters:
+  debug:
+    verbosity: detailed
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      exporters: [debug]
+YAML
+docker run -d --name "$RUN-sink" --network "$NETWORK" --network-alias "$RUN-sink" -v "$(dpath "$CERTS"):/cfg:ro" \
+    "$COLLECTOR_IMAGE" --config /cfg/sink.yaml >/dev/null
+docker run -d --name "$RUN-collector" --network "$NETWORK" --network-alias finapp-collector.finapp-observability.svc.cluster.local \
+    -v "$ROOT/deploy/observability/base/collector.yaml:/cfg/collector.yaml:ro" \
+    -e POD_IP=0.0.0.0 -e COLLECTOR_PEERS="$RUN-collector" -e TEMPO_ENDPOINT="$RUN-sink:4317" \
+    -e LOKI_ENDPOINT="http://$RUN-sink:4318/otlp" -e FINAPP_ENVIRONMENT=check -e TAIL_DECISION_WAIT=2s \
+    "$COLLECTOR_IMAGE" --config /cfg/collector.yaml >/dev/null
 start_controller public traefik.yaml
 start_controller operator traefik-operator.yaml
 docker run -d --name "$RUN-client" --network "$NETWORK" --entrypoint sleep "$CURL_IMAGE" 600 >/dev/null
@@ -868,6 +957,61 @@ if [ "$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$RUN-spool")" 
     echo "ok   the controller is still running, never restarted"
 else
     echo "!!   the controller did not survive a full spool"
+    status=1
+fi
+
+echo "==   the edge's own lines (P16-TSK-003): through the committed collector's platform receiver, none of the client's address, a header,"
+echo "     a query or an unrouted path out; and a collector that hangs costs a request nothing"
+CLIENT_ADDRESS=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$RUN-client")
+expect_code "a routed request carrying a query and a header" 200 -H "X-Needle-Header: needle-in-a-header" "$PUBLIC/v1/me?ref=needle-in-a-query"
+expect_code "an unrouted request whose path is the caller's text" 404 "$PUBLIC/needle-unrouted-path/4111111111111111"
+shipped=""
+i=0
+while [ "$i" -lt 30 ]; do
+    shipped=$(docker logs "$RUN-sink" 2>&1)
+    if printf '%s' "$shipped" | grep -qF -- "-> service.name: Str(finapp-edge)" && printf '%s' "$shipped" | grep -qF -- "GET 404 <nil>"; then
+        break
+    fi
+    i=$((i + 1))
+    sleep 1
+done
+found=""
+for needle in "$CLIENT_ADDRESS" needle-in-a-header needle-in-a-query needle-unrouted-path 4111111111111111 finapp.svc.cluster.local; do
+    printf '%s' "$shipped" | grep -qF -- "$needle" && found="$found $needle"
+done
+missing=""
+for control in "-> service.name: Str(finapp-edge)" "-> RouterName: Str(" "-> RequestPath: Str(/v1/me)" "GET 200 " "GET 404 <nil>" "-> DownstreamStatus: Int(404)"; do
+    printf '%s' "$shipped" | grep -qF -- "$control" || missing="$missing [$control]"
+done
+if [ -n "$found" ]; then
+    echo "!!   the edge's lines carried out:$found"
+    status=1
+elif [ -n "$missing" ]; then
+    printf '%s\n' "$shipped" | tail -40
+    echo "!!   the edge's lines did not arrive as the platform's net keeps them:$missing"
+    status=1
+else
+    echo "ok   the edge's lines arrived through the platform receiver with their router, path and status, and no needle"
+fi
+# The collector replaced by a stand-in that takes every connection and answers nothing, under the same name: the proxy's export is its own
+# SDK's, asynchronous and bounded, so every request is still answered at once.
+docker rm -f "$RUN-collector" >/dev/null
+docker run -d --name "$RUN-hung" --network "$NETWORK" --network-alias finapp-collector.finapp-observability.svc.cluster.local \
+    --entrypoint sh "$TRAEFIK_IMAGE" -c 'nc -lk -p 4319 >/dev/null' >/dev/null
+slowest=0
+for request in $(seq 1 30); do
+    took=$(client curl -sk --max-time 15 -o /dev/null -w '%{http_code} %{time_total}' "$PUBLIC/v1/me" || true)
+    case $took in
+        "200 "*) ;;
+        *) echo "!!   with the collector hung, request $request answered $took"; status=1 ;;
+    esac
+    seconds=$(printf '%s' "$took" | awk '{print int($2 * 1000)}')
+    [ "$seconds" -gt "$slowest" ] && slowest=$seconds
+done
+if [ "$slowest" -lt 5000 ]; then
+    echo "ok   with the collector hung, 30 requests each answered, the slowest in ${slowest} ms"
+else
+    echo "!!   with the collector hung, a request took ${slowest} ms: the export is holding requests"
     status=1
 fi
 

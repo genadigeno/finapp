@@ -587,3 +587,31 @@ tests:
               summary: "A critical flow's gauge cannot be read on b:8081"
               description: "finapp_payments_withdrawal_unknown_age is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
 
+  # FlowGaugesUnreadable when every gauge it names reads a number on both instances: silent well past its quarter hour
+  # (2026-11-12; its only silent case had been the not-yet one at fourteen minutes on NaN gauges).
+  - interval: 1m
+    input_series:
+      - series: 'finapp_kyc_review_queue{job="finapp", instance="a:8081"}'
+        values: '3x25'
+      - series: 'finapp_kyc_review_queue{job="finapp", instance="b:8081"}'
+        values: '3x25'
+      - series: 'finapp_ledger_negative_positions{job="finapp", instance="a:8081", purpose="CUSTOMER_WALLET"}'
+        values: '0x25'
+      - series: 'finapp_ledger_negative_positions{job="finapp", instance="b:8081", purpose="CUSTOMER_WALLET"}'
+        values: '0x25'
+      - series: 'finapp_merchant_payout_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x25'
+      - series: 'finapp_merchant_payout_unknown_age{job="finapp", instance="b:8081"}'
+        values: '0x25'
+      - series: 'finapp_payments_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x25'
+      - series: 'finapp_payments_unknown_age{job="finapp", instance="b:8081"}'
+        values: '0x25'
+      - series: 'finapp_payments_withdrawal_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x25'
+      - series: 'finapp_payments_withdrawal_unknown_age{job="finapp", instance="b:8081"}'
+        values: '0x25'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: FlowGaugesUnreadable
+        exp_alerts: []

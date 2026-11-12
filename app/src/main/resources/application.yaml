@@ -280,10 +280,12 @@ management:
 
   tracing:
     sampling:
-      # Every request, deliberately, and only for now. Phase 0 has no traffic, so sampling would
-      # buy nothing and would make an already-rare failure rarer to catch. This number is a load
-      # decision and belongs with Phase 15, where there is load to measure - a financial platform
-      # that samples at 1% cannot explain the one payment a customer is asking about.
+      # Every request, at the head: decided by Phase 15's C10 and ADR-0124 decision 2. The
+      # collector's tail policy keeps every error, every slow trace and every money-moving route
+      # and samples the rest, so this stays 1.0 and the sampling is the collector's; calibrating it
+      # is Phase 16's, by measurement. A payment's traceability rests on the correlation id in the
+      # journal and the audit trail, never on a sampled trace. (Until 2026-11-12 this comment left
+      # the number to Phase 15.)
       probability: 1.0
 
 # ---------------------------------------------------------------------------

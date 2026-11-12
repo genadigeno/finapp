@@ -3,6 +3,7 @@ package com.finapp.app.architecture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -38,6 +39,7 @@ class EdgeManifestsTest {
     private static final String STATIC = "deploy/edge/base/traefik.yaml";
     private static final String OPERATOR_STATIC = "deploy/edge/base/traefik-operator.yaml";
     private static final String CONTROLLERS = "deploy/edge/base/controllers.yaml";
+    private static final String QUOTA = "deploy/edge/base/resourcequota.yaml";
     private static final String PUBLIC_EDGE = "deploy/edge/base/public-edge.yaml";
     private static final String OPERATOR_EDGE = "deploy/edge/base/operator-edge.yaml";
     private static final String POLICY = "infra/scripts/manifest-policy/edge.rego";
@@ -329,6 +331,73 @@ class EdgeManifestsTest {
     }
 
     @Test
+    @DisplayName("each edge is scraped by a headless Service of its own naming the TLS port alone, and each controller ships its lines to the"
+            + " collector's platform receiver alone, query strings and headers dropped at the proxy (P16-TSK-003)")
+    @SuppressWarnings("unchecked")
+    void eachEdgeIsScrapedAndShipsItsLines() {
+        List<Map<String, Object>> services = yamlAll(read("deploy/edge/base/scrape-services.yaml"));
+        Map<String, String> selected = new java.util.TreeMap<>();
+        for (Map<String, Object> service : services) {
+            Map<String, Object> spec = map(service, "spec");
+            assertThat(spec).as("headless, so it carries no traffic; ready or not, so a controller that cannot answer is a failed scrape")
+                    .containsEntry("clusterIP", "None").containsEntry("publishNotReadyAddresses", true);
+            assertThat((List<Object>) spec.get("ports")).isEqualTo(List.of(Map.of("name", "https", "port", 8443, "targetPort", "https", "protocol", "TCP")));
+            selected.put(String.valueOf(map(service, "metadata").get("name")), String.valueOf(map(spec, "selector").get("app.kubernetes.io/name")));
+        }
+        assertThat(selected).containsExactly(Map.entry("finapp-edge-operator-scrape", "finapp-edge-operator"),
+                Map.entry("finapp-edge-public-scrape", "finapp-edge-public"));
+        assertThat(read("deploy/edge/base/kustomization.yaml")).contains("  - scrape-services.yaml");
+        assertThat(read(POLICY)).contains("[edge-scrape-service]");
+
+        // Both controllers reach the collector's platform receiver, and nothing else of the namespace, by label on 4319.
+        Map<String, Object> collectorPeer = Map.of(
+                "namespaceSelector", Map.of("matchLabels", Map.of("kubernetes.io/metadata.name", "finapp-observability")),
+                "podSelector", Map.of("matchLabels", Map.of("finapp/role", "telemetry-collector")));
+        int shipping = 0;
+        for (Map<String, Object> policy : yamlAll(read("deploy/edge/base/networkpolicy.yaml"))) {
+            for (Object rule : (List<Object>) map(policy, "spec").getOrDefault("egress", List.of())) {
+                Map<String, Object> egress = (Map<String, Object>) rule;
+                if (((List<Object>) egress.get("to")).contains(collectorPeer)) {
+                    shipping++;
+                    assertThat(egress.get("to")).isEqualTo(List.of(collectorPeer));
+                    assertThat(egress.get("ports")).isEqualTo(List.of(Map.of("protocol", "TCP", "port", 4319)));
+                }
+            }
+        }
+        assertThat(shipping).as("the public and the operator controllers").isEqualTo(2);
+        for (String file : List.of(STATIC, OPERATOR_STATIC)) {
+            Map<String, Object> access = map(yaml(read(file)), "accessLog");
+            assertThat(map(map(access, "fields"), "queryParameters")).as(file).containsEntry("defaultMode", "drop");
+            assertThat(access).as("%s: the console's copy kept while the collector is away", file).containsEntry("dualOutput", true);
+            assertThat(read(file)).as(file).contains(":4319/v1/logs").doesNotContain(":4318");
+        }
+    }
+
+    @Test
+    @DisplayName("finapp-edge's one quota is its worst moment, exactly: each controller's rollout, old and new together, and the eviction its budget allows, in pods, CPU and memory, in every overlay")
+    void theNamespaceQuotaIsItsWorstMoment() {
+        List<Map<String, Object>> documents = new ArrayList<>(controllers);
+        List<Map<String, Object>> quotas = yamlAll(read(QUOTA));
+        documents.addAll(quotas);
+        assertThat(WorstMoment.ofKind(documents, "ResourceQuota")).as("exactly one quota, or the tightest decides").hasSize(1);
+        assertThat(read("deploy/edge/base/kustomization.yaml")).containsPattern("(?m)^  - resourcequota\\.yaml$");
+        // The base's numbers are every overlay's: an overlay patching a controller or the quota would need its own count here.
+        for (String overlay : OVERLAYS) {
+            Map<String, Object> kustomization = yaml(read("deploy/edge/overlays/" + overlay + "/kustomization.yaml"));
+            for (Object patch : (List<?>) kustomization.getOrDefault("patches", List.of())) {
+                assertThat(map(cast(patch), "target").get("kind")).as("%s patches only Services", overlay).isEqualTo("Service");
+            }
+            assertThat((List<?>) kustomization.get("resources")).as("%s adds no workload", overlay)
+                    .allSatisfy(resource -> assertThat(String.valueOf(resource)).isIn("../../base", "certificates.yaml"));
+        }
+
+        Map<String, BigDecimal> needed = WorstMoment.of(documents);
+        assertThat(needed.get("pods")).as("two controllers, each 2 x 2 + 1").isEqualByComparingTo("10");
+        Map<String, BigDecimal> stated = WorstMoment.stated(quotas.get(0));
+        needed.forEach((key, value) -> assertThat(stated.get(key)).as("the quota's %s is the worst moment, both ways", key).isEqualByComparingTo(value));
+    }
+
+    @Test
     @DisplayName("every policy id in edge.rego is refused by a plant, and every plant is refused: read from the two files, never a list here")
     void everyEdgePolicyIsRefusedByAPlant() {
         Set<String> ruleIds = new TreeSet<>();
@@ -345,6 +414,11 @@ class EdgeManifestsTest {
         while (refused.find()) {
             refusedPlants.add(refused.group(1));
             refusedIds.add(refused.group(2));
+        }
+        // `edge_accepted` is a plant the policies must let through (the quota re-counted with a controller, P16-TSK-004): made, and answered for.
+        Matcher accepted = Pattern.compile("(?m)^edge_accepted (\\S+)$").matcher(script);
+        while (accepted.find()) {
+            refusedPlants.add(accepted.group(1));
         }
         Set<String> planted = new TreeSet<>();
         Matcher made = Pattern.compile("(?m)^\\s+edge_plant(?:_on)? (edge-[a-z-]+)\\b").matcher(script);

@@ -48,6 +48,17 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    # Its own log and its access log, to the collector's platform receiver (P16-TSK-003), which admits the controllers by this label.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-observability
+          podSelector:
+            matchLabels:
+              finapp/role: telemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4319
     - to:
         - namespaceSelector:
             matchLabels:
@@ -105,6 +116,17 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    # Its own log and its access log, to the collector's platform receiver (P16-TSK-003), which admits the controllers by this label.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-observability
+          podSelector:
+            matchLabels:
+              finapp/role: telemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4319
     - to:
         - namespaceSelector:
             matchLabels:

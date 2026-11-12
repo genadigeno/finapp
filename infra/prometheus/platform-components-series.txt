@@ -1,0 +1,18 @@
+# The series the platform-components rules read (infra/prometheus/rules/platform.yml), as the pinned images publish them (P16-TSK-003).
+# Captured 2026-11-12 from runs of the pinned images, not written from documentation: the cluster watcher's exporter (the collector's
+# k8s_cluster receiver, resource_to_telemetry_conversion on) read through the API server's proxy on a one-node kind cluster after a planted
+# migrator-shaped Job failed and a finapp-app Deployment existed (OPERATIONS_RUNBOOK.md section 11.41's record), and the proxy's /metrics on its
+# management entry point after requests answered 200, 404 and 502 (section 11.42's record). A label's value is * : every value the rules select
+# on is the run's own name (finapp-migrator, finapp, finapp-app, websecure, a status code). PlatformComponentAlertRulesTest holds every name the
+# rules read, and every label they select or group by, to a line here or to a label the scrape adds; capture again whenever a pin below moves.
+# The scrape adds job and instance to every series, env on kind, and edge to the proxy's (deploy/observability/overlays/kind/prometheus.yml).
+# collector sha256:e40d61f10c9a617cca1ffd1be4d7e2b3a4b0f0001798ff07e58cabe82e618cea
+# traefik sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
+k8s_deployment_available{k8s_deployment_name=*,k8s_deployment_uid=*,k8s_namespace_name=*,otel_scope_name=*,otel_scope_schema_url=*,otel_scope_version=*}
+k8s_deployment_desired{k8s_deployment_name=*,k8s_deployment_uid=*,k8s_namespace_name=*,otel_scope_name=*,otel_scope_schema_url=*,otel_scope_version=*}
+k8s_job_active_pods{k8s_job_name=*,k8s_job_uid=*,k8s_namespace_name=*,otel_scope_name=*,otel_scope_schema_url=*,otel_scope_version=*}
+k8s_job_desired_successful_pods{k8s_job_name=*,k8s_job_uid=*,k8s_namespace_name=*,otel_scope_name=*,otel_scope_schema_url=*,otel_scope_version=*}
+k8s_job_failed_pods{k8s_job_name=*,k8s_job_uid=*,k8s_namespace_name=*,otel_scope_name=*,otel_scope_schema_url=*,otel_scope_version=*}
+k8s_job_max_parallel_pods{k8s_job_name=*,k8s_job_uid=*,k8s_namespace_name=*,otel_scope_name=*,otel_scope_schema_url=*,otel_scope_version=*}
+k8s_job_successful_pods{k8s_job_name=*,k8s_job_uid=*,k8s_namespace_name=*,otel_scope_name=*,otel_scope_schema_url=*,otel_scope_version=*}
+traefik_entrypoint_requests_total{code=*,entrypoint=*,method=*,protocol=*}

@@ -1,0 +1,38 @@
+# The one read of this namespace from outside it (P16-TSK-003; THREAT_MODEL.md section 6 item 43 (b), decided 2026-11-12): the cluster watcher
+# of finapp-observability (deploy/observability/base/cluster-watch.yaml) lists and watches what a Job's alert and the migrator's records need,
+# and its receiver lists, and nothing else. Granted here, by the application's own release, because what may read finapp is finapp's owner's
+# decision. Its ServiceAccount is the one entry of finapp.rego's controller accounts.
+#
+# EXACTLY THESE KINDS. The receiver (k8s_cluster, collector-contrib 0.165.0) lists every kind below in the namespace and logs a refusal every
+# few seconds for any it may not (measured on kind); events carry the migrator Job's story; pods carry a failed run's last lines in their
+# status. No Secret, no ConfigMap, no pods/log, no exec, attach or port-forward, no write of any kind.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: finapp-cluster-watch
+rules:
+  - apiGroups: [""]
+    resources: [pods, events, services, replicationcontrollers, resourcequotas]
+    verbs: [list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets, daemonsets]
+    verbs: [list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-cluster-watch
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-cluster-watch
+subjects:
+  - kind: ServiceAccount
+    name: finapp-cluster-watch
+    namespace: finapp-observability
