@@ -350,6 +350,34 @@ class TelemetryPipelineManifestsTest {
     }
 
     @Test
+    @DisplayName("a person reads the pipeline's pods, their logs, Deployments and events, and break-glass here evicts a pod and nothing else,"
+            + " each role bound to its own group, rendered by the pipeline's release and held by finapp.rego's rules (P15-TSK-032, item 42 (k))")
+    void aPersonReadsHereAndBreakGlassEvicts() {
+        Map<String, Map<String, Object>> roles = new java.util.TreeMap<>();
+        Map<String, Map<String, Object>> bindings = new java.util.TreeMap<>();
+        for (Map<String, Object> document : yamlAll(read(BASE + "rbac-humans.yaml"))) {
+            Map<String, Object> metadata = map(document, "metadata");
+            assertThat(metadata).as("stated, so the committed file says whose role it is").containsEntry("namespace", "finapp-observability");
+            ("Role".equals(document.get("kind")) ? roles : bindings).put(String.valueOf(metadata.get("name")), document);
+        }
+        assertThat(roles.keySet()).containsExactly("finapp-break-glass", "finapp-read-only");
+        assertThat(roles.get("finapp-read-only").get("rules")).isEqualTo(List.of(
+                Map.of("apiGroups", List.of(""), "resources", List.of("pods", "pods/log", "events"), "verbs", List.of("get", "list", "watch")),
+                Map.of("apiGroups", List.of("apps"), "resources", List.of("deployments"), "verbs", List.of("get", "list", "watch"))));
+        assertThat(roles.get("finapp-break-glass").get("rules")).isEqualTo(List.of(
+                Map.of("apiGroups", List.of(""), "resources", List.of("pods/eviction"), "verbs", List.of("create"))));
+        assertThat(bindings.keySet()).containsExactly("finapp-break-glass", "finapp-read-only");
+        for (Map.Entry<String, Map<String, Object>> binding : bindings.entrySet()) {
+            assertThat(map(binding.getValue(), "roleRef")).containsEntry("kind", "Role").containsEntry("name", binding.getKey());
+            assertThat(binding.getValue().get("subjects")).isEqualTo(List.of(
+                    Map.of("apiGroup", "rbac.authorization.k8s.io", "kind", "Group", "name", binding.getKey())));
+        }
+        assertThat(read(BASE + "kustomization.yaml")).contains("  - rbac-humans.yaml");
+        assertThat(read(POLICY)).contains("\"[rbac-\"}").contains("[obs-break-glass-evictions]");
+        assertThat(read("infra/scripts/manifest-policy/finapp.rego")).contains("person_namespaces := {\"finapp\", \"finapp-observability\"}");
+    }
+
+    @Test
     @DisplayName("every policy id in observability.rego is refused by a plant, and every plant is refused: read from the two files, never a list here")
     void everyPolicyIsRefusedByAPlant() {
         Set<String> ruleIds = new TreeSet<>();
@@ -374,7 +402,8 @@ class TelemetryPipelineManifestsTest {
         assertThat(refusedIds).as("every rule is refused by a plant").containsAll(ruleIds);
         refusedIds.removeAll(ruleIds);
         assertThat(refusedIds).as("the rest are finapp.rego's, reused")
-                .containsExactlyInAnyOrder("security-token", "images-digest", "security-non-root", "probes-present");
+                .containsExactlyInAnyOrder("security-token", "images-digest", "security-non-root", "probes-present", "rbac-human-namespace",
+                        "rbac-human-secrets", "rbac-human-subresource");
         assertThat(refusedPlants).as("every plant is refused and every refusal has its plant").isEqualTo(planted);
     }
 

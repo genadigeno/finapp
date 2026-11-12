@@ -1,0 +1,65 @@
+# What a person may do in the telemetry pipeline's namespace (P15-TSK-032; THREAT_MODEL.md section 6 item 42 (k), decided 2026-11-12): read the
+# collectors' and the back ends' pods, their logs, the Deployments and the events, and under break-glass evict one pod. The same two groups as
+# the application's namespace (deploy/base/rbac-humans.yaml), each bound here to a role of its own: a person arrives through the identity layer,
+# never by a name written here. finapp.rego's rules hold both as they hold the application's (observability.rego applies them to this stream),
+# a person's binding is admitted in finapp and finapp-observability alone, and observability.rego holds break-glass here to evictions.
+#
+# NOT `secrets` AND NOT `configmaps`: nothing a pod here is configured with is a person's to read (OPERATIONS_RUNBOOK.md section 11.34 needs
+# neither), and neither are exec, attach, port-forward, ephemeral containers or the proxy subresources, each a way inside a pod. NOT A POD
+# DELETED AND NOT A REPLICA COUNT: a pod is evicted, one at a time, which the collector's PodDisruptionBudget admits; a count changes by a
+# commit and a rolling update.
+#
+# The namespace is stated, not left to the transformer, so a reader of the committed files tells this role from the application's of the
+# same name.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: finapp-read-only
+  namespace: finapp-observability
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-read-only
+  namespace: finapp-observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-read-only
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-read-only
+---
+# Incident response here is one act: a wedged collector or back end evicted (OPERATIONS_RUNBOOK.md sections 11.25 and 11.34). Bounded as the
+# application's break-glass is: the group has no members until the identity layer puts a session in it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: finapp-break-glass
+  namespace: finapp-observability
+rules:
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-break-glass
+  namespace: finapp-observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-break-glass
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-break-glass
