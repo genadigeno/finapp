@@ -1,0 +1,7 @@
+# What staging's root Application syncs (P15-TSK-017): the project and staging's four Applications.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+  - applications.yaml

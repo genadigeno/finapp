@@ -313,9 +313,9 @@ YAML
     plant_on rollout-recreate "$DEPLOYMENT" 's/type: RollingUpdate/type: Recreate/;/rollingUpdate:/,/maxSurge: 1/d'
     plant_on rollout-strategy-absent "$DEPLOYMENT" '/^  strategy:$/,/^      maxSurge: 1$/d'
     plant_on rollout-surge-absent "$DEPLOYMENT" '/^      maxSurge: 1$/d'
-    plant_on rollout-min-ready "$DEPLOYMENT" 's/minReadySeconds: 115/minReadySeconds: 114/'
-    plant_on rollout-grace-short "$DEPLOYMENT" 's/terminationGracePeriodSeconds: 115/terminationGracePeriodSeconds: 110/'
-    plant_on rollout-grace-absent "$DEPLOYMENT" '/^      terminationGracePeriodSeconds: 115$/d'
+    plant_on rollout-min-ready "$DEPLOYMENT" 's/minReadySeconds: 117/minReadySeconds: 116/'
+    plant_on rollout-grace-short "$DEPLOYMENT" 's/terminationGracePeriodSeconds: 117/terminationGracePeriodSeconds: 110/'
+    plant_on rollout-grace-absent "$DEPLOYMENT" '/^      terminationGracePeriodSeconds: 117$/d'
     plant_on rollout-replicas "$DEPLOYMENT" 's/^spec:$/spec:\n  replicas: 3/'
     plant_on rollout-deadline "$DEPLOYMENT" 's/progressDeadlineSeconds: 600/progressDeadlineSeconds: 200/'
     plant_on rollout-prestop-exec "$DEPLOYMENT" 's/^              sleep:$/              exec:/;s/^                seconds: 10$/                command: ["sleep", "10"]/'
@@ -377,8 +377,29 @@ YAML
     plant_on schema-type "$DEPLOYMENT" 's/^  revisionHistoryLimit: 10$/  revisionHistoryLimit: ten/'
     plant render-broken
     mutate render-broken "$PRODUCTION" 's|^  - \.\./\.\./base$|  - ../../base-that-is-not-there|'
+    # The release record (P15-TSK-017): every image the overlay renders is the recorded pair, wherever it is named. A finapp image under
+    # another name kustomize's images: does not rewrite, as an init container of the Deployment and by a patch of the Job; and a record
+    # that names another pair than the overlay's.
+    OTHER=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    plant_on release-elsewhere "$DEPLOYMENT" 's/^      containers:$/      initContainers:\n        - name: elsewhere\n          image: registry.invalid\/finapp-app@'"$OTHER"'\n          resources:\n            requests: {cpu: 10m, memory: 8Mi}\n            limits: {cpu: 10m, memory: 8Mi}\n      containers:/'
+    plant_on release-patched "$PRODUCTION" 's|^images:$|patches:\n  - target:\n      kind: Job\n      name: finapp-migrator\n    patch: \|-\n      - op: replace\n        path: /spec/template/spec/containers/0/image\n        value: registry.invalid/finapp-migrator@'"$OTHER"'\nimages:|'
+    plant_on release-record-differs overlays/production/release.yaml 's/^app: .*$/app: "'"$OTHER"'"/'
+    plant_on release-staging-record-differs overlays/staging/release.yaml 's/^migrator: .*$/migrator: "'"$OTHER"'"/' staging
+
+    # The delivery's Applications against Argo CD's schema (P15-TSK-017): a sync policy misspelled is refused, not read as none.
+    plant delivery-schema-typo ../delivery/production
+    mutate delivery-schema-typo delivery/production/applications.yaml 's/^    automated:$/    automatic:/'
 
     plant_namespace_security
+}
+
+# release_data <deploy dir> <overlay>: the pair an environment GitOps delivers is recorded to run (deploy/overlays/<environment>/release.yaml,
+# P15-TSK-017), as the policies' data: release-images holds every image the overlay renders to it. An overlay with no record states none.
+release_data() {
+    case $2 in staging | production) ;; *) return 0 ;; esac
+    for key in app migrator; do
+        printf 'release_%s: "%s"\n' "$key" "$(sed -n "s/^$key: \"\{0,1\}\(sha256:[0-9a-f]*\)\"\{0,1\} *\$/\1/p" "$1/overlays/$2/release.yaml" 2>/dev/null)"
+    done
 }
 
 # The namespaces are a root of their own, because an overlay's `namespace:` renames every Namespace it renders (see
@@ -1067,6 +1088,16 @@ in_container() {
                 kustomize build "/repo/deploy/overlays/$overlay" > "/scratch/rendered/$overlay.yaml"
                 append_namespaces /repo/deploy "/scratch/rendered/$overlay.yaml"
                 printf 'overlay: %s\n' "$overlay" > "/scratch/rendered/$overlay.data.yaml"
+                release_data /repo/deploy "$overlay" >> "/scratch/rendered/$overlay.data.yaml"
+            done
+            # The delivery (P15-TSK-017): each environment's project and Applications, and, read as committed, the roots and the
+            # controller's configuration, which no Kustomize root holds. Schema-checked like everything else that reaches a cluster.
+            for environment in staging production; do
+                kustomize build "/repo/deploy/delivery/$environment" > "/scratch/rendered/delivery-$environment.yaml"
+            done
+            : > /scratch/rendered/delivery-committed.yaml
+            for file in /repo/deploy/delivery/roots/*.yaml /repo/deploy/delivery/controller/*.yaml; do
+                { printf -- '---\n'; cat "$file"; } >> /scratch/rendered/delivery-committed.yaml
             done
             ;;
         plants)
@@ -1080,6 +1111,7 @@ in_container() {
                 [ -s "$directory/rendered.yaml" ] || [ -f "$directory/render.failed" ] \
                     || { echo "!!   plant $name rendered nothing" >&2; exit 1; }
                 [ -f "$directory/render.failed" ] || append_namespaces "$directory/deploy" "$directory/rendered.yaml"
+                release_data "$directory/deploy" "$overlay" >> "$directory/overlay.yaml"
                 if [ -f "$directory/after-render.sed" ]; then
                     cp "$directory/rendered.yaml" "$directory/rendered.before"
                     sed -i -f "$directory/after-render.sed" "$directory/rendered.yaml"
@@ -1206,8 +1238,9 @@ KUBECONFORM_IMAGE="${KUBECONFORM_IMAGE:-${KUBECONFORM_REPOSITORY}@${KUBECONFORM_
 CONFTEST_IMAGE="${CONFTEST_IMAGE:-${CONFTEST_REPOSITORY}@${CONFTEST_DIGEST}}"
 
 SCHEMAS="https://raw.githubusercontent.com/yannh/kubernetes-json-schema/${KUBERNETES_SCHEMAS_COMMIT}/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json"
-# ExternalSecret and SecretStore are custom kinds, read from their own catalogue at one commit. A kind with no schema stays an
-# error here: an object no schema reads is an object nothing checks.
+# ExternalSecret and SecretStore are custom kinds, read from their own catalogue at one commit, and so are the delivery's Argo CD
+# Application and AppProject (P15-TSK-017), from the same commit. A kind with no schema stays an error here: an object no schema reads
+# is an object nothing checks.
 CRD_SCHEMAS="https://raw.githubusercontent.com/datreeio/CRDs-catalog/${ESO_CRD_SCHEMAS_COMMIT}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
 
 if ! docker info >/dev/null 2>&1; then
@@ -1308,6 +1341,9 @@ for overlay in $OVERLAYS; do
     check "kubeconform $overlay" kubeconform_on "/scratch/rendered/$overlay.yaml"
     check "the policies on $overlay" conftest_on "/scratch/rendered/$overlay.yaml" "/scratch/rendered/$overlay.data.yaml"
 done
+for delivery in delivery-staging delivery-production delivery-committed; do
+    check "kubeconform $delivery" kubeconform_on "/scratch/rendered/$delivery.yaml"
+done
 
 refused stream-empty stream-empty
 refused stream-no-container stream-empty
@@ -1357,6 +1393,10 @@ refused memory-overcommit resources-memory
 refused job-resources resources-present
 
 refused image-tag images-digest
+refused release-elsewhere release-images
+refused release-patched release-images
+refused release-record-differs release-images
+refused release-staging-record-differs release-images
 refused image-no-digest images-digest
 refused image-absent images-digest
 refused job-image-tag images-digest
@@ -1615,6 +1655,7 @@ refused minted-volume security-token
 schema_refused schema-typo "revisionHistoryLimits"
 schema_refused schema-type "revisionHistoryLimit"
 render_refused render-broken "base-that-is-not-there"
+schema_refused delivery-schema-typo "/spec/syncPolicy"
 
 if [ "$status" -eq 0 ]; then
     echo "ok   every check green, every plant refused for its reason"

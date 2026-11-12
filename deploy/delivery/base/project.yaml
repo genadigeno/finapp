@@ -1,0 +1,46 @@
+# The Argo CD project of the platform's release and edge Applications (P15-TSK-017, ADR-0122 decision 4, C8; OPERATIONS_RUNBOOK.md
+# section 11.36). One per cluster: staging and production are separate accounts and clusters, so each controller holds its own copy,
+# synced by that environment's root Application from deploy/delivery/<environment>.
+#
+# WHAT IT BOUNDS: one repository, the platform's two namespaces, nothing outside a namespace, and inside one only the kinds the release
+# and the edge render (DeliveryManifestsTest holds the list to them). A Secret is not among them: a committed one is refused by the
+# manifest policy, and here too, so a credential can only come from the store. The admission policies and the namespaces are another
+# project's (project-cluster.yaml), so neither the release nor the edge can create a ClusterImagePolicy or a Namespace.
+#
+# WHAT DOES NOT BOUND IT. This file is synced by the root, whose project writes AppProjects and Applications in argocd, and Argo CD's
+# own documentation says what that is: a project with access to Argo CD's namespace, and the ability to create Applications in any
+# project, are admin-level. So a merged change under deploy/delivery/ can widen this project, add another, or put an Application in
+# `default`: everything under deploy/delivery/ is admin-equivalent on the cluster, and the control on it is the code owner's review
+# (.github/CODEOWNERS) and the root's rendered set (DeliveryManifestsTest), not this file.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: finapp
+  namespace: argocd
+spec:
+  description: The platform's release and edge, synced from this repository alone
+  sourceRepos:
+    - https://github.com/genadigeno/finapp.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: finapp
+    - server: https://kubernetes.default.svc
+      namespace: finapp-edge
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - {group: "", kind: ServiceAccount}
+    - {group: "", kind: ConfigMap}
+    - {group: "", kind: Service}
+    - {group: "", kind: ResourceQuota}
+    - {group: "", kind: LimitRange}
+    - {group: apps, kind: Deployment}
+    - {group: batch, kind: Job}
+    - {group: autoscaling, kind: HorizontalPodAutoscaler}
+    - {group: policy, kind: PodDisruptionBudget}
+    - {group: networking.k8s.io, kind: NetworkPolicy}
+    - {group: rbac.authorization.k8s.io, kind: Role}
+    - {group: rbac.authorization.k8s.io, kind: RoleBinding}
+    - {group: external-secrets.io, kind: ExternalSecret}
+    - {group: external-secrets.io, kind: SecretStore}
+  orphanedResources:
+    warn: true

@@ -314,7 +314,10 @@ For example:
 ```
 
 - **`first-conforming-release`** names the first release whose code conforms to this migration. A release is named by the
-  Gradle `version` it was built with, less `-SNAPSHOT` (`/actuator/info` publishes it), compared as a version.
+  Gradle `version` it was built with (`/actuator/info` publishes it), compared as a version. A marker names a release, never a
+  snapshot; a build named `X.Y.Z-SNAPSHOT` comes before `X.Y.Z`, the release it leads to. *(Revised 2026-11-12: this said "less
+  `-SNAPSHOT`", which made a snapshot equal to its release, so a rollback to a `1.4.0-SNAPSHOT` build across a marker naming
+  `1.4.0` passed. The promotion's records keep the name as built.)*
 - **`ANY`** says every release's code conforms, so it excludes nothing from a rollback: a tightening that refuses nothing,
   such as a widened `CHECK` replaced in place, or a function body that changed only how it reads the clock.
 - **A named release must already be out** (`MARKER_AHEAD_OF_THE_RELEASE`): it may not be newer than the floor's `release`,
@@ -330,7 +333,10 @@ For example:
 
 **The promotion script's rule (`P15-TSK-017`).** A rollback to release R is refused when any migration above R's own newest
 version in that module carries a marker naming a release newer than R. Past such a marker the way back is a forward fix.
-`ANY` never refuses.
+`ANY` never refuses. *(Built 2026-11-12: `infra/scripts/Promotion.java`, run by `promote.sh` before it writes and by CI on the pull
+request. "The migrations" are those of the newest release the environment has ever run, read from its release record's history
+along the branch's first-parent line, so a commit of a side branch that was merged never counts as run; a marker it cannot read, or a second one, refuses; and a rollback keeps the migrator of that
+newest release, whose run on its own schema is a no-op, because a schema is never rolled back. `OPERATIONS_RUNBOOK.md` §11.36.)*
 
 **Enforced at run time: the schema-version guard.** The build embeds each schema's newest version, read from the migrations
 on the application's runtime classpath. The readiness contributor `schemaVersion` answers `OUT_OF_SERVICE` while any schema

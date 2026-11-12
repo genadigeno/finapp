@@ -1,0 +1,28 @@
+# Who must approve a change before it can merge (P15-TSK-017, C8; OPERATIONS_RUNBOOK.md section 11.36; THREAT_MODEL.md T11, T28).
+#
+# UNDER PULL-BASED GITOPS A MERGE IS A DEPLOY. Argo CD syncs production from master, so every path below reaches production, or governs
+# what does, the moment it merges: the overlays and everything they render (deploy/, the delivery's Applications and the smoke's
+# records included), the infrastructure code (infra/terraform: production's root and the modules it calls), the checks that refuse a
+# bad promotion (infra/scripts), the configuration register (every FINANCIAL default changes there in the same pull request as the
+# code, ConfigurationRegisterIsCompleteTest), the released-schema floor (moving it is what lets a contract past the lint,
+# docs/migrations), and the workflow and this file. And what those checks read, which a change could weaken before the change it
+# lets through (the review of P15-TSK-017): build-logic (the Gradle version a release is named by), every module's migrations (their
+# contract markers), the architecture guards and the expand-only lint, and gradle/ (the version catalog and the dependency
+# verification metadata). CodeOwnersTest holds that each of those resolves to an owner here.
+#
+# WHAT THIS FILE DOES NOT DO. It names who must review; GitHub enforces it only once branch protection on master requires a review
+# from a code owner, with stale approvals dismissed, the latest push approved by someone other than its author, and no bypass. Those
+# are repository settings, the owner's to apply (THREAT_MODEL.md section 6 item 4; the rules are written out in OPERATIONS_RUNBOOK.md
+# section 11.36). An author's own approval never counts, so while the repository has one owner a change to any path below cannot merge
+# without an administrator's bypass, which those rules forbid: a second person must be named here before production exists.
+#
+# Last match wins, so a later line naming nobody would un-own a path: none does, and CodeOwnersTest refuses one.
+/deploy/                                      @genadigeno
+/infra/                                       @genadigeno
+/docs/architecture/CONFIGURATION_REGISTER.md  @genadigeno
+/docs/migrations/                             @genadigeno
+/.github/                                     @genadigeno
+/build-logic/                                 @genadigeno
+/gradle/                                      @genadigeno
+/*/src/main/resources/db/migration/           @genadigeno
+/app/src/test/java/com/finapp/app/architecture/  @genadigeno

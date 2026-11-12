@@ -18,9 +18,18 @@
 #       value's, which is exactly what makes every row under the old value unreadable. A version's value and its check value never
 #       change once listed; new material goes to a new version.
 #
-# WHAT IT CANNOT PROVE. It compares two commits, so it proves the change was two commits, not that the first rollout finished
-# (OPERATIONS_RUNBOOK.md section 11.29 states that gate; delivery order is P15-TSK-017's once a GitOps controller applies these).
-# A kubectl rollout undo never reaches it, which is why the runbook forbids that for a ring change.
+#   (5) an activation rendered into an environment GitOps delivers (an overlay's own literal for that environment; a literal in
+#       deploy/base or deploy/components for both) before that environment was seen holding the version (P15-TSK-017; THREAT_MODEL.md
+#       section 6 item 32 (c)): the environment's newest record under deploy/evidence/<environment> AS MERGED AT THE BASE, written by
+#       infra/scripts/post-deploy-smoke.sh from what every replica runs (the rollout complete, none terminating, every pod on one
+#       configuration), must list the version. A record the change itself adds does not count: it would be the change vouching for
+#       itself. Comparing two commits proves the change was two commits, not that the first
+#       had rolled out, and Argo CD alone cannot hold the order: it syncs the branch's newest commit, so two commits merged inside one
+#       polling interval reach a cluster as one sync. So the order is held here, at the merge, which is the deploy.
+#
+# WHAT IT CANNOT PROVE. That the record is still true when the activation merges: nothing but a reviewed change, which rule (2)
+# holds, can take a listed version away. A kubectl rollout undo never reaches it, which is why the runbook forbids that for a ring
+# change. The kind overlay is the rehearsal's, applied by its script, and is held to rules (1) to (4) alone.
 #
 # Usage:
 #   infra/scripts/key-ring-activation-check.sh <base-ref>     compare the working tree with a base commit
@@ -28,6 +37,12 @@
 #
 # Exit status: 0 nothing moved out of order; 1 refused; 2 usage, or the base could not be read, so nothing is proved.
 set -eu
+
+# The one reader of a smoke record (P15-TSK-017), and a path as a JDK on this host takes it.
+PROMOTION="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/Promotion.java"
+jpath() {
+    if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
 
 # Anything that reads like a ring setting, however spelled, check values among them (P15-TSK-020's review: the legacy
 # _RING_CHECK_VALUES, a dotted or camel-cased property, any separator). Matched without regard to case. The first character stops
@@ -105,6 +120,30 @@ compare() {
                 status=1
             fi
 
+            # (5) An activation in an environment GitOps delivers, before that environment's newest smoke record, as merged at the base,
+            #     lists the version. The base and the components are rendered into both environments, so a literal there waits for both.
+            environments=""
+            case $file in
+                deploy/overlays/staging/*) environments=staging ;;
+                deploy/overlays/production/*) environments=production ;;
+                deploy/base/* | deploy/components/*) environments="staging production" ;;
+            esac
+            if [ -n "$environments" ] && [ -n "$head_active" ] && [ "$head_active" != "${base_active:-1}" ]; then
+                for environment in $environments; do
+                    said=$(java --source 21 "$(jpath "$PROMOTION")" held "$(jpath "$base")" "$environment" "$stem" "$head_active" 2>&1) && read_status=0 || read_status=$?
+                    if [ "$read_status" -eq 1 ]; then
+                        echo "$file: ${stem}_RING_ACTIVEVERSION moves to $head_active before $environment was seen holding it" >&2
+                        echo "  $said" >&2
+                        status=1
+                    elif [ "$read_status" -ne 0 ]; then
+                        # A record that could not be read, or no JDK, proves nothing: refused, and said so.
+                        echo "$file: ${stem}_RING_ACTIVEVERSION moves to $head_active, and $environment's records could not be judged ($read_status)" >&2
+                        echo "  $said" >&2
+                        status=1
+                    fi
+                done
+            fi
+
             # (2) A version the base listed has left, neither held nor retired.
             for version in $(printf '%s,%s' "$base_versions" "$base_retired" | tr ',' ' '); do
                 if ! in_list "$version" "${head_versions:-1}" && ! in_list "$version" "$head_retired"; then
@@ -139,27 +178,40 @@ self_test() {
     trap 'rm -rf "$tmp"' EXIT
     failures=0
 
-    plant() { # plant <name> <expected status> <file> <base literals, | separated> <head literals, | separated>
+    plant() { # plant <name> <expected status> <file> <base literals, | separated> <head literals, | separated> [<environment> <listing>]...
         rm -rf "$tmp/b" "$tmp/h"
         mkdir -p "$tmp/b/$(dirname "$3")" "$tmp/h/$(dirname "$3")"
         printf '%s\n' "$4" | tr '|' '\n' | sed 's/^/      - /' > "$tmp/b/$3"
         printf '%s\n' "$5" | tr '|' '\n' | sed 's/^/      - /' > "$tmp/h/$3"
+        # The smoke's records, in the form infra/scripts/Promotion.java writes, listing FINAPP_DOC as given: "<environment> <listing>"
+        # pairs, written into the base (merged before the change) unless the pair's environment is prefixed head: (the change's own).
+        name=$1 expected=$2
+        shift 5
+        while [ $# -ge 2 ]; do
+            side=b
+            environment=$1
+            case $environment in head:*) side=h; environment=${environment#head:} ;; esac
+            mkdir -p "$tmp/$side/deploy/evidence/$environment"
+            printf 'environment: %s\nchecked: "2026-11-12T10:00:00Z"\nhealth: PASS\nbuild-identity: PASS\ntrial-balance: PASS\nheld:\n  - "FINAPP_DOC listed %s active 1"\n' \
+                "$environment" "$2" > "$tmp/$side/deploy/evidence/$environment/20261112T100000Z-000000000000.yaml"
+            shift 2
+        done
         set +e
         compare "$tmp/b" "$tmp/h" > "$tmp/out" 2>&1
         got=$?
         set -e
-        if [ "$got" -ne "$2" ]; then
-            echo "!!   plant $1: expected status $2, got $got" >&2
+        if [ "$got" -ne "$expected" ]; then
+            echo "!!   plant $name: expected status $expected, got $got" >&2
             sed 's/^/     /' "$tmp/out" >&2
             failures=$((failures + 1))
         else
-            echo "ok   plant $1: status $got"
+            echo "ok   plant $name: status $got"
         fi
     }
 
     f=deploy/overlays/production/kustomization.yaml
     plant nothing-changes 0 "$f" 'FINAPP_DOC_RING_VERSIONS=1,2' 'FINAPP_DOC_RING_VERSIONS=1,2'
-    plant known-then-active 0 "$f" 'FINAPP_DOC_RING_VERSIONS=1,2' 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_ACTIVEVERSION=2'
+    plant known-then-active 0 "$f" 'FINAPP_DOC_RING_VERSIONS=1,2' 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_ACTIVEVERSION=2' production 1,2
     plant listed-and-activated-together 1 "$f" 'NOT_A_RING=1' 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_ACTIVEVERSION=2'
     plant top-version-dropped 1 "$f" 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_ACTIVEVERSION=2' 'NOT_A_RING=1'
     plant top-version-dropped-from-the-list 1 "$f" 'FINAPP_DOC_RING_VERSIONS=1,2' 'FINAPP_DOC_RING_VERSIONS=1'
@@ -170,11 +222,11 @@ self_test() {
     plant a-yml-file-is-read 1 deploy/overlays/production/ring.yml 'NOT_A_RING=1' 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_ACTIVEVERSION=2'
     plant spring-is-not-a-ring 0 "$f" 'NOT_A_RING=1' 'spring.versions=1'
     c1=FINAPP_DOC_RING_CHECKVALUES=1:552d40876e6d9748,2:0ec936eb254d5bcf
-    plant check-values-kept-through-activation 0 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" "FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_ACTIVEVERSION=2|$c1"
+    plant check-values-kept-through-activation 0 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" "FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_ACTIVEVERSION=2|$c1" production 1,2
     plant check-value-of-a-held-version-changed 1 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_CHECKVALUES=1:552d40876e6d9748,2:5daa68abe4ec79b0'
     plant check-value-of-a-held-version-removed 1 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" 'FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_CHECKVALUES=1:552d40876e6d9748'
     plant base-check-value-changed-with-one-version 1 "$f" 'FINAPP_DOC_RING_CHECKVALUES=1:552d40876e6d9748' 'FINAPP_DOC_RING_CHECKVALUES=1:5daa68abe4ec79b0'
-    plant check-value-of-a-retired-version-dropped 0 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" 'FINAPP_DOC_RING_VERSIONS=2|FINAPP_DOC_RING_ACTIVEVERSION=2|FINAPP_DOC_RING_RETIREDVERSIONS=1|FINAPP_DOC_RING_CHECKVALUES=2:0ec936eb254d5bcf'
+    plant check-value-of-a-retired-version-dropped 0 "$f" "FINAPP_DOC_RING_VERSIONS=1,2|$c1" 'FINAPP_DOC_RING_VERSIONS=2|FINAPP_DOC_RING_ACTIVEVERSION=2|FINAPP_DOC_RING_RETIREDVERSIONS=1|FINAPP_DOC_RING_CHECKVALUES=2:0ec936eb254d5bcf' production 1,2
     # Every other spelling Spring binds to check-values, and a value this script could not parse (P15-TSK-020's review): refused,
     # because a check value read as nothing would let rule (4) pass a change it exists to stop.
     plant check-values-in-the-legacy-spelling 1 "$f" 'NOT_A_RING=1' 'FINAPP_DOC_RING_CHECK_VALUES=1:552d40876e6d9748'
@@ -183,6 +235,28 @@ self_test() {
     plant check-values-in-upper-case-hex 1 "$f" 'NOT_A_RING=1' 'FINAPP_DOC_RING_CHECKVALUES=1:552D40876E6D9748,2:0EC936EB254D5BCF'
     plant check-value-with-no-version 1 "$f" 'NOT_A_RING=1' 'FINAPP_DOC_RING_CHECKVALUES=552d40876e6d9748'
     plant check-value-too-short 1 "$f" 'NOT_A_RING=1' 'FINAPP_DOC_RING_CHECKVALUES=1:552d4087'
+    # Rule (5) (P15-TSK-017): an activation where GitOps delivers waits for that environment's smoke record to list the version. The three
+    # production activations above carry the record their environment would have; without it each is refused, as below.
+    k12='FINAPP_DOC_RING_VERSIONS=1,2'
+    a2='FINAPP_DOC_RING_VERSIONS=1,2|FINAPP_DOC_RING_ACTIVEVERSION=2'
+    plant activation-with-no-record 1 "$f" "$k12" "$a2"
+    plant activation-before-the-listing-was-seen 1 "$f" "$k12" "$a2" production 1
+    plant activation-on-another-environments-record 1 "$f" "$k12" "$a2" staging 1,2
+    plant activation-after-the-listing-was-seen 0 "$f" "$k12" "$a2" production 1,2
+    plant staging-activation-with-no-record 1 deploy/overlays/staging/kustomization.yaml "$k12" "$a2"
+    plant staging-activation-after-the-listing-was-seen 0 deploy/overlays/staging/kustomization.yaml "$k12" "$a2" staging 1,2
+    plant kind-activation-needs-no-record 0 deploy/overlays/kind/kustomization.yaml "$k12" "$a2"
+    plant pointer-moved-back-after-the-listing-was-seen 0 "$f" "$a2" "$k12|FINAPP_DOC_RING_ACTIVEVERSION=1" production 1,2
+    # A record the change itself adds is no record (the review of P15-TSK-017): it would be the change vouching for itself.
+    plant activation-with-its-own-record 1 "$f" "$k12" "$a2" head:production 1,2
+    # A literal in the base or a component is rendered into both GitOps environments, so it waits for both.
+    b=deploy/base/kustomization.yaml
+    c=deploy/components/secret-delivery/kustomization.yaml
+    plant base-activation-with-no-record 1 "$b" "$k12" "$a2"
+    plant base-activation-with-one-environment-seen 1 "$b" "$k12" "$a2" staging 1,2
+    plant base-activation-with-both-seen 0 "$b" "$k12" "$a2" staging 1,2 production 1,2
+    plant component-activation-with-no-record 1 "$c" "$k12" "$a2"
+    plant component-activation-with-both-seen 0 "$c" "$k12" "$a2" staging 1,2 production 1,2
 
     if [ "$failures" -ne 0 ]; then
         echo "!!   $failures plant(s) not refused for their reason" >&2

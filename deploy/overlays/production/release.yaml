@@ -1,0 +1,8 @@
+# The release this environment runs (P15-TSK-017; OPERATIONS_RUNBOOK.md section 11.36). Not rendered: Kustomize never reads it.
+# infra/scripts/promote.sh writes it in the same commit as the two digests in kustomization.yaml, which DeliveryManifestsTest
+# holds equal, and its history is what the promotion reads for the schema this environment holds (a schema is never rolled
+# back). `none` and sixty-four zeros until the first promotion, as the overlay's digests are: nothing real is committed.
+release: "none"
+revision: "none"
+app: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+migrator: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
