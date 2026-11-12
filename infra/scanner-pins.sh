@@ -198,3 +198,23 @@ METRICS_SERVER_REPOSITORY=registry.k8s.io/metrics-server/metrics-server
 METRICS_SERVER_VERSION=v0.9.1
 METRICS_SERVER_DIGEST=sha256:9b0ba1926e1d3089673f45461c3c1416109dea33b3ba3434048defd380df329b
 METRICS_SERVER_MANIFEST_SHA256=3c7f57cdbee0f57fb0259a150e8f6d6cb4f29d72d1aa5dce8803151dd6d4c2a1
+
+# The component rolls of the kind rehearsal (P16-TSK-005, REHEARSAL_SCOPE=rolls; THREAT_MODEL.md section 6 item 43 (f)): for each component the
+# platform runs beside its own release, the other image of a pair, which the step rolls to under the workload and back from to the deployed pin.
+# The deployed pins are TRAEFIK_* above (deploy/edge/base/controllers.yaml) and the kind overlay's postgres.yaml and kafka.yaml (compose.yaml's
+# versions). Each target is the same repository and minor as its deployed pin and another patch, which KindRehearsalContractTest holds, so a
+# bump of a deployed pin onto its target turns the test red until a new target is chosen. Deployed nowhere but a rehearsal's own cluster and
+# pulled by digest; check-pinned-images.sh checks that each tag has not moved, and asks no newer-release question of a target.
+# PostgreSQL's deployed 18.6 is the newest patch published on 2026-11-12 (18.5 never was), so its target is the patch before it, 18.4, and its
+# step rolls back first: the same data directory under two releases of one major, in both directions.
+TRAEFIK_ROLL_REPOSITORY=library/traefik
+TRAEFIK_ROLL_VERSION=v3.7.18
+TRAEFIK_ROLL_DIGEST=sha256:9c437ac4f09ce6f4980a8544902d3475fdf70a1a7c578729581d2535dfa7d635
+
+POSTGRES_ROLL_REPOSITORY=library/postgres
+POSTGRES_ROLL_VERSION=18.4
+POSTGRES_ROLL_DIGEST=sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+
+KAFKA_ROLL_REPOSITORY=apache/kafka
+KAFKA_ROLL_VERSION=4.3.2
+KAFKA_ROLL_DIGEST=sha256:852a0d49fc4e656b022e7f23785411802c9a088c78a7c5e39f33969de9c227a7

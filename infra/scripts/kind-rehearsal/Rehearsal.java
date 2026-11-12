@@ -528,6 +528,9 @@ public final class Rehearsal {
         threads.add(Thread.ofVirtual().start(() -> transfers(label, stop, note, failed, succeeded, byFlow)));
         threads.add(Thread.ofVirtual().start(() -> topUps(label, stop, note, failed, succeeded, byFlow)));
         threads.add(Thread.ofVirtual().start(() -> commerce(label, stop, note, failed, succeeded, byFlow)));
+        if ("operator-edge".equals(System.getenv("WORKLOAD_EDGE"))) {
+            threads.add(Thread.ofVirtual().start(() -> operatorEdge(stop, note, failed, succeeded, byFlow)));
+        }
         for (Thread thread : threads) {
             thread.join();
         }
@@ -627,6 +630,22 @@ public final class Rehearsal {
             counted("payout", payoutKey, note, failed, ok, byFlow, () -> payout("0.10", payoutKey));
             i++;
             pause(4000);
+        }
+    }
+
+    /**
+     * The operator host under its own controllers' roll (P16-TSK-005, {@code WORKLOAD_EDGE=operator-edge}): a read with no session, which only
+     * the application answers, with {@code 401}. Anything else - a refused connection, a {@code 404} or {@code 5xx} from the edge - is a failure
+     * like any other flow's. It moves no money and the census counts none of it.
+     */
+    private void operatorEdge(AtomicBoolean stop, java.util.function.BiConsumer<String, String> note, AtomicLong failed, AtomicLong ok,
+            Map<String, AtomicLong> byFlow) {
+        int i = 0;
+        while (!stop.get()) {
+            counted("operator-edge", "read-" + i, note, failed, ok, byFlow,
+                    () -> expect("operator edge", get(operatorBase, "/v1/operator/events/dead-letters", null), 401));
+            i++;
+            pause(1000);
         }
     }
 

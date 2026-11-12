@@ -1,5 +1,9 @@
-# Test-only, single-node, ephemeral: the kind rehearsal's PostgreSQL. C3: state lives outside the cluster in
+# Test-only, single-node, gone with its cluster: the kind rehearsal's PostgreSQL. C3: state lives outside the cluster in
 # every real environment, and the manifest policy refuses a StatefulSet in any other overlay.
+#
+# The data directory is on a volume claim that kind's own provisioner (local-path, the cluster's default StorageClass) backs, not an
+# emptyDir (P16-TSK-005): a roll replaces the pod, and an emptyDir goes with the pod it belongs to, so the rehearsal's version change
+# would start an empty server. The claim outlives the pod and is deleted with the namespace or the cluster.
 #
 # The restricted pod profile holds here too: this image was run with a read-only root, as 999:999, with every
 # capability dropped, and reached ready. Mounted at /var/lib/postgresql rather than /var/lib/postgresql/data, as
@@ -143,8 +147,6 @@ spec:
               mountPath: /etc/finapp-postgres-hba
               readOnly: true
       volumes:
-        - name: data
-          emptyDir: {}
         - name: run
           emptyDir: {}
         - name: tmp
@@ -158,3 +160,12 @@ spec:
         - name: hba
           configMap:
             name: finapp-kind-postgres-hba
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi

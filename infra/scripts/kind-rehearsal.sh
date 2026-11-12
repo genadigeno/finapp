@@ -17,9 +17,9 @@
 # release N" is a real case: this is a rehearsal's stand-in, and the first real release moves both definitions.
 #
 # THE MODES (REHEARSAL_PROBE), each a deliberate break that must turn the run red: `max-unavailable`, `min-ready`, `skip-replay`,
-# `no-default-deny`; under REHEARSAL_SCOPE=rotations (P15-TSK-020) `hmac-previous-dropped` and `grant-missing`. A probe stops as soon as its
-# assertion has gone red or the run has completed green, and the script's exit status says which. MUTATION_TESTING.md records what each
-# was seen to do.
+# `no-default-deny`; under REHEARSAL_SCOPE=rotations (P15-TSK-020) `hmac-previous-dropped` and `grant-missing`; under REHEARSAL_SCOPE=rolls
+# (P16-TSK-005) `edge-max-unavailable`. A probe stops as soon as its assertion has gone red or the run has completed green, and the script's
+# exit status says which. MUTATION_TESTING.md records what each was seen to do.
 #
 # THE SCOPES (REHEARSAL_SCOPE). `release`, the default: the walk above. `rotations` (P15-TSK-020): release N alone, then every rotation
 # of kind-rehearsal/rotations.sh (REHEARSAL_ROTATIONS selects some), each under the workload, with the census after it and its rollback.
@@ -31,6 +31,11 @@
 # `delivery` (P15-TSK-032): the data tier, the simulator and the topics as above, and then nothing of this script's own release: Argo CD,
 # installed from what infra/scripts/controller-check.sh renders, syncs deploy/overlays/staging through a rehearsal root, promote.sh writes
 # each pair and the smoke reads the result (kind-rehearsal/delivery.sh, OPERATIONS_RUNBOOK.md section 11.36).
+#
+# `rolls` (P16-TSK-005, THREAT_MODEL.md section 6 item 43 (f)): release N alone, then the three components the platform runs beside its own
+# release - the edge's controllers, the test-only PostgreSQL and the test-only broker - each rolled to the other image of its pair in
+# infra/scanner-pins.sh and back, under the workload, with the census after each leg (kind-rehearsal/rolls.sh, OPERATIONS_RUNBOOK.md
+# sections 11.26 and 11.28).
 #
 # A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
 # common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
@@ -64,10 +69,10 @@ ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 # What the run rehearses: `release` (the default, P15-TSK-012's walk from N - 1 to N and back) or `rotations` (P15-TSK-020: release N alone,
 # then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
 SCOPE=${REHEARSAL_SCOPE:-release}
-case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents or delivery, not $SCOPE" >&2; exit 2 ;; esac
+case $SCOPE in release | rotations | signals | incidents) ;; delivery | rolls) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery or rolls, not $SCOPE" >&2; exit 2 ;; esac
 # Every scope but `release` deploys release N alone: the steps below that name N - 1 deploy N.
 N_ONLY=""
-case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
+case $SCOPE in rotations | signals | incidents | delivery | rolls) N_ONLY=1 ;; esac
 # The platform scopes' API audit log (Q12): only they write one.
 AUDITED=""
 case $SCOPE in signals | incidents) AUDITED=1 ;; esac
@@ -527,6 +532,12 @@ load_tagged postgres 18.6 "$(sed -n 's/.*postgres:18.6@\(sha256:[0-9a-f]*\).*/\1
 load_tagged apache/kafka 4.3.1 "$(sed -n 's/.*apache\/kafka:4.3.1@\(sha256:[0-9a-f]*\).*/\1/p' "$ROOT/deploy/overlays/kind/kafka.yaml")"
 load_tagged "$TRAEFIK_REPOSITORY" "$TRAEFIK_VERSION" "$TRAEFIK_DIGEST"
 load_tagged "$CURL_REPOSITORY" "$CURL_VERSION" "$CURL_DIGEST"
+if [ "$SCOPE" = rolls ]; then
+    # The other image of each pair (P16-TSK-005), by digest, so that the roll finds it in the node as the deployed pins are found.
+    load_tagged "$TRAEFIK_ROLL_REPOSITORY" "$TRAEFIK_ROLL_VERSION" "$TRAEFIK_ROLL_DIGEST"
+    load_tagged "$POSTGRES_ROLL_REPOSITORY" "$POSTGRES_ROLL_VERSION" "$POSTGRES_ROLL_DIGEST"
+    load_tagged "$KAFKA_ROLL_REPOSITORY" "$KAFKA_ROLL_VERSION" "$KAFKA_ROLL_DIGEST"
+fi
 IMAGE_APP_N=$(load_built finapp-app:rehearsal-n)
 IMAGE_MIGRATOR_N=$(load_built finapp-migrator:rehearsal-n)
 if [ -n "$N_ONLY" ]; then
@@ -1363,11 +1374,13 @@ no_pod_terminating() {
     return 1
 }
 
+# start_workload <label> [retry] [operator-edge]: the third adds a read on the operator host to the public flows (P16-TSK-005), for a step
+# that rolls the operator's controllers too.
 start_workload() {
     name="$CLUSTER-workload-$1"
     # shellcheck disable=SC2086
     dock run -d --name "$name" --network kind --add-host "public.finapp.test:$NODE_IP" --add-host "operator.finapp.test:$NODE_IP" \
-        -e "WORKLOAD_RETRY=${2:-}" -v "$(dpath "$CLIENT"):/work" -v "$(dpath "$DIR"):/src:ro" "$JDK_IMAGE" java --source 21 /src/Rehearsal.java /work workload "$1" >/dev/null \
+        -e "WORKLOAD_RETRY=${2:-}" -e "WORKLOAD_EDGE=${3:-}" -v "$(dpath "$CLIENT"):/work" -v "$(dpath "$DIR"):/src:ro" "$JDK_IMAGE" java --source 21 /src/Rehearsal.java /work workload "$1" >/dev/null \
         || cannot "the workload could not start"
     CONTAINERS="$CONTAINERS $name"
 }
@@ -1538,6 +1551,14 @@ migrations_between() {
 if [ "$SCOPE" = rotations ]; then
     # shellcheck source=infra/scripts/kind-rehearsal/rotations.sh
     . "$DIR/rotations.sh"
+    step end
+    finish
+fi
+
+# The rolls scope (P16-TSK-005) stops it here as well: N is deployed, smoked, its census green, the cluster suites passed.
+if [ "$SCOPE" = rolls ]; then
+    # shellcheck source=infra/scripts/kind-rehearsal/rolls.sh
+    . "$DIR/rolls.sh"
     step end
     finish
 fi

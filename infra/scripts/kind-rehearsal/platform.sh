@@ -638,8 +638,9 @@ incidents_fleet_blind() {
 }
 
 incidents_database_restart() {
-    # Section 11.40, the nearest this cluster has to a failover: the database's server stopped uncleanly, in place (its volume is an emptyDir,
-    # so the pod is never deleted). Not a failover: no promotion, no DNS change, no second server.
+    # Section 11.40, the nearest this cluster has to a failover: the database's server stopped uncleanly, in place: the pod is never deleted,
+    # so its container restarts on the same volume. Not a failover: no promotion, no DNS change, no second server. (Its data was on an
+    # emptyDir, which deleting the pod would have lost, until P16-TSK-005 put it on a volume claim; the step still stops it in place.)
     client sign-in-flood counter 3 >> "$ART/platform-client.log" 2>&1 || true
     counted=$(psql_query -c "SELECT count(*) FROM platform.window_counter" | tr -d '[:space:]')
     [ "${counted:-0}" -gt 0 ] || fail "11.40: the positive control: no door hit was counted before the restart"
