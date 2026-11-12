@@ -387,8 +387,14 @@ awk 'BEGIN{n=0} /^---$/{n++; next} {doc[n] = doc[n] $0 "\n"} END{for (i = 0; i <
     "$ARGOCD_STREAM" > "$WORK/argocd-definitions.yaml"
 [ "$(grep -c '^kind: CustomResourceDefinition$' "$WORK/argocd-definitions.yaml")" -ge 3 ] || cannot "Argo CD's definitions were not found in its render"
 kube apply --server-side -f - < "$WORK/argocd-definitions.yaml" >> "$ART/apply.log" 2>&1 || cannot "could not apply Argo CD's definitions"
-kube wait --for condition=established --timeout=120s crd/appprojects.argoproj.io crd/applications.argoproj.io >> "$ART/apply.log" 2>&1 \
-    || cannot "Argo CD's definitions were not established"
+# Read in a loop: `kubectl wait` on a definition created a moment before answers an error, its conditions not yet written (seen on kind).
+deadline=$(( $(date +%s) + 180 ))
+for definition in appprojects.argoproj.io applications.argoproj.io; do
+    until [ "$(kube get crd "$definition" -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' 2>/dev/null)" = True ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || cannot "Argo CD's definition $definition was not established within three minutes"
+        sleep 2
+    done
+done
 kube apply --server-side -f - < "$ROOT/deploy/delivery/controller/default-project.yaml" >> "$ART/apply.log" 2>&1 || cannot "the restricted default project could not be applied"
 kube apply --server-side --force-conflicts -f - < "$ARGOCD_STREAM" >> "$ART/apply.log" 2>&1 || cannot "could not apply Argo CD: see apply.log"
 kube -n argocd rollout status statefulset/argocd-application-controller --timeout=300s >> "$ART/apply.log" 2>&1 || fail "Argo CD's application controller did not become ready"
