@@ -332,6 +332,8 @@ test reads Phase 15's status; the filter also ran eight ArchUnit rule classes, g
 
 ## Owner acceptances the flip needs (one answer)
 
+**Decided 2026-11-12** by the owner ("accept all"): **A-G as recommended**. The flip itself waits for the Phase 15 → 16 transition gate, which the owner has not opened yet ("wait", 2026-11-12); `P15-REM-005` lands before that gate's guard run. Asked at the exit about Phase 16's test tiers, the owner chose to keep skipping the database and Kafka tiers per task.
+
 | # | Decision | Recommendation |
 |---|---|---|
 | **A** | **The owner's own postponements, as recorded deviations of Phase 15**: the storm (PI-004); the database pass and every case owed to it (PI-023 - universal criterion 7, the gate's database-pass item, the concurrent-execution row, the sweeps, the burst across replicas, and the residual rows of T3, T12, T13, T17, T33, T34, T38, T44); the platform rehearsals (PI-024 - criterion 4, the final-tree release and census, and T11's, T12's, T29's and T46's residual rows) | Accept, owned after the project's phases as each issue says; reminded at every exit |

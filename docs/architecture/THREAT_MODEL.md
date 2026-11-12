@@ -1220,12 +1220,13 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     **Two more rows have been added since, and the owner accepted them on 2026-11-11, as recommended** (2026-11-10, the static analysis on the tree with wave E merged): the
     key-ring retirement guard's statement, built from its own closed list of stamped columns, and the embedded configuration register's
     read of its own classpath resource, until 2027-06-30, as the others.
-    **Three more rows have been added since, replacing one, and await the owner** (found by the Phase 15 exit review, 2026-11-12):
+    **Three more rows have been added since, replacing one; the owner accepted them on 2026-11-12** (found by the Phase 15 exit review, 2026-11-12):
     the static analysis on the tree with wave F merged (2026-11-12) read the migrator's role bootstrap after the alternating users,
     found three statements without rows and one row no finding matched, and replaced that row by three with the siblings' expiry
     (role names from the class's constant list, constant attributes and options, the driver's SCRAM verifier; no request value).
     `infra/semgrep/baseline.tsv` holds 61 rows: 58 of the 59 the owner accepted above, and these three, which no decision here
-    accepted. *Recommendation*: accept the three until 2027-06-30, as their siblings.
+    accepted. *Recommendation*: accept the three until 2027-06-30, as their siblings. **Decided 2026-11-12** by the owner ("accept all", the exit review's acceptances): as recommended.
+    *(Read "and await the owner" until the owner's decision of 2026-11-12.)*
     *(Corrected by the Phase 15 exit review, 2026-11-12: (b) said "the baseline's date and row count are held by
     `SecurityScansAreWiredTest`". Its `theBaselineIsSmallAndReasoned` holds every row's expiry in the future, every row's file
     and rule real, and the rows under a ratio of the tree's statements; nothing holds the count, or holds it equal to what this
@@ -2124,7 +2125,7 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     holds only the locked period. The options: **(i)** the Phase 15 → 16 transition writes Phase 16's post-recovery verification
     drill over a source that holds a loan and a BNPL obligation, and the seeded source gains both in that task; **(ii)** seed
     them into section 11.35's seeded source now, as its own change. *Recommendation*: **(i)**, since Phase 16's exit already
-    requires a post-recovery verification before money moves, and one drill can show both.
+    requires a post-recovery verification before money moves, and one drill can show both. **Decided 2026-11-12** by the owner ("accept all", the exit review's acceptances): as recommended.
 
     **(b) The rendered manifests are not scanned by a graded misconfiguration scanner** (T4; criterion 2's "configuration scans
     of manifests"). ADR-0122 decision 2 said Trivy scans the rendered manifests. As built, the overlays are held by
@@ -2133,7 +2134,7 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     maintained catalogue of Kubernetes misconfigurations would. The options: **(i)** `trivy config` at HIGH and CRITICAL over
     every rendered overlay in the `manifests` job, as a second net beside the policies, a finding carried as item 12's are;
     **(ii)** the policies alone, ADR-0122 corrected to say so. *Recommendation*: **(i)**, in Phase 16's first wave: the
-    scanner is pinned already and it needs no account.
+    scanner is pinned already and it needs no account. **Decided 2026-11-12** by the owner ("accept all", the exit review's acceptances): as recommended.
 
 ## 7. Decided against
 
