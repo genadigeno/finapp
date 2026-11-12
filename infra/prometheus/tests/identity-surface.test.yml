@@ -57,6 +57,23 @@ tests:
         alertname: OperatorPasswordProvenOnPublic
         exp_alerts: []
 
+  # OperatorPasswordProvenOnPublic, the opposite case the review asked for (P15-TSK-043's fix round): an old proven count, unchanged for
+  # the whole run, through a failed scrape's staleness marker and, on another replica, a six-minute gap. Ten minutes after each, the
+  # instant ten minutes back has no sample; the count is still old, and nothing new was refused: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="authentication", kind="public", outcome="credential_proven"}'
+        values: '1x5 stale 1x20'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="b:8081", type="authentication", kind="unmarked", outcome="credential_proven"}'
+        values: '1x5 _x6 1x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: OperatorPasswordProvenOnPublic
+        exp_alerts: []
+      - eval_time: 21m
+        alertname: OperatorPasswordProvenOnPublic
+        exp_alerts: []
+
   # OperatorPasswordProvenOnPublic, the opposite case: staff refused everywhere else - wrong passwords, the session doors, unmarked
   # requests - over two instances, and no password proven: silent.
   - interval: 1m
@@ -113,6 +130,22 @@ tests:
               summary: "Staff are being refused for want of the edge's surface marker"
               description: "A role-holding identity was refused in the last 10 minutes at a request with no usable surface marker: the edge was rolled after the application, or something other than the edge reached it. See OPERATIONS_RUNBOOK.md section 11.37."
       - eval_time: 17m
+        alertname: StaffRefusedUnmarked
+        exp_alerts: []
+
+  # StaffRefusedUnmarked, the review's opposite case: an old unmarked count through a staleness marker and, on another replica, a
+  # six-minute gap, nothing new refused: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="a:8081", type="mfa_challenge", kind="unmarked", outcome="refused"}'
+        values: '1x5 stale 1x20'
+      - series: 'finapp_identity_surface_refusal_total{job="finapp", instance="b:8081", type="authentication", kind="unmarked", outcome="credential_unproven"}'
+        values: '1x5 _x6 1x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: StaffRefusedUnmarked
+        exp_alerts: []
+      - eval_time: 21m
         alertname: StaffRefusedUnmarked
         exp_alerts: []
 

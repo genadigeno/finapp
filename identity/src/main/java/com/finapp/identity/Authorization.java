@@ -206,6 +206,10 @@ public final class Authorization {
     /**
      * Grants a role.
      *
+     * <p><strong>Ends no session</strong>: kept for the database fixtures that stand a role up around the grant's door. A
+     * production grant goes through {@code IdentityAdministration} and the overload below, which ends a first role's sessions;
+     * {@code RoleGrantDoorTest} refuses any production call of this one (`P15-TSK-043`'s review).
+     *
      * @param assignedBy the actor granting it — never derived from the request, always the proven
      *     identity, because {@link PermissionName#ROLE_ASSIGN} is the permission that grants
      *     permissions and its trail is the only thing that makes an escalation visible

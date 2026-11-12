@@ -101,21 +101,27 @@ class RoleGrantDoorTest {
     }
 
     @Test
-    @DisplayName("the only production path to a role is the one that checks the factor: no other caller of Authorization.assign")
+    @DisplayName("the only production path to a role is the one that checks the factor and ends a first role's sessions: no other"
+            + " caller of Authorization.assign, and that one through the overload that carries the consequence (P15-TSK-043)")
     void theOnlyGrantIsTheOneThatChecks() {
-        var callers = new com.tngtech.archunit.core.importer.ClassFileImporter()
+        var calls = new com.tngtech.archunit.core.importer.ClassFileImporter()
                 .withImportOption(com.tngtech.archunit.core.importer.ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
                 .importPackages("com.finapp")
                 .stream()
                 .flatMap(javaClass -> javaClass.getMethodCallsFromSelf().stream())
                 .filter(call -> call.getName().equals("assign")
                         && call.getTargetOwner().isEquivalentTo(com.finapp.identity.Authorization.class))
-                .map(call -> call.getOriginOwner().getSimpleName())
-                .collect(java.util.stream.Collectors.toSet());
+                .toList();
 
-        assertThat(callers)
+        assertThat(calls.stream().map(call -> call.getOriginOwner().getSimpleName()).collect(java.util.stream.Collectors.toSet()))
                 .as("a new caller of Authorization.assign is a grant that skips the factor check")
                 .containsExactly("IdentityAdministration");
+        // The five-argument assign stays for the database fixtures, ninety-nine calls in fifty classes, and ends no session: a
+        // production grant through it would make a first role that leaves the customer's sessions serving (P15-TSK-043's review).
+        assertThat(calls).as("not vacuous").isNotEmpty().allSatisfy(call -> assertThat(call.getTarget().getRawParameterTypes())
+                .as("%s calls the overload that runs the grant's consequence", call.getOrigin().getFullName())
+                .hasSize(6)
+                .last().satisfies(consequence -> assertThat(consequence.isEquivalentTo(java.util.function.Function.class)).isTrue()));
     }
 
     private static MockHttpServletRequest requestWithSession() {

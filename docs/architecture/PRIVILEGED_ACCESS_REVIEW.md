@@ -212,10 +212,14 @@ application's pool does - the same URL and the same driver settings, `sslmode` a
 judgement covers it (`ReportingPoolTransportTest`). Startup refuses a reporting user naming the application's own
 role, the migrator or the superuser, which would make the grants irrelevant (`ReportingPoolRoleTest`). **Beside the names,
 what the role can do** (`P15-TSK-043`): every connection the pool makes asks the database first, and a role that is a member
-of `finapp_app` through any chain, or that holds `INSERT`, `UPDATE`, `DELETE` or `TRUNCATE` on any table outside the system
-schemas - itself, through `PUBLIC` or through any role it is a member of - is refused whatever it is called, as is a
-database with no ledger table to judge; report generation then fails closed and the instance serves on
-(`ReportingPoolCapabilityTest`; `ReportingPoolCapabilityDatabaseTest`, owed). A role is a
+of `finapp_app`, `pg_execute_server_program` or `pg_write_server_files` through any chain is refused whatever it is called; so
+is one that, by itself, through `PUBLIC` or through any role it is a member of, outside the system schemas, holds `INSERT` or
+`UPDATE` on any column of a table, view or foreign table (a column grant included, which the table's own privileges do not
+show), `DELETE`, `TRUNCATE` or `TRIGGER` on one, `UPDATE` or `USAGE` on a sequence, or `CREATE` on a schema; and so is a
+database with no ledger table to judge. Report generation then fails closed and the instance serves on
+(`ReportingPoolCapabilityTest`; `ReportingPoolCapabilityDatabaseTest`, owed; `OPERATIONS_RUNBOOK.md` §11.37 for what on-call
+sees). Functions a role may execute are not judged: the platform's `SECURITY DEFINER` functions are executable by
+`finapp_app` alone. A role is a
 cluster object: the local
 initialisation script creates it, and in a deployed database the one-time bootstrap step does (`P15-TSK-004`).
 

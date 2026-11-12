@@ -50,8 +50,11 @@ groups:
         # is a phished operator credential in use from the internet; kind="unmarked" is a request no edge marked - the rollout
         # StaffRefusedUnmarked tickets, or a caller past the edge - and pages too, by the owner's ruling (item 39 (b)): any proven refusal.
         # The second term is a replica whose counter is already above zero when first scraped (a refusal between its start and its
-        # first scrape), which increase() cannot see; it pages while that series is under ten minutes old.
-        expr: sum by (kind) (increase(finapp_identity_surface_refusal_total{outcome="credential_proven"}[10m])) > 0 or sum by (kind) (finapp_identity_surface_refusal_total{outcome="credential_proven"} > 0 unless finapp_identity_surface_refusal_total{outcome="credential_proven"} offset 10m) > 0
+        # first scrape), which increase() cannot see; it pages while that series is under ten minutes old. "New" is no sample at all in
+        # the hour before those ten minutes, never one missing instant: a failed scrape's staleness marker, or a gap of minutes, would
+        # make "x offset 10m" empty for an interval and page an old count (the review's finding). A Prometheus with no history, or back
+        # from an outage longer than that hour, still sees an old count as new once (OPERATIONS_RUNBOOK.md section 11.37).
+        expr: sum by (kind) (increase(finapp_identity_surface_refusal_total{outcome="credential_proven"}[10m])) > 0 or sum by (kind) (finapp_identity_surface_refusal_total{outcome="credential_proven"} > 0 unless present_over_time(finapp_identity_surface_refusal_total{outcome="credential_proven"}[1h] offset 10m)) > 0
         for: 0s
         labels:
           severity: page
@@ -63,7 +66,7 @@ groups:
         # P15-TSK-043 (THREAT_MODEL.md T31): staff refused at a public door because the request carried no usable surface marker, so the
         # application was rolled before the edge, or something other than the edge reached it. Found before an operator is locked out
         # and calls; the second term is OperatorPasswordProvenOnPublic's.
-        expr: sum(increase(finapp_identity_surface_refusal_total{kind="unmarked"}[10m])) > 0 or sum(finapp_identity_surface_refusal_total{kind="unmarked"} > 0 unless finapp_identity_surface_refusal_total{kind="unmarked"} offset 10m) > 0
+        expr: sum(increase(finapp_identity_surface_refusal_total{kind="unmarked"}[10m])) > 0 or sum(finapp_identity_surface_refusal_total{kind="unmarked"} > 0 unless present_over_time(finapp_identity_surface_refusal_total{kind="unmarked"}[1h] offset 10m)) > 0
         for: 0s
         labels:
           severity: ticket

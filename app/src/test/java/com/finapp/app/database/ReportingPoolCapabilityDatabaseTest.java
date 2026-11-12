@@ -93,6 +93,68 @@ class ReportingPoolCapabilityDatabaseTest {
     }
 
     @Test
+    @DisplayName("a column grant (P15-TSK-043's review): INSERT on one column of the journal, UPDATE on one column of a report"
+            + " run - refused, though has_table_privilege answers false for both")
+    void aColumnGrantIsRefused() throws SQLException {
+        String inserting = role("rp_colinsert_", true);
+        String updating = role("rp_colupdate_", true);
+        bootstrap("GRANT USAGE ON SCHEMA ledger TO " + inserting, "GRANT INSERT (id) ON ledger.journal_entry TO " + inserting,
+                "GRANT USAGE ON SCHEMA accounting TO " + updating, "GRANT UPDATE (status) ON accounting.report_run TO " + updating);
+        assertThat(rootAnswers("SELECT has_table_privilege('" + inserting + "', 'ledger.journal_entry', 'INSERT')"))
+                .as("the table's own privileges hold no column grant").isFalse();
+
+        assertRefused(inserting, "can write ledger.journal_entry (INSERT)");
+        assertRefused(updating, "can write accounting.report_run (UPDATE)");
+    }
+
+    @Test
+    @DisplayName("a column grant held by a role it is a member of without inheriting, and one granted to PUBLIC: each refused, the"
+            + " PUBLIC one refusing the reporting role itself until it is revoked")
+    void aColumnGrantThroughAMembershipOrPublicIsRefused() throws SQLException {
+        String carrier = role("rp_colcarrier_", false);
+        String member = role("rp_colmember_", true);
+        bootstrap("GRANT UPDATE (status) ON accounting.report_run TO " + carrier, "ALTER ROLE " + member + " NOINHERIT",
+                "GRANT " + carrier + " TO " + member);
+        assertRefused(member, "can write accounting.report_run (UPDATE)");
+
+        bootstrap("GRANT INSERT (id) ON ledger.journal_entry TO PUBLIC");
+        try {
+            assertRefused(DatabaseRoles.required("finapp.db.reporting.user"), DatabaseRoles.required("finapp.db.reporting.password"),
+                    "can write ledger.journal_entry (INSERT)");
+        } finally {
+            bootstrap("REVOKE INSERT (id) ON ledger.journal_entry FROM PUBLIC");
+        }
+        assertOpens(DatabaseRoles.required("finapp.db.reporting.user"), DatabaseRoles.required("finapp.db.reporting.password"));
+    }
+
+    @Test
+    @DisplayName("the other write routes: TRIGGER on a ledger table, UPDATE and USAGE on an order sequence, CREATE on a schema,"
+            + " and the server's program and file writers - each refused; SELECT on the sequence alone opens")
+    void theOtherWriteRoutesAreRefused() throws SQLException {
+        String trigger = role("rp_trigger_", true);
+        String setting = role("rp_sequpdate_", true);
+        String advancing = role("rp_sequsage_", true);
+        String reading = role("rp_seqselect_", true);
+        String creating = role("rp_schemacreate_", true);
+        String program = role("rp_serverprogram_", true);
+        String files = role("rp_serverfiles_", true);
+        bootstrap("GRANT TRIGGER ON ledger.journal_entry TO " + trigger,
+                "GRANT UPDATE ON SEQUENCE lending.record_order TO " + setting,
+                "GRANT USAGE ON SEQUENCE lending.record_order TO " + advancing,
+                "GRANT USAGE ON SCHEMA lending TO " + reading, "GRANT SELECT ON SEQUENCE lending.record_order TO " + reading,
+                "GRANT CREATE ON SCHEMA accounting TO " + creating,
+                "GRANT pg_execute_server_program TO " + program, "GRANT pg_write_server_files TO " + files);
+
+        assertRefused(trigger, "can write ledger.journal_entry (TRIGGER)");
+        assertRefused(setting, "can write sequence lending.record_order (UPDATE)");
+        assertRefused(advancing, "can write sequence lending.record_order (USAGE)");
+        assertRefused(creating, "can write schema accounting (CREATE)");
+        assertRefused(program, "can use the rights of pg_execute_server_program");
+        assertRefused(files, "can use the rights of pg_write_server_files");
+        assertOpens(reading, login);
+    }
+
+    @Test
     @DisplayName("the positive control: finapp_reporting opens, reads, and the check ran on its connection")
     void theReportingRoleOpens() throws SQLException {
         try (ReportingPool pool = new ReportingPool(DatabaseRoles.required("finapp.db.url"), Map.of(),
@@ -118,9 +180,30 @@ class ReportingPoolCapabilityDatabaseTest {
     // ------------------------------------------------------------------------------------------- the world
 
     private void assertRefused(String role, String reason) throws SQLException {
-        try (ReportingPool pool = new ReportingPool(DatabaseRoles.required("finapp.db.url"), Map.of(), role, login, 1)) {
+        assertRefused(role, login, reason);
+    }
+
+    private static void assertRefused(String role, String password, String reason) throws SQLException {
+        try (ReportingPool pool = new ReportingPool(DatabaseRoles.required("finapp.db.url"), Map.of(), role, password, 1)) {
             assertThatExceptionOfType(SQLException.class).as(role).isThrownBy(pool::open)
                     .satisfies(refused -> assertThat(messages(refused)).as(role).contains(reason));
+        }
+    }
+
+    private static void assertOpens(String role, String password) throws SQLException {
+        try (ReportingPool pool = new ReportingPool(DatabaseRoles.required("finapp.db.url"), Map.of(), role, password, 1);
+                Connection connection = pool.open();
+                Statement read = connection.createStatement();
+                ResultSet one = read.executeQuery("SELECT 1")) {
+            assertThat(one.next()).as(role).isTrue();
+        }
+    }
+
+    private static boolean rootAnswers(String sql) throws SQLException {
+        try (Connection root = DatabaseRoles.bootstrap(); Statement statement = root.createStatement();
+                ResultSet answer = statement.executeQuery(sql)) {
+            assertThat(answer.next()).isTrue();
+            return answer.getBoolean(1);
         }
     }
 

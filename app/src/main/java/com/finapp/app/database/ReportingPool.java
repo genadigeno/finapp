@@ -66,15 +66,21 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
      * <p><strong>Capability, not a name.</strong> {@code ReportingPoolBeans} refuses the writer's names at the application's
      * start; a role holding a writer's rights under any other name passed it. This refuses:
      * <ul>
-     *   <li>a role that is a member of {@code finapp_app} through any chain, inheriting or not ({@code MEMBER}: a membership
-     *       that only lets the role {@code SET ROLE} to the writer counts, which {@code USAGE} would miss);</li>
-     *   <li>a role that holds {@code INSERT}, {@code UPDATE}, {@code DELETE} or {@code TRUNCATE} on any table, view or foreign
-     *       table outside the system schemas - itself, through {@code PUBLIC}, or through any role it is a member of, so a
-     *       writer of another name and {@code pg_write_all_data} are refused by what they can do. Superusers are refused by
-     *       both;</li>
+     *   <li>a role that is a member of {@code finapp_app}, {@code pg_execute_server_program} or {@code pg_write_server_files}
+     *       through any chain, inheriting or not ({@code MEMBER}: a membership that only lets the role {@code SET ROLE} to the
+     *       writer counts, which {@code USAGE} would miss);</li>
+     *   <li>a role that can write, outside the system schemas, by itself, through {@code PUBLIC} or through any role it is a
+     *       member of: {@code INSERT} or {@code UPDATE} on any column of any table, view or foreign table
+     *       ({@code has_any_column_privilege}, because a column grant is not in the table's own privileges and
+     *       {@code has_table_privilege} never sees it); {@code DELETE}, {@code TRUNCATE} or {@code TRIGGER} on one;
+     *       {@code UPDATE} or {@code USAGE} on a sequence (each sets or advances it; {@code SELECT} is a read); {@code CREATE}
+     *       on a schema. So a writer of another name and {@code pg_write_all_data} are refused by what they can do, and a
+     *       superuser by both;</li>
      *   <li>a database with no ledger table to judge: the check cannot have looked at what it exists for, so it fails closed
      *       rather than pass over an empty catalogue.</li>
      * </ul>
+     * Functions a role may execute are not judged: every {@code SECURITY DEFINER} function the platform defines revokes
+     * {@code EXECUTE} from {@code PUBLIC} and grants it to {@code finapp_app} alone, and a member of that role is refused above.
      *
      * <p><strong>Where the pool starts.</strong> The pool is lazy by design, so a reporting role that cannot connect never
      * takes a replica out of readiness: its start is its first connection, and the check then runs again on every
@@ -85,13 +91,17 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
     static final String CAPABILITY_CHECK = """
             DO $capability$
             DECLARE
+                held text;
                 ledger_tables integer;
                 writable text;
             BEGIN
-                IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles writer
-                           WHERE writer.rolname = 'finapp_app'
-                             AND pg_catalog.pg_has_role(current_user, writer.oid, 'MEMBER')) THEN
-                    RAISE EXCEPTION 'finapp reporting pool refused: % can use the rights of finapp_app', current_user;
+                SELECT writer.rolname INTO held FROM pg_catalog.pg_roles writer
+                    WHERE writer.rolname IN ('finapp_app', 'pg_execute_server_program', 'pg_write_server_files')
+                      AND pg_catalog.pg_has_role(current_user, writer.oid, 'MEMBER')
+                    ORDER BY writer.rolname
+                    LIMIT 1;
+                IF held IS NOT NULL THEN
+                    RAISE EXCEPTION 'finapp reporting pool refused: % can use the rights of %', current_user, held;
                 END IF;
                 SELECT count(*) INTO ledger_tables
                     FROM pg_catalog.pg_class judged
@@ -102,16 +112,41 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
                 END IF;
                 WITH mine AS MATERIALIZED (
                     SELECT member.oid FROM pg_catalog.pg_roles member
-                    WHERE pg_catalog.pg_has_role(current_user, member.oid, 'MEMBER'))
-                SELECT pg_catalog.format('%I.%I (%s)', home.nspname, judged.relname, act.privilege) INTO writable
-                    FROM mine
-                    CROSS JOIN pg_catalog.pg_class judged
-                    JOIN pg_catalog.pg_namespace home ON home.oid = judged.relnamespace
-                    CROSS JOIN unnest(ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) AS act(privilege)
-                    WHERE judged.relkind IN ('r', 'p', 'v', 'f')
-                      AND home.nspname <> 'information_schema' AND home.nspname !~ '^pg_'
-                      AND pg_catalog.has_table_privilege(mine.oid, judged.oid, act.privilege)
-                    LIMIT 1;
+                    WHERE pg_catalog.pg_has_role(current_user, member.oid, 'MEMBER')),
+                nonsystem AS MATERIALIZED (
+                    SELECT home.oid, home.nspname FROM pg_catalog.pg_namespace home
+                    WHERE home.nspname <> 'information_schema' AND home.nspname !~ '^pg_')
+                SELECT any_write.found INTO writable FROM (
+                    SELECT pg_catalog.format('%I.%I (%s)', nonsystem.nspname, judged.relname, act.privilege) AS found
+                        FROM mine
+                        CROSS JOIN pg_catalog.pg_class judged
+                        JOIN nonsystem ON nonsystem.oid = judged.relnamespace
+                        CROSS JOIN unnest(ARRAY['INSERT', 'UPDATE']) AS act(privilege)
+                        WHERE judged.relkind IN ('r', 'p', 'v', 'f')
+                          AND pg_catalog.has_any_column_privilege(mine.oid, judged.oid, act.privilege)
+                    UNION ALL
+                    SELECT pg_catalog.format('%I.%I (%s)', nonsystem.nspname, judged.relname, act.privilege)
+                        FROM mine
+                        CROSS JOIN pg_catalog.pg_class judged
+                        JOIN nonsystem ON nonsystem.oid = judged.relnamespace
+                        CROSS JOIN unnest(ARRAY['DELETE', 'TRUNCATE', 'TRIGGER']) AS act(privilege)
+                        WHERE judged.relkind IN ('r', 'p', 'v', 'f')
+                          AND pg_catalog.has_table_privilege(mine.oid, judged.oid, act.privilege)
+                    UNION ALL
+                    SELECT pg_catalog.format('sequence %I.%I (%s)', nonsystem.nspname, judged.relname, act.privilege)
+                        FROM mine
+                        CROSS JOIN pg_catalog.pg_class judged
+                        JOIN nonsystem ON nonsystem.oid = judged.relnamespace
+                        CROSS JOIN unnest(ARRAY['UPDATE', 'USAGE']) AS act(privilege)
+                        WHERE judged.relkind = 'S'
+                          AND pg_catalog.has_sequence_privilege(mine.oid, judged.oid, act.privilege)
+                    UNION ALL
+                    SELECT pg_catalog.format('schema %I (CREATE)', nonsystem.nspname)
+                        FROM mine
+                        CROSS JOIN nonsystem
+                        WHERE pg_catalog.has_schema_privilege(mine.oid, nonsystem.oid, 'CREATE')
+                ) AS any_write
+                LIMIT 1;
                 IF writable IS NOT NULL THEN
                     RAISE EXCEPTION 'finapp reporting pool refused: % can write %', current_user, writable;
                 END IF;

@@ -36,26 +36,28 @@ class SurfaceRefusalAlertRulesTest {
     private static final String SERIES = "finapp_identity_surface_refusal_total";
 
     @Test
-    @DisplayName("the page: any proven refusal on any instance, by kind, in ten minutes - or a replica first seen already counting one -"
+    @DisplayName("the page: any proven refusal on any instance, by kind, in ten minutes - or a replica first seen already counting one,"
+            + " new meaning no sample in the hour before those ten minutes, so a staleness marker or a gap is not new -"
             + " at page, waiting for nothing")
     void thePageIsAsWritten() {
         Map<String, Object> rule = rule(PAGE);
         String proven = SERIES + "{outcome=\"credential_proven\"}";
         assertThat(String.valueOf(rule.get("expr")).strip()).isEqualTo(
-                "sum by (kind) (increase(" + proven + "[10m])) > 0 or sum by (kind) (" + proven + " > 0 unless " + proven
-                        + " offset 10m) > 0");
+                "sum by (kind) (increase(" + proven + "[10m])) > 0 or sum by (kind) (" + proven + " > 0 unless present_over_time(" + proven
+                        + "[1h] offset 10m)) > 0");
         assertThat(severity(rule)).isEqualTo("page");
         assertThat(String.valueOf(rule.get("for"))).isEqualTo("0s");
     }
 
     @Test
-    @DisplayName("the ticket: any unmarked refusal at any door on any instance in ten minutes - or a replica first seen already"
+    @DisplayName("the ticket: any unmarked refusal at any door on any instance in ten minutes - or a replica first seen already, new"
+            + " meaning no sample in the hour before those ten minutes,"
             + " counting one - at ticket, waiting for nothing")
     void theTicketIsAsWritten() {
         Map<String, Object> rule = rule(TICKET);
         String unmarked = SERIES + "{kind=\"unmarked\"}";
         assertThat(String.valueOf(rule.get("expr")).strip()).isEqualTo(
-                "sum(increase(" + unmarked + "[10m])) > 0 or sum(" + unmarked + " > 0 unless " + unmarked + " offset 10m) > 0");
+                "sum(increase(" + unmarked + "[10m])) > 0 or sum(" + unmarked + " > 0 unless present_over_time(" + unmarked + "[1h] offset 10m)) > 0");
         assertThat(severity(rule)).isEqualTo("ticket");
         assertThat(String.valueOf(rule.get("for"))).isEqualTo("0s");
     }
@@ -114,6 +116,9 @@ class SurfaceRefusalAlertRulesTest {
             assertThat(firing).as("%s: a case where it fires", alert).isGreaterThanOrEqualTo(2);
             assertThat(silent).as("%s: the opposite case, where it stays silent", alert).isGreaterThanOrEqualTo(2);
         }
+        // P15-TSK-043's review: an old count through a failed scrape's staleness marker, and through a gap of minutes, planted for each.
+        assertThat(cases.split("values: '1x5 stale 1x20'", -1)).as("a staleness marker in an old count, for each alert").hasSize(3);
+        assertThat(cases.split("values: '1x5 _x6 1x20'", -1)).as("a six-minute gap in an old count, for each alert").hasSize(3);
     }
 
     private static String severity(Map<String, Object> rule) {

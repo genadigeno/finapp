@@ -1762,7 +1762,9 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
 
 **Diagnose and act**, as section 10.1's four steps: the schedule off (`AccountingScheduleOff`), the leg failing (`AccountingCloseLegFailing`), the database, an overtaken worker holding the thread. Restore the leg and the next poll claims every attempt; the gauge falls within 15 s. Nothing here needs a person's act on the rows, and **no door claims an attempt by hand**. **`AccountingCloseCheckStallUnreadable`** is the gauge publishing no value for 15 minutes in scrapes that complete: section 10.14, which also says when it cannot fire; `GET .../close-run` still answers per period, or refuses.
 
-**`AccountingCloseLegFailing`.** `finapp.accounting.close.leg.failed{leg}` rose more than once in two hours: `open`, `checks`, `orphans` or `inquiry`. One failure alone is silent, a transaction lost at a bad moment. Two hours so that the hourly `open` leg's second failure is seen. The log says `The accounting close schedule's <leg> leg failed` with its exception's class, no message; `checks` also counts a conclusion that could not commit (`A close check could not be concluded`), whose lease then lapses and is reclaimed, nothing having passed. `inquiry`: section 10.6. **What it means for the month**: `open` failing means no next month opens; `checks`, no run and no judgement; `orphans`, a report run stuck `GENERATING` past its lease. Fix what it fails on. A restart loses nothing.
+**`AccountingCloseLegFailing`.** `finapp.accounting.close.leg.failed{leg}` rose more than once in two hours: `open`, `checks`, `orphans` or `inquiry`. One failure alone is silent, a transaction lost at a bad moment. Two hours so that the hourly `open` leg's second failure is seen. The log says `The accounting close schedule's <leg> leg failed` with its exception's class, no message; `checks` also counts a conclusion that could not commit (`A close check could not be concluded`), whose lease then lapses and is reclaimed, nothing having passed. `inquiry`: section 10.6. **What it means for the month**: `open` failing means no next month opens; `checks`, no run and no judgement; `orphans`, a report run stuck `GENERATING` past its lease. Fix what it fails on. A restart loses nothing. *(`orphans` failing with
+`AccountingStorageException` on every instance, and the database logging `finapp reporting pool refused`, is the reporting pool
+refusing a role that can write: section 11.37, `P15-TSK-043`.)*
 
 ### 10.10 A divergence: a FINAL report that does not reproduce - `AccountingReportDiverged`
 
@@ -1882,7 +1884,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.33 Rotations rehearsed on `kind`: running them, reading them, the last record *(written 2026-11-11, below)* | `P15-TSK-020` | `P15-TSK-020` |
 | 11.34 Telemetry: the collector and its second net, retention by class, finding one payment, the collector down *(written 2026-11-11, below)* | `P15-TSK-023` | `P15-TSK-023` (on `kind`), `-032` |
 | 11.35 Restore, held until the platform's own checks pass on it; the restore rehearsal and its last record *(written 2026-11-11, below)* | `P15-TSK-030` | `P15-TSK-030` (the logical restore, on containers); the managed restore is `THREAT_MODEL.md` §6 item 38 |
-| 11.37 Staff refused where staff are refused: the page on a proven password, the ticket on an unmarked refusal, a first role's sign-in again *(written 2026-11-12, below)* | `P15-TSK-043` | `-032` |
+| 11.37 Staff refused where staff are refused: the page on a proven password, the ticket on an unmarked refusal, a first role's sign-in again; a reporting pool that refuses its role *(written 2026-11-12, below)* | `P15-TSK-043` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -3203,7 +3205,7 @@ The product proofs have no plant of their own here: each is the platform's check
 
 **What this does not mean.** One node, one machine, three replicas. The store is the operator's `fake` provider: the operator's reconciliation, ownership and generation handling were observed, never a cloud store's access control, audit or versions (`AWSPREVIOUS` is the rehearsal's own file). The broker and the database are test-only copies; MSK's SCRAM association and RDS's master user were not involved. The callback rotation is the payment webhook door's; the other four doors share its window code (`CallbackDoorsHoldTheirWindowTest`), not this run. The key rotation is the MFA ring's; the other seven rings are built by the same `ConfinedKeyRing` over the same `KeyRing`, each from its own key class's properties, and the check value is that shared code's; the cipher that writes and reads under each ring is its module's own (the MFA ring's is `SecretCipher`), and no row under any of the other seven was written or read across a rotation here. A provider's API credential and a report source's were not rotated: the simulated provider verifies none (`THREAT_MODEL.md` section 6 item 36 (c)). Nor were the migrator's credential, the master credential or the source-bucket key (item 36 (d)). Runs 1 to 3 were on the branch before master's merges, the callback and certificate rotations among them, and neither has run since: their own lines are unchanged since but for a comment, and the helpers they share with the other rotations ran in run 5. Run 5 ran the database, Kafka and key rotations on the final bytes, after the merge that moved the client's staff sign-in to the operator host (`P15-TSK-042`). kindnetd has not answered (`THREAT_MODEL.md` section 6 item 30). The numbers are from a loaded development machine.
 
-### 11.37 Staff refused where staff are refused - `OperatorPasswordProvenOnPublic`, `StaffRefusedUnmarked`; a first role's sign-in again (`P15-TSK-043`)
+### 11.37 Staff refused where staff are refused - `OperatorPasswordProvenOnPublic`, `StaffRefusedUnmarked`; a first role's sign-in again; a reporting pool that refuses its role (`P15-TSK-043`)
 
 *(Written by `P15-TSK-043`, 2026-11-12, from `infra/prometheus/rules/flows.yml`'s identity group and its promtool cases. Not rehearsed:
 no real receiver exists, and `P15-TSK-032` rehearses section 11.)*
@@ -3212,7 +3214,8 @@ no real receiver exists, and `P15-TSK-032` rehearses section 11.)*
 issues or strengthens access, on a surface that refuses staff (section 11.26's operators' half): `kind` is `public` (the public edge's
 marker) or `unmarked` (no usable marker where an edge must have set one), and at sign-in `outcome` says whether the password was the
 identity's own. Two rules read it, each over every replica, with a second term for a replica whose counter is already above zero at its
-first scrape (a refusal between its start and that scrape), which a rate cannot see:
+first scrape (a refusal between its start and that scrape), which a rate cannot see. "First" means the series had no sample at all in
+the hour before the last ten minutes, so a failed scrape or a gap of minutes in an old count raises nothing:
 
 | Alert | Fires on | Severity |
 |---|---|---|
@@ -3233,6 +3236,14 @@ first scrape (a refusal between its start and that scrape), which a rate cannot 
   a compromise and a hole in `finapp-app-ingress`, so the policy is checked first.
 - Either way, the incident's own procedure is section 11.12's, which `P15-TSK-032` writes.
 
+**An old count raised once.** A Prometheus with no history - a new one, or one whose storage was lost - or one back from an outage longer
+than the hour the second term looks back over sees a replica's old non-zero count as new, and raises each alert once for ten minutes,
+though nothing was refused just now. Tell it from a new refusal before acting: the audit record is the truth. A new refusal has its
+`identity.PublicSurfaceRefused` row inside those ten minutes (`occurred_at`, `change_summary` naming the surface and, at sign-in,
+`credential=proven`); an old count has none there, its rows being as old as the replica's start, and `increase(...[10m])` over the series
+is zero. Prometheus's own `prometheus_tsdb_head_min_time` near the alert's start says the history is new. Stand it down with that
+recorded; a refusal that is in the trail is handled as above.
+
 **`StaffRefusedUnmarked` (ticket): the application is ahead of the edge, or something reached it past the edge.** Staff are refused at
 every door that signs in or strengthens a session, customers are served, so this is never an outage for them. Roll the edge forward (or
 the application back) as section 11.26's *Rolling it out, and back* says; if the edge is as built, check `finapp-app-ingress` before
@@ -3244,9 +3255,25 @@ administrator when `n` > 0). They sign in on the operator host; their customer s
 A second role ends nothing. The grant's review confirms the recovery channels and the factor the identity added as a customer
 (`PRIVILEGED_ACCESS_REVIEW.md` section 5, question 6).
 
-**Testing it.** `infra/prometheus/tests/identity-surface.test.yml`: each rule fires on its series, on a replica first scraped already
-counting, and is silent on the other's series and on an old count; run by `infra/scripts/alert-rules-check.sh` and CI's `alerts` job.
-`SurfaceRefusalAlertRulesTest` holds the rules as written over the meter's own series.
+**A reporting pool that refuses its role** (`P15-TSK-043`; `PRIVILEGED_ACCESS_REVIEW.md` section 8). Report generation's pool asks the
+database, as each connection's first statement, whether its role can write, and a connection whose role can is a connection that failed:
+no report run generates, every replica keeps serving everything else. What on-call sees: the database's own log line, `ERROR:  finapp
+reporting pool refused: <role> can write <schema>.<table> (<privilege>)` (or `can use the rights of <role>`, or `no ledger table to
+judge`), followed by the statement; in the application only the SQLState, never the reason (`DatabaseFailure`): a report request answers
+`500` with `ERROR ... Unhandled error on <route>` and `AccountingStorageException: opening a report snapshot (SQLState P0001)`, and the
+accounting schedule's `orphans` leg logs `The accounting close schedule's orphans leg failed: AccountingStorageException` each tick, which
+`AccountingCloseLegFailing` (section 10.9) tickets; the run stays `GENERATING` until its lease, and the orphan leg retries it. What to
+do: read the database's line, then the role's grants and memberships (`\dp`, `\du` or `information_schema.column_privileges` for a
+column grant), and take away the write - a grant, a membership, a `PUBLIC` grant someone made - never widen anything to make the check
+pass, and never point the pool at another role. The next connection is judged again, so nothing restarts. **Connections already open
+keep serving as the changed role** until Hikari's `maxLifetime` (its default, 30 minutes; this pool does not set it) replaces them, and
+those connections read inside `REPEATABLE READ READ ONLY` snapshots, which refuse a write at the transaction; to end them sooner, roll
+the fleet.
+
+**Testing it.** `infra/prometheus/tests/identity-surface.test.yml`: each rule fires on its series and on a replica first scraped already
+counting, and is silent on the other's series, on an old count, and on an old count through a staleness marker or a six-minute gap; run
+by `infra/scripts/alert-rules-check.sh` and CI's `alerts` job. `SurfaceRefusalAlertRulesTest` holds the rules as written over the meter's
+own series.
 
 **Failure and rollback.** A rule that cannot be evaluated pages nobody; `InstanceDown` and `FinappTargetsAbsent` (section 11.8) are what
 say the scrape is gone. Removing either rule is a change to `flows.yml`, which the tests above refuse.
