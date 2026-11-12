@@ -1762,7 +1762,9 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
 
 **Diagnose and act**, as section 10.1's four steps: the schedule off (`AccountingScheduleOff`), the leg failing (`AccountingCloseLegFailing`), the database, an overtaken worker holding the thread. Restore the leg and the next poll claims every attempt; the gauge falls within 15 s. Nothing here needs a person's act on the rows, and **no door claims an attempt by hand**. **`AccountingCloseCheckStallUnreadable`** is the gauge publishing no value for 15 minutes in scrapes that complete: section 10.14, which also says when it cannot fire; `GET .../close-run` still answers per period, or refuses.
 
-**`AccountingCloseLegFailing`.** `finapp.accounting.close.leg.failed{leg}` rose more than once in two hours: `open`, `checks`, `orphans` or `inquiry`. One failure alone is silent, a transaction lost at a bad moment. Two hours so that the hourly `open` leg's second failure is seen. The log says `The accounting close schedule's <leg> leg failed` with its exception's class, no message; `checks` also counts a conclusion that could not commit (`A close check could not be concluded`), whose lease then lapses and is reclaimed, nothing having passed. `inquiry`: section 10.6. **What it means for the month**: `open` failing means no next month opens; `checks`, no run and no judgement; `orphans`, a report run stuck `GENERATING` past its lease. Fix what it fails on. A restart loses nothing.
+**`AccountingCloseLegFailing`.** `finapp.accounting.close.leg.failed{leg}` rose more than once in two hours: `open`, `checks`, `orphans` or `inquiry`. One failure alone is silent, a transaction lost at a bad moment. Two hours so that the hourly `open` leg's second failure is seen. The log says `The accounting close schedule's <leg> leg failed` with its exception's class, no message; `checks` also counts a conclusion that could not commit (`A close check could not be concluded`), whose lease then lapses and is reclaimed, nothing having passed. `inquiry`: section 10.6. **What it means for the month**: `open` failing means no next month opens; `checks`, no run and no judgement; `orphans`, a report run stuck `GENERATING` past its lease. Fix what it fails on. A restart loses nothing. *(`orphans` failing with
+`AccountingStorageException` on every instance, and the database logging `finapp reporting pool refused`, is the reporting pool
+refusing a role that can write: section 11.37, `P15-TSK-043`.)*
 
 ### 10.10 A divergence: a FINAL report that does not reproduce - `AccountingReportDiverged`
 
@@ -1883,6 +1885,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.34 Telemetry: the collector and its second net, retention by class, finding one payment, the collector down *(written 2026-11-11, below)* | `P15-TSK-023` | `P15-TSK-023` (on `kind`), `-032` |
 | 11.35 Restore, held until the platform's own checks pass on it; the restore rehearsal and its last record *(written 2026-11-11, below)* | `P15-TSK-030` | `P15-TSK-030` (the logical restore, on containers); the managed restore is `THREAT_MODEL.md` §6 item 38 |
 | 11.36 Promote and roll back by digest; the delivery's order; the production approval boundary and the rules only the owner can apply *(written 2026-11-12, below)* | `P15-TSK-017` | `P15-TSK-017` (the refusals on repositories built per test, the signature refusals on CI's own registry); `-032` (through the controller, on `kind`) |
+| 11.37 Staff refused where staff are refused: the page on a proven password, the ticket on an unmarked refusal, a first role's sign-in again; a reporting pool that refuses its role *(written 2026-11-12, below)* | `P15-TSK-043` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -1913,6 +1916,7 @@ row.)*
 *(Added 2026-11-11 by `P15-TSK-023`: §11.34 below is written, from `deploy/observability/` and `infra/scripts/telemetry-check.sh`, and its `kind` half has run once on one machine; no deployed environment has a telemetry backend.)*
 *(Added 2026-11-11 by `P15-TSK-030`: §11.35 below is written, row 11.5's procedure, and records the restore rehearsal: a logical backup restored into containers on one machine. A managed restore has not run anywhere.)*
 *(Added 2026-11-12 by `P15-TSK-017`: §11.36 below is written, rows 11.2 and the promotion's half of 11.3, from the promotion, the smoke and the delivery's manifests. No environment exists and Argo CD has not run here: the refusals have run on repositories built per test and on CI's own registry, and `-032` rehearses the rest through the controller.)*
+*(Added 2026-11-12 by `P15-TSK-043`: §11.37 below is written, from `infra/prometheus/rules/flows.yml`'s identity group and its promtool cases, and §11.26's operators' half gains its two alerts, a first role's sign-in again and the operator edge's trace context; not yet rehearsed.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
@@ -2882,11 +2886,13 @@ the controller pods do not start.
 
 **Failure and rollback.** An edge outage is refused traffic and nothing more: the application stays ready, and its schedules and consumers do not notice. Revert by the previous manifest digest; every route and limit is in the ConfigMap's hash, so a revert restores them together.
 
-**The operators' half: staff on the operator host alone** *(written by `P15-TSK-042`, 2026-11-11, from the code and its checks; not yet run on a cluster - the `kind` rehearsal's edge step asserts it from its next run)*. Each controller sets `X-Finapp-Surface` (`public-edge.yaml`, `operator-edge.yaml`, the `edge-headers` middleware), replacing whatever a client sent. The application refuses a role-holding identity - anyone holding a live role - at sign-in, the MFA step, a factor's enrolment and confirmation, the password change, a recovery channel's addition and recovery, unless the operator edge marked the request. The word is trusted only because `finapp-app-ingress` admits no pod but the two controllers to port 8080: a change to that policy that admits anything else makes the marker anybody's to write, and is a security change, not a network one. One exception is the policy's own: a pod cannot block its node, and on EKS the network policy agent admits the node's address on every port, so a host-network process on that node could write the marker; it could reach the operator routes directly as well, so the marker gives it nothing more, and keeping host-network workloads off the application's nodes is what bounds both.
+**The operators' half: staff on the operator host alone** *(written by `P15-TSK-042`, 2026-11-11, from the code and its checks; not yet run on a cluster - the `kind` rehearsal's edge step asserts it from its next run; its two signals alerted, a first role's sign-in again and the operator edge's trace context added by `P15-TSK-043`, 2026-11-12, section 11.37)*. Each controller sets `X-Finapp-Surface` (`public-edge.yaml`, `operator-edge.yaml`, the `edge-headers` middleware), replacing whatever a client sent. The application refuses a role-holding identity - anyone holding a live role - at sign-in, the MFA step, a factor's enrolment and confirmation, the password change, a recovery channel's addition and recovery, unless the operator edge marked the request. The word is trusted only because `finapp-app-ingress` admits no pod but the two controllers to port 8080: a change to that policy that admits anything else makes the marker anybody's to write, and is a security change, not a network one. One exception is the policy's own: a pod cannot block its node, and on EKS the network policy agent admits the node's address on every port, so a host-network process on that node could write the marker; it could reach the operator routes directly as well, so the marker gives it nothing more, and keeping host-network workloads off the application's nodes is what bounds both.
 
 **Rolling it out, and back.** The edge first, then the application: an application that requires the marker must never meet an edge that does not send it. The order is always safe, because an application without this change ignores the header. To roll back, the application first, then the edge if at all; the header left on the edge harms nothing. Wherever nothing is deployed in front of the application - no edge network named (`FINAPP_EDGE_PROXIES` blank) and its database on loopback: a laptop, the test tiers - it needs no marker and the one port serves both surfaces, as before the edge. A deployment whose database is reached through a sidecar on 127.0.0.1 is still behind the edge, because its overlay names the edge network.
 
-**An operator cannot sign in.** First: are they on the operator host? On the public one their own password is refused with the same `401` as a wrong one, by design, and nothing is counted against their lockout there. Read `identity.PublicSurfaceRefused` for their identity (`platform.audit_record`, `target_id` the identity): `surface=public` means they used the public host; `credential=proven` on it means their correct password was presented from the internet: treat it as a phished credential to be replaced on the operator host, and the identity's sessions ended, not as a support ticket. `surface=unmarked` means the request reached the application with no usable marker: the edge was rolled after the application, or something other than the edge reached it. `finapp_identity_surface_refusal_total{kind="unmarked"}` rising across operators says the first; roll the edge forward (or the application back), and check `finapp-app-ingress` before anything else if the edge is as built. Customers are served throughout, so this is never an outage for them. An operator who only lost their password recovers on the operator host; the public host answers their recovery request `202` and does nothing. A staff member who banks on the platform with the same login cannot sign in from the internet to their own accounts either; they use them from the operator host, or keep a second, customer-only login (`THREAT_MODEL.md` section 6 item 39 (c)). `finapp_identity_surface_refusal_total{outcome="credential_proven"}` counts the refused sign-ins whose password was right: any increase is a phished credential.
+**An operator cannot sign in.** First: are they on the operator host? On the public one their own password is refused with the same `401` as a wrong one, by design, and nothing is counted against their lockout there. Read `identity.PublicSurfaceRefused` for their identity (`platform.audit_record`, `target_id` the identity): `surface=public` means they used the public host; `credential=proven` on it means their correct password was presented from the internet: treat it as a phished credential to be replaced on the operator host, and the identity's sessions ended, not as a support ticket. `surface=unmarked` means the request reached the application with no usable marker: the edge was rolled after the application, or something other than the edge reached it. `finapp_identity_surface_refusal_total{kind="unmarked"}` rising across operators says the first, and its ticket, `StaffRefusedUnmarked` (section 11.37), says it within ten minutes of the first refusal; roll the edge forward (or the application back), and check `finapp-app-ingress` before anything else if the edge is as built. Customers are served throughout, so this is never an outage for them. A person given their first role cannot use the sessions they held as a customer: the grant ended them, and they sign in again on the operator host (section 11.37). An operator who only lost their password recovers on the operator host; the public host answers their recovery request `202` and does nothing. A staff member who banks on the platform with the same login cannot sign in from the internet to their own accounts either; they use them from the operator host, or keep a second, customer-only login (`THREAT_MODEL.md` section 6 item 39 (c)). `finapp_identity_surface_refusal_total{outcome="credential_proven"}` counts the refused sign-ins whose password was right: any increase pages, `OperatorPasswordProvenOnPublic` (section 11.37), and is a phished credential until a rollout explains an unmarked one.
+
+**Staff's tooling and the trace** *(`P15-TSK-043`, 2026-11-12; `THREAT_MODEL.md` section 6 item 37 (f))*. The operator edge removes a caller's `traceparent`, `tracestate` and `baggage`, as the public edge does (`operator-edge.yaml`'s `edge-headers`), so every operator request starts a trace of its own and no member of staff can switch tracing off for their own requests. Find an operator's request by the `X-Correlation-Id` its answer carries: section 11.34's Tempo and Loki queries find its spans, where the tail policy kept its trace, and the lines it logged, and a tool that sends its own `X-Correlation-Id` gets it back as `X-Client-Correlation-Id` (ADR-0034). Neither edge sets or removes either header.
 
 ### 11.30 Abuse limits - `finapp.abuse.requests`, `PublicDoorsRefusingMost` (`P15-TSK-022`)
 
@@ -3328,6 +3334,79 @@ has not finished; `asks for`/`runs ... not`, the cluster runs something the over
 role's, and need an account. The registry's untagged-expiry rule waits for that copy, and the signature repository waits for the owner's
 decision on the scanner's finding (threat register §6 item 40). Staging's own money-moving smoke against its simulated providers, with the
 census, is the `kind` rehearsal's today. Argo CD's behaviour is read, not seen: `P15-TSK-032`'s rehearsal records it.
+
+### 11.37 Staff refused where staff are refused - `OperatorPasswordProvenOnPublic`, `StaffRefusedUnmarked`; a first role's sign-in again; a reporting pool that refuses its role (`P15-TSK-043`)
+
+*(Written by `P15-TSK-043`, 2026-11-12, from `infra/prometheus/rules/flows.yml`'s identity group and its promtool cases. Not rehearsed:
+no real receiver exists, and `P15-TSK-032` rehearses section 11.)*
+
+**What reads it.** `finapp_identity_surface_refusal_total{type,kind,outcome}` counts each role-holding identity refused at a door that
+issues or strengthens access, on a surface that refuses staff (section 11.26's operators' half): `kind` is `public` (the public edge's
+marker) or `unmarked` (no usable marker where an edge must have set one), and at sign-in `outcome` says whether the password was the
+identity's own. Two rules read it, each over every replica, with a second term for a replica whose counter is already above zero at its
+first scrape (a refusal between its start and that scrape), which a rate cannot see. "First" means the series had no sample at all in
+the hour before the last ten minutes, so a failed scrape or a gap of minutes in an old count raises nothing:
+
+| Alert | Fires on | Severity |
+|---|---|---|
+| `OperatorPasswordProvenOnPublic` | any `outcome="credential_proven"` refusal in the last ten minutes, by `kind` | page |
+| `StaffRefusedUnmarked` | any `kind="unmarked"` refusal at any door in the last ten minutes | ticket |
+
+**`OperatorPasswordProvenOnPublic` (page): treat it as a compromised credential in use now.** Read `identity.PublicSurfaceRefused` in
+`platform.audit_record` for the last ten minutes (`change_summary` carrying `credential=proven`); `target_id` is the identity.
+- `kind="public"`: an operator's correct password arrived through the public edge, from the internet. The sign-in was refused and nothing
+  was counted against the operator's lockout. Reach the operator by a channel you already hold - not one the record or a caller gives
+  you - and have the credential replaced on the operator host (recovery or a password change there). If the operator cannot be reached,
+  or did not sign in from the internet, an `ADMINISTRATOR` suspends the identity with a reason naming the incident: the suspension ends
+  every session it holds.
+- `kind="unmarked"`, with `StaffRefusedUnmarked` beside it: most likely an operator signing in on the operator host while the application
+  is ahead of the edge - the rollout below - and the right password is theirs. It pages by the owner's ruling, any proven refusal: confirm
+  the rollout explains it (the ticket, the edge's revision, more than one operator refused) before standing it down. An unmarked proven
+  refusal with no rollout to explain it is a caller that reached the application without either edge, holding an operator's password: both
+  a compromise and a hole in `finapp-app-ingress`, so the policy is checked first.
+- Either way, the incident's own procedure is section 11.12's, which `P15-TSK-032` writes.
+
+**An old count raised once.** A Prometheus with no history - a new one, or one whose storage was lost - or one back from an outage longer
+than the hour the second term looks back over sees a replica's old non-zero count as new, and raises each alert once for ten minutes,
+though nothing was refused just now. Tell it from a new refusal before acting: the audit record is the truth. A new refusal has its
+`identity.PublicSurfaceRefused` row inside those ten minutes (`occurred_at`, `change_summary` naming the surface and, at sign-in,
+`credential=proven`); an old count has none there, its rows being as old as the replica's start, and `increase(...[10m])` over the series
+is zero. Prometheus's own `prometheus_tsdb_head_min_time` near the alert's start says the history is new. Stand it down with that
+recorded; a refusal that is in the trail is handled as above.
+
+**`StaffRefusedUnmarked` (ticket): the application is ahead of the edge, or something reached it past the edge.** Staff are refused at
+every door that signs in or strengthens a session, customers are served, so this is never an outage for them. Roll the edge forward (or
+the application back) as section 11.26's *Rolling it out, and back* says; if the edge is as built, check `finapp-app-ingress` before
+anything else. Found here, before an operator is locked out and calls.
+
+**A person given their first role signs in again.** Granting the first role to an identity ends every session it holds, in the grant's
+transaction (`identity.RoleAssigned` says `firstRole=true, sessionsRevoked=<n>`, beside an `identity.SessionRevoked` naming the
+administrator when `n` > 0). They sign in on the operator host; their customer sessions, stepped up from the internet or not, are gone.
+A second role ends nothing. The grant's review confirms the recovery channels and the factor the identity added as a customer
+(`PRIVILEGED_ACCESS_REVIEW.md` section 5, question 6).
+
+**A reporting pool that refuses its role** (`P15-TSK-043`; `PRIVILEGED_ACCESS_REVIEW.md` section 8). Report generation's pool asks the
+database, as each connection's first statement, whether its role can write, and a connection whose role can is a connection that failed:
+no report run generates, every replica keeps serving everything else. What on-call sees: the database's own log line, `ERROR:  finapp
+reporting pool refused: <role> can write <schema>.<table> (<privilege>)` (or `can use the rights of <role>`, or `no ledger table to
+judge`), followed by the statement; in the application only the SQLState, never the reason (`DatabaseFailure`): a report request answers
+`500` with `ERROR ... Unhandled error on <route>` and `AccountingStorageException: opening a report snapshot (SQLState P0001)`, and the
+accounting schedule's `orphans` leg logs `The accounting close schedule's orphans leg failed: AccountingStorageException` each tick, which
+`AccountingCloseLegFailing` (section 10.9) tickets; the run stays `GENERATING` until its lease, and the orphan leg retries it. What to
+do: read the database's line, then the role's grants and memberships (`\dp`, `\du` or `information_schema.column_privileges` for a
+column grant), and take away the write - a grant, a membership, a `PUBLIC` grant someone made - never widen anything to make the check
+pass, and never point the pool at another role. The next connection is judged again, so nothing restarts. **Connections already open
+keep serving as the changed role** until Hikari's `maxLifetime` (its default, 30 minutes; this pool does not set it) replaces them, and
+those connections read inside `REPEATABLE READ READ ONLY` snapshots, which refuse a write at the transaction; to end them sooner, roll
+the fleet.
+
+**Testing it.** `infra/prometheus/tests/identity-surface.test.yml`: each rule fires on its series and on a replica first scraped already
+counting, and is silent on the other's series, on an old count, and on an old count through a staleness marker or a six-minute gap; run
+by `infra/scripts/alert-rules-check.sh` and CI's `alerts` job. `SurfaceRefusalAlertRulesTest` holds the rules as written over the meter's
+own series.
+
+**Failure and rollback.** A rule that cannot be evaluated pages nobody; `InstanceDown` and `FinappTargetsAbsent` (section 11.8) are what
+say the scrape is gone. Removing either rule is a change to `flows.yml`, which the tests above refuse.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

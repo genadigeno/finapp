@@ -313,20 +313,22 @@ deny contains msg if {
 	msg := sprintf("[edge-upgrade] %s forwards a client's Upgrade header: an h2c upgrade would be a tunnel past the allow-list", [prefix])
 }
 
-# The public edge starts every trace (P15-TSK-023's review): a caller's W3C context would set the sampler's flag for its own requests or
-# choose the trace ids the collectors route by. The operator edge keeps them, for staff's tooling (THREAT_MODEL.md section 6 item 37 (f)).
+# Each edge starts every trace (P15-TSK-023's review for the public one, P15-TSK-043 for the operators', THREAT_MODEL.md section 6
+# item 37 (f)): a caller's W3C context would set the sampler's flag for its own requests or choose the trace ids the collectors route by,
+# and staff are callers too. Asked per edge of the constant set, so an edge whose ConfigMap is missing, whose middleware is renamed or
+# whose value is null or anything but empty is refused: the helper is undefined, never false, and `not` over it denies.
 trace_headers := {"traceparent", "tracestate", "baggage"}
 
-trace_context_is_stripped if {
+trace_context_is_stripped(prefix) if {
 	every name in trace_headers {
-		edge_file("finapp-edge-public-routes-").http.middlewares["edge-headers"].headers.customRequestHeaders[name] == ""
+		edge_file(prefix).http.middlewares["edge-headers"].headers.customRequestHeaders[name] == ""
 	}
 }
 
 deny contains msg if {
-	"finapp-edge-public-routes-" in route_config_prefixes
-	not trace_context_is_stripped
-	msg := "[edge-trace-context] the public edge forwards a client's traceparent, tracestate or baggage: a caller would sample its own requests or pick the collectors' routing"
+	some prefix in route_config_prefixes
+	not trace_context_is_stripped(prefix)
+	msg := sprintf("[edge-trace-context] %s forwards a client's traceparent, tracestate or baggage: a caller, staff included, would sample its own requests or pick the collectors' routing", [prefix])
 }
 
 # ------------------------------------------------------------------------------------------- which surface (P15-TSK-042)

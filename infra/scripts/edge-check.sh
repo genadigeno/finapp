@@ -9,7 +9,8 @@
 # THEN THE ROUTING, THROUGH THE REAL PROXY. The route files are matched by Traefik, not by anything in this repository, and a path allow-list is
 # only as good as what the proxy does with `//`, `..`, `%2F` and `;`. So this script runs the pinned image, with the committed files
 # unchanged, against a stand-in backend that reports each request it receives, and asks it: which spellings of an operator path reach
-# the backend, whose X-Forwarded-For arrives, whose surface marker arrives (P15-TSK-042), what is refused and with what status, and whether
+# the backend, whose X-Forwarded-For arrives, whose surface marker arrives (P15-TSK-042), whether a caller's trace context arrives from
+# either host and a tool's correlation id from the operator one (P15-TSK-043), what is refused and with what status, and whether
 # a body at the application's limit gets through.
 # The stand-in is Traefik's own whoami image, under the name the route files address, so not a byte of the route file changes.
 #
@@ -109,6 +110,9 @@ plant_all() {
     edge_plant_on edge-no-write-timeout "$STATIC" '/writeTimeout: 120s/d'
     edge_plant_on edge-upgrade-forwarded "$PUBLIC_EDGE" '/^          Upgrade: ""$/d'
     edge_plant_on edge-trace-context-forwarded "$PUBLIC_EDGE" '/^          traceparent: ""$/d'
+    # P15-TSK-043: the operator edge strips them too; a missing name and a null one (a key present with no value) each refused.
+    edge_plant_on edge-trace-context-operator-forwarded edge/base/operator-edge.yaml '/^          tracestate: ""$/d'
+    edge_plant_on edge-trace-context-operator-null edge/base/operator-edge.yaml 's/^          baggage: ""$/          baggage:/'
     edge_plant_on edge-operator-no-allowlist "$OPERATOR_ROUTES" '1,/internal-only, body-cap/s/internal-only, //'
     # P15-TSK-042: each edge states its own surface on every router.
     edge_plant_on edge-surface-unstated "$PUBLIC_EDGE" '/^          X-Finapp-Surface: public$/d'
@@ -309,6 +313,8 @@ edge_refused edge-no-backend-timeout edge-timeouts
 edge_refused edge-no-write-timeout edge-timeouts
 edge_refused edge-upgrade-forwarded edge-upgrade
 edge_refused edge-trace-context-forwarded edge-trace-context
+edge_refused edge-trace-context-operator-forwarded edge-trace-context
+edge_refused edge-trace-context-operator-null edge-trace-context
 edge_refused edge-operator-no-allowlist edge-routes-operator
 edge_refused edge-surface-unstated edge-surface
 edge_refused edge-surface-wrong-word edge-surface
@@ -624,9 +630,9 @@ surface_seen "the public host, a forged marker named hop-by-hop" public --http1.
 surface_seen "the operator host, the marker named hop-by-hop" operator --http1.1 -X POST -H 'Connection: X-Finapp-Surface' \
     "$OPERATOR/v1/authentications"
 
-# P15-TSK-023's review. The platform joins an inbound W3C trace context and samples by its flag, so a public caller's would decide its own
-# requests' tracing and choose the trace ids the collectors route by. The public edge removes all three names; the operator edge keeps
-# them for staff's tooling (THREAT_MODEL.md section 6 item 37 (f)). A client's trace context: none of it may reach the backend publicly.
+# P15-TSK-023's review, and P15-TSK-043 for the operator edge. The platform joins an inbound W3C trace context and samples by its flag,
+# so a caller's would decide its own requests' tracing and choose the trace ids the collectors route by. Both edges remove all three names
+# (THREAT_MODEL.md section 6 item 37 (f)): none of a client's trace context may reach the backend from either host.
 # trace_context_seen <label> <wanted count of the three names> <curl args...>
 trace_context_seen() {
     label=$1 wanted=$2
@@ -641,14 +647,32 @@ trace_context_seen() {
         status=1
     fi
 }
-echo "==   a public caller's trace context never reaches a replica (edge-trace-context)"
+echo "==   a caller's trace context never reaches a replica, from either host (edge-trace-context)"
 TRACE_CONTEXT="-H traceparent:00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00 -H tracestate:vendor=planted -H baggage:planted=1"
 # shellcheck disable=SC2086
 trace_context_seen "the public host" 0 $TRACE_CONTEXT "$PUBLIC/v1/me"
 # shellcheck disable=SC2086
 trace_context_seen "the public host over HTTP/2" 0 --http2 $TRACE_CONTEXT "$PUBLIC/v1/me"
 # shellcheck disable=SC2086
-trace_context_seen "the operator host, which keeps them" 3 -X POST $TRACE_CONTEXT "$OPERATOR/v1/authentications"
+trace_context_seen "the operator host" 0 -X POST $TRACE_CONTEXT "$OPERATOR/v1/authentications"
+# shellcheck disable=SC2086
+trace_context_seen "the operator host over HTTP/2" 0 --http2 -X POST $TRACE_CONTEXT "$OPERATOR/v1/authentications"
+# shellcheck disable=SC2086
+trace_context_seen "the operator host, an operator route" 0 $TRACE_CONTEXT "$OPERATOR/v1/operator/merchants/$SAMPLE"
+
+# What staff's tooling keeps (P15-TSK-043): a request is found by its correlation id. The application mints X-Correlation-Id on every
+# answer and echoes a caller's own as X-Client-Correlation-Id (ADR-0034); neither edge names either header (EdgeManifestsTest), and a
+# tool's own reference still reaches the replica through the operator host, the trace context stripped beside it.
+# shellcheck disable=SC2086
+correlation=$(client curl -sk --max-time 15 -X POST -H 'X-Correlation-Id: staff-tool-ref-0043' $TRACE_CONTEXT "$OPERATOR/v1/authentications" | tr -d '\r')
+traced=$(printf '%s\n' "$correlation" | grep -ic '^\(traceparent\|tracestate\|baggage\):' || true)
+if printf '%s\n' "$correlation" | grep -qx 'X-Correlation-Id: staff-tool-ref-0043' && [ "$traced" = 0 ]; then
+    echo "ok   the operator host: a tool's X-Correlation-Id reached the backend as sent, and none of the trace context sent beside it"
+else
+    printf '%s\n' "$correlation"
+    echo "!!   the operator host: a tool's X-Correlation-Id did not reach the backend as sent, or $traced of the trace context sent beside it did"
+    status=1
+fi
 
 client sh -c 'head -c 1048576 /dev/zero > /tmp/one-mib; head -c 3145728 /dev/zero > /tmp/three-mib; head -c 1900000 /dev/zero > /tmp/almost-two'
 
