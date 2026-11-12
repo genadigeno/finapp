@@ -614,8 +614,9 @@ jobs:
         run: ./infra/scripts/migrator-verify.sh
 
       # P15-TSK-032: OPERATIONS_RUNBOOK.md section 11.4 rehearsed on the image this job built - a migration failing on its data,
-      # stopped, run again, refused below an applied version and fixed forward; and on the developer's Gradle path, the
-      # migration outside a transaction the build refuses, which only flywayRepair gets past.
+      # stopped, run again, refused below an applied version and fixed forward; and, on the image and on the developer's Gradle
+      # path, the migration outside a transaction the build refuses: no history row, a leftover every later run trips over,
+      # no finish under Flyway's own lock, and only the owner's drop and a migration corrected into a transaction as a way out.
       - name: Rehearse a failed migration on the image
         run: ./infra/scripts/migration-failure-rehearsal.sh
 

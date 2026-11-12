@@ -17,8 +17,9 @@
 #                   history is identical to the build's.
 #   bounded         a table held by another session: the run fails with exit 11 inside its bound rather than queueing, and
 #                   leaves no history behind. A statement that fails: exit 10, once, and no failed row, because a
-#                   transactional migration rolls back (Flyway writes a failed row only for a non-transactional one), and
-#                   the server's error detail, which is row data, stays out of the log.
+#                   transactional migration rolls back and Flyway's failed row is written inside its PostgreSQL lock's
+#                   transaction, which rolls back too (so a non-transactional one leaves none either: migration-failure-
+#                   rehearsal.sh), and the server's error detail, which is row data, stays out of the log.
 #   refused         the superuser's credential: exit 12, nothing changed.
 #   the debt rows   a TRUNCATE as the migrator refused on every reconciliation and settlement table; a shadowing schema
 #                   first in a role's path changes what an unqualified clock reads and not what lending's does.

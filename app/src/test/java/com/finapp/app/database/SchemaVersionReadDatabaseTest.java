@@ -72,7 +72,8 @@ class SchemaVersionReadDatabaseTest {
     }
 
     @Test
-    @DisplayName("a failed migration's row is not an applied version: success = false, as a non-transactional failure leaves")
+    @DisplayName("a failed migration's row is not an applied version: success = false, as Flyway writes under a per-session lock"
+            + " (on its default PostgreSQL lock it writes none: OPERATIONS_RUNBOOK.md section 11.4)")
     void aFailedRowIsNotApplied() throws SQLException {
         try (Connection connection = DatabaseRoles.migrator(); Statement statement = connection.createStatement()) {
             connection.setAutoCommit(false);

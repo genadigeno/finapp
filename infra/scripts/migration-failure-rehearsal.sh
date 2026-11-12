@@ -11,11 +11,13 @@
 #   release N - 1  every migration and a plant table applied; rows written that the next release's CHECK refuses.
 #   release N      an expand step, a CHECK the rows violate, and a migration of a later schema: exit 10 on the first attempt,
 #                  failure=DEFINITE; the expand step applied and kept; no history row for the CHECK and no failed row; the
-#                  constraint absent; the later schema's migration never reached; the rows' values not in the log; and the
-#                  application's own read of what is applied (the readiness guard's) showing the schema short of the CHECK, older
-#                  than a replica of N expects.
+#                  constraint absent; the later schema's migration never reached; and the application's own read of what is
+#                  applied (the readiness guard's) showing the schema short of the CHECK, older than a replica of N expects.
+#                  The rows' values are looked for in the log too, though a CHECK's error names no row: that a failing row's
+#                  detail stays out of the log is migrator-verify.sh's, on a duplicate key, whose error would name it.
 #   again          the Job run again with nothing fixed: exit 10 the same way, nothing applied, the history unchanged.
-#   ahead          in an environment that had applied the CHECK, a fix with a lower version is refused at validation.
+#   ahead          in an environment that had applied the CHECK, a fix with a lower version is refused at validation: as staging
+#                  is, ahead of production, whenever production's data fails a migration staging passed (runbook section 11.4).
 #   the fix        a migration below the CHECK and above the last applied fixes the rows: exit 0, the fix, the CHECK and the later
 #                  schema applied in that order, the constraint validated; a second run applies nothing.
 #
@@ -328,6 +330,7 @@ expect_exit 10 "$code" "release N's run with a CHECK the data violates" "$WORK/n
 expect_log n 'schema=ledger attempts=1 failure=DEFINITE' "a definite failure was retried, or not classed DEFINITE"
 expect_log n 'result=FAILED schema=ledger' "the run did not say FAILED at ledger"
 expect_log n 'is violated by some row' "the migration did not fail for its own reason"
+# A CHECK's error names no row, so this cannot fail here; a row's detail kept out of the log is migrator-verify.sh's to show.
 if grep -q '4242' "$WORK/n.log"; then
     fail "a failed migration wrote row data to the Job's log"
 fi
@@ -348,7 +351,7 @@ fi
 [ "$(app_sql finapp_release "SELECT has_table_privilege('ledger.flyway_schema_history', 'SELECT')")" = f ] \
     || fail "the application's role can read the history table, which the guard's function exists to avoid"
 echo "exit 10 on the first attempt, DEFINITE; the expand step kept, no row for the CHECK and no failed row, the later schema not reached;"
-echo "  no row data in the log; the guard reads ledger at 9002 where N's build expects 9004, so a replica of N stays unready"
+echo "  the guard reads ledger at 9002 where N's build expects 9004, so a replica of N stays unready"
 
 echo "== the Job again, nothing fixed"
 before=$(whole_history finapp_release ledger)
@@ -373,7 +376,7 @@ expect_exit 10 "$code" "a fix below a version already applied" "$WORK/ahead-fix.
 expect_log ahead-fix 'Detected resolved migration not applied to database: 9003' "the fix was not refused at validation"
 [ "$(plants_in finapp_ahead ledger)" = "9001:true 9002:true 9004:true" ] || fail "the refused fix changed the history: $(plants_in finapp_ahead ledger)"
 echo "exit 10: \"Detected resolved migration not applied to database: 9003\"; outOfOrder=false keeps it out, so this fix is only for"
-echo "  environments still behind the CHECK, and one ahead of it is fixed by an audited operational procedure instead"
+echo "  environments still behind the CHECK. Staging is ahead whenever production fails: there no forward fix exists (runbook 11.4)"
 
 echo "== the fix: a migration below the CHECK and above the last applied"
 code=0

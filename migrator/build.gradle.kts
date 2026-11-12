@@ -68,8 +68,16 @@ tasks.withType<Test>().configureEach {
                 ".github/workflows/ci.yml",
                 "infra/scripts/**",
                 "infra/postgres/initdb/**",
+                // EveryMigrationRunsInATransactionTest (P15-TSK-032) reads every build script, every gradle.properties and any
+                // Flyway configuration file, wherever it is: an edit to one of them must not leave the rule up to date.
+                "build.gradle.kts",
+                "**/*.gradle.kts",
+                "**/gradle.properties",
+                "**/flyway.conf",
+                "**/flyway.toml",
             )
-            exclude("**/build/**")
+            // .claude holds other checkouts of this repository (worktrees), .gradle Gradle's own state: neither is this build's.
+            exclude("**/build/**", ".claude/**", ".gradle/**", ".git/**")
         }
     )
         .withPropertyName("buildsOwnFiles")

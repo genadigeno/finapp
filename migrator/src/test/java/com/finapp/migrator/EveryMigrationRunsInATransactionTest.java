@@ -7,6 +7,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,7 @@ import org.flywaydb.core.api.FlywayException;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.flywaydb.core.api.migration.JavaMigration;
 import org.flywaydb.core.api.resource.LoadableResource;
+import org.flywaydb.core.extensibility.Plugin;
 import org.flywaydb.core.internal.database.DatabaseType;
 import org.flywaydb.core.internal.database.DatabaseTypeRegister;
 import org.flywaydb.core.internal.parser.ParsingContext;
@@ -71,12 +73,20 @@ import org.postgresql.ds.PGSimpleDataSource;
  *   <li>versioned, repeatable and callback scripts alike: every {@code .sql} the scanner finds, whatever its prefix.
  * </ul>
  *
- * <p>And the global setting, which reaches every script at once: the runner's own configuration, a migrating module's
- * {@code flyway} block naming a transaction setting or a way to load one ({@code executeInTransaction}, {@code mixed},
- * {@code pluginConfiguration}, {@code configFiles}), a committed {@code gradle.properties} holding a {@code flyway.} key (the
- * plugin reads every project property with that prefix), and a committed Flyway configuration file ({@code flyway.conf}, which the
+ * <p>And the global setting, which reaches every script at once: the runner's own configuration; a migrating module's
+ * {@code flyway} block naming a transaction setting, a way to load one, or code of its own that runs SQL
+ * ({@code executeInTransaction}, {@code mixed}, {@code pluginConfiguration}, {@code configFiles}, {@code resolvers},
+ * {@code callbacks}); the extension configured anywhere else (a second {@code flyway} block, a block in the root script, a
+ * convention plugin or another module, {@code FlywayExtension} or {@code extensions} by name); a Flyway task configured or
+ * registered (its type, {@code tasks.flywayMigrate}, {@code named("flyway...")}); a committed {@code gradle.properties} holding
+ * {@code flyway.} or {@code systemProp.flyway.} or a {@code -Dflyway.} JVM argument (the plugin reads every project property
+ * and every system property with that prefix); and a committed Flyway configuration file ({@code flyway.conf}, which the
  * plugin loads from the user's home and from its working directory, or {@code flyway.toml}). A developer's own shell, home
- * directory and command line are not the repository's, and are not read here.
+ * directory and command line are not the repository's, and are not read here; nor is {@code .claude/}, which holds other
+ * checkouts of this repository.
+ *
+ * <p>Separately, {@link #theRunnerKeepsFlywaysTransactionalLock} holds the one Flyway setting the procedure's description of a
+ * failure rests on: the image keeps Flyway's transactional PostgreSQL lock, under which a failed migration writes no row.
  *
  * <p>The expand-only lint ({@code MigrationLint}) already refuses any file in a migration directory that is not a versioned
  * script, so a {@code .conf} is refused twice; this rule is the one that says why, and that reads a statement as Flyway does.
@@ -87,12 +97,37 @@ class EveryMigrationRunsInATransactionTest {
     /** Where a module's scripts live, relative to the module: {@code src/main/resources/db/migration/<module>}. */
     private static final String MIGRATIONS = "src/main/resources/db/migration";
 
-    /** The settings a flyway block could change the transaction mode with, directly or by loading a file or a map that does. */
-    private static final List<String> TRANSACTION_SETTINGS = List.of("executeInTransaction", "mixed", "pluginConfiguration", "configFiles");
+    /**
+     * The settings a flyway block could change the transaction mode with, directly, by loading a file or a map that does, or by
+     * running code of its own that executes SQL.
+     */
+    private static final List<String> TRANSACTION_SETTINGS =
+            List.of("executeInTransaction", "mixed", "pluginConfiguration", "configFiles", "resolvers", "callbacks");
 
     private static final Pattern FLYWAY_BLOCK = Pattern.compile("(?ms)^flyway \\{\\R(.*?)^}\\s*$");
 
-    private static final Set<String> SKIPPED_DIRECTORIES = Set.of(".git", ".gradle", ".idea", "build", "out", "node_modules");
+    /** Any block configuring the extension, wherever it opens on a line. */
+    private static final Pattern FLYWAY_BLOCK_OPENING = Pattern.compile("(?m)^\\s*flyway\\s*\\{");
+
+    /** The extension configured other than by a module's one block. */
+    private static final List<Pattern> EXTENSION_BY_NAME = List.of(
+            Pattern.compile("\\bFlywayExtension\\b"),
+            Pattern.compile("\\bextensions\\s*\\.\\s*\\w+\\s*(<[^>]*>)?\\s*\\(\\s*\"flyway\""));
+
+    /** A Flyway task configured or registered: by its type, its accessor, or its name. */
+    private static final List<Pattern> FLYWAY_TASK = List.of(
+            Pattern.compile("\\bFlyway\\w*Task\\b"),
+            Pattern.compile("\\btasks\\s*\\.\\s*flyway\\w*"),
+            Pattern.compile("\\b(named|getByName|findByName|getting|existing|register|configure)\\s*(<[^>]*>)?\\s*\\(\\s*\"flyway\\w*\""),
+            Pattern.compile("\\bval\\s+flyway\\w*\\s+by\\s+tasks\\b"),
+            Pattern.compile("\\btasks\\s*\\[\\s*\"flyway"));
+
+    /** A whole-line comment, or a block comment opening a line: never inside a string, which a build script's paths are full of. */
+    private static final Pattern SCRIPT_COMMENT = Pattern.compile("(?ms)^[ \\t]*/\\*.*?\\*/|^[ \\t]*//[^\\n]*");
+
+    /** {@code .claude} holds other checkouts of this repository (worktrees): their files are not this tree's. */
+    private static final Set<String> SKIPPED_DIRECTORIES =
+            Set.of(".git", ".gradle", ".idea", ".claude", "build", "out", "node_modules");
 
     /** Why a script or a setting was refused. */
     enum Refused {
@@ -102,9 +137,13 @@ class EveryMigrationRunsInATransactionTest {
         SCRIPT_CONFIGURATION,
         /** Flyway itself refuses the script, as it does one mixing both kinds of statement. */
         FLYWAY_REFUSES,
-        /** A migrating module's flyway block names a transaction setting, or a way to load one. */
+        /** A migrating module's flyway block names a transaction setting, a way to load one, or code that runs SQL. */
         BUILD_SETTING,
-        /** A committed {@code gradle.properties} holds a {@code flyway.} key. */
+        /** The extension configured other than by a migrating module's one block. */
+        EXTENSION_ELSEWHERE,
+        /** A Flyway task configured or registered in a build script. */
+        TASK_CONFIGURATION,
+        /** A committed {@code gradle.properties} holds a {@code flyway.} key, a {@code systemProp.flyway.} key or a {@code -Dflyway.}. */
         GRADLE_PROPERTY,
         /** A committed Flyway configuration file. */
         CONFIGURATION_FILE,
@@ -205,16 +244,50 @@ class EveryMigrationRunsInATransactionTest {
         write(root, "flyway.conf", "flyway.executeInTransaction=false\n");
         write(root.resolve("conf"), "flyway.toml", "[flyway]\nexecuteInTransaction = false\n");
         write(root.resolve("build"), "flyway.conf", "a build directory's own output is not the repository's\n");
+        write(root.resolve(".claude/worktrees/another"), "flyway.conf", "another checkout's file is not this tree's\n");
+        // The setting reached as a system property of the build's JVM, which the plugin reads with every other system property.
+        write(root.resolve("plantedsys"), "gradle.properties", "systemProp.flyway.mixed=true\n");
+        write(root.resolve("plantedjvm"), "gradle.properties", "org.gradle.jvmargs=-Xmx2g -Dflyway.executeInTransaction=false\n");
+        // Code that runs SQL of its own, or loads it.
+        module(root, "plantedresolver", "    resolvers = arrayOf(\"com.example.Resolver\")\n");
+        module(root, "plantedcallback", "    callbacks = arrayOf(\"com.example.Callback\")\n");
+        // The extension configured outside a module's one block.
+        module(root, "plantedtwo", "");
+        Files.writeString(root.resolve("plantedtwo/build.gradle.kts"), "\nflyway {\n    mixed = true\n}\n", StandardOpenOption.APPEND);
+        write(root, "build.gradle.kts", "subprojects {\n    flyway {\n        mixed = true\n    }\n}\n");
+        write(root.resolve("build-logic/src/main/kotlin"), "finapp.flyway-conventions.gradle.kts",
+                "configure<org.flywaydb.gradle.FlywayExtension> {\n    mixed = true\n}\n");
+        // A Flyway task configured: by its accessor, and by its type and name.
+        module(root, "plantedtask", "");
+        Files.writeString(root.resolve("plantedtask/build.gradle.kts"), "\ntasks.flywayMigrate {\n    mixed = true\n}\n",
+                StandardOpenOption.APPEND);
+        module(root, "plantedtyped", "");
+        Files.writeString(root.resolve("plantedtyped/build.gradle.kts"),
+                "\ntasks.named<org.flywaydb.gradle.task.FlywayMigrateTask>(\"flywayMigrate\") {\n    mixed = true\n}\n",
+                StandardOpenOption.APPEND);
+        // Each of those, in comments only: read as nothing.
+        write(root.resolve("tools"), "build.gradle.kts",
+                "// tasks.flywayMigrate { mixed = true } and FlywayExtension, in a comment\n/* flyway {\n    mixed = true\n} */\n"
+                        + "val where = \"**/*.gradle.kts\"\n");
 
         Map<String, Refused> refused = new TreeMap<>();
         check(root).refusals().forEach(refusal -> refused.put(refusal.file(), refusal.rule()));
 
-        assertThat(refused).as("each place refused for its own reason, and nothing else refused").containsExactlyInAnyOrderEntriesOf(Map.of(
-                "plantedpayments/build.gradle.kts", Refused.BUILD_SETTING,
-                "plantedfx/build.gradle.kts", Refused.BUILD_SETTING,
-                "gradle.properties", Refused.GRADLE_PROPERTY,
-                "flyway.conf", Refused.CONFIGURATION_FILE,
-                "conf/flyway.toml", Refused.CONFIGURATION_FILE));
+        assertThat(refused).as("each place refused for its own reason, and nothing else refused").containsExactlyInAnyOrderEntriesOf(Map.ofEntries(
+                Map.entry("plantedpayments/build.gradle.kts", Refused.BUILD_SETTING),
+                Map.entry("plantedfx/build.gradle.kts", Refused.BUILD_SETTING),
+                Map.entry("plantedresolver/build.gradle.kts", Refused.BUILD_SETTING),
+                Map.entry("plantedcallback/build.gradle.kts", Refused.BUILD_SETTING),
+                Map.entry("plantedtwo/build.gradle.kts", Refused.EXTENSION_ELSEWHERE),
+                Map.entry("build.gradle.kts", Refused.EXTENSION_ELSEWHERE),
+                Map.entry("build-logic/src/main/kotlin/finapp.flyway-conventions.gradle.kts", Refused.EXTENSION_ELSEWHERE),
+                Map.entry("plantedtask/build.gradle.kts", Refused.TASK_CONFIGURATION),
+                Map.entry("plantedtyped/build.gradle.kts", Refused.TASK_CONFIGURATION),
+                Map.entry("gradle.properties", Refused.GRADLE_PROPERTY),
+                Map.entry("plantedsys/gradle.properties", Refused.GRADLE_PROPERTY),
+                Map.entry("plantedjvm/gradle.properties", Refused.GRADLE_PROPERTY),
+                Map.entry("flyway.conf", Refused.CONFIGURATION_FILE),
+                Map.entry("conf/flyway.toml", Refused.CONFIGURATION_FILE)));
     }
 
     @Test
@@ -224,6 +297,19 @@ class EveryMigrationRunsInATransactionTest {
         assertThat(runner.isExecuteInTransaction()).as("Flyway's default, which nothing in the runner may change").isTrue();
         assertThat(runner.isMixed()).as("a script mixing both kinds is refused rather than run outside a transaction").isFalse();
         assertThat(runnerRefusals(runner)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the runner keeps Flyway's transactional PostgreSQL lock, under which a failed migration writes no history row:"
+            + " what OPERATIONS_RUNBOOK.md section 11.4 describes and the rehearsal shows")
+    void theRunnerKeepsFlywaysTransactionalLock() throws ReflectiveOperationException {
+        FluentConfiguration runner = MigrationPlan.configurationFor("ledger", new PGSimpleDataSource(), Path.of("/migrator/sql"));
+        Plugin postgres = runner.getPluginRegister().getExact("PostgreSQLConfigurationExtension");
+        assertThat(postgres).as("flyway-database-postgresql's configuration, as the image runs it").isNotNull();
+        assertThat(postgres.getClass().getName()).isEqualTo("org.flywaydb.database.postgresql.PostgreSQLConfigurationExtension");
+        assertThat((boolean) postgres.getClass().getMethod("isTransactionalLock").invoke(postgres))
+                .as("a per-session lock would change what a failure leaves (a success = false row) and what section 11.4 says to do")
+                .isTrue();
     }
 
     // ------------------------------------------------------------------------------------------------------------------
@@ -272,18 +358,45 @@ class EveryMigrationRunsInATransactionTest {
                 }
             }
         }
+        List<String> migrating = modules(root);
         for (Path file : committedFiles(root)) {
             String name = file.getFileName().toString();
+            String at = relative(root, file);
             if (name.equals("flyway.conf") || name.equals("flyway.toml")) {
-                refusals.add(new Refusal(relative(root, file), Refused.CONFIGURATION_FILE, "a Flyway configuration file"));
+                refusals.add(new Refusal(at, Refused.CONFIGURATION_FILE, "a Flyway configuration file"));
             } else if (name.equals("gradle.properties")) {
                 Files.readAllLines(file, StandardCharsets.UTF_8).stream()
                         .map(String::strip)
-                        .filter(line -> line.startsWith("flyway."))
-                        .forEach(line -> refusals.add(new Refusal(relative(root, file), Refused.GRADLE_PROPERTY, line)));
+                        .filter(line -> !line.startsWith("#") && !line.startsWith("!"))
+                        .filter(line -> line.startsWith("flyway.") || line.startsWith("systemProp.flyway.") || line.contains("-Dflyway."))
+                        .forEach(line -> refusals.add(new Refusal(at, Refused.GRADLE_PROPERTY, line)));
+            } else if (name.endsWith(".gradle.kts")) {
+                refusals.addAll(scriptRefusals(at, Files.readString(file, StandardCharsets.UTF_8), migrating));
             }
         }
         return new Outcome(List.copyOf(read), List.copyOf(refusals));
+    }
+
+    /**
+     * What a build script does to Flyway beyond a migrating module's one block: a second block, a block anywhere else, the
+     * extension or a Flyway task configured by name. Whole-line and line-opening block comments are not read.
+     */
+    private static List<Refusal> scriptRefusals(String at, String script, List<String> migrating) {
+        String text = SCRIPT_COMMENT.matcher(script).replaceAll("");
+        List<Refusal> found = new ArrayList<>();
+        boolean ownScript = at.endsWith("/build.gradle.kts") && at.indexOf('/') == at.lastIndexOf('/')
+                && migrating.contains(at.substring(0, at.indexOf('/')));
+        long blocks = FLYWAY_BLOCK_OPENING.matcher(text).results().count();
+        if (ownScript && blocks > 1) {
+            found.add(new Refusal(at, Refused.EXTENSION_ELSEWHERE, blocks + " flyway blocks, where the first is the one read"));
+        } else if (!ownScript && blocks > 0) {
+            found.add(new Refusal(at, Refused.EXTENSION_ELSEWHERE, "a flyway block outside a migrating module's own script"));
+        }
+        EXTENSION_BY_NAME.forEach(pattern -> pattern.matcher(text).results()
+                .forEach(match -> found.add(new Refusal(at, Refused.EXTENSION_ELSEWHERE, match.group()))));
+        FLYWAY_TASK.forEach(pattern -> pattern.matcher(text).results()
+                .forEach(match -> found.add(new Refusal(at, Refused.TASK_CONFIGURATION, match.group()))));
+        return found;
     }
 
     private static List<String> runnerRefusals(FluentConfiguration configuration) {

@@ -2053,12 +2053,17 @@ rollout has not started, a release's migrations are expand-only or carry a contr
 one has either not happened at all or, in the second case below, left the schema where a person must read it. **Never `clean`. Never edit an applied migration. Do not run
 `flywayRepair` to make the symptom go away** (`DATA_MIGRATIONS.md` §3.1).
 
-First read `<schema>.flyway_schema_history` for the failing schema, and the Job's log.
+First read the Job's log and its exit code (`kubectl -n finapp logs job/finapp-migrator`, with the read-only role, §11.36). Nobody
+reaches the database in a deployed environment today (`THREAT_MODEL.md` §6 item 31 (e)), so `<schema>.flyway_schema_history`, which
+the application's role cannot read either, is read only where someone can: a developer's database, a rehearsal. *(This read "First
+read `<schema>.flyway_schema_history` for the failing schema, and the Job's log" until 2026-11-12.)*
 
 **What the Job's log says.** `finapp-migrator schema=<schema> attempts=1 failure=DEFINITE`, the exception, and
-`finapp-migrator result=FAILED schema=<schema>`, exit `10`. The Job does not retry it (§11.1b): run again with nothing fixed, it fails
-the same way and applies nothing. The run stops at that schema, so the schemas after it in the order are not reached and their
-migrations of the release are still pending too. The server's detail of a failing row is not in the log.
+`finapp-migrator result=FAILED schema=<schema>`, exit `10`. The Job does not retry it (§11.1b), and the same revision is never synced
+again (§11.36): run again with nothing fixed, it fails the same way and applies nothing. The run stops at that schema, so the schemas
+after it in the order are not reached and their migrations of the release are still pending too. The server's detail of a failing
+row is kept out of the log (`logServerErrorDetail=false`; `migrator-verify.sh` shows it on a duplicate key, whose error would name the
+row; a `CHECK`'s error names none).
 
 **No row for the migration (the usual case).** Every migration in this repository runs in a transaction, and on PostgreSQL a
 failed one is rolled back and leaves no history row. Nothing happened. The next run tries it again. So the question is why it
@@ -2070,15 +2075,35 @@ failed:
   environment, it **must not be edited**: the other environment's checksum would no longer match. Add a new migration with a
   **lower version than the failed one and higher than the last applied**, which fixes the data, and release that. In the
   environments that already applied the failed one, `outOfOrder = false` would refuse it, so such a fix is only possible while
-  every environment is behind the failed version; otherwise fix the data by an audited operational procedure and re-run the Job.
-  The refusal reads `Detected resolved migration not applied to database: <version>`, exit `10`.
+  every environment is behind the failed version; otherwise the data is fixed by hand, below. The refusal reads `Detected resolved
+  migration not applied to database: <version>`, exit `10`. *(The clause after the semicolon read "otherwise fix the data by an
+  audited operational procedure and re-run the Job" until 2026-11-12.)*
+
+**In production, staging is ahead, and there is no forward fix.** A pair reaches production only after staging ran the same pair with
+a passing smoke (§11.36), so a migration that fails on production's data has already applied in staging. A fix with a lower version is
+then refused in staging (`Detected resolved migration not applied to database`, rehearsed as `ahead`) and can never be promoted.
+Production stays on N − 1, serving: the failed migration changed nothing, the release's earlier ones are expand-only or marked, and
+the rollout never started. Every later release carries the same migration, so production takes none until its data is fixed. That
+needs a person who can reach the data, and nobody can today (`THREAT_MODEL.md` §6 item 31 (e)). Once someone can: the data is fixed
+by an audited operational procedure, written into the incident's record (§11.12), and the same revision is synced once more by the
+reviewed manual sync that §11.36 names as the one exception for this case. Until then it is a residual, `THREAT_MODEL.md` §6
+item 42.
+
+**A run stopped mid-way** (its pod killed, its connection lost). Flyway applies a migration on one connection and writes its row on
+another, inside the transaction that holds its lock, which commits after the migration's own: a run stopped between the two leaves
+the migration applied and no row. So no row, but `already exists` or a schema already showing what the migration does, means: compare
+the catalogue with the migration before treating it as never run, because the next run would apply it again. A per-session lock would
+not close this: the row would then commit before the migration's transaction, and a stop between would leave a row for a migration
+that rolled back (Flyway 13.7.0's `DbMigrate`, read 2026-11-12).
 
 **A migration outside a transaction: the build refuses one, so this case cannot arise while that rule holds.** Flyway runs a
 migration outside a transaction when a statement cannot run inside one (`CREATE INDEX CONCURRENTLY` and the others its PostgreSQL
 parser names) or a `<script>.conf` says `executeInTransaction=false`. `EveryMigrationRunsInATransactionTest` (in the migrator module)
 reads every script with the pinned Flyway's own parser and refuses each such form, and the setting made for every script, until
-the migrator gains a reviewed mode for one (`THREAT_MODEL.md` §6 item 42 (b)). Build an index in the migration's transaction, as
-ledger `V029` does. What such a migration does, as rehearsed on the pinned Flyway 13.7.0 with PostgreSQL's default transactional
+the migrator gains a reviewed mode for one: Flyway's per-session lock with an audited repair, or an audited drop of a leftover; a
+person's way in (`THREAT_MODEL.md` §6 item 31 (e)); and the weighing of what an index built inside a transaction costs on a large live
+table, whose writes it blocks for as long as it builds (`THREAT_MODEL.md` §6 item 42 (b)). Until then, build an index in the
+migration's transaction, as ledger `V029` does. What such a migration does, as rehearsed on the pinned Flyway 13.7.0 with PostgreSQL's default transactional
 lock (neither the build nor the image changes it):
 
 - **A failure leaves no row** in the history, failed or not: Flyway writes its failed row inside the transaction that holds its lock,
@@ -2110,15 +2135,16 @@ schema at its last applied migration and never a failed one (rehearsed; the repl
 **There is nothing to roll back**: the old image is what is serving, so there is no digest to revert, and the forward fix is the only
 way.
 
-**Whichever it is**, the application release has not started. After a fix, run the Job again; it applies what is pending and nothing
-else.
+**Whichever it is**, the application release has not started. After a fix, the Job runs again through a new promotion that carries it
+(§11.36: after exit `10` the same revision is never synced again, the one exception being **In production** above); it applies what is
+pending and nothing else. *(This read "After a fix, run the Job again" until 2026-11-12.)*
 
 **The rehearsal.** `infra/scripts/migration-failure-rehearsal.sh [image]` (default `finapp-migrator:<revision>`, built by
 `infra/scripts/migrator-image-build.sh`): one throwaway PostgreSQL on a random port, the image run as the Job runs it, the plants
 copied into a stopped container (never the repository's), the developer's half through `./gradlew` with the plants as a second
 Flyway location. Docker and a JDK; every credential generated per run, none printed. Exit `0` every assertion held, `1` one failed,
-`2` a step could not run. CI's `migrator-image` job runs it on the image it built. `MigrationFailureRehearsalTest` holds what it
-asserts.
+`2` a step could not run. CI's `migrator-image` job is wired to run it on the image the job built; it has not run in CI yet.
+`MigrationFailureRehearsalTest` holds what it asserts.
 
 **The last record.** 2026-11-12, 10:43:24-10:48:43Z, one run on one development machine (Docker 28.0.1, `postgres:18.6`), the
 harness at sha256 `f29c17e9…5bb9a9af` on branch `P15-TSK-032-S3` (`b7f5fff3`), the image `finapp-migrator` built by
@@ -2128,7 +2154,7 @@ every assertion held, exit `0`, in 5 minutes 19 seconds.
 | Step | Seen |
 |---|---|
 | release N − 1 | 343 migrations applied (the repository's and the plant table) |
-| release N, a `CHECK` the rows violate | exit `10` on the first attempt, `failure=DEFINITE`; the expand step before it applied and kept; no row for the `CHECK` and no failed row; the later schema's migration not reached; no row value in the log; the guard's read, as `finapp_app`, at the expand step, short of the `CHECK`, and the history table closed to that role |
+| release N, a `CHECK` the rows violate | exit `10` on the first attempt, `failure=DEFINITE`; the expand step before it applied and kept; no row for the `CHECK` and no failed row; the later schema's migration not reached; no row value in the log (a `CHECK`'s error names none, so this shows little: the property is `migrator-verify.sh`'s); the guard's read, as `finapp_app`, at the expand step, short of the `CHECK`, and the history table closed to that role |
 | the Job again | exit `10` the same way, nothing applied, the history unchanged |
 | an environment that applied it | the fix below it refused: `Detected resolved migration not applied to database: 9003`, exit `10` |
 | the fix | exit `0`, applied 3 in order (the fix, the `CHECK`, the later schema's), the constraint validated; the next run applied 0 |
@@ -3331,6 +3357,11 @@ new promotion. Exit `12`, the configuration, identity or credential refused: fix
 then a person holding Argo CD's `sync` on that Application (granted through Argo CD's own RBAC to the break-glass group, §11.25, and audited
 by Argo CD's own event log) syncs the same revision once, by hand. A transient failure (the database unreachable within the Job's deadline):
 the same manual sync, once the cause is gone. Write each manual sync into the incident's record (§11.12).
+
+*(Added 2026-11-12 by `P15-TSK-032`, from §11.4's rehearsal.)* **The one exception to "never sync the same revision again" after exit
+`10`:** a migration that failed on production's data while staging, which has applied it, refuses any fix with a lower version
+(§11.4, "In production"); once a person has fixed that data by an audited operational procedure, the same revision is synced once more
+by the manual sync above, reviewed, and written into the incident's record.
 
 **The projects bound the Applications, and nothing bounds `deploy/delivery/`.** `finapp` (the release and the edge): this repository alone,
 the namespaces `finapp` and `finapp-edge`, nothing outside a namespace, and inside one only the kinds the release and the edge render,
