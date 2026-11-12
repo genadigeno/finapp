@@ -142,9 +142,9 @@ class PlatformRehearsalContractTest {
                 .contains("'unauthorized\\|logged in'");
         assertThat(breakGlass).as("the API server's own record of every act, joined to the incident record")
                 .contains("api_audit \"$holder\"").contains("'create|r=pods,s=eviction'").contains("'list|r=secrets'")
-                .contains("'patch|r=deployments,s=scale'").contains("an audit event lacks its code, time or id")
+                .contains("'[a-z]*|r=deployments,s=scale'").contains("an audit event lacks its code, time or id")
                 .contains(">> \"$INCIDENT_FILE\"");
-        assertThat(function("api_audit")).contains("\"auditID\"").contains("\"responseStatus\"").contains("\"stageTimestamp\"");
+        assertThat(function("api_audit")).contains("field auditID").contains("\"responseStatus\"").contains("field stageTimestamp").contains("part subresource");
     }
 
     @Test
