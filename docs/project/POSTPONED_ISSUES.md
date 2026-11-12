@@ -32,6 +32,7 @@ commit and the date; do not delete the entry.
 | PI-020 | `POSTPONED` | the privileged access review, by the owner (2026-11-08) | identity - one identity may hold both roles of a propose/approve pair; required before production use |
 | PI-021 | `POSTPONED` | `P15-TSK-038`'s census, by the owner (2026-11-09) | payments - routing's version in force and the dispute door judged on an instance's clock; required before production use |
 | PI-022 | `POSTPONED` | `P15-TSK-023`'s gate, by the owner (2026-11-11) | observability - an amount printed into an exception's message or a builder's generated form, which a pod's console keeps; required before production use |
+| PI-023 | `POSTPONED` | the owner, during Phase 15 wave H (2026-11-12) | every module - the Phase 15 database pass (`P15-TST-002`): every database, own-container and Kafka tier, never run since Phase 15 began; run after the project's phases, with the storms |
 
 ---
 
@@ -521,3 +522,23 @@ commit and the date; do not delete the entry.
 - **Consequence until fixed:** such a message reaches no error body and no exported span, but an unhandled one is printed with its stack trace. The collector scrubs `Money`'s string form from the shipped record; the pod's console keeps it for the node's log rotation.
 - **Fix:** rewrite each message to name the rule and the currency, never the figure, and suppress the two builders' generated forms: sixteen classes' messages and the tests that read them. The residue list then empties, and the test holds it empty.
 - **Owner of the fix:** one small remediation entry before production use.
+
+## PI-023 — The Phase 15 database pass (`P15-TST-002`) is run after the project's phases
+
+- **Status:** `POSTPONED` (owner, 2026-11-12, during wave H: "no needed db pass", confirmed as postponed like the storms rather than
+  run as wave I). Due after the project's phases, beside PI-004's storms.
+- **What:** `P15-TST-002`, the one database pass C14 promised at the phase exit: every module's `databaseTest`, own-container and
+  `kafkaTest` tiers run fresh once on the final tree (PI-012's full run); PI-013's and PI-014's regression cases; PI-014's
+  unclassified suites classified; PI-015's struck rows performed again or struck for good. With it goes every database case a Phase
+  15 task wrote and owed to that pass (C14): each task's report names its own, and `MUTATION_TESTING.md` and `THREAT_MODEL.md`'s
+  `GAP | PI-023` rows list them.
+- **Consequence until it runs:** those cases exist and were walked by hand against the DDL at their tasks' gates; none has run on
+  PostgreSQL or Kafka in Phase 15. The reviews of this phase found database tests that could never have passed (a fixture breaking a
+  `CHECK`, a missing child row), so some will fail when first run, and a failure may be a production defect as easily as a test
+  defect. Among them are the concurrency cases the identity doors' correctness rests on (the last administrator, the role changes'
+  locks), the reporting pool's capability refusals, and the regression cases of PI-013 and PI-014. PI-012, PI-014 and PI-015 stay
+  `POSTPONED`: each says it is `FIXED` only when this pass runs it green. The Phase 15 exit records the pass as a deviation, as it
+  records the storm; `PHASE_GATES.md` §5 Phase 15's database-pass exit item is not met.
+- **Fix:** run the pass as `P15-TST-002` describes, on the tree as it then stands; classify each red as a test defect (repaired) or a
+  production defect (fixed in a task of its own); close PI-012, PI-014 and PI-015 or postpone them again by the owner.
+- **Owner of the fix:** the owner, after the project's phases; the coordinator reminds the owner at each phase exit, with the storms.

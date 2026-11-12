@@ -139,7 +139,7 @@ filing channels, real customer funds.
 | C11 | Event contracts and Kafka security | (A) event schemas as a build-time catalogue with compatibility tests against the last released versions, no runtime schema registry; Kafka over `SASL_SSL` with SCRAM-SHA-512 credentials from the secrets manager and per-principal ACLs; (B) a runtime schema registry; (C) mTLS client certificates or cloud IAM authentication | **(A)**: no consumer outside the monolith exists and Kafka is never truth; SCRAM needs no new client library | Ratified 2026-11-07 |
 | C12 | Data retention scope | (A) build the operational sweeps — outbox published rows and inbox records past their redelivery bound; idempotency records only once debt row #61 (posting once-ness) is settled — write the retention policy by data class, design audit archival to write-once storage; defer purges of financial evidence, agreements and regulatory reports to the choice of a real jurisdiction, crypto-shredding by key version the designed mechanism; (B) build every purge now against assumed periods | **(A)**: retention periods are a jurisdiction's, and the reference jurisdiction is neutral; a purge built against an invented period is a defect waiting for one | Ratified 2026-11-07 |
 | C13 | Privileged access | (A) keep platform-native operator identities with TOTP step-up; type an operator's session `OPERATOR` in audit (debt row: every session actor is `CUSTOMER`); audit a refused step-up; operator routes internal only (C9); a `finapp_reporting` `SELECT`-only database role for report generation — Phase 14's C10, its Phase 15 half — a cut candidate; workforce OIDC federation deferred until a workforce identity provider exists; (B) OIDC federation for operators now; (C) no reporting role | **(A)** | Ratified 2026-11-07 |
-| C14 | Criterion 7, the database pass and the storm | — | The standing deviation (Phase 14's C5): per task the hermetic tier, the architecture tier, the touched modules' tests and the phase's new static checks; database suites written and owed; **one database pass at the exit (`P15-TST-002`)** running every tier fresh **including `kafkaTest`** (PI-012) and closing PI-013, PI-014 and PI-015, which are due "at the next phase's database pass at the latest"; the storm `P15-TST-001` planned and `POSTPONED` (PI-004) | Ratified 2026-11-07 |
+| C14 | Criterion 7, the database pass and the storm | — | The standing deviation (Phase 14's C5): per task the hermetic tier, the architecture tier, the touched modules' tests and the phase's new static checks; database suites written and owed; **one database pass at the exit (`P15-TST-002`)** running every tier fresh **including `kafkaTest`** (PI-012) and closing PI-013, PI-014 and PI-015, which are due "at the next phase's database pass at the latest"; the storm `P15-TST-001` planned and `POSTPONED` (PI-004) | Ratified 2026-11-07 *(The database pass postponed by the owner, 2026-11-12, PI-023, as the storm.)* |
 | C15 | The carried items owned by Phase 15 | — | §25's dispositions: the production-hardening classes scheduled into this phase's tasks, the rest re-dated with a reason; applied to `CURRENT_STATE.md` and `DECISIONS.md` by `P15-TSK-002` on ratification | Ratified 2026-11-07 |
 
 C1, C3, C6, C7 and C8 are infrastructure choices a real environment would revisit against cost and an organisation's
@@ -663,7 +663,8 @@ alert rule** — `-025` gives each critical flow its SLO alerts and the ledger i
   counted sample of at least one procedure each, the platform section §11 whole). Each ends in the financial census where money is involved.
 - **The exit's database pass**, `P15-TST-002`: every module's `databaseTest`, own-container and `kafkaTest` tiers fresh on
   the final tree (PI-012); PI-013's and PI-014's regression cases green (fixed by `-033`); PI-014's unclassified suites
-  classified; PI-015's struck rows performed again or struck for good with a reason.
+  classified; PI-015's struck rows performed again or struck for good with a reason. *(Postponed by the owner, 2026-11-12,
+  `POSTPONED_ISSUES.md` PI-023: run after the project's phases, as the storm; the exit records it as a deviation.)*
 - **The storm**, `P15-TST-001`: planned and `POSTPONED` (PI-004).
 
 ---
@@ -735,8 +736,8 @@ restore rehearsal (`-030`), the runbooks' rehearsal (`-032`), the database pass.
 | `P15-TSK-041` | Jackson, `lz4-java` and `snappy-java` moved to their fixed releases *(added by the owner, 2026-11-09, `THREAT_MODEL.md` §6 item 12)* | M15.2 | `-006` | `DOD-BUILD`, `DOD-SEC` |
 | `P15-TSK-042` | Operators refused on the public surface *(added by the owner, 2026-11-09, `THREAT_MODEL.md` §6 item 22)* | M15.7 | `-011`, `-022` | `DOD-SEC`, `DOD-API` |
 | `P15-TSK-043` | Operator access hardened: a promoted person's sessions ended, the reporting pool judged by capability, the surface refusals alerted *(added by the owner, 2026-11-11, `THREAT_MODEL.md` §6 items 36 and 39)* | M15.7 | `-020`, `-023`, `-042` | `DOD-SEC`, `DOD-OBS` |
-| `P15-TST-002` | The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015) | M15.11 | `-002`…`-033`, `-035`…`-043`, `P14-REM-009` | `DOD-TEST` |
-| `P15-TSK-034` | The production readiness review | M15.11 | `-032`, `P15-TST-002` | `DOD-DOC` |
+| `P15-TST-002` | The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015) *(postponed by the owner, 2026-11-12, PI-023)* | M15.11 | `-002`…`-033`, `-035`…`-043`, `P14-REM-009` | `DOD-TEST` |
+| `P15-TSK-034` | The production readiness review | M15.11 | `-032` *(and `P15-TST-002` until it was postponed, 2026-11-12)* | `DOD-DOC` |
 | `P15-TST-001` | The rolling-deploy storm — `POSTPONED` (PI-004) | M15.11 | all | `DOD-TEST` |
 | `P15-DOC-001` | The Phase 15 exit review | M15.11 | all but `TST-001` | `DOD-DOC` |
 
@@ -745,10 +746,10 @@ restore rehearsal (`-030`), the runbooks' rehearsal (`-032`), the database pass.
 **Waves** (each wave's items depend only on earlier waves; every dependency-free item of a wave may run in parallel, the
 owner's standing rule): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`, `-033`; **C** `-004`,
 `-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`, `-036`; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035`, `-037`, `-038`, `-039`, `P14-REM-009` *(the last four added by the owner, 2026-11-08)*; **E** `-012`,
-`-016`, `-019`, `-022`, `-031`, `-040`, `-041` *(the last two added by the owner, 2026-11-09)*; **F** `-007`, `-020`, `-023`, `-030`, `-042` *(the last added by the owner, 2026-11-09)*; **G** `-017`, `-043` *(added by the owner, 2026-11-11)*; **H** `-032`; **I** `P15-TST-002`;
+`-016`, `-019`, `-022`, `-031`, `-040`, `-041` *(the last two added by the owner, 2026-11-09)*; **F** `-007`, `-020`, `-023`, `-030`, `-042` *(the last added by the owner, 2026-11-09)*; **G** `-017`, `-043` *(added by the owner, 2026-11-11)*; **H** `-032`; **I** `P15-TST-002` *(postponed by the owner, 2026-11-12, PI-023)*;
 **J** `-034`; **K** `P15-DOC-001` (`P15-TST-001` `POSTPONED`, PI-004).
 
-**Critical path** (bold): **`-001` → `-003` → `-004` → `-005` → `-012` → `-007` → `-017` → `-032` → `TST-002` → `-034`
+**Critical path** (bold): **`-001` → `-003` → `-004` → `-005` → `-012` → `-007` → `-017` → `-032` → `-034` *(`TST-002` postponed, 2026-11-12)*
 → `DOC-001`**; the equal-length branch `-003` → `-009` → `-010` / `-011` → `-012` (with `-008` before `-009`).
 
 **Every edge**: `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`, `-033` after `-001`; `-029` after `-002`;
@@ -757,8 +758,8 @@ owner's standing rule): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-02
 `-014` and `-026`; `-016` after `-014` and `-018`; `-017` after `-007`, `-012` and `-016`; `-019` after `-018`; `-020`
 after `-012` and `-019`; `-022` after `-011`; `-023` and `-030` after `-012`; `-025` after `-024`; `-027` and `-028`
 after `-026`; `-031` after `-008` and `-018`; `-035` after `-025` (added by the owner, 2026-11-08); `-036` after `-001` and `-002`, whose ruling created it (added by `-002`, 2026-11-08, applying C15; wave C, off the critical path); `-037` after `-033`, `-038` after `-002`, `-039` after `-021` (added by the owner, 2026-11-08; off the critical path); `-040` after `-004`, `-037`, `-038` and `P14-REM-009`, `-041` after `-006` (added by the owner, 2026-11-09; off the critical path); `-043` after `-020`, `-023` and `-042` (added by the owner, 2026-11-11; off the critical path); `-042` after `-011` and `-022` (added by the owner, 2026-11-09; off the critical path); `-032` after `-017`, `-020`, `-025`, `-028` and `-030`; `P15-TST-002` after
-every item from `-002` to `-033`, `-035` to `-043` and `P14-REM-009`, so that it runs on the final tree; `-034` after `-032` and `P15-TST-002`; `P15-DOC-001` after every item but
-`P15-TST-001`.
+every item from `-002` to `-033`, `-035` to `-043` and `P14-REM-009`, so that it runs on the final tree; `-034` after `-032` (and `P15-TST-002` until the owner postponed it, 2026-11-12); `P15-DOC-001` after every item but
+`P15-TST-001` and `P15-TST-002` (both postponed by the owner).
 
 ## 20. Exit criteria (summary — the gate is `PHASE_GATES.md` §5 Phase 15)
 
