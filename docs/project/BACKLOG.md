@@ -28729,7 +28729,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - *Routed by `P15-TSK-023`'s gate (2026-11-11), status unchanged:* owed by C14: `LoanApplicationDatabaseTest#aLendingFlowLeavesNoNeedle` (the needle sweep through a lending flow over the recorded spans and the printed output, its class `own-container`), written and walked against its fixtures by hand. The kafka tier's consumers now record an `inbox.handle` span around each handler, which changes no outcome a kafka suite reads.
 - *Routed by `P15-TSK-043` (2026-11-12, its review's fix round), status unchanged:* owed to this pass (C14), written and walked by hand: `IdentityAdministrationDatabaseTest#aFirstRoleEndsTheGranteesSessions` and `#aSecondRoleEndsNoSession` (the same tokens refused after a first role, both records, a second role and a retry ending none), and `ReportingPoolCapabilityDatabaseTest` (nine cases: each writer-capable role refused by its reason - a chain, a `SET`-only membership, a direct `INSERT`, a `TRUNCATE`, `pg_write_all_data`, column grants to the role, through a membership and to `PUBLIC` (revoked in the case), `TRIGGER`, a sequence's `UPDATE` and `USAGE`, a schema's `CREATE`, the server's program and file writers - and `finapp_reporting` and a sequence-reading role opening; its planted roles are dropped after each case). `THREAT_MODEL.md` T3's and T44's `PLANNED` rows name this item for them.
 
-**P15-TSK-034 — The production readiness review** — `READY` (2026-11-12; marked by the coordinator at `P15-TSK-032`'s merge, master `c13b8980`; every dependency `COMPLETE`)
+**P15-TSK-034 — The production readiness review** — `COMPLETE` (2026-11-12; designed, built and gated on branch `P15-TSK-034` from master `45e5c20b`; documents and one hermetic guard, no production code, migration, manifest or ADR; marks no task `READY` - the coordinator does; read "`READY` (2026-11-12; marked by the coordinator at `P15-TSK-032`'s merge, master `c13b8980`; every dependency `COMPLETE`)" until the design, then `IN_PROGRESS`)
 - **Objective**: state, per deployable unit and per module, whether it meets the readiness standard, with evidence.
 - **Affected components**: `PRODUCTION_READINESS.md` (`-001`'s), every task's evidence.
 - **Dependencies**: `-032`. *(Read "`-032`, `P15-TST-002`" until the owner postponed the database pass, 2026-11-12, PI-023.)*
@@ -28749,6 +28749,31 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* the standard is written: [`PRODUCTION_READINESS.md`](../architecture/PRODUCTION_READINESS.md), the twelve dimensions as checkable clauses, a multi-instance row per unit (this entry's), six unit tables and 23 module tables, the open `P14-REM-*` entries named per unit and module. Its evidence grammar is the threat model's, parsed and resolved by `EvidenceCitations` (`com.finapp.app.architecture`), which this task's guard reuses. *(The fix round, 2026-11-08:)* the evidence grammar gained content pins (`contains: …`, `lacks: …`) and a `GAP` state, and the standard gained a boundary-to-unit map for Security (i) and clause-level `N/A` for managed PostgreSQL and Kafka on Deployment (a)–(c); a file that is not a test counts only with a pin or a test asserting its property.
 - *Routed by the owner (2026-11-08), status unchanged:* `X-TSK-008`'s remainder (the ordering `CHECK`s and the second session leftover) is counted as a named gap, horizon before production use.
+- *As built (2026-11-12):* [`PRODUCTION_READINESS.md`](../architecture/PRODUCTION_READINESS.md) §3 and §4 ruled, all 170 cells
+  (six units of thirteen rows, twenty-three modules of four): 64 `MET as rehearsed`, 4 multi-instance `PASS`, 83 `GAP`, 19
+  `N/A`; every **Today** cell kept as the survey's record. Every unit, and every module with runtime behaviour, has at least
+  one gap; nothing is called ready, and no cell claims compliance. The multi-instance rows: `finapp-migrator` `PASS` (ten
+  runs of the image at once in CI's migrator job), PostgreSQL, Kafka and telemetry `PASS` at three replicas on `kind`, each
+  naming what rests on PI-023 or PI-004; `finapp-app` `GAP` (time still decided on an instance's clock: `X-TSK-006`,
+  `X-TSK-007`, `X-TSK-008`'s remainder, PI-021; the storm, PI-004; the counted contention cases, PI-023 with PI-012 to
+  PI-015), the edge `GAP` (its cluster-wide count's cases, PI-023). Every open remediation entry (`P14-REM-001` to `-008`,
+  `-010`, `-011`), every `POSTPONED` issue (PI-001, PI-003 to PI-024) and `X-TSK-008` is a `GAP` owner in `finapp-app`'s row
+  it touches, and Security (i) lists, per unit, each CRITICAL or HIGH threat at its boundaries whose rows still read `GAP` or
+  `REMEDIATION`, with their owners. §1 gained the review's five readings (the ruling words; a rehearsal read through its
+  contract test, its dated run named in prose; a database-tier test never makes a cell met; an owner is someone who can still
+  act; where the named gaps sit). What no entry, issue or item held went to `THREAT_MODEL.md` §6 **item 43**, (a) to (h),
+  awaiting the owner: the managed services' own signals; the migrator's, the edge's and the telemetry stack's own signals; the
+  telemetry stack delivered by no Application and the edge's and telemetry's namespaces with no quota; settlement's and
+  cross-border's alerts owned by another module, and the owner label held in form only; `paymentmethods`, `party` and
+  `accounts` with no signal of their own; rollouts of the edge and the test-only data tier never rehearsed; Phase 16's drills
+  held by no entry; a test named for more than it reads. `P14-REM-009` struck from accounting's named gaps (closed
+  2026-11-09). **The guard**: `ProductionReadinessIsEvidencedTest` (`com.finapp.app.architecture`, eight tests, hermetic),
+  reusing `EvidenceCitations`: every row parses, every cell ruled, a `MET` or `PASS` on paths that resolve (no document, no
+  unpinned bare file, no database-tier test), a `GAP` naming a live owner, an `N/A` its reason, every open entry and issue
+  owning a gap, no compliance or readiness wording. Its probe, a planted evidence link to a missing file, performed and
+  recorded (`MUTATION_TESTING.md` §2). `THREAT_MODEL.md` §8's sentence naming this task rewritten. **Deviations**: none from
+  the scope; the entry's "the threat-model guard's mechanism reused" is a new guard class over the same `EvidenceCitations`,
+  not a widening of `ThreatModelIsCompleteTest`.
 
 **P15-TST-001 — The rolling-deploy storm** — `POSTPONED` (by the owner, `POSTPONED_ISSUES.md` PI-004: every later phase's
 storm runs after the project's phases)

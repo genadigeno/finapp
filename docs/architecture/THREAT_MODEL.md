@@ -2028,6 +2028,72 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     namespace closed. *Recommendation*: **(i)**, before the first real environment. **Decided 2026-11-12** under the owner's
     standing word: as recommended; not built.
 
+43. **What the readiness review found that no task, issue or item held** *(added 2026-11-12 by the readiness review,
+    `PRODUCTION_READINESS.md` §3 and §4)*. Eight things, each a decision. None is a threat's control today; each is a
+    readiness `GAP` this item holds until the owner rules it, and the review's cells name it as `owner item 43`.
+
+    **(a) The managed services' own signals.** PostgreSQL's and the brokers' own metrics and logs (connections, replication,
+    storage and locks; under-replicated partitions, in-sync replicas and disk) are read by nothing the platform owns. The
+    Terraform plans export the database's and the brokers' logs to the cloud's log service and turn on Performance Insights,
+    and no rule, dashboard or runbook section reads any of it: the platform sees the data tier from the client side alone (the
+    pools, the consumers), so a degrading database is seen once requests fail. The options: **(i)** with the first real
+    environment, the services' metrics into the cluster's Prometheus (an exporter of the cloud's metrics, or the services'
+    own Prometheus endpoints) and their logs through the back end item 37 (a) chose, with rules and runbook sections owned by
+    `platform`, the thresholds calibrated by Phase 16's load model; **(ii)** the client-side signals alone. *Recommendation*:
+    **(i)**, with the first real environment, before it holds a customer's money.
+
+    **(b) The platform's own components, watched by nothing.** A failed or stalled migrator Job alerts nobody (a failed Sync
+    hook is seen only by someone looking at the controller), and its lines are neither structured nor shipped. The edge
+    publishes metrics no scrape reads, writes an access log nobody ships, and no rule reads it. The telemetry stack's own lines
+    are not shipped. The options: **(i)** the edge's metrics scraped; the edge's, the migrator's and the telemetry stack's lines
+    shipped through the collector; a rule on a failed or overdue migrator Job and one on the edge's error ratio, owned by
+    `platform`, each with its promtool cases and a runbook section; **(ii)** leave them to a real environment's own tooling.
+    *Recommendation*: **(i)**, in Phase 16's first wave: none of it needs an account, and a migration that fails at night
+    should wake someone.
+
+    **(c) Delivery and bounds outside `finapp`.** No Argo CD Application and no staging or production overlay renders the
+    telemetry stack: its base and its `kind` overlay exist, and the survey's reading that the collector is in "every
+    environment's release" did not hold. Neither `finapp-edge` nor `finapp-observability` has a `ResourceQuota`, so the bar's
+    Resource limits (b) has nothing to hold there. The options: **(i)** an observability overlay per environment, its
+    Application in the root after the release, with item 37 (a)'s back ends; a quota in each namespace sized from its own
+    worst moment as `finapp`'s is, held by the manifest check; **(ii)** the quota only, the stack delivered by hand.
+    *Recommendation*: **(i)**, before the first real environment; the quota first, since it needs no account.
+
+    **(d) Alerts owned by another module, and an owner check that holds a form.** Settlement's rules (`SettlementSourceSilent`,
+    `SettlementFileStuck` and the rest) carry the owner `reconciliation`, and the cross-border rules
+    (`CrossBorderPaymentUndelivered`, `OutboundCreditUnknownAged` and the rest) carry `fx`, both through their group's label, so
+    a settlement or a cross-border alert wakes another module's owner; nothing records that sharing as decided. And
+    `AlertCatalogueTest` holds that every alert has an owner label of lower-case letters, not that it names a module of the
+    build, which `RunbookRehearsalCountTest` holds for the runbook's owners (every value read on 2026-11-12 is a module). The
+    options: **(i)** label each rule by the module whose flow it watches, and hold the label to `settings.gradle.kts`'s modules
+    as the runbook's test does; **(ii)** keep the shared labels and record the sharing as the ownership. *Recommendation*:
+    **(i)**, a small change before production use: who is woken for a settlement alert is settlement's question (§4 of the
+    plan).
+
+    **(e) Modules with flows and no signal.** `paymentmethods` tokenises a card against its provider with no meter, no alert and
+    no runbook section; `party` (registration) has one counter and `accounts` one gauge, and neither has an alert or a section of
+    its own. The options: **(i)** `paymentmethods` gains a provider-outcome meter, an alert and a section beside the payment
+    provider's, since it faces a provider (T23); `party`'s registration and `accounts`' openings are read under identity's and
+    transfers' objectives, and their cells ruled `N/A` by the owner's word; **(ii)** all three as (i)'s `paymentmethods`.
+    *Recommendation*: **(i)**, before production use.
+
+    **(f) Rollouts never rehearsed.** The edge's controllers, the test-only PostgreSQL and the test-only broker never changed
+    version on `kind`, so their roll and roll back (the bar's Deployment (d)) never ran; a managed minor upgrade of either
+    service never ran anywhere; and an edge controller lost under traffic was never shown. *Recommendation*: the three `kind`
+    steps in Phase 16's first wave, which need no account; the managed upgrade with the first real environment.
+
+    **(g) Phase 16's drills, held by no entry yet.** The review leans on drills `PHASE_15_PLAN.md` §1.3 gives Phase 16: a
+    database failover (runbook §11.40, and the socket timeout item 42 (h) left to it), the data tier's availability, and ten
+    instances at load. Phase 16 has no backlog yet, so nothing holds them. *Recommendation*: the Phase 15 → 16 transition
+    writes each as a task; this part closes when it does.
+
+    **(h) A test named for more than it reads.** `KubernetesManifestsTest#requestsAndLimitsAreSet` says "every container states
+    requests and limits" and reads the application's container alone. Nothing is unheld: the manifest policy's
+    `[resources-present]` rule holds every container of every workload, its plant refused (`everyPolicyIsRefusedByAPlant`).
+    *Recommendation*: name the test for what it reads, in the next change to that class.
+
+    *Awaiting the owner* (2026-11-12): the standing word for waves G and H does not reach wave J.
+
 ## 7. Decided against
 
 As `PHASE_15_PLAN.md` §9.3 decided, and kept here so that the model does not count these as missing controls:
@@ -2049,5 +2115,6 @@ As `PHASE_15_PLAN.md` §9.3 decided, and kept here so that the model does not co
   text is written to them.
 - That a `database`-tier test ran fresh on this tree (§4's note).
 - That any planned control exists before its task's gate replaces the promise with evidence. The guard enforces that.
-- That the platform is ready for production. That is `PRODUCTION_READINESS.md`'s question, and `P15-TSK-034` answers it.
+- That the platform is ready for production. `PRODUCTION_READINESS.md` rules each unit and module against its bar as
+  rehearsed in this repository, names every gap's owner, and calls none of them ready.
 - Compliance with, or certification under, any standard.
