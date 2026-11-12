@@ -1673,8 +1673,11 @@ public final class Rehearsal {
         say("compromise sign-in-after status=" + again.status());
         String replaced = "a-replaced-password-" + UUID.randomUUID();
         if (again.status() == 201) {
+            // A holder of a factor changes the password on a stepped-up session alone (403 identity.AssuranceRequired otherwise): the factor
+            // the holder confirmed is theirs is what proves them here. A factor the holder did not recognise means a new identity instead.
+            String stepped = fresh(who);
             Answer changed = post(operatorBase, "/v1/me/credential", "{\"currentPassword\":" + jsonString(password()) + ",\"newPassword\":"
-                    + jsonString(replaced) + "}", field(again.body(), "sessionToken"), null);
+                    + jsonString(replaced) + "}", stepped, null);
             say("compromise password-change status=" + changed.status() + (ok(changed) ? "" : " code=" + codeOf(changed)));
             if (ok(changed)) {
                 state.setProperty(who + ".password", replaced);
