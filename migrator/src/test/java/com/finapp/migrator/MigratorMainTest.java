@@ -142,8 +142,12 @@ class MigratorMainTest {
     @DisplayName("a database that is not there is transient, and its failure prints neither the password nor the URL's value")
     void anUnreachableDatabaseIsTransientAndPrintsNoSecret() throws IOException {
         aDirectoryForEverySchema(true);
-        ExitCode exit = MigratorMain.run(new String[0], LOCAL, sql, out);
+        // The first connection's retry with its pauses not slept (FirstConnectionTest holds the bound itself).
+        FirstConnection noWait = new FirstConnection(FirstConnection.ATTEMPTS, FirstConnection.PAUSE, duration -> { }, out, "finapp-migrator");
+        ExitCode exit = MigratorMain.run(new String[0], LOCAL, sql, out, noWait);
         assertThat(exit).as("nothing listens on port 1").isEqualTo(ExitCode.TRANSIENT);
+        assertThat(output()).as("tried again before giving up, every attempt but the last").contains("connect attempt=" + (FirstConnection.ATTEMPTS - 1) + " of ")
+                .doesNotContain("connect attempt=" + FirstConnection.ATTEMPTS + " of ");
         assertThat(output()).doesNotContain("a-throwaway-password").doesNotContain("127.0.0.1:1");
     }
 }

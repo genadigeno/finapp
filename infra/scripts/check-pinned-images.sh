@@ -182,6 +182,27 @@ list_tags_like_dockerhub() {
         | tr ',' '\n' | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | grep -E "^${major}${rest}\$"
 }
 
+# quay.io's tags, anonymously, every page (P15-TSK-032, for Argo CD). A page that fails fails the list, and a page limit bounds it, as for ghcr.
+list_tags_quay() {
+    page=1
+    tags=""
+    while :; do
+        [ "$page" -le 50 ] || return 1
+        body=$(curl -fsS "https://quay.io/api/v1/repository/${1#quay.io/}/tag/?limit=100&onlyActiveTags=true&page=$page") || return 1
+        tags="$tags
+$(printf '%s' "$body" | tr ',' '\n' | sed -n 's/.*"name": *"\(v\{0,1\}[0-9][0-9.]*\)".*/\1/p')"
+        printf '%s' "$body" | grep -q '"has_additional": *true' || break
+        page=$((page + 1))
+    done
+    printf '%s\n' "$tags" | sed '/^$/d'
+}
+
+# Docker's official images as ECR Public mirrors them (public.ecr.aws/docker/library/<name>): the releases are Docker Hub's, compared
+# within the major and the suffix as a base's are (P15-TSK-032, for the Redis that Argo CD's install names).
+list_tags_ecr_library() {
+    list_tags_like_dockerhub "${1#public.ecr.aws/docker/library/}" "$2"
+}
+
 check() {
     name=$1 repository=$2 version=$3 digest=$4 lister=$5
 
@@ -267,6 +288,13 @@ check cosign                  "$COSIGN_REPOSITORY"                  "$COSIGN_VER
 check policy-controller       "$POLICY_CONTROLLER_REPOSITORY"       "$POLICY_CONTROLLER_VERSION"       "$POLICY_CONTROLLER_DIGEST"       list_tags_ghcr
 check policy-controller-chart "$POLICY_CONTROLLER_CHART_REPOSITORY" "$POLICY_CONTROLLER_CHART_VERSION" "$POLICY_CONTROLLER_CHART_DIGEST" list_tags_ghcr
 check registry                "$REGISTRY_REPOSITORY"                "$REGISTRY_VERSION"                "$REGISTRY_DIGEST"                list_tags_dockerhub
+# Argo CD (P15-TSK-032): the controller and the two images its install manifest names beside its own. A newer Argo CD is a new install
+# manifest too: ARGOCD_INSTALL_SHA256 moves with it, and the Dex and Redis versions are the ones that manifest names.
+check argocd       "$ARGOCD_REPOSITORY"       "$ARGOCD_VERSION"       "$ARGOCD_DIGEST"       list_tags_quay
+check argocd-dex   "$ARGOCD_DEX_REPOSITORY"   "$ARGOCD_DEX_VERSION"   "$ARGOCD_DEX_DIGEST"   list_tags_ghcr
+check argocd-redis "$ARGOCD_REDIS_REPOSITORY" "$ARGOCD_REDIS_VERSION" "$ARGOCD_REDIS_DIGEST" list_tags_ecr_library
+# metrics-server, for the kind delivery rehearsal (P15-TSK-032): its manifest moves with its version (METRICS_SERVER_MANIFEST_SHA256).
+check metrics-server "$METRICS_SERVER_REPOSITORY" "$METRICS_SERVER_VERSION" "$METRICS_SERVER_DIGEST" list_tags_registry_k8s
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

@@ -120,7 +120,7 @@ the applied counts of the concurrent runs sum to the number of migrations, and t
 |---|---|---|
 | `0` | Every schema is at the latest migration: applied now, or nothing to apply | Succeeds; the rollout may start |
 | `10` | A migration or a validation failed. It would fail the same way again | `FailJob`: no retry; §11.4 of the runbook |
-| `11` | A lock was not granted within the bound, or the database was unavailable | Retried, up to `backoffLimit` |
+| `11` | A lock was not granted within the bound, or the database was unavailable: the first connection is first tried ten times, ten seconds apart (`FirstConnection`: 90 s to 190 s a pod, within the deadline below across every pod; `P15-TSK-032`, because a new pod's first connections are refused until the cluster's network policy reaches its address), and only a refused or unanswered connection is tried again, never a credential, a database that is not there or a TLS refusal | Retried, up to `backoffLimit` |
 | `12` | The configuration or identity was refused; a credential the server refused; a database that is not there; a TLS connection that cannot be verified (the CA bundle, its path, the host). Nothing ran | `FailJob` |
 | others | The JVM's own (`1` uncaught, `3` out of memory) or a killed container's (`137`, `143`) | Retried, up to `backoffLimit` |
 

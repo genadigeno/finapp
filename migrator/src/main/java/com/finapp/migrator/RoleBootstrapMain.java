@@ -36,6 +36,11 @@ public final class RoleBootstrapMain {
     }
 
     static ExitCode run(String[] args, Map<String, String> environment, PrintStream out) {
+        return run(args, environment, out, FirstConnection.standard(out, "finapp-bootstrap"));
+    }
+
+    /** The same, with the first connection's retry given: a test's pauses are not slept. */
+    static ExitCode run(String[] args, Map<String, String> environment, PrintStream out, FirstConnection firstConnection) {
         try {
             if (args.length != 0) {
                 throw new RefusedConfiguration("this process takes no arguments");
@@ -51,7 +56,7 @@ public final class RoleBootstrapMain {
                 throw new RefusedConfiguration("the master user cannot be one of the roles it creates");
             }
             Map<RoleBootstrap.Role, String> passwords = RoleBootstrap.passwords(environment);
-            return applyTwice(dataSource(url, master, masterPassword), passwords, out);
+            return applyTwice(dataSource(url, master, masterPassword), passwords, out, firstConnection);
         } catch (RefusedConfiguration refused) {
             out.println("finapp-bootstrap result=" + ExitCode.REFUSED + " reason=" + refused.getMessage());
             return ExitCode.REFUSED;
@@ -77,19 +82,25 @@ public final class RoleBootstrapMain {
 
     static ExitCode applyTwice(DataSource dataSource, Map<RoleBootstrap.Role, String> passwords, PrintStream out)
             throws SQLException {
+        return applyTwice(dataSource, passwords, out, FirstConnection.standard(out, "finapp-bootstrap"));
+    }
+
+    static ExitCode applyTwice(DataSource dataSource, Map<RoleBootstrap.Role, String> passwords, PrintStream out,
+            FirstConnection firstConnection) throws SQLException {
         try {
-            return applyOnce(dataSource, passwords, out);
+            return applyOnce(dataSource, passwords, out, firstConnection);
         } catch (SQLException collision) {
             if (!ROLE_COLLISIONS.contains(collision.getSQLState())) {
                 throw collision;
             }
-            return applyOnce(dataSource, passwords, out);
+            return applyOnce(dataSource, passwords, out, firstConnection);
         }
     }
 
-    private static ExitCode applyOnce(DataSource dataSource, Map<RoleBootstrap.Role, String> passwords, PrintStream out)
-            throws SQLException {
-        try (Connection connection = dataSource.getConnection()) {
+    private static ExitCode applyOnce(DataSource dataSource, Map<RoleBootstrap.Role, String> passwords, PrintStream out,
+            FirstConnection firstConnection) throws SQLException {
+        // A new pod's first connection may be refused until the cluster's network policy has reached it (FirstConnection).
+        try (Connection connection = firstConnection.open(dataSource)) {
             for (String line : RoleBootstrap.apply(connection, passwords)) {
                 out.println("finapp-bootstrap " + line);
             }

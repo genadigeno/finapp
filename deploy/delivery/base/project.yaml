@@ -17,6 +17,10 @@ kind: AppProject
 metadata:
   name: finapp
   namespace: argocd
+  annotations:
+    # Before the Applications that name it. In the same wave the root created an Application a second before its project, the
+    # Application's first sync failed for want of the project, and with no retry it stayed failed (seen on kind, P15-TSK-032).
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   description: The platform's release and edge, synced from this repository alone
   sourceRepos:

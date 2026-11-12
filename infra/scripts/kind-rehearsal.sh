@@ -28,6 +28,10 @@
 # the activation gates of sections 1-10 and the alerts a plant raises without stopping anything; `incidents` holds the outages, the rolls,
 # break-glass and the incident itself.
 #
+# `delivery` (P15-TSK-032): the data tier, the simulator and the topics as above, and then nothing of this script's own release: Argo CD,
+# installed from what infra/scripts/controller-check.sh renders, syncs deploy/overlays/staging through a rehearsal root, promote.sh writes
+# each pair and the smoke reads the result (kind-rehearsal/delivery.sh, OPERATIONS_RUNBOOK.md section 11.36).
+#
 # A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
 # common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
 # that a kept cluster is what it is used against, and refused whenever CI is set: a record is only ever of a whole run.
@@ -60,10 +64,10 @@ ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 # What the run rehearses: `release` (the default, P15-TSK-012's walk from N - 1 to N and back) or `rotations` (P15-TSK-020: release N alone,
 # then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
 SCOPE=${REHEARSAL_SCOPE:-release}
-case $SCOPE in release | rotations | signals | incidents) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals or incidents, not $SCOPE" >&2; exit 2 ;; esac
+case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents or delivery, not $SCOPE" >&2; exit 2 ;; esac
 # Every scope but `release` deploys release N alone: the steps below that name N - 1 deploy N.
 N_ONLY=""
-case $SCOPE in rotations | signals | incidents) N_ONLY=1 ;; esac
+case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
 # The platform scopes' API audit log (Q12): only they write one.
 AUDITED=""
 case $SCOPE in signals | incidents) AUDITED=1 ;; esac
@@ -526,8 +530,8 @@ load_tagged "$CURL_REPOSITORY" "$CURL_VERSION" "$CURL_DIGEST"
 IMAGE_APP_N=$(load_built finapp-app:rehearsal-n)
 IMAGE_MIGRATOR_N=$(load_built finapp-migrator:rehearsal-n)
 if [ -n "$N_ONLY" ]; then
-    # Rotations and the platform's procedures are rehearsed on release N alone: the first deployment is N's, so every step below that
-    # names N - 1 deploys N.
+    # Rotations, the platform's procedures and the delivery are rehearsed on release N alone: the first deployment is N's, so every
+    # step below that names N - 1 deploys N.
     IMAGE_APP_NM1=$IMAGE_APP_N
     IMAGE_MIGRATOR_NM1=$IMAGE_MIGRATOR_N
 else
@@ -624,7 +628,15 @@ fi
 for file in "$A"/*.yaml; do
     case $(basename "$file") in
         all.yaml | Deployment.finapp-app.yaml | HorizontalPodAutoscaler.finapp-app.yaml | Job.finapp-migrator.yaml) ;;
-        *) apply_files "$file" ;;
+        *)
+            # The delivery scope (P15-TSK-032): only what the environment brings, the test-only data tier; the release is Argo CD's, and
+            # the two data-tier policies, which staging renders under the same names, reach a cluster through it.
+            if [ "$SCOPE" = delivery ]; then
+                case $(basename "$file") in NetworkPolicy.finapp-app-data-tier.yaml | NetworkPolicy.finapp-migrator-data-tier.yaml) continue ;; esac
+                grep -q 'finapp/test-only: "true"' "$file" || continue
+            fi
+            apply_files "$file"
+            ;;
     esac
 done
 {
@@ -701,6 +713,9 @@ kafka_admin kafka-acls.sh --add --allow-principal "User:$application_user" --ope
     || cannot "could not grant the consumer groups"
 log "$(printf '%s\n' "$topics" | wc -l) topics created with $partitions partitions and the application's ACLs"
 
+# The delivery scope (P15-TSK-032) deploys nothing of its own from here to the census: the bootstrap, the release and the edge are Argo CD's
+# and the pipeline role's, in kind-rehearsal/delivery.sh, which is sourced once the census and the client below are defined.
+if [ "$SCOPE" != delivery ]; then
 step bootstrap-roles
 sed "s#MIGRATOR_IMAGE#$IMAGE_MIGRATOR_NM1#; s#PROBE_IMAGE#$CURL_IMAGE#" "$DIR/bootstrap-job.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the bootstrap Job"
 wait_job finapp finapp-role-bootstrap 300 role-bootstrap
@@ -774,6 +789,7 @@ done
 kube -n finapp-edge get secret finapp-edge-local-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > "$CLIENT/edge-ca.crt"
 [ -s "$CLIENT/edge-ca.crt" ] || fail "the edge's local CA could not be read"
 pass "the edge is up: two controllers per surface, reading their certificates at mode 0440 through fsGroup"
+fi
 
 NODE_IP=$(dock inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "$NODE")
 [ -n "$NODE_IP" ] || cannot "the node has no address on the kind network"
@@ -892,6 +908,14 @@ census() {
     fi
     pass "census $label green"
 }
+
+# The delivery scope (P15-TSK-032) ends here: everything from the controllers to the last census is kind-rehearsal/delivery.sh's.
+if [ "$SCOPE" = delivery ]; then
+    # shellcheck source=infra/scripts/kind-rehearsal/delivery.sh
+    . "$DIR/delivery.sh"
+    step end
+    finish
+fi
 
 # ---------------------------------------------------------------------------------------------------
 # Smoke, then the hold, then N - 1 on N's schema.

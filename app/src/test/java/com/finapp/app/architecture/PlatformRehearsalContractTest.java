@@ -59,7 +59,7 @@ class PlatformRehearsalContractTest {
     @DisplayName("the two scopes deploy release N alone, source platform.sh at the scope branch, and run each of its steps in order")
     void thePlatformScopesRunReleaseNAloneAndSourceTheirSteps() {
         assertThat(harness).contains("case $SCOPE in release | rotations | signals | incidents)")
-                .contains("case $SCOPE in rotations | signals | incidents) N_ONLY=1 ;; esac")
+                .contains("case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac")
                 .contains("if [ \"$SCOPE\" = signals ] || [ \"$SCOPE\" = incidents ]; then").contains(". \"$DIR/platform.sh\"");
         assertThat(platform).as("every step of each scope dispatched")
                 .contains("signals_alerting;").contains("signals_plants;").contains("signals_staff;").contains("signals_surface;")

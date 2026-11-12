@@ -167,3 +167,34 @@ TEMPO_DIGEST=sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e
 LOKI_REPOSITORY=grafana/loki
 LOKI_VERSION=3.7.9
 LOKI_DIGEST=sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+
+# Argo CD and the External Secrets chart, rendered under a rule (P15-TSK-032; OPERATIONS_RUNBOOK.md section 11.36): sourced by
+# infra/scripts/controller-check.sh, which renders both and holds them to infra/scripts/manifest-policy/controllers.rego, and by the kind
+# rehearsal's delivery scope, which installs exactly what that check rendered. Argo CD is installed from its release's own install manifest,
+# a raw file at the release's tag, held by the file's sha256 (a moved tag changes the bytes, and the check refuses them); every image it
+# names is rewritten to these digests, and the policy refuses any other. Dex and Redis are the images that manifest names beside its own,
+# at the versions it names: a new Argo CD release moves all three and the sha256 together.
+ARGOCD_REPOSITORY=quay.io/argoproj/argocd
+ARGOCD_VERSION=v3.6.1
+ARGOCD_DIGEST=sha256:296e3d74f449b2ce45265613fcb68c18ed7366488360c8ea32f5f2a93d2e5c54
+ARGOCD_INSTALL_SHA256=7be23ca7d9ca3d3074dee8332f1ca92a933b990cee7c9cf22cf3843ee8c2913e
+
+ARGOCD_DEX_REPOSITORY=ghcr.io/dexidp/dex
+ARGOCD_DEX_VERSION=v2.46.0
+ARGOCD_DEX_DIGEST=sha256:933fcd3f523338c847b88ef84a7145fb2fcb7b9917f08418612afeaaa2001777
+
+ARGOCD_REDIS_REPOSITORY=public.ecr.aws/docker/library/redis
+ARGOCD_REDIS_VERSION=8.10.1-alpine
+ARGOCD_REDIS_DIGEST=sha256:ef216d85ec44f4fdf7c0e6df2d1757a4734ed32fbb278cabd3181b5a27353b79
+
+# The External Secrets chart's archive at ESO_VERSION without its leading v: a classic Helm repository prints no digest, so the archive's
+# own sha256 is the pin. The same value kind-rehearsal/rotations.sh pulls by, which ControllerRenderContractTest holds equal.
+ESO_CHART_SHA256=0a6d9e91b1ff50adfdbf24b50b582babfa7c5b7df42b21974ca4b3fb88ee5e34
+
+# metrics-server, for the kind delivery rehearsal alone (P15-TSK-032): kind has no metrics source, so the release's HorizontalPodAutoscaler
+# is Degraded under Argo CD's own check and the root never applies the edge's wave. Installed from its release's manifest, held by the
+# file's sha256, its image by this digest. A real environment brings its own metrics source (OPERATIONS_RUNBOOK.md section 11.36).
+METRICS_SERVER_REPOSITORY=registry.k8s.io/metrics-server/metrics-server
+METRICS_SERVER_VERSION=v0.9.1
+METRICS_SERVER_DIGEST=sha256:9b0ba1926e1d3089673f45461c3c1416109dea33b3ba3434048defd380df329b
+METRICS_SERVER_MANIFEST_SHA256=3c7f57cdbee0f57fb0259a150e8f6d6cb4f29d72d1aa5dce8803151dd6d4c2a1

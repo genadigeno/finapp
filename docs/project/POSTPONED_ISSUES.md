@@ -33,7 +33,7 @@ commit and the date; do not delete the entry.
 | PI-021 | `POSTPONED` | `P15-TSK-038`'s census, by the owner (2026-11-09) | payments - routing's version in force and the dispute door judged on an instance's clock; required before production use |
 | PI-022 | `POSTPONED` | `P15-TSK-023`'s gate, by the owner (2026-11-11) | observability - an amount printed into an exception's message or a builder's generated form, which a pod's console keeps; required before production use |
 | PI-023 | `POSTPONED` | the owner, during Phase 15 wave H (2026-11-12) | every module - the Phase 15 database pass (`P15-TST-002`): every database, own-container and Kafka tier, never run since Phase 15 began; run after the project's phases, with the storms |
-| PI-024 | `POSTPONED` | the owner, at `P15-TSK-032`'s implementation (2026-11-12) | platform and every domain module - the platform rehearsals not run whole on `kind`: every `incidents` step, `signals` from §6.1's clearing on, the release scope on the final tree, the cluster probes; run after the project's phases, with PI-004 and PI-023 |
+| PI-024 | `POSTPONED` | the owner, at `P15-TSK-032`'s implementation (2026-11-12) | platform and every domain module - the platform rehearsals not run whole on `kind`: every `incidents` step, `signals` from §6.1's clearing on, the delivery's unseen steps, the release scope on the final tree, the cluster probes; run after the project's phases, with PI-004 and PI-023 |
 
 ---
 
@@ -560,6 +560,8 @@ commit and the date; do not delete the entry.
     held by a promtool case, not seen to clear on a cluster), §7, §8 and §9's activations and their alerts, the domain step's
     census, the correctness pages (§11.20, §10.17's rebuild, §11.22), the operators' half (§11.26, `StaffRefusedUnmarked`), the
     telemetry stack's alerts (§11.34) and the close (§11.31's `ConfigFingerprintDisagrees`, §11.8's `CertificateExpiring`);
+  - **the `delivery` scope's unseen steps** (runbook §11.36's record): the freshness order against the migrator hook, a rollback by
+    digest with the migrator kept, and a failed migrator hook with its way back;
   - **the release scope** (`REHEARSAL_SCOPE=release`, K-rel) on the final tree;
   - **the cluster probes** (`REHEARSAL_PROBE`): each scope's plants removed, seen red on a cluster.
   Two parts were never built into a step, and come with this item's runs: §11.11's parked value (a merchant closed after a
@@ -573,7 +575,7 @@ commit and the date; do not delete the entry.
   either platform scope exists, and a step never run may fail on its first run for a reason of its own, as each of the six
   development runs did (five for a defect of the harness or of the `kind` overlay, one for a committed alerting rule's).
   `THREAT_MODEL.md`'s rows that rested on a run read `GAP | PI-024`.
-- **Fix:** run `REHEARSAL_SCOPE=signals` and `REHEARSAL_SCOPE=incidents` whole, then the release scope, on the tree as it then
+- **Fix:** run `REHEARSAL_SCOPE=signals`, `incidents` and `delivery` whole, then the release scope, on the tree as it then
   stands (`.github/workflows/ci.yml` runs the two platform scopes on its nightly `schedule`); repair each red as a harness
   defect or fix it as a production defect in a task of its own; fill §11.38's counts and each section's last record from those runs
   and turn this item's `GAP` rows to `EXISTS`; perform the cluster probes and record them in `MUTATION_TESTING.md` §2.
