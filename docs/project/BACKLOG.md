@@ -28801,7 +28801,7 @@ storm runs after the project's phases)
 - **Acceptance criteria**: every round's census green across ten replicas. **Definition of done**: `DOD-TEST`.
   **Risk**: Medium. **Cx**: L.
 
-**P15-DOC-001 — The Phase 15 exit review** — `PLANNED`
+**P15-DOC-001 — The Phase 15 exit review** — `READY` (2026-11-12; marked by the coordinator at `P15-TSK-034`'s merge, master `6aa40e66`; every dependency `COMPLETE`)
 - **Objective**: read every ADR, plan section and register row against the code, configuration and rehearsal records;
   rule the gate clause by clause; ratify or record C1–C15; accept ADR-0120…0125 or correct them; confirm no document
   claims compliance.
