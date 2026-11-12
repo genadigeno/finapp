@@ -29136,7 +29136,7 @@ on none:
 - **Operational documentation**: two new runbook sections.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `IN_PROGRESS` (2026-11-12; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
+**P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `COMPLETE` (2026-11-12; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; built in wave A beside `-001`, `-002`, `-003` and `-005`, branch `P16-TSK-004` from master `6981c167`; no migration, no production Java, no new ADR - a dated note on ADR-0122; one new owner item, `THREAT_MODEL.md` §6 item 48; marks no task `READY` - the coordinator does; read `READY` until its gate)
 - **Objective**: as decided 2026-11-12, in the first wave.
   - (c) The quota part: a `ResourceQuota` for `finapp-edge` and `finapp-observability`, each sized from its own worst moment as
     `finapp`'s is.
@@ -29162,6 +29162,36 @@ on none:
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's check list widened.
 - **Risk**: Low. **Cx**: S.
+- *Corrected by its design (2026-11-12):* **the probe's hostPath is the node's root.** At the scan's bar Trivy 0.76.2 reads a hostPath
+  of an ordinary directory as `KSV-0023`, MEDIUM, and does not report it; a hostPath of `/` is `KSV-0121`, HIGH. The policies'
+  `[security-host]` refuses every hostPath, the first net. **finapp's formula is not these namespaces' worst moment**: it rests on
+  `minReadySeconds` at least the grace and one budget of one, and the edge's controllers and the collector state no
+  `minReadySeconds` while kind's back ends are `Recreate` with no budget, so each Deployment is counted as `finapp.rego`'s
+  `worst_moment` says (the same numbers as the formula for today's shapes, 2 x 2 + 1 per controller, and the right ones when a
+  shape changes).
+- *As built (2026-11-12, its gate):* **(c)** `deploy/edge/base/resourcequota.yaml` (10 pods, 1 CPU requested, 10 limited, 5120Mi
+  both; every edge overlay) and `deploy/observability/base/resourcequota.yaml` (the collector's 5 pods, 500m, 5, 2560Mi; kind's
+  overlay raised to 13, 1200m, 12, 5376Mi for its four back ends). Each held equal to its namespace's worst moment, in both
+  directions, by `[edge-quota]`, `[edge-quota-pods]`, `[edge-quota-compute]`, `[edge-quota-sizing]` in `edge.rego` and their
+  `[obs-quota-*]` siblings in `observability.rego`, over `finapp.rego`'s shared count; a namespace with two quotas, a scoped one,
+  one missing a key or an unreadable quantity refused; a workload the count cannot size refused, never guessed. Plants in every
+  run of `edge-check.sh` (seven refused, two accepted that re-count the quota with a third controller, one per rollout branch) and
+  `telemetry-check.sh` (four refused, one accepted with a second Tempo); the entry's probe, the quota removed from `finapp-edge`, is
+  `edge-quota-absent`. On every build: `EdgeManifestsTest#theNamespaceQuotaIsItsWorstMoment` and
+  `TelemetryPipelineManifestsTest#theNamespaceQuotaIsItsWorstMoment`, the count stated a second time in `WorstMoment`. No API
+  server has applied either quota yet: the next kind rehearsal is the first. **(b)** `manifest-check.sh` renders every kustomize
+  root under `deploy/` (found by search, 16 roots, and the delivery's committed roots: 17 streams) and runs `trivy config` at HIGH
+  and CRITICAL, embedded checks only, nothing sent; each stream must come back read as Kubernetes; every finding as read is printed,
+  then the verdict, carried findings out by `infra/trivy/accepted-misconfigurations.rego` (one finding per entry, by check and whole
+  message, reason, expiry). Its first reading: **two HIGH, no CRITICAL**, both `KSV-0109` on the kind overlay, both false readings
+  (the test-only broker's start script naming its credential's variables; kind's tokenisation timeout), carried until 2027-06-30
+  and listed in `THREAT_MODEL.md` §6 item 48 for the owner, who has not accepted them yet. Trivy's own plants: `KSV-0017` (a
+  privileged edge controller), `KSV-0121` (a telemetry back end mounting `/`), `KSV-0109` (a second key beside the carried one).
+  `KubernetesManifestsTest#trivyGradesEveryRenderedRoot` and `#everyCarriedMisconfigurationIsInTheRegister` hold the wiring and the
+  register. T4 gains an `EXISTS` row; items 43 (c)'s quota part and 44 (b) closed by dated notes; readiness: the edge's and the
+  telemetry's Resource limits `MET as rehearsed`. Not built: the observability overlay per environment (the exclusion), a
+  `LimitRange` in either namespace (not decided; the quota alone refuses a pod with no requests), a scan of the controllers'
+  third-party renders (not overlays; `controller-check.sh` holds them).
 
 **P16-TSK-005 — The edge, PostgreSQL and the broker rolled and rolled back on `kind` (`THREAT_MODEL.md` §6 item 43 (f))** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: as decided 2026-11-12, in the first wave. The three `kind` steps that need no account: each component changes

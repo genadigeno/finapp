@@ -3,6 +3,7 @@ package com.finapp.app.architecture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -38,6 +39,7 @@ class EdgeManifestsTest {
     private static final String STATIC = "deploy/edge/base/traefik.yaml";
     private static final String OPERATOR_STATIC = "deploy/edge/base/traefik-operator.yaml";
     private static final String CONTROLLERS = "deploy/edge/base/controllers.yaml";
+    private static final String QUOTA = "deploy/edge/base/resourcequota.yaml";
     private static final String PUBLIC_EDGE = "deploy/edge/base/public-edge.yaml";
     private static final String OPERATOR_EDGE = "deploy/edge/base/operator-edge.yaml";
     private static final String POLICY = "infra/scripts/manifest-policy/edge.rego";
@@ -329,6 +331,30 @@ class EdgeManifestsTest {
     }
 
     @Test
+    @DisplayName("finapp-edge's one quota is its worst moment, exactly: each controller's rollout, old and new together, and the eviction its budget allows, in pods, CPU and memory, in every overlay")
+    void theNamespaceQuotaIsItsWorstMoment() {
+        List<Map<String, Object>> documents = new ArrayList<>(controllers);
+        List<Map<String, Object>> quotas = yamlAll(read(QUOTA));
+        documents.addAll(quotas);
+        assertThat(WorstMoment.ofKind(documents, "ResourceQuota")).as("exactly one quota, or the tightest decides").hasSize(1);
+        assertThat(read("deploy/edge/base/kustomization.yaml")).containsPattern("(?m)^  - resourcequota\\.yaml$");
+        // The base's numbers are every overlay's: an overlay patching a controller or the quota would need its own count here.
+        for (String overlay : OVERLAYS) {
+            Map<String, Object> kustomization = yaml(read("deploy/edge/overlays/" + overlay + "/kustomization.yaml"));
+            for (Object patch : (List<?>) kustomization.getOrDefault("patches", List.of())) {
+                assertThat(map(cast(patch), "target").get("kind")).as("%s patches only Services", overlay).isEqualTo("Service");
+            }
+            assertThat((List<?>) kustomization.get("resources")).as("%s adds no workload", overlay)
+                    .allSatisfy(resource -> assertThat(String.valueOf(resource)).isIn("../../base", "certificates.yaml"));
+        }
+
+        Map<String, BigDecimal> needed = WorstMoment.of(documents);
+        assertThat(needed.get("pods")).as("two controllers, each 2 x 2 + 1").isEqualByComparingTo("10");
+        Map<String, BigDecimal> stated = WorstMoment.stated(quotas.get(0));
+        needed.forEach((key, value) -> assertThat(stated.get(key)).as("the quota's %s is the worst moment, both ways", key).isEqualByComparingTo(value));
+    }
+
+    @Test
     @DisplayName("every policy id in edge.rego is refused by a plant, and every plant is refused: read from the two files, never a list here")
     void everyEdgePolicyIsRefusedByAPlant() {
         Set<String> ruleIds = new TreeSet<>();
@@ -345,6 +371,11 @@ class EdgeManifestsTest {
         while (refused.find()) {
             refusedPlants.add(refused.group(1));
             refusedIds.add(refused.group(2));
+        }
+        // `edge_accepted` is a plant the policies must let through (the quota re-counted with a controller, P16-TSK-004): made, and answered for.
+        Matcher accepted = Pattern.compile("(?m)^edge_accepted (\\S+)$").matcher(script);
+        while (accepted.find()) {
+            refusedPlants.add(accepted.group(1));
         }
         Set<String> planted = new TreeSet<>();
         Matcher made = Pattern.compile("(?m)^\\s+edge_plant(?:_on)? (edge-[a-z-]+)\\b").matcher(script);

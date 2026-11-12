@@ -6,18 +6,24 @@ import com.finapp.app.eventing.EventingBeans;
 import com.finapp.app.eventing.InboxConsumers;
 import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.platform.metrics.GaugeRefresher;
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.apache.catalina.core.StandardContext;
 import org.apache.tomcat.util.net.NioEndpoint;
 import org.junit.jupiter.api.BeforeAll;
@@ -56,6 +62,7 @@ class KubernetesManifestsTest {
     private static final String PINS = "infra/scanner-pins.sh";
     private static final String PIN_CHECK = "infra/scripts/check-pinned-images.sh";
     private static final String WORKFLOW = ".github/workflows/ci.yml";
+    private static final String CARRIED = "infra/trivy/accepted-misconfigurations.rego";
     private static final List<String> OVERLAYS = List.of("kind", "staging", "production");
     private static final String ZERO_DIGEST = "sha256:" + "0".repeat(64);
 
@@ -318,8 +325,9 @@ class KubernetesManifestsTest {
             refusedPlants.add(saying.group(1));
             refusedIds.add(saying.group(2));
         }
-        // `accepted` is a plant the policies must let through (a controller's role, P15-TSK-010): made, and answered for.
-        Matcher other = Pattern.compile("(?m)^(?:schema_refused|render_refused|accepted) (\\S+)\\b").matcher(script);
+        // `accepted` is a plant the policies must let through (a controller's role, P15-TSK-010): made, and answered for. `trivy_refused` is a
+        // plant the graded scan refuses (P16-TSK-004), whose check is Trivy's, not a rule of this file.
+        Matcher other = Pattern.compile("(?m)^(?:schema_refused|render_refused|accepted|trivy_refused) (\\S+)\\b").matcher(script);
         while (other.find()) {
             refusedPlants.add(other.group(1));
         }
@@ -346,6 +354,89 @@ class KubernetesManifestsTest {
         assertThat(job).as("ungated: every change to a manifest meets it")
                 .noneSatisfy(line -> assertThat(line.trim()).startsWith("if:"));
         assertThat(String.join("\n", job)).doesNotContain("secrets.");
+    }
+
+    @Test
+    @DisplayName("trivy config grades every kustomize root at HIGH and CRITICAL, found by search, each read as Kubernetes, and refuses a privileged controller, the node's root mounted and a widened carry by the check's id")
+    void trivyGradesEveryRenderedRoot() throws IOException {
+        String script = EvidenceCitations.read(root.resolve(SCRIPT));
+        assertThat(script)
+                .as("the pinned image, the embedded checks alone, nothing sent, the bar of criterion 2")
+                .contains("TRIVY_IMAGE=\"${TRIVY_IMAGE:-${TRIVY_REPOSITORY}@${TRIVY_DIGEST}}\"")
+                .contains("docker run --rm --network none -v \"$VOLUME:/scratch:ro\" -v \"$DIR/trivy:/accepted:ro\" \"$TRIVY_IMAGE\"")
+                .contains("config --skip-check-update --disable-telemetry --skip-version-check --quiet --severity HIGH,CRITICAL")
+                .as("every root by search, a Component skipped, never vacuous")
+                .contains("for file in $(find \"$1\" -name kustomization.yaml | sort); do")
+                .contains("grep -q '^kind: Component$' \"$file\" && continue")
+                .contains("render_roots /repo/deploy /scratch/trivy")
+                .contains("[ -s \"$2/overlays-production.yaml\" ]")
+                .as("every stream read as Kubernetes, every finding printed as read, then the verdict with the carry alone")
+                .contains("grep -qxF -- \"read $root kubernetes\"")
+                .contains("trivy_config /scratch/trivy --exit-code 0")
+                .contains("trivy_config \"$1\" --exit-code 1 --ignore-policy /accepted/accepted-misconfigurations.rego")
+                .contains("check \"trivy config: no HIGH or CRITICAL finding that is not carried\" trivy_clean /scratch/trivy")
+                .as("the planted trees are read as the tree is")
+                .contains("case $name in trivy-*) render_roots \"$directory/deploy\" \"$directory/roots\" ;; esac")
+                .contains("refuses \"$1\" \"$2\" trivy_clean \"/scratch/plants/$1/roots\"");
+        Map<String, String> refusedBy = new TreeMap<>();
+        Matcher refused = Pattern.compile("(?m)^trivy_refused (\\S+) (KSV-[0-9]+)$").matcher(script);
+        while (refused.find()) {
+            refusedBy.put(refused.group(1), refused.group(2));
+        }
+        assertThat(refusedBy).as("each plant refused by Trivy's own check")
+                .containsExactlyInAnyOrderEntriesOf(Map.of("trivy-privileged", "KSV-0017", "trivy-host-root", "KSV-0121", "trivy-carry-widened", "KSV-0109"));
+
+        // "Every root" is the search's, not a list here: it finds each overlay this repository renders, and no overlay is a Component.
+        List<String> roots;
+        try (Stream<Path> files = Files.walk(root.resolve("deploy"))) {
+            roots = files.filter(file -> file.getFileName().toString().equals("kustomization.yaml"))
+                    .filter(file -> !Pattern.compile("(?m)^kind: Component\\s*$").matcher(EvidenceCitations.read(file)).find())
+                    .map(file -> root.resolve("deploy").relativize(file.getParent()).toString().replace('\\', '/'))
+                    .toList();
+        }
+        assertThat(roots).as("every overlay of the release, the edge and the pipeline is a root the search renders")
+                .contains("overlays/kind", "overlays/staging", "overlays/production", "edge/overlays/kind", "edge/overlays/staging",
+                        "edge/overlays/production", "observability/overlays/kind", "delivery/staging", "delivery/production", "namespaces",
+                        "admission");
+        assertThat(script).contains("cp /scratch/rendered/delivery-committed.yaml /scratch/trivy/delivery-committed.yaml");
+    }
+
+    @Test
+    @DisplayName("every finding the manifest scan carries names one finding, has a reason and an unexpired date, and is listed with that date in the register's owner item 48, and nothing else is")
+    void everyCarriedMisconfigurationIsInTheRegister() {
+        String carried = EvidenceCitations.read(root.resolve(CARRIED));
+        String item = ownerItem(EvidenceCitations.read(root.resolve("docs/architecture/THREAT_MODEL.md")), 48);
+        assertThat(carried).contains("package trivy").contains("default ignore := false")
+                .as("an entry stops applying the day after its date").contains("time.now_ns() < time.add_date(time.parse_ns(\"2006-01-02\", entry.until), 0, 0, 1)")
+                .contains("regex.match(entry.message, input.Message)").contains("input.ID == entry.id");
+
+        Matcher entry = Pattern.compile("(?s)\\{\\s*\"id\": \"([^\"]+)\",\\s*\"object\": \"([^\"]+)\",\\s*\"message\": `([^`]+)`,\\s*\"until\": \"([0-9-]+)\",\\s*\"statement\": \"([^\"]+)\",\\s*}")
+                .matcher(carried);
+        Set<String> entries = new TreeSet<>();
+        while (entry.find()) {
+            String id = entry.group(1);
+            String object = entry.group(2);
+            assertThat(entry.group(3)).as("%s on %s: the whole message, anchored", id, object).startsWith("^").endsWith("$");
+            assertThat(entry.group(5).strip()).as("%s on %s: a reason", id, object).hasSizeGreaterThan(40);
+            assertThat(LocalDate.parse(entry.group(4))).as("%s on %s: unexpired", id, object).isAfterOrEqualTo(LocalDate.now(Clock.systemUTC()));
+            assertThat(item).as("%s on %s is listed with its date", id, object)
+                    .containsPattern("`" + Pattern.quote(id) + "` on `" + Pattern.quote(object) + "`[^\\n]*?until " + Pattern.quote(entry.group(4)));
+            entries.add(id + " " + object);
+        }
+        assertThat(entries).as("the carry was read").isNotEmpty();
+        Set<String> listed = new TreeSet<>();
+        Matcher line = Pattern.compile("`(KSV-[0-9]+)` on `([^`]+)`").matcher(item);
+        while (line.find()) {
+            listed.add(line.group(1) + " " + line.group(2));
+        }
+        assertThat(listed).as("the register lists what the file carries, and nothing it does not").isEqualTo(entries);
+    }
+
+    /** The text of the register's numbered owner item, up to the next. */
+    private static String ownerItem(String register, int number) {
+        Matcher item = Pattern.compile("(?ms)^" + number + "\\.\\s.*?(?=^\\d+\\.\\s|^## |\\z)").matcher(register);
+        assertThat(item.find()).as("owner item %s", number).isTrue();
+        return item.group();
     }
 
     @Test

@@ -460,6 +460,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T4 | A workload identity that reads only its own secrets: one role per workload, trusted by that workload's reader ServiceAccount alone, `sub` and `aud` by `StringEquals`; each role names every entry it may read, holds no wildcard and no action on a bucket, and cannot reach the database's master credential. The readers run no pod, so no pod holds a cloud identity. Asserted over a plan against a mock provider, never applied; CI's check refuses a plant of each | EXISTS | `infra/terraform/modules/security/tests/security.tftest.hcl` `contains: The application's reader can read the migrator's entries.` `contains: A reader's trust does not name exactly its ServiceAccount` `contains: reaches the database's master credential`; `infra/terraform/modules/security/main.tf` `contains: :sub"`; `infra/scripts/terraform-check.sh` `contains: refuses reader-wildcard` `contains: refuses reader-any-account` |
 | T4 | A pod cannot take its node's credentials: every node launches from a template requiring IMDSv2 with a hop limit of one, and no node accepts SSH. Asserted over a plan against a mock provider, never applied | EXISTS | `infra/terraform/modules/kubernetes/tests/kubernetes.tftest.hcl` `contains: A pod can reach the instance metadata service and so the node's credentials.` `contains: A node accepts SSH.`; `infra/terraform/modules/kubernetes/main.tf` `contains: http_put_response_hop_limit = 1` |
 | T4 | The cluster would enforce a NetworkPolicy: its VPC CNI add-on turns on the network policy agent, which is off by default. Asserted over a plan against a mock provider, never applied; the policies themselves are the default-deny row above | EXISTS | `infra/terraform/modules/kubernetes/tests/kubernetes.tftest.hcl` `contains: NetworkPolicy would be accepted and enforced by nothing`; `infra/terraform/modules/kubernetes/main.tf` `contains: enableNetworkPolicy = "true"` |
+| T4 | A second net the platform did not write: CI's manifests job runs `trivy config`, the pinned image with only its embedded checks, at HIGH and CRITICAL over every kustomize root under `deploy/`, found by search rather than listed (bases, every overlay, the delivery's roots), and over the delivery's committed roots; a stream Trivy does not read as Kubernetes fails the run, every finding as read is printed, and a finding fails unless one entry of the carry names that one finding by its check and its whole message, with a reason and an expiry listed in §6 item 48. Trivy refuses, by the check's id, a privileged edge controller, a telemetry back end mounting the node's root and a carried finding widened by one key, each planted in the same run. A hostPath of an ordinary directory is MEDIUM to Trivy, below the bar: the platform's own rule `[security-host]` refuses every hostPath, in every stream its policies read | EXISTS | `app/src/test/java/com/finapp/app/architecture/KubernetesManifestsTest.java#trivyGradesEveryRenderedRoot`; `app/src/test/java/com/finapp/app/architecture/KubernetesManifestsTest.java#everyCarriedMisconfigurationIsInTheRegister`; `infra/scripts/manifest-check.sh` `contains: trivy_refused trivy-privileged KSV-0017` `contains: trivy_refused trivy-host-root KSV-0121` `contains: trivy_refused trivy-carry-widened KSV-0109` `contains: --severity HIGH,CRITICAL` |
 | T5 | Every resolved dependency verified against a committed checksum. Signature verification is off: trust on first use, stated | EXISTS | `gradle/verification-metadata.xml` `contains: <verify-metadata>true</verify-metadata>` `contains: <verify-signatures>false</verify-signatures>` |
 | T5 | Every action in CI's one workflow pinned to a full commit SHA, with weekly update proposals for the pins | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#everyActionIsPinnedToACommit` |
 | T5 | Every scanner image pinned by a full sha256 digest, and the pins' freshness checked by a scheduled job | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#everyScannerImageIsPinnedByDigest` |
@@ -2076,7 +2077,11 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     Resource limits (b) has nothing to hold there. The options: **(i)** an observability overlay per environment, its
     Application in the root after the release, with item 37 (a)'s back ends; a quota in each namespace sized from its own
     worst moment as `finapp`'s is, held by the manifest check; **(ii)** the quota only, the stack delivered by hand.
-    *Recommendation*: **(i)**, before the first real environment; the quota first, since it needs no account. **Decided 2026-11-12** by the owner ("accept all"): as recommended.
+    *Recommendation*: **(i)**, before the first real environment; the quota first, since it needs no account. **Decided 2026-11-12** by the owner ("accept all"): as recommended. *(The quota part
+    closed 2026-11-12: one `ResourceQuota` in `finapp-edge` and one in `finapp-observability`, each equal to its namespace's worst
+    rollout moment in pods, CPU and memory, counted per Deployment because neither namespace shares the premises of `finapp`'s formula,
+    and held by `edge.rego` and `observability.rego`, each rule refusing its plant in every run of its check. The observability overlay
+    per environment stays open, before the first real environment.)*
 
     **(d) Alerts owned by another module, and an owner check that holds a form.** Settlement's rules (`SettlementSourceSilent`,
     `SettlementFileStuck` and the rest) carry the owner `reconciliation`, and the cross-border rules
@@ -2134,7 +2139,30 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     maintained catalogue of Kubernetes misconfigurations would. The options: **(i)** `trivy config` at HIGH and CRITICAL over
     every rendered overlay in the `manifests` job, as a second net beside the policies, a finding carried as item 12's are;
     **(ii)** the policies alone, ADR-0122 corrected to say so. *Recommendation*: **(i)**, in Phase 16's first wave: the
-    scanner is pinned already and it needs no account. **Decided 2026-11-12** by the owner ("accept all", the exit review's acceptances): as recommended.
+    scanner is pinned already and it needs no account. **Decided 2026-11-12** by the owner ("accept all", the exit review's acceptances): as recommended. *(Closed
+    2026-11-12: `trivy config` runs at HIGH and CRITICAL over every kustomize root under `deploy/` in the `manifests` job, beside the
+    policies, refusing its own plants in the same run (§4's T4 row). Its first reading found two HIGH findings, both false readings on
+    the kind overlay, carried as item 12's are and listed in item 48 for the owner.)*
+
+48. **T4's residual: the findings the manifest scan carries** *(added 2026-11-12 by the graded scan of every overlay, item 44 (b))*.
+    `trivy config` 0.76.2 over every kustomize root under `deploy/` read two HIGH findings and no CRITICAL on 2026-11-12, both
+    `KSV-0109` ("ConfigMap with secrets"), both on the kind overlay, and both false readings. Each is carried by
+    `infra/trivy/accepted-misconfigurations.rego` as one finding, by its check and its whole message, with a reason and an expiry, so
+    the `manifests` job is green; a second key flagged in the same ConfigMap, or the check on any other object, still fails it.
+    **No decision here accepts them**: only the owner accepts a risk (§1.4). `KubernetesManifestsTest` holds this list and that file
+    equal.
+   - `KSV-0109` on `ConfigMap/finapp-kind-kafka-start` (the test-only broker's start script), until 2027-06-30: the script names
+     `$KAFKA_APP_USER` and `$KAFKA_APP_PASSWORD`, which the pod reads from the Secret the rehearsal generates for each run; nothing
+     literal is committed, and the secret scan and `CommittedConfigurationHoldsNoSecretTest` read the same file.
+   - `KSV-0109` on `ConfigMap/finapp-app-config` (kind's `FINAPP_PAYMENTMETHODS_TOKENISATION_TIMEOUT=PT15S`), until 2027-06-30: a
+     duration for tokenising a card. `finapp.rego` already reads this one name as a duration and nothing else, the same false reading
+     decided for the platform's own `[no-secret-literal]` rule.
+
+    The options: **(i)** accept both until 2027-06-30, the horizon of the static analysis's reasoned rows in item 12 (b); **(ii)** change
+    the manifests until the scanner reads nothing, the start script's credential through a mounted file and the timeout through the
+    Deployment's environment, which moves the same values to where Trivy does not look. *Recommendation*: **(i)**. (ii) lowers no risk,
+    it changes only what the scanner sees, and a rule that is satisfied by hiding a value from it is the habit this net exists to catch.
+    *Awaiting the owner* (2026-11-12).
 
 ## 7. Decided against
 

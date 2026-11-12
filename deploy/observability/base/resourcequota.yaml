@@ -1,0 +1,24 @@
+# The telemetry pipeline's namespace quota (THREAT_MODEL.md section 6 item 43 (c), decided 2026-11-12): the base's numbers are the
+# collector's alone, and an overlay that adds its backends adds them here (kind's does). A pod stating no requests or no limits meets
+# this quota's "must specify", since it states every key unscoped; nothing else in finapp-observability refuses one.
+#
+# THE ARITHMETIC, held equal by manifest-policy/observability.rego against the rendered stream (finapp.rego's worst_moment). finapp's
+# formula, maxReplicas + 2 x maxSurge + 1, rests on minReadySeconds holding back terminating pods; the collector states none, so a
+# rollout may have every old pod still inside its grace beside the new ones, and a pod inside its grace is still charged:
+#   the collector    a rollout: old and new together, 2 x 2 replicas                              4
+#                    one more evicted outside it, its PodDisruptionBudget's maxUnavailable           1
+#   pods                                                                                          5
+#   requests.cpu       5 x 100m                                                                500m
+#   limits.cpu         5 x 1                                                                      5
+#   memory, both       5 x 512Mi                                                             2560Mi
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: finapp-observability
+spec:
+  hard:
+    pods: "5"
+    requests.cpu: 500m
+    requests.memory: 2560Mi
+    limits.cpu: "5"
+    limits.memory: 2560Mi

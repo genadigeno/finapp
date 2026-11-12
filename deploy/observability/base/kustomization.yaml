@@ -13,6 +13,8 @@ resources:
   - networkpolicy.yaml
   # What a person may do here (P15-TSK-032; THREAT_MODEL.md section 6 item 42 (k)): read, and under break-glass evict.
   - rbac-humans.yaml
+  # The namespace's quota at its worst moment (THREAT_MODEL.md section 6 item 43 (c)); an overlay with backends raises it.
+  - resourcequota.yaml
 
 # Named with a content hash, so a changed allow-list rolls the collectors and a revert is a manifest digest.
 configMapGenerator:

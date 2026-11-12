@@ -1575,6 +1575,187 @@ deny contains msg if {
 	msg := sprintf("[limitrange-admits] %s requests %s below the LimitRange's min %v", [label(doc), resource, value])
 }
 
+# ------------------------------------------------------------------------------------- the quotas outside finapp (P16-TSK-004)
+#
+# No rule here: helpers that edge.rego and observability.rego call for finapp-edge and finapp-observability, each under its own rule
+# ids and plants (THREAT_MODEL.md section 6 item 43 (c), decided 2026-11-12). Each namespace's quota is held equal to its worst moment,
+# in both directions, as finapp's is above: below it a rollout stalls on its own quota, above it the quota bounds nothing.
+#
+# finapp's formula, maxReplicas + 2 x maxSurge + 1, rests on two premises these namespaces do not share: minReadySeconds at least the
+# grace, so terminating pods never stack, and one PodDisruptionBudget of one. So the worst moment is counted per Deployment from what
+# the stream states, a pod inside its grace being still charged:
+#   R            its replicas, or the maxReplicas of an autoscaler that targets it
+#   a rollout    Recreate: R, since the controller waits for the old pods to go. RollingUpdate: the controller counts R + maxSurge at
+#                most and does not count the pods it stopped, so they are charged beside it; old and new together never exceed 2R.
+#                With minReadySeconds at least the grace, at most maxSurge + maxUnavailable are terminating at once:
+#                min(2R, R + 2 x maxSurge + maxUnavailable). Without it every old pod may be: 2R.
+#   outside it   the integer maxUnavailable of the PodDisruptionBudget selecting its pods (finapp's + 1), or R where none does: a
+#                drain evicts every pod, and each replacement starts while the evicted one is charged.
+# As finapp's: one rollout at a time, and a pod evicted past its budget because it is unhealthy (unhealthyPodEvictionPolicy) is not
+# counted. A workload this cannot size (not a Deployment, no stated strategy, a percentage) is reported, never guessed.
+
+quota_keys := {"pods", "requests.cpu", "requests.memory", "limits.cpu", "limits.memory"}
+
+kind_and_name(doc) := sprintf("%v/%v", [object.get(doc, "kind", "(no kind)"), name_of(doc)])
+
+namespace_workloads(ns) := {[doc, spec] | some [doc, spec] in workloads; namespace_of(doc) == ns}
+
+namespace_holds_documents(ns) if {
+	some doc in documents
+	namespace_of(doc) == ns
+}
+
+namespace_quotas(ns) := [doc | some doc in of_kind("ResourceQuota"); namespace_of(doc) == ns]
+
+replicas_of(doc) := hpa.spec.maxReplicas if {
+	some hpa in of_kind("HorizontalPodAutoscaler")
+	namespace_of(hpa) == namespace_of(doc)
+	section(hpa.spec, "scaleTargetRef").kind == doc.kind
+	section(hpa.spec, "scaleTargetRef").name == name_of(doc)
+} else := object.get(section(doc, "spec"), "replicas", 1)
+
+strategy_type(doc) := object.get(section(section(doc, "spec"), "strategy"), "type", "absent")
+
+rolling_value(doc, field) := object.get(section(section(section(doc, "spec"), "strategy"), "rollingUpdate"), field, "absent")
+
+# minReadySeconds at least the grace, both read as numbers: anything else is read as not settling, the larger bound.
+settles(doc) if {
+	ready := object.get(section(doc, "spec"), "minReadySeconds", 0)
+	grace := object.get(section(section(section(doc, "spec"), "template"), "spec"), "terminationGracePeriodSeconds", 30)
+	is_number(ready)
+	is_number(grace)
+	ready >= grace
+}
+
+rollout_peak(doc) := r if {
+	strategy_type(doc) == "Recreate"
+	r := replicas_of(doc)
+	is_number(r)
+} else := min([2 * r, (r + (2 * s)) + u]) if {
+	strategy_type(doc) == "RollingUpdate"
+	settles(doc)
+	r := replicas_of(doc)
+	s := rolling_value(doc, "maxSurge")
+	u := rolling_value(doc, "maxUnavailable")
+	every n in [r, s, u] {
+		is_number(n)
+	}
+} else := 2 * r if {
+	strategy_type(doc) == "RollingUpdate"
+	not settles(doc)
+	r := replicas_of(doc)
+	s := rolling_value(doc, "maxSurge")
+	u := rolling_value(doc, "maxUnavailable")
+	every n in [r, s, u] {
+		is_number(n)
+	}
+}
+
+# A budget selects a workload's pods when its matchLabels, stated and not empty, are all on the pod template. A budget with
+# matchExpressions is not read as selecting anything, so the workload is counted as having none: the larger bound.
+budget_selects(pdb, doc) if {
+	namespace_of(pdb) == namespace_of(doc)
+	selector := section(section(pdb, "spec"), "selector")
+	count(list_of(selector, "matchExpressions")) == 0
+	wanted := section(selector, "matchLabels")
+	count(wanted) > 0
+	labels := section(section(section(section(doc, "spec"), "template"), "metadata"), "labels")
+	every key, value in wanted {
+		labels[key] == value
+	}
+}
+
+budget_allowances(doc) := [object.get(section(pdb, "spec"), "maxUnavailable", "absent") |
+	some pdb in of_kind("PodDisruptionBudget")
+	budget_selects(pdb, doc)
+]
+
+outside_rollout(doc) := max(allowances) if {
+	allowances := budget_allowances(doc)
+	count(allowances) > 0
+	every n in allowances {
+		is_number(n)
+	}
+} else := replicas_of(doc)
+
+worst_moment(doc) := rollout_peak(doc) + outside_rollout(doc) if {
+	doc.kind == "Deployment"
+}
+
+sized(doc) if {
+	is_number(worst_moment(doc))
+}
+
+pods_at_worst(ns) := sum([worst_moment(doc) | some [doc, _] in namespace_workloads(ns)])
+
+compute_at_worst(ns, bound, resource) := sum([share |
+	some [doc, spec] in namespace_workloads(ns)
+	share := worst_moment(doc) * pod_total(spec, bound, resource)
+])
+
+readable_quantity(value) if {
+	is_number(quantity(value))
+}
+
+# Each set is empty when the namespace is not rendered: the caller's stream holds another namespace's overlay alone.
+quota_presence_findings(ns) := missing | several | scoped | unstated | unreadable if {
+	missing := {msg |
+		namespace_holds_documents(ns)
+		count(namespace_quotas(ns)) == 0
+		msg := sprintf("no ResourceQuota in namespace %s: nothing bounds it, and a pod stating no requests is admitted", [ns])
+	}
+	several := {msg |
+		count(namespace_quotas(ns)) > 1
+		msg := sprintf("namespace %s has %d ResourceQuotas: exactly one, or the tightest decides what a rollout may take", [ns, count(namespace_quotas(ns))])
+	}
+	scoped := {msg |
+		some doc in namespace_quotas(ns)
+		some field in {"scopes", "scopeSelector"}
+		stated(section(doc, "spec"), field)
+		msg := sprintf("%s has %s, so some pods go unmeasured", [kind_and_name(doc), field])
+	}
+	unstated := {msg |
+		some doc in namespace_quotas(ns)
+		some key in quota_keys
+		not stated(section(section(doc, "spec"), "hard"), key)
+		msg := sprintf("%s does not state %s, so a container stating none is admitted", [kind_and_name(doc), key])
+	}
+	unreadable := {msg |
+		some doc in namespace_quotas(ns)
+		some key, value in section(section(doc, "spec"), "hard")
+		not readable_quantity(value)
+		msg := sprintf("%s states %s as %v, which is not a quantity", [kind_and_name(doc), key, value])
+	}
+}
+
+quota_sizing_findings(ns) := {msg |
+	some [doc, _] in namespace_workloads(ns)
+	not sized(doc)
+	msg := sprintf("%s in %s cannot be sized: a Deployment stating Recreate, or RollingUpdate with integer maxSurge and maxUnavailable, is the one shape whose worst moment is counted", [kind_and_name(doc), ns])
+}
+
+quota_pods_findings(ns) := {msg |
+	some doc in namespace_quotas(ns)
+	hard := section(section(doc, "spec"), "hard")
+	milli(quantity(hard.pods)) != milli(pods_at_worst(ns))
+	msg := sprintf("%s states %v pods and the namespace's worst moment is %d: each Deployment's rollout and the evictions its budget allows. Below it a rollout stalls on its own quota; above it the quota bounds nothing", [kind_and_name(doc), hard.pods, pods_at_worst(ns)])
+}
+
+quota_compute_findings(ns) := {msg |
+	some doc in namespace_quotas(ns)
+	hard := section(section(doc, "spec"), "hard")
+	some bound in {"requests", "limits"}
+	some resource in {"cpu", "memory"}
+	key := sprintf("%s.%s", [bound, resource])
+	milli(quantity(hard[key])) != milli(compute_at_worst(ns, bound, resource))
+	msg := sprintf("%s states %s %v, and the namespace's worst moment needs %s exactly", [kind_and_name(doc), key, hard[key], shown(resource, compute_at_worst(ns, bound, resource))])
+}
+
+# Memory in Mi, as the manifests write it; CPU in cores.
+shown(resource, value) := sprintf("%vMi", [value / 1048576]) if {
+	resource == "memory"
+} else := sprintf("%v", [value])
+
 # ------------------------------------------------------------------------------------- secret delivery (P15-TSK-018)
 
 # An unnamed object must not make a rule's message undefined, which would pass it: label() walks into metadata.name.

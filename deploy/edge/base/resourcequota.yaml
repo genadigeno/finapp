@@ -1,0 +1,24 @@
+# The edge's namespace quota (THREAT_MODEL.md section 6 item 43 (c), decided 2026-11-12). Every overlay renders the same two
+# controllers, so no overlay patches it. A pod stating no requests or no limits meets this quota's "must specify", since it states
+# every key unscoped; nothing else in finapp-edge refuses one.
+#
+# THE ARITHMETIC, held equal by manifest-policy/edge.rego against the rendered stream (finapp.rego's worst_moment). finapp's formula,
+# maxReplicas + 2 x maxSurge + 1, rests on minReadySeconds holding back terminating pods; the controllers state none, so a rollout may
+# have every old pod still inside its grace beside the new ones, and a pod inside its grace is still charged:
+#   per controller   a rollout: old and new together, 2 x 2 replicas                              4
+#                    one more evicted outside it, its PodDisruptionBudget's maxUnavailable           1
+#   two controllers, which share a ConfigMap and so roll together                       pods       10
+#   requests.cpu       10 x 100m                                                                  1
+#   limits.cpu         10 x 1                                                                    10
+#   memory, both       10 x 512Mi                                                            5120Mi
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: finapp-edge
+spec:
+  hard:
+    pods: "10"
+    requests.cpu: "1"
+    requests.memory: 5120Mi
+    limits.cpu: "10"
+    limits.memory: 5120Mi
