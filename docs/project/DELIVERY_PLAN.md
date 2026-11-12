@@ -2152,6 +2152,11 @@ New business capability of any kind.
 
 # Phase 16 — Scale, Resilience and Disaster Recovery
 
+*(Planned in detail by the Phase 15 → 16 transition, 2026-11-12: [`PHASE_16_PLAN.md`](PHASE_16_PLAN.md), ADR-0126…0129, `BACKLOG.md` §Phase 16. Where this section and the plan differ, the plan is right. Three readings:
+- **§11's "Redis loss" and §12's chaos list**: no code uses Redis or any shared cache. A shared cache's loss is `N/A`, and the per-instance caches are lost with their pod, experiment E03.
+- **§12's "region loss" and "split brain"**: designed-only without a cloud account. ADR-0129 refuses active-active writes.
+- **§11's Gatling/k6**: k6, pinned by digest, is proposed (C5).)*
+
 ### 1. Objective
 Establish how the platform behaves under load, partial failure and disaster — and prove
 recovery preserves financial correctness.

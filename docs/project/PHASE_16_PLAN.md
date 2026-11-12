@@ -14,8 +14,9 @@ the owner already decided for this phase (`THREAT_MODEL.md` §6 items 18, 32, 33
 repository as it stands at master `3d5089d9`. The owner's brief calls the phase "Scale, Resilience, High Availability and
 Disaster Recovery"; the roadmap's shorter title stays in the roadmap and the backlog, and the brief's areas are this plan's
 scope. The owner decisions C1–C12 (§2.2) are **proposed, awaiting the owner**; the first task depends on none of them. The
-Phase 15 completion gate (`P15-GATE`) runs beside this initialisation and this plan edits no Phase 15 section: it is written
-as if the gate passes, and it is merged only if it does.
+Phase 15 completion gate (`P15-GATE`) ran beside this initialisation and passed (merged at master `cf6eb4a2`: Phase 15 `COMPLETE`
+with its recorded deviations, the multi-instance answer `PASS` as counted at three replicas, ten instances deviation B, closed by
+this phase's `P16-TSK-014`); this plan edits no Phase 15 section.
 
 ---
 

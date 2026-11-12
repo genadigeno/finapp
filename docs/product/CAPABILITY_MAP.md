@@ -372,6 +372,15 @@ section's capabilities.)*
   one telemetry egress, one payment traced end to end, platform runbooks rehearsed, a readiness review per unit
 - Not claimed: compliance with, or certification under, any standard; a production environment carrying real funds
 
+## Scale, resilience and recovery *(Phase 16, planned at the Phase 15 → 16 transition, 2026-11-12 — `PHASE_16_PLAN.md`; nothing of it is built)*
+- Capacity — planned: documented capacity limits per operation, measured on `kind` under named workloads, a proposed production
+  target derived from stated assumptions, the first bottleneck named with evidence
+- Resilience — planned: load shedding before any financial effect, sweeps that survive a poisoned row, every retry safe with
+  idempotency, registered failure experiments each ending in the financial census
+- Recovery — planned: restore, point-in-time recovery and a disaster-recovery rebuild, money held until the books are proven;
+  RTO and RPO by tier
+- Not claimed: a managed failover, a region's loss or a real provider's outage executed (designed-only without a cloud account)
+
 ## Platform
 - API gateway *(none: the edge is an ingress, the application authenticates - Phase 15, C9)*
 - Eventing
