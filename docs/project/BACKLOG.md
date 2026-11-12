@@ -29012,7 +29012,7 @@ owner. **Never cut**: `-001`, `-006`, `-007`, `-014`, `-022`, `-024`, `-025`, `-
 
 A reviewer finding any of it refuses the change.
 
-**The owner decisions** (2026-11-12, C1–C12, `PHASE_16_PLAN.md` §2.2), **proposed and awaiting the owner**; the first task depends
+**The owner decisions** (2026-11-12, C1–C12, `PHASE_16_PLAN.md` §2.2), **decided at their recommendations by the owner the same day** ("accept recommendations"; read "proposed and awaiting the owner" until then); the first task depends
 on none:
 - **C1**: the experiments, drills and the integrated soak (`P16-TST-001`) are the phase's substance and are not postponed. No new
   in-process storm is written. The storms of Phases 13–15 stay PI-004's.
