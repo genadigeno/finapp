@@ -1033,7 +1033,7 @@ were added on 2026-11-09 and await the owner." until then.)* **Items 35, 36, 38 
 read "... and they await the owner." until then.)* **Item 40 was added on 2026-11-12 by the delivery's task and decided the same
 day under the owner's standing word for waves G and H ("start H after G, accept all recommendations"), as recommended.**
 **Item 42 was added on 2026-11-12 by the runbooks' rehearsal and decided the same day under the same standing word, each part as
-recommended; its parts (d), (e), (j) (i) and (k) were built the same day.**
+recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1736,7 +1736,7 @@ recommended; its parts (d), (e), (j) (i) and (k) were built the same day.**
     item 35 (d).
 
 42. **T3's, T12's, T14's, T15's, T18's, T23's, T28's, T29's and T33's residuals: what the runbooks' rehearsal leaves** *(added 2026-11-12 by the
-    runbooks' rehearsal)*. Eleven things, each a decision; (d), (e), (j) (i) and (k) built the same day.
+    runbooks' rehearsal)*. Twelve things, each a decision; (d), (e), (j) (i), (k) and (l) built the same day.
 
     **(a) The age alerts read the oldest alone** (T23). `BreakAgeHigh` pages on `max by (severity)
     (finapp_reconciliation_break_age{severity="high"}) > 86400`, and `SuspenseItemAged` raises a ticket on
@@ -1991,6 +1991,22 @@ recommended; its parts (d), (e), (j) (i) and (k) were built the same day.**
     (`unhealthyPodEvictionPolicy: AlwaysAllow`); runbook §11.34's steps read as reads under the read-only role and a collector's
     eviction under break-glass. No person reads Prometheus, Tempo, Loki or Alertmanager, and the back ends are not break-glass's to
     evict.
+
+    **(l) The reporting pool had no metrics** (T14). A sweep of every alert rule's label matchers against what the code emits (245
+    checked, one mismatch, `CreditPolicyMissing`'s, fixed) found `ConnectionPoolSaturated` and `ConnectionPoolStarved` excluding
+    `pool!="finapp-reporting"`, a pool whose HikariCP data source sits inside a bean that is not a `DataSource`, which Spring Boot's
+    binder never instruments: no series existed, the exclusion removed nothing, and the pool's saturation was watched by nothing. The
+    options:
+    - **(i) Bind the reporting pool's own HikariCP meters** to the application's registry, so the series exist and the exclusion
+      and its promtool case mean what they say.
+    - **(ii) Accept it**: the pool is one connection, and a pool that cannot open is ticketed by `AccountingCloseLegFailing`.
+
+    *Recommendation*: **(i)**. **Decided 2026-11-12** under the owner's standing word ("accept all recommendations", waves G and H):
+    as recommended. **Built 2026-11-12**: the reporting pool binds its HikariCP meters with HikariCP's
+    `MicrometerMetricsTrackerFactory`, the tracker Spring Boot's binder uses for the writer, so `hikaricp_connections_*{pool="finapp-reporting"}`
+    exist under the writer's names from the pool's first connection; building it opens nothing and a refused start registers nothing
+    (`ReportingPoolMetricsTest`). The two rules keep excluding it by choice. `uri!~"/actuator/.*"` in `HttpServerErrorsHigh` is a
+    harmless no-op: the actuator answers on the management port.
 
 ## 7. Decided against
 
