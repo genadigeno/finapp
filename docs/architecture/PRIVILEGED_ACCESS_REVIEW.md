@@ -108,11 +108,18 @@ by identity at the act.
 to their own identity, nor revoke one from it (`IdentityAdministration`'s `SELF`); every grant and revocation is
 `identity.RoleAssigned`, with the actor, the target, the role and a required reason. The grant is
 `POST /v1/identities/{id}/roles` (`granted=<role>`). A role is revoked, since `P15-TSK-032`, through
-`DELETE /v1/identities/{id}/roles/{role}` with a reason, on a `MULTI_FACTOR` session (`revoked=<role>`, with `lastRole` and the
-sessions it ended), which refuses to take a role that can grant roles from the last `ACTIVE` identity holding one
-(`409 identity.LastRoleGranter`), so the platform never leaves nobody able to grant. *(Until then
-no door revoked a role: `Authorization.revoke` existed and nothing reachable called it, so a role could be ended only by
-suspending the whole identity or by a write around the door.)*
+`DELETE /v1/identities/{id}/roles/{role}` with a reason (`revoked=<role>`, with `lastRole` and the sessions it ended), which
+refuses to take a role that can grant roles from the last `ACTIVE` identity holding one (`409 identity.LastRoleGranter`, "This
+would leave no active identity that can grant roles."), so the platform never leaves nobody able to grant. **Since
+`P15-TSK-032` every identity administration door needs a `MULTI_FACTOR` session on the operator host** - the grant, the
+revocation, a suspension (`POST /v1/identities/{id}/suspension`) and a reinstatement (`DELETE` on it) - answering a password
+session `403 identity.AssuranceRequired`, with their refusals recorded; `ADMINISTRATOR` is refused to a grantee with no
+enrolled factor (`409 identity.FactorRequiredForRole`), as the roles that can redirect a merchant's money are (§6); and the
+suspension refuses the last `ACTIVE` administrator as the revocation does. Risk's `SUSPEND_IDENTITY`, a four-eyes action on an
+account-takeover case, is exempt from that refusal by design, so that a compromised last administrator stays suspendable; after
+it, the only way back is `README.md` §5e's out-of-band step (`OPERATIONS_RUNBOOK.md` §11.12). *(Until then no door revoked a
+role: `Authorization.revoke` existed and nothing reachable called it, so a role could be ended only by suspending the whole
+identity or by a write around the door.)*
 
 ## 5. The review
 
@@ -126,7 +133,8 @@ list held five since `P15-TSK-039`)*:
 3. Does any identity hold `ADMINISTRATOR` beside another role? The administrator grants roles; holding one of the
    roles it grants is reviewed as a conflict and justified or revoked.
 4. Was every grant since the last review made by a different person than its holder, with a reason that names a need?
-5. Does any holder of a role that can redirect a merchant's money have no enrolled factor? `GET
+5. Does any holder of a role that needs an enrolled factor - one that can redirect a merchant's money, or, since
+   `P15-TSK-032`, `ADMINISTRATOR` - have none? `GET
    /v1/operator/access-review/factorless-holdings`, on a `MULTI_FACTOR` session, names them, from the live rows of both tables: each is resolved by
    the holder enrolling, or the role being revoked with a reason. The rule below refuses new ones; this finds the ones
    that stood before it (§6).
@@ -136,8 +144,9 @@ list held five since `P15-TSK-039`)*:
    `THREAT_MODEL.md` §6 item 39 (a2).)* The grant ended the sessions the identity held as a customer, but not what proves
    it: a channel or a factor added as a customer, from the internet, keeps proving the identity on the operator surface.
    Staff is decided as everywhere else, by any live role, so a re-grant after a revocation is a first role again and is
-   asked again. A channel or factor the holder does not recognise is a compromise, not a correction: an `ADMINISTRATOR`
-   suspends the identity with a reason naming it, which ends its sessions, and the runbook's compromise procedure follows.
+   asked again. A channel or factor the holder does not recognise is a compromise, not a correction: an `ADMINISTRATOR`, on
+   a stepped-up session, suspends the identity with a reason naming it, which ends its sessions, and the runbook's compromise
+   procedure follows (`OPERATIONS_RUNBOOK.md` §11.12, the last active administrator's case included).
    A holding written around the grant's door (a script, break-glass) has no such record, ended no session, and is
    asked this question as if it had one.
 
@@ -158,8 +167,9 @@ check against the authoritative rows without asking the reviewer anything:
 | Per question, 1 to 6 | Every holding it named, and for each the resolution: kept, with the justification; revoked, with the revocation's audit id (`revoked=<role>`); the holder enrolled (the `identity.MfaEnrolmentConfirmed` id); confirmed by the holder (question 6), with how they were reached; or suspended with a reason (`identity.IdentitySuspended`'s id). "None" where it named none |
 | What is left | Each item not resolved in the performance, with an owner and a date; or "none". The factorless-holdings read is empty after the performance, or names exactly what this field carries |
 
-Every act a performance takes goes through the doors named above and leaves its own `platform.audit_record` row; the record
-cites those rows by id and never restates a credential, a channel's value or a factor.
+Every act a performance takes goes through the doors named above, a revocation or a suspension on the administrator's
+stepped-up session (§4), and leaves its own `platform.audit_record` row; the record cites those rows by id and never restates a
+credential, a channel's value or a factor.
 
 **The performances.**
 
@@ -220,9 +230,12 @@ operator doors, a payout destination's among them.
 
 There is no standing emergency identity in the application, and none is created. Break-glass is two procedures:
 
-- **In the application.** An incident that needs a permission nobody on duty holds is met by an `ADMINISTRATOR`
-  granting the role to a named person, `POST /v1/identities/{id}/roles` with a reason naming the incident, and revoking it
-  when the incident closes, `DELETE /v1/identities/{id}/roles/{role}` with a reason. Both acts are `identity.RoleAssigned`
+- **In the application.** An incident that needs a permission nobody on duty holds is met by an `ADMINISTRATOR`, on a
+  session stepped up with their own factor, granting the role to a named person, `POST /v1/identities/{id}/roles` with a
+  reason naming the incident, and revoking it when the incident closes, `DELETE /v1/identities/{id}/roles/{role}` with a
+  reason, on the same kind of session. **The grantee enrols a factor first** (`POST /v1/me/mfa` and its confirmation): a role
+  that needs one - `ADMINISTRATOR` since `P15-TSK-032`, and those that can redirect a merchant's money - is refused
+  `409 identity.FactorRequiredForRole` without it, break-glass included. Both acts are `identity.RoleAssigned`
   (`granted=<role>`, `revoked=<role>`); a grant left standing is found by the next review (§5, question 1). A role granted
   to someone holding none is a first role, and ends the sessions they held (§2); a revocation of the last role they hold
   ends their sessions again (`lastRole=true`). Every act the person takes under the role is recorded `EMPLOYEE` and, at a

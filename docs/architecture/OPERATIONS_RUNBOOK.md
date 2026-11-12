@@ -2477,7 +2477,11 @@ No amount appears in any of them: the audited operator reports answer the figure
 environment that will.*
 
 **What it is for.** An incident that cannot wait for a reviewed change, where the normal path, a pull request and the GitOps
-sync, is too slow or is the thing that broke. Nothing else. A change you would like to make is a pull request.
+sync, is too slow or is the thing that broke. Nothing else. A change you would like to make is a pull request. **This is
+break-glass beneath the application.** Break-glass inside it, a role granted to a named person for the incident, is
+`PRIVILEGED_ACCESS_REVIEW.md` §7's: an `ADMINISTRATOR` on a session stepped up with their own factor grants it and revokes it
+at the close, each with a reason naming the incident, and the grantee enrols a factor first, because a role that needs one
+(`ADMINISTRATOR` among them) is refused without it (§11.12 step 7).
 
 **What bounds it in time, plainly.** Kubernetes RBAC has no expiring binding, so nothing in the cluster ends this. The binding
 in `deploy/base/rbac-humans.yaml` names the group `finapp-break-glass`, which has no members. In a real environment a person
@@ -2842,11 +2846,30 @@ own (§11.35 step 8), never corrected to pass.
 after the identity is reinstated, never before; and reinstating before the roles are gone would hand whoever holds the password
 an identity that is staff.
 
-1. **Suspend.** An `ADMINISTRATOR`, never the suspected identity, `POST /v1/identities/{id}/suspension` with a reason naming the
-   incident (`422 api.ValidationFailed` for oneself). The suspension ends every session the identity holds, in its own
-   transaction: `identity.IdentitySuspended`, and `identity.SessionRevoked` naming the administrator when any ended. Effective on
-   the next request on every replica: sessions and roles are read per request from the database. If the door refuses because
-   the identity is the last active one able to grant roles, grant that role to a second person first, then suspend.
+**Every identity administration door here needs a stepped-up session.** The grant, the revocation, the suspension and the
+reinstatement each declare `MULTI_FACTOR`: the administrator acts from the operator host on a session stepped up with their own
+factor, and a password session is answered `403 identity.AssuranceRequired`. Each door's refusals are recorded
+(`identity.StepUpRefused`, `identity.AuthorizationDenied`, `door.ActRefused`).
+
+1. **Suspend.** An `ADMINISTRATOR`, never the suspected identity, on a stepped-up session: `POST
+   /v1/identities/{id}/suspension` with a reason naming the incident (`422 api.ValidationFailed` for oneself). The suspension ends
+   every session the identity holds, in its own transaction: `identity.IdentitySuspended`, and `identity.SessionRevoked` naming
+   the administrator when any ended. Effective on the next request on every replica: sessions and roles are read per request
+   from the database.
+   **When the suspect is the last active administrator**, the door refuses, `409 identity.LastRoleGranter` ("This would leave
+   no active identity that can grant roles."), so that an administrator's act never leaves the platform with nobody able to
+   grant. Two ways on:
+   - **Another administrator first.** If the holder still controls the identity (reached by a channel the incident already
+     holds, on their own stepped-up session), they grant `ADMINISTRATOR` to a second person who already has an enrolled factor
+     (step 7's door; refused `409 identity.FactorRequiredForRole` without one), and that person suspends.
+   - **Risk's `SUSPEND_IDENTITY`**, when the holder does not control it or cannot be reached: an action on an
+     account-takeover case for the holder's party, proposed by a `RISK_INVESTIGATE` holder and approved by a different
+     `RISK_CASE_APPROVE` holder on a stepped-up session (§9.9; `POST /v1/operator/risk/cases/{caseId}/risk-actions`, then its
+     `/approval`). It suspends every identity of the party, and it is exempt from the last-administrator refusal by design, so
+     that a compromised last administrator stays suspendable; it belongs to the risk desk, which owns the case. **It leaves no
+     active administrator**: nobody can then grant, revoke or reinstate through the platform, the steps below stop here, and the
+     only way back is `README.md` §5e's out-of-band database write (a role inserted for an active identity, or the suspended
+     one's status set back), which a deployed environment has no means for today (`THREAT_MODEL.md` §6 item 31(e)).
 2. **Read what it did**, since the compromise may have begun: `platform.audit_record` by `actor_id`, in a read-only session (the
    review's query, below). Every `EMPLOYEE` act there is reviewed by its section's owner. An approval it gave had a second person
    on the other side. **What a door can set back is set back through it**: a kill switch it stopped, by the two-person restart
@@ -2855,11 +2878,12 @@ an identity that is staff.
    that undoes it**: the money left with its recipient. That is a recovery case for the section's owner, recorded in the
    incident (the money asked back from whoever received it, outside the platform, and the books following the evidence through
    reconciliation or a four-eyes adjustment through the ledger's own door), and never a ledger edit.
-3. **Revoke every role it holds**, each with a reason: `DELETE /v1/identities/{id}/roles/{role}` (`ROLE_ASSIGN`, on a
-   `MULTI_FACTOR` session, the operator surface only). Its answers: `204` when revoked, and `204` too when the role was not held,
-   with nothing written, recorded or ended; `422` for oneself or for a missing reason; `404 api.NotFound` for an unknown
-   identity; `400 api.MalformedRequest` for a role that does not exist; `409 identity.LastRoleGranter` when the role can grant
-   roles and the subject is its last `ACTIVE` holder (a suspended subject is not one); `403 identity.AssuranceRequired` below
+3. **Revoke every role it holds**, each with a reason, on the administrator's stepped-up session: `DELETE
+   /v1/identities/{id}/roles/{role}` (`ROLE_ASSIGN`, `MULTI_FACTOR`, the operator surface only). Its answers: `204` when revoked,
+   and `204` too when the role was not held, with nothing written, recorded or ended; `422` for oneself or for a missing reason;
+   `404 api.NotFound` for an unknown identity; `400 api.MalformedRequest` for a role that does not exist;
+   `409 identity.LastRoleGranter` ("This would leave no active identity that can grant roles.") when the role can grant roles and
+   the subject is its last `ACTIVE` holder (a suspended subject is not one); `403 identity.AssuranceRequired` below
    `MULTI_FACTOR`. Each revocation is `identity.RoleAssigned` saying `revoked=<ROLE>, lastRole=false`, or
    `revoked=<ROLE>, lastRole=true, sessionsRevoked=<n>` for the last, beside an `identity.SessionRevoked` when it ended any
    (here none: the suspension did). Every replica stops granting the role on the next request.
@@ -2868,8 +2892,9 @@ an identity that is staff.
    (`identity.mfa_enrolment`, `ACTIVE`) is theirs (`PRIVILEGED_ACCESS_REVIEW.md` §5 question 6). **One they do not recognise
    ends this path**: no door removes a confirmed factor or a verified channel (`PRIVILEGED_ACCESS_REVIEW.md` §6), so the identity
    stays suspended for good and the answer is a new identity (below).
-5. **Reinstate**: `DELETE /v1/identities/{id}/suspension` with a reason (`identity.IdentityReinstated`). Sessions are not
-   restored, and the identity is now a customer: step 3 left it no role.
+5. **Reinstate**, on the administrator's stepped-up session: `DELETE /v1/identities/{id}/suspension` with a reason
+   (`identity.IdentityReinstated`; its refusals recorded as `door.ActRefused`). Sessions are not restored, and the identity is
+   now a customer: step 3 left it no role.
 6. **The credential.** **If the holder still knows the current password**, they sign in at once on the operator host, step up
    with their own factor, and change the password, `POST /v1/me/credential` (`identity.CredentialChanged`), which ends every
    other session the identity holds. An identity with an enrolled factor cannot change its password on a password-only session
@@ -2878,18 +2903,21 @@ an identity that is staff.
    new identity. **If an attacker changed the password**, nothing restores the holder's access but a new identity: a recovery,
    `POST /v1/recoveries`, starts a request whose token nothing delivers (no channel adapter or notifier exists: the notifier is
    a business capability `PHASE_15_PLAN.md` §25 re-dated), so nobody can complete it today.
-7. **Re-grant the roles**, each with a reason naming the incident: `POST /v1/identities/{id}/roles`. The first ends every
-   session again (`firstRole=true, sessionsRevoked=<n>`), the holder signs in again on the operator host (§11.37), and the next
-   review asks its question 6 of the identity.
+7. **Re-grant the roles**, each with a reason naming the incident, on the administrator's stepped-up session: `POST
+   /v1/identities/{id}/roles`. A role that needs a factor (`ADMINISTRATOR`, and the roles that can redirect a merchant's money,
+   `LEDGER_OPERATOR` and `MERCHANT_ADMINISTRATOR`) is refused `409 identity.FactorRequiredForRole` until the identity has one
+   confirmed. The first ends every session again (`firstRole=true, sessionsRevoked=<n>`), the holder signs in again on the
+   operator host (§11.37), and the next review asks its question 6 of the identity.
 
 **When the answer is a new identity, and how one comes about.** An attacker's factor or channel on the identity (nothing removes
 it), a password the holder no longer knows (no recovery completes), or a holder with no factor whom step 6 would leave exposed.
 No administrative door creates an identity: **the person registers again**, `POST /v1/registrations`, under a different login.
 The old login stays taken for good, because a login is unique across every identity, closed ones included (identity `V002`), and
-the old identity stays suspended with its history. The new identity enrols its factor (`POST /v1/me/mfa`), and an administrator
-grants its roles afresh, each with a reason naming the incident: a role that can redirect a merchant's money is refused until the
-factor is confirmed (`409 identity.FactorRequiredForRole`), the first role ends the sessions it held as a customer, and the review
-asks question 6 of it, since that factor and its channels were added from the internet.
+the old identity stays suspended with its history. The new identity enrols its factor first (`POST /v1/me/mfa`, then its
+confirmation), and an administrator, on a stepped-up session, grants its roles afresh, each with a reason naming the incident: a
+role that needs a factor (`ADMINISTRATOR` among them) is refused until the factor is confirmed (`409
+identity.FactorRequiredForRole`), the first role ends the sessions it held as a customer, and the review asks question 6 of it,
+since that factor and its channels were added from the internet.
 
 **Other credentials** are their own sections': a merchant's API key, `DELETE /v1/operator/merchants/{id}/api-keys/{keyId}` with a
 reason (`MERCHANT_ADMINISTER`; `merchant.MerchantApiKeyRevoked`), the old key refused at once; a callback key or a field-level
@@ -3938,7 +3966,8 @@ the hour before the last ten minutes, so a failed scrape or a gap of minutes in 
 `platform.audit_record` for the last ten minutes (`change_summary` carrying `credential=proven`); `target_id` is the identity.
 - `kind="public"`: an operator's correct password arrived through the public edge, from the internet. The sign-in was refused and nothing
   was counted against the operator's lockout. Follow section 11.12's "A compromised operator credential" in its order: an
-  `ADMINISTRATOR` suspends the identity first, with a reason naming the incident, which ends every session it holds; then the
+  `ADMINISTRATOR`, on a session stepped up with their own factor, suspends the identity first, with a reason naming the incident,
+  which ends every session it holds (the last active administrator is suspended by section 11.12 step 1's two ways); then the
   operator is reached by a channel the incident already holds - not one the record or a caller gives you - and the password is
   changed only after the identity is reinstated, because a suspended identity can neither sign in nor recover. *(Read "have the
   credential replaced on the operator host (recovery or a password change there). If the operator cannot be reached … suspends
@@ -3963,7 +3992,8 @@ every door that signs in or strengthens a session, customers are served, so this
 the application back) as section 11.26's *Rolling it out, and back* says; if the edge is as built, check `finapp-app-ingress` before
 anything else. Found here, before an operator is locked out and calls.
 
-**A person given their first role signs in again.** Granting the first role to an identity ends every session it holds, in the grant's
+**A person given their first role signs in again.** Granting the first role to an identity (an `ADMINISTRATOR` on a session stepped
+up with their own factor; a role that needs a factor is refused until the grantee has one) ends every session it holds, in the grant's
 transaction (`identity.RoleAssigned` says `firstRole=true, sessionsRevoked=<n>`, beside an `identity.SessionRevoked` naming the
 administrator when `n` > 0). They sign in on the operator host; their customer sessions, stepped up from the internet or not, are gone.
 A second role ends nothing. The grant's review confirms the recovery channels and the factor the identity added as a customer
@@ -3977,8 +4007,10 @@ sessionsRevoked=<n>`, each with the actor, the target, the reason, the correlati
 sessions at its next request. The person signs in again as the customer they now are, on either host. A role taken beside
 another ends nothing (`lastRole=false`): the role stops granting on the next request and the sessions serve what the identity
 still is. A retry, or a role not held, answers `204` again and writes, records and ends nothing. `409 identity.LastRoleGranter`
-means the role can grant roles and the identity is its last `ACTIVE` holder: grant it to a second person first, then revoke;
-nothing was taken. An administrator cannot revoke their own role (`422 api.ValidationFailed`); another administrator does it.
+("This would leave no active identity that can grant roles.") means the role can grant roles and the identity is its last
+`ACTIVE` holder: grant it to a second person first (one with an enrolled factor: `ADMINISTRATOR` is refused
+`409 identity.FactorRequiredForRole` without one), then revoke; nothing was taken. The suspension door refuses the same last
+holder the same way (section 11.12 step 1). An administrator cannot revoke their own role (`422 api.ValidationFailed`); another administrator does it.
 `422` too for a missing reason, `404 api.NotFound` for an unknown identity, `400 api.MalformedRequest` for a role that does not
 exist, `403 identity.AssuranceRequired` below `MULTI_FACTOR`, and each refusal is recorded. Break-glass's close in the
 application, the access review's revocations and section 11.12's compromise steps use this door.
