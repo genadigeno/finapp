@@ -51,7 +51,9 @@ import org.springframework.context.SmartLifecycle;
  * </ul>
  *
  * <p><strong>What it does not hold.</strong> That a row's strategy is right - that is the row's review and the counted races it
- * cites. A class named only in prose, outside code marks, is not counted as named. Row locks, unique constraints and conditional
+ * cites. A class named only in prose, outside code marks, is not counted as named. A namespace is read where the code writes it as a
+ * number - a constant named for it, or a call's literal first argument - so a class taking a lock whose namespace it reads from another
+ * class is held by its name in the table, and a namespace built at run time is what this cannot see. Row locks, unique constraints and conditional
  * updates arbitrate everywhere and are the rows' own business; the advisory namespaces are the one cross-component key space, so
  * they are the arbiters held here.
  */
