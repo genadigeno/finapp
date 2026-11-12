@@ -26830,7 +26830,7 @@ thirty-seven items (`P15-TSK-001`…`-034`, `P15-TST-001`, `P15-TST-002`, `P15-D
 `P15-TSK-001` marked `READY` *(thirty-eight since 2026-11-08, when the owner added `P15-TSK-035`, the source-join
 census, by accepting `THREAT_MODEL.md` section 6 item 2; **thirty-nine** since `P15-TSK-002` added `P15-TSK-036`, callbacks
 as hints for the payment and instant providers, the same day, applying C15: `X-TSK-015` moved into the phase; **forty-two** since the owner accepted `P15-TSK-037`, `-038` and `-039` the same day; **forty-four** since the owner accepted `P15-TSK-040` and `-041`, 2026-11-09; **forty-five** since the owner accepted `P15-TSK-042` the same day; **forty-six** since the owner accepted `P15-TSK-043`, 2026-11-11)*. The engineering plan is [`PHASE_15_PLAN.md`](PHASE_15_PLAN.md); decisions are
-ADR-0120…ADR-0125 (`Proposed`). The roadmap's title is kept ("Production Hardening"); the owner's brief calls the phase
+ADR-0120…ADR-0125 (`Accepted` by the exit review, `P15-DOC-001`, 2026-11-12; *read "`Proposed`" until then*). The roadmap's title is kept ("Production Hardening"); the owner's brief calls the phase
 "Production Architecture and Hardening", and its twelve areas are the plan's scope. **No new invariant**: the phase
 protects the catalogue's existing ones — `INV-LED-*`, `INV-ACC-01`, `INV-HIST-01`, `INV-IDEM-*`, `INV-EVT-*`,
 `INV-AUD-*` — through deployment, rotation, restart and restore, read from the catalogue at the gate.
@@ -28801,7 +28801,7 @@ storm runs after the project's phases)
 - **Acceptance criteria**: every round's census green across ten replicas. **Definition of done**: `DOD-TEST`.
   **Risk**: Medium. **Cx**: L.
 
-**P15-DOC-001 — The Phase 15 exit review** — `READY` (2026-11-12; marked by the coordinator at `P15-TSK-034`'s merge, master `6aa40e66`; every dependency `COMPLETE`)
+**P15-DOC-001 — The Phase 15 exit review** — `COMPLETE` (2026-11-12; designed, built and gated on branch `P15-DOC-001` from master `11ee8da3`; documents only, no production code, migration, manifest or new ADR; marked `READY` by the coordinator at `P15-TSK-034`'s merge, master `6aa40e66`; marks no task `READY` - the Phase 15 → 16 transition is the owner's to open; [`reviews/PHASE_15_REVIEW.md`](reviews/PHASE_15_REVIEW.md); the phase's status line is the owner's to flip at the transition)
 - **Objective**: read every ADR, plan section and register row against the code, configuration and rehearsal records;
   rule the gate clause by clause; ratify or record C1–C15; accept ADR-0120…0125 or correct them; confirm no document
   claims compliance.
@@ -28831,6 +28831,77 @@ storm runs after the project's phases)
 - **Acceptance criteria**: every clause holds, holds in another form recorded, or is a recorded deviation the owner
   accepts. **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: L.
 - *Routed by the owner (2026-11-08, an ADR promise with no register row), status unchanged:* ADR-0006's coupling review is part of the exit review.
+- *As built (2026-11-12):* **verdict - Phase 15 `COMPLETE` with recorded deviations, pending the Phase 15 → 16 transition gate and the owner's acceptance of the deviations** ([`reviews/PHASE_15_REVIEW.md`](reviews/PHASE_15_REVIEW.md)). Six read-only audits, each finding re-read before acted on; no database pass (PI-023), no cluster or container. The seven: 1 `PASS` (measurable form; 32 of 38 CRITICAL and HIGH threats carry residual rows held by named owners), 3 `PASS`, 6 `PASS` in another form, 2, 5 and 7 `PARTIAL`, 4 `PARTIAL` by the owner's choice (PI-024); per area 7 `PASS`, 5 `PARTIAL`, the database pass `NOT MET` by the owner's choice; universal criterion 7 `NOT MET` by the owner's choice, 4 and 11 `PARTIAL`. **The ten-instance answer: `UNKNOWN` at ten, by the owner's choice** - `PASS` on every counted rehearsal, no `FAIL`. ADR-0120…0125 `Accepted` after eleven corrections; ADR-0006's coupling review done (the graph is the declared one; four weaker rules, `P15-REM-001`); C1–C15 recorded; §3's five stale documents confirmed corrected; `PHASE_15_PLAN.md` §26 errata (fifteen); no compliance claim. **Fixed**: `MUTATION_TESTING.md` §4's `P15-TST-001` and `-002` deferral rows (the flip's one red); `THREAT_MODEL.md` §5's T21/T27/T28/T45 paragraph and statement count, item 12's three unaccepted baseline rows and its overstated guard, item 43 decided, **item 44** added; `DISTRIBUTED_EXECUTION.md`'s stale rows and drain count; `PRODUCTION_READINESS.md`'s item reference and Alerting reading; `CONFIGURATION_REGISTER.md`'s finished task's promise; words left behind in `SYSTEM_ARCHITECTURE.md`, `DECISIONS.md`, ADR-0027, ADR-0089 and this section's preamble; PI-023's one known red. **Recorded**: `P15-REM-001`…`-004` (below, `PLANNED`). **The flip rehearsed twice** (`CURRENT_STATE.md` restored byte-identical each time): 1 red of 68 on master's bytes, 0 after the rows. Tests by name only, the owner's rule: the entry's "the `com.finapp.app.architecture` package" replaced by named guards, a deviation; counts in the review's *Tests*. Owed to PI-023: the mutation rows on the shared registers this review edited, not performed again.
+
+## Phase 15 remediation (the Phase 15 exit review, 2026-11-12)
+
+*Created by the Phase 15 exit review ([`reviews/PHASE_15_REVIEW.md`](reviews/PHASE_15_REVIEW.md), `P15-DOC-001`) from its
+findings. None creates or destroys money, overwrites history or lets one person approve their own money-moving act: each is a
+guard that holds less than its name or its decision says, or a leg of a proof the phase's evidence does not show. Each is
+`PLANNED`, outside every milestone, **blocking nothing of Phase 15's exit** and none of Phase 16's start, with its horizon; each
+runs the three-command loop (`.claude/skills/task-*`) when the owner schedules it, and its design settles what the entry leaves
+open. The owner's postponements PI-004, PI-023 and PI-024 are not repeated here (`POSTPONED_ISSUES.md`).*
+
+**P15-REM-001 — ADR-0006's boundary rules made to hold what they say** — `PLANNED` — **before any service extraction is
+decided** (ADR-0001's revisit point, Phase 16)
+- Objective: the coupling review (ADR-0006's Follow-up, done by the exit review) found the Gradle graph exactly the declared
+  one and no foreign key across schemas, and four rules weaker than the ADR says: (a) the internals rule reads `.internal`
+  packages and no module has one - every module is a flat package of public types - so give each module's private stores and
+  JDBC classes a package the rule reads, or replace the rule by a published-surface allow-list per module; (b) the entity rule
+  reads JPA entities and there are none (ADR-0033): retire it with a dated note, or aim it at what can cross (a store type in
+  another module's signature); (c) `INV-LED-04`'s static half: an ArchUnit rule that only `com.finapp.ledger` calls the journal
+  store's `append` (today held by the dependency direction alone; no call exists outside the ledger); (d) a global guard that no
+  migration's `REFERENCES` names another module's schema, beside the per-migration checks; (e) `app`'s direct schema reads
+  (thirteen schemas, `SELECT` only, through declared port adapters) pinned per adapter and schema, `SELECT` only, and ADR-0006's
+  data boundary given the exception in words; (f) `MODULE_ARCHITECTURE.md`'s `notification` module, declared and never built,
+  given its deferral or struck.
+- Bounded context: `app` (the architecture guards), every module's package layout for (a); documents. Dependencies: none.
+  Multi-instance: none (static rules). Security: module boundaries are classification boundaries (ADR-0006), so (a) and (e) are
+  also least-privilege rules.
+- Testing: each rule with a planted violation seen red (ADR-0006's own verification rule), recorded in `MUTATION_TESTING.md`
+  §2 for (c) under `INV-LED-04`. DoD: `DOD-ARCH`, `DOD-TEST`, `DOD-DOC`. Risk: Low. Cx: M ((a) touches every module's layout).
+
+**P15-REM-002 — An audit record tested for every auditable route** — `PLANNED` — **before production use**
+- Objective: `PHASE_GATES.md` §5 Phase 15 criterion 5's last clause, "every route in the permission register whose act is
+  auditable has a test of its record", is held by nothing: `AuditCompletenessTest` proves each registered action is referenced by
+  production code, `RoutePermissionRegisterTest` holds permissions, and `RefusedActsAreRecordedTest` covers the refusals of
+  some doors. Build the guard - a route's audited action named, and a test asserting its record (actor, operation, target,
+  outcome) named beside it - and write the missing tests; a name match found some actions named only by database-tier tests
+  (owed under PI-023) and some by none.
+- Bounded context: `app` (the route register and its guard), each module's audit tests. Dependencies: none; its database half
+  runs with PI-023's pass. Security/audit: the clause as written.
+- Testing: the guard with a planted route whose record no test asserts, seen red. DoD: `DOD-SEC`, `DOD-TEST`. Risk: Low. Cx: M.
+
+**P15-REM-003 — The end-to-end trace's provider and ledger legs, and its causation** — `PLANNED` — **before the trace is relied on
+in a real environment**, its run with PI-024's
+- Objective: criterion 7 names customer → request → domain → provider → ledger → settlement → reconciliation, the correlation
+  joining every leg and the causation across the outbox. The rehearsal's trace step (`infra/scripts/kind-rehearsal/telemetry.sh`)
+  asserts nine spans - the payment's two requests, the outbox and inbox, the settlement file's upload, attestation, parse and
+  accept, and a reconciliation chunk - and no provider span, no ledger posting span and no causation id; its reconciliation
+  chunk is any chunk in Tempo, not the run that allocated the file's line. Assert a provider call's span and the posting's span
+  under the payment's correlation, the causation id carried across the outbox, and the chunk of the allocating run; add any span
+  the domain does not emit, inside the attribute allow-list.
+- Bounded context: the rehearsal harness and its contract test; `app`'s spans if one is missing. Dependencies: none; the run is
+  PI-024's. Security: the needle sweep unchanged; no amount or identifier outside the allow-list enters a span (ADR-0072).
+- Testing: the harness's contract test holding each new leg; a run on `kind` with the leg removed seen red. DoD: `DOD-OBS`,
+  `DOD-TEST`. Risk: Low. Cx: S.
+
+**P15-REM-004 — Guards that hold less than they are named for** — `PLANNED` — **Phase 16's first wave**
+- Objective: each found by the exit review; nothing is unheld today, but each guard would pass a defect its name says it
+  catches. (a) `DISTRIBUTED_EXECUTION.md` §3 has no guard: hold it both ways against the lifecycle beans (`ShutdownOrderTest`
+  counts forty) and the code's arbitration classes; (b) `SecurityScansAreWiredTest` does not hold the Semgrep baseline's rows
+  equal to what `THREAT_MODEL.md` §6 item 12 accepted, so three rows went unrecorded: hold the count and the dates to the item;
+  (c) `TerraformIsPinnedAndCheckedTest` asserts at least three test files for eleven module and root directories, and
+  `terraform test` with no file passes on no run: require one per directory; (d) `AlertCatalogueTest#everyNewAlertHasAPromtoolCase`
+  holds that a case names the alert, not that it fires on a burn and stays silent on a healthy series; and the domain rule files'
+  alerts have no promtool case at all; (e) the rotation table (`SECRET_MANAGEMENT.md` §5.1) has no row for the TLS certificate and
+  image-signing classes of `PHASE_15_PLAN.md` §10, and no test holds a revocation procedure per class; (f)
+  `ConfigurationRegisterIsCompleteTest#everyFinancialRowAnswersTheMixedFleetQuestion` holds that a statement exists, not that it
+  answers - say so in its name, or hold a form; (g) three stale comments in production sources, at their next change:
+  `RequiresPermission`'s "no production endpoint declares one yet", `UnderwritingCaseController`'s `credit.review:EMPLOYEE:` key
+  (the code keys `CUSTOMER`, `Actor.keyedType`), and `application.yaml`'s sampling comment deferring to Phase 15 (C10 decided it).
+- Bounded context: `app` (the guards), documents; production sources for (g) only, comments. Dependencies: none.
+- Testing: each tightened guard with a planted defect seen red. DoD: `DOD-TEST`, `DOD-DOC`. Risk: Low. Cx: M.
 
 ---
 

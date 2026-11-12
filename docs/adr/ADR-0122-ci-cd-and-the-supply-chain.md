@@ -1,6 +1,6 @@
 # ADR-0122 — CI/CD and the supply chain: one signed image per commit, promoted by digest, every production change two-person, every release schema-compatible with the last
 
-Status: Proposed
+Status: Accepted (2026-11-12, `P15-DOC-001` — read against the code and corrected first)
 Date: 2026-11-07
 Phase: 15
 Context: Platform (build and delivery) · Security (supply chain) · every module (migrations, events)
@@ -19,7 +19,10 @@ compatibility check between releases.
 ## Decision
 
 1. **Build once.** Each commit produces the app image and the migrator image, their SBOMs and their scans. The same
-   digest moves through `ci`, `staging` and `production`. Nothing is rebuilt for an environment.
+   digest moves through `ci`, `staging` and `production`. Nothing is rebuilt for an environment. *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: as built,
+   each CI job builds the commit's images itself, and one digest per commit rests on reproducibility, which the `image`
+   job proves by building twice and comparing every layer; no registry yet carries a CI-built digest to staging
+   (`THREAT_MODEL.md` §6 item 35), and promotion by digest is `promote.sh`'s.)*
 2. **Scanning and analysis.** Trivy, already pinned, scans the image (vulnerabilities, secrets, misconfiguration), the
    rendered manifests and the Terraform. HIGH and CRITICAL findings fail the build. Semgrep OSS runs with rules vendored
    in the repository, so no rules are fetched at runtime. Dependabot is extended to base images. Each new tool is pinned
@@ -30,6 +33,10 @@ compatibility check between releases.
    `infra/semgrep/rules` rather than files copied from Semgrep's registry. The registry's rules carry their own licence,
    and no registry rule can say what "constant" means for this codebase's idiom. Semgrep runs with no network at all. The
    Trivy pin moved from 0.74.0 to 0.76.2. Nothing else in this decision changed.
+
+   *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: Trivy does not scan the rendered manifests. They are held by `kubeconform -strict` and the platform's
+   own policies (`infra/scripts/manifest-policy/`), each refusing a plant; `trivy config` runs over the Terraform alone.
+   Whether to add it over the overlays as a second net is `THREAT_MODEL.md` §6 item 44 (b).)*
 3. **Signing and admission.** Images are signed with Cosign. The SLSA provenance and the SBOM are attached as
    attestations. The cluster's admission controller refuses an image that is unsigned or comes from an unexpected
    identity. Keyless signing from CI's OIDC identity is the reference. Until a registry and an identity exist, CI proves
@@ -199,4 +206,7 @@ environment rules are the owner's to apply when a registry and hosted runners ex
 *(2026-11-12, `P15-TSK-017`:)* decision 4 is built as declared manifests, a promotion and a smoke (its note above). The promotion
 refuses a digest without its signature; the install order is the root's waves after the pipeline role's bootstrap. What remains:
 the signature repository (`THREAT_MODEL.md` §6 item 40), the registry's expiry rule after a promotion lands under an immutable tag (a
-pipeline-role step), and the delivery seen on a controller (`P15-TSK-032`).
+pipeline-role step), and the delivery seen on a controller (`P15-TSK-032`). *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: the signature repository is built in the
+registry module, and the delivery was seen on a controller by `P15-TSK-032`'s rehearsal, its remaining steps postponed
+by the owner (`POSTPONED_ISSUES.md` PI-024). What remains is the production identity (§6 item 35) and the expiry step after a
+promotion.)*

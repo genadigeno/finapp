@@ -170,7 +170,8 @@ person. That person is powerful, and the design must bound the power:
    negative test in `RoutePermissionRegisterTest`. *(As built (`P10-DOC-001`, 2026-10-09): the
    `GET` queue read is not keyed — it is audited per serving, `credit.ReviewCasesRead`
    (§Follow-up). The key's actor type is the session actor's as `SessionAuthenticationInterceptor`
-   types it — every session actor is `CUSTOMER`, an operator's included — so an underwriter's key
+   types it — every session actor is `CUSTOMER`, an operator's included — so an underwriter's key *(since `P15-TSK-021`, 2026-11-08, an operator's act is audited as `EMPLOYEE`; the idempotency key's type stays `CUSTOMER`
+   through `Actor.keyedType`, so the key below is unchanged. Noted by the Phase 15 exit review, 2026-11-12)*
    reads `credit.review:CUSTOMER:<identityId>`, not `EMPLOYEE` as first written; the decision's
    `decided_by_type` is `EMPLOYEE` regardless (§Follow-up (5)).)* Audited acts: `credit.ReviewCaseAssigned`,
    `credit.ReviewCaseReleased`, `credit.ReviewDecided` (reason required),

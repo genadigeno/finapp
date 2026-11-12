@@ -22,7 +22,10 @@ run against a real environment.
 - **`FINANCIAL`**: it changes a financial outcome, limit, price, route or risk judgement. When in doubt a property is classed here,
   because over-classing costs a sentence and under-classing hides a decision from the fingerprint. Each row says why replicas holding
   different values during a rollout is safe, read from how the value is used. **Two people on every change is ADR-0122's decision and
-  is not built yet**: `P15-TSK-017` delivers it. What exists today is a pull request, and section 1.1 says which.
+  is not enforced yet**: `.github/CODEOWNERS` names an owner for the overlays and this register, and it names one person, and no
+  branch rule yet makes the review required (`THREAT_MODEL.md` section 6 item 4: the owner applies the rules and names a second
+  person when the repository gains a production environment). What exists today is a pull request, and section 1.1 says which.
+  *(Read "is not built yet: `P15-TSK-017` delivers it" until the Phase 15 exit review, 2026-11-12.)*
 - **`OPERATIONAL`**: anything else: pacing, batch sizes, timeouts, leases, switches, addresses that are not a route.
 
 A value that decides money and is **not** safe mixed belongs in versioned database data, not here (section 4).
@@ -34,7 +37,7 @@ fleet. No value leaves the application. Changing the class of a row changes the 
 
 ### 1.1 How a `FINANCIAL` value changes
 
-Three paths, none with its second person yet (`P15-TSK-017`'s `CODEOWNERS`; the branch rules are the owner's to apply).
+Three paths, none with its second person yet (`.github/CODEOWNERS` names one person; the branch rules are the owner's to apply).
 
 | Rows | Path | What a reviewer sees |
 |---|---|---|

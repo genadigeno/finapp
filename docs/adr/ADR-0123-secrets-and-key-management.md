@@ -1,6 +1,6 @@
 # ADR-0123 — Secrets and key management: a managed secret store and KMS per environment, delivered as the environment the application already reads, field-level keys as versioned key rings
 
-Status: Proposed
+Status: Accepted (2026-11-12, `P15-DOC-001` — read against the code and corrected first)
 Date: 2026-11-07
 Phase: 15
 Context: Platform (secrets) · Security · every module holding a cipher (identity, kyc, payments, merchant, credit, fx,
@@ -15,7 +15,7 @@ Secrets come from environment variables. Each one has a marked local default, an
 loopback (ADR-0020). The code reads 37 key, secret, password and token properties *(27 distinct `finapp.*` credential
 properties, each with its own `ConfinedCredential` key class, besides the database's credentials - recounted from the
 code by `P15-TSK-001`, 2026-11-08; 35 with the eight `key-version` companions, which are not secrets)*. Eight AES-256-GCM cipher classes, built as nine
-instances (`EvidenceCipher` twice, `PaymentBeans.java:83` and `:829`) over eight keys (`DocumentCipher` and
+instances (`EvidenceCipher` twice, `PaymentBeans.java:83` and `:829`; `:87` and `:835` on the exit review's tree) over eight keys (`DocumentCipher` and
 `CounterpartySubjectCipher` share `finapp.doc.key`, `CounterpartyScreeningBeans.java:65-76`), stamp a key version on
 every row, but each holds only one active key. A rotation would therefore make every earlier row
 unreadable, and many of these tables are `INSERT`-only evidence that must never be rewritten. There is no secrets

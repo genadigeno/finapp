@@ -2,8 +2,8 @@
 
 Written by `P15-TSK-001` (2026-11-08), Phase 15's first task and its security baseline. Every later Phase 15 task
 builds a control this register names, and the register is held by `ThreatModelIsCompleteTest`
-(`com.finapp.app.architecture`). The controls are decided in ADR-0120…ADR-0125 (`Proposed`) and in the ADRs each row
-cites; this document decides nothing. It names threats, rates them by a written rule, and maps each one to a control
+(`com.finapp.app.architecture`). The controls are decided in ADR-0120…ADR-0125 (`Accepted` by the Phase 15 exit review,
+2026-11-12; read "`Proposed`" until then) and in the ADRs each row cites; this document decides nothing. It names threats, rates them by a written rule, and maps each one to a control
 with evidence, to a task that will build one, to a gap with its owner, or to an acceptance that only the owner can
 give.
 
@@ -879,7 +879,9 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   was written first stays neither refused nor detected until `PI-016` lands.
 - **T45, injection through hand-written JDBC.** Every statement is hand-written. The codebase's idiom is constant SQL
   with bind parameters, and the statements read for this register were constant. Some concatenate constants
-  (`ROW + " WHERE …"`), and about fifteen `createStatement()` calls execute constant or configuration-derived text.
+  (`ROW + " WHERE …"`), and twenty `createStatement()` calls in production source (`app`, `platform`, `reconciliation` and
+  the migrator) execute constant or configuration-derived text. *(Read "about fifteen" until the Phase 15 exit review's count,
+  2026-11-12.)*
   *(Since 2026-11-08)* CI's static analysis holds the idiom: a statement whose text is built from anything but
   constants fails the `sast` job, and a statement it cannot prove constant takes a baseline row with a reason and an
   expiry (owner item 12). **Its limits**: Semgrep OSS does not follow a value across methods or files, so a private
@@ -913,9 +915,13 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   "two persons on production" is held by nothing until the owner applies the rules and names a second person. *(Read "Today no
   `CODEOWNERS` file exists" until 2026-11-12.)* **Owner item 4, decided 2026-11-08**: the owner applies them when the repository
   gains a production environment.
-- **T21, T27, T28, T45.** Today **no built control exists** for these CRITICAL and HIGH threats: nothing
-  is deployed, and T45's rule is unwritten. Each is answered only by its planned tasks, and rule 9 and the exit rule
-  (§1.5) hold them to it. *(Read "T4, T21, T27, T28, T29, T32, T45" until 2026-11-08: T4's image and node controls and
+- **T21, T27, T28, T45.** Each now has built rows in §4 (T21 two, T27 eight, T28 four, T45 one), and **nothing is
+  deployed**: no edge serves a real client, no image is promoted to a real environment, no change reaches a real
+  production, and T45's rule refuses statements in CI over a tree no real database runs. What stays open is each one's
+  `GAP` rows (T27 three, T28 one, T45 one) and the owner items they name. *(Corrected by the Phase 15 exit review,
+  2026-11-12: this read "Today **no built control exists** for these CRITICAL and HIGH threats: nothing is deployed, and
+  T45's rule is unwritten. Each is answered only by its planned tasks, and rule 9 and the exit rule (§1.5) hold them to
+  it", contradicted by §4's rows and by T45's own bullet above.)* *(Read "T4, T21, T27, T28, T29, T32, T45" until 2026-11-08: T4's image and node controls and
   T29's cluster controls are now built rows of §4, though nothing is deployed; and read with T32 among them until 2026-11-09, when its backup configuration became a built row, though nothing had been backed up; since 2026-11-11 a logical backup and its restore are rehearsed on containers, and a managed one is still never taken, §4's T32 rows. Since 2026-11-12 the promotion's refusals and the approval boundary's file are built rows of T27 and T28 too; nothing has been deployed through them.)*
 - **T6, T7, T29, the network and cluster modules.** Their rows are asserted over a plan against a mock provider, which
   proves the configuration and not AWS's behaviour: no account exists, so nothing has shown that AWS accepts it or
@@ -1214,6 +1220,16 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     **Two more rows have been added since, and the owner accepted them on 2026-11-11, as recommended** (2026-11-10, the static analysis on the tree with wave E merged): the
     key-ring retirement guard's statement, built from its own closed list of stamped columns, and the embedded configuration register's
     read of its own classpath resource, until 2027-06-30, as the others.
+    **Three more rows have been added since, replacing one, and await the owner** (found by the Phase 15 exit review, 2026-11-12):
+    the static analysis on the tree with wave F merged (2026-11-12) read the migrator's role bootstrap after the alternating users,
+    found three statements without rows and one row no finding matched, and replaced that row by three with the siblings' expiry
+    (role names from the class's constant list, constant attributes and options, the driver's SCRAM verifier; no request value).
+    `infra/semgrep/baseline.tsv` holds 61 rows: 58 of the 59 the owner accepted above, and these three, which no decision here
+    accepted. *Recommendation*: accept the three until 2027-06-30, as their siblings.
+    *(Corrected by the Phase 15 exit review, 2026-11-12: (b) said "the baseline's date and row count are held by
+    `SecurityScansAreWiredTest`". Its `theBaselineIsSmallAndReasoned` holds every row's expiry in the future, every row's file
+    and rule real, and the rows under a ratio of the tree's statements; nothing holds the count, or holds it equal to what this
+    item accepted, which is how the three rows above went unrecorded.)*
 18. **T10's and T37's residual: the tables the retention sweeps leave alone** *(added 2026-11-08 by the retention task's
    gate; numbered for the tasks that ran beside it)*. The audit archival is designed (`DATA_RETENTION.md` §3) and not
    built, so the audit table grows and no archive copy exists. Idempotency records and session rows are not swept: a sweep
@@ -2030,7 +2046,9 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
 
 43. **What the readiness review found that no task, issue or item held** *(added 2026-11-12 by the readiness review,
     `PRODUCTION_READINESS.md` §3 and §4)*. Eight things, each a decision. None is a threat's control today; each is a
-    readiness `GAP` this item holds until the owner rules it, and the review's cells name it as `owner item 43`.
+    readiness `GAP` this item holds until the owner rules it, and the review's cells name it as `owner item 43`. *(The owner
+    ruled all eight on 2026-11-12, as recommended: each cell stays a `GAP`, held by the decided part until it is built where
+    its decision lands.)*
 
     **(a) The managed services' own signals.** PostgreSQL's and the brokers' own metrics and logs (connections, replication,
     storage and locks; under-replicated partitions, in-sync replicas and disk) are read by nothing the platform owns. The
@@ -2040,7 +2058,7 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     environment, the services' metrics into the cluster's Prometheus (an exporter of the cloud's metrics, or the services'
     own Prometheus endpoints) and their logs through the back end item 37 (a) chose, with rules and runbook sections owned by
     `platform`, the thresholds calibrated by Phase 16's load model; **(ii)** the client-side signals alone. *Recommendation*:
-    **(i)**, with the first real environment, before it holds a customer's money.
+    **(i)**, with the first real environment, before it holds a customer's money. **Decided 2026-11-12** by the owner ("accept all"): as recommended.
 
     **(b) The platform's own components, watched by nothing.** A failed or stalled migrator Job alerts nobody (a failed Sync
     hook is seen only by someone looking at the controller), and its lines are neither structured nor shipped. The edge
@@ -2049,7 +2067,7 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     shipped through the collector; a rule on a failed or overdue migrator Job and one on the edge's error ratio, owned by
     `platform`, each with its promtool cases and a runbook section; **(ii)** leave them to a real environment's own tooling.
     *Recommendation*: **(i)**, in Phase 16's first wave: none of it needs an account, and a migration that fails at night
-    should wake someone.
+    should wake someone. **Decided 2026-11-12** by the owner ("accept all"): as recommended.
 
     **(c) Delivery and bounds outside `finapp`.** No Argo CD Application and no staging or production overlay renders the
     telemetry stack: its base and its `kind` overlay exist, and the survey's reading that the collector is in "every
@@ -2057,7 +2075,7 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     Resource limits (b) has nothing to hold there. The options: **(i)** an observability overlay per environment, its
     Application in the root after the release, with item 37 (a)'s back ends; a quota in each namespace sized from its own
     worst moment as `finapp`'s is, held by the manifest check; **(ii)** the quota only, the stack delivered by hand.
-    *Recommendation*: **(i)**, before the first real environment; the quota first, since it needs no account.
+    *Recommendation*: **(i)**, before the first real environment; the quota first, since it needs no account. **Decided 2026-11-12** by the owner ("accept all"): as recommended.
 
     **(d) Alerts owned by another module, and an owner check that holds a form.** Settlement's rules (`SettlementSourceSilent`,
     `SettlementFileStuck` and the rest) carry the owner `reconciliation`, and the cross-border rules
@@ -2068,31 +2086,54 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     options: **(i)** label each rule by the module whose flow it watches, and hold the label to `settings.gradle.kts`'s modules
     as the runbook's test does; **(ii)** keep the shared labels and record the sharing as the ownership. *Recommendation*:
     **(i)**, a small change before production use: who is woken for a settlement alert is settlement's question (§4 of the
-    plan).
+    plan). **Decided 2026-11-12** by the owner ("accept all"): as recommended.
 
     **(e) Modules with flows and no signal.** `paymentmethods` tokenises a card against its provider with no meter, no alert and
     no runbook section; `party` (registration) has one counter and `accounts` one gauge, and neither has an alert or a section of
     its own. The options: **(i)** `paymentmethods` gains a provider-outcome meter, an alert and a section beside the payment
     provider's, since it faces a provider (T23); `party`'s registration and `accounts`' openings are read under identity's and
     transfers' objectives, and their cells ruled `N/A` by the owner's word; **(ii)** all three as (i)'s `paymentmethods`.
-    *Recommendation*: **(i)**, before production use.
+    *Recommendation*: **(i)**, before production use. **Decided 2026-11-12** by the owner ("accept all"): as recommended.
 
     **(f) Rollouts never rehearsed.** The edge's controllers, the test-only PostgreSQL and the test-only broker never changed
     version on `kind`, so their roll and roll back (the bar's Deployment (d)) never ran; a managed minor upgrade of either
     service never ran anywhere; and an edge controller lost under traffic was never shown. *Recommendation*: the three `kind`
-    steps in Phase 16's first wave, which need no account; the managed upgrade with the first real environment.
+    steps in Phase 16's first wave, which need no account; the managed upgrade with the first real environment. **Decided 2026-11-12** by the owner ("accept all"): as recommended.
 
     **(g) Phase 16's drills, held by no entry yet.** The review leans on drills `PHASE_15_PLAN.md` §1.3 gives Phase 16: a
     database failover (runbook §11.40, and the socket timeout item 42 (h) left to it), the data tier's availability, and ten
     instances at load. Phase 16 has no backlog yet, so nothing holds them. *Recommendation*: the Phase 15 → 16 transition
-    writes each as a task; this part closes when it does.
+    writes each as a task; this part closes when it does. **Decided 2026-11-12** by the owner ("accept all"): as recommended. The Phase 15 → 16 transition writes the database failover,
+    the data tier's availability and ten instances at load as Phase 16 tasks.
 
     **(h) A test named for more than it reads.** `KubernetesManifestsTest#requestsAndLimitsAreSet` says "every container states
     requests and limits" and reads the application's container alone. Nothing is unheld: the manifest policy's
     `[resources-present]` rule holds every container of every workload, its plant refused (`everyPolicyIsRefusedByAPlant`).
-    *Recommendation*: name the test for what it reads, in the next change to that class.
+    *Recommendation*: name the test for what it reads, in the next change to that class. **Decided 2026-11-12** by the owner ("accept all"): as recommended. Not renamed by the exit review.
 
-    *Awaiting the owner* (2026-11-12): the standing word for waves G and H does not reach wave J.
+    *(Read "*Awaiting the owner* (2026-11-12): the standing word for waves G and H does not reach wave J" until the owner's
+    decision of 2026-11-12.)*
+
+44. **T32's and T4's residuals: what the Phase 15 exit review found that no task, issue or item held** *(added 2026-11-12 by
+    the Phase 15 exit review, `reviews/PHASE_15_REVIEW.md`)*. Two things, each a decision.
+
+    **(a) The restore's lending and BNPL proofs have judged no subject** (T32; `PHASE_GATES.md` §5 Phase 15 criterion 6, "every
+    product proof `HOLDS`"). Both of `OPERATIONS_RUNBOOK.md` section 11.35's records, the seeded source's and the `kind`
+    rehearsal's database's, ran `LOAN_SUBLEDGER`, `LOAN_REPLAY`, `BNPL_SUBLEDGER` and `BNPL_THREE_WAY` over zero subjects,
+    because neither source holds a loan or a BNPL obligation: those four verdicts were shown over empty data, and item 38 (c)
+    holds only the locked period. The options: **(i)** the Phase 15 → 16 transition writes Phase 16's post-recovery verification
+    drill over a source that holds a loan and a BNPL obligation, and the seeded source gains both in that task; **(ii)** seed
+    them into section 11.35's seeded source now, as its own change. *Recommendation*: **(i)**, since Phase 16's exit already
+    requires a post-recovery verification before money moves, and one drill can show both.
+
+    **(b) The rendered manifests are not scanned by a graded misconfiguration scanner** (T4; criterion 2's "configuration scans
+    of manifests"). ADR-0122 decision 2 said Trivy scans the rendered manifests. As built, the overlays are held by
+    `kubeconform -strict` and the platform's own policies under `infra/scripts/manifest-policy/`, each refusing its plant;
+    `trivy config` runs over the Terraform alone. The policies hold what the platform decided; nothing reports what a
+    maintained catalogue of Kubernetes misconfigurations would. The options: **(i)** `trivy config` at HIGH and CRITICAL over
+    every rendered overlay in the `manifests` job, as a second net beside the policies, a finding carried as item 12's are;
+    **(ii)** the policies alone, ADR-0122 corrected to say so. *Recommendation*: **(i)**, in Phase 16's first wave: the
+    scanner is pinned already and it needs no account.
 
 ## 7. Decided against
 

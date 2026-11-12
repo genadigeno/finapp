@@ -540,6 +540,11 @@ commit and the date; do not delete the entry.
   locks), the reporting pool's capability refusals, and the regression cases of PI-013 and PI-014. PI-012, PI-014 and PI-015 stay
   `POSTPONED`: each says it is `FIXED` only when this pass runs it green. The Phase 15 exit records the pass as a deviation, as it
   records the storm; `PHASE_GATES.md` §5 Phase 15's database-pass exit item is not met.
+- **Known red before it runs** *(found by the Phase 15 exit review, 2026-11-12)*: `MerchantApiKeyDatabaseTest` still asserts that an
+  operator's key issuance is audited as `CUSTOMER` (its comment calls that a finding), and since `P15-TSK-021` an operator's act is
+  typed `EMPLOYEE`; a test defect, its expectation to be corrected at the pass. `ColumnClassificationTest`, the classification
+  register's only completeness guard, is database-tier: the review checked the 64 columns Phase 15's migrations add by hand against
+  the register, and the whole schema's comparison is this pass's.
 - **Fix:** run the pass as `P15-TST-002` describes, on the tree as it then stands; classify each red as a test defect (repaired) or a
   production defect (fixed in a task of its own); close PI-012, PI-014 and PI-015 or postpone them again by the owner.
 - **Owner of the fix:** the owner, after the project's phases; the coordinator reminds the owner at each phase exit, with the storms.
