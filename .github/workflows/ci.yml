@@ -641,6 +641,14 @@ jobs:
             timeout: 150
           - scope: rotations
             timeout: 240
+          # P15-TSK-032 (OPERATIONS_RUNBOOK.md section 11.38): the runbook's procedures against their planted conditions, nightly only
+          # (the design's Q10). Each waits for its rules' own `for:` - the longest 80 minutes - so neither belongs on a push.
+          - scope: signals
+            timeout: 330
+            nightly: only
+          - scope: incidents
+            timeout: 300
+            nightly: only
     steps:
       - name: Check out, with the history N - 1 is built from
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -652,8 +660,11 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
+          NIGHTLY: ${{ matrix.nightly }}
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|infra/scripts/kind-rehearsal|infra/scripts/kind-secrets|infra/scripts/KeyCheckValue\.java$|infra/postgres/|infra/kafka/|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
+          if [ "$NIGHTLY" = only ] && [ "$EVENT" != schedule ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|infra/scripts/kind-rehearsal|infra/scripts/kind-secrets|infra/scripts/KeyCheckValue\.java$|infra/postgres/|infra/kafka/|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

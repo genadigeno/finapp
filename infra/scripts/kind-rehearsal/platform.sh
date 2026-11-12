@@ -397,6 +397,28 @@ signals_operators_half() {
     pass "11.26: the edge rolled forward, staff sign in on the operator host"
 }
 
+signals_telemetry() {
+    # Section 11.34, the telemetry stack's own alerts (THREAT_MODEL.md section 6 item 37 (d)): a back end gone, then the collectors gone.
+    # Nothing for the money either way: the requests are neither failed nor slowed, and readiness does not move.
+    kube -n finapp-observability scale deployment/finapp-tempo --replicas=0 >> "$ART/apply.log" 2>&1 || fail "Tempo could not be stopped"
+    # The harness's smoke: every flow through the edge, its counts added to what the census expects; a failed one fails the step.
+    smoke telemetry-backend
+    fires TelemetryBackendDown placeholder-ticket 900 "11.34, a trace back end gone" ',job="finapp-tempo"'
+    fires TelemetryExportFailing placeholder-ticket 900 "11.34, the collectors' export to it failing"
+    kube -n finapp-observability scale deployment/finapp-tempo --replicas=1 >> "$ART/apply.log" 2>&1 || fail "Tempo could not be started again"
+    kube -n finapp-observability rollout status deployment/finapp-tempo --timeout=300s >> "$ART/apply.log" 2>&1 || fail "Tempo did not come back"
+    clears TelemetryBackendDown 900 "11.34, Tempo back" ',job="finapp-tempo"'
+    collectors=$(kube -n finapp-observability get deployment finapp-collector -o jsonpath='{.spec.replicas}')
+    kube -n finapp-observability scale deployment/finapp-collector --replicas=0 >> "$ART/apply.log" 2>&1 || fail "the collectors could not be stopped"
+    smoke telemetry-collector
+    [ "$(kube -n finapp get deployment finapp-app -o jsonpath='{.status.readyReplicas}')" -ge 3 ] || fail "11.34: readiness moved with the collectors gone"
+    fires TelemetryCollectorsAbsent placeholder-ticket 900 "11.34, every collector gone"
+    kube -n finapp-observability scale deployment/finapp-collector --replicas="${collectors:-2}" >> "$ART/apply.log" 2>&1 || fail "the collectors could not be started again"
+    kube -n finapp-observability rollout status deployment/finapp-collector --timeout=300s >> "$ART/apply.log" 2>&1 || fail "the collectors did not come back"
+    clears TelemetryCollectorsAbsent 900 "11.34, the collectors back"
+    census telemetry
+}
+
 signals_close() {
     # Section 11.31's procedure: steps 1 and 2 read, then the stopped rollout resumed; one configuration, and the page ends.
     remaining=$(( 80 * 60 + 300 - ($(date +%s) - CONFIG_PLANTED) ))
@@ -851,6 +873,7 @@ if [ "$SCOPE" = signals ]; then
     wanted platform-domain && { step platform-domain; signals_domain; }
     wanted platform-correctness && { step platform-correctness; signals_correctness; }
     wanted platform-operators-half && { step platform-operators-half; signals_operators_half; }
+    wanted platform-telemetry && { step platform-telemetry; signals_telemetry; }
     wanted platform-close && { step platform-close; signals_close; }
 else
     wanted platform-prepare && { step platform-prepare; incidents_prepare; }
