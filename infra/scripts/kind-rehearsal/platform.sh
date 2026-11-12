@@ -87,6 +87,8 @@ clears() {
 
 # The rules as committed, all of them loaded, and the receivers there.
 alerting_ready() {
+    kube -n finapp-observability rollout status deployment/finapp-alertmanager --timeout=300s >> "$ART/apply.log" 2>&1 \
+        || fail "Alertmanager did not become ready in finapp-observability"
     committed=$(cat "$ROOT"/infra/prometheus/rules/*.yml | grep -c '^ *- alert: ')
     loaded=0
     deadline=$(( $(date +%s) + 300 ))
