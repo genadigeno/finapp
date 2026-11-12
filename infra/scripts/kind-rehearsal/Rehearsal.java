@@ -123,6 +123,7 @@ public final class Rehearsal {
             case "access-review-enrol" -> rehearsal.accessReviewEnrol();
             case "first-role" -> rehearsal.firstRole();
             case "compromise" -> rehearsal.compromise(args[2], args[3]);
+            case "public-sign-in" -> rehearsal.publicSignIn(args[2]);
             case "key-conflict" -> rehearsal.keyConflict(args[2]);
             case "callback-unmappable" -> rehearsal.callbackUnmappable(args[2]);
             case "settlement-refused" -> rehearsal.settlementRefused(args[2]);
@@ -1634,10 +1635,19 @@ public final class Rehearsal {
      * Runbook 11.37's compromised credential: the administrator suspends {@code who} with a reason naming the incident, which ends every
      * session it holds; a sign-in is refused while suspended; reinstatement with a reason restores no session, and a new sign-in is served.
      */
+    /**
+     * Section 11.12's compromise order (P15-TSK-032, as section 11.12 states it): suspend; the actor's acts read (the shell, from the audit
+     * trail); every role revoked through the revocation door with the incident as reason; the channels and factor confirmed with the holder
+     * (a person's act, recorded by the shell); reinstate, sessions not restored; the holder changes the password on the operator host at
+     * once (recovery delivers no token until a channel adapter exists); every role granted again with a reason. The roles are read by the
+     * shell into roles-{who}.txt before this runs. The new password is kept as {who}.password for this person alone.
+     */
     private void compromise(String who, String incident) throws Exception {
         String id = requireIdentity("compromise", who);
         say("compromise identity=" + id);
         String login = state.getProperty(who + ".login");
+        List<String> roles = Files.readAllLines(work.resolve("roles-" + who + ".txt")).stream().map(String::strip).filter(r -> !r.isEmpty()).toList();
+        say("compromise roles=" + roles.size());
         Answer before = signIn(operatorBase, login);
         String previous = before.status() == 201 ? field(before.body(), "sessionToken") : null;
         if (previous == null) {
@@ -1645,16 +1655,48 @@ public final class Rehearsal {
             throw new IllegalStateException(who + " could not sign in before the suspension: " + before.status());
         }
         String admin = fresh("admin");
-        Answer suspended = post(operatorBase, "/v1/identities/" + segment(id) + "/suspension",
-                reasonBody("incident " + incident + ": a credential proven where staff are refused" + WHY), admin, null);
+        String why = "incident " + incident + ": " + who + "'s password proven where staff are refused" + WHY;
+        Answer suspended = post(operatorBase, "/v1/identities/" + segment(id) + "/suspension", reasonBody(why), admin, null);
         say("compromise suspend status=" + suspended.status() + (ok(suspended) ? "" : " code=" + codeOf(suspended)));
         say("compromise old-session status=" + get(operatorBase, "/v1/operator/events/dead-letters", previous).status());
         say("compromise sign-in status=" + signIn(operatorBase, login).status());
+        for (String role : roles) {
+            Answer revoked = call("DELETE", operatorBase + "/v1/identities/" + segment(id) + "/roles/" + segment(role), reasonBody(why),
+                    Map.of("Authorization", "Bearer " + admin));
+            say("compromise revoke role=" + role + " status=" + revoked.status() + (ok(revoked) ? "" : " code=" + codeOf(revoked)));
+        }
         Answer reinstated = call("DELETE", operatorBase + "/v1/identities/" + segment(id) + "/suspension",
-                reasonBody("incident " + incident + ": the credential replaced, the person reached on a held channel" + WHY),
+                reasonBody("incident " + incident + ": the channels and the factor confirmed with the holder on a channel already held" + WHY),
                 Map.of("Authorization", "Bearer " + admin));
         say("compromise reinstate status=" + reinstated.status() + (ok(reinstated) ? "" : " code=" + codeOf(reinstated)));
-        say("compromise sign-in-after status=" + signIn(operatorBase, login).status());
+        Answer again = signIn(operatorBase, login);
+        say("compromise sign-in-after status=" + again.status());
+        String replaced = "a-replaced-password-" + UUID.randomUUID();
+        if (again.status() == 201) {
+            Answer changed = post(operatorBase, "/v1/me/credential", "{\"currentPassword\":" + jsonString(password()) + ",\"newPassword\":"
+                    + jsonString(replaced) + "}", field(again.body(), "sessionToken"), null);
+            say("compromise password-change status=" + changed.status() + (ok(changed) ? "" : " code=" + codeOf(changed)));
+            if (ok(changed)) {
+                state.setProperty(who + ".password", replaced);
+                save();
+            }
+        }
+        for (String role : roles) {
+            Answer regranted = grant(admin, id, role, "incident " + incident + ": " + who + "'s roles restored once the credential was replaced" + WHY);
+            say("compromise regrant role=" + role + " status=" + regranted.status() + (ok(regranted) ? "" : " code=" + codeOf(regranted)));
+        }
+        Answer old = post(operatorBase, "/v1/authentications", "{\"loginIdentifier\":" + jsonString(login) + ",\"password\":"
+                + jsonString(password()) + "}", null, null);
+        say("compromise old-password status=" + old.status());
+        Answer replacedIn = post(operatorBase, "/v1/authentications", "{\"loginIdentifier\":" + jsonString(login) + ",\"password\":"
+                + jsonString(state.getProperty(who + ".password", password())) + "}", null, null);
+        say("compromise new-password status=" + replacedIn.status());
+    }
+
+    /** A person's own password at the public sign-in: for a role-holder, refused and counted credential_proven (section 11.37's page). */
+    private void publicSignIn(String who) throws Exception {
+        Answer answer = signIn(publicBase, state.getProperty(who + ".login"));
+        say("public-sign-in who=" + who + " status=" + answer.status());
     }
 
     // ------------------------------------------------------------------ the critical flows' signals (11.20, 11.22, 11.23, 11.30)

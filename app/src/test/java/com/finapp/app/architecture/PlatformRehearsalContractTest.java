@@ -152,11 +152,19 @@ class PlatformRehearsalContractTest {
             + " its sessions ended, reinstated with a reason, each record carrying actor, time, operation, target, correlation and outcome")
     void aCompromisedOperatorIsSuspendedWithItsRecord() {
         String surface = function("signals_surface");
-        assertThat(surface).contains("fires OperatorPasswordProvenOnPublic placeholder-page").contains("client compromise operator \"$INCIDENT\"")
-                .contains("'suspend status=204'").contains("'old-session status=401'").contains("'reinstate status=204'")
+        assertThat(surface).contains("client public-sign-in stranger").contains("fires OperatorPasswordProvenOnPublic placeholder-page")
+                .contains("client compromise stranger \"$INCIDENT\"");
+        assertThat(surface).as("section 11.12's order: suspend, the acts read, every role revoked, reinstated, the password replaced,"
+                        + " the roles granted again")
+                .contains("'suspend status=204'").contains("'old-session status=401'").contains("WHERE actor_id = '$STRANGER'")
+                .contains("compromise revoke role=.* status=204").contains("'reinstate status=204'").contains("'password-change status=201'")
+                .contains("'old-password status=401'").contains("compromise regrant role=.* status=204");
+        assertThat(surface).as("each act's record, its reason where it takes one")
                 .contains("audited \"the compromise: the suspension\" identity.IdentitySuspended \"\" reason")
-                .contains("identity.SessionRevoked").contains("identity.IdentityReinstated \"\" reason")
-                .contains("grep -q \"$INCIDENT\" \"$ART/audit-identity.IdentitySuspended.txt\"");
+                .contains("identity.SessionRevoked").contains("identity.RoleAssigned \"\" reason")
+                .contains("identity.IdentityReinstated \"\" reason").contains("identity.CredentialChanged")
+                .contains("grep -q \"$INCIDENT\" \"$ART/audit-identity.IdentitySuspended.txt\"").contains("lastRole=true");
+        assertThat(client).as("recovery delivers no token, so the holder replaces the password at once").contains("/v1/me/credential");
         assertThat(function("audited")).as("every field the review reads")
                 .contains("$1==\"\" || $2==\"\" || $4==\"\" || $6==\"\" || $8==\"\" || $9==\"\"");
         assertThat(function("app_audit")).contains("occurred_at").contains("actor_id").contains("operation").contains("target_id")

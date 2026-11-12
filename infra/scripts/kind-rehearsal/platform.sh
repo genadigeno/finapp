@@ -257,21 +257,39 @@ signals_staff() {
 }
 
 signals_surface() {
-    # Section 11.37's page, and the compromise procedure it starts (section 11.12): an operator's own password at the public sign-in.
-    client surface > "$ART/surface-platform.txt" 2>&1 || fail "the surface check could not run: see surface-platform.txt"
-    grep -qx 'surface operator-sign-in-on-public status=401' "$ART/surface-platform.txt" || fail "the operator's password on the public host was not refused"
+    # Section 11.37's page, and the compromise procedure it starts in section 11.12's order: a staff member's own password at the public
+    # sign-in (`stranger`, staff since the access review, with a factor), treated as a compromised credential in use now.
+    client public-sign-in stranger >> "$ART/platform-client.log" 2>&1 || true
+    grep -q '^platform public-sign-in who=stranger status=401' "$ART/platform-client.log" || fail "11.37: a staff password on the public host was not refused"
     fires OperatorPasswordProvenOnPublic placeholder-page 300 "11.37 the page" ',kind="public"'
     audited "11.37 the public refusal" identity.PublicSurfaceRefused
-    client compromise operator "$INCIDENT" >> "$ART/platform-client.log" 2>&1 || fail "the compromise procedure could not run: see platform-client.log"
-    for expected in 'suspend status=204' 'old-session status=401' 'sign-in status=401' 'reinstate status=204' 'sign-in-after status=201'; do
+    STRANGER=$(sed -n 's/^stranger.identity=//p' "$CLIENT/ids.properties" | tr -d '[:space:]')
+    [ -n "$STRANGER" ] || cannot "the compromised identity's id is unknown"
+    psql_query -c "SELECT role_name FROM identity.role_assignment WHERE identity_id = '$STRANGER' AND revoked_at IS NULL ORDER BY role_name" \
+        > "$CLIENT/roles-stranger.txt" || cannot "the compromised identity's roles could not be read"
+    roles=$(grep -c . "$CLIENT/roles-stranger.txt")
+    [ "$roles" -ge 1 ] || cannot "the compromised identity holds no role"
+    client compromise stranger "$INCIDENT" >> "$ART/platform-client.log" 2>&1 || fail "the compromise procedure could not run: see platform-client.log"
+    # Step 2: the actor's acts, read from the trail before anything is changed back.
+    psql_query -F '|' -c "SELECT occurred_at, operation, target_type, target_id, outcome FROM platform.audit_record WHERE actor_id = '$STRANGER'
+        ORDER BY occurred_at" > "$ART/compromise-acts.txt" 2>&1 || fail "the actor's acts could not be read"
+    for expected in 'suspend status=204' 'old-session status=401' 'sign-in status=401' 'reinstate status=204' 'sign-in-after status=201' \
+        'password-change status=201' 'old-password status=401' 'new-password status=201'; do
         grep -q "^platform compromise $expected" "$ART/platform-client.log" || fail "the compromise procedure: not $expected: see platform-client.log"
     done
-    pass "11.37 and 11.12: the operator suspended with a reason (old session and sign-in refused), reinstated with a reason, signing in again"
+    [ "$(grep -c '^platform compromise revoke role=.* status=204' "$ART/platform-client.log")" = "$roles" ] || fail "the compromise: not every role revoked through the door"
+    [ "$(grep -c '^platform compromise regrant role=.* status=204' "$ART/platform-client.log")" = "$roles" ] || fail "the compromise: not every role granted again"
+    pass "11.37 and 11.12: suspended with a reason (old session and sign-in refused), its $roles role(s) revoked through the door, reinstated, the password replaced on the operator host (the old one refused), the roles granted again"
     audited "the compromise: the suspension" identity.IdentitySuspended "" reason
     audited "the compromise: the sessions it ended" identity.SessionRevoked
+    audited "the compromise: the revocations and the grants" identity.RoleAssigned "" reason
     audited "the compromise: the reinstatement" identity.IdentityReinstated "" reason
+    audited "the compromise: the password replaced" identity.CredentialChanged
     grep -q "$INCIDENT" "$ART/audit-identity.IdentitySuspended.txt" || fail "the suspension's record does not name the incident in its reason"
-    pass "the suspension's record names $INCIDENT, the reason given"
+    grep -q "revoked=.*lastRole=true" "$ART/audit-identity.RoleAssigned.txt" 2>/dev/null \
+        || psql_query -c "SELECT count(*) FROM platform.audit_record WHERE operation = 'identity.RoleAssigned' AND target_id = '$STRANGER'
+            AND change_summary LIKE '%lastRole=true%'" | grep -q '[1-9]' || fail "the compromise: no revocation recorded the last role"
+    pass "the compromise's records name $INCIDENT, the reason given, the last role's revocation marked"
 }
 
 signals_first_role() {
@@ -877,9 +895,9 @@ if [ "$SCOPE" = signals ]; then
     wanted platform-alerting && { step platform-alerting; signals_alerting; }
     wanted platform-plants && { step platform-plants; signals_plants; }
     wanted platform-staff && { step platform-staff; signals_staff; }
+    wanted platform-access-review && { step platform-access-review; signals_access_review; }
     wanted platform-surface && { step platform-surface; signals_surface; }
     wanted platform-first-role && { step platform-first-role; signals_first_role; }
-    wanted platform-access-review && { step platform-access-review; signals_access_review; }
     wanted platform-domain && { step platform-domain; signals_domain; }
     wanted platform-correctness && { step platform-correctness; signals_correctness; }
     wanted platform-operators-half && { step platform-operators-half; signals_operators_half; }
