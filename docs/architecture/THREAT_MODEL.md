@@ -2113,6 +2113,13 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     writes each as a task; this part closes when it does. **Decided 2026-11-12** by the owner ("accept all"): as recommended. The Phase 15 → 16 transition writes the database failover,
     the data tier's availability and ten instances at load as Phase 16 tasks.
 
+    *(Dated note, 2026-11-12: **this part is closed.** The Phase 15 → 16 transition wrote the three drills as Phase 16 tasks:
+    the database failover drill, with item 42 (h)'s socket timeout, is `P16-TSK-022`; the data tier's availability is
+    `P16-TSK-023`; ten instances at load is `P16-TSK-014`. The readiness cells this part held now name `P16-TSK-022` and
+    `P16-TSK-023` as their owners in place of this item (`PRODUCTION_READINESS.md` §3.1 Failure handling and Runbooks, §3.3
+    Failure handling, Runbooks and Multi-instance, §4.2 Runbooks), each with its own dated note. Until this note, those
+    cells read "a Phase 16 drill no backlog entry holds".)*
+
     **(h) A test named for more than it reads.** `KubernetesManifestsTest#requestsAndLimitsAreSet` says "every container states
     requests and limits" and reads the application's container alone. Nothing is unheld: the manifest policy's
     `[resources-present]` rule holds every container of every workload, its plant refused (`everyPolicyIsRefusedByAPlant`).
