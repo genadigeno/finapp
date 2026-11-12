@@ -74,3 +74,10 @@ census.
 
 `P16-TSK-001` writes the register and its guard. `P16-TSK-019` builds the toolkit. `P16-TSK-020`…`-023` and `P16-TSK-027` run the
 experiments.
+
+*(Dated note, 2026-11-12: the register as built, decisions 2 and 7 unchanged. `docs/architecture/RESILIENCE_EXPERIMENTS.md` holds
+`PHASE_16_PLAN.md` §9.2's experiments `E01`…`E26`, one experiment per §13 scenario, `F01`…`F15`, and the designed-only rows `D01`…`D05`,
+each with its local analogue. Every experiment also states its replica count and the tasks that run it, and a result also names the
+replica count it ran at. `ResilienceExperimentsAreRegisteredTest` holds it: besides decision 2's fields, evidence and live remediation,
+it refuses an unrun experiment whose runners have all finished, a scenario with no registered experiment, a cited test in the wrong
+tier, and an endpoint or a credential in the register.)*

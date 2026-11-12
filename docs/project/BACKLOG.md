@@ -29029,7 +29029,7 @@ on none:
   Phase 16's experiments.
 - **C12**: automatic rail availability is decided on measured failure rates.
 
-**P16-TSK-001 — The capacity model, the experiment register and its guard** — `READY` (marked by the Phase 15 → 16 transition, 2026-11-12)
+**P16-TSK-001 — The capacity model, the experiment register and its guard** — `COMPLETE` (2026-11-12; designed, built and gated on branch `P16-TSK-001` from master `6981c167`, wave A beside `-002`…`-005`; documents and one hermetic guard, no production code, migration, manifest or ADR; marks no task `READY` - the coordinator does; read "`READY` (marked by the Phase 15 → 16 transition, 2026-11-12)" until the design)
 - **Objective**: give every later task one place to measure into and one register to record into, held by a guard, before any
   measurement or experiment exists.
 - **Affected components**: documents (`docs/architecture/CAPACITY_MODEL.md` new, `docs/architecture/RESILIENCE_EXPERIMENTS.md` new,
@@ -29070,6 +29070,7 @@ on none:
 - **Definition of done**: `DOD-ARCH`, `DOD-DOC`, `DOD-TEST`.
 - **Operational documentation**: the two new documents; `OPERATIONS_RUNBOOK.md` unchanged.
 - **Risk**: Low. **Cx**: M.
+- **As built** (2026-11-12): as `CURRENT_STATE.md` §Just completed records. `docs/architecture/CAPACITY_MODEL.md` (the three workloads; W1–W8 with five readings R1–R5 where they leave a gap; the per-operation rates derived with their arithmetic, the in-flight column by Little's law; W7 **read from the event writers, ≈ 7.3 events per money movement**, ≈ 3.2 million events and ≈ 434,000 journal entries a day; what each consumer group reads; the measured columns and the first limit left for `-007`; the budget at ten read from the configuration, 104 > 88; the strategies). `docs/architecture/RESILIENCE_EXPERIMENTS.md` (the fields, the result grammar, the seven checks and the safety boundary; `E01`…`E26` with every field filled; the fifteen scenarios, every cited test resolved in its tier; one experiment per scenario, `F01`…`F15`, run by `-027`; the designed-only rows `D01`…`D05` of ADR-0127 decision 7; every result and remediation slot empty, `E10` `N/A` with its reason). `ResilienceExperimentsAreRegisteredTest`, 13 rules, each red on its own plant (`MUTATION_TESTING.md` §2). Six readiness gap columns re-pointed at `-022` and `-023`, and item 43 (g) closed by a dated note naming `-022`, `-023` and `-014`. **Design corrections**: W7 four → ≈ 7.3, the events and postings rows, the concurrent-clients column and the "30 movements a second" sentence, by errata in `PHASE_16_PLAN.md` §4.2 and §4.3; two tier labels of §13 (`BnplOutboxAtomicityDatabaseTest` own-container, `HealthEndpointTest` slice), by an erratum there; the scenario experiments and the designed-only rows added beside the plan's E-list, which stays exactly §9.2's.
 
 **P16-TSK-002 — Guards that hold what they are named for (`P15-REM-004`)** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: `P15-REM-004`'s (a)–(g), Phase 16's first wave by that entry's horizon. Each guard named in it is made to hold
@@ -29188,7 +29189,7 @@ on none:
   and listed in `THREAT_MODEL.md` §6 item 48 for the owner, who has not accepted them yet. Trivy's own plants: `KSV-0017` (a
   privileged edge controller), `KSV-0121` (a telemetry back end mounting `/`), `KSV-0109` (a second key beside the carried one).
   `KubernetesManifestsTest#trivyGradesEveryRenderedRoot` and `#everyCarriedMisconfigurationIsInTheRegister` hold the wiring and the
-  register. T4 gains an `EXISTS` row; items 43 (c)'s quota part and 44 (b) closed by dated notes; readiness: the edge's and the
+  register. T4 and T14 each gain an `EXISTS` row; items 43 (c)'s quota part and 44 (b) closed by dated notes; readiness: the edge's and the
   telemetry's Resource limits `MET as rehearsed`. Not built: the observability overlay per environment (the exclusion), a
   `LimitRange` in either namespace (not decided; the quota alone refuses a pod with no requests), a scan of the controllers'
   third-party renders (not overlays; `controller-check.sh` holds them).
