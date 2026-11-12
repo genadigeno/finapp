@@ -732,3 +732,39 @@ tests:
         alertname: CertificateExpirySeriesAbsent
         exp_alerts: []
 
+  # ConnectionPoolStarved and PlatformGaugesUnreadable on a healthy instance: no borrower waiting on the application's
+  # pool, and every platform gauge a number - silent well past each rule's wait (2026-11-12; each rule's only silent case
+  # had been a not-yet one on a breaking series).
+  - interval: 15s
+    input_series:
+      - series: 'hikaricp_connections_pending{job="finapp", instance="a:8081", pool="finapp"}'
+        values: '0x100'
+      - series: 'hikaricp_connections_pending{job="finapp", instance="b:8081", pool="finapp"}'
+        values: '0x100'
+      - series: 'finapp_outbox_pending{job="finapp", instance="a:8081"}'
+        values: '2x100'
+      - series: 'finapp_outbox_pending{job="finapp", instance="b:8081"}'
+        values: '2x100'
+      - series: 'finapp_outbox_oldest_seconds{job="finapp", instance="a:8081"}'
+        values: '5x100'
+      - series: 'finapp_outbox_oldest_seconds{job="finapp", instance="b:8081"}'
+        values: '5x100'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="a:8081"}'
+        values: '5x100'
+      - series: 'finapp_outbox_oldest_publishable_seconds{job="finapp", instance="b:8081"}'
+        values: '5x100'
+      - series: 'finapp_inbox_lag{job="finapp", instance="a:8081", consumer="risk.signals"}'
+        values: '0x100'
+      - series: 'finapp_inbox_lag{job="finapp", instance="b:8081", consumer="risk.signals"}'
+        values: '0x100'
+      - series: 'finapp_platform_clock_offset_seconds{job="finapp", instance="a:8081"}'
+        values: '0x100'
+      - series: 'finapp_platform_clock_offset_seconds{job="finapp", instance="b:8081"}'
+        values: '0x100'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConnectionPoolStarved
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: PlatformGaugesUnreadable
+        exp_alerts: []

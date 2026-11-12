@@ -702,3 +702,16 @@ tests:
             exp_annotations:
               summary: "The source-join census has recent findings"
               description: "2 journal entries were counted by the source-join census within its ticket window. See OPERATIONS_RUNBOOK.md section 11.27."
+
+  # SourceCensusLagging on a census that keeps up: a minute behind on both instances, silent well past its five minutes
+  # (2026-11-12; its only silent case had been the not-yet one at two minutes on a lagging census).
+  - interval: 15s
+    input_series:
+      - series: 'finapp_accounting_source_census_lag_seconds{job="finapp", instance="a:8081"}'
+        values: '60x60'
+      - series: 'finapp_accounting_source_census_lag_seconds{job="finapp", instance="b:8081"}'
+        values: '60x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SourceCensusLagging
+        exp_alerts: []
