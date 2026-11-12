@@ -675,9 +675,12 @@ deny contains msg if {
 	msg := "[service-present] no Service selects finapp-app on the API port: nothing could route to it"
 }
 
+# A headless Service (the scrape's, P15-TSK-023) publishes the pods' own addresses and balances nothing, so it is not the route
+# the edge takes: it does not count (P15-TSK-017, which found the plant below accepted once the scrape's Service existed).
 api_service_rendered if {
 	some doc in of_kind("Service")
 	section(section(doc, "spec"), "selector")["app.kubernetes.io/name"] == "finapp-app"
+	object.get(section(doc, "spec"), "clusterIP", "") != "None"
 	some port in list_of(doc.spec, "ports")
 	service_port_is_the_api(port)
 }

@@ -3,10 +3,11 @@
 # that environment's root Application from deploy/delivery/<environment>.
 #
 # WHAT IT BOUNDS, whatever a later change to an Application's source says: one repository, the platform's two namespaces, and of what
-# is not in a namespace only the Namespaces and the admission policies. No Secret is ever applied from here: a committed Secret is
-# refused by the manifest policy, and here too, so a credential can only come from the store. A ClusterRole, a webhook or a CRD from
-# this project is refused: the controllers are installed by the pipeline role, outside every Application (THREAT_MODEL.md section 6
-# item 31), and nothing here can widen what they hold.
+# is not in a namespace only the Namespaces and the admission policies, and in a namespace only the kinds the release and the edge
+# render (DeliveryManifestsTest holds the list to them). A Secret is not among them: a committed one is refused by the manifest policy,
+# and here too, so a credential can only come from the store. A ClusterRole, a webhook or a CRD from this project is refused: the
+# controllers are installed by the pipeline role, outside every Application (THREAT_MODEL.md section 6 item 31), and nothing here can
+# widen what they hold.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -26,8 +27,20 @@ spec:
       kind: Namespace
     - group: policy.sigstore.dev
       kind: ClusterImagePolicy
-  namespaceResourceBlacklist:
-    - group: ""
-      kind: Secret
+  namespaceResourceWhitelist:
+    - {group: "", kind: ServiceAccount}
+    - {group: "", kind: ConfigMap}
+    - {group: "", kind: Service}
+    - {group: "", kind: ResourceQuota}
+    - {group: "", kind: LimitRange}
+    - {group: apps, kind: Deployment}
+    - {group: batch, kind: Job}
+    - {group: autoscaling, kind: HorizontalPodAutoscaler}
+    - {group: policy, kind: PodDisruptionBudget}
+    - {group: networking.k8s.io, kind: NetworkPolicy}
+    - {group: rbac.authorization.k8s.io, kind: Role}
+    - {group: rbac.authorization.k8s.io, kind: RoleBinding}
+    - {group: external-secrets.io, kind: ExternalSecret}
+    - {group: external-secrets.io, kind: SecretStore}
   orphanedResources:
     warn: true

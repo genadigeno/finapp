@@ -132,17 +132,26 @@ class DeliveryManifestsTest {
         Map<String, String> waves = new LinkedHashMap<>();
         String migratorHook = null;
         String migratorDeletion = null;
-        for (Object patch : (List<?>) documents(ORDER).get(0).get("patches")) {
-            Map<?, ?> entry = (Map<?, ?>) patch;
-            String kinds = String.valueOf(((Map<?, ?>) entry.get("target")).get("kind"));
-            Map<?, ?> annotations = (Map<?, ?>) ((Map<?, ?>) yaml().load(String.valueOf(entry.get("patch")))).get("metadata");
-            annotations = (Map<?, ?>) annotations.get("annotations");
-            for (String kind : kinds.replaceAll("^\\(|\\)$", "").split("\\|")) {
+        Map<String, Object> component = documents(ORDER).get(0);
+        assertThat(component).as("annotation transformers alone: a patch would re-serialise the objects the policies read")
+                .doesNotContainKeys("patches", "patchesStrategicMerge", "patchesJson6902");
+        for (Object transformer : (List<?>) component.get("transformers")) {
+            Map<?, ?> entry = (Map<?, ?>) yaml().load(String.valueOf(transformer));
+            assertThat(entry.get("kind")).isEqualTo("AnnotationsTransformer");
+            Map<?, ?> annotations = (Map<?, ?>) entry.get("annotations");
+            for (Object fieldSpec : (List<?>) entry.get("fieldSpecs")) {
+                Map<?, ?> spec = (Map<?, ?>) fieldSpec;
+                assertThat(spec.get("path")).as("the object's own annotations, never a pod template's, which would roll the fleet")
+                        .isEqualTo("metadata/annotations");
+                String kind = String.valueOf(spec.get("kind"));
+                assertThat(waves).as("%s is placed once", kind).doesNotContainKey(kind);
                 waves.put(kind, String.valueOf(annotations.get("argocd.argoproj.io/sync-wave")));
-            }
-            if (kinds.equals("Job")) {
-                migratorHook = String.valueOf(annotations.get("argocd.argoproj.io/hook"));
-                migratorDeletion = String.valueOf(annotations.get("argocd.argoproj.io/hook-delete-policy"));
+                if (kind.equals("Job")) {
+                    migratorHook = String.valueOf(annotations.get("argocd.argoproj.io/hook"));
+                    migratorDeletion = String.valueOf(annotations.get("argocd.argoproj.io/hook-delete-policy"));
+                } else {
+                    assertThat(annotations.containsKey("argocd.argoproj.io/hook")).as("%s is no hook", kind).isFalse();
+                }
             }
         }
         assertThat(migratorHook).as("a Sync hook in its wave, never PreSync, which runs before everything the migrator needs").isEqualTo("Sync");
@@ -161,12 +170,18 @@ class DeliveryManifestsTest {
 
         // Every kind the two overlays render is placed explicitly: a new kind would otherwise land in wave 0, after the migrator.
         Set<String> rendered = new TreeSet<>(List.of("ConfigMap"));
+        Set<String> jobs = new TreeSet<>();
         for (String directory : List.of("deploy/base", "deploy/components/secret-delivery", "deploy/overlays/staging", "deploy/overlays/production")) {
             try (Stream<Path> files = Files.list(root.resolve(directory))) {
                 for (Path file : files.filter(path -> path.toString().endsWith(".yaml")).toList()) {
                     String name = file.getFileName().toString();
                     if (!name.equals("kustomization.yaml") && !name.equals("release.yaml")) {
-                        documents(root.relativize(file).toString().replace('\\', '/')).forEach(document -> rendered.add(String.valueOf(document.get("kind"))));
+                        for (Map<String, Object> document : documents(root.relativize(file).toString().replace('\\', '/'))) {
+                            rendered.add(String.valueOf(document.get("kind")));
+                            if ("Job".equals(document.get("kind"))) {
+                                jobs.add(String.valueOf(map(document, "metadata").get("name")));
+                            }
+                        }
                     }
                 }
             } catch (IOException e) {
@@ -174,6 +189,7 @@ class DeliveryManifestsTest {
             }
         }
         assertThat(waves.keySet()).as("every kind the release renders has its wave").containsAll(rendered);
+        assertThat(jobs).as("every Job the release renders becomes a hook, so the migrator must be the only one").containsExactly("finapp-migrator");
 
         // The rehearsal, which ran and was recorded (OPERATIONS_RUNBOOK.md section 11.28), applies in that order by script.
         String harness = EvidenceCitations.read(root.resolve(HARNESS));
@@ -209,8 +225,35 @@ class DeliveryManifestsTest {
                 Map.of("server", IN_CLUSTER, "namespace", "finapp-edge")));
         assertThat(spec.get("clusterResourceWhitelist")).isEqualTo(List.of(Map.of("group", "", "kind", "Namespace"),
                 Map.of("group", "policy.sigstore.dev", "kind", "ClusterImagePolicy")));
-        assertThat(spec.get("namespaceResourceBlacklist")).isEqualTo(List.of(Map.of("group", "", "kind", "Secret")));
-        assertThat(spec).doesNotContainKeys("namespaceResourceWhitelist", "sourceNamespaces", "roles", "signatureKeys");
+        assertThat(spec).doesNotContainKeys("namespaceResourceBlacklist", "sourceNamespaces", "roles", "signatureKeys");
+        Set<String> allowed = new TreeSet<>();
+        for (Object entry : (List<?>) spec.get("namespaceResourceWhitelist")) {
+            Map<?, ?> kind = (Map<?, ?>) entry;
+            assertThat(new TreeSet<>(kind.keySet().stream().map(String::valueOf).toList())).as("a group and a kind, never a wildcard")
+                    .containsExactly("group", "kind");
+            assertThat(String.valueOf(kind.get("kind"))).doesNotContain("*").isNotEqualTo("Secret");
+            allowed.add(String.valueOf(kind.get("kind")));
+        }
+        // Exactly what the release and the edge render, read from their files: a kind the project lists and nothing renders is a door
+        // left open, and a kind rendered and not listed would be refused at the first sync.
+        Set<String> rendered = new TreeSet<>(List.of("ConfigMap"));
+        for (String directory : List.of("deploy/base", "deploy/components/secret-delivery", "deploy/overlays/staging", "deploy/overlays/production",
+                "deploy/edge/base")) {
+            try (Stream<Path> files = Files.list(root.resolve(directory))) {
+                for (Path file : files.filter(path -> path.toString().endsWith(".yaml")).toList()) {
+                    String name = file.getFileName().toString();
+                    if (!name.equals("kustomization.yaml") && !name.equals("release.yaml")) {
+                        // A Kubernetes object has an apiVersion; the edge's route and controller files are configuration a generator reads.
+                        documents(root.relativize(file).toString().replace('\\', '/')).stream()
+                                .filter(document -> document != null && document.get("apiVersion") != null)
+                                .forEach(document -> rendered.add(String.valueOf(document.get("kind"))));
+                    }
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+        assertThat(allowed).as("the project admits exactly the kinds the release and the edge render, a Secret never among them").isEqualTo(rendered);
 
         for (String environment : ENVIRONMENTS) {
             Map<String, Object> delivery = documents("deploy/delivery/roots/" + environment + ".yaml").stream()

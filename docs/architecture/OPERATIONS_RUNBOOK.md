@@ -3244,14 +3244,26 @@ commit. No finalizer: deleting an Application leaves what it applied running. **
 saying one release and the cluster running another; a rollback is a revert pull request, below.
 
 **The project bounds all of it** (`deploy/delivery/base/project.yaml`): this repository alone, the namespaces `finapp` and `finapp-edge`,
-outside a namespace only Namespaces and the admission policies, and never a `Secret`. The root has a project of its own that writes
+outside a namespace only Namespaces and the admission policies, inside one only the kinds the release and the edge render, never a `Secret`. The root has a project of its own that writes
 Applications and projects in `argocd` and nothing else.
 
 **What each environment adds, outside this repository.** Its root carries, as kustomize patches of the Applications it renders, what is
 never committed here (`SECRET_MANAGEMENT.md` §3.5): the reader ServiceAccounts' role ARNs and the stores' region from its root module's
-outputs, the images' registry (an `images` new name, never a digest: the digest is the overlay's), and the admission policies' authority
-and signature repository. That copy is held with the environment's delivery configuration, under its own access control and two-person
-review.
+outputs, the images' registry (an `images` new name, `finapp-<environment>-app` and `-migrator`, never a digest: the digest is the
+overlay's; another repository name is refused at admission), the data tier's and providers' addresses in place of the overlays'
+documentation ranges (never `0.0.0.0/0`, a link-local range or the cluster's own, which the manifest policy refuses), and the admission
+policies' authority and signature repository. That copy is held with the environment's delivery configuration, under its own access
+control and two-person review.
+
+**What the delivery does not carry.** The controllers: Argo CD itself, the policy controller (§11.32's order) and the External Secrets
+Operator (`deploy/operators/external-secrets/values.yaml`, into its own namespace `external-secrets`) are the pipeline role's to install,
+as the first controllers of a cluster are (§6 item 31 of the threat register). The one-time role bootstrap (§11.1b) is not part of a
+release and not a hook: when a release adds a role, the pipeline role runs it before the promotion. The edge's TLS Secrets and the load
+balancer controller its Services' annotations assume are the environment's; a certificate comes from outside the namespace or by a DNS-01
+solver, because a solver pod in `finapp-edge` would be refused at admission. The telemetry pipeline (`deploy/observability`) has a `kind`
+overlay alone, so no environment's root syncs it until a back end is chosen (§6 item 37 (a)): a promoted release exports to nothing
+meanwhile and blocks on nothing. **A signing key or identity rotated** overlaps the two authorities and signs again every digest running
+or kept for rollback before the old authority goes, and a revocation is an authority change, never a deletion alone (§6 item 35).
 
 **Promote to staging.**
 1. The pipeline role copies both digests and their signatures and attestations (the `.sig` and `.att` tags) into staging's registry and
