@@ -72,6 +72,12 @@ again. Once active, a version is never edited — a further successor corrects i
 
 ---
 
+**The last record** *(`P15-TSK-032`, 2026-11-12, on `kind`)*. The steps above for all four sources in the `signals` scope's
+development runs dev3 to dev6 (§11.38's table). In dev6 (head `0cc4fda0`), for each source: a successor proposed by one person,
+the proposer's own approval refused `409 reconciliation.RuleSetActivationBySameActor`, approved by a second person, and step 1 read
+back version 2 `ACTIVE` with its JPY and BHD rows. A wrong proposal's rejection was read, not run. No money moved; the scope's
+census after its domain step never ran, the runs having stopped earlier and the whole run being postponed by the owner (`POSTPONED_ISSUES.md` PI-024).
+
 ## 2. Activating FX pricing policy v1 — before the first quote
 
 *(Added by `P9-TSK-007`, 2026-10-04; owner decision O7 in `PHASE_9_PLAN.md` §2; ADR-0075 §7;
@@ -119,6 +125,12 @@ enrolled factor is refused `403 identity.AssuranceRequired` at every approval an
 `GET /v1/operator/access-review/factorless-holdings` does not name that role, so enrol controllers ahead of need: enrolment
 is self-service (`POST /v1/me/mfa`, then `POST /v1/authentications/mfa` to step up).
 
+**The last record** *(`P15-TSK-032`, 2026-11-12, on `kind`)*. dev5 and dev6 (§11.38's table; dev6 at head `0cc4fda0`): a quote
+before version 1 refused `422 fx.PairNotOffered`; version 1 proposed, the proposer's own approval refused `409 fx.SelfApprovalRefused`,
+approved by a second person and read back `ACTIVE`; a quote then served `201`. The quote needed a reference rate: the rehearsal's
+simulator serves one and the platform scopes name it, with the `kind` overlay's 15 s timeouts. Read, not run: a wrong proposal's
+rejection, and the kill switch.
+
 ## 3. Activating the FX provider source's rule set v1 - before the first cover settles
 
 *(Added by `P9-TSK-011`, 2026-10-05; `PHASE_9_PLAN.md` §12.9.2, owner decision O7; decision D26.)*
@@ -165,6 +177,14 @@ thresholds USD 1,000.00, JPY 150000, BHD 400.000. The canonical body is `Corrido
 app's tests (held by `CorridorRuleSetV1Test`, proposed and activated by two controllers in
 `CorridorSourceDatabaseTest`).
 
+**The last record** *(`P15-TSK-032`, 2026-11-12, on `kind`)*. dev6 (head `0cc4fda0`, §11.38's table): with no rule set for
+`fx-sim-a.trade-report`, `ReconciliationRuleSetMissing{source="fx-sim-a.trade-report"}` fired and reached the ticket receiver;
+version 1 proposed, the proposer's own approval refused `409 reconciliation.RuleSetActivationBySameActor`, approved by a second
+person and read back `ACTIVE`; the alert for that source resolved. The other sources with no version, `fx-sim-b.trade-report` and
+the two corridor sources, kept it firing for themselves throughout, as they should: the corridor source's v1, the second
+procedure here, was read, not run. (dev5 saw the same up to the activation, and stopped because the harness read the alert across
+every source rather than the one the procedure activates.)
+
 ## 3b. Activating the corridor policy v1 - before any corridor is offered
 
 *(Added by `P9-TSK-015`, 2026-10-05; ADR-0080 section 4, owner decision O7, decision D26.)*
@@ -204,6 +224,11 @@ opens an enable request a different person approves at `…/corridor-enable-requ
 
 **Verify.** Discovery lists the four corridors with their fees, maxima and delivery estimates.
 
+**The last record** *(`P15-TSK-032`, 2026-11-12, on `kind`)*. dev6 (head `0cc4fda0`, §11.38's table): discovery listed no
+corridor; version 1 proposed, the proposer's own approval refused `409 crossborder.SelfApprovalRefused`, approved by a second
+person and read back `ACTIVE`; discovery then listed the four corridors. Read, not run: the second corridor rail, and the kill
+switch.
+
 ## 4. An FX cover that will not conclude - UNKNOWN, refused requotes, off plan, anomalies
 
 *(Added by `P9-TSK-012`, 2026-10-05; ADR-0077; `INV-FX-08`, `INV-LIFE-03`.)*
@@ -230,6 +255,11 @@ exactly - `FX_POSITION` closes, the difference is realised in that leg's currenc
    there (`AMOUNT_MISMATCH`/`FX_LEG_DIFFERS`, or `UNKNOWN_EXTERNAL`), resolved four-eyes.
 4. **The FX source's v1 missing:** an executed cover cannot open its legs and its outcome refuses - fail
    closed; activate v1 (section 3) and the next sweep books it.
+
+**What has run, not counted** *(`P15-TSK-032`, 2026-11-12, on `kind`)*. Step 4 in dev6 (head `0cc4fda0`, §11.38's table): a
+conversion executed before the FX source's v1 (`201`), its cover `DISPATCHED` and not booked; after §3's activation the next
+sweep booked it (`EXECUTED`). Money moved, and the scope's census after its domain step never ran (the run stopped at §6.1), so
+§11.38 counts step 4 read, with steps 1 to 3; the whole run is postponed by the owner (`POSTPONED_ISSUES.md` PI-024).
 
 ## 5. The FX proofs fail - a book unexplained, or a plan that does not replay
 
@@ -261,8 +291,9 @@ write; ADR-0086 §4, ADR-0089, decision D26. Every name and number below is read
 Nothing is decided without an `ACTIVE` policy for the product **and** an `ACTIVE` `RETAIL_SCORECARD`:
 - with no `ACTIVE` policy, a submission (`POST /v1/me/credit/decision-requests`) is refused
   `422 credit.ProductNotOffered`, and `finapp.credit.policy.active{product}` reads 0 - the
-  `CreditPolicyMissing` alert (`min by (product) (finapp_credit_policy_active{product!~"bnpl_.*"}) == 0`
-  for 15 min, ticket) - the lending products only: the BNPL products (`P12-TSK-001`) have no seed and
+  `CreditPolicyMissing` alert (`min by (product) (finapp_credit_policy_active{product!~"BNPL_.*"}) == 0`
+  for 15 min, ticket; *read `bnpl_.*` until 2026-11-12, which matched no product's series, so the alert stood for the BNPL
+  products wherever BNPL was not offered: found on `kind` by `P15-TSK-032`*) - the lending products only: the BNPL products (`P12-TSK-001`) have no seed and
   production activates none (`PHASE_12_PLAN.md` §1.1), so their gauge reads 0 by design; `P12-TSK-026`
   owns BNPL's alerts;
 - with a policy but no `ACTIVE` scorecard, a submission is admitted but its progress step waits at
@@ -322,6 +353,14 @@ approving fallback, or with no rule guaranteed to refuse an approval past its ma
 **If a proposal is wrong.** Any holder - the proposer included, as a withdrawal - rejects it,
 `POST …/{versionId}/rejection` with a reason; then propose again. A version is never edited, and
 there is no route that edits or deletes one.
+
+**What has run, not counted** *(`P15-TSK-032`, 2026-11-12, on `kind`)*. dev6 (head `0cc4fda0`, §11.38's table):
+`CreditPolicyMissing` fired and reached the ticket receiver; the scorecard and the two lending products' policies proposed, each
+proposer's own approval refused `403 credit.SelfApprovalRefused`, approved by a second person and read back `ACTIVE`. The alert
+did not resolve: it stood for `BNPL_PAY_IN_4` and `BNPL_PAY_IN_N`, which §6 never activates, because the rule excluded the BNPL
+products by a lower-case pattern their series never carry - **a defect of the committed rule, found by this run** and fixed
+(`6d806802`: `infra/prometheus/rules/credit.yml` and its `kind` copy, with a promtool case on the real labels). Its clearing on a
+cluster after the fix was never seen (`POSTPONED_ISSUES.md` PI-024), so §11.38 counts §6 read.
 
 ### 6.2 The review queue - a referral nobody works is a silent decline
 
@@ -2216,6 +2255,9 @@ have a failed row to remove, has not run here.
 *Written by `P15-TSK-026` and `P15-TSK-028` (2026-11-08) from the code they built; **not yet rehearsed** - no deployed broker
 exists, and the rehearsal is `-032`'s. The consumption and freshness objectives are `docs/architecture/SLOS.md`'s, and their burn-rate alerts §11.8's; the signals
 below exist today.*
+*(2026-11-12: still not rehearsed. `P15-TSK-032`'s `incidents` scope holds the broker outage, a refused credential, a poison
+record and an abandoned event (`platform-broker`, `platform-dead-letters`) and never ran them: the owner postponed the platform
+scopes' remaining runs, `POSTPONED_ISSUES.md` PI-024. §11.38 counts the section read.)*
 
 **The consumer signals** (`P15-TSK-025`). Two series name what a poll cannot otherwise say. **`finapp.inbox.poll.failures{outcome}`** counts every thrown consumer poll: `InboxPollFailing` (page) reads `failed`, sustained for 15 minutes, and `InboxPollRefused` (page) reads `refused`, for 5. **`finapp.inbox.consumer.evictions`** counts a commit the group refused because it had already evicted the member: `InboxConsumerEvicted` (ticket). **`finapp.inbox.commits.deferred`** counts a commit a rebalance refused, sent after the next poll *(added 2026-11-09, `P15-TSK-012`; no alert reads it yet)*: one is nothing, and a sustained rate is a group that keeps rebalancing with its committed offsets standing still. `finapp.inbox.lag{module}` is what `InboxLagHigh` (ticket, over 1000 records in a group for 15 minutes) and `ConsumptionBurnFast` read; a group's lag is the sum of its members', and a consumer whose polls throw publishes NaN, never its last number.
 
@@ -2418,6 +2460,8 @@ used a key is the account's own, and no module creates one (`THREAT_MODEL.md` §
 ### 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate - `InstanceDown`, `FinappTargetsAbsent`, `GaugesStale`, `FxGaugesUnreadable`, `ReconciliationGaugesUnreadable`, `AuthenticationAvailabilityBurnFast` and `AuthenticationAvailabilityBurnSlow`, `AuthenticationLatencyBurnFast` and `AuthenticationLatencyBurnSlow`, `TransferAvailabilityBurnFast` and `TransferAvailabilityBurnSlow`, `TransferLatencyBurnFast` and `TransferLatencyBurnSlow`, `PaymentCheckoutBurnFast` and `PaymentCheckoutBurnSlow`, `MerchantApiBurnFast` and `MerchantApiBurnSlow`, `ProviderCallbacksBurnFast` and `ProviderCallbacksBurnSlow`, `OperatorSurfaceBurnFast` and `OperatorSurfaceBurnSlow`, `EventFreshnessBurnFast` and `EventFreshnessBurnSlow`, `ConsumptionBurnFast` and `ConsumptionBurnSlow`, `CertificateExpiringSoon`, `CertificateExpiring`, `CertificateExpirySeriesAbsent`
 
 *(Written by `P15-TSK-024`, 2026-11-08: the instance-down and stale-gauge parts, from `infra/prometheus/rules/platform.yml` and the code. **Not yet rehearsed**: `P15-TSK-032` rehearses this section on `kind` or compose and records the result. Every alert is routed by severity to a placeholder receiver (`infra/alertmanager/alertmanager.yml`); no on-call tool exists.)*
+*(2026-11-12: still not rehearsed. The `incidents` scope's `platform-instance-down` and `platform-fleet-blind` steps hold one
+instance stopped and the database cut off from every replica, and never ran (`POSTPONED_ISSUES.md` PI-024).)*
 
 **How every gauge reads.** Every `finapp.` gauge of an instance is read on one thread, `gauge-refresher`, never on the scrape. A scrape answers each gauge's last read and asks the thread for another once that read is 5 s old; each gauge class keeps its own floor and bounds on top (accounting's: section 10.14). So a scrape does no database work on its own thread, whatever the database is doing, and every gauge of an instance together holds at most one connection of its pool. A gauge answers no value (NaN) before its first read, when its read failed, and once its ask has gone unanswered for `finapp.gauges.stale-after` (2 minutes): never a zero nobody read, and never its last number for good. The library series (`jvm_*`, `hikaricp_*`, `http_server_*`) read memory and stay on the scrape. Each instance reads the shared database for itself; a fleet-wide gauge aggregates with `max()`.
 
@@ -2436,6 +2480,9 @@ One gauge NaN while the canary is 1 is not this alert: that gauge's read is fail
 
 
 *(Written by `P15-TSK-025`, 2026-11-08: the burn-rate and certificate parts. **Not yet rehearsed**: `P15-TSK-032` rehearses it.)*
+*(2026-11-12: still not rehearsed. The `signals` scope's development runs planted a certificate with an hour of life (dev1 to
+dev6) and never reached its close, which awaits `CertificateExpiring`; the broker step that burns the freshness objective never
+ran (`POSTPONED_ISSUES.md` PI-024).)*
 
 #### A burning error budget
 
@@ -2475,6 +2522,8 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 ### 11.20 Correctness pages - `LedgerTrialBalanceNonZero`, `LedgerProjectionDrift`, `GlNotEqualLedger`, `OutboxDeadLetter`, `InboxDeadLetterParked`, `PaymentWebhookUnmappable`, `CorrectnessGaugesUnreadable`, `CorrectnessUnverifiable`
 
 *(Written by `P15-TSK-025`, 2026-11-08, from `infra/prometheus/rules/correctness.yml`. **Not yet rehearsed** (`P15-TSK-032`). The register of every correctness signal, the product proofs among them, is `docs/architecture/SLOS.md` section 3.)*
+*(2026-11-12: still not rehearsed. The `signals` scope's correctness step (a drifted projection rebuilt by §10.17's door, an
+unmappable callback) and the `incidents` scope's dead-letter and books steps hold samples, never run (`POSTPONED_ISSUES.md` PI-024).)*
 
 **These have no budget and no waiting.** Each pages on its first breaching sample. **Never correct a figure to clear one**: financial history is immutable, and a correction is a reversal or a compensating entry through the existing doors, after the cause is understood.
 
@@ -2495,6 +2544,8 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 ### 11.21 The platform under load - `OutboxPublicationStalled`, `HttpServerErrorsHigh`, `ConnectionPoolSaturated`, `ConnectionPoolStarved`, `InstanceClockOffset`, `PlatformGaugesUnreadable`, `PlatformSeriesAbsent`
 
 *(Written by `P15-TSK-025`, 2026-11-08, from `infra/prometheus/rules/platform.yml`. **Not yet rehearsed** (`P15-TSK-032`).)*
+*(2026-11-12: still not rehearsed. The `incidents` scope's broker step awaits `OutboxPublicationStalled` and never ran
+(`POSTPONED_ISSUES.md` PI-024).)*
 
 **`OutboxPublicationStalled` (page).** The oldest row the relay may still publish is over 5 minutes old. Kafka is integration, not truth: every event waits durably in the database. Follow §11.6's broker-outage procedure. If the broker is healthy, the relay is the suspect: read the `outbox-relay` schedule's log lines and `finapp.outbox.publication` by outcome. A dead-lettered row does not fire this; its aggregate's later rows do.
 
@@ -2509,6 +2560,8 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 ### 11.22 The critical flows - `AuthenticationRefusalsSpike`, `AccountLockoutSpike`, `LedgerPostingsRefused`, `CustomerWalletNegative`, `PaymentUnknownAged`, `WithdrawalUnknownAged`, `PaymentWebhookRefusalsSpike`, `TransferFailureSpike`, `TransferKeyConflict`, `CheckoutExpiryRising`, `MerchantPayoutUnknownAged`, `KycReviewQueueBacklog`, `ConsentRoutesFailing`, `FlowGaugesUnreadable`, `FlowSeriesAbsent`
 
 *(Written by `P15-TSK-025`, 2026-11-08, from `infra/prometheus/rules/flows.yml`. **Not yet rehearsed** (`P15-TSK-032`). Thresholds are reference values.)*
+*(2026-11-12: still not rehearsed. The `signals` scope's correctness step holds `TransferKeyConflict` and
+`MerchantPayoutUnknownAged` (its payout held since the plants, which dev2 to dev6 planted) and was never reached (`POSTPONED_ISSUES.md` PI-024).)*
 
 | Alert | What it says | First steps | Owner |
 |---|---|---|---|
@@ -2531,6 +2584,8 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 ### 11.23 Settlement and reconciliation alerts
 
 *(Written by `P15-TSK-025`, 2026-11-08: these alerts predate this section and had no runbook section. **Not yet rehearsed** (`P15-TSK-032`).)*
+*(2026-11-12: still not rehearsed. The `signals` scope's correctness step holds `SettlementDeliveryRefused` and was never
+reached (`POSTPONED_ISSUES.md` PI-024).)*
 
 No amount appears in any of them: the audited operator reports answer the figures (`GET /v1/operator/reports/reconciliation/*`). A break is resolved through its own door and never by editing a line.
 
@@ -2551,6 +2606,8 @@ No amount appears in any of them: the audited operator reports answer the figure
 ### 11.24 FX and cross-border alerts
 
 *(Written by `P15-TSK-025`, 2026-11-08: these alerts predate this section. **Not yet rehearsed** (`P15-TSK-032`). Sections 3, 4 and 5 are the procedures for a cover, a proof and a plan.)*
+*(2026-11-12: still not rehearsed, and no step of the platform scopes plants one of these alerts: writing one comes with
+`POSTPONED_ISSUES.md` PI-024's runs. Sections 3 and 4's procedures ran in part on `kind`; their records say what.)*
 
 | Alert | What it says | First steps |
 |---|---|---|
@@ -2568,6 +2625,9 @@ No amount appears in any of them: the audited operator reports answer the figure
 
 *Not rehearsed: `-032` does. No cluster, cloud account or person exists to hold this role; the procedure is written for the
 environment that will.*
+*(2026-11-12: still not rehearsed. The `incidents` scope's break-glass step (a time-bound credential naming the incident, its
+reach and refusals, the fleet stopped and started, the API server's audit log read) never ran (`POSTPONED_ISSUES.md` PI-024); the `can-i` checks
+above were corrected from a run of them against the `kind` API server.)*
 
 **What it is for.** An incident that cannot wait for a reviewed change, where the normal path, a pull request and the GitOps
 sync, is too slow or is the thing that broke. Nothing else. A change you would like to make is a pull request. **This is
@@ -2643,6 +2703,8 @@ That is the record of what was done; the incident record is why. Application log
 ### 11.27 A source-join break, the census behind or unreadable, the fleet blind - `JournalEntryUnsourced`, `SourceCensusFindingsRecent`, `SourceCensusLagging`, `SourceCensusStalled`, `GaugesStaleAcrossTheFleet`
 
 *(Written by `P15-TSK-035`, 2026-11-09, from the census (`accounting`'s `SourceCensus`, the per-module `*JournalSources` read ports) and `infra/prometheus/rules/correctness.yml`. **Not yet rehearsed** (`P15-TSK-032`).)*
+*(2026-11-12: still not rehearsed. The `incidents` scope's books step (an unsourced entry, `JournalEntryUnsourced`) and
+fleet-blind step (`GaugesStaleAcrossTheFleet`) hold samples, and never ran (`POSTPONED_ISSUES.md` PI-024).)*
 
 **What it means.** The census reads every journal entry against the domain record that caused it, namespace by namespace (the join and what it compares are stated on each module's `*JournalSources`). `JournalEntryUnsourced` is its page, on the first non-zero sample of `finapp.accounting.source.census.breaks{kind}`: `UNSOURCED`, no record behind the entry (or a namespace no join answers for), or `MISMATCHED`, a record whose figures differ from the entry's lines. It is a detective control on the books no proof reads (`THREAT_MODEL.md` T15). It does not detect an entry whose domain record was written first (`PI-016`), nor a forged entry matching an open record's amounts and currency to another account, and it compares amounts and currency, not accounts.
 
@@ -2702,6 +2764,9 @@ Eight field-encryption keys, each a **ring**: an active version that writes, ret
 ### 11.31 Changing configuration - `ConfigFingerprintDisagrees`, `ConfigFingerprintAbsent` (`P15-TSK-031`)
 
 *(Written by `P15-TSK-031`, 2026-11-09, from [`CONFIGURATION_REGISTER.md`](CONFIGURATION_REGISTER.md), the overlays and `infra/prometheus/rules/platform.yml`. **Not yet rehearsed**, and no real environment exists to change.)*
+*(2026-11-12: still not rehearsed. The `signals` scope's development runs planted the fleet on two configurations (dev1 to
+dev6: a `FINANCIAL` key changed, the rollout paused after its first new replica) and never reached the close, which awaits
+`ConfigFingerprintDisagrees` (`POSTPONED_ISSUES.md` PI-024).)*
 
 **Find the property first.** The register names its class and where each environment gets it.
 
@@ -2854,9 +2919,10 @@ name); record the case with the closed customer's identity and the merchant's, a
 was not made. The value's procedure is the closed customer's, as the corridor return's; its remedy is a later payments
 phase's.
 
-**The last record.** Not yet rehearsed: the `kind` incidents run records it here (a merchant closed after a payout and the
-payout returned; a customer closed before a corridor return; an inbound credit no party owns; a book refund to a closed payer
-wallet), each with the census after.
+**The last record.** Not rehearsed. The `incidents` scope holds no step for this section yet (a merchant closed after a payout and
+the payout returned; a customer closed before a corridor return; an inbound credit no party owns; a book refund to a closed payer
+wallet; each with the census after): writing it and running it are `POSTPONED_ISSUES.md` PI-024's, the owner having postponed the platform
+scopes' remaining runs on 2026-11-12. §11.38 counts the section read.
 
 ### 11.12 Incident response: severity, roles, communication, the freeze, a restore decided, a compromised operator credential, the post-incident review (`P15-TSK-032`)
 
@@ -3049,16 +3115,29 @@ It states the timeline; what was harmed, and what the census or the section's ch
 and why; what held and what did not; and the follow-ups, each a backlog entry or a postponed issue with an owner, never a fix
 promised only in prose.
 
-**The last record.** Not yet rehearsed: the `kind` incidents run's game day records it here (two raw writes planted, an incident
-declared at its severity, roles held, the freeze, break-glass opened and closed through §11.25, the decision whether to restore
-taken and recorded, the plants' removal recorded as their teardown, and the review written from the two logs).
+**The last record** *(`P15-TSK-032`, 2026-11-12, on `kind`)*. **A compromised operator credential**, rehearsed in dev5 (head
+`ca4c323a`, §11.38's table). An identity holding one role signed in with its password on the public host;
+`OperatorPasswordProvenOnPublic` fired and reached the page receiver, and `identity.PublicSurfaceRefused` recorded it (§11.37). Then
+this section's order, through the doors on an administrator's stepped-up session: suspended with a reason naming the incident
+(`204`; its old session refused `401`, a sign-in refused `401`); its acts read from `platform.audit_record`; its role revoked through
+`DELETE /v1/identities/{id}/roles/{role}` (`204`, recorded `lastRole=true`); reinstated (`204`); the holder's password changed on a
+stepped-up session on the operator host (`201`; the old password then refused `401`, the new one admitted `201`); the role granted
+again with a reason (`204`). Every act left its record with actor, time, operation, target, correlation and outcome, the suspension,
+revocation, grant and reinstatement each with a reason naming the run's incident id: one `identity.IdentitySuspended`, three
+`identity.SessionRevoked`, one `identity.IdentityReinstated`, one `identity.CredentialChanged`, and the revocation and grant among the
+run's `identity.RoleAssigned` records. The holder's confirmation of its channels and factors is a person's, and was not scripted.
+**Not run** (`POSTPONED_ISSUES.md` PI-024): the `incidents` scope's game day - two raw writes planted, an incident declared at its severity, roles
+held, the freeze, break-glass opened and closed through §11.25, the restore decision recorded, the plants' removal recorded as their
+teardown, and the review written from the two logs. Declaring and running an incident, a restore decided and the post-incident review
+are counted read.
 
 ### 11.38 The platform rehearsals: the record and the count per section (`P15-TSK-032`)
 
 *(Written by `P15-TSK-032`, 2026-11-12. A record, not a procedure. `RunbookRehearsalCountTest` holds its form, one row per section
 of this runbook read from the runbook's own headings, and **is not evidence that anything was rehearsed**: it checks that a date
 parses and a commit is hexadecimal, not that the run happened. What a run asserted is in the last record of the section it
-rehearsed. A cell reading `pending` is filled from the task's `kind` runs at its gate, and from then none may.)*
+rehearsed. Filled at the task's gate, 2026-11-12, from the runs that were made: the owner postponed the whole platform runs
+(`POSTPONED_ISSUES.md` PI-024), so a count here is a development run's or an earlier record's, and no cell reads `pending`.)*
 
 **What counts as rehearsed.** A procedure counts as rehearsed only when **its own steps ran**: a run planted the condition the
 procedure is for, executed the procedure's steps against it through the doors, commands and reads an operator would use
@@ -3081,8 +3160,29 @@ the row's author keeps the count.
 **Why a section may stand unrehearsed: a closed list.** `no account` (it needs a cloud account or a managed service, which
 Phase 15 never applies); `Phase 16 drill` (the plan gives it to Phase 16's drills: a failover, chaos, load, ten instances);
 `real provider` (it needs a provider's own behaviour, not a simulator's); `real person` (it needs a real environment's people or
-holders). A row rehearsed in part may name one for the rest. A §1–§10 row may not stand at nought: criterion 4 asks a sample of
-each.
+holders); `postponed by the owner (PI-024)` (the owner postponed the platform rehearsals' remaining cluster runs, 2026-11-12:
+the procedure's step was written and not run, or, for §11.11, not yet written). A row rehearsed in part may name one for the rest.
+A §1–§10 row may not stand at nought, criterion 4 asking a sample of each, but by the owner's postponement: the test admits that
+reason only while the register holds PI-024 `POSTPONED`.
+
+**The task's runs.** The two platform scopes (`infra/scripts/kind-rehearsal/platform.sh`, `REHEARSAL_SCOPE=signals` and
+`incidents`) ran only as development runs, `REHEARSAL_KEEP=1` on one development machine (`kind` v0.33.0, node `v1.34.11`,
+kube-router as the policy engine, as §11.28's), the `signals` scope each time from a fresh cluster, each stopping at its first red:
+**no whole run of either scope, and none of `incidents`, was made**, by the owner's choice (PI-024). Each is named by the branch head
+that carried it, its tree built in the run:
+
+| Run | Date, UTC | Head | Reached | Stopped at, and why |
+|---|---|---|---|---|
+| dev1 | 2026-11-12 10:29-10:52 | `31c5b6dc` | the alerting baseline, §11.31's and §11.8's plants | the scrape's relabelling judged against exactly three targets while a paused rollout runs four: the harness's |
+| dev2 | 2026-11-12 10:53-11:08 | `8a95ff28` | the plants, the staff's grants, the access review's question 5, §11.37's page | §11.12's password change refused `403 identity.AssuranceRequired` on a session not stepped up: the harness's |
+| dev3 | 2026-11-12 11:08-11:25 | `5078e612` | §11.37's first role, §1, §2's activation | §2's quote: the simulator served no reference rates or FX provider and the `kind` overlay named none: the harness's and the overlay's |
+| dev4 | 2026-11-12 12:07-12:27 | `a2a0726b` | as dev3 | §2's quote: the reference client's 5 s default timed out on the simulator's handshake: the overlay's |
+| dev5 | 2026-11-12 12:41-13:13 | `ca4c323a` | the baseline (218 of 218 rules loaded), the access review's question 5, §11.37's page and §11.12's compromise whole, the first role, §1, §2, §3's alert and activation | `ReconciliationRuleSetMissing` read across every source when §3 activates one: the harness's |
+| dev6 | 2026-11-12 13:35-14:09 | `0cc4fda0` | the plants, §1, §2, §3 (fired and cleared), §4 step 4, §3b, §6.1's alert and activation | `CreditPolicyMissing` never clearing: **a defect of the committed rule**, which matched the BNPL products by a lower-case name their series never carry; fixed (`6d806802`) with a promtool case on the real labels, not seen to clear on a cluster |
+
+The rehearsal's own records are each section's last record. What the dev runs asserted that the count below does not count, the
+plants (a payout held, a short certificate, the fleet on two configurations) and the controls (the edge, the policies, the
+telemetry pipeline, every rule loaded), is §11.28's and §11.34's kind of evidence, not a procedure's steps.
 
 **Where, on what, which run.** `kind` (one cluster on one machine, §11.28), `compose`, or `containers` (a script's own, as
 §11.13's, §11.14's and §11.35's). The commit is each one its record names, or the branch head that carried the run; the date the
@@ -3090,59 +3190,60 @@ latest; the run, as its record names it.
 
 | Section | Owner | Rehearsed | Read | Procedures | Where | Date | Commit | Run | Procedure only because |
 |---|---|---|---|---|---|---|---|---|---|
-| §1 | `reconciliation` | pending | pending | 2 | pending | pending | pending | pending | — |
-| §2 | `fx` | pending | pending | 3 | pending | pending | pending | pending | — |
-| §3 | `reconciliation` | pending | pending | 2 | pending | pending | pending | pending | — |
-| §3b | `crossborder` | pending | pending | 3 | pending | pending | pending | pending | — |
-| §4 | `fx` | pending | pending | 4 | pending | pending | pending | pending | — |
-| §5 | `fx` | pending | pending | 2 | pending | pending | pending | pending | — |
-| §6 | `credit` | pending | pending | 3 | pending | pending | pending | pending | — |
-| §7 | `lending` | pending | pending | 13 | pending | pending | pending | pending | — |
-| §8 | `bnpl` | pending | pending | 9 | pending | pending | pending | pending | — |
-| §9 | `risk` | pending | pending | 14 | pending | pending | pending | pending | — |
-| §10 | `accounting` | pending | pending | 17 | pending | pending | pending | pending | — |
+| §1 | `reconciliation` | 1 | 1 | 2 | kind | 2026-11-12 | `5078e612`, `a2a0726b`, `ca4c323a`, `0cc4fda0` | `dev3 to dev6, the signals scope's development runs` | — |
+| §2 | `fx` | 1 | 2 | 3 | kind | 2026-11-12 | `ca4c323a`, `0cc4fda0` | `dev5 and dev6, the signals scope's development runs` | — |
+| §3 | `reconciliation` | 1 | 1 | 2 | kind | 2026-11-12 | `0cc4fda0` | `dev6, the signals scope's development run` | — |
+| §3b | `crossborder` | 1 | 2 | 3 | kind | 2026-11-12 | `0cc4fda0` | `dev6, the signals scope's development run` | — |
+| §4 | `fx` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-024) |
+| §5 | `fx` | 0 | 2 | 2 | — | — | — | — | postponed by the owner (PI-024) |
+| §6 | `credit` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-024) |
+| §7 | `lending` | 0 | 13 | 13 | — | — | — | — | postponed by the owner (PI-024) |
+| §8 | `bnpl` | 0 | 9 | 9 | — | — | — | — | postponed by the owner (PI-024) |
+| §9 | `risk` | 0 | 14 | 14 | — | — | — | — | postponed by the owner (PI-024) |
+| §10 | `accounting` | 0 | 17 | 17 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.1 | `platform` | 1 | 0 | 1 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
 | §11.1.1 | `platform` | 2 | 4 | 6 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
 | §11.1b | `migrator` | 2 | 1 | 3 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
 | §11.1c | `platform` | 2 | 2 | 4 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
-| §11.4 | `migrator` | pending | pending | 3 | pending | pending | pending | pending | — |
-| §11.6 | `platform` | pending | pending | 7 | pending | pending | pending | pending | — |
+| §11.4 | `migrator` | 2 | 2 | 4 | containers | 2026-11-12 | `677f1121` | `migration-failure-rehearsal.sh, 11:37-11:42Z, the section's last record` | — |
+| §11.6 | `platform` | 0 | 7 | 7 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.7 | `platform` | 0 | 5 | 5 | — | — | — | — | no account |
-| §11.8 | `platform` | pending | pending | 5 | pending | pending | pending | pending | — |
+| §11.8 | `platform` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.9 | `platform` | 1 | 2 | 3 | containers | 2026-11-08 | `05e8de31` | `image-scan.sh and sast.sh with their plants, P15-TSK-006` | — |
-| §11.11 | `reconciliation`, `payments` | pending | pending | 4 | pending | pending | pending | pending | — |
-| §11.12 | `platform` | pending | pending | 4 | pending | pending | pending | pending | — |
+| §11.11 | `reconciliation`, `payments` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.12 | `platform` | 1 | 3 | 4 | kind | 2026-11-12 | `ca4c323a` | `dev5, the signals scope's development run` | postponed by the owner (PI-024) |
 | §11.13 | `platform` | 1 | 2 | 3 | containers | 2026-11-12 | `59d8b87e` | `terraform-check.sh, 43 plants, P15-TSK-017's final bytes` | — |
 | §11.14 | `platform` | 1 | 2 | 3 | containers | 2026-11-12 | `59d8b87e` | `manifest-check.sh, 283 plants, P15-TSK-017's final bytes` | — |
-| §11.15 | `platform` | pending | pending | 4 | pending | pending | pending | pending | — |
-| §11.20 | `ledger`, `accounting`, `platform`, `payments` | pending | pending | 8 | pending | pending | pending | pending | — |
-| §11.21 | `platform` | pending | pending | 5 | pending | pending | pending | pending | — |
-| §11.22 | `identity`, `ledger`, `payments`, `transfers`, `checkout`, `merchant`, `kyc`, `consent` | pending | pending | 15 | pending | pending | pending | pending | — |
-| §11.23 | `reconciliation`, `settlement` | pending | pending | 11 | pending | pending | pending | pending | — |
-| §11.24 | `fx`, `crossborder` | pending | pending | 9 | pending | pending | pending | pending | — |
-| §11.25 | `platform` | pending | pending | 4 | pending | pending | pending | pending | — |
+| §11.15 | `platform` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.20 | `ledger`, `accounting`, `platform`, `payments` | 0 | 8 | 8 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.21 | `platform` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.22 | `identity`, `ledger`, `payments`, `transfers`, `checkout`, `merchant`, `kyc`, `consent` | 0 | 15 | 15 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.23 | `reconciliation`, `settlement` | 0 | 11 | 11 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.24 | `fx`, `crossborder` | 0 | 9 | 9 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.25 | `platform` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.26 | `platform`, `identity` | 2 | 10 | 12 | containers, kind | 2026-11-12 | `e0ed74f2`, `59d8b87e` | `§11.33 run 3; edge-check.sh on P15-TSK-017's final bytes` | — |
-| §11.27 | `accounting` | pending | pending | 7 | pending | pending | pending | pending | — |
+| §11.27 | `accounting` | 0 | 7 | 7 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.28 | `platform` | 1 | 0 | 1 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
 | §11.29 | `platform` | 3 | 6 | 9 | kind | 2026-11-11 | `38576191`, `e0ed74f2`, `4e29b4fd` | `§11.33 runs 2, 3 and 5` | — |
-| §11.30 | `platform` | pending | pending | 5 | pending | pending | pending | pending | — |
-| §11.31 | `platform` | pending | pending | 4 | pending | pending | pending | pending | — |
+| §11.30 | `platform` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.31 | `platform` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.32 | `platform` | 2 | 2 | 4 | kind | 2026-11-11 | `aa622a19` | `§11.32's last record` | — |
 | §11.33 | `platform` | 1 | 0 | 1 | kind | 2026-11-11 | `4e29b4fd` | `§11.33 run 5` | — |
 | §11.34 | `platform` | 3 | 2 | 5 | kind, containers | 2026-11-12 | `12f9b929`, `59d8b87e` | `§11.34's full run; telemetry-check.sh on P15-TSK-017's final bytes` | — |
 | §11.35 | `platform` | 2 | 2 | 4 | containers, kind | 2026-11-11 | `0f5921e9` | `§11.35's seeded and kind-source records` | no account |
 | §11.36 | `platform` | pending | pending | 8 | pending | pending | pending | pending | — |
-| §11.37 | `identity`, `accounting` | pending | pending | 6 | pending | pending | pending | pending | — |
-| §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | pending | pending | 3 | pending | pending | pending | pending | — |
-| §11.40 | `platform` | pending | pending | 2 | pending | pending | pending | pending | Phase 16 drill |
-| Provider callbacks are hints | `payments` | pending | pending | 6 | pending | pending | pending | pending | — |
+| §11.37 | `identity`, `accounting` | 2 | 4 | 6 | kind | 2026-11-12 | `5078e612`, `ca4c323a` | `dev3 and dev5, the signals scope's development runs` | postponed by the owner (PI-024) |
+| §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.40 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
+| Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
 
 - **§11.1, §11.28**: §11.28's run (a stop under a rolling update and under a kill; running and reading the rehearsal).
 - **§11.1.1**: rehearsed, a handler added (the audited replay over the rollout window) and a rollback (the replay over the
   rollback window after the re-roll), both in §11.28's run. Read: a handler removed, a new `eventVersion`, rolling the catalogues
-  forward, and **a handler in a new group, named for the `incidents` run** (the offsets set with the fleet stopped).
+  forward, and a handler in a new group (the offsets set with the fleet stopped), whose step the `incidents` scope holds and
+  never ran (PI-024).
 - **§11.1b**: rehearsed, the bootstrap step and the migration Job then the rollout (`result=APPLIED`). Read: a Job that ends
   `TRANSIENT`, `FAILED` or `REFUSED` (the failed migration is §11.4's).
 - **§11.1c**: rehearsed, a replica held unready on an older schema (the hold) and a rollback onto a newer schema with no marker.
@@ -3152,24 +3253,27 @@ latest; the run, as its record names it.
 - **§11.13 and §11.14**: rehearsed, the check run with every plant refused. Read: changing a pin or a version (§11.13), changing a
   number the budget reads and the quota following (§11.14).
 - **§11.26**: rehearsed, the checks run (`edge-check.sh`) and a renewed certificate and its rollback by a new issuance
-  (§11.33 run 3). Read: the other ten, among them **the operators' half and the rollout order, named for the `signals` run**.
+  (§11.33 run 3). Read: the other ten, among them the operators' half, whose step the `signals` scope holds and never reached
+  (PI-024), and the rollout order.
   A route answered `404` on the public host and a forged address counted once were §11.28's controls, not these procedures' steps.
 - **§11.29**: rehearsed, a key's two-step, its rollback, and a callback secret's rotation with its window (§11.33). Read: a replica
-  that will not start, both compromises (**a callback key's, named for the `incidents` run**), retiring a version, a base
+  that will not start, both compromises (a callback key's, whose step the `incidents` scope holds and never ran, PI-024), retiring
+  a version, a base
   version other than 1, and a third version.
 - **§11.32**: rehearsed, the check run, and the controller down and brought back (a signed image refused while it was away,
   admitted once it returned). Read: a denied apply (the run asserted each refusal by name, the control, not a person's steps
   from it) and the install order.
 - **§11.33**: its own last record.
 - **§11.34**: rehearsed, finding one payment, the collector down (stopped and hung, requests unaffected), and the check run.
-  Read: a needle found (the sweep found none, so the procedure's steps never ran) and **the telemetry stack's own alerts, named for
-  the `signals` run**.
+  Read: a needle found (the sweep found none, so the procedure's steps never ran) and the telemetry stack's own alerts, whose step
+  the `signals` scope holds and never reached (PI-024); their rules are held both ways by promtool.
 - **§11.35**: rehearsed, the logical restore and its verification (steps 1 to 5, the roles released in step 7, and step 8's
-  refusals, every plant refused and never released), and running the rehearsal. Read: **step 6, bringing the broker to the
-  restored position, which has run nowhere and is named for the `incidents` run**; and the managed half (`no account`).
+  refusals, every plant refused and never released), and running the rehearsal. Read: step 6, bringing the broker to the
+  restored position, which has run nowhere (the `incidents` scope's break-glass step holds it, never run, PI-024); and the managed
+  half (`no account`).
 - **§11.7**: the cloud half, which no account exists to run; its fleet half is §11.33's.
 
-A row named for a run above is updated from that run's record at the gate, with the rest.
+A step held for a run above and not run is PI-024's: its row changes when that item's runs are made.
 
 ### 11.39 A row that fails every tick: a corrupt id that stalls a sweep, a row at a sweep's head, a rematch residual (`P15-TSK-032`)
 
@@ -3247,10 +3351,11 @@ re-heads the worklist with only that line to show: no durable record, no meter.
   allocates or examines the item. A person may also work the break through its own door (§11.23). A durable exclusion is Phase
   16's.
 
-**The last record.** Not yet rehearsed: the `kind` incidents run records it here (a v4 id at the head of the card sweep, the line
-on every replica and no attempt concluded, then removed by the harness as the plant's teardown and the sweep resuming; a row
-failing every tick with every other row still reached; the residual where it can be planted without a switch in production
-code, or recorded unproven with the reason).
+**The last record.** Not rehearsed. The `incidents` scope's poisoned-rows step holds the first procedure (a captured card attempt
+copied under a v4 id into `CAPTURE_DISPATCHED`, its references made new and its capture's facts taken off; the `Payment sweep
+failed` line asserted on every replica; the row removed by the harness as the plant's teardown) and never ran, the owner having
+postponed the platform scopes' remaining runs (`POSTPONED_ISSUES.md` PI-024). The other two, a row failing every tick with every other row
+still reached and the rematch residual, hold no step. §11.38 counts the three read.
 
 ### 11.40 Database failover: what the fleet does and what a person does (`P15-TSK-032`)
 
@@ -3308,7 +3413,9 @@ place (the pod, and its data, kept), and by killing the server rather than shutt
 after a crash and keeps it across a clean shutdown, and a standby promoted by a failover never held an unlogged table's rows. It
 shows readiness down and back on every replica with none restarted, claims lapsing and
 taken, and the abuse table empty after. It does not show a standby taking over, an endpoint moving, a connection black-holed (a
-stopped server resets its connections), or anything of the managed service's own. **The last record**: not yet run.
+stopped server resets its connections), or anything of the managed service's own. **The last record**: not run. The
+`incidents` scope's database-restart step holds the `kind` half above and never ran (`POSTPONED_ISSUES.md` PI-024); the failover itself is a Phase
+16 drill.
 
 ### 11.13 Infrastructure code: running the Terraform checks, and changing a pin
 
@@ -3462,6 +3569,8 @@ rollout and the measured connection peak (`-012`), and delivery (§11.36). *(Rea
 
 *(Written by `P15-TSK-029`, 2026-11-08, from the code it landed. Not rehearsed: `-032` rehearses it. The policy is
 [`DATA_RETENTION.md`](DATA_RETENTION.md).)*
+*(2026-11-12: still not rehearsed. The `incidents` scope's retention step (published rows backdated and swept, a sweep the role
+cannot run, the sweeps paused, a bound refused at start) never ran (`POSTPONED_ISSUES.md` PI-024).)*
 
 **What runs.** Two schedules on every instance, `outbox-retention-sweep` and `inbox-retention-sweep`, each every
 `finapp.retention.sweep.interval` (default five minutes) and each deleting up to 20 batches of
@@ -3552,7 +3661,7 @@ the controller pods do not start.
 
 ### 11.30 Abuse limits - `finapp.abuse.requests`, `PublicDoorsRefusingMost` (`P15-TSK-022`)
 
-*(Written by `P15-TSK-022`, 2026-11-09, from the code and its tests. The counted case across real instances is owed to `P15-TST-002`; it has run on a scratch PostgreSQL by hand and on no cluster.)*
+*(Written by `P15-TSK-022`, 2026-11-09, from the code and its tests. The counted case across real instances is owed to `P15-TST-002`, postponed as `POSTPONED_ISSUES.md` PI-023; it has run on a scratch PostgreSQL by hand and on no cluster. On 2026-11-12 `P15-TSK-032`'s `incidents` scope gained the section's steps on `kind` (a source past a lowered limit, the limit raised, a store that cannot count) and never ran them, PI-024.)*
 
 **What is there.** The five routes that need no session and no signature (registration, sign-in, recovery, recovery completion, channel verification) are each counted per source and fixed window in the unlogged table `platform.window_counter`, across every replica. The numbers are `finapp.abuse.*` in `application.yaml`, reference values calibrated by Phase 16. The edge's limits (§11.26) are a first, coarse layer, per controller; these are the ones that count. A provider's callback is not counted: its signature is checked first and a forged one writes nothing.
 
@@ -3764,7 +3873,7 @@ then, under break-glass, `kubectl create --raw /api/v1/namespaces/finapp-observa
 
 **Changing one of these rules.** In `infra/prometheus/rules/telemetry.yml`, copied to the kind overlay's `rules/`, with its promtool cases both ways in `infra/prometheus/tests/telemetry.test.yml` (`infra/scripts/alert-rules-check.sh`). Never a threshold or a `for` changed to make a rehearsal faster.
 
-**The last record of the alerts** *(containers, 2026-11-12)*: not yet fired on `kind` - that is the platform rehearsal's `signals` run (the collector scaled to zero, Tempo scaled to zero, Loki held past the queue), recorded here when it has run. What has run: `promtool test rules` over the eight rules' cases, green through the pinned Prometheus - each rule firing and silent while healthy; the three counter rules silent through a staleness marker, a six-minute gap and a Prometheus with no history, and firing on a series born above zero on an old collector and after a restart in place; the load-balancing tier silent at a first apply and on the survivor of a roll, ticketing outside a peer change, Tempo and Loki ticketing at any time; the ingest rules silent after a back end's restart under sparse traffic - and `alert-rules-check.sh`'s `offset-term` plant refused. The tier's drops measured as above, with and without its retry and queue. The names read from the pinned images on containers (`telemetry-series.sh`, run again on the committed configuration after the review): with Tempo and Loki stopped the committed collector's `otelcol_exporter_send_failed_spans` and `..._log_records` appeared within its sixty seconds of retries, already above zero; a one-batch queue overrun gave `otelcol_exporter_enqueue_failed_*`; a memory limiter set below the process refused the very first request (the application side answered 503) and its `otelcol_receiver_refused_*` series were born at 2.
+**The last record of the alerts** *(containers, 2026-11-12)*: not fired on `kind`: the platform rehearsal's `signals` scope holds the step (the collectors rolled under traffic as its control, Tempo scaled to zero under writes, the collectors scaled to zero) and never reached it, the owner having postponed its runs (`POSTPONED_ISSUES.md` PI-024). What has run: `promtool test rules` over the eight rules' cases, green through the pinned Prometheus - each rule firing and silent while healthy; the three counter rules silent through a staleness marker, a six-minute gap and a Prometheus with no history, and firing on a series born above zero on an old collector and after a restart in place; the load-balancing tier silent at a first apply and on the survivor of a roll, ticketing outside a peer change, Tempo and Loki ticketing at any time; the ingest rules silent after a back end's restart under sparse traffic - and `alert-rules-check.sh`'s `offset-term` plant refused. The tier's drops measured as above, with and without its retry and queue. The names read from the pinned images on containers (`telemetry-series.sh`, run again on the committed configuration after the review): with Tempo and Loki stopped the committed collector's `otelcol_exporter_send_failed_spans` and `..._log_records` appeared within its sixty seconds of retries, already above zero; a one-batch queue overrun gave `otelcol_exporter_enqueue_failed_*`; a memory limiter set below the process refused the very first request (the application side answered 503) and its `otelcol_receiver_refused_*` series were born at 2.
 
 **The last record** *(`kind`, 2026-11-11)*: (`kind`, one machine, kube-router; `OPERATIONS_RUNBOOK.md` §11.34 holds the record.) **The first run** (2026-11-11 16:34-17:04Z, GREEN, 74 assertions) **was partial**: it stopped after `telemetry-scrape`, so no later census counted what the telemetry steps did, and its outage's second phase, called black-holed, was a refusal (kube-router rejects what no policy admits). **The full run** of the merged harness after the review's fix round (2026-11-11 20:29-21:22Z, images from `12f9b929`, every step to `end`; GREEN, 108 assertions, none failed; four attempts before it stopped on images deleted in Docker Desktop mid-load, on a census that miscounted the telemetry steps' transfers (fixed), on this machine's Docker refusing to save one platform of kube-router's index (the loader fixed) and on a `finapp.risk` member of N - 1 holding four partitions after the rollback, not seen again): from inside `finapp-observability` a pod labelled as the collector reached Tempo and Loki and was refused PostgreSQL, Kafka, another namespace's pod and the internet; an unlabelled pod was refused Tempo, PostgreSQL and the internet; a pod of another namespace was refused the collector's 4318, and the application's replica reached it. One card top-up of 731.94 EUR, its PSP file uploaded and attested, and a run that settled it: every leg found in Tempo by the correlation it ran in - each request's own minted one for the create's, the confirmation's, the upload's and the attestation's HTTP spans, the payment's events' for `outbox.publish` and `inbox.handle`, the file's id for `settlement.parse` and `settlement.accept`, `reconciliation.chunk` for the runs - and the stored chain from the file's line to the payment's own expectation (keyed by the capture's reference, opened in the confirmation's correlation, `SETTLED`); the customer's own traceparent removed at the public edge, Tempo holding nothing under it. The collector up, stopped (a refusal) and hung (a stand-in that takes every connection and answers nothing, the Service's one endpoint): 1,468, 1,500 and 1,453 one-cent transfers, none failed and none unresolved, p95 50, 47 and 49 ms, no replica unready. The sweep: a record planted through the collector with an amount after a JSON escape and a card number reached Loki under its correlation, scrubbed; 14 records under five correlations the replicas printed were in Loki; none of 104 needles (the traced and the planted amounts, the planted card number and every party) in 1,195 records, 128 traces or any replica's console. Prometheus read job `finapp`, 3 targets of 3 up, `env="kind"`, no `env="local"`. The censuses after the kill, the rollback, the reroll and the last one counted the telemetry steps' top-up and transfers, green.
 
@@ -4170,6 +4279,15 @@ pass, and never point the pool at another role. The next connection is judged ag
 keep serving as the changed role** until Hikari's `maxLifetime` (its default, 30 minutes; this pool does not set it) replaces them, and
 those connections read inside `REPEATABLE READ READ ONLY` snapshots, which refuse a write at the transaction; to end them sooner, roll
 the fleet (a commit to the overlay, section 11's fleet rule).
+
+**The last record** *(`P15-TSK-032`, 2026-11-12, on `kind`)*. In the `signals` scope's development runs (§11.38's table):
+**`OperatorPasswordProvenOnPublic`** (dev2 and dev5): a role holder's password proven on the public host, the page fired and reached
+its receiver, `identity.PublicSurfaceRefused` recorded the refusal, and §11.12's compromise followed whole (dev5, its last record).
+**A first role** (dev3 and dev5): a customer signed in and stepped up on the public host; a first role granted on an administrator's
+stepped-up session ended that session (`firstRole=true` recorded); the operator host signed the person in; a second role ended
+nothing. Read, not run (`POSTPONED_ISSUES.md` PI-024): `StaffRefusedUnmarked` (the `signals` scope's operators'-half step), an old count raised
+once, a last role's revocation followed by a sign-in as a customer (dev5 revoked a last role inside the compromise and saw
+`lastRole=true` recorded, the identity already suspended, with no sign-in after it), and the reporting pool refusing its role.
 
 **Testing it.** `infra/prometheus/tests/identity-surface.test.yml`: each rule fires on its series and on a replica first scraped already
 counting, and is silent on the other's series, on an old count, and on an old count through a staleness marker or a six-minute gap; run

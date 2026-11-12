@@ -317,7 +317,7 @@ signals_first_role() {
 }
 
 signals_access_review() {
-    # PRIVILEGED_ACCESS_REVIEW.md section 5, questions 5 and 6, performed once on this cluster's identities.
+    # PRIVILEGED_ACCESS_REVIEW.md section 5, question 5, performed once on this cluster's identities (question 6 asks a holder, whom a script is not).
     client access-review before >> "$ART/platform-client.log" 2>&1 || fail "the access review could not read: see platform-client.log"
     grep -q '^platform access-review before status=200 holdings=[1-9][0-9]* stranger=yes' "$ART/platform-client.log" \
         || fail "question 5: the planted holding was not named: $(grep '^platform access-review before' "$ART/platform-client.log")"
@@ -350,7 +350,7 @@ signals_domain() {
     [ -n "$TRADE" ] || fail "section 4: no conversion was made: $(grep '^platform fx-conversion' "$ART/platform-client.log")"
     # Per source: fx-sim-b's and the corridors' sources stay without a rule set here (section 3b is the corridor's pricing policy, not
     # its sources' rule sets), so the alert is read for the source this procedure activates, fx-sim-a's, and for no other.
-    fires ReconciliationRuleSetMissing placeholder-ticket 1500 "11.24 and section 3, the FX source's rule set missing" ',source="fx-sim-a.trade-report"'
+    fires ReconciliationRuleSetMissing placeholder-ticket 1500 "section 3 (and 10.3's gauge), the FX source's rule set missing" ',source="fx-sim-a.trade-report"'
     client fx-cover "$TRADE" >> "$ART/platform-client.log" 2>&1 || true
     grep '^platform fx-cover ' "$ART/platform-client.log" | tail -1 > "$WORK/cover-before.txt"
     activation activate-fx-source "section 3, the FX source's rule set v1"

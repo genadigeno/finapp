@@ -41,6 +41,11 @@ import org.junit.jupiter.api.Test;
  * before the gate as after it, and from the gate no cell may read {@code pending}. The entry's status must be read as one this
  * test knows: an entry missing, or a header it cannot read, fails rather than leaving {@code pending} allowed for good.
  *
+ * <p><strong>The owner's postponement.</strong> The closed list holds one reason that is not a fact about the procedure: the
+ * owner postponed the platform rehearsals' remaining cluster runs ({@code POSTPONED_ISSUES.md} PI-024, 2026-11-12). It is the one
+ * reason a §1-§10 row may stand without a rehearsed sample, and it is admissible only while the register holds PI-024
+ * {@code POSTPONED}: the item fixed, every row giving it must be filled from the runs again.
+ *
  * <p><strong>The floor.</strong> A procedure is counted by the section's own words; what this test holds under that count is
  * the section's sub-headings one level down: a row may not count fewer procedures than its section has sub-headings, so a
  * sub-heading added with its row unchanged is refused. A procedure added as a paragraph moves no floor, and nothing here can see
@@ -52,6 +57,7 @@ class RunbookRehearsalCountTest {
 
     private static final String RUNBOOK = "docs/architecture/OPERATIONS_RUNBOOK.md";
     private static final String BACKLOG = "docs/project/BACKLOG.md";
+    private static final String REGISTER = "docs/project/POSTPONED_ISSUES.md";
     private static final String SETTINGS = "settings.gradle.kts";
     private static final String TASK = "P15-TSK-032";
 
@@ -64,8 +70,14 @@ class RunbookRehearsalCountTest {
     /** The statuses an entry's header may read for this test to know whether the gate has passed. */
     private static final Set<String> KNOWN_STATUSES = Set.of("PLANNED", "READY", "IN_PROGRESS", "COMPLETE");
 
+    /** The owner's postponement of the remaining cluster runs (PI-024, 2026-11-12): the one reason that admits a domain row at nought. */
+    private static final String POSTPONED = "postponed by the owner (PI-024)";
+
+    /** The register's own row for that postponement, read as still standing. */
+    private static final Pattern STILL_POSTPONED = Pattern.compile("(?m)^\\| PI-024 \\| `POSTPONED` \\|");
+
     /** Why a section may stand unrehearsed, the closed list section 11.38 states. */
-    private static final Set<String> REASONS = Set.of("no account", "Phase 16 drill", "real provider", "real person");
+    private static final Set<String> REASONS = Set.of("no account", "Phase 16 drill", "real provider", "real person", POSTPONED);
 
     /** Where a rehearsal may run (criterion 4: on {@code kind} or compose; the containers of the checks and the restore). */
     private static final Set<String> PLACES = Set.of("kind", "compose", "containers");
@@ -88,6 +100,7 @@ class RunbookRehearsalCountTest {
     private static Set<String> modules;
     private static String status;
     private static boolean complete;
+    private static boolean stillPostponed;
 
     /** One row of the count, as written. */
     private record Row(String section, String owner, String rehearsed, String read, String procedures, String where, String date,
@@ -134,6 +147,7 @@ class RunbookRehearsalCountTest {
         }
         status = EvidenceCitations.backlogStatuses(root.resolve(BACKLOG)).get(TASK);
         complete = "COMPLETE".equals(status);
+        stillPostponed = STILL_POSTPONED.matcher(EvidenceCitations.read(root.resolve(REGISTER))).find();
     }
 
     @Test
@@ -204,14 +218,35 @@ class RunbookRehearsalCountTest {
     }
 
     @Test
-    @DisplayName("every domain section §1-§10 has at least one procedure rehearsed, criterion 4's counted sample")
+    @DisplayName("every domain section §1-§10 has at least one procedure rehearsed, criterion 4's counted sample, unless the owner"
+            + " postponed it (PI-024)")
     void everyDomainSectionHasARehearsedSample() {
         List<Row> domain = rows.values().stream().filter(Row::domain).toList();
         assertThat(domain).as("the domain sections' rows").hasSize(11);
+        int sampled = 0;
         for (Row row : domain) {
-            if (!row.pending()) {
-                assertThat(row.rehearsedCount()).as("§%s's sample", row.section()).isPositive();
+            if (row.pending()) {
+                continue;
             }
+            if (row.rehearsedCount() == 0) {
+                assertThat(row.reason()).as("§%s stands without a sample only by the owner's postponement", row.section())
+                        .isEqualTo(POSTPONED);
+            } else {
+                sampled++;
+            }
+        }
+        if (domain.stream().noneMatch(Row::pending)) {
+            assertThat(sampled).as("a positive control: some domain sections were sampled").isPositive();
+        }
+    }
+
+    @Test
+    @DisplayName("the owner's postponement is a reason only while the register holds PI-024 postponed")
+    void thePostponementStandsOnlyWhileTheRegisterHoldsIt() {
+        List<String> giving = rows.values().stream().filter(row -> POSTPONED.equals(row.reason())).map(Row::section).toList();
+        if (!giving.isEmpty()) {
+            assertThat(stillPostponed).as("§§%s give PI-024 as their reason: %s holds it POSTPONED, or they are filled from the runs",
+                    giving, REGISTER).isTrue();
         }
     }
 
