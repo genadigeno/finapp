@@ -107,13 +107,16 @@ spec:
                 secretKeyRef:
                   name: finapp-kind-postgres
                   key: password
+          # 1 GiB since P16-TSK-006: at 512 MiB the demonstration load drove a backend into the container's memory limit 4.5 minutes in,
+          # the kernel killed it and the server reinitialised (OPERATIONS_RUNBOOK.md section 11.43's record). A test-only stand-in's size; a
+          # managed database is sized on its own.
           resources:
             requests:
               cpu: 250m
-              memory: 512Mi
+              memory: 1Gi
             limits:
               cpu: "1"
-              memory: 512Mi
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false

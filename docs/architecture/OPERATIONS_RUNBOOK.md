@@ -4576,6 +4576,21 @@ While it runs, every 30 s, the harness reads every correctness page of `SLOS.md`
 own statistics and `pg_stat_statements`. After it, the full census. It runs on the reference machine, not in CI: a runner is another
 machine, and a number is always reported with its workload and its machine (ADR-0126 decision 1).
 
+**The generator arrives from several addresses.** k6 runs as four instances (`REHEARSAL_LOAD_GENERATORS`), each its own container on
+the `kind` network and so its own address, each running its exact share of every arrival rate (k6's execution segments). Customers
+arrive from many addresses, and the edge's per-source tiers are a client's limits: one address carrying the whole population met them
+and measured them instead of the platform (the first run below). Each instance has one core; its summary, report and series are under
+`k6/<n>/`, and the harness's `k6/report.tsv` adds their counts and takes the percentiles from all their samples together.
+
+**The same run rehearses the platform's own signals** (`THREAT_MODEL.md` §6 item 47 (c); §11.41 and §11.42 hold the procedures).
+Before the load a migrator Job is planted to fail (the release's own Job, its image a shell printing migrator-shaped lines with a
+card number and an amount, exiting 10) and two requests carrying a card number go through the public edge; after the load's census
+the run reads `MigratorJobFailed` and `MigratorJobOverdue` firing and held by Alertmanager on `placeholder-page`, the failed run's
+lines in Loki under `finapp-migrator` with the exit code and the scrub's mark, and sweeps the edge's, the migrator's, the collectors'
+and the watcher's streams for every needle (in each line, and in the request path the edge's records keep) beside a count of what
+it read and a planted control per stream found scrubbed; then the release's own Job is run again and both pages clear. The
+Overdue page's seventeen minutes pass under the load (`signals-*` in the artefacts).
+
 **What it drives (the `demonstration` profile).** `CAPACITY_MODEL.md` §1's demonstration workload: transfers 1.325 a second, card or
 checkout payments 2.655, card top-ups 0.53 (the withdrawals of R2 folded into top-ups), balance reads 50, sign-ins 3.18 and merchant
 API reads 5.3 (the target's peak scaled by 5 / 10.47), each through its own scenario; the provider's signed callbacks, two per captured
@@ -4592,7 +4607,8 @@ REHEARSAL_SCOPE=load infra/scripts/kind-rehearsal.sh
 ```
 
 `REHEARSAL_LOAD_PROFILE` names another profile file; `REHEARSAL_LOAD_DURATION` shortens the run, which then is not the profile's
-workload (`load/workload.txt` says so); `REHEARSAL_LOAD_CUSTOMERS` (20) is how many customers the load spreads over; `REHEARSAL_PROBE`
+workload (`load/workload.txt` says so); `REHEARSAL_LOAD_CUSTOMERS` (20) is how many customers the load spreads over;
+`REHEARSAL_LOAD_GENERATORS` (4) how many addresses the generator arrives from; `REHEARSAL_PROBE`
 takes `closed-model`, `sampler-disabled` or `unbalanced-entry`. The usual `REHEARSAL_KEEP`, `REHEARSAL_REUSE_CLUSTER`,
 `REHEARSAL_SKIP_BUILD` and `REHEARSAL_ARTEFACTS` apply. Exit 0 green, 1 an assertion failed, 2 a step could not run.
 
@@ -4606,7 +4622,7 @@ takes `closed-model`, `sampler-disabled` or `unbalanced-entry`. The usual `REHEA
 - `load-run`: the load, the samplers, the callback sender and the settlement file. **A sample that fails or cannot read stops the load
   at once and fails the run.**
 - `load-judge`: the samples covering the load (none missing at either end, no gap over 45 s, every one `PASS`); the generator holding
-  its model (no dropped iteration, every arrival rate within 2%, its CPU under 90% of its two cores); every money movement resolved by
+  its model (no dropped iteration, every arrival rate within 2%, each instance's CPU under 90% of its core); every money movement resolved by
   its key and every retried key answered alike; each operation's error ratio within its objective; the callbacks two per capture, all
   `204`; every ready replica serving each money-moving route; the settlement file taken whole and reconciled.
 - `load-census`: the full census with the generator's counts (one effect per key, the provider's keys, the wallets, the outbox drained,
@@ -4619,11 +4635,11 @@ takes `closed-model`, `sampler-disabled` or `unbalanced-entry`. The usual `REHEA
 | `workload.txt` | The profile, whether this run is its workload, duration, replicas, commit, machine, the generator's pin, what was and was not driven | Whose number this is, before any number |
 | `k6/report.tsv` | Per operation: its rate, arrivals, resolved, refused, unresolved, attempts, failed attempts, `409`s, retried keys and those answered alike, p50, p95, p99 and max latency as the client saw it (connection and handshake included), the flow's p99 | Latency and errors per operation |
 | `k6/generator.tsv` | Dropped iterations, peak and allocated virtual users, requests, duration | Whether the generator held its model |
-| `k6/summary.json`, `k6/k6-series.csv.gz` | k6's summary, and every sample of every metric with its tags | Anything the report does not show; `P16-TSK-007`'s analysis |
+| `k6/<n>/summary.json`, `k6/<n>/k6-series.csv.gz`, `k6-<n>.log` | Each instance's summary, every sample of every metric with its tags, and its log | Anything the report does not show; `P16-TSK-007`'s analysis |
 | `samples.tsv`, `samples/` | One line per 30 s sample (verdict, replicas scraped of ready, clauses, detail) and each sample's raw answers | The invariants during the load |
 | `sample.sql` | The exact clauses sampled, extracted from `census.sql` | What "the census during load" was |
 | `pg-*.tsv`, `pg-statements-final.txt` | Every 10 s: sessions by state and wait, lock waits, commits, rollbacks, deadlocks, temporary files, WAL, checkpoints, the busiest tables; the top statements by time | The database's side of saturation |
-| `containers.tsv` | Every 10 s: the node's, the generator's and the callback sender's CPU and memory | The machine, and the generator's own saturation |
+| `containers.tsv` | Every 10 s: the node's, each generator instance's and the callback sender's CPU and memory | The machine, and the generator's own saturation |
 | `prometheus/*.json` | CPU, heap, GC, threads, busy request threads, Hikari active and pending and acquisition, the outbox's oldest publishable age, consumer lag, requests per replica, over the run | The application's side of saturation |
 | `callbacks-load.*`, `spread.tsv`, `settlement.*` | Each callback's answer; replicas per route; the settlement file and its reconciliation counts | The provider's, the edge's and reconciliation's share |
 | `../census-load.txt` | The full census after the load | One effect per key, counted |

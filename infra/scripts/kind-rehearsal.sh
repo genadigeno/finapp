@@ -31,7 +31,8 @@
 # `load` (P16-TSK-006, ADR-0126, OPERATIONS_RUNBOOK.md section 11.43): release N alone, smoked and its census green, then a load profile
 # driven through the real edge by k6 as an open model, the correctness pages and the census's committed-fact clauses sampled every 30 s
 # while it runs, and the full census after it (kind-rehearsal/load.sh, whose probes are closed-model, sampler-disabled and
-# unbalanced-entry). Its pre-flight reads what k6 will run before anything is built.
+# unbalanced-entry). Its pre-flight reads what k6 will run before anything is built. The same run rehearses the platform's own signals
+# (kind-rehearsal/telemetry.sh's platform_signals_plant and platform_signals; THREAT_MODEL.md section 6 item 47 (c)).
 #
 # `delivery` (P15-TSK-032): the data tier, the simulator and the topics as above, and then nothing of this script's own release: Argo CD,
 # installed from what infra/scripts/controller-check.sh renders, syncs deploy/overlays/staging through a rehearsal root, promote.sh writes

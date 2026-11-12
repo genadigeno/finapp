@@ -33,7 +33,9 @@ import org.junit.jupiter.api.Test;
  *   <li>one effect per key is tried (same-key retries) and counted (the census takes the generator's counts);
  *   <li>the generator reaches only the run's own cluster, through the edge, with only the run's fixture and the edge's CA;
  *   <li>the demonstration profile is the capacity model's, and every operation it leaves undriven says why and who drives it;
- *   <li>each of the entry's probes is wired to do what it says.
+ *   <li>each of the entry's probes is wired to do what it says;
+ *   <li>the platform's own signals ({@code THREAT_MODEL.md} section 6 item 47 (c)) are rehearsed in the same run: a migrator Job planted
+ *       to fail pages twice and is routed, its lines reach Loki scrubbed, and every platform stream is swept for every needle.
  * </ol>
  *
  * <p>Hermetic: it reads files only.
@@ -85,9 +87,9 @@ class LoadRehearsalContractTest {
         return load.substring(start.end(), end.start());
     }
 
-    /** The k6 container's own command, from its docker run to its last continued line. */
+    /** The k6 instances' own command, from their docker run to its last continued line. */
     private static String generatorCommand() {
-        int start = load.indexOf("dock run -d --name \"$CLUSTER-load-k6\"");
+        int start = load.indexOf("dock run -d --name \"$CLUSTER-load-k6-$i\"");
         assertThat(start).as("load.sh starts the generator's container").isNotNegative();
         int end = load.indexOf("|| cannot \"k6 could not start\"", start);
         assertThat(end).as("the generator's command ends").isGreaterThan(start);
@@ -161,7 +163,7 @@ class LoadRehearsalContractTest {
                 .contains(">> \"$WORK/load-sample-failed\"");
         assertThat(function("load_sampler")).contains("started + 30");
         assertThat(function("load_run")).as("a failing sample stops the load and fails the run")
-                .contains("if [ -s \"$WORK/load-sample-failed\" ]; then").contains("dock stop -t 30 \"$CLUSTER-load-k6\"")
+                .contains("if [ -s \"$WORK/load-sample-failed\" ]; then").contains("load_generators stop")
                 .contains("fail \"a sample failed during the load, which stopped it");
         String slos = read("docs/architecture/SLOS.md");
         Matcher page = Pattern.compile("(?m)^\\| `([A-Za-z]+)` \\|").matcher(slos.substring(slos.indexOf("## 3. "), slos.indexOf("## 4. ")));
@@ -202,8 +204,13 @@ class LoadRehearsalContractTest {
                 .contains("fail \"the samples do not cover the load");
         assertThat(judge).as("the generator, never trusted to have kept up")
                 .contains("[ \"$dropped\" = 0 ] || fail \"the generator dropped $dropped iterations")
-                .contains("$3 < want * 0.98 || $3 > want * 1.02 + 1").contains("(c < 180)");
-        assertThat(generatorCommand()).as("the generator's CPU is bounded, so its saturation can be read").contains("--cpus 2");
+                .contains("$3 < want * 0.98 || $3 > want * 1.02 + 1").contains("(c < 90)");
+        assertThat(generatorCommand()).as("each instance's CPU is bounded, so its saturation can be read").contains("--cpus 1");
+        assertThat(generatorCommand()).as("the generator arrives from several addresses, each running its exact share of every rate")
+                .contains("--execution-segment \"$i/$LOAD_GENERATORS:$((i + 1))/$LOAD_GENERATORS\"")
+                .contains("--execution-segment-sequence \"$sequence\"");
+        assertThat(function("load_report")).as("the instances' percentiles taken from their samples together, never averaged")
+                .contains("gzip -dc \"$series\"").contains("-v m=\"latency_$op\"").contains("sort -k1,1 -k2,2g");
         assertThat(function("load_statistics")).as("PostgreSQL's statistics and the containers every 10 s")
                 .contains("statistics.sql").contains("statements.sql").contains("dock stats --no-stream").contains("started + 10");
         assertThat(function("load_census")).as("the saturation signals exported, and absent ones refused")
@@ -298,6 +305,53 @@ class LoadRehearsalContractTest {
                     .isIn(EvidenceCitations.LIVE_STATUSES);
         }
         assertThat(undriven).as("what this harness leaves undriven, and nothing else").containsExactly("bnpl", "credit", "lending");
+    }
+
+    @Test
+    @DisplayName("the platform's own signals are rehearsed on the full cluster: a migrator Job planted to fail pages twice and is routed, its lines in Loki scrubbed, every platform stream swept for every needle beside its control")
+    void thePlatformsOwnSignalsAreRehearsed() {
+        String telemetry = read("infra/scripts/kind-rehearsal/telemetry.sh");
+        String scope = function("load_scope");
+        assertThat(scope).as("the load scope plants before its load and reads after its census")
+                .contains("step platform-signals-plant\n    platform_signals_plant").contains("step platform-signals\n    platform_signals\n");
+        assertThat(scope.indexOf("platform_signals_plant")).isLessThan(scope.indexOf("load_run"));
+        assertThat(scope.indexOf("    platform_signals\n")).isGreaterThan(scope.indexOf("load_census"));
+        String plant = shellFunction(telemetry, "platform_signals_plant");
+        assertThat(plant).as("the release's own Job, its image a shell printing migrator-shaped lines with a card number and an amount, exit 10")
+                .contains("\"$A/Job.finapp-migrator.yaml\"").contains("card $SIGNALS_MIGRATOR_PAN for $SIGNALS_AMOUNT EUR")
+                .contains("exit 10").contains("kube -n finapp delete job finapp-migrator");
+        assertThat(plant).as("the edge's needles: a routed and an unrouted path, a query and a header, through the real public edge")
+                .contains("\"/v1/me/accounts/$SIGNALS_PAN/balance\" \"/v1/nowhere/$SIGNALS_PAN\"").contains("-H \"X-Card: $SIGNALS_PAN_SPACED\"")
+                .contains("--cacert /work/edge-ca.crt");
+        String signals = shellFunction(telemetry, "platform_signals");
+        assertThat(signals).as("both pages fire through the committed rules and reach the committed routing")
+                .contains("signals_await MigratorJobFailed firing").contains("signals_routed MigratorJobFailed")
+                .contains("signals_await MigratorJobOverdue firing").contains("signals_routed MigratorJobOverdue");
+        assertThat(shellFunction(telemetry, "signals_routed")).contains("\"name\":\"placeholder-page\"");
+        assertThat(signals).as("the failed run's lines in Loki, scrubbed")
+                .contains("'{service_name=\"finapp-migrator\"}'").contains("MIGRATION_FAILED").contains("k8s_container_exit_code")
+                .contains("grep -qF '[scrubbed]' \"$ART/signals-loki-migrator.json\"");
+        assertThat(signals).as("every platform stream swept for every needle, in its lines and the edge's kept path, beside what was read")
+                .contains("for stream in finapp-edge finapp-migrator finapp-collector finapp-cluster-watch; do")
+                .contains("|~ \\\"$pattern\\\"").contains("RequestPath=~\\\".*($pattern).*\\\"")
+                .contains("fail \"signals: the sweep read no record of $stream").contains("fail \"signals: a needle in $stream");
+        assertThat(signals).as("a planted control in each stack stream found scrubbed, and the edge's planted path found scrubbed")
+                .contains("for stream in finapp-collector finapp-cluster-watch; do").contains(":4319/v1/logs")
+                .contains("RequestPath=~\".*scrubbed.*\"");
+        assertThat(shellFunction(telemetry, "signals_loki")).as("a query Loki refused is not a sweep that found nothing")
+                .contains("\"status\":\"success\"").contains("echo refused");
+        assertThat(signals).as("put back: the release's Job run again, both pages cleared")
+                .contains("apply_files \"$A/Job.finapp-migrator.yaml\"").contains("signals_await MigratorJobFailed none")
+                .contains("signals_await MigratorJobOverdue none");
+    }
+
+    /** The body of one shell function of a sourced harness file. */
+    private static String shellFunction(String text, String name) {
+        Matcher start = Pattern.compile("(?m)^" + Pattern.quote(name) + "\\(\\) \\{$").matcher(text);
+        assertThat(start.find()).as("the file defines %s", name).isTrue();
+        Matcher end = Pattern.compile("(?m)^}$").matcher(text);
+        assertThat(end.find(start.end())).as("%s ends", name).isTrue();
+        return text.substring(start.end(), end.start());
     }
 
     @Test

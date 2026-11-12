@@ -15,7 +15,11 @@
 #   - every money movement was resolved by its key, the same-key retries (one iteration in twenty, half before and half after the first
 #     answer) answered alike, every operation's errors were within its objective, and every ready replica served each money-moving route;
 #   - the provider's callbacks (two per captured card payment) and one settlement file at mid-run were delivered and taken;
-#   - after the load, the full census held with the generator's counts, and a last sample passed.
+#   - after the load, the full census held with the generator's counts, and a last sample passed;
+#   - the platform's own signals (telemetry.sh's platform_signals_plant and platform_signals, THREAT_MODEL.md section 6 item 47 (c)): a
+#     migrator Job planted to fail before the load raised MigratorJobFailed and, its seventeen minutes passing under the load,
+#     MigratorJobOverdue, each routed; its lines in Loki scrubbed; the edge's, the migrator's and the stack's streams swept for every
+#     needle beside their controls; the release's Job run again and both pages cleared.
 # The latency percentiles, errors, PostgreSQL's statistics every 10 s, pg_stat_statements, the containers' CPU and memory and the
 # saturation signals Prometheus holds are in $REHEARSAL_ARTEFACTS/load. A run is reported with its workload's name and its machine
 # (load/workload.txt): a kind number is never production capacity (ADR-0126 decision 1).
@@ -36,6 +40,8 @@
 LOAD_PROFILE_NAME=${REHEARSAL_LOAD_PROFILE:-demonstration}
 LOAD_CUSTOMERS=${REHEARSAL_LOAD_CUSTOMERS:-20}
 LOAD_DURATION=${REHEARSAL_LOAD_DURATION:-}
+# How many addresses the generator arrives from: each instance its own container, running its share of every rate.
+LOAD_GENERATORS=${REHEARSAL_LOAD_GENERATORS:-4}
 K6_IMAGE="$K6_REPOSITORY@$K6_DIGEST"
 LOAD_PROM=finapp-prometheus:9090
 # The census's expected counts take these from load_judge: zero in every other scope.
@@ -197,7 +203,7 @@ load_statistics() {
             pg_admin -f - < "$LOAD_SRC/statements.sql"
         } 2>> "$LOAD_ART/statistics-errors.log" | awk -F'|' -v at="$at" -v dir="$LOAD_ART" \
             'NF > 1 {name = $1; line = at; for (f = 2; f <= NF; f++) line = line "\t" $f; print line >> (dir "/pg-" name ".tsv")}'
-        for container in "$NODE" "$CLUSTER-load-k6" "$CLUSTER-load-callbacks"; do
+        for container in "$NODE" $(dock ps --format '{{.Names}}' --filter "name=$CLUSTER-load-"); do
             dock stats --no-stream --format "$at\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" "$container" >> "$LOAD_ART/containers.tsv" 2>/dev/null
         done
         while [ "$(date +%s)" -lt $((started + 10)) ] && [ ! -f "$WORK/load-stop" ]; do
@@ -293,12 +299,17 @@ load_scope() {
     load_target
     step load-setup
     load_setup
+    # The platform's own signals (THREAT_MODEL.md section 6 item 47 (c); telemetry.sh): planted before the load, read after its census.
+    step platform-signals-plant
+    platform_signals_plant
     step load-run
     load_run
     step load-judge
     load_judge
     step load-census
     load_census
+    step platform-signals
+    platform_signals
 }
 
 # The harness loads only the cluster it made or kept under its own name: the node it execs into must be that cluster's.
@@ -387,20 +398,31 @@ load_run() {
         -v "$(dpath "$CLIENT"):/work" -v "$(dpath "$DIR"):/src:ro" "$JDK_IMAGE" java --source 21 /src/Rehearsal.java /work load-callbacks load >/dev/null \
         || cannot "the callback sender could not start"
     CONTAINERS="$CONTAINERS $CLUSTER-load-callbacks"
-    dock run -d --name "$CLUSTER-load-k6" --network kind --cpus 2 --add-host "public.finapp.test:$NODE_IP" \
-        -e SSL_CERT_FILE=/generator/edge-ca.crt -e "LOAD_PROFILE=/load/$LOAD_PROFILE_NAME.json" -e LOAD_FIXTURE=/generator/load-fixture.json \
-        -e "LOAD_RUN=$LOAD_RUN_TAG" -e "LOAD_DURATION=$LOAD_DURATION" \
-        -v "$(dpath "$LOAD_GEN"):/generator:ro" -v "$(dpath "$LOAD_SRC"):/load:ro" -v "$(dpath "$LOAD_ART/k6"):/out" \
-        "$K6_IMAGE" run --quiet --no-color --out csv=/out/k6-series.csv.gz /load/scenarios.js >/dev/null || cannot "k6 could not start"
-    CONTAINERS="$CONTAINERS $CLUSTER-load-k6"
-    log "load $LOAD_PROFILE_NAME for $LOAD_DURATION ($secs s), run $LOAD_RUN_TAG, $LOAD_CUSTOMERS customers"
+    # The generator as LOAD_GENERATORS instances, each its own container and so its own address, each running its exact share of every
+    # arrival rate (k6's execution segments). Customers arrive from many addresses; one address carrying the whole population would meet
+    # the edge's per-source tiers, which are a client's limits, not the platform's, and measure them instead (OPERATIONS_RUNBOOK.md
+    # section 11.43's first run).
+    sequence=$(awk -v n="$LOAD_GENERATORS" 'BEGIN {s = "0"; for (i = 1; i <= n; i++) s = s "," i "/" n; print s}')
+    i=0
+    while [ "$i" -lt "$LOAD_GENERATORS" ]; do
+        mkdir -p "$LOAD_ART/k6/$i"
+        chmod 0777 "$LOAD_ART/k6/$i"
+        dock run -d --name "$CLUSTER-load-k6-$i" --network kind --cpus 1 --add-host "public.finapp.test:$NODE_IP" \
+            -e SSL_CERT_FILE=/generator/edge-ca.crt -e "LOAD_PROFILE=/load/$LOAD_PROFILE_NAME.json" -e LOAD_FIXTURE=/generator/load-fixture.json \
+            -e "LOAD_RUN=$LOAD_RUN_TAG" -e "LOAD_DURATION=$LOAD_DURATION" \
+            -v "$(dpath "$LOAD_GEN"):/generator:ro" -v "$(dpath "$LOAD_SRC"):/load:ro" -v "$(dpath "$LOAD_ART/k6/$i"):/out" \
+            "$K6_IMAGE" run --quiet --no-color --execution-segment "$i/$LOAD_GENERATORS:$((i + 1))/$LOAD_GENERATORS" \
+            --execution-segment-sequence "$sequence" --out csv=/out/k6-series.csv.gz /load/scenarios.js >/dev/null || cannot "k6 could not start"
+        CONTAINERS="$CONTAINERS $CLUSTER-load-k6-$i"
+        i=$((i + 1))
+    done
+    log "load $LOAD_PROFILE_NAME for $LOAD_DURATION ($secs s), run $LOAD_RUN_TAG, $LOAD_CUSTOMERS customers, $LOAD_GENERATORS generator addresses"
     planted=""
     settled=""
-    while [ "$(dock inspect -f '{{.State.Running}}' "$CLUSTER-load-k6" 2>/dev/null || echo false)" = true ]; do
+    while load_generating; do
         if [ -s "$WORK/load-sample-failed" ]; then
             touch "$WORK/load-stop" "$WORK/load-feed-stop" "$CLIENT/stop-callbacks-load"
-            dock stop -t 30 "$CLUSTER-load-k6" >/dev/null 2>&1 || true
-            dock logs "$CLUSTER-load-k6" > "$LOAD_ART/k6.log" 2>&1 || true
+            load_generators stop
             fail "a sample failed during the load, which stopped it: $(cat "$WORK/load-sample-failed" | tr '\n' ' ' | cut -c1-600)see load/samples.tsv"
         fi
         elapsed=$(( $(date +%s) - LOAD_STARTED ))
@@ -415,8 +437,8 @@ load_run() {
         sleep 5
     done
     LOAD_ENDED=$(date +%s)
-    k6_status=$(dock inspect -f '{{.State.ExitCode}}' "$CLUSTER-load-k6" 2>/dev/null || echo unknown)
-    dock logs "$CLUSTER-load-k6" > "$LOAD_ART/k6.log" 2>&1 || true
+    k6_status=$(load_generators status)
+    load_generators logs
     # The last captures fed, then the sender drained: everything fed before its stop is delivered and answered.
     sleep 15
     touch "$WORK/load-feed-stop"
@@ -436,9 +458,61 @@ load_run() {
     touch "$WORK/load-stop"
     sleep 12
     [ ! -s "$WORK/load-sample-failed" ] || fail "a sample failed during the load: $(cat "$WORK/load-sample-failed" | tr '\n' ' ' | cut -c1-600)see load/samples.tsv"
-    [ "$k6_status" = 0 ] || cannot "k6 ended with status $k6_status: see load/k6.log"
-    [ -s "$LOAD_ART/k6/report.tsv" ] || cannot "k6 wrote no report: see load/k6.log"
+    [ "$k6_status" = 0 ] || cannot "a generator ended with status $k6_status: see load/k6-*.log"
+    load_report
     log "the load ran $((LOAD_ENDED - LOAD_STARTED)) s"
+}
+
+# load_generating: whether any generator instance still runs.
+load_generating() {
+    g=0
+    while [ "$g" -lt "$LOAD_GENERATORS" ]; do
+        [ "$(dock inspect -f '{{.State.Running}}' "$CLUSTER-load-k6-$g" 2>/dev/null || echo false)" = true ] && return 0
+        g=$((g + 1))
+    done
+    return 1
+}
+
+# load_generators <stop|status|logs>: every instance stopped; the first non-zero exit status, or 0; every instance's log kept.
+load_generators() {
+    g=0
+    worst=0
+    while [ "$g" -lt "$LOAD_GENERATORS" ]; do
+        case $1 in
+            stop) dock stop -t 30 "$CLUSTER-load-k6-$g" >/dev/null 2>&1 || true
+                  dock logs "$CLUSTER-load-k6-$g" > "$LOAD_ART/k6-$g.log" 2>&1 || true ;;
+            status) code=$(dock inspect -f '{{.State.ExitCode}}' "$CLUSTER-load-k6-$g" 2>/dev/null || echo unknown)
+                    [ "$worst" != 0 ] || worst=$code ;;
+            logs) dock logs "$CLUSTER-load-k6-$g" > "$LOAD_ART/k6-$g.log" 2>&1 || true ;;
+        esac
+        g=$((g + 1))
+    done
+    [ "$1" != status ] || echo "$worst"
+}
+
+# The instances' reports as one: counts summed per operation; the percentiles taken from every instance's samples together, never
+# averaged across instances; the generator's own figures summed, its peak the largest.
+load_report() {
+    g=0
+    while [ "$g" -lt "$LOAD_GENERATORS" ]; do
+        [ -s "$LOAD_ART/k6/$g/report.tsv" ] || cannot "the generator $g wrote no report: see load/k6-$g.log"
+        g=$((g + 1))
+    done
+    head -1 "$LOAD_ART/k6/0/report.tsv" > "$LOAD_ART/k6/report.tsv"
+    for op in $(load_operations k6); do
+        counts=$(awk -F'\t' -v op="$op" '$1 == op {rate = $2; for (f = 3; f <= 11; f++) s[f] += $f}
+            END {line = op "\t" rate; for (f = 3; f <= 11; f++) line = line "\t" s[f] + 0; print line}' "$LOAD_ART"/k6/*/report.tsv)
+        percentiles=$(for series in "$LOAD_ART"/k6/*/k6-series.csv.gz; do gzip -dc "$series"; done \
+            | awk -F, -v m="latency_$op" -v f="flow_$op" '$1 == m {print "l", $3} $1 == f {print "f", $3}' \
+            | sort -k1,1 -k2,2g | awk '
+                $1 == "l" {l[++nl] = $2} $1 == "f" {fl[++nf] = $2}
+                function at(a, n, p) { if (n == 0) return 0; i = int(n * p + 0.999999); if (i < 1) i = 1; return a[i] }
+                END {printf "%.1f\t%.1f\t%.1f\t%.1f\t%.1f", at(l, nl, 0.50), at(l, nl, 0.95), at(l, nl, 0.99), at(l, nl, 1), at(fl, nf, 0.99)}')
+        printf '%s\t%s\n' "$counts" "$percentiles" >> "$LOAD_ART/k6/report.tsv"
+    done
+    head -1 "$LOAD_ART/k6/0/generator.tsv" > "$LOAD_ART/k6/generator.tsv"
+    awk -F'\t' 'FNR == 2 {d += $1; if ($2 + 0 > p) p = $2 + 0; m += $3; r += $4; if ($5 + 0 > t) t = $5 + 0} END {print d + 0 "\t" p + 0 "\t" m + 0 "\t" r + 0 "\t" t + 0}' \
+        "$LOAD_ART"/k6/*/generator.tsv >> "$LOAD_ART/k6/generator.tsv"
 }
 
 load_judge() {
@@ -462,12 +536,12 @@ load_judge() {
 $(tail -1 "$LOAD_ART/k6/generator.tsv")
 EOF
     [ "$dropped" = 0 ] || fail "the generator dropped $dropped iterations: it could not hold the arrival rate, so this run under-reports latency and is invalid"
-    cpu=$(awk -F'\t' -v c="$CLUSTER-load-k6" '$2 == c {v = $3; sub(/%/, "", v); if (v + 0 > m) m = v + 0} END {print m + 0}' "$LOAD_ART/containers.tsv")
-    [ "$(awk -v c="$cpu" 'BEGIN {print (c < 180) ? "ok" : "saturated"}')" = ok ] \
-        || fail "the generator saturated: its CPU reached $cpu% of a 200% limit, so the run is invalid"
+    cpu=$(awk -F'\t' -v c="$CLUSTER-load-k6-" 'index($2, c) == 1 {v = $3; sub(/%/, "", v); if (v + 0 > m) m = v + 0} END {print m + 0}' "$LOAD_ART/containers.tsv")
+    [ "$(awk -v c="$cpu" 'BEGIN {print (c < 90) ? "ok" : "saturated"}')" = ok ] \
+        || fail "the generator saturated: an instance's CPU reached $cpu% of its one-core limit, so the run is invalid"
     bad=$(awk -F'\t' -v secs="$secs" 'NR > 1 { want = $2 * secs; if ($3 < want * 0.98 || $3 > want * 1.02 + 1) printf "%s %d of %.0f; ", $1, $3, want }' "$report")
     [ -z "$bad" ] || fail "arrivals off the profile's rates: $bad: see load/k6/report.tsv"
-    pass "the generator held its open model: no iteration dropped, every operation's arrivals within 2% of its rate, its CPU at most $cpu% of 200%"
+    pass "the generator held its open model: no iteration dropped, every operation's arrivals within 2% of its rate, each instance's CPU at most $cpu% of its one core"
     # Money: every movement resolved by its key, every retried key answered alike, and nothing refused.
     for op in $(load_operations k6); do
         line=$(awk -F'\t' -v op="$op" '$1 == op' "$report")

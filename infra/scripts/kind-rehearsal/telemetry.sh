@@ -13,6 +13,10 @@
 #                       and every rehearsal customer's party - over every record Loki holds of the run, the latest and the flow's traces
 #                       and every replica's console; the planted record and a correlation a replica printed found in Loki as controls
 #   telemetry_scrape    the deployed Prometheus: job finapp, every replica up, env="kind" and never env="local"
+#   platform_signals_plant, platform_signals
+#                       the platform's own signals (P16-TSK-006, THREAT_MODEL.md section 6 item 47 (c)), run by the load scope: a migrator
+#                       Job planted to fail paging twice through the committed rules and routing, its lines in Loki scrubbed, and the edge's,
+#                       the migrator's and the stack's streams swept for every needle beside their controls
 
 TELEMETRY_PROXY=/api/v1/namespaces/finapp-observability/services
 
@@ -484,4 +488,173 @@ telemetry_scrape() {
     else
         fail "scrape: job finapp $targets targets for $replicas replicas, $ones up, env=kind on $up, env=local on $local_env (telemetry-scrape.json)"
     fi
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The platform's own signals on the full cluster (P16-TSK-006, its entry widened by THREAT_MODEL.md section 6 item 47 (c); OPERATIONS_RUNBOOK.md
+# sections 11.41 and 11.42). platform_signals_plant plants a failing migrator Job and sends the edge requests that carry needles;
+# platform_signals then reads the two Job pages firing and routed, the failed run's lines in Loki, and sweeps the edge's, the migrator's and
+# the telemetry stack's streams for every needle as telemetry_sweep sweeps the application's, each beside a count of what was read and a
+# planted control found scrubbed; then it puts the release's own Job back and reads both pages clear. The load scope runs the plant before
+# its load and the reading after its census, so MigratorJobOverdue's seventeen minutes pass under the load rather than after it.
+# ---------------------------------------------------------------------------------------------------
+SIGNALS_PROM=finapp-prometheus:9090
+SIGNALS_AM=finapp-alertmanager:9093
+# The needles no platform stream may carry: a card number in the two shapes the scrub reads, the planted run's own, and an amount.
+SIGNALS_PAN=5555555555554444
+SIGNALS_PAN_SPACED="5555 5555 5555 4444"
+SIGNALS_MIGRATOR_PAN=4111111111111111
+SIGNALS_AMOUNT=6234.18
+
+signals_value() {
+    telemetry_get "$SIGNALS_PROM" "/api/v1/query?query=$(urlencode "$1")" 2>/dev/null | sed -n 's/.*"value":\[[^,]*,"\([^"]*\)"\].*/\1/p' | head -1
+}
+
+# signals_state <alertname>: firing, pending or none, as the cluster's Prometheus evaluates the committed rule.
+signals_state() {
+    [ -n "$(signals_value "max(ALERTS{alertname=\"$1\",alertstate=\"firing\"})")" ] && { echo firing; return; }
+    [ -n "$(signals_value "max(ALERTS{alertname=\"$1\",alertstate=\"pending\"})")" ] && { echo pending; return; }
+    echo none
+}
+
+# signals_await <alertname> <firing|none> <deadline epoch>: 0 once the alert is in that state, 1 at the deadline; each change kept.
+signals_await() {
+    last=""
+    while :; do
+        state=$(signals_state "$1")
+        if [ "$state" != "$last" ]; then
+            printf '%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$1" "$state" >> "$ART/signals-alerts.tsv"
+            last=$state
+        fi
+        if [ "$state" = "$2" ]; then
+            return 0
+        fi
+        [ "$(date +%s)" -lt "$3" ] || return 1
+        sleep 15
+    done
+}
+
+# signals_routed <alertname>: Alertmanager holds the alert on the receiver a page routes to.
+signals_routed() {
+    deadline=$(( $(date +%s) + 120 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        telemetry_get "$SIGNALS_AM" "/api/v2/alerts?filter=$(urlencode "alertname=\"$1\"")" > "$ART/signals-am-$1.json" 2>/dev/null || true
+        grep -q '"name":"placeholder-page"' "$ART/signals-am-$1.json" && return 0
+        sleep 10
+    done
+    return 1
+}
+
+# signals_loki <file> <LogQL>: the records Loki holds for the query over the last two hours, kept in the file, and their count; "refused"
+# when Loki did not answer it, which no caller may read as none found.
+signals_loki() {
+    now=$(date +%s)
+    telemetry_get finapp-loki:3100 "/loki/api/v1/query_range?query=$(urlencode "$2")&start=$((now - 7200))000000000&end=$((now + 60))000000000&limit=1000" \
+        > "$1" 2>&1 || true
+    if grep -q '"status":"success"' "$1"; then
+        tr ',' '\n' < "$1" | grep -c '"[0-9]\{19\}"' || true
+    else
+        echo refused
+    fi
+}
+
+# signals_count <selector>: every record a stream holds over the last two hours, the sweep's control; empty when Loki did not answer.
+signals_count() {
+    now=$(date +%s)
+    telemetry_get finapp-loki:3100 "/loki/api/v1/query?query=$(urlencode "sum(count_over_time($1[2h]))")&time=$((now + 1))000000000" 2>/dev/null \
+        | sed -n 's/.*"value":\[[0-9.]*,"\([0-9]*\)"\].*/\1/p' | head -1
+}
+
+platform_signals_plant() {
+    SIGNALS_FROM=$(date +%s)
+    : > "$ART/signals-alerts.tsv"
+    # The migrator Job planted to fail: the release's own Job as rendered, its image the pinned Prometheus image's shell printing migrator-shaped
+    # lines - a card number and an amount among them, for the sweep - and exiting 10, which the Job's podFailurePolicy fails at once. Nothing
+    # else of the Job is changed. The release's own Job, completed, is removed first: the next one takes its name.
+    planted_image="docker.io/$PROMETHEUS_REPOSITORY@$PROMETHEUS_DIGEST"
+    current=$(sed -n 's/^ *image: \(finapp-migrator@sha256:[0-9a-f]*\)$/\1/p' "$A/Job.finapp-migrator.yaml" | head -1)
+    [ -n "$current" ] || cannot "the rendered migrator Job names no migrator image to replace"
+    sed "s#^\( *\)image: $current\$#\1image: $planted_image\n\1command: [\"/bin/sh\", \"-c\", \"echo finapp-migrator schema=platform applied=0 attempts=1; echo finapp-migrator schema=ledger attempts=1 failure=MIGRATION card $SIGNALS_MIGRATOR_PAN for $SIGNALS_AMOUNT EUR; echo finapp-migrator result=MIGRATION_FAILED schema=ledger; exit 10\"]#" \
+        "$A/Job.finapp-migrator.yaml" > "$WORK/job-planted.yaml"
+    [ "$(grep -c 'command: \["/bin/sh"' "$WORK/job-planted.yaml")" = 1 ] || cannot "the planted Job's command could not be written"
+    cp "$WORK/job-planted.yaml" "$ART/signals-job-planted.yaml"
+    kube -n finapp delete job finapp-migrator --wait=true --timeout=180s >> "$ART/apply.log" 2>&1 || cannot "the release's migrator Job could not be removed"
+    apply_files "$WORK/job-planted.yaml"
+    log "signals: a migrator Job planted to fail with exit 10, its lines carrying a card number and an amount"
+    # The edge's needles, through the real public edge: a routed path carrying a card number (the access line keeps a routed path, which the
+    # scrub must cut) and an unrouted one (whose path the scrub drops), each with a query and a header carrying them too (dropped at the proxy).
+    : > "$ART/signals-edge-requests.txt"
+    for path in "/v1/me/accounts/$SIGNALS_PAN/balance" "/v1/nowhere/$SIGNALS_PAN"; do
+        dock run --rm --network kind --add-host "public.finapp.test:$NODE_IP" -v "$(dpath "$CLIENT"):/work:ro" "$CURL_IMAGE" \
+            -s -o /dev/null -w '%{http_code}\n' --max-time 20 --cacert /work/edge-ca.crt -H "X-Card: $SIGNALS_PAN_SPACED" \
+            "https://public.finapp.test:30443$path?amount=$SIGNALS_AMOUNT%20EUR" >> "$ART/signals-edge-requests.txt" 2>&1 || true
+    done
+    [ "$(grep -c '^[0-9][0-9][0-9]$' "$ART/signals-edge-requests.txt")" = 2 ] || cannot "the edge's needle requests were not answered: see signals-edge-requests.txt"
+    log "signals: two requests carrying a card number and an amount sent through the public edge, answered $(tr '\n' ' ' < "$ART/signals-edge-requests.txt")"
+}
+
+platform_signals() {
+    # The two pages, as the committed rules decide them over the cluster watcher's series, and routed as the committed routing says.
+    signals_await MigratorJobFailed firing $((SIGNALS_FROM + 900)) || fail "signals: MigratorJobFailed did not fire within 15 min of the planted failure: see signals-alerts.tsv"
+    signals_routed MigratorJobFailed || fail "signals: MigratorJobFailed fired and Alertmanager did not route it to placeholder-page"
+    pass "signals: MigratorJobFailed fired on the planted failure and reached placeholder-page"
+    signals_await MigratorJobOverdue firing $((SIGNALS_FROM + 1800)) || fail "signals: MigratorJobOverdue did not fire within 30 min of the plant: see signals-alerts.tsv"
+    signals_routed MigratorJobOverdue || fail "signals: MigratorJobOverdue fired and Alertmanager did not route it to placeholder-page"
+    pass "signals: MigratorJobOverdue fired once no migrator Job had succeeded for its deadline, and reached placeholder-page"
+    # The failed run's lines and the Job's events, in Loki under the migrator's stream, scrubbed.
+    migrator=$(signals_loki "$ART/signals-loki-migrator.json" '{service_name="finapp-migrator"}')
+    [ "$migrator" != refused ] || fail "signals: Loki refused the migrator stream's query: see signals-loki-migrator.json"
+    grep -q 'MIGRATION_FAILED' "$ART/signals-loki-migrator.json" || fail "signals: the planted run's lines are not in Loki under finapp-migrator: see signals-loki-migrator.json"
+    grep -q 'k8s_container_exit_code' "$ART/signals-loki-migrator.json" || fail "signals: the migrator's records carry no exit code: see signals-loki-migrator.json"
+    grep -qF '[scrubbed]' "$ART/signals-loki-migrator.json" || fail "signals: the planted run's card number and amount reached Loki without the scrub's mark"
+    pass "signals: the failed run's lines and the Job's events in Loki under finapp-migrator ($migrator records), the card number and the amount scrubbed"
+    # The stack's own streams carry only what goes wrong, so each is given a control: a record planted on the collector's platform receiver from
+    # a pod labelled as an edge controller (the receiver's one door besides the watcher), carrying a card number and an amount.
+    : > "$WORK/signals-markers.txt"
+    for stream in finapp-collector finapp-cluster-watch; do
+        marker="signals-control-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
+        printf '{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"%s"}}]},"scopeLogs":[{"scope":{"name":"%s"},"logRecords":[{"timeUnixNano":"%s000000000","severityNumber":13,"severityText":"WARN","body":{"stringValue":"%s planted by the sweep: card %s for %s EUR"}}]}]}]}\n' \
+            "$stream" "$stream" "$(date +%s)" "$marker" "$SIGNALS_PAN_SPACED" "$SIGNALS_AMOUNT" > "$WORK/signals-plant.json"
+        code=$(kube -n finapp-edge exec -i np-edge -c probe -- curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H 'Content-Type: application/json' \
+            --data-binary @- http://finapp-collector.finapp-observability.svc.cluster.local:4319/v1/logs < "$WORK/signals-plant.json" 2>/dev/null || true)
+        [ "$code" = 200 ] || cannot "the collector's platform receiver did not take the control for $stream: $code"
+        printf '%s %s\n' "$stream" "$marker" >> "$WORK/signals-markers.txt"
+    done
+    sleep 25
+    while read -r stream marker; do
+        found=$(signals_loki "$ART/signals-control-$stream.json" "{service_name=\"$stream\"} |= \"$marker\"")
+        [ "$found" != refused ] && [ "$found" -ge 1 ] || fail "signals: the control planted on $stream never reached Loki, so the sweep could not have seen it leak"
+        grep -qF '[scrubbed]' "$ART/signals-control-$stream.json" || fail "signals: the control planted on $stream reached Loki without the scrub's mark"
+    done < "$WORK/signals-markers.txt"
+    # The sweep, stream by stream, as telemetry_sweep reads the application's: every record of the last two hours searched for every needle, in
+    # its line and, for the edge, in the request path its records keep, beside the count of what was read.
+    psql_query -c "SELECT i.party_id FROM identity.identity i WHERE i.party_id IS NOT NULL" | tr -d ' ' | grep . > "$WORK/signals-needles.txt" || true
+    printf '%s\n%s\n%s\n%s\n' "$SIGNALS_PAN" "$SIGNALS_PAN_SPACED" "$SIGNALS_MIGRATOR_PAN" "$SIGNALS_AMOUNT" >> "$WORK/signals-needles.txt"
+    pattern=$(sed 's/\./[.]/g' "$WORK/signals-needles.txt" | paste -sd'|' -)
+    needles=$(grep -c . "$WORK/signals-needles.txt")
+    : > "$ART/signals-sweep.tsv"
+    for stream in finapp-edge finapp-migrator finapp-collector finapp-cluster-watch; do
+        read_count=$(signals_count "{service_name=\"$stream\"}")
+        in_lines=$(signals_loki "$ART/signals-sweep-$stream.json" "{service_name=\"$stream\"} |~ \"$pattern\"")
+        in_paths=0
+        if [ "$stream" = finapp-edge ]; then
+            in_paths=$(signals_loki "$ART/signals-sweep-$stream-paths.json" "{service_name=\"$stream\"} | RequestPath=~\".*($pattern).*\"")
+        fi
+        printf '%s\t%s\t%s\t%s\n' "$stream" "${read_count:-0}" "$in_lines" "$in_paths" >> "$ART/signals-sweep.tsv"
+        [ "$in_lines" != refused ] && [ "$in_paths" != refused ] || fail "signals: Loki refused the sweep of $stream: see signals-sweep-$stream*.json"
+        [ "${read_count:-0}" -gt 0 ] || fail "signals: the sweep read no record of $stream: a sweep over nothing proves nothing"
+        [ "$in_lines" = 0 ] && [ "$in_paths" = 0 ] || fail "signals: a needle in $stream: $in_lines lines and $in_paths request paths: see signals-sweep-$stream*.json"
+    done
+    # The edge's control: the routed request carrying the card number is in its stream with the path scrubbed, so the path search could have seen it.
+    scrubbed_paths=$(signals_loki "$ART/signals-edge-scrubbed.json" '{service_name="finapp-edge"} | RequestPath=~".*scrubbed.*"')
+    [ "$scrubbed_paths" != refused ] && [ "$scrubbed_paths" -ge 1 ] \
+        || fail "signals: the edge's planted request is not in Loki with its path scrubbed, so the path search could not have seen it"
+    pass "signals: none of $needles needles in the edge's, the migrator's, the collectors' or the watcher's streams ($(awk -F'\t' '{printf "%s %s records; ", $1, $2}' "$ART/signals-sweep.tsv")), each stack stream's planted control there scrubbed, the edge's planted request there with its path scrubbed"
+    # Put back: the planted Job removed and the release's own run again, which succeeds on a schema already current; both pages then clear.
+    kube -n finapp delete job finapp-migrator --wait=true --timeout=180s >> "$ART/apply.log" 2>&1 || cannot "the planted migrator Job could not be removed"
+    apply_files "$A/Job.finapp-migrator.yaml"
+    wait_job finapp finapp-migrator 900 signals-migrator
+    signals_await MigratorJobFailed none $(( $(date +%s) + 600 )) || fail "signals: MigratorJobFailed still $(signals_state MigratorJobFailed) 10 min after the release's Job succeeded"
+    signals_await MigratorJobOverdue none $(( $(date +%s) + 600 )) || fail "signals: MigratorJobOverdue still $(signals_state MigratorJobOverdue) 10 min after the release's Job succeeded"
+    pass "signals: the release's own migrator Job run again and succeeded, and both pages cleared"
 }
