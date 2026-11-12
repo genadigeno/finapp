@@ -3442,6 +3442,14 @@ administrator when `n` > 0). They sign in on the operator host; their customer s
 A second role ends nothing. The grant's review confirms the recovery channels and the factor the identity added as a customer
 (`PRIVILEGED_ACCESS_REVIEW.md` section 5, question 6).
 
+**A person whose last role is revoked signs in again, as a customer** (`P15-TSK-032`). `DELETE /v1/identities/{id}/roles/{role}`, an
+`ADMINISTRATOR` on a `MULTI_FACTOR` session with a reason in the body, takes one role; taking the identity's last one ends every session
+it holds, in the revocation's transaction (`identity.RoleAssigned` says `revoked=<ROLE>, lastRole=true, sessionsRevoked=<n>`, beside an
+`identity.SessionRevoked` naming the administrator when `n` > 0), on every replica at its next request. A role taken beside another ends
+nothing (`lastRole=false`). A retry answers `204` again and records nothing. `409 identity.LastRoleGranter` means the identity is the
+last active one holding `ADMINISTRATOR`: grant it to a second person first, then revoke; nothing was taken. An administrator cannot
+revoke their own role (`422`); another administrator does it.
+
 **A reporting pool that refuses its role** (`P15-TSK-043`; `PRIVILEGED_ACCESS_REVIEW.md` section 8). Report generation's pool asks the
 database, as each connection's first statement, whether its role can write, and a connection whose role can is a connection that failed:
 no report run generates, every replica keeps serving everything else. What on-call sees: the database's own log line, `ERROR:  finapp
