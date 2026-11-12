@@ -6,6 +6,7 @@ import com.finapp.platform.testing.RepositoryPaths;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -198,15 +199,64 @@ class AlertCatalogueTest {
         assertThat(checked).as("not vacuous").isEqualTo(42);
     }
 
+    /**
+     * Every alert of every rule file fires in a promtool case, and stays silent in another on series it reads, once its own
+     * wait has passed (`P15-REM-004` (d), 2026-11-12). Until then this was {@code everyNewAlertHasAPromtoolCase}: it held that
+     * some case <em>named</em> each alert of five files, so a case that never fired its alert passed, a silent case taken before
+     * the rule's {@code for} on a breaking series passed as "silent", and the seven domain rule files had no case at all.
+     *
+     * <p>What counts. A <strong>firing</strong> case expects at least one alert, in a test file that loads the alert's rule file:
+     * promtool, run by {@code alert-rules-check.sh}, then proves it fires as expected. A <strong>silent</strong> case expects
+     * none, is evaluated at or after the rule's {@code for}, and sits in a group whose input series feed at least one series the
+     * expression reads (recording rules followed to what they read) - so a not-yet case on a breaking series, a silence over
+     * no series at all, and a case in a file that never loads the rule each count for nothing. Whether a group's series are
+     * "healthy" beyond that is the case's own comment and its review: promtool proves only that the rule is silent there.
+     */
     @Test
-    @DisplayName("every alert this task wrote, and every rule the routed notes asked for, is named by a promtool case")
-    void everyNewAlertHasAPromtoolCase() throws IOException {
-        String cases = allTestFiles();
-        for (Alert alert : alerts()) {
-            if (STATED_FILES.contains(alert.file()) || Set.of("CreditScorecardMissing", "BnplSweepClaimFailing").contains(alert.name())) {
-                assertThat(cases).as("a promtool case for %s", alert.name()).contains("alertname: " + alert.name() + "\n");
-            }
-        }
+    @DisplayName("every alert of every rule file fires in a promtool case and stays silent in another, at or after its for, in a group feeding a"
+            + " series it reads: a case that only names it, a silence before its wait or over none of its series, and a case in a file that"
+            + " does not load its rules each count for nothing")
+    void everyAlertFiresInOneCaseAndStaysSilentOnItsSeriesInAnother() throws IOException {
+        List<Alert> alerts = alerts();
+        List<PromtoolCase> cases = promtoolCases();
+        assertThat(alerts).as("not vacuous: the alerts of every file").hasSizeGreaterThan(210);
+        assertThat(cases).as("not vacuous: the cases of every test file").hasSizeGreaterThan(450);
+        assertThat(promtoolCaseViolations(alerts, recordedSeries(), cases)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the promtool-case rule refuses each planted gap, and passes a pair that holds, a recording rule followed to the series it reads")
+    void thePromtoolCaseRuleRefusesItsPlants() {
+        Alert alert = new Alert("x.yml", "x", "XBroken", Map.of("expr", "max(finapp_x{kind=\"a\"}) > 0", "for", "5m"), Map.of());
+        Set<String> loads = Set.of("x.yml");
+        PromtoolCase fires = new PromtoolCase("x.test.yml", loads, "XBroken", true, Duration.ofMinutes(10), Set.of("finapp_x"));
+        PromtoolCase silent = new PromtoolCase("x.test.yml", loads, "XBroken", false, Duration.ofMinutes(10), Set.of("finapp_x"));
+        Map<String, Set<String>> none = Map.of();
+
+        assertThat(promtoolCaseViolations(List.of(alert), none, List.of(fires, silent))).as("a pair that holds").isEmpty();
+        assertThat(promtoolCaseViolations(List.of(alert), none, List.of(silent)))
+                .as("a case that names the alert and never fires it").anySatisfy(problem -> assertThat(problem).contains("never fires"));
+        assertThat(promtoolCaseViolations(List.of(alert), none,
+                List.of(fires, new PromtoolCase("x.test.yml", loads, "XBroken", false, Duration.ofMinutes(4), Set.of("finapp_x")))))
+                .as("a silence taken before the rule's for, which a breaking series also shows").isNotEmpty();
+        assertThat(promtoolCaseViolations(List.of(alert), none,
+                List.of(fires, new PromtoolCase("x.test.yml", loads, "XBroken", false, Duration.ofMinutes(10), Set.of("finapp_y")))))
+                .as("a silence over none of the series the rule reads").isNotEmpty();
+        assertThat(promtoolCaseViolations(List.of(alert), none, List.of(
+                new PromtoolCase("y.test.yml", Set.of("y.yml"), "XBroken", true, Duration.ofMinutes(10), Set.of("finapp_x")), silent)))
+                .as("a firing case in a file that does not load the rule").anySatisfy(problem -> assertThat(problem).contains("never fires"));
+        assertThat(promtoolCaseViolations(List.of(new Alert("x.yml", "x", "XEmpty", Map.of("expr", "vector(1)", "for", "0s"), Map.of())),
+                none, List.of())).as("a rule whose expression reads no series").anySatisfy(problem -> assertThat(problem).contains("no series"));
+
+        Alert recorded = new Alert("x.yml", "x", "XRecorded", Map.of("expr", "finapp:x_ratio:rate5m > 0.1", "for", "1m"), Map.of());
+        assertThat(promtoolCaseViolations(List.of(recorded), Map.of("finapp:x_ratio:rate5m", Set.of("finapp_x_total")), List.of(
+                new PromtoolCase("x.test.yml", loads, "XRecorded", true, Duration.ofMinutes(10), Set.of("finapp_x_total")),
+                new PromtoolCase("x.test.yml", loads, "XRecorded", false, Duration.ofMinutes(10), Set.of("finapp_x_total")))))
+                .as("a recording rule is followed to the raw series a test file feeds").isEmpty();
+        assertThat(seriesRead("label_replace(max by (job, instance) (finapp_a != finapp_a), \"gauge\", \"finapp_b\", \"\", \"\")"
+                + " or sum(increase(finapp_c{outcome=\"x\"}[1h] offset 10m)) / clamp_min(absent(finapp_d), 1)"))
+                .as("the series an expression reads: not a label, a string, a function, a window or an offset")
+                .containsExactlyInAnyOrder("finapp_a", "finapp_c", "finapp_d");
     }
 
     @Test
@@ -436,14 +486,142 @@ class AlertCatalogueTest {
         return recorded;
     }
 
-    private static String allTestFiles() throws IOException {
-        StringBuilder all = new StringBuilder();
-        try (Stream<Path> files = Files.list(testsDirectory())) {
-            for (Path file : files.sorted().toList()) {
-                all.append(Files.readString(file).replace("\r\n", "\n")).append('\n');
+    // ------------------------------------------------------------------------------------ the promtool cases
+
+    /** One {@code alert_rule_test} entry: its file, the rule files that file loads, the alert, whether it expects one, when, and what its group feeds. */
+    record PromtoolCase(String file, Set<String> loads, String alert, boolean fires, Duration at, Set<String> fed) {}
+
+    private static final Pattern STRING_LITERAL = Pattern.compile("\"(?:[^\"\\\\]|\\\\.)*\"");
+    private static final Pattern LABEL_MATCHERS = Pattern.compile("\\{[^}]*}");
+    private static final Pattern RANGE = Pattern.compile("\\[[^\\]]*]");
+    private static final Pattern GROUPING = Pattern.compile("\\b(?:by|without|on|ignoring|group_left|group_right)\\s*\\([^)]*\\)");
+
+    /** An identifier that is whole (no longer one around it) and not called: a series or a recorded rule's name, once the above are gone. */
+    private static final Pattern SERIES_NAME = Pattern.compile("(?<![A-Za-z0-9_:.])([a-zA-Z_:][a-zA-Z0-9_:]*)(?![a-zA-Z0-9_:])(?!\\s*\\()");
+    private static final Set<String> PROMQL_WORDS = Set.of("and", "or", "unless", "bool", "offset", "by", "without", "on", "ignoring",
+            "group_left", "group_right", "inf", "nan", "Inf", "NaN");
+    private static final Pattern INPUT_SERIES = Pattern.compile("^\\s*([a-zA-Z_:][a-zA-Z0-9_:]*)");
+    private static final Pattern DURATION_PART = Pattern.compile("(\\d+)(ms|s|m|h|d|w|y)");
+
+    /** The series an expression reads: string literals, label matchers, windows and grouping clauses removed, then every name not called. */
+    static Set<String> seriesRead(String expr) {
+        String text = STRING_LITERAL.matcher(expr).replaceAll("\"\"");
+        text = LABEL_MATCHERS.matcher(text).replaceAll(" ");
+        text = RANGE.matcher(text).replaceAll(" ");
+        text = GROUPING.matcher(text).replaceAll(" ");
+        Set<String> names = new TreeSet<>();
+        Matcher name = SERIES_NAME.matcher(text);
+        while (name.find()) {
+            if (!PROMQL_WORDS.contains(name.group(1))) {
+                names.add(name.group(1));
             }
         }
-        return all.toString();
+        return names;
+    }
+
+    static Duration duration(Object text) {
+        if (text == null) {
+            return Duration.ZERO;
+        }
+        Duration total = Duration.ZERO;
+        Matcher part = DURATION_PART.matcher(String.valueOf(text));
+        while (part.find()) {
+            long amount = Long.parseLong(part.group(1));
+            total = total.plus(switch (part.group(2)) {
+                case "ms" -> Duration.ofMillis(amount);
+                case "s" -> Duration.ofSeconds(amount);
+                case "m" -> Duration.ofMinutes(amount);
+                case "h" -> Duration.ofHours(amount);
+                case "d" -> Duration.ofDays(amount);
+                case "w" -> Duration.ofDays(7 * amount);
+                default -> Duration.ofDays(365 * amount);
+            });
+        }
+        return total;
+    }
+
+    /** The gaps: an alert never fired by a case of a file that loads it, or never shown silent past its wait on series it reads. */
+    static List<String> promtoolCaseViolations(List<Alert> alerts, Map<String, Set<String>> recorded, List<PromtoolCase> cases) {
+        List<String> problems = new ArrayList<>();
+        for (Alert alert : alerts) {
+            Set<String> read = followed(seriesRead(alert.expr()), recorded);
+            if (read.isEmpty()) {
+                problems.add(alert.name() + " (" + alert.file() + ") reads no series, so no silent case can be on its series");
+            }
+            Duration waits = duration(alert.rule().get("for"));
+            List<PromtoolCase> own = cases.stream()
+                    .filter(promtool -> promtool.alert().equals(alert.name()) && promtool.loads().contains(alert.file()))
+                    .toList();
+            if (own.stream().noneMatch(PromtoolCase::fires)) {
+                problems.add(alert.name() + " (" + alert.file() + ") never fires in a case of a file that loads it");
+            }
+            if (own.stream().noneMatch(promtool -> !promtool.fires() && promtool.at().compareTo(waits) >= 0
+                    && promtool.fed().stream().anyMatch(read::contains))) {
+                problems.add(alert.name() + " (" + alert.file() + ") is never shown silent at or after its for (" + waits
+                        + ") in a group feeding a series it reads " + read);
+            }
+        }
+        return problems;
+    }
+
+    private static Set<String> followed(Set<String> names, Map<String, Set<String>> recorded) {
+        Set<String> all = new TreeSet<>();
+        List<String> pending = new ArrayList<>(names);
+        while (!pending.isEmpty()) {
+            String name = pending.remove(pending.size() - 1);
+            if (all.add(name) && recorded.containsKey(name)) {
+                pending.addAll(recorded.get(name));
+            }
+        }
+        return all;
+    }
+
+    /** Every recording rule of every rule file, and the series its expression reads. */
+    private static Map<String, Set<String>> recordedSeries() throws IOException {
+        Map<String, Set<String>> recorded = new TreeMap<>();
+        try (Stream<Path> files = Files.list(rulesDirectory())) {
+            for (Path file : files.filter(path -> path.getFileName().toString().endsWith(".yml")).sorted().toList()) {
+                for (Object node : (List<?>) yamlAt(file).get("groups")) {
+                    for (Object rule : (List<?>) map(node).get("rules")) {
+                        Map<String, Object> entry = map(rule);
+                        if (entry.get("record") != null) {
+                            recorded.put(String.valueOf(entry.get("record")), seriesRead(String.valueOf(entry.get("expr"))));
+                        }
+                    }
+                }
+            }
+        }
+        return recorded;
+    }
+
+    private static List<PromtoolCase> promtoolCases() throws IOException {
+        List<PromtoolCase> cases = new ArrayList<>();
+        try (Stream<Path> files = Files.list(testsDirectory())) {
+            for (Path file : files.filter(path -> path.getFileName().toString().endsWith(".test.yml")).sorted().toList()) {
+                Map<String, Object> document = yamlAt(file);
+                Set<String> loads = new TreeSet<>();
+                for (Object ruleFile : (List<?>) document.get("rule_files")) {
+                    loads.add(Path.of(String.valueOf(ruleFile)).getFileName().toString());
+                }
+                for (Object node : (List<?>) document.get("tests")) {
+                    Map<String, Object> test = map(node);
+                    Set<String> fed = new TreeSet<>();
+                    for (Object series : test.get("input_series") == null ? List.of() : (List<?>) test.get("input_series")) {
+                        Matcher name = INPUT_SERIES.matcher(String.valueOf(map(series).get("series")));
+                        if (name.find()) {
+                            fed.add(name.group(1));
+                        }
+                    }
+                    for (Object entry : test.get("alert_rule_test") == null ? List.of() : (List<?>) test.get("alert_rule_test")) {
+                        Map<String, Object> promtool = map(entry);
+                        Object expected = promtool.get("exp_alerts");
+                        cases.add(new PromtoolCase(file.getFileName().toString(), loads, String.valueOf(promtool.get("alertname")),
+                                expected instanceof List<?> list && !list.isEmpty(), duration(promtool.get("eval_time")), fed));
+                    }
+                }
+            }
+        }
+        return cases;
     }
 
     private static String statedAggregation(String text, String alert) {

@@ -91,8 +91,11 @@ class NoSingleInstanceAssumptionRulesTest {
      * <p>Named individually rather than by package or by type. A type-wide exemption for
      * {@code ThreadLocal} would admit the next one without anyone deciding, and the register in
      * §3 is the thing that is supposed to force the decision.
+     *
+     * <p>Package-private since 2026-11-12: {@link DistributedExecutionRegisterTest} holds every class here, and every class of
+     * {@link #LEASE_PROTECTED_SCHEDULERS}, to a row of that register.
      */
-    private static final Set<String> PERMITTED_PROCESS_LOCAL_STATE =
+    static final Set<String> PERMITTED_PROCESS_LOCAL_STATE =
             Set.of(
                     "com.finapp.platform.correlation.CorrelationContext.CURRENT",
                     "com.finapp.platform.security.SecurityContext.CURRENT");
@@ -122,7 +125,7 @@ class NoSingleInstanceAssumptionRulesTest {
      * load-bearing below, and any future scheduled work that is NOT lease-protected does not get
      * to ride on it — the set names classes, never packages, so the next scheduler is a decision.
      */
-    private static final Set<String> LEASE_PROTECTED_SCHEDULERS =
+    static final Set<String> LEASE_PROTECTED_SCHEDULERS =
             Set.of(
                     "com.finapp.app.eventing.OutboxRelaySchedule",
                     // P5-TSK-014: the rule's OTHER half made real - no lease, no leader, BY

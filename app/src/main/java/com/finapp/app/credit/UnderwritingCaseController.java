@@ -25,8 +25,10 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * The underwriter's doors (`P10-TSK-018`; ADR-0089 point 8, PHASE_10_PLAN.md section 9): the review queue and the acts on
  * a referral's case - every route behind {@code CREDIT_UNDERWRITE}, held by {@code UNDERWRITER} alone, and every act keyed
- * per principal ({@code credit.review:EMPLOYEE:<id>}), synchronous. The queue serves each case's basis - the normalised
- * attributes and the rules - never raw evidence, and every serving is audited.
+ * per principal ({@code credit.review:CUSTOMER:<id>}: a person is keyed {@code CUSTOMER} whichever surface they act on,
+ * {@code Actor.keyedType}, so a retry across a release names the same key), synchronous. The queue serves each case's basis -
+ * the normalised attributes and the rules - never raw evidence, and every serving is audited. *(Until 2026-11-12 this read
+ * {@code credit.review:EMPLOYEE:<id>}, the audit type, which the key never carries.)*
  */
 @RestController
 @RecordsRefusals

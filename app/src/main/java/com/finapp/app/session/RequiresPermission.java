@@ -26,12 +26,13 @@ import java.lang.annotation.Target;
  * would otherwise be reachable unauthenticated, which is the inversion of what its author asked for
  * - the same trap `@RequiresAssurance` closes.
  *
- * <h2>No production endpoint declares one yet</h2>
+ * <h2>Where it is declared</h2>
  *
- * <p>`PHASE_1_PLAN.md` §7 marks two endpoints `session, admin role` -
- * `POST /v1/identities/{id}/suspension` and `POST /v1/identities/{id}/roles` - and **no backlog task
- * owns either**. Recorded rather than absorbed. Inventing a privileged endpoint to give this
- * annotation something to do would be a security control chosen to suit a test.
+ * <p>On the handlers of the operator surface and every other privileged door, from `PHASE_1_PLAN.md`
+ * §7's two administration endpoints - `POST /v1/identities/{id}/suspension` and
+ * `POST /v1/identities/{id}/roles`, built by `P1-TSK-028` - onwards. *(Until 2026-11-12 this said
+ * that no production endpoint declared one yet and that no backlog task owned those two: true when it
+ * was written, stale since `P1-TSK-028`.)*
  */
 @Target({ElementType.METHOD, ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)
