@@ -2432,3 +2432,179 @@ accepted deviation B, not upgraded. **Universal criterion 7** `NOT MET` by the o
   balance before money movement resumes.
 - Any service extraction or partitioning decision is backed by measurement and an ADR.
 - Read replicas provably never serve authoritative financial reads.
+
+*(Dated note, the Phase 15 → 16 transition, 2026-11-12: the six criteria above are kept as written. "Cache loss" in the second
+names a component the platform does not have. No code uses Redis or any shared cache: `compose.yaml` runs one "local only",
+no client library exists, and sessions live in PostgreSQL (ADR-0030). So it is read as **the loss of the per-instance,
+non-authoritative caches with their pod** (experiment E03), and a shared cache is recorded `N/A` with that reason. Nothing
+else is changed; the measurable form below is added.)*
+
+**The six, made measurable** (written by the Phase 15 → 16 transition, 2026-11-12; task IDs are `PHASE_16_PLAN.md`'s, a bare
+`-nnn` meaning `P16-TSK-nnn`). Each is marked either **executable here** or **designed-only**:
+- **Executable here**: met only by its executed record, with date, commit, commands, numbers, artefacts and the financial census.
+- **Designed-only**: written and reviewed, its configuration tested where a mock provider allows, never claimed as executed. The
+  owner accepts each as designed-only or holds it open (`PHASE_16_PLAN.md` §2.2 C4).
+
+1. *Load test at target volume with financial invariants asserted during load.* **Executable here**:
+   - the sustained profile at the proposed production target's peak (`PHASE_16_PLAN.md` §4.3); if the reference machine's `kind`
+     cannot carry it, at the engineering test workload, with the ratio to the target recorded;
+   - the correctness signals and the census clauses sampled every 30 s during load, with **zero** failures at every sample;
+   - one effect per idempotency key, the same-key retries included;
+   - the full census after the load.
+
+   **Owners**: `-006`, `-007`, `-014`, `P16-TST-001`.
+2. *Chaos experiments (node loss, DB failover, broker outage, cache loss, network partition) each leave the ledger correct.*
+   **Executable here**, each under load, each with the census green after and every register field filled:
+   - E04: a `kind` worker stopped;
+   - E05: the local synchronous standby promoted;
+   - E08 and E09: one broker of three lost, then all brokers;
+   - E03: pods lost, and their per-instance caches with them;
+   - E14 and E15: partitions.
+
+   **Designed-only**: a managed failover, an availability zone's loss, a managed broker's failover. **Owners**: `-019`…`-022`,
+   `-013`.
+3. *Measured RPO and RTO meet documented targets.* ADR-0128's tiers are the documented targets. **Executable here**:
+   - tier 1: the application-side interruption measured in E05 against 15 minutes, with zero acknowledged commits lost;
+   - tier 2: the local point-in-time restore recovering to within its target of the planted bad write, its duration recorded
+     with the restore rate per GiB;
+   - tier 3: the cluster rebuilt from the repository and a backup, timed.
+
+   **Designed-only**: the managed services' own failover and restore times, and tier 4 (a region). **Owners**: `-022`, `-024`,
+   `-025`.
+4. *Post-DR verification executed: full reconciliation and trial balance before money movement resumes.* **Executable here**,
+   after the local restore and after the DR exercise:
+   - the roles stay locked until `RestoreVerification` passes over a source holding every product, a loan and a BNPL obligation
+     among them (`THREAT_MODEL.md` §6 item 44 (a));
+   - the verification covers the trial balance zero per currency, GL = ledger per locked period, the projection check, every
+     product proof `HOLDS` over at least one subject each, and the source census;
+   - the settlement files after the restore point are then re-ingested and reconciliation re-run, with money still held;
+   - money moves only after a recorded release;
+   - a planted corruption fails the verification.
+
+   **Owners**: `-024`, `-025`.
+5. *Any service extraction or partitioning decision is backed by measurement and an ADR.* Every such decision taken in the
+   phase cites its measurement run and its ADR. A decision not to extract or partition is recorded the same way. **Owners**:
+   `-008`, `-012`, `-030`.
+6. *Read replicas provably never serve authoritative financial reads.* One of two holds (ADR-0129):
+   - no replica is routed, and a guard holds that one primary data source serves every money-moving door; or
+   - a replica serves the reporting pool alone, and a guard holds that no money-moving door reaches that pool.
+
+   **Owners**: `-012`.
+
+**Per area** (the owner's Phase 16 brief, Part 28 — each measurable):
+- **Performance and capacity** — **Executable here.** `CAPACITY_MODEL.md` is filled:
+  - for each operation of `PHASE_16_PLAN.md` §4.3, the measured throughput, p50/p95/p99, error rate and resource cost at the
+    engineering test workload, its workload and machine named;
+  - the first limit of the stress profile named, with its evidence;
+  - the proposed production target's assumptions W1–W8 ratified or changed by the owner (C8).
+
+  **Owners**: `-001`, `-007`.
+- **Sustained and peak load** — **Executable here.**
+  - The sustained profile runs for 2 h and the soak for 8 h, with no growth in heap after GC, no pool exhaustion, outbox and
+    consumer lag within their SLOs, and the retention sweeps keeping pace.
+  - In the peak, burst and spike profiles, every refused request is refused before any financial effect.
+
+  **Owners**: `-007`, `-016`, `P16-TST-001`.
+- **Concurrent financial operations** — **Executable here.**
+  - The concurrent-financial profile runs over each hot row of `PHASE_16_PLAN.md` §6.4, with lock waits per row recorded, every
+    deadlock explained by a known path that converges, and zero duplicate effects.
+  - Scenarios 7 and 8 run at ten replicas.
+
+  **Owners**: `-008`, `-027`.
+- **Database scalability** — **Executable here.**
+  - The connection budget at ten is decided and held by `ConnectionPoolSizingGuard`; the peak `pg_stat_activity` at ten stays
+    within `instances × pool`.
+  - The top statements' plans are read; autovacuum, WAL and checkpoints are recorded over the soak.
+  - Item 18's archival and sweeps are built, with their database cases written.
+  - The posting scope is unique before any idempotency record is swept.
+
+  **Owners**: `-008`…`-012`.
+- **Kafka throughput and recovery** — **Executable here**, on the test-only three-broker cluster:
+  - lag per group at peak, and drained after a burst within the `consumption` SLO;
+  - scale 3 → 10 → 3 during load, with one effect per record;
+  - one broker lost without an error;
+  - all brokers lost for 10 minutes, and every outbox row published once after;
+  - a day's replay inside the dedupe window, with zero second effects.
+
+  **Designed-only**: a managed broker's failover. **Owners**: `-013`.
+- **Resilience** — **Executable here.**
+  - Every outbound call's timeouts and every retry are in one inventory. Each retry is classified safe by an arbiter, a read or
+    the provider's protocol, and none retries an ambiguous financial call.
+  - Load shedding refuses before the idempotency claim, proven by a planted shed whose retry is a first attempt.
+  - Sweeps survive a poisoned row, and the failed tick is paged (item 42 (i)).
+
+  **Owners**: `-016`, `-017`, `-018`.
+- **Failure injection** — **Executable here.**
+  - Every experiment of `PHASE_16_PLAN.md` §9.2 is run, or recorded `N/A` with its reason.
+  - Its register row is complete: hypothesis, affected units, expected behaviour, safety, success criteria, stop, result,
+    remediation.
+  - Each failed result is remediated or owned by a live task.
+  - The harness's refusal of a foreign context is proven by a plant.
+
+  **Owners**: `-019`…`-021`, `-001`.
+- **High availability** — **Executable here** for the platform's half.
+  - The single points of failure are registered, with an answer each.
+  - The financial-operation availability matrix is written and checked by the experiments.
+  - The availability SLOs are met at the sustained profile on `kind`, or recalibrated with a reason.
+
+  **Designed-only**: a zone's loss. **Owners**: `-023`, `-029`.
+- **Backup and restoration** —
+  - the logical restore and a point-in-time restore from archived WAL, each executed and verified (criterion 4);
+  - a restore with a missing key version refusing the evidence;
+  - the Kafka recovery step of `OPERATIONS_RUNBOOK.md` §11.35 run.
+
+  **Designed-only**: managed restores. **Owners**: `-024`.
+- **RTO/RPO validation** — criterion 3. **Owners**: `-022`, `-024`, `-025`.
+- **Disaster recovery** —
+  - the DR plan written;
+  - the `kind` cluster and its data destroyed, and the platform rebuilt from the repository, a backup and regenerated secrets,
+    timed, ending in criterion 4's gate;
+  - registry unavailability for a starting replica answered (T42).
+
+  **Designed-only**: the cloud half. **Owners**: `-025`.
+- **Multi-region assessment** — **Designed-only** by nature, its configuration checks **executable here**.
+  - Every service, store and workflow is assigned a model, with its reason (ADR-0129).
+  - No active-active write path exists.
+  - The recovery-region Terraform variant passes `terraform test` with mock providers and is never applied.
+
+  **Owners**: `-026`.
+- **Financial correctness under failure** — **Executable here.** The fifteen scenarios of `PHASE_16_PLAN.md` §13 are each executed
+  end to end on `kind`, with the seven checks counted and recorded. No scenario is passed by citing a test alone. **Owners**:
+  `-027`.
+- **Security** — **Executable here.**
+  - No route answers a protected request without its check under any experiment (a negative probe per experiment).
+  - Sessions survive replacement and failover.
+  - The abuse limits are exact at ten.
+  - A four-eyes act is refused for the same person during a failover.
+  - Backups and the WAL archive are never in plaintext on disk.
+  - Audit rows are equal across recovery.
+
+  **Designed-only**: a WAF and DDoS protection. **Owners**: `-028`, `-015`.
+- **Observability** — **Executable here.**
+  - Item 43 (b)'s scrape, shipping, alerts, promtool cases and runbook sections.
+  - Saturation signals in every load run's artefacts.
+  - Every SLO's burn rule seen to fire on a real burn in an experiment, and to stay silent at peak.
+  - Item 42 (a)'s break-age counts.
+
+  **Owners**: `-003`, `-006`, `-029`.
+- **Operational readiness** —
+  - `-031`'s distributed-system audit at ten, with every answer cited and every violation remediated or owned;
+  - every new procedure a runbook section, rehearsed in the experiment that exercises it;
+  - `PRODUCTION_READINESS.md`'s cells that named Phase 16 re-read with the evidence;
+  - no unit called ready on a configuration file alone.
+
+  **Owners**: `-031`, `-023`.
+- **Documentation** —
+  - ADR-0126…0129 read against what was built, and accepted or corrected by `P16-DOC-001`;
+  - C1–C12 decided;
+  - every designed-only criterion listed by name at the exit;
+  - no document claiming production readiness, compliance, certification or attestation.
+
+  **Owners**: every task, `P16-DOC-001`.
+- **The exit pass** — `P16-TST-002` on the final tree:
+  - the quick forms of the mandatory experiments re-run once and green: the demonstration load with invariants during load,
+    E01, E05, E09, the restore with its verification, scenarios 1 and 14;
+  - the guard classes run by name;
+  - the database and Kafka fleet tiers run as C2 and C11 decide.
+
+  **Owners**: `P16-TST-002`.

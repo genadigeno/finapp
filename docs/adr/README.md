@@ -33,6 +33,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
   the same way; ADR-0116 stands superseded in part by ADR-0119, its header naming the part. ADR-0120…0125 were written
   `Proposed` at the Phase 14 → 15 transition (2026-11-07), and all six were accepted by the Phase 15 review (`P15-DOC-001`,
   2026-11-12) in the same way, each read against the code with its corrected passages marked in place.
+  ADR-0126…0129 were written `Proposed` at the Phase 15 → 16 transition (2026-11-12).
   *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
   transition added it with the Phase 8 decisions.)*
 - A decision found in code but absent from this record is architectural debt.
@@ -166,6 +167,10 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0123](ADR-0123-secrets-and-key-management.md) | Secrets and key management: a managed store and KMS per environment, delivered as the environment, field-level keys as versioned key rings | Accepted | 15 | Platform · Security · every cipher-holding module |
 | [0124](ADR-0124-observability-slos-and-error-budgets.md) | Observability, SLOs and error budgets: one telemetry egress, burn-rate alerts, correctness invariants never budgeted | Accepted | 15 | Platform · every module (signals, runbooks) · Security |
 | [0125](ADR-0125-configuration-and-environment-management.md) | Configuration and environment management: environments differ by values, never by code path; every property registered and classed | Accepted | 15 | Platform · every module (properties) · Security |
+| [0126](ADR-0126-the-workload-model-and-load-testing.md) | The workload model and load testing: three named workloads, k6 outside the build, invariants read during load | Proposed | 16 | Platform · every module (operated under load) |
+| [0127](ADR-0127-the-failure-injection-method.md) | The failure-injection method: scripted experiments on `kind`, registered with their stop conditions, never against anything the run did not create | Proposed | 16 | Platform · every module (operated under failure) |
+| [0128](ADR-0128-recovery-objectives-and-the-post-recovery-gate.md) | Recovery objectives and the post-recovery financial gate: RTO and RPO by tier, no money moves until the books are proven | Proposed | 16 | Platform · Ledger · Reconciliation |
+| [0129](ADR-0129-availability-and-the-multi-region-stance.md) | Availability and the multi-region stance: one writer, multi-AZ active-passive, no active-active writes | Proposed | 16 | Platform · Ledger · every module (availability) |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
@@ -241,3 +246,9 @@ free number is ADR-0120.)*
 model), ADR-0121 (infrastructure as code), ADR-0122 (CI/CD and the supply chain), ADR-0123 (secrets and key management),
 ADR-0124 (observability, SLOs and error budgets) and ADR-0125 (configuration and environment management), all
 `Proposed`, from `PHASE_15_PLAN.md`; the next free number is ADR-0126.)*
+
+*(The Phase 16 row stays: no service extraction or partitioning decision is taken at the transition, which leaves each to the
+task whose measurement justifies it (`PHASE_16_PLAN.md` §6.5, §24; `P16-TSK-012`, `P16-TSK-030`). The Phase 15 → 16 transition
+(2026-11-12) wrote ADR-0126 (the workload model and load testing), ADR-0127 (the failure-injection method), ADR-0128 (recovery
+objectives and the post-recovery gate) and ADR-0129 (availability and the multi-region stance), all `Proposed`, from
+`PHASE_16_PLAN.md`; the next free number is ADR-0130.)*
