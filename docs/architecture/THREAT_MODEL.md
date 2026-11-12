@@ -1717,8 +1717,8 @@ recommended; its parts (d) and (e) were built the same day.**
     `sha256-*` on the signature repositories, AWS-0031 accepted on them alone until 2027-06-30, as built; who may push there stays
     item 35 (d).
 
-42. **T3's, T12's, T14's, T15's, T18's, T23's and T33's residuals: what the runbooks' rehearsal leaves** *(added 2026-11-12 by the
-    runbooks' rehearsal)*. Ten things, each a decision; (d) and (e) built the same day.
+42. **T3's, T12's, T14's, T15's, T18's, T23's, T28's, T29's and T33's residuals: what the runbooks' rehearsal leaves** *(added 2026-11-12 by the
+    runbooks' rehearsal)*. Eleven things, each a decision; (d), (e), (j) (i) and (k) built the same day.
 
     **(a) The age alerts read the oldest alone** (T23). `BreakAgeHigh` pages on `max by (severity)
     (finapp_reconciliation_break_age{severity="high"}) > 86400`, and `SuspenseItemAged` raises a ticket on
@@ -1947,6 +1947,21 @@ recommended; its parts (d) and (e) were built the same day.**
     did not prevent ends at (iii). **Decided 2026-11-12** under the owner's standing word ("accept all recommendations", waves G and H):
     as recommended. **Built 2026-11-12**: (i), the build refusing a tightening migration that is neither `NOT VALID` nor marked with the
     data fix preceding it. (ii) is deferred to the first real environment.
+
+    **(k) No person's role reaches the telemetry pipeline's namespace** (T28, T29). The human roles of `deploy/base/rbac-humans.yaml`,
+    read-only and break-glass, are bound in `finapp` alone, so runbook §11.34's steps in `finapp-observability` (a collector's log, a
+    back end's pods, a stuck pod evicted) were the cluster administrator's, an act no role bounds. The options:
+    - **(i) The same two roles there**: a read-only Role (get, list and watch on pods, their logs, deployments and events) and an
+      evict-only break-glass Role, bound to the same two groups, the manifest policy's human-role rules applied to that namespace's
+      stream as to the application's.
+    - **(ii) Leave the steps to the cluster administrator**, each recorded as a break-glass act is (runbook §11.25).
+
+    *Recommendation*: **(i)**. A person reading a collector's log is an ordinary act, and an ordinary act that needs the administrator's
+    access is one nobody bounds. **Decided 2026-11-12** under the owner's standing word ("accept all recommendations", waves G and H):
+    as recommended. **Built 2026-11-12**: `deploy/observability/base/rbac-humans.yaml` (the two Roles and their bindings to the same
+    groups); `infra/scripts/manifest-policy/finapp.rego`'s `[rbac-human-namespace]` widened to that namespace; `observability.rego`
+    reusing the `[rbac-` rules, with `[obs-break-glass-evictions]`; runbook §11.34's steps read as reads under the read-only role and
+    evictions under break-glass.
 
 ## 7. Decided against
 
