@@ -3277,7 +3277,8 @@ first sync failed for want of the project, and with no retry it stayed failed un
 
 A wave waits for the one before because the controller's configuration judges an Application healthy only when synced and healthy, and an
 admission policy only when the policy controller has observed it and says `Ready` (its check reads the pinned controller's v1beta1 status
-shape; that a v1beta1 policy carries it is `-032`'s to see). **These waves order the root's own sync** (the first install, or a change to
+shape, which each v1beta1 policy carried on `kind`, and the check judged each `Healthy`, and the same policy one generation unobserved
+`Progressing`). **These waves order the root's own sync** (the first install, or a change to
 the root's files). Once the four exist, each syncs its own path, and a change merged to two of them reaches both in no defined order.
 **So a change touches one Application's paths, and two are two pull requests, merged in wave order**: `deploy/admission` before
 `deploy/namespaces` before the release (`deploy/base`, `deploy/components`, an overlay) before the edge (`deploy/edge`). This is a rule of
@@ -3370,7 +3371,7 @@ environment's. **The one-time role bootstrap** (§11.1b) is not part of a
 release and not a hook: when a release adds a role, the pipeline role runs it before the promotion, as a Job in `finapp` with the signed
 migrator image alone. The `kind` rehearsal's bootstrap Job also carries a `wait-for-postgres` init container from the curl image, because its
 PostgreSQL starts in the same run; that image is not admitted in `finapp` (no policy names it), and a real environment's database is
-already up, so the real Job carries no init container; that it is admitted and runs is `-032`'s to show on `kind`. *(`P15-TSK-032`: without
+already up, so the real Job carries no init container; on `kind` it was admitted and ran, the signed migrator alone. *(`P15-TSK-032`: without
 it, on `kind` under kube-router, the bootstrap failed four pods in eighty seconds, each new pod's first connection refused before the network
 policy had reached its address, the same asynchronous policy Calico and Cilium apply. The wait now lives in the program, for the bootstrap and
 the migrator alike: the first connection tried ten times, ten seconds apart, a refused or unanswered connection alone (DATA_MIGRATIONS.md
@@ -3467,8 +3468,30 @@ does not name: stop and find out why before anything else.
 role's, and need an account; so does the signature repository's push policy (the signing role alone, §6 item 35 (d)): whoever can push there
 can delete or replace a signature, which forges nothing but refuses every pod of that digest, running or kept for rollback. The registry's
 untagged-expiry rule waits for that copy. Staging's own money-moving smoke against its simulated providers, with the census, is the `kind`
-rehearsal's today. Argo CD's behaviour, the health checks and the restricted `default` project are read, not seen: `P15-TSK-032`'s rehearsal
-records them.
+rehearsal's today. Argo CD's behaviour, the health checks and the restricted `default` project were read here first; what `P15-TSK-032`'s
+rehearsal saw of them is the record below, and what it has not yet seen is named there.
+
+**The last record** (`P15-TSK-032`, `kind`, Kubernetes v1.34.11, kube-router as the policy engine, Argo CD v3.6.1, 2026-11-12). **The run of
+14:11–14:43Z** (branch commit `f616b5f8`): the controllers from the render, the metrics API `Available` before the root; the `default` project
+refused an Application placed in it; `promote.sh` refused a tag and an unsigned digest, then wrote the pair; the release's first sync ended
+`Failed` at its `ExternalSecret`s while the application's store lacked one key, with no Job, no Deployment and no retry for 61 s; the role
+bootstrap ran in `finapp`, the signed migrator alone, no init container; the `ExternalSecret` turned `Ready` 54 s after the key reached the
+store, and the release's sync by hand took 39 s; the root's own sync stayed `Running` through the hold and was `Synced` and `Healthy` 403 s
+after it was applied; the waves in order (admission 14:25:27–29, namespaces 14:25:30, the release created 14:25:32 and finished 14:28:20, the
+edge created 14:31:39); each admission policy `Healthy` under the installed check and `Progressing` one generation unobserved; the hook
+awaited (14:27:48–14:28:17, the Deployment created 14:28:20); the client's money through the edge, `post-deploy-smoke.sh staging` passing on
+its first try under the read-only role with its record committed to the run's repository alone, the census green; self-heal put back a hand
+change in 1 s; a `rollout restart` as recorded above. It stopped red at the freshness step: the annotation's commit failed its sync 109 s
+after the push, the `ExternalSecret`'s read of its store refused, because the harness's own sync by hand, written as a raw `.operation`, had
+emptied the stores (above, "How"). **The run of 14:57Z** (`d6168c78`), its sync by hand carrying the Application's options and the stores
+counted after it: the same again up to the rollout restart (the hold 61 s, `Ready` 52 s after the key, the sync by hand 38 s with every
+store's entries intact, the root `Synced` and `Healthy` 399 s after it was applied, the waves in order, the smoke on its first try, the
+census green, self-heal in 3 s), then stopped at the owner's word. **Not yet seen on a controller**, owed to the nightly `delivery` row and
+`P15-TST-002`: the freshness order against the hook, the rollback by digest with the migrator kept, and a failed migrator hook with its way
+back. Earlier runs that day were development, each fixed before the next: one red at the role bootstrap (a first connection refused before
+the network policy reached the pod, now the migrator's own bounded retry), one that could not run (definitions waited on before they had
+conditions), and one red at reading the policies' health from `status.resources`, rescued by hand (metrics-server installed, the root
+synced) and not counted.
 
 ### 11.37 Staff refused where staff are refused - `OperatorPasswordProvenOnPublic`, `StaffRefusedUnmarked`; a first role's sign-in again; a reporting pool that refuses its role (`P15-TSK-043`)
 
