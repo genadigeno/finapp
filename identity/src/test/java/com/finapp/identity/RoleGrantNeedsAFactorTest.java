@@ -163,6 +163,11 @@ class RoleGrantNeedsAFactorTest {
                         grants.incrementAndGet();
                         return true;
                     }
+                    // P15-TSK-043: a grant reads whether this is the subject's first role. None held: a first role, whose
+                    // sessions end - the fake store below has none open. FirstRoleEndsSessionsTest holds that half.
+                    if (method.getName().equals("liveRolesOf")) {
+                        return Set.of();
+                    }
                     if (method.getName().equals("holdingsWithoutFactor")) {
                         assertThat((Set<RoleName>) args[1]).containsExactlyInAnyOrder(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR);
                         return java.util.Collections.nCopies(standing,
@@ -179,7 +184,12 @@ class RoleGrantNeedsAFactorTest {
                     factorReads.incrementAndGet();
                     return enrolled ? Optional.of(new Object()) : Optional.empty();
                 });
-        SessionRevocation revocation = new SpringObjenesis().newInstance(SessionRevocation.class);
+        SessionStore<Connection> sessionStore = (SessionStore<Connection>) Proxy.newProxyInstance(
+                SessionStore.class.getClassLoader(), new Class<?>[] {SessionStore.class}, (proxy, method, args) -> {
+                    assertThat(method.getName()).isEqualTo("revokeAllFor");
+                    return 0;
+                });
+        SessionRevocation revocation = new SessionRevocation(sessionStore, IDS, CLOCK, (uow, record) -> written.add(record));
         return new IdentityAdministration(IDS, CLOCK, identities,
                 new Authorization(assignments, IDS, CLOCK, (uow, record) -> written.add(record)), revocation,
                 (uow, record) -> written.add(record), (uow, envelope, payload, mediaType) -> { }, enrolments);

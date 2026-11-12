@@ -408,6 +408,51 @@ class IdentityAdministrationDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // A first role ends what the customer held (P15-TSK-043)
+
+    @Test
+    @DisplayName("P15-TSK-043: a first role ends every session the grantee held - the stepped-up one included - on the very"
+            + " next request, the grant's record saying so; a session issued after it serves")
+    void aFirstRoleEndsTheGranteesSessions() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        IdentityId subject = givenAnIdentity();
+        String asACustomer = givenASessionFor(subject);
+        String steppedUp = givenASessionAt(subject, AssuranceLevel.MULTI_FACTOR);
+        assertThat(get("/sessions", asACustomer).statusCode()).as("precondition: the customer's session serves").isEqualTo(200);
+        assertThat(get("/sessions", steppedUp).statusCode()).as("precondition: so does the stepped-up one").isEqualTo(200);
+
+        assertThat(post(rolesOf(subject), givenASessionFor(admin), reviewerRole()).statusCode()).isEqualTo(204);
+
+        // The SAME tokens, as the suspension's test reads them: a session issued before the grant is a customer's, and a
+        // MULTI_FACTOR one stepped up from the internet would otherwise reach every MULTI_FACTOR operator route.
+        assertThat(get("/sessions", asACustomer).statusCode()).as("the customer's session ended at the grant").isEqualTo(401);
+        assertThat(get("/sessions", steppedUp).statusCode()).as("the stepped-up session ended at the grant").isEqualTo(401);
+        assertThat(summariesOf("identity.RoleAssigned", subject, admin)).contains("firstRole=true, sessionsRevoked=2");
+        assertThat(summariesOf("identity.SessionRevoked", subject, admin)).as("the administrator decided it").contains("sessionsRevoked=2");
+        assertThat(get("/sessions", givenASessionFor(subject)).statusCode()).as("staff sign in again, and that session serves")
+                .isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("P15-TSK-043: a second role ends nothing - its holder's sessions were issued at doors that knew it was staff;"
+            + " a retried first grant ends nothing more")
+    void aSecondRoleEndsNoSession() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        String adminSession = givenASessionFor(admin);
+        IdentityId subject = givenAnIdentity();
+        assertThat(post(rolesOf(subject), adminSession, reviewerRole()).statusCode()).isEqualTo(204);
+        String asStaff = givenASessionFor(subject);
+
+        assertThat(post(rolesOf(subject), adminSession, "{\"role\":\"ACCOUNTANT\",\"reason\":\"OPS-6203 finance desk\"}")
+                .statusCode()).isEqualTo(204);
+        assertThat(post(rolesOf(subject), adminSession, reviewerRole()).statusCode()).as("a retry after a lost answer").isEqualTo(204);
+
+        assertThat(get("/sessions", asStaff).statusCode()).as("a second role and a retry end nothing").isEqualTo(200);
+        assertThat(summariesOf("identity.RoleAssigned", subject, admin)).contains("granted=ACCOUNTANT, firstRole=false")
+                .contains("granted=KYC_REVIEWER, firstRole=true, sessionsRevoked=0");
+    }
+
+    // -----------------------------------------------------------------
     // Everything else
 
     @Test
@@ -867,6 +912,25 @@ class IdentityAdministrationDatabaseTest {
                                         + " coalesce(change_summary, ''), ' '), '')"
                                         + " FROM platform.audit_record"
                                         + " WHERE operation = ? AND target_id = ? AND actor_id = ?")) {
+            select.setString(1, operation);
+            select.setString(2, target.value().toString());
+            select.setString(3, actor.value().toString());
+            try (ResultSet rows = select.executeQuery()) {
+                rows.next();
+                return rows.getString(1);
+            }
+        }
+    }
+
+    /**
+     * Every change summary of {@code operation} on {@code target} by {@code actor} (`P15-TSK-043`): {@link #auditOf} joins the
+     * reason, which is null on a record that needs none, and a null reason empties its row.
+     */
+    private static String summariesOf(String operation, IdentityId target, IdentityId actor) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement(
+                        "SELECT coalesce(string_agg(change_summary, ' '), '') FROM platform.audit_record"
+                                + " WHERE operation = ? AND target_id = ? AND actor_id = ?")) {
             select.setString(1, operation);
             select.setString(2, target.value().toString());
             select.setString(3, actor.value().toString());

@@ -23,7 +23,8 @@ import java.util.Objects;
  * <h2>Never the writer's, and no fallback to it</h2>
  *
  * <p>Report generation's snapshots open connections here and nowhere else. A role that is missing, a credential that is
- * wrong or a pool that cannot connect fails {@link #open} - the snapshot cannot open, the run is not generated, and
+ * wrong, a pool that cannot connect or a role that can write ({@link #CAPABILITY_CHECK}, `P15-TSK-043`) fails {@link #open} -
+ * the snapshot cannot open, the run is not generated, and
  * it stays {@code GENERATING} until its lease runs out and the orphan leg tries again. There is no path from here to
  * the application's {@code DataSource}: a fallback would be a silent return to the privilege this pool exists to
  * remove.
@@ -56,6 +57,102 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
     /** The property sizing each instance's reporting pool. */
     public static final String POOL_SIZE_PROPERTY = "finapp.database.reporting.pool-size";
 
+    /**
+     * What the role can do, asked of the database on every connection this pool makes, before it is handed out
+     * (`P15-TSK-043`; {@code THREAT_MODEL.md} §6 item 36 (g), T44). Hikari runs it as the connection's first statement; one that
+     * raises is a connection that failed, so a pool whose role can write never starts, and report generation fails closed
+     * as it does when the pool cannot connect at all.
+     *
+     * <p><strong>Capability, not a name.</strong> {@code ReportingPoolBeans} refuses the writer's names at the application's
+     * start; a role holding a writer's rights under any other name passed it. This refuses:
+     * <ul>
+     *   <li>a role that is a member of {@code finapp_app}, {@code pg_execute_server_program} or {@code pg_write_server_files}
+     *       through any chain, inheriting or not ({@code MEMBER}: a membership that only lets the role {@code SET ROLE} to the
+     *       writer counts, which {@code USAGE} would miss);</li>
+     *   <li>a role that can write, outside the system schemas, by itself, through {@code PUBLIC} or through any role it is a
+     *       member of: {@code INSERT} or {@code UPDATE} on any column of any table, view or foreign table
+     *       ({@code has_any_column_privilege}, because a column grant is not in the table's own privileges and
+     *       {@code has_table_privilege} never sees it); {@code DELETE}, {@code TRUNCATE} or {@code TRIGGER} on one;
+     *       {@code UPDATE} or {@code USAGE} on a sequence (each sets or advances it; {@code SELECT} is a read); {@code CREATE}
+     *       on a schema. So a writer of another name and {@code pg_write_all_data} are refused by what they can do, and a
+     *       superuser by both;</li>
+     *   <li>a database with no ledger table to judge: the check cannot have looked at what it exists for, so it fails closed
+     *       rather than pass over an empty catalogue.</li>
+     * </ul>
+     * Functions a role may execute are not judged: every {@code SECURITY DEFINER} function the platform defines revokes
+     * {@code EXECUTE} from {@code PUBLIC} and grants it to {@code finapp_app} alone, and a member of that role is refused above.
+     *
+     * <p><strong>Where the pool starts.</strong> The pool is lazy by design, so a reporting role that cannot connect never
+     * takes a replica out of readiness: its start is its first connection, and the check then runs again on every
+     * connection it makes, so a role changed while a replica runs is judged at its next one. Every replica judges its own.
+     * Any error - a catalogue read refused, no {@code plpgsql} - fails the connection too. Reads {@code pg_catalog} only,
+     * once per physical connection, while Hikari sets the connection up.
+     */
+    static final String CAPABILITY_CHECK = """
+            DO $capability$
+            DECLARE
+                held text;
+                ledger_tables integer;
+                writable text;
+            BEGIN
+                SELECT writer.rolname INTO held FROM pg_catalog.pg_roles writer
+                    WHERE writer.rolname IN ('finapp_app', 'pg_execute_server_program', 'pg_write_server_files')
+                      AND pg_catalog.pg_has_role(current_user, writer.oid, 'MEMBER')
+                    ORDER BY writer.rolname
+                    LIMIT 1;
+                IF held IS NOT NULL THEN
+                    RAISE EXCEPTION 'finapp reporting pool refused: % can use the rights of %', current_user, held;
+                END IF;
+                SELECT count(*) INTO ledger_tables
+                    FROM pg_catalog.pg_class judged
+                    JOIN pg_catalog.pg_namespace home ON home.oid = judged.relnamespace
+                    WHERE home.nspname = 'ledger' AND judged.relkind IN ('r', 'p');
+                IF ledger_tables = 0 THEN
+                    RAISE EXCEPTION 'finapp reporting pool refused: no ledger table to judge, so the check cannot run';
+                END IF;
+                WITH mine AS MATERIALIZED (
+                    SELECT member.oid FROM pg_catalog.pg_roles member
+                    WHERE pg_catalog.pg_has_role(current_user, member.oid, 'MEMBER')),
+                nonsystem AS MATERIALIZED (
+                    SELECT home.oid, home.nspname FROM pg_catalog.pg_namespace home
+                    WHERE home.nspname <> 'information_schema' AND home.nspname !~ '^pg_')
+                SELECT any_write.found INTO writable FROM (
+                    SELECT pg_catalog.format('%I.%I (%s)', nonsystem.nspname, judged.relname, act.privilege) AS found
+                        FROM mine
+                        CROSS JOIN pg_catalog.pg_class judged
+                        JOIN nonsystem ON nonsystem.oid = judged.relnamespace
+                        CROSS JOIN unnest(ARRAY['INSERT', 'UPDATE']) AS act(privilege)
+                        WHERE judged.relkind IN ('r', 'p', 'v', 'f')
+                          AND pg_catalog.has_any_column_privilege(mine.oid, judged.oid, act.privilege)
+                    UNION ALL
+                    SELECT pg_catalog.format('%I.%I (%s)', nonsystem.nspname, judged.relname, act.privilege)
+                        FROM mine
+                        CROSS JOIN pg_catalog.pg_class judged
+                        JOIN nonsystem ON nonsystem.oid = judged.relnamespace
+                        CROSS JOIN unnest(ARRAY['DELETE', 'TRUNCATE', 'TRIGGER']) AS act(privilege)
+                        WHERE judged.relkind IN ('r', 'p', 'v', 'f')
+                          AND pg_catalog.has_table_privilege(mine.oid, judged.oid, act.privilege)
+                    UNION ALL
+                    SELECT pg_catalog.format('sequence %I.%I (%s)', nonsystem.nspname, judged.relname, act.privilege)
+                        FROM mine
+                        CROSS JOIN pg_catalog.pg_class judged
+                        JOIN nonsystem ON nonsystem.oid = judged.relnamespace
+                        CROSS JOIN unnest(ARRAY['UPDATE', 'USAGE']) AS act(privilege)
+                        WHERE judged.relkind = 'S'
+                          AND pg_catalog.has_sequence_privilege(mine.oid, judged.oid, act.privilege)
+                    UNION ALL
+                    SELECT pg_catalog.format('schema %I (CREATE)', nonsystem.nspname)
+                        FROM mine
+                        CROSS JOIN nonsystem
+                        WHERE pg_catalog.has_schema_privilege(mine.oid, nonsystem.oid, 'CREATE')
+                ) AS any_write
+                LIMIT 1;
+                IF writable IS NOT NULL THEN
+                    RAISE EXCEPTION 'finapp reporting pool refused: % can write %', current_user, writable;
+                END IF;
+            END
+            $capability$""";
+
     private final HikariDataSource pool;
 
     /**
@@ -85,6 +182,8 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
         built.setConnectionTimeout(5_000);
         built.setValidationTimeout(2_000);
         built.setReadOnly(true);
+        // Before any connection is handed out, on every one (P15-TSK-043): a role that can write never starts the pool.
+        built.setConnectionInitSql(CAPABILITY_CHECK);
         transport.forEach(built::addDataSourceProperty);
         built.addDataSourceProperty("connectTimeout", "5");
         built.addDataSourceProperty("ApplicationName", "finapp");
@@ -94,6 +193,11 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
     /** A driver property this pool connects with, or null - read by the transport test, never by production code. */
     String driverProperty(String name) {
         return pool.getDataSourceProperties().getProperty(name);
+    }
+
+    /** The statement every new connection runs before it is handed out - read by the capability test, never by production code. */
+    String connectionInitSql() {
+        return pool.getConnectionInitSql();
     }
 
     /**

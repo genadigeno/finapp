@@ -141,6 +141,14 @@ Revoking forty sessions writes one record with the count in its change summary. 
 deliberate: the session rows carry `revoked_at` and answer *when each one ended*; the audit record
 answers *who decided*. Forty records would bury the decision under its consequences.
 
+**A first role ends the grantee's sessions, and both records say so** (`P15-TSK-043`; `THREAT_MODEL.md` §6 item 39 (a2)).
+`identity.RoleAssigned`'s summary is `granted=<ROLE>, firstRole=true, sessionsRevoked=<n>` when the identity held no live
+role before the grant, and `granted=<ROLE>, firstRole=false` otherwise; for a first role the revocation also writes its own
+`identity.SessionRevoked` (`sessionsRevoked=<n>`, the identity its target, the administrator its actor) when `n` > 0, as a
+suspension does. The reason is the grant's, on `identity.RoleAssigned`. Both are written in the grant's transaction, the
+revocation before the grant's record, so a grant on the record always ended what it had to. `PRIVILEGED_ACCESS_REVIEW.md` §5
+question 6 reads `firstRole=true`. A grant recorded before this release says `granted=<ROLE>` alone.
+
 **Why MFA enrolment is two actions rather than one** (`P1-TSK-017`). *Started* and *confirmed* are
 different facts about the account: the first says somebody was offered a secret, the second says
 somebody **proved they hold it**, and only the second changes what can authenticate. Recording only

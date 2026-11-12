@@ -290,7 +290,9 @@ handler declaring `@RequiresPermission` - the identity's live roles are read onc
 and an identity holding any role is `EMPLOYEE` (the operator population; the plan calls it `OPERATOR`, and every
 person `CHECK` already admitted `EMPLOYEE`); every other session request is `CUSTOMER`, a role holder on their own
 wallet or loan application included. The same read decides the permission, so a permitted operator act is always
-`EMPLOYEE`, and a role granted or revoked mid-session is honoured on the next request. Nothing the client sends takes
+`EMPLOYEE`, and a role granted or revoked mid-session is honoured on the next request - except a first role, which since
+`P15-TSK-043` (2026-11-12) ends every session its grantee held, in the grant's transaction, so the grantee signs in again
+on the operator surface and no session a customer stepped up from the internet serves staff. Nothing the client sends takes
 part. Records written before stay `CUSTOMER`. **An idempotency scope keys a person once** (`Actor.keyedType`,
 `IdempotencyScopesKeyThePersonTest`): eighty scopes named the actor's type, and a retry crossing a role change or the
 release that introduced the typing would otherwise have found no record and acted twice. **A refused step-up is

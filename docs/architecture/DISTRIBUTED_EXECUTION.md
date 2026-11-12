@@ -984,6 +984,11 @@ and the orphan leg retries it (`ConnectionPoolSizingGuardTest#theReportingPoolIs
 `ReportGenerationReadsAsTheReportingRoleTest`). Generations on one instance share its one reporting connection; a
 second waiting longer than the pool's five-second timeout fails the same way and is retried by the orphan leg, so a
 deployment that generates concurrently raises `FINAPP_DB_REPORTING_POOL_SIZE` and the guard holds it to the budget.
+*(`P15-TSK-043`, 2026-11-12:)* each of those connections first asks the database whether its role can write
+(`ReportingPool.CAPABILITY_CHECK`, Hikari's `connectionInitSql`): one catalogue read per physical connection, made while
+the pool sets the connection up and before it is handed out, on every instance for itself, so a role changed while the fleet runs is judged at each
+instance's next connection. A refusal is a connection that failed, the same path as a role that cannot connect; it shares
+no state between instances and adds no connection to the budget.
 
 ## 5. Standing rules for future work
 

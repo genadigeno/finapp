@@ -77,16 +77,34 @@ class EdgeManifestsTest {
             Map<String, Object> custom = map(map(map(map(yaml(read(file)), "http"), "middlewares"), "edge-headers"), "headers");
             assertThat(map(custom, "customRequestHeaders")).containsEntry("Forwarded", "").containsEntry("X-Forwarded-Prefix", "").containsEntry("Upgrade", "");
         }
-        // A public caller's trace context never reaches a replica: the platform joins it and samples by its flag (P15-TSK-023's review).
-        // The operator edge keeps it (THREAT_MODEL.md section 6 item 37 (f)).
-        Map<String, Object> publicHeaders = map(map(map(map(map(yaml(read(PUBLIC_EDGE)), "http"), "middlewares"), "edge-headers"), "headers"),
-                "customRequestHeaders");
-        assertThat(publicHeaders).containsEntry("traceparent", "").containsEntry("tracestate", "").containsEntry("baggage", "");
-        Map<String, Object> operatorHeaders = map(map(map(map(map(yaml(read(OPERATOR_EDGE)), "http"), "middlewares"), "edge-headers"), "headers"),
-                "customRequestHeaders");
-        assertThat(operatorHeaders).doesNotContainKeys("traceparent", "tracestate", "baggage");
         assertThat(read("infra/scripts/manifest-policy/edge.rego")).contains("[edge-trace-context]");
         assertThat(read("infra/scripts/edge-check.sh")).contains("edge-trace-context").contains("traceparent");
+    }
+
+    @Test
+    @DisplayName("neither edge forwards a caller's traceparent, tracestate or baggage, staff's included, and neither sets or removes the"
+            + " correlation id staff's tooling finds a request by (P15-TSK-023's review, P15-TSK-043)")
+    void neitherEdgeForwardsACallersTrace() {
+        // The platform joins an inbound W3C trace context and samples by its flag, so a caller's would switch tracing off for its own
+        // requests or choose the trace ids the collectors route by. Staff are callers too (THREAT_MODEL.md section 6 item 37 (f)).
+        for (String file : List.of(PUBLIC_EDGE, OPERATOR_EDGE)) {
+            Map<String, Object> headers = map(map(map(map(yaml(read(file)), "http"), "middlewares"), "edge-headers"), "headers");
+            assertThat(map(headers, "customRequestHeaders")).as("%s: each set empty, so the proxy removes whatever a client sent", file)
+                    .containsEntry("traceparent", "").containsEntry("tracestate", "").containsEntry("baggage", "");
+            // Read from the parsed file, every key at every depth: a comment may name the header, a setting may not.
+            assertThat(keysOf(yaml(read(file)))).as("%s: the answer's X-Correlation-Id and a tool's own reach staff untouched", file)
+                    .isNotEmpty().noneMatch(key -> key.toLowerCase(Locale.ROOT).contains("correlation"));
+        }
+        assertThat(read(POLICY).replace("\r\n", "\n")).as("the rule asks every edge of the set, never the public one alone")
+                .contains("some prefix in route_config_prefixes\n\tnot trace_context_is_stripped(prefix)")
+                .doesNotContain("trace_context_is_stripped if");
+        String script = read(SCRIPT);
+        assertThat(script).as("a plant on the operator edge, a name removed and a name left null")
+                .contains("edge_refused edge-trace-context-operator-forwarded edge-trace-context")
+                .contains("edge_refused edge-trace-context-operator-null edge-trace-context")
+                .as("the pinned proxy: the operator host's backend sees none of the three")
+                .contains("trace_context_seen \"the operator host\" 0 ")
+                .doesNotContain("which keeps them");
     }
 
     @Test
@@ -361,6 +379,20 @@ class EdgeManifestsTest {
 
     private static String read(String path) {
         return EvidenceCitations.read(root.resolve(path));
+    }
+
+    /** Every key of a parsed document, at every depth, and every string a list holds. */
+    private static List<String> keysOf(Object node) {
+        List<String> keys = new ArrayList<>();
+        if (node instanceof Map<?, ?> nested) {
+            nested.forEach((key, value) -> {
+                keys.add(String.valueOf(key));
+                keys.addAll(keysOf(value));
+            });
+        } else if (node instanceof List<?> items) {
+            items.forEach(item -> keys.addAll(item instanceof String text ? List.of(text) : keysOf(item)));
+        }
+        return keys;
     }
 
     private static Map<String, Object> yaml(String text) {

@@ -30,8 +30,11 @@ Every audited act names an actor: an identity and the **population** it acted in
 **The role decides, per request, from the server's record.** The interceptor reads the identity's live roles from
 `identity.role_assignment` in the request's own authentication transaction, once, and that one read decides both the
 population and the permission - so a permitted operator act is always recorded `EMPLOYEE`, and nothing the client sends
-enters the decision. A role granted mid-session is honoured on the next request; a role revoked mid-session stops
-working on the next request, as `INV-IDN-03` requires. A role holder acting on their own wallet, payment or loan
+enters the decision. A **first** role - the identity held no live role - ends every session the grantee holds, in the
+grant's own transaction, so a session a customer stepped up from the internet never serves a member of staff: the grantee
+signs in again on the operator surface (`P15-TSK-043`; `FirstRoleEndsSessionsTest`, `IdentityAdministrationDatabaseTest`,
+owed). A further role granted mid-session is honoured on the next request; a role revoked mid-session stops working on the
+next request, as `INV-IDN-03` requires, and ends no session: the identity's sessions then serve what it is. A role holder acting on their own wallet, payment or loan
 application is a customer in that act. Operator acts recorded before `P15-TSK-021` read `CUSTOMER` and stay as written
 (history is append-only; the `*_by_type` columns are frozen by trigger). An idempotency scope keys a person once,
 whatever population a request types them in (`Actor.keyedType`), so a retry crossing a role change or the release that
@@ -109,7 +112,8 @@ the actor, the target, the role and a required reason.
 
 Who holds which role is read from the authoritative record, never from a spreadsheet: the live rows of
 `identity.role_assignment` (granted, not revoked), per role, with the `identity.RoleAssigned` record of each grant -
-who granted it, when and why. The review answers four questions:
+who granted it, when and why. The review answers six questions *(read "four" until `P15-TSK-043`, 2026-11-12, though the
+list held five since `P15-TSK-039`)*:
 
 1. Does every holder still need the role? A role held without a current need is revoked, with a reason.
 2. Does any identity hold both roles of a §4 row? It is resolved by revoking one, with a reason.
@@ -120,6 +124,16 @@ who granted it, when and why. The review answers four questions:
    /v1/operator/access-review/factorless-holdings`, on a `MULTI_FACTOR` session, names them, from the live rows of both tables: each is resolved by
    the holder enrolling, or the role being revoked with a reason. The rule below refuses new ones; this finds the ones
    that stood before it (§6).
+6. For every **first** role granted since the last review - an `identity.RoleAssigned` record saying `firstRole=true` -
+   has the holder confirmed, to the reviewer and on the operator surface, that the identity's verified recovery channels
+   (`identity.contact_channel`) and its enrolled factor (`identity.mfa_enrolment`, `ACTIVE`) are theirs? *(`P15-TSK-043`;
+   `THREAT_MODEL.md` §6 item 39 (a2).)* The grant ended the sessions the identity held as a customer, but not what proves
+   it: a channel or a factor added as a customer, from the internet, keeps proving the identity on the operator surface.
+   Staff is decided as everywhere else, by any live role, so a re-grant after a revocation is a first role again and is
+   asked again. A channel or factor the holder does not recognise is a compromise, not a correction: an `ADMINISTRATOR`
+   suspends the identity with a reason naming it, which ends its sessions, and the runbook's compromise procedure follows.
+   A holding written around the grant's door (a script, break-glass) has no such record, ended no session, and is
+   asked this question as if it had one.
 
 The review is a human procedure: the owner sets its cadence and its reviewer, and a leaver's roles are revoked on the
 day they leave. Its first performance is `P15-TSK-032`'s, with the runbook's break-glass and compromise procedures.
@@ -196,12 +210,22 @@ and nothing else - no write, no DDL, no restricted table (`ReportingRoleIsSelect
 back to the application's role (`ReportGenerationReadsAsTheReportingRoleTest`). It reaches the database the way the
 application's pool does - the same URL and the same driver settings, `sslmode` among them - so the transport guard's
 judgement covers it (`ReportingPoolTransportTest`). Startup refuses a reporting user naming the application's own
-role, the migrator or the superuser, which would make the grants irrelevant (`ReportingPoolRoleTest`). A role is a
+role, the migrator or the superuser, which would make the grants irrelevant (`ReportingPoolRoleTest`). **Beside the names,
+what the role can do** (`P15-TSK-043`): every connection the pool makes asks the database first, and a role that is a member
+of `finapp_app`, `pg_execute_server_program` or `pg_write_server_files` through any chain is refused whatever it is called; so
+is one that, by itself, through `PUBLIC` or through any role it is a member of, outside the system schemas, holds `INSERT` or
+`UPDATE` on any column of a table, view or foreign table (a column grant included, which the table's own privileges do not
+show), `DELETE`, `TRUNCATE` or `TRIGGER` on one, `UPDATE` or `USAGE` on a sequence, or `CREATE` on a schema; and so is a
+database with no ledger table to judge. Report generation then fails closed and the instance serves on
+(`ReportingPoolCapabilityTest`; `ReportingPoolCapabilityDatabaseTest`, owed; `OPERATIONS_RUNBOOK.md` §11.37 for what on-call
+sees). Functions a role may execute are not judged: the platform's `SECURITY DEFINER` functions are executable by
+`finapp_app` alone. A role is a
 cluster object: the local
 initialisation script creates it, and in a deployed database the one-time bootstrap step does (`P15-TSK-004`).
 
 ## 9. What this review does not claim
 
 It does not claim that the holding rule of §4 is enforced (owner item 9), that the holdings §6's check names have been
-resolved or that the review of §5 has been performed (a human procedure, first performed by `P15-TSK-032`), that
+resolved or that the review of §5 has been performed, its question 6 included (a human procedure, first performed by
+`P15-TSK-032`), that
 operator routes are off the public edge (`P15-TSK-011`), or any conformity with a standard.

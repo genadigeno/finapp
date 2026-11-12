@@ -32,6 +32,14 @@ http:
           # The operators' surface (P15-TSK-042): set, replacing whatever the client sent, as public-edge.yaml says. Staff sign in,
           # step up, enrol, change a password and recover here and nowhere else.
           X-Finapp-Surface: operator
+          # NO CALLER'S TRACE HERE EITHER (P15-TSK-043, THREAT_MODEL.md section 6 item 37 (f)): removed as the public edge removes them,
+          # so no caller, staff included, can switch tracing off for their own requests or choose the trace ids the collectors route
+          # by. An operator request always starts a trace of its own; staff's tooling finds it by the X-Correlation-Id every answer
+          # carries, which this edge neither sets nor removes. edge-check.sh proves both on the pinned proxy; EdgeManifestsTest and
+          # edge.rego's [edge-trace-context] hold the three names on both edges.
+          traceparent: ""
+          tracestate: ""
+          baggage: ""
 
     # The private ranges, and no others; a real environment narrows them to its own.
     internal-only:
