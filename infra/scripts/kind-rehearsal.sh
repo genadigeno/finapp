@@ -1511,6 +1511,15 @@ if [ "$SCOPE" = rotations ]; then
     finish
 fi
 
+# The platform scopes (P15-TSK-032) stop it here too: N is deployed, smoked, its census green, the cluster suites passed, the telemetry
+# pipeline up with every committed rule loaded and Alertmanager routing them.
+if [ "$SCOPE" = signals ] || [ "$SCOPE" = incidents ]; then
+    # shellcheck source=infra/scripts/kind-rehearsal/platform.sh
+    . "$DIR/platform.sh"
+    step end
+    finish
+fi
+
 NM1_REF=$(cat "$ART/nminus1.ref" 2>/dev/null || true)
 step hold
 if [ -n "$NM1_REF" ] && [ "$(migrations_between "$NM1_REF")" -gt 0 ]; then
