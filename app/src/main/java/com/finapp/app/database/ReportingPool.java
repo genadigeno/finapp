@@ -1,6 +1,8 @@
 package com.finapp.app.database;
 
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Map;
@@ -42,6 +44,18 @@ import java.util.Objects;
  * connection is a backend process on the same server as the writer's. Lazy: nothing connects until the first report.
  * Its connections carry {@code application_name = finapp}, as the writer's do, so a count of the fleet's backends
  * counts both pools.
+ *
+ * <h2>Measured as the writer's pool is</h2>
+ *
+ * <p>Not being a {@code DataSource} bean, it is not one Spring Boot's pool-metrics binder finds, so it binds itself
+ * (`P15-TSK-032`, {@code THREAT_MODEL.md} §6 item 42 (l)): HikariCP's own {@code MicrometerMetricsTrackerFactory} on the
+ * application's registry - the tracker Boot's binder ends in for the writer - so {@code hikaricp.connections.*} carry
+ * {@code pool="finapp-reporting"} under the writer's names. Set on the configuration, before the pool exists: it opens
+ * nothing and touches no readiness. Hikari registers the meters only once the pool has started, after its first
+ * connection passed {@link #CAPABILITY_CHECK}, so a refused start registers none, and a retried one none again; closing
+ * the pool removes them. The platform's saturation and starvation rules keep excluding this pool deliberately - one
+ * connection is full whenever a report runs, and a pool that cannot open fails the run, which
+ * {@code AccountingCloseLegFailing} tickets - but its series exist, for the dashboard and for a reader.
  */
 public final class ReportingPool implements ReportingConnections, AutoCloseable {
 
@@ -161,12 +175,14 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
      *     first: an {@code sslmode} set there rather than in the URL is what {@code TransportSecurityGuard} judged, and a
      *     pool that dropped it would reach the same remote database under the driver's default - unencrypted, silently
      * @param size connections this instance holds, at least one
+     * @param registry the application's meter registry, which the pool's {@code hikaricp.connections.*} join once it starts
      */
-    public ReportingPool(String jdbcUrl, Map<String, String> transport, String username, String password, int size) {
+    public ReportingPool(String jdbcUrl, Map<String, String> transport, String username, String password, int size, MeterRegistry registry) {
         Objects.requireNonNull(jdbcUrl, "jdbcUrl");
         Objects.requireNonNull(transport, "transport");
         Objects.requireNonNull(username, "username");
         Objects.requireNonNull(password, "password");
+        Objects.requireNonNull(registry, "registry");
         if (size < 1) {
             throw new IllegalArgumentException("the reporting pool holds at least one connection, not " + size);
         }
@@ -187,6 +203,8 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
         transport.forEach(built::addDataSourceProperty);
         built.addDataSourceProperty("connectTimeout", "5");
         built.addDataSourceProperty("ApplicationName", "finapp");
+        // Its meters, as the writer's pool has them (P15-TSK-032, item 42 (l)): registered by Hikari when the pool starts.
+        built.setMetricsTrackerFactory(new MicrometerMetricsTrackerFactory(registry));
         this.pool = built;
     }
 
