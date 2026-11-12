@@ -194,9 +194,11 @@ roll_edge() {
 # ---------------------------------------------------------------------------------------------------
 
 # A request in flight when the server stops can leave a card payment PROCESSING with its provider call made and its outcome unwritten. Nothing
-# sends that call again: the platform's own sweep asks the provider once the dispatch is past its dispatched age, and only then does a retry
-# by key see the payment concluded. So the leg's retries are bounded past the longest such age the code declares (payments' and merchant
-# payouts', read from their placeholders, never copied), with five minutes for the sweep's poll, the claim's lease and the retry's pause.
+# sends that call again: the platform's own sweep asks the provider (the simulator's GET /operations/{reference}) once the dispatch is past
+# its dispatched age, and only then does a retry by key see the payment concluded; an authorization concluded that way is captured by the
+# client's next confirmation or, failing one, by the sweep's stranded-authorization leg one dispatched age later. So the leg's retries are
+# bounded past twice the longest such age the code declares (payments' and merchant payouts', read from their placeholders, never copied),
+# with five minutes for the sweep's poll, the claim's lease and the retry's pause.
 dispatched_minutes() {
     for source in app/src/main/java/com/finapp/app/payments/PaymentSweeperSchedule.java app/src/main/java/com/finapp/app/merchant/MerchantPayoutBeans.java; do
         sed -n 's/.*finapp\.\(payments\|merchant\.payout\)\.sweeper\.dispatched-age:PT\([0-9]*\)M}.*/\2/p' "$ROOT/$source"
@@ -207,7 +209,7 @@ case $ROLL_RETRY_MINUTES in '' | *[!0-9]*) cannot "the payment sweep's dispatche
 if grep -Eq 'SWEEPER_DISPATCHED_?AGE' "$A/all.yaml"; then
     cannot "the kind overlay sets a sweep's dispatched age, which this leg reads from the code's default"
 fi
-ROLL_RETRY_SECONDS=$((ROLL_RETRY_MINUTES * 60 + 300))
+ROLL_RETRY_SECONDS=$((2 * ROLL_RETRY_MINUTES * 60 + 300))
 
 # postgres_leg <label> <image> <version>: the server's pod replaced onto the image, its claim kept, the workload retrying by key.
 postgres_leg() {

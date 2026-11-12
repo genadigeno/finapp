@@ -253,8 +253,12 @@ class KindRehearsalContractTest {
                         + " restarted for it")
                 .contains("WORKLOAD_RETRY_SECONDS=$ROLL_RETRY_SECONDS start_workload \"$label\" retry").contains("requests stayed unresolved")
                 .as("retried past the sweep that concludes a payment caught mid-call, its age read from the code")
-                .contains("sweeper\\.dispatched-age:PT").contains("ROLL_RETRY_SECONDS=$((ROLL_RETRY_MINUTES * 60 + 300))")
-                .contains("the server's start time did not move")
+                .contains("sweeper\\.dispatched-age:PT").contains("ROLL_RETRY_SECONDS=$((2 * ROLL_RETRY_MINUTES * 60 + 300))")
+                .contains("the server's start time did not move");
+        assertThat(read("infra/scripts/kind-rehearsal/Simulator.java")).as("the simulated card rail answers the sweep's inquiry, or nothing caught mid-call"
+                        + " could ever be concluded here")
+                .contains("server.createContext(OPERATIONS, Simulator::operationInquiry)").contains("\"{\\\"status\\\":\\\"unrecognised\\\"}\"");
+        assertThat(rolls)
                 .contains("SHOW server_version").contains("a replica restarted for the database's restart")
                 .contains("the server's volume claim was replaced");
         assertThat(rolls).as("the broker: zero failed requests, every replica ready, the outbox seen holding rows, the version asked, one volume claim")
