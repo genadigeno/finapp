@@ -426,6 +426,15 @@ signals_operators_half() {
 signals_telemetry() {
     # Section 11.34, the telemetry stack's own alerts (THREAT_MODEL.md section 6 item 37 (d)): a back end gone, then the collectors gone.
     # Nothing for the money either way: the requests are neither failed nor slowed, and readiness does not move.
+    # First the negative control: a rollout of the collectors, with traffic flowing, raises no export failure (the load-balancing exporter's
+    # peers changing under it is a rollout's cost, not a failure).
+    start_workload collector-roll
+    kube -n finapp-observability rollout restart deployment/finapp-collector >> "$ART/apply.log" 2>&1 || fail "the collectors could not be rolled"
+    kube -n finapp-observability rollout status deployment/finapp-collector --timeout=300s >> "$ART/apply.log" 2>&1 || fail "the collectors' roll did not finish"
+    sleep 180
+    stop_workload collector-roll
+    [ "$(alert_state TelemetryExportFailing)" = none ] || fail "11.34: a rollout of the collectors raised TelemetryExportFailing: see alerts.tsv"
+    pass "11.34: the collectors rolled under traffic, and no export failure raised"
     kube -n finapp-observability scale deployment/finapp-tempo --replicas=0 >> "$ART/apply.log" 2>&1 || fail "Tempo could not be stopped"
     # The harness's smoke: every flow through the edge, its counts added to what the census expects; a failed one fails the step.
     smoke telemetry-backend
