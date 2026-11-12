@@ -146,6 +146,19 @@ migration that cannot run in a transaction (`executeInTransaction=false`, for `C
 leaves a failed row, and then `validateOnMigrate` refuses every later run until it is dealt with. Either way the way out is
 forward, never `clean`: runbook §11.4.
 
+*(Corrected 2026-11-12, `P15-TSK-032`, by its rehearsal on the image and on Gradle: **on this Flyway and PostgreSQL's default
+transactional lock, a failed migration outside a transaction leaves no row either.** Flyway writes the failed row inside the
+transaction that holds its lock, and that transaction rolls back; the effect stays (an `INVALID` index), unrecorded, and every
+later run trips over it ("already exists"). On rows that allow it, `CREATE INDEX CONCURRENTLY` waits for Flyway's own
+lock-holding transaction: the image's `lock_timeout` ends it after 3 s, and Gradle's task waits with no bound. The failed row
+the paragraph above describes arises only with the lock taken per session, which neither the build nor the image does. So
+**the build now refuses a migration that would run outside a transaction**: `EveryMigrationRunsInATransactionTest`, in the
+migrator module, reads every script with the pinned Flyway's own scanner and PostgreSQL parser and refuses each form that version
+accepts (a statement it runs outside a transaction, a `<script>.conf` saying `executeInTransaction=false`, and the setting made for
+every script: a `flyway` block, a `gradle.properties` key, a Flyway configuration file, the runner's own configuration), until the
+migrator gains a reviewed mode for one. `infra/scripts/migration-failure-rehearsal.sh` rehearses §11.4's cases; the runbook holds
+the record.)*
+
 ### 2.2 The one-time bootstrap step: the deployed roles
 
 *(Added by `P15-TSK-004`, 2026-11-08.)* Roles are infrastructure, never Flyway (§6): the migrator is `NOCREATEROLE`, and the
@@ -190,7 +203,10 @@ Migration checksum mismatch for migration version 001
 This is not an obstacle to work around with `flywayRepair`. `flywayRepair` rewrites the
 history table to match the files — it makes the symptom disappear without making the
 database correct. Use it only when the *files* are known-good and the history is known-bad
-(for example, after a failed non-transactional migration), and record why.
+(for example, after a failed non-transactional migration), and record why. *(2026-11-12,
+`P15-TSK-032`: that example does not arise on this repository's configuration - on PostgreSQL's
+default transactional lock a failed migration writes no row - and the build refuses such a
+migration; §2.1's note.)*
 
 ### 3.2 Forward-only
 
@@ -384,7 +400,13 @@ failure rolls back. Two exceptions matter:
 
 - `CREATE INDEX CONCURRENTLY` cannot run inside a transaction. It needs a migration marked
   non-transactional, and such a migration can leave an invalid index behind if it fails,
-  which must be found and dropped before retrying.
+  which must be found and dropped before retrying. *(Since 2026-11-12, `P15-TSK-032`: **the build
+  refuses one** - `EveryMigrationRunsInATransactionTest`, §2.1's note - until the migrator gains a
+  reviewed mode for it. On this Flyway's default PostgreSQL lock such a migration cannot finish on
+  the image (it waits for Flyway's own lock-holding transaction until `lock_timeout`), and a failure
+  leaves its invalid index with no history row, which only a person can drop. Build an index in the
+  migration's transaction, as ledger `V029` does; an index a large live table needs built
+  `CONCURRENTLY` waits for that mode.)*
 - `ALTER TABLE` variants that rewrite the table take an `ACCESS EXCLUSIVE` lock for the
   duration. On a large ledger table that is an outage. Prefer the expand/contract path.
 

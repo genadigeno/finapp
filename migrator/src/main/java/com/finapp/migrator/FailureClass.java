@@ -13,8 +13,11 @@ import org.flywaydb.core.internal.exception.FlywayMigrateException;
  * Which failures another attempt can help, by what PostgreSQL said rather than by what the message reads like.
  *
  * <p>Deliberately narrow, because the wide reading costs twice: retrying a failure that is really a defect hides it for the
- * length of the retries, and a failed <em>non-transactional</em> migration has already written a failed row, so running
- * it again only repeats Flyway's refusal.
+ * length of the retries, and a failed <em>non-transactional</em> migration has left its effect behind, which no rollback
+ * undid ({@code CREATE INDEX CONCURRENTLY} leaves an {@code INVALID} index), so running it again only trips over that
+ * ("already exists"). It leaves no history row: on PostgreSQL Flyway writes the failed row inside the transaction that holds
+ * its lock, and that transaction rolls back ({@code OPERATIONS_RUNBOOK.md} section 11.4, rehearsed). <em>(Until 2026-11-12
+ * this said the migration had already written a failed row, so that a retry would repeat Flyway's refusal: not so here.)</em>
  */
 enum FailureClass {
 
@@ -108,7 +111,10 @@ enum FailureClass {
         return tls && !networkWentAway;
     }
 
-    /** True unless Flyway says this migration could not run in a transaction, which is when it writes a failed row. */
+    /**
+     * True unless Flyway says this migration could not run in a transaction: then what it did before the lock timed out was
+     * not rolled back, and a retry would trip over it.
+     */
     private static boolean leftNoRecord(Throwable failure) {
         for (Throwable t = failure; t != null; t = next(t)) {
             if (t instanceof FlywayMigrateException migrate) {
