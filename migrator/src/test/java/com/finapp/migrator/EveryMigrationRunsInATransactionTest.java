@@ -39,13 +39,18 @@ import org.postgresql.ds.PGSimpleDataSource;
  *
  * <h2>Why</h2>
  *
- * <p>A migration Flyway runs outside a transaction leaves a {@code success = false} row in the schema history when it fails, with an
- * effect that may be partial ({@code CREATE INDEX CONCURRENTLY} leaves an {@code INVALID} index), and every later run refuses at
- * validation until the row is removed by {@code flywayRepair}. The migrator image has no repair, by design: it takes no arguments,
- * so a Job can ask it for nothing but a migration, and no person reaches a terminal in a deployed environment. So until the
- * migrator gains a reviewed repair mode, the build refuses such a migration, and the one failure a deployed environment could not
- * get out of cannot arise there. {@code infra/scripts/migration-failure-rehearsal.sh} shows that failure, and its way out, on the
- * developer's Gradle path, the one place a repair exists.
+ * <p>A migration Flyway runs outside a transaction is one a deployed environment can neither fail cleanly nor complete, on the
+ * pinned Flyway with PostgreSQL's default transactional lock, which neither the build nor the image changes (the Gradle plugin
+ * cannot set it without a JSON library on the build's classpath). Flyway writes a failed row inside the transaction that holds
+ * that lock, and the transaction rolls back, so a failure leaves <em>no</em> row while its effect stays: {@code CREATE INDEX
+ * CONCURRENTLY} leaves an {@code INVALID} index, and every later run is refused by it ("already exists") with nothing in the
+ * history to say why. On rows that allow it, the same statement waits for every open transaction, Flyway's own lock-holding one
+ * among them: the image's {@code lock_timeout} ends it after three seconds, {@code INVALID} again, and the developer's Gradle task
+ * waits with no bound. Only a person's {@code DROP INDEX} clears the leftover, and no person reaches a terminal in a deployed
+ * environment. {@code infra/scripts/migration-failure-rehearsal.sh} shows each of these on the image and on Gradle. (With the lock
+ * taken per session instead, as Flyway advises for such migrations, a failure would leave a {@code success = false} row that only
+ * {@code flywayRepair} removes, and the image has no repair.) So until the migrator gains a reviewed mode for these, the build
+ * refuses such a migration.
  *
  * <h2>How: Flyway decides, not this class</h2>
  *
@@ -76,7 +81,7 @@ import org.postgresql.ds.PGSimpleDataSource;
  * <p>The expand-only lint ({@code MigrationLint}) already refuses any file in a migration directory that is not a versioned
  * script, so a {@code .conf} is refused twice; this rule is the one that says why, and that reads a statement as Flyway does.
  */
-@DisplayName("every migration runs inside a transaction, until the migrator has a reviewed repair mode (P15-TSK-032)")
+@DisplayName("every migration runs inside a transaction, until the migrator has a reviewed mode for one that cannot (P15-TSK-032)")
 class EveryMigrationRunsInATransactionTest {
 
     /** Where a module's scripts live, relative to the module: {@code src/main/resources/db/migration/<module>}. */
@@ -135,8 +140,9 @@ class EveryMigrationRunsInATransactionTest {
         assertThat(onDisk).as("the migrations on disk").isGreaterThan(300);
         assertThat(outcome.scriptsRead()).as("Flyway's scanner found every script on disk, so nothing passed unread").hasSize((int) onDisk);
         assertThat(outcome.refusals())
-                .as("a migration outside a transaction leaves a failed row only flywayRepair removes, and the migrator has no repair:"
-                        + " build the index in the migration's transaction, as ledger V029 does (DATA_MIGRATIONS.md section 4.4)")
+                .as("a migration outside a transaction can neither fail cleanly nor finish on the deployed runner, and what it leaves"
+                        + " only a person can drop: build the index in the migration's transaction, as ledger V029 does"
+                        + " (DATA_MIGRATIONS.md section 4.4)")
                 .isEmpty();
     }
 

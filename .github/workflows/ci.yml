@@ -613,6 +613,12 @@ jobs:
       - name: Run the image against a throwaway database
         run: ./infra/scripts/migrator-verify.sh
 
+      # P15-TSK-032: OPERATIONS_RUNBOOK.md section 11.4 rehearsed on the image this job built - a migration failing on its data,
+      # stopped, run again, refused below an applied version and fixed forward; and on the developer's Gradle path, the
+      # migration outside a transaction the build refuses, which only flywayRepair gets past.
+      - name: Rehearse a failed migration on the image
+        run: ./infra/scripts/migration-failure-rehearsal.sh
+
   # ---------------------------------------------------------------------------
   # The kind rehearsal (P15-TSK-012, ADR-0120): the platform on a real Kubernetes API as
   # three replicas, the migration Job, smoke through the real edge, a rolling update from

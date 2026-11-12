@@ -50,7 +50,8 @@ date, by the ledger, only when the command asks, never backward and never silent
 `journal_entry (posting_date, id)` serves "the entries of a period" - the General Ledger's month aggregate and its
 drill-down's keyset (`ORDER BY posting_date, id`, then the line's `seq`), and every report run of a locked period. It
 was built in the migration's own transaction (no production journal existed; `DATA_MIGRATIONS.md` §4.4): a deployment
-over a large live journal would build it `CONCURRENTLY` in a non-transactional migration instead. Accounting reads the
+over a large live journal would build it `CONCURRENTLY` in a non-transactional migration instead *(which the build refuses
+since 2026-11-12 until the migrator gains a reviewed mode for one: `DATA_MIGRATIONS.md` §4.4)*. Accounting reads the
 journal through it only in `REPEATABLE READ READ ONLY` snapshots (`INV-ACC-14`) and stores nothing it reads
 (`INV-ACC-06`).
 
