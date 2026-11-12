@@ -29177,7 +29177,10 @@ on none:
   47 (a)); (3) five rules, not two - each named rule is blind in a case measured here without its companion; (4) a component the entry did
   not name, the cluster watcher, the only way to a Job's state; (5) the `kind` harness gains no step this wave (`-005` held the full cluster;
   a step is run to its end before it is relied on): item 47 (c). **Not done**: the watcher's API egress in a real environment, and
-  kindnetd unmeasured (item 47 (d)); the edge's lines joined to the replicas' by the answer's correlation id (item 47 (e)).
+  kindnetd unmeasured (item 47 (d)); the edge's lines joined to the replicas' by the answer's correlation id (item 47 (e)). **At the
+  merge of master** (`P16-TSK-004`'s quotas): `finapp-observability`'s quota raised by the watcher's worst moment (one replica, a
+  rollout of two and an eviction: 3 pods) - 8 pods, 800m, 8 cores, 3328Mi in the base, 16, 1500m, 15, 6144Mi on `kind` - with its two
+  plants and `TelemetryPipelineManifestsTest#theNamespaceQuotaIsItsWorstMoment` moved to it, the watcher's CPU limit made one core.
 
 **P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `COMPLETE` (2026-11-12; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; built in wave A beside `-001`, `-002`, `-003` and `-005`, branch `P16-TSK-004` from master `6981c167`; no migration, no production Java, no new ADR - a dated note on ADR-0122; one new owner item, `THREAT_MODEL.md` §6 item 48; marks no task `READY` - the coordinator does; read `READY` until its gate)
 - **Objective**: as decided 2026-11-12, in the first wave.

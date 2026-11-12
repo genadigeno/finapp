@@ -990,7 +990,7 @@ subjects:
 YAML
     # A token is the listed controller's in its own namespace alone: the application naming an account of the watcher's name in finapp, and
     # mounting its token, is refused as any other workload is.
-    plant_on token-on-a-listed-name-elsewhere "$DEPLOYMENT" "s/serviceAccountName: finapp-app/serviceAccountName: finapp-cluster-watch/; s/$SWITCH: false/$SWITCH: true/"
+    plant_on automount-under-a-listed-name-elsewhere "$DEPLOYMENT" "s/serviceAccountName: finapp-app/serviceAccountName: finapp-cluster-watch/; s/$SWITCH: false/$SWITCH: true/"
     plant rbac-aggregated-into-view
     add_resource rbac-aggregated-into-view role.yaml <<'YAML'
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1733,7 +1733,7 @@ refused rbac-listed-account-built-in-role rbac-binding-rendered
 refused rbac-cluster-watch-secrets rbac-cluster-watch
 refused rbac-cluster-watch-writes rbac-cluster-watch
 refused rbac-cluster-watch-cluster-wide rbac-cluster-watch
-refused token-on-a-listed-name-elsewhere security-token
+refused automount-under-a-listed-name-elsewhere security-token
 refused rbac-aggregated-into-view rbac-aggregate-label
 refused rbac-same-name-elsewhere rbac-human-secrets
 refused rbac-person-bound-elsewhere rbac-human-namespace
