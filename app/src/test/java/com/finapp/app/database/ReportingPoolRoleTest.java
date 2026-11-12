@@ -60,7 +60,7 @@ class ReportingPoolRoleTest {
     }
 
     private static ReportingPool build(MockEnvironment environment) {
-        return new ReportingPoolBeans().reportingPool(environment);
+        return new ReportingPoolBeans().reportingPool(environment, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     private static MockEnvironment settings(String reportingUser) {

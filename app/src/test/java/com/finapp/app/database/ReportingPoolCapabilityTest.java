@@ -26,7 +26,7 @@ class ReportingPoolCapabilityTest {
     @DisplayName("every connection the pool makes runs the check first, whatever the role is called")
     void everyConnectionRunsTheCheck() {
         for (String role : new String[] {"finapp_reporting", "finapp_reporting_a", "anything_a_deployment_names"}) {
-            try (ReportingPool pool = new ReportingPoolBeans().reportingPool(settings(role))) {
+            try (ReportingPool pool = new ReportingPoolBeans().reportingPool(settings(role), new io.micrometer.core.instrument.simple.SimpleMeterRegistry())) {
                 assertThat(pool.connectionInitSql()).as(role).isEqualTo(ReportingPool.CAPABILITY_CHECK);
             }
         }

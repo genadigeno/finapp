@@ -432,7 +432,9 @@ tests:
               summary: "The connection pool of b:8081 is nearly full"
               description: "Over 90% of the pool on b:8081 has been in use for 5 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
 
-  # ConnectionPoolSaturated: the report pool at its one connection is no saturation.
+  # ConnectionPoolSaturated: the report pool at its one connection is no saturation. The series is one production emits since the pool binds
+  # its own meters (P15-TSK-032, THREAT_MODEL.md section 6 item 42 (l); ReportingPoolMetricsTest), and the exclusion is kept by choice: one
+  # connection is full whenever a report runs, and a pool that cannot open fails the run, which AccountingCloseLegFailing tickets.
   - interval: 1m
     input_series:
       - series: 'hikaricp_connections_active{job="finapp", instance="a:8081", pool="finapp-reporting"}'
