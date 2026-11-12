@@ -2100,6 +2100,13 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     version on `kind`, so their roll and roll back (the bar's Deployment (d)) never ran; a managed minor upgrade of either
     service never ran anywhere; and an edge controller lost under traffic was never shown. *Recommendation*: the three `kind`
     steps in Phase 16's first wave, which need no account; the managed upgrade with the first real environment. **Decided 2026-11-12** by the owner ("accept all"): as recommended.
+    *Its `kind` half closed 2026-11-12*: the three steps are the `kind` harness's `rolls` scope (`infra/scripts/kind-rehearsal/rolls.sh`,
+    held by `KindRehearsalContractTest`), run whole on one cluster under the workload with the census after every leg
+    (`OPERATIONS_RUNBOOK.md` section 11.28's rolls record): the edge's controllers to the pair's other Traefik and back with zero failed
+    requests through either host; the test-only PostgreSQL to the pair's other patch and back on one volume claim, every request it
+    caught retried by key to one effect; the test-only broker likewise, with no request failed and the outbox holding the events until it
+    returned. PostgreSQL's pair goes to the patch before the deployed one, which is the newest published. Still open, as decided: the
+    managed minor upgrade, with the first real environment, and an edge controller lost under traffic, Phase 16's experiment E25.
 
     **(g) Phase 16's drills, held by no entry yet.** The review leans on drills `PHASE_15_PLAN.md` §1.3 gives Phase 16: a
     database failover (runbook §11.40, and the socket timeout item 42 (h) left to it), the data tier's availability, and ten

@@ -249,7 +249,12 @@ postgres_leg() {
     pass "postgres roll $label: the server restarted onto PostgreSQL $3 on the same volume claim"
     [ "$(workload_unresolved "$label")" = 0 ] || fail "postgres roll $label: $(workload_unresolved "$label") requests stayed unresolved, see workload-$label.tsv"
     pass "postgres roll $label: $(workload_failed "$label") attempts failed while the server was away and were retried with the same key; none unresolved"
-    swept=$(awk -F'\t' '$NF ~ /ended PROCESSING/ {print $1 "|" $2}' "$CLIENT/workload-$label.tsv" | sort -u | wc -l | tr -d ' ')
+    # A top-up waiting reads "ended PROCESSING" under its own key; a checkout whose payment waits reads "ended PAYMENT_PENDING" and names
+    # the payment, since every checkout's key column reads "fresh".
+    swept=$( {
+        awk -F'\t' '$NF ~ /ended PROCESSING/ {print "top-up|" $2}' "$CLIENT/workload-$label.tsv"
+        sed -n 's/.*ended PAYMENT_PENDING.*"paymentIntentId":"\([^"]*\)".*/checkout|\1/p' "$CLIENT/workload-$label.tsv"
+    } | sort -u | wc -l | tr -d ' ')
     log "postgres roll $label: $swept payments caught mid-call stayed PROCESSING until the platform's sweep asked the provider, and were then answered"
     assert_flows_ran "$label"
     restarts_after=$(app_restarts)

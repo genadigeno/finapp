@@ -29163,7 +29163,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's check list widened.
 - **Risk**: Low. **Cx**: S.
 
-**P16-TSK-005 — The edge, PostgreSQL and the broker rolled and rolled back on `kind` (`THREAT_MODEL.md` §6 item 43 (f))** — `IN_PROGRESS` (2026-11-12, designed: a `rolls` scope of the harness, the test-only data tier on volume claims so a roll keeps its data, PostgreSQL's pair 18.6 and 18.4 because no newer patch is published, the probe the entry's break with a slow start; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
+**P16-TSK-005 — The edge, PostgreSQL and the broker rolled and rolled back on `kind` (`THREAT_MODEL.md` §6 item 43 (f))** — `COMPLETE` (2026-11-12; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; built in wave A beside `-001`…`-004`, branch `P16-TSK-005` from master `6981c167`; no migration, no ADR, no new owner item; marks no task `READY` - the coordinator does; read `READY`, then `IN_PROGRESS`, until its gate)
 - **Objective**: as decided 2026-11-12, in the first wave. The three `kind` steps that need no account: each component changes
   version under a workload and comes back.
 - **Affected components**: the `kind` harness (a step per component), `deploy/edge/`, `deploy/overlays/kind/postgres.yaml`,
@@ -29190,6 +29190,27 @@ on none:
 - **Definition of done**: `DOD-BUILD`, `DOD-TEST`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.26's roll procedure and §11.28's record.
 - **Risk**: Medium (machine load). **Cx**: M.
+- *As built (2026-11-12):* **A `rolls` scope of the `kind` harness** (`REHEARSAL_SCOPE=rolls`, `infra/scripts/kind-rehearsal/rolls.sh`):
+  release N alone, then `roll-edge`, `roll-postgres` and `roll-kafka`, each component to the other image of its pair and back under the
+  workload with the census after each of the six legs. The pairs are `*_ROLL_*` triples in `infra/scanner-pins.sh`, pulled by digest,
+  their tags checked by `check-pinned-images.sh` (a `roll-target` asks no newer-release question). **Three corrections to the entry**, as
+  the preamble allows: (1) PostgreSQL has no newer patch than the deployed 18.6 (the newest published, 2026-11-06; 18.5 never was), so its
+  pair is 18.6 and 18.4 and its step rolls back first; the edge (3.7.17 → 3.7.18) and the broker (4.3.1 → 4.3.2) roll forward first.
+  (2) The test-only StatefulSets' data moved from an `emptyDir` to a volume claim (kind's local-path provisioner): a roll replaces the pod,
+  and an `emptyDir` goes with it. (3) The probe is the entry's break with the slow start `maxUnavailable: 0` exists for (readiness 30 s
+  after start, past the 10 s accept grace); the entry's form alone is predicted to fail no request and was not run. Two harness defects
+  the runs found, fixed: the database leg's retries now bounded past twice the payment sweep's dispatched age (read from the code), and the
+  simulator now answers the card rail's inquiry (`GET /operations/{reference}`), without which a payment caught mid-call could never be
+  concluded on `kind`. The workload gained an optional operator-host read (`WORKLOAD_EDGE=operator-edge`) and a retry bound a step can set
+  (`WORKLOAD_RETRY_SECONDS`). CI runs the scope nightly. **The recorded run** (2026-11-12, 20:17-20:58 UTC, a fresh cluster, head
+  `35981197`, `OPERATIONS_RUNBOOK.md` §11.28's rolls record): 78 assertions, none failed, the census green after all six legs; the edge
+  rolled with 0 of 92 and 0 of 95 requests failed, two ready controllers per surface throughout; PostgreSQL restarted in 5-6 s each way,
+  cleanly, onto the version asked, 246 and 55 failed attempts retried by key with none unresolved (three payments caught mid-call concluded
+  by the sweep), no replica restarted; the broker rolled in 41 s and 57 s with 0 of 141 and 0 of 164 failed, three replicas ready, the
+  outbox holding up to 327 and 420 events. **The probe** (the same head): red at the zero-failed assertion, 15 of 79 requests failed, no
+  controller ready on either surface for about 26 s. Routed to `-022`: a lost database connection answers `500 api.InternalError`, and a
+  payment caught mid-call waits the sweep's ten minutes (its entry's note). `KindRehearsalContractTest#theRollsAssertWhatTheEntryNames` and
+  `#eachRollTargetIsAnotherPatchOfItsDeployedPin` hold the steps' text and the pairs.
 
 **P16-TSK-006 — The load harness: k6 through the real edge, invariants sampled during load (ADR-0126, C5)** — `PLANNED`
 - **Objective**: one reproducible way to drive every profile of `PHASE_16_PLAN.md` §5.1 through the deployed platform's real edge,
@@ -29719,6 +29740,13 @@ on none:
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.40.
 - **Risk**: Medium. **Cx**: L.
+- *Routed from `P16-TSK-005` (2026-11-12):* its database roll on `kind` (a clean restart of the test-only server onto another patch
+  under the workload, `OPERATIONS_RUNBOOK.md` §11.28's rolls record) showed two things this drill should measure and decide at the
+  failover. **The answer a client gets while the database is away** was `500 api.InternalError` ("Something went wrong on our side"),
+  not a `503`, on transfers, payouts and a top-up's confirmation; each was retried by its key and took one effect, but a `500` does not
+  tell a client the refusal is temporary: decide here whether a lost connection answers `503` with `Retry-After`. **A card payment
+  caught mid-call** stays `PROCESSING` until the payment sweep's dispatched age (`finapp.payments.sweeper.dispatched-age`, 10 minutes)
+  lets it ask the provider, so its client waits that long for a conclusion: measure it at the failover beside the interruption.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
 - **Objective**: as decided:

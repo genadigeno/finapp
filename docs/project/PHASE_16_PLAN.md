@@ -489,7 +489,7 @@ the harness stops the fault and restores at the first of its triggers.
 | Application | ≥ 3 replicas, PDB, zone spread | No | E01–E04 |
 | Migrator | A Job per release; Flyway's lock serialises | Not on the request path; a failed Job blocks a release, not service | Item 43 (b)'s alert (`-003`) |
 | PostgreSQL (reference) | Multi-AZ synchronous standby | No, by design; failover unmeasured | Designed-only; local analogue E05 (`-022`) |
-| PostgreSQL (`kind`) | One pod, `emptyDir` | **Yes** (test-only) | The pair (C7) |
+| PostgreSQL (`kind`) | One pod, its data on a volume claim (an `emptyDir` until 2026-11-12) | **Yes** (test-only) | The pair (C7) |
 | Kafka (reference) | Three brokers, RF 3, ISR 2 | No | E08; designed-only for MSK |
 | Kafka (`kind`) | One broker, RF 1 | **Yes** (test-only) | Three brokers (`-013`) |
 | Edge | Two controllers per edge | No (within a cluster) | E25 |
