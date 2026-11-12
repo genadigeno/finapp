@@ -372,7 +372,9 @@ no package filter, no database, Kafka, cluster or container), each XML's UTC tim
   the filter pulls in (24): **229 tests, 1 failed** - `TestTaxonomyTest#everyTestClassDeclaresATierAtLeastAsHeavyAsItNeeds` on
   `ReportingPoolMetricsTest`, master's red (above, `P15-REM-005`); every other class green.
 - **After recording `P15-REM-005`** (the backlog, this review and `CURRENT_STATE.md` changed again): the guards reading those files
-  once more - *(below)*.
+  once more (started 17:23:17 UTC, every XML written 17:23:37-17:24:25): `ThreatModelIsCompleteTest` 14, `MutationDemonstrationTest` 9,
+  `PlannedMetersExistTest` 13, `ProductionReadinessIsEvidencedTest` 8, `RunbookRehearsalCountTest` 7, with the eight rule classes (24):
+  **75 tests, 0 failed**. After it only this section changed, and no guard reads this document.
 
 **Not run, owed**: every `database`, own-container and `kafka` test (PI-023), `RiskStormTest` and the slow classes, the
 `kind` and container scripts (PI-024), and the CI jobs, which no one here observes.
