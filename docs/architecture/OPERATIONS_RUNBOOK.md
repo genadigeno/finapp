@@ -2526,12 +2526,19 @@ the record doesn't explain is a security event of its own.
 **Verify it holds** (from a principal in the group):
 
 ```bash
-kubectl auth can-i get secrets -n finapp                    # no
-kubectl auth can-i list secrets -n finapp                   # no
-kubectl auth can-i create pods/exec -n finapp               # no
-kubectl auth can-i patch deployments -n finapp              # no
-kubectl auth can-i delete pods -n finapp                    # yes
+kubectl auth can-i get secrets -n finapp                                  # no
+kubectl auth can-i list secrets -n finapp                                 # no
+kubectl auth can-i create pods --subresource=exec -n finapp               # no
+kubectl auth can-i patch deployments -n finapp                            # no
+kubectl auth can-i create pods -n finapp                                  # no
+kubectl auth can-i delete pods -n finapp                                  # yes
+kubectl auth can-i create pods --subresource=eviction -n finapp           # yes
+kubectl auth can-i patch deployments --subresource=scale -n finapp        # yes
 ```
+
+**Name a subresource with `--subresource`.** `kubectl auth can-i create pods/exec` reads `pods/exec` as a type and a name: it asks
+whether you may create *a pod named `exec`*, and answers `no` whatever exec allows. Seen on the `kind` rehearsal (2026-11-12), in the
+access review kubectl sends. *(This block read `create pods/exec` until then, a check that answered for the wrong question.)*
 
 **The audit.** Every call is in the cluster's API audit log, which `modules/kubernetes` turns on (asserted over a plan, never applied).
 That is the record of what was done; the incident record is why. Application logs are neither.
