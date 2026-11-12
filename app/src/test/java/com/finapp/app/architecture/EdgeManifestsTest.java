@@ -353,7 +353,8 @@ class EdgeManifestsTest {
         }
         assertThat(refusedIds).as("every edge rule is refused by a plant, and no plant names a rule the file lacks").containsAll(ruleIds);
         refusedIds.removeAll(ruleIds);
-        assertThat(refusedIds).as("the rest are finapp.rego's, reused").containsExactlyInAnyOrder("security-token", "images-digest", "security-non-root", "security-read-only");
+        assertThat(refusedIds).as("the rest are finapp.rego's, reused").containsExactlyInAnyOrder("security-token", "images-digest", "security-non-root", "security-read-only",
+                "rbac-human-namespace");
         assertThat(refusedPlants).as("every plant is refused and every refusal has its plant").isEqualTo(planted);
     }
 

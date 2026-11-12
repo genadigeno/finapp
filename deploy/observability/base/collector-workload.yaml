@@ -151,12 +151,16 @@ spec:
       targetPort: metrics
       protocol: TCP
 ---
+# One collector at a time (the break-glass eviction of OPERATIONS_RUNBOOK.md section 11.34). AlwaysAllow (P15-TSK-032's review): a collector
+# that is not ready may be evicted even when the budget is spent, so with both collectors unready - the case a person evicts one for - the
+# eviction is not refused with 429 for ever; a ready collector is still held to one unavailable.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: finapp-collector
 spec:
   maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app.kubernetes.io/name: finapp-collector

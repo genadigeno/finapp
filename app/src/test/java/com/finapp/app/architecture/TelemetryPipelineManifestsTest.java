@@ -373,7 +373,11 @@ class TelemetryPipelineManifestsTest {
                     Map.of("apiGroup", "rbac.authorization.k8s.io", "kind", "Group", "name", binding.getKey())));
         }
         assertThat(read(BASE + "kustomization.yaml")).contains("  - rbac-humans.yaml");
-        assertThat(read(POLICY)).contains("\"[rbac-\"}").contains("[obs-break-glass-evictions]");
+        assertThat(read(POLICY)).contains("\"[rbac-\"}").contains("[obs-break-glass-evictions]").contains("[obs-person-reads]");
+        // The eviction break-glass makes is admitted for an unready collector too, or both unready would refuse it with 429 for ever.
+        Map<String, Object> budget = yamlAll(read(BASE + "collector-workload.yaml")).stream()
+                .filter(document -> "PodDisruptionBudget".equals(document.get("kind"))).findFirst().orElseThrow();
+        assertThat(map(budget, "spec")).containsEntry("maxUnavailable", 1).containsEntry("unhealthyPodEvictionPolicy", "AlwaysAllow");
         assertThat(read("infra/scripts/manifest-policy/finapp.rego")).contains("person_namespaces := {\"finapp\", \"finapp-observability\"}");
     }
 

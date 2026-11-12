@@ -5,9 +5,14 @@
 # a person's binding is admitted in finapp and finapp-observability alone, and observability.rego holds break-glass here to evictions.
 #
 # NOT `secrets` AND NOT `configmaps`: nothing a pod here is configured with is a person's to read (OPERATIONS_RUNBOOK.md section 11.34 needs
-# neither), and neither are exec, attach, port-forward, ephemeral containers or the proxy subresources, each a way inside a pod. NOT A POD
-# DELETED AND NOT A REPLICA COUNT: a pod is evicted, one at a time, which the collector's PodDisruptionBudget admits; a count changes by a
-# commit and a rolling update.
+# neither), and neither are exec, attach, port-forward, ephemeral containers or the proxy subresources, each a way inside a pod - so Prometheus,
+# Tempo, Loki and Alertmanager, reached only through the API server's proxy or a port-forward, are no person's to read either. NOT A POD
+# DELETED AND NOT A REPLICA COUNT: a pod is evicted, one at a time; a count changes by a commit and a rolling update. BREAK-GLASS EVICTS A
+# COLLECTOR ONLY: the collector's PodDisruptionBudget admits one at a time, while a back end (Tempo, Loki, Prometheus, Alertmanager on kind)
+# is one replica on its own emptyDir with no budget, so evicting it deletes it and what it holds - the cluster administrator's decision, not
+# break-glass's. Break-glass reads nothing here: a session in that group alone cannot see the pod it evicts.
+#
+# observability.rego holds every role a person can hold here to exactly these rules ([obs-person-reads]), so a patch adding a resource fails.
 #
 # The namespace is stated, not left to the transformer, so a reader of the committed files tells this role from the application's of the
 # same name.

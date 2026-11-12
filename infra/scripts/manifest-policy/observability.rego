@@ -324,6 +324,50 @@ deny contains msg if {
 	msg := sprintf("[obs-break-glass-evictions] %s may %s %s: in finapp-observability break-glass evicts a pod and writes nothing else", [main.label(role), verb, resource])
 }
 
+# ------------------------------------------------------------------------------------------- a person's roles here, exactly
+
+# P15-TSK-032's review: finapp.rego's rules refuse what no person may hold anywhere (a Secret, a wildcard, a way inside a pod); here a
+# person holds exactly these, triple by triple, and a role of any other name nothing. Every role a person can hold in this namespace: one a
+# binding here gives a group or a user, and any role here no listed controller holds. A ConfigMap, a Service or a Role patched in by an
+# overlay is refused, as is a read added to break-glass.
+person_triples := {
+	"finapp-read-only": {
+		["", "pods", "get"], ["", "pods", "list"], ["", "pods", "watch"],
+		["", "pods/log", "get"], ["", "pods/log", "list"], ["", "pods/log", "watch"],
+		["", "events", "get"], ["", "events", "list"], ["", "events", "watch"],
+		["apps", "deployments", "get"], ["apps", "deployments", "list"], ["apps", "deployments", "watch"],
+	},
+	"finapp-break-glass": {["", "pods/eviction", "create"]},
+}
+
+person_roles_here contains role if {
+	some binding in main.rbac_bindings
+	in_namespace(binding)
+	some subject in main.list_of(binding, "subjects")
+	not main.is_service_account(subject)
+	some role in main.rbac_roles
+	main.binds(binding, role)
+}
+
+person_roles_here contains role if {
+	some role in main.human_roles
+	in_namespace(role)
+}
+
+allowed_for_a_person(role, triple) if {
+	triple in object.get(person_triples, role.metadata.name, set())
+}
+
+deny contains msg if {
+	some role in person_roles_here
+	some rule in main.list_of(role, "rules")
+	some group in main.list_of(rule, "apiGroups")
+	some resource in main.list_of(rule, "resources")
+	some verb in main.list_of(rule, "verbs")
+	not allowed_for_a_person(role, [group, resource, verb])
+	msg := sprintf("[obs-person-reads] %s gives a person %v %v in API group %v: in finapp-observability a person holds pods, their logs, Deployments and events to read, and break-glass an eviction, nothing else", [main.label(role), verb, resource, group])
+}
+
 # ------------------------------------------------------------------------------------------- the application's one endpoint
 
 collector_endpoints := {
