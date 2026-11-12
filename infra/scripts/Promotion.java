@@ -51,9 +51,12 @@ public final class Promotion {
     static final Pattern DIGEST = Pattern.compile("sha256:[0-9a-f]{64}");
     static final Pattern REVISION = Pattern.compile("[0-9a-f]{40}");
 
-    /** DATA_MIGRATIONS.md section 4.1, the form {@code MigrationLint.MARKER_FORM} holds; {@code PromotionTest} holds the two equal. */
+    /**
+     * DATA_MIGRATIONS.md section 4.1, the form {@code MigrationLint.MARKER_FORM} holds; {@code PromotionTest} holds the two equal.
+     * Its optional {@code data-fix=} (2026-11-12, `P15-TSK-032`) is the lint's alone: a rollback reads the first group only.
+     */
     static final String MARKER_FORM =
-            "^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\\.[0-9]+\\.[0-9]+); waives=([A-Z_]+(?:,[A-Z_]+)*); reason=(\\S.*)$";
+            "^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\\.[0-9]+\\.[0-9]+); waives=([A-Z_]+(?:,[A-Z_]+)*)(?:; data-fix=V([0-9]+(?:[._][0-9]+)*))?; reason=(\\S.*)$";
     static final Pattern MARKER = Pattern.compile(MARKER_FORM);
     /** Anything that reads like a marker, the lint's own test of one: a line it cannot read is refused, never passed over. */
     static final Pattern MARKER_LIKE = Pattern.compile("^--\\s*finapp-contract\\b.*$", Pattern.CASE_INSENSITIVE);

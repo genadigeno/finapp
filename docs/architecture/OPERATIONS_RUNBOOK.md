@@ -2087,7 +2087,10 @@ the rollout never started. Every later release carries the same migration, so pr
 needs a person who can reach the data, and nobody can today (`THREAT_MODEL.md` §6 item 31 (e)). Once someone can: the data is fixed
 by an audited operational procedure, written into the incident's record (§11.12), and the same revision is synced once more by the
 reviewed manual sync that §11.36 names as the one exception for this case. Until then it is a residual, `THREAT_MODEL.md` §6
-item 42 (j).
+item 42 (j). **What makes it rare** (2026-11-12): the build refuses a tightening over rows an earlier release wrote unless it is
+`NOT VALID`, validated only by a later release, or its marker names the data fix that runs before it in the same release
+(`DATA_MIGRATIONS.md` §4.1, `TIGHTENED_OVER_OLD_ROWS`), so a migration that judges production's rows has had them fixed, or left
+unjudged, first. A reviewed migrator data-fix mode, for the rows nobody foresaw, stays deferred (item 42 (j)'s second half).
 
 **A run stopped mid-way** (its pod killed, its connection lost). Flyway applies a migration on one connection and writes its row on
 another, inside the transaction that holds its lock, which commits after the migration's own: a run stopped between the two leaves
