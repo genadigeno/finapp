@@ -3237,8 +3237,8 @@ latest; the run, as its record names it.
 | §11.37 | `identity`, `accounting` | 2 | 4 | 6 | kind | 2026-11-12 | `5078e612`, `ca4c323a` | `dev3 and dev5, the signals scope's development runs` | postponed by the owner (PI-024) |
 | §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.40 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
-| §11.41 | `platform` | 3 | 1 | 4 | kind | 2026-11-12 | `722365ad`, `HEADPLACEHOLDER` | `§11.41's runs 1 and 2` | — |
-| §11.42 | `platform` | 4 | 0 | 4 | containers, kind | 2026-11-12 | `HEADPLACEHOLDER` | `§11.42's record` | — |
+| §11.41 | `platform` | 3 | 1 | 4 | kind | 2026-11-12 | `722365ad`, `d8f907c4` | `§11.41's runs 1 and 2` | — |
+| §11.42 | `platform` | 4 | 0 | 4 | containers, kind | 2026-11-12 | `d8f907c4` | `§11.42's record` | — |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3551,7 +3551,7 @@ under traffic (`P16-TSK-005`, `P16-TSK-020`); the edge's SLO of its own, which `
   (`http: TLS handshake error from <address>:<port>`, a record whose body is the proxy's message): the collector now cuts every address
   from an edge record, and the next run read `TLS handshake error from [address]` and no needle, with the router, the routed path and the
   status kept. With the collector replaced by a stand-in that takes every connection and answers nothing, 30 requests each answered, the
-  slowest in 171 ms, 54 ms and 32 ms over three runs.
+  slowest in 171, 54, 32 and 95 ms over four runs; the final run (begun 20:23Z) green whole, 146 checks.
 - **The platform's own lines.** `{service_name="finapp-collector"}` held the collectors' warnings on `kind` (§11.41's runs) and on these
   containers, each with its `k8s_pod_name`; the watcher's on `kind`'s first run.
 

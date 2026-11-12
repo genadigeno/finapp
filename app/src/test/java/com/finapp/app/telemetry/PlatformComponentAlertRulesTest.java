@@ -102,7 +102,7 @@ class PlatformComponentAlertRulesTest {
         }
         // And the watcher reads that namespace.
         Map<String, Object> receiver = map(map(yaml(WATCHER).get("receivers")).get("k8s_cluster"));
-        assertThat((List<?>) receiver.get("namespaces")).containsExactly(namespace);
+        assertThat(receiver.get("namespaces")).isEqualTo(List.of(namespace));
     }
 
     @Test
@@ -112,9 +112,11 @@ class PlatformComponentAlertRulesTest {
         Map<String, Set<String>> published = capture();
         assertThat(published).as("the capture was read").containsKeys("k8s_job_failed_pods", "traefik_entrypoint_requests_total");
         Pattern selector = Pattern.compile("\\b([a-z_][a-z0-9_]*)\\{([^}]*)}");
-        Pattern matcher = Pattern.compile("([a-z_]+)\\s*(=~|!=|=)");
-        Pattern grouping = Pattern.compile("\\b(?:by|on)\\s*\\(([a-z_, ]*)\\)");
+        // A label name may hold digits (k8s_job_name): a class without them would read "s_job_name" and miss every by (...) naming one.
+        Pattern matcher = Pattern.compile("\\b([a-z_][a-z0-9_]*)\\s*(=~|!=|=)");
+        Pattern grouping = Pattern.compile("\\b(?:by|on)\\s*\\(([a-z0-9_, ]*)\\)");
         int read = 0;
+        Set<String> grouped = new TreeSet<>();
         for (String name : RULE_NAMES) {
             String expr = expr(name);
             Matcher series = selector.matcher(expr);
@@ -134,12 +136,14 @@ class PlatformComponentAlertRulesTest {
                     if (label.isBlank()) {
                         continue;
                     }
+                    grouped.add(label.strip());
                     boolean somewhere = SCRAPE_LABELS.contains(label) || published.values().stream().anyMatch(set -> set.contains(label));
                     assertThat(somewhere).as("%s groups by %s, which some published series carries", name, label).isTrue();
                 }
             }
         }
         assertThat(read).as("not vacuous: the selectors were read").isGreaterThanOrEqualTo(12);
+        assertThat(grouped).as("not vacuous: the groupings were read, k8s_job_name's among them").contains("k8s_job_name", "k8s_namespace_name", "edge");
     }
 
     @Test

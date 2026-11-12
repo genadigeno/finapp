@@ -29096,7 +29096,7 @@ on none:
 - **Operational documentation**: `SECRET_MANAGEMENT.md` §5.1's new rows.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-003 — The platform's own components watched: the edge, the migrator, the telemetry stack (`THREAT_MODEL.md` §6 item 43 (b))** — `IN_PROGRESS` (2026-11-12; branch `P16-TSK-003` from master `6981c167`; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
+**P16-TSK-003 — The platform's own components watched: the edge, the migrator, the telemetry stack (`THREAT_MODEL.md` §6 item 43 (b))** — `COMPLETE` (2026-11-12; branch `P16-TSK-003` from master `6981c167`; gate `COMPLETE` 2026-11-12; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: as decided 2026-11-12, in Phase 16's first wave: a migration that fails at night wakes someone, and the edge's
   errors are seen.
 - **Affected components**:
