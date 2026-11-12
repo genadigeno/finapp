@@ -1,0 +1,24 @@
+# Argo CD's `default` project, restricted to nothing (P15-TSK-032; OPERATIONS_RUNBOOK.md section 11.36). Not synced by any Application:
+# the pipeline role applies it with the controller, in the stream infra/scripts/controller-check.sh renders and holds to
+# infra/scripts/manifest-policy/controllers.rego (rule controller-default-project), and the kind rehearsal's delivery scope installs that
+# same stream and sees an Application placed here refused.
+#
+# WHY. As Argo CD installs it, `default` accepts any repository, any destination and any kind, and every Application names a project. So an
+# Application written in `argocd` by anyone who can write one there, or by a merged change under deploy/delivery/ that names no project of
+# this repository's, would reach the whole cluster. Restricted, it reaches nothing: no source repository, no source namespace, no
+# destination, every namespaced kind refused, and no cluster-scoped kind (the absence of a whitelist allows none). The shape is the one
+# Argo CD's own documentation gives for disabling the default project (read 2026-11-12). It cannot be deleted, only restricted, and Argo
+# CD creates it only when it is missing, so applying this before the controller starts is what keeps the open default from ever existing.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: argocd
+spec:
+  description: Restricted to nothing - every Application of this platform names one of its own projects
+  sourceRepos: []
+  sourceNamespaces: []
+  destinations: []
+  namespaceResourceBlacklist:
+    - group: "*"
+      kind: "*"
