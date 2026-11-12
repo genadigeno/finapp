@@ -49,7 +49,7 @@ telemetry_deploy() {
     telemetry_image "$PROMETHEUS_REPOSITORY" "$PROMETHEUS_VERSION" "$PROMETHEUS_DIGEST"
     render_overlay observability observability/overlays/kind
     apply_files "$WORK/render/observability/all.yaml"
-    for deployment in finapp-tempo finapp-loki finapp-prometheus finapp-collector; do
+    for deployment in finapp-tempo finapp-loki finapp-prometheus finapp-alertmanager finapp-collector; do
         kube -n finapp-observability rollout status "deployment/$deployment" --timeout=300s >> "$ART/apply.log" 2>&1 \
             || fail "$deployment did not become ready"
     done

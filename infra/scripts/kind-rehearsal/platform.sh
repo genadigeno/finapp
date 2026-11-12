@@ -104,6 +104,8 @@ alerting_ready() {
     grep -q 'placeholder-page' "$ART/alertmanager-status.json" && grep -q 'placeholder-ticket' "$ART/alertmanager-status.json" \
         || fail "Alertmanager's configuration does not name placeholder-page and placeholder-ticket"
     [ "$(prom_value 'count(up{job="finapp"} == 1)')" = 3 ] || fail "Prometheus does not scrape three replicas of finapp"
+    # cert-manager scraped, so the certificate rules read real series and CertificateExpirySeriesAbsent stays silent for the right reason.
+    [ "$(prom_value 'max(up{job="cert-manager"})')" = 1 ] || fail "Prometheus does not scrape cert-manager"
     pass "Alertmanager routes to placeholder-page and placeholder-ticket; Prometheus scrapes three replicas"
 }
 
@@ -186,6 +188,9 @@ signals_alerting() {
     alerting_ready
     prom_query 'ALERTS{alertstate="firing"}' > "$ART/alerts-baseline.json" 2>&1 || true
     log "firing at the baseline: $(grep -o '"alertname":"[^"]*"' "$ART/alerts-baseline.json" | sort -u | tr '\n' ' ')"
+    # The collectors started minutes ago, as every rollout of them does: the load-balancing exporter's start-up drops must not page.
+    [ "$(alert_state TelemetryExportFailing)" = none ] || fail "TelemetryExportFailing fires at the baseline, before any plant: see alerts-baseline.json"
+    pass "nothing of the telemetry stack's own fires at the baseline, the collectors minutes old"
 }
 
 signals_plants() {
@@ -404,7 +409,9 @@ signals_telemetry() {
     # The harness's smoke: every flow through the edge, its counts added to what the census expects; a failed one fails the step.
     smoke telemetry-backend
     fires TelemetryBackendDown placeholder-ticket 900 "11.34, a trace back end gone" ',job="finapp-tempo"'
-    fires TelemetryExportFailing placeholder-ticket 900 "11.34, the collectors' export to it failing"
+    # The exporter named: the load-balancing exporter between the collectors fails at every collectors' start (peers not yet resolvable),
+    # so an unqualified firing could be that and not this.
+    fires TelemetryExportFailing placeholder-ticket 900 "11.34, the collectors' export to it failing" ',exporter="otlp_grpc/tempo"'
     kube -n finapp-observability scale deployment/finapp-tempo --replicas=1 >> "$ART/apply.log" 2>&1 || fail "Tempo could not be started again"
     kube -n finapp-observability rollout status deployment/finapp-tempo --timeout=300s >> "$ART/apply.log" 2>&1 || fail "Tempo did not come back"
     clears TelemetryBackendDown 900 "11.34, Tempo back" ',job="finapp-tempo"'
