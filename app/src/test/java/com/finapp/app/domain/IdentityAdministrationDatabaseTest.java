@@ -300,6 +300,12 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         for (String role : java.util.List.of("RISK_ANALYST", "RISK_OFFICER", "AML_OFFICER")) {
             IdentityId holder = givenAnIdentity();
+            if (role.equals("RISK_ANALYST")) {
+                // P15-TSK-032: the risk approver needs an enrolled factor first - refused without one, granted with it.
+                assertThat(post(rolesOf(holder), givenASessionFor(admin), "{\"role\":\"RISK_ANALYST\",\"reason\":\"OPS-6101 risk desk\"}")
+                        .body()).contains("identity.FactorRequiredForRole");
+                givenAConfirmedFactorFor(holder);
+            }
 
             // Granted through the REAL endpoint (the P2-TSK-004 precedent): the request enum admits the value at the
             // boundary, identity V023's regenerated constraint admits the row, and the grant is audited like any other.

@@ -127,20 +127,27 @@ public final class IdentityAdministration {
      * written - the same rule a revocation keeps ({@link #revokeRole}). Two administrators suspending each other at once leave
      * exactly one. <strong>The locks come before the status write, in the revocation's order</strong>: the subject's row
      * ({@link RoleAssignmentStore#lockForRoleChange}), then every live holding of a granting role in key order; then the
-     * status update and the session revocation's {@code FOR UPDATE} of the subject's row. Taken after the status write, the
-     * holdings' lock would deadlock with a revocation whose actor is the subject: that revocation holds the holdings and then
-     * takes {@code KEY SHARE} on its actor's row for {@code revoked_by}'s foreign key, which a held {@code FOR UPDATE} blocks.
-     * <strong>The count is a fresh statement after the locks</strong> ({@link Authorization#lockActiveGranters}), so a
+     * status update and the session revocation's {@code FOR UPDATE} of the subject's row. Taken after that {@code FOR UPDATE},
+     * the holdings' lock would deadlock with a revocation whose actor is the subject: that revocation holds the holdings and
+     * then takes {@code KEY SHARE} on its actor's row for {@code revoked_by}'s foreign key, which a held {@code FOR UPDATE}
+     * blocks. <strong>The count is a fresh statement after the locks</strong> ({@link Authorization#lockActiveGranters}), so a
      * suspension or revocation that committed while they waited is seen. A subject holding no granting role takes the
      * identity's lock alone.
      *
      * <p><strong>Risk's automated suspension is not bound by it</strong> ({@link SuspensionCause#RISK}, risk's
      * {@code SUSPEND_IDENTITY}): a compromised last administrator must still be suspendable, so security wins over
-     * availability there, and risk's path takes none of these locks. If it suspends the last one, nobody can grant, revoke,
-     * suspend or reinstate through the platform; the only way back is the out-of-band write of {@code README.md} §5e - a
-     * granting role inserted for an {@code ACTIVE} identity, or the suspended one's status set back - by someone holding a
-     * database credential that can write {@code identity}'s tables. In a deployed environment no person has such a session
-     * today ({@code THREAT_MODEL.md} §6 item 31 (e)).
+     * availability there, and risk's path takes none of these locks. Two ways it leaves no active administrator: it suspends
+     * the last one; or, with two left, it suspends one while an administrator suspends the other - the administrator's count,
+     * taken after its locks, still sees risk's subject active, because risk takes no lock and has not committed, so both land.
+     * Either way nobody can grant, revoke, suspend or reinstate through identity's doors, and the way back is the same. First,
+     * <strong>risk's own {@code REINSTATE_IDENTITY}</strong> ({@link #reinstate(Connection, IdentityId, IdentityId, String,
+     * SuspensionCause)} with {@link SuspensionCause#RISK}), which lifts a suspension risk made, in the platform: a risk case
+     * opened and the action proposed, then approved by a second analyst on a stepped-up session. Failing that - or for an
+     * administrator's suspension, which risk does not lift - the out-of-band write of {@code README.md} §5e by someone holding a
+     * database credential that can write {@code identity}'s tables: a granting role inserted for an {@code ACTIVE} identity, or
+     * the suspended one restored in full ({@code status = 'ACTIVE', suspension_cause = NULL, status_changed_at = now()}; V024's
+     * {@code identity_suspension_cause_only_while_suspended} refuses an {@code ACTIVE} row keeping its cause). In a deployed
+     * environment no person has such a session today ({@code THREAT_MODEL.md} §6 item 31 (e)).
      */
     public Suspension suspend(
             Connection unitOfWork, IdentityId subject, IdentityId actor, String reason, SuspensionCause cause) {
@@ -298,8 +305,9 @@ public final class IdentityAdministration {
      * storage exception rendered {@code 500}, which is our fault reported for a caller's typo.
      *
      * <p><strong>A role that can redirect a merchant's money needs a factor first</strong> (`P15-TSK-039`;
-     * {@code PRIVILEGED_ACCESS_REVIEW.md} §6), and since `P15-TSK-032` so does the role that grants roles and suspends
-     * identities ({@link RoleName#requiresEnrolledFactor}): read here, on the grant's own unit of work, per decision. No door removes a
+     * {@code PRIVILEGED_ACCESS_REVIEW.md} §6), and since `P15-TSK-032` so do the role that grants roles and suspends
+     * identities and the risk desk's approver ({@link RoleName#requiresEnrolledFactor}): read here, on the grant's own unit of
+     * work, per decision. No door removes a
      * confirmed factor, so a factor seen here cannot be taken away between this read and the grant. A retried grant to
      * someone already holding the role without a factor is refused too: the answer says what the holding lacks, where
      * reporting success would tell the administrator the rule was satisfied.
@@ -387,8 +395,10 @@ public final class IdentityAdministration {
      * revoking each other - or a revocation and an administrator's suspension of the other holder lock the same rows in the
      * same order, the second waits for the first, and its count sees what the first committed, a suspension included. A
      * suspended holder does not count - a suspended administrator cannot sign in - and a grant still in flight is not seen,
-     * which errs towards refusing. Risk's automated suspension takes no such lock and is not bound by the rule
-     * ({@link #suspend(Connection, IdentityId, IdentityId, String, SuspensionCause)}).
+     * which errs towards refusing. Risk's automated suspension takes no such lock and is not bound by the rule, so a
+     * revocation racing risk's suspension of the other holder can leave none, as an administrator's suspension racing it can;
+     * the end state and the way back are the same ({@link #suspend(Connection, IdentityId, IdentityId, String,
+     * SuspensionCause)}).
      *
      * <h2>The last role ends every session the identity holds</h2>
      *

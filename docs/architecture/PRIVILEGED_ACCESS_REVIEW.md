@@ -136,8 +136,8 @@ list held five since `P15-TSK-039`)*:
 3. Does any identity hold `ADMINISTRATOR` beside another role? The administrator grants roles; holding one of the
    roles it grants is reviewed as a conflict and justified or revoked.
 4. Was every grant since the last review made by a different person than its holder, with a reason that names a need?
-5. Does any holder of a role that needs an enrolled factor - one that can redirect a merchant's money, or, since
-   `P15-TSK-032`, `ADMINISTRATOR` - have none? `GET
+5. Does any holder of a role that needs an enrolled factor - one that can redirect a merchant's money, `ADMINISTRATOR`, or
+   the risk desk's approver (`RISK_ANALYST`), §6 - have none? `GET
    /v1/operator/access-review/factorless-holdings`, on a `MULTI_FACTOR` session, names them, from the live rows of both tables: each is resolved by
    the holder enrolling, or the role being revoked with a reason. The rule below refuses new ones; this finds the ones
    that stood before it (§6).
@@ -201,8 +201,9 @@ refusal whose record cannot be written is answered `500`, never without its reco
    move or redirect money that is not the operator's. **Built:** a grant of a role holding any of those three is refused
    `409 identity.FactorRequiredForRole` until the subject has a confirmed factor (`RoleGrantNeedsAFactorTest`), and the
    destination's proposal and approval declare `MULTI_FACTOR` unconditionally. Today's roles are `MERCHANT_ADMINISTRATOR`
-   and `LEDGER_OPERATOR`, and since `P15-TSK-032` `ADMINISTRATOR` (it grants roles and suspends identities: see the third
-   ruling below); the rule reads the grants, so a permission moved to another role takes it along. A holding
+   and `LEDGER_OPERATOR`, and since `P15-TSK-032` `ADMINISTRATOR` (it grants roles and suspends identities) and
+   `RISK_ANALYST` (it approves a risk case's action: see the third ruling below); the rule reads the grants, so a permission
+   moved to another role takes it along. A holding
    from before the rule is **named, not revoked**: §5 question 5. Until it is resolved, such a holder still cannot act
    on a destination (no factor, no `MULTI_FACTOR` session), and can still pay a merchant out on a password: the review
    closes that, not a migration.
@@ -227,7 +228,11 @@ knowingly**: the second ruling keeps "what stops a change" quick - a kill switch
 and a revocation are the stop direction for a person's access. They step up anyway: each also takes access away from
 someone else, so a stolen password could suspend every other administrator, and for an administrator with a factor the
 step-up costs seconds. A factorless administrator from before the rule cannot act at these doors until they enrol, which is
-self-service, and §5's check names them.
+self-service, and §5's check names them. **The risk desk's approver needs a factor too** (`RISK_CASE_APPROVE`, held by
+`RISK_ANALYST`; ruled under the same word): risk's automated `SUSPEND_IDENTITY` is not bound by the last-administrator rule
+- a compromised last administrator must stay suspendable - so it is the one path that can suspend every administrator, and
+its approval already needs a stepped-up session; without the factor rule a factorless analyst's stolen password would enrol
+the thief's factor and approve. Opening a case and proposing an action need neither.
 
 **Declared doors judge the level before the permission**, as every declared door does: at those thirteen, a caller on a
 password session is told to step up whether or not they hold the permission. It denies a stolen password a way to learn

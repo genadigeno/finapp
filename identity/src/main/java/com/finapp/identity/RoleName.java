@@ -405,16 +405,19 @@ public enum RoleName {
      * Whether this role may not be granted to an identity with no enrolled factor (`P15-TSK-039`;
      * {@code PRIVILEGED_ACCESS_REVIEW.md} §6). Decided from what the role grants, so a permission moved to another role takes
      * the rule with it: proposing a payout destination, approving one, paying out - a merchant's money redirected - and,
-     * since `P15-TSK-032`, granting roles or suspending identities. Every administrative door demands a {@code MULTI_FACTOR}
-     * session, and a password alone may enrol an identity's <em>first</em> factor, so a factorless administrator's stolen
-     * password would otherwise pass every one of those doors after enrolling the thief's own factor.
+     * since `P15-TSK-032`, granting roles or suspending identities, and approving a risk case's action - risk's automated
+     * suspension is the one path that can suspend every administrator, since the last-administrator rule does not bind it.
+     * Every such door demands a {@code MULTI_FACTOR} session, and a password alone may enrol an identity's <em>first</em>
+     * factor, so a factorless holder's stolen password would otherwise pass every one of those doors after enrolling the
+     * thief's own factor. Opening and proposing a risk case need none.
      */
     public boolean requiresEnrolledFactor() {
         return permissions.contains(PermissionName.MERCHANT_ADMINISTER)
                 || permissions.contains(PermissionName.PAYOUT_DESTINATION_APPROVE)
                 || permissions.contains(PermissionName.MERCHANT_PAYOUT)
                 || permissions.contains(PermissionName.ROLE_ASSIGN)
-                || permissions.contains(PermissionName.IDENTITY_SUSPEND);
+                || permissions.contains(PermissionName.IDENTITY_SUSPEND)
+                || permissions.contains(PermissionName.RISK_CASE_APPROVE);
     }
 
     public static String sqlValueList() {
