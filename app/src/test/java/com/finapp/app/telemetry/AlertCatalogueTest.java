@@ -98,6 +98,47 @@ class AlertCatalogueTest {
         }
     }
 
+    /** kubectl's annotations cap, which a client-side apply's copy of the object counts against (`P15-TSK-032`'s review). */
+    private static final int ANNOTATIONS_CAP = 262_144;
+
+    /** What is left for the rule files to grow before the build fails, and before an apply would: 32 KiB. */
+    private static final int MARGIN = 32_768;
+
+    @Test
+    @DisplayName("kind's rules ConfigMap fits a client-side apply's annotation with 32 KiB to spare, measured as kubectl writes it: every file"
+            + " JSON-escaped, < > & as six bytes each, plus a kilobyte for the object around them (P15-TSK-032)")
+    void theRulesConfigMapFitsAClientSideApply() throws IOException {
+        long serialised = 1_024;
+        int files = 0;
+        try (Stream<Path> copies = Files.list(RepositoryPaths.locate(KIND_RULES + "slo.yml").getParent())) {
+            for (Path file : copies.sorted().toList()) {
+                serialised += file.getFileName().toString().length() + 6 + escapedLength(Files.readString(file));
+                files++;
+            }
+        }
+        assertThat(files).as("the copies were read").isGreaterThanOrEqualTo(13);
+        assertThat(serialised).as("the rules ConfigMap as kubectl's last-applied annotation holds it: past %s bytes split the ConfigMap, or"
+                + " apply the overlay server-side, before it reaches the %s-byte cap", ANNOTATIONS_CAP - MARGIN, ANNOTATIONS_CAP)
+                .isLessThanOrEqualTo(ANNOTATIONS_CAP - MARGIN).isGreaterThan(150_000);
+    }
+
+    /** A string's length as Go's encoding/json writes it, which kubectl uses: HTML-escaped. */
+    private static long escapedLength(String text) {
+        long length = 0;
+        for (int at = 0; at < text.length(); ) {
+            int point = text.codePointAt(at);
+            at += Character.charCount(point);
+            if (point == '"' || point == '\\' || point == '\n' || point == '\r' || point == '\t') {
+                length += 2;
+            } else if (point < 0x20 || point == '<' || point == '>' || point == '&' || point == 0x2028 || point == 0x2029) {
+                length += 6;
+            } else {
+                length += new String(Character.toChars(point)).getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            }
+        }
+        return length;
+    }
+
     @Test
     @DisplayName("every alert has a severity of page or ticket, a for and an owning module: the rule's label or its group's")
     void everyAlertIsRoutedAndOwned() throws IOException {

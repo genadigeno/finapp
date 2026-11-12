@@ -43,7 +43,7 @@ class TelemetryAlertRulesTest {
     private static final Set<String> ANY_LOSS = Set.of("TelemetryExportFailing", "TelemetryExportQueueFull", "TelemetryReceiverRefusing");
 
     private static final Set<String> NOT_A_SERIES = Set.of("sum", "by", "or", "and", "unless", "on", "ignoring", "increase", "rate",
-            "present_over_time", "absent", "count", "offset", "bool", "max", "min");
+            "present_over_time", "absent", "count", "offset", "bool", "max", "min", "group_left", "group_right");
 
     /** A name not inside another word or a number (the m of {@code 10m}), with its matchers when it has any. */
     private static final Pattern SELECTOR = Pattern.compile("(?<![a-zA-Z0-9_:.])([a-zA-Z_:][a-zA-Z0-9_:]*)\\s*(\\{[^}]*})?");
@@ -55,36 +55,62 @@ class TelemetryAlertRulesTest {
     void everyNameLabelAndValueIsStored() {
         Map<String, List<Map<String, String>>> stored = stored();
         int names = 0;
+        int groupings = 0;
         for (Map.Entry<String, String> rule : expressions().entrySet()) {
-            for (String term : rule.getValue().split(" or ")) {
-                Set<String> grouped = new TreeSet<>();
-                Matcher by = Pattern.compile("\\bby \\(([^)]*)\\)").matcher(term);
-                while (by.find()) {
-                    grouped.addAll(List.of(by.group(1).split(",\\s*")));
-                }
-                for (Map.Entry<String, String> selector : selectors(term).entrySet()) {
-                    String name = selector.getKey();
-                    names++;
-                    assertThat(stored).as("%s reads %s, a name the pinned Prometheus stored (a suffix it does not carry, or one it does, is"
-                            + " a rule that never fires)", rule.getKey(), name).containsKey(name);
-                    List<Map<String, String>> series = stored.get(name);
-                    for (String label : grouped) {
-                        assertThat(series).as("%s groups %s by %s, a label every stored series of it carries", rule.getKey(), name, label)
-                                .allSatisfy(labels -> assertThat(labels).containsKey(label));
-                    }
-                    Matcher matcher = MATCHER.matcher(selector.getValue());
-                    while (matcher.find()) {
-                        String label = matcher.group(1).replace("\"", "");
-                        assertThat(matcher.group(2)).as("%s selects %s by equality or by a list", rule.getKey(), name).isIn("=", "=~");
-                        for (String value : matcher.group(2).equals("=~") ? List.of(matcher.group(3).split("\\|")) : List.of(matcher.group(3))) {
-                            assertThat(series).as("%s selects %s{%s=\"%s\"}, a value the pinned images were seen to store", rule.getKey(), name,
-                                    label, value).anySatisfy(labels -> assertThat(labels.get(label)).isIn(value, "*"));
-                        }
+            for (Map.Entry<String, String> selector : selectors(rule.getValue()).entrySet()) {
+                String name = selector.getKey();
+                names++;
+                assertThat(stored).as("%s reads %s, a name the pinned Prometheus stored (a suffix it does not carry, or one it does, is"
+                        + " a rule that never fires)", rule.getKey(), name).containsKey(name);
+                List<Map<String, String>> series = stored.get(name);
+                Matcher matcher = MATCHER.matcher(selector.getValue());
+                while (matcher.find()) {
+                    String label = matcher.group(1).replace("\"", "");
+                    assertThat(matcher.group(2)).as("%s selects %s by equality or by a list", rule.getKey(), name).isIn("=", "=~");
+                    for (String value : matcher.group(2).equals("=~") ? List.of(matcher.group(3).split("\\|")) : List.of(matcher.group(3))) {
+                        assertThat(series).as("%s selects %s{%s=\"%s\"}, a value the pinned images were seen to store", rule.getKey(), name,
+                                label, value).anySatisfy(labels -> assertThat(labels.get(label)).isIn(value, "*"));
                     }
                 }
             }
+            // A label summed by is on every series summed, within the aggregation's own parentheses. The operand an `on` matches against
+            // (the collector's uptime, a filter or a count it is compared with) lends no labels to the sum, and is not held to them.
+            for (Map.Entry<List<String>, String> grouping : groupings(rule.getValue())) {
+                String summed = grouping.getValue().replaceAll(
+                        "\\b(on|ignoring)\\([^)]*\\)\\s*(group_(left|right)\\s*)?([a-z_]+\\()?[a-zA-Z_:][a-zA-Z0-9_:]*", " ");
+                for (String name : selectors(summed).keySet()) {
+                    groupings++;
+                    for (String label : grouping.getKey()) {
+                        assertThat(stored.get(name)).as("%s groups %s by %s, a label every stored series of it carries", rule.getKey(), name, label)
+                                .allSatisfy(labels -> assertThat(labels).containsKey(label));
+                    }
+                }
+            }
+            // A label an `on` matches by is on every series of both sides, or the match is empty and the rule never fires.
+            Matcher on = Pattern.compile("\\bon\\(([^)]+)\\)").matcher(rule.getValue());
+            while (on.find()) {
+                assertThat(List.of(on.group(1).split(",\\s*"))).as("%s matches on labels the uptime series carries, or adds", rule.getKey())
+                        .allSatisfy(label -> assertThat(label).isIn("job", "instance", "exporter"));
+            }
         }
-        assertThat(names).as("not vacuous: the selectors of every rule were read").isGreaterThanOrEqualTo(20);
+        assertThat(names).as("not vacuous: each rule's distinct series were read, nineteen over the eight").isGreaterThanOrEqualTo(19);
+        assertThat(groupings).as("not vacuous: the aggregations of every rule were read").isGreaterThanOrEqualTo(12);
+    }
+
+    /** Each {@code by (labels) (inner)} of an expression: its labels and the expression it aggregates. */
+    private static List<Map.Entry<List<String>, String>> groupings(String expr) {
+        List<Map.Entry<List<String>, String>> found = new ArrayList<>();
+        Matcher by = Pattern.compile("\\bby \\(([^)]*)\\)\\s*\\(").matcher(expr);
+        while (by.find()) {
+            int depth = 1;
+            int at = by.end();
+            while (at < expr.length() && depth > 0) {
+                char next = expr.charAt(at++);
+                depth += next == '(' ? 1 : next == ')' ? -1 : 0;
+            }
+            found.add(Map.entry(List.of(by.group(1).split(",\\s*")), expr.substring(by.end(), at - 1)));
+        }
+        return found;
     }
 
     @Test
@@ -113,8 +139,8 @@ class TelemetryAlertRulesTest {
     }
 
     @Test
-    @DisplayName("each rule that tickets on any drop or refusal also reads a series born above zero, new meaning no sample in the hour before"
-            + " the last ten minutes, never an `offset` term a staleness marker or a gap empties")
+    @DisplayName("each rule that tickets on any drop or refusal also reads a series born above zero - its collector younger than the ten"
+            + " minutes, or the series with fewer samples in them than its collector's uptime series - never an `offset` term")
     void aCounterBornAboveZeroIsSeen() {
         Map<String, List<Map<String, String>>> stored = stored();
         Set<String> bornAtAFailure = new TreeSet<>();
@@ -138,16 +164,17 @@ class TelemetryAlertRulesTest {
                 counters++;
                 read.add(name);
                 assertThat(stored).containsKey(name);
-                assertThat(expr).as("%s sees %s when it is born above zero", alert, name)
-                        .contains(name + " > 0 unless present_over_time(" + name + "[1h] offset 10m)");
+                assertThat(expr).as("%s sees %s when it is born above zero, after a restart in place too", alert, name)
+                        .contains("((" + name + " > 0 and on(job, instance) otelcol_process_uptime < 600) or (" + name + " > 0 and count_over_time("
+                                + name + "[10m]) < on(job, instance) group_left count_over_time(otelcol_process_uptime[10m])))");
             }
             assertThat(counters).as("%s reads its counters for spans and for log records", alert).isEqualTo(2);
         }
         assertThat(read).as("every counter born at a failure is read by a rule that sees it born").containsAll(bornAtAFailure.stream()
                 .filter(name -> name.startsWith("otelcol_exporter_")).toList());
         for (Map.Entry<String, String> rule : expressions.entrySet()) {
-            assertThat(rule.getValue().replace("[1h] offset 10m)", "")).as("%s has no offset term but the hour of present_over_time",
-                    rule.getKey()).doesNotContain("offset");
+            assertThat(rule.getValue()).as("%s has no offset term: a staleness marker or a gap empties one", rule.getKey())
+                    .doesNotContain("offset").doesNotContain("present_over_time");
         }
     }
 
@@ -173,6 +200,18 @@ class TelemetryAlertRulesTest {
             if (ANY_LOSS.contains(alert)) {
                 assertThat(String.valueOf(rule.getValue().get("for"))).as("%s: a drop is a fact, not a condition to wait out", alert).isEqualTo("0s");
                 assertThat(expr).as("%s: per collector, never across the fleet", alert).contains("sum by (job, instance, ");
+            }
+        }
+        // The owner's rulings (2026-11-12): the load-balancing tier is not read while its own collector's peers change - the collector young,
+        // or its set of peers changed - over every term of the rule, and nothing else is excluded anywhere.
+        String exclusion = "unless on(job, instance, exporter) label_replace(otelcol_process_uptime < 780 or on(job, instance)"
+                + " increase(otelcol_loadbalancer_num_backend_updates[13m]) > 0, \"exporter\", \"load_balancing\", \"\", \"\")";
+        assertThat(String.valueOf(rules.get("TelemetryExportFailing").get("expr")).strip()).as("the start-up window, over the whole rule")
+                .startsWith("( ").endsWith(") " + exclusion);
+        for (Map.Entry<String, String> rule : expressions().entrySet()) {
+            if (!"TelemetryExportFailing".equals(rule.getKey())) {
+                assertThat(rule.getValue()).as("%s excludes nothing", rule.getKey()).doesNotContain("otelcol_loadbalancer_num_backend_updates")
+                        .doesNotContain("label_replace").doesNotContain("< 780");
             }
         }
         assertThat(String.valueOf(rules.get("TelemetryCollectorDown").get("expr"))).isEqualTo("up{job=\"finapp-collector\"} == 0");
@@ -255,7 +294,9 @@ class TelemetryAlertRulesTest {
 
     /** Every series selector of a term, by name, with its matchers ({@code ""} when it has none). */
     private static Map<String, String> selectors(String term) {
-        String bare = term.replaceAll("\\b(by|on|ignoring) ?\\([^)]*\\)", " ").replaceAll("\\[[^\\]]*\\]", " ");
+        // A function's string arguments (label_replace's) are no series: each follows a comma, which a matcher's label never does here.
+        String bare = term.replaceAll("\\b(by|on|ignoring) ?\\([^)]*\\)", " ").replaceAll("\\[[^\\]]*\\]", " ")
+                .replaceAll(",\\s*\"[^\"]*\"", " ");
         Map<String, String> found = new LinkedHashMap<>();
         Matcher selector = SELECTOR.matcher(bare);
         while (selector.find()) {

@@ -187,6 +187,11 @@ class TelemetryPipelineManifestsTest {
         assertThat(fromTheApplication).as("traces and logs").isEqualTo(2);
         assertThat(stringList(map(pipelines, "traces/ingress").get("exporters"))).containsExactly("load_balancing");
         assertThat(map(map(collector, "exporters"), "load_balancing")).containsEntry("routing_key", "traceID");
+        // P15-TSK-032's review: the tier's own retry and queue re-route a failed batch to the peers the resolver knows by then, so a peer
+        // starting, leaving or not yet resolved costs no span; without them each was a drop and a ticket at every rollout.
+        Map<String, Object> balancing = map(map(collector, "exporters"), "load_balancing");
+        assertThat(map(balancing, "retry_on_failure")).containsEntry("enabled", true).containsEntry("max_elapsed_time", "120s");
+        assertThat(map(balancing, "sending_queue")).containsEntry("enabled", true);
         assertThat(stringList(map(pipelines, "traces/sampling").get("processors"))).contains("tail_sampling");
         assertThat(config).contains("name: errors").contains("name: slow").contains("name: writes").contains("name: asynchronous-legs");
     }

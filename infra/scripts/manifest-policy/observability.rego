@@ -263,11 +263,13 @@ deny contains msg if {
 }
 
 # Who may reach a backend, and on which port: the collectors on its ingest port and the scraper on its counters' port; Alertmanager the
-# scraper alone. Each peer exactly a role of this namespace.
+# scraper alone; and the scraper itself nobody (P15-TSK-032's review): on kind it runs with --web.enable-lifecycle, whose /-/reload and
+# /-/quit answer anyone who reaches it, so only its node (the API server's proxy) may. Each peer exactly a role of this namespace.
 store_admits := {
 	"trace-store": [{"role": "telemetry-collector", "ports": {["TCP", 4317]}}, {"role": "metrics-scraper", "ports": {["TCP", 3200]}}],
 	"log-store": [{"role": "telemetry-collector", "ports": {["TCP", 3100]}}, {"role": "metrics-scraper", "ports": {["TCP", 3100]}}],
 	"alert-router": [{"role": "metrics-scraper", "ports": {["TCP", 9193]}}],
+	"metrics-scraper": [],
 }
 
 admitted_to_store(rule, role) if {
@@ -286,7 +288,7 @@ deny contains msg if {
 	may_select(policy, pod_labels(role))
 	some rule in main.list_of(policy.spec, "ingress")
 	not admitted_to_store(rule, role)
-	msg := sprintf("[obs-store-ingress] %s admits to the %s something other than the collectors on its ingest port or the scraper on its own", [main.label(policy), role])
+	msg := sprintf("[obs-store-ingress] %s admits to the %s a peer or a port its list does not name", [main.label(policy), role])
 }
 
 # ------------------------------------------------------------------------------------------- the application's one endpoint

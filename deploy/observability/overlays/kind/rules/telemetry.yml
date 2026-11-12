@@ -11,11 +11,13 @@
 # - The collector (otel/opentelemetry-collector-contrib 0.165.0, `level: basic`) answers the classic text format, and its counters carry
 #   no _total suffix: otelcol_exporter_send_failed_spans, never ..._spans_total. Tempo's and Loki's distributor counters do carry it.
 # - otelcol_exporter_send_failed_* and otelcol_exporter_enqueue_failed_* DO NOT EXIST until the first failure, and the first sample of
-#   each is already above zero; otelcol_receiver_refused_* exist from a receiver's first request, which may itself be refused. increase()
-#   cannot see a series' first sample, so each rule on them has a second term: a series above zero that is new, "new" meaning no sample
-#   at all in the hour before the last ten minutes. Never `x offset 10m`, which a failed scrape's staleness marker or a gap of minutes
-#   empties for an instant and so pages an old count (P15-TSK-043's review); a Prometheus with no history, or back from an outage longer
-#   than that hour, still sees an old count as new once.
+#   each is already above zero; otelcol_receiver_refused_* exist from a receiver's first request, which may itself be refused; and every
+#   one of them is born again, above zero, after its collector restarts in place. increase() cannot read a series' first sample, so each
+#   rule on them has a second term, a count above zero that is new: its collector is younger than the ten minutes the rule looks back
+#   (every count it holds is recent), or the series has fewer samples in those ten minutes than its collector's own uptime series (it was
+#   born within them). A failed scrape or a gap takes a sample from both alike, so neither reads as new, and neither does an old count to a
+#   Prometheus with no history. Never `x offset 10m`, which a staleness marker or a gap of minutes empties for an instant and so tickets
+#   an old count (P15-TSK-043's review).
 # - The exporter series carry server.address, server.port and url.path; every rule sums them away by the labels it names.
 #
 # THE JOBS: finapp-collector (every collector, by DNS, per pod), finapp-tempo and finapp-loki (the reference back ends, kind and compose).
@@ -35,7 +37,8 @@ groups:
       - alert: TelemetryCollectorDown
         # Aggregation: per instance - one collector down is that collector's, and a healthy peer must not hide it
         # Two collectors share the application's traffic behind one Service, so one down halves the second net's capacity and moves a share
-        # of every trace id to the other; its in-memory batches are gone. A ticket: nothing financial waits on it.
+        # of every trace id to the other; its in-memory batches are gone. A ticket: nothing financial waits on it. A collector deleted and
+        # not replaced is no target at all, and with one still scraped no rule here sees it (OPERATIONS_RUNBOOK.md section 11.34).
         expr: up{job="finapp-collector"} == 0
         for: 5m
         labels:
@@ -56,20 +59,31 @@ groups:
           description: "No target of the finapp-collector job has existed for 5 minutes: the collectors are gone, or the scrape lost them. See OPERATIONS_RUNBOOK.md section 11.34."
       - alert: TelemetryExportFailing
         # Aggregation: sum by (job, instance, exporter) - per collector and exporter, the series' address and path labels summed away
-        # A collector dropped spans or log records after its retries ran out (sixty seconds against Tempo or Loki, the load-balancing
-        # exporter's own against a peer): the back end or the peer refused them or could not be reached. Any drop in ten minutes; an old
-        # count never.
+        # A collector dropped spans or log records it could not deliver: Tempo or Loki refused them or stayed unreachable past sixty seconds
+        # of retries, or the load-balancing tier failed to reach a peer for two minutes of its own. Any drop in ten minutes; an old count never.
+        # EXCEPT THE LOAD-BALANCING TIER WHILE ITS COLLECTOR'S PEERS ARE CHANGING, by design (the owner's rulings, 2026-11-12). Until a
+        # collector's resolver reads the peers' DNS name it has nobody to route to, and after a peer leaves the cluster DNS keeps listing it
+        # for up to thirty seconds. The tier's retry and queue (collector.yaml) carry a batch across both, and measured on the pinned image they
+        # did: no span dropped at a first apply with the name resolving 30 s late, across a roll, on a new collector or the survivor (without
+        # them, 170 to 200 spans a collector at the start and 35 to 37 on a joining one; OPERATIONS_RUNBOOK.md section 11.34). So that one
+        # exporter is not read while its own collector is younger than 780 s, nor within 780 s of the collector's set of peers changing
+        # (otelcol_loadbalancer_num_backend_updates, which moves only when the set does): the tier's two-minute retry budget, plus the ten
+        # minutes the counter terms look back, plus a scrape, rounded up. Every rollout, scale-down and pod deleted changes every
+        # collector's set; none of them tickets. Any other exporter tickets at any age, and the tier failing outside a change tickets then.
         expr: >-
+          (
           sum by (job, instance, exporter) (increase(otelcol_exporter_send_failed_spans[10m])) > 0
           or sum by (job, instance, exporter) (increase(otelcol_exporter_send_failed_log_records[10m])) > 0
-          or sum by (job, instance, exporter) (otelcol_exporter_send_failed_spans > 0 unless present_over_time(otelcol_exporter_send_failed_spans[1h] offset 10m))
-          or sum by (job, instance, exporter) (otelcol_exporter_send_failed_log_records > 0 unless present_over_time(otelcol_exporter_send_failed_log_records[1h] offset 10m))
+          or sum by (job, instance, exporter) ((otelcol_exporter_send_failed_spans > 0 and on(job, instance) otelcol_process_uptime < 600) or (otelcol_exporter_send_failed_spans > 0 and count_over_time(otelcol_exporter_send_failed_spans[10m]) < on(job, instance) group_left count_over_time(otelcol_process_uptime[10m])))
+          or sum by (job, instance, exporter) ((otelcol_exporter_send_failed_log_records > 0 and on(job, instance) otelcol_process_uptime < 600) or (otelcol_exporter_send_failed_log_records > 0 and count_over_time(otelcol_exporter_send_failed_log_records[10m]) < on(job, instance) group_left count_over_time(otelcol_process_uptime[10m])))
+          )
+          unless on(job, instance, exporter) label_replace(otelcol_process_uptime < 780 or on(job, instance) increase(otelcol_loadbalancer_num_backend_updates[13m]) > 0, "exporter", "load_balancing", "", "")
         for: 0s
         labels:
           severity: ticket
         annotations:
           summary: "The collector {{ $labels.instance }} is dropping what {{ $labels.exporter }} cannot deliver"
-          description: "{{ $labels.exporter }} on {{ $labels.instance }} dropped telemetry after its retries in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
+          description: "{{ $labels.exporter }} on {{ $labels.instance }} dropped telemetry it could not deliver in the last 10 minutes. See OPERATIONS_RUNBOOK.md section 11.34."
       - alert: TelemetryExportQueueFull
         # Aggregation: sum by (job, instance, exporter) - per collector and exporter
         # A collector dropped spans or log records at its sending queue's door: a thousand batches already wait on a back end that is slow or
@@ -77,8 +91,8 @@ groups:
         expr: >-
           sum by (job, instance, exporter) (increase(otelcol_exporter_enqueue_failed_spans[10m])) > 0
           or sum by (job, instance, exporter) (increase(otelcol_exporter_enqueue_failed_log_records[10m])) > 0
-          or sum by (job, instance, exporter) (otelcol_exporter_enqueue_failed_spans > 0 unless present_over_time(otelcol_exporter_enqueue_failed_spans[1h] offset 10m))
-          or sum by (job, instance, exporter) (otelcol_exporter_enqueue_failed_log_records > 0 unless present_over_time(otelcol_exporter_enqueue_failed_log_records[1h] offset 10m))
+          or sum by (job, instance, exporter) ((otelcol_exporter_enqueue_failed_spans > 0 and on(job, instance) otelcol_process_uptime < 600) or (otelcol_exporter_enqueue_failed_spans > 0 and count_over_time(otelcol_exporter_enqueue_failed_spans[10m]) < on(job, instance) group_left count_over_time(otelcol_process_uptime[10m])))
+          or sum by (job, instance, exporter) ((otelcol_exporter_enqueue_failed_log_records > 0 and on(job, instance) otelcol_process_uptime < 600) or (otelcol_exporter_enqueue_failed_log_records > 0 and count_over_time(otelcol_exporter_enqueue_failed_log_records[10m]) < on(job, instance) group_left count_over_time(otelcol_process_uptime[10m])))
         for: 0s
         labels:
           severity: ticket
@@ -92,8 +106,8 @@ groups:
         expr: >-
           sum by (job, instance, receiver) (increase(otelcol_receiver_refused_spans[10m])) > 0
           or sum by (job, instance, receiver) (increase(otelcol_receiver_refused_log_records[10m])) > 0
-          or sum by (job, instance, receiver) (otelcol_receiver_refused_spans > 0 unless present_over_time(otelcol_receiver_refused_spans[1h] offset 10m))
-          or sum by (job, instance, receiver) (otelcol_receiver_refused_log_records > 0 unless present_over_time(otelcol_receiver_refused_log_records[1h] offset 10m))
+          or sum by (job, instance, receiver) ((otelcol_receiver_refused_spans > 0 and on(job, instance) otelcol_process_uptime < 600) or (otelcol_receiver_refused_spans > 0 and count_over_time(otelcol_receiver_refused_spans[10m]) < on(job, instance) group_left count_over_time(otelcol_process_uptime[10m])))
+          or sum by (job, instance, receiver) ((otelcol_receiver_refused_log_records > 0 and on(job, instance) otelcol_process_uptime < 600) or (otelcol_receiver_refused_log_records > 0 and count_over_time(otelcol_receiver_refused_log_records[10m]) < on(job, instance) group_left count_over_time(otelcol_process_uptime[10m])))
         for: 0s
         labels:
           severity: ticket
@@ -116,11 +130,14 @@ groups:
         # The back end's own witness, against the collectors': the collectors kept traces in the last fifteen minutes (the tail policy's
         # decision, so a sampled-away trace is never owed) and Tempo's distributor received no span in the same window. It sees what the
         # collectors' counters cannot: an exporter taken out of a pipeline, an endpoint pointing elsewhere, a back end held without refusing.
-        # A volume signal: a collector's first kept trace is a new series increase() cannot read, so a lone trace is not judged. Gated on the
-        # back end being scraped at all, up or down; where it is not, this is silent.
+        # A RECEIPT IS AN INCREASE, OR A SERIES BORN IN THE WINDOW: after Tempo restarts its counter exists again only from its first push,
+        # born above zero, which increase() cannot read; a series present now with fewer samples in the window than Tempo's successful scrapes
+        # was born there, by a push. A volume signal: a collector's first kept trace is a new series increase() cannot read, so a lone trace
+        # is not judged. Gated on the back end being scraped at all, up or down; where it is not, this is silent.
         expr: >-
           (sum(increase(otelcol_processor_tail_sampling_global_count_traces_sampled{sampled="true"}[15m])) > 0
-          unless on() sum(increase(tempo_distributor_spans_received_total[15m])) > 0)
+          unless on() (sum(increase(tempo_distributor_spans_received_total[15m])) > 0
+          or count(tempo_distributor_spans_received_total and count_over_time(tempo_distributor_spans_received_total[15m]) < on(instance) group_left sum_over_time(up{job="finapp-tempo"}[15m])) > 0))
           and on() count(up{job="finapp-tempo"}) > 0
         for: 10m
         labels:
@@ -131,10 +148,12 @@ groups:
       - alert: LogIngestStopped
         # Aggregation: sum() - the log store is one, and what every collector took in is what it should have received
         # The same witness for logs, which are never sampled: the collectors took log records in from the application in the last fifteen
-        # minutes and Loki's distributor received no line. Gated on Loki being scraped at all, up or down.
+        # minutes and Loki's distributor received no line, a series born in the window counting as a receipt. Gated on Loki being scraped at
+        # all, up or down.
         expr: >-
           (sum(increase(otelcol_receiver_accepted_log_records{receiver="otlp"}[15m])) > 0
-          unless on() sum(increase(loki_distributor_lines_received_total[15m])) > 0)
+          unless on() (sum(increase(loki_distributor_lines_received_total[15m])) > 0
+          or count(loki_distributor_lines_received_total and count_over_time(loki_distributor_lines_received_total[15m]) < on(instance) group_left sum_over_time(up{job="finapp-loki"}[15m])) > 0))
           and on() count(up{job="finapp-loki"}) > 0
         for: 10m
         labels:

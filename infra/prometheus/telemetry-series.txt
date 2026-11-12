@@ -100,6 +100,7 @@ healthy otelcol_processor_tail_sampling_count_traces_sampled{decision=not_sample
 healthy otelcol_processor_tail_sampling_count_traces_sampled{decision=not_sampled,instance=*,job=finapp-collector,policy=slow,sampled=false}
 healthy otelcol_processor_tail_sampling_count_traces_sampled{decision=not_sampled,instance=*,job=finapp-collector,policy=the-rest,sampled=false}
 healthy otelcol_processor_tail_sampling_count_traces_sampled{decision=not_sampled,instance=*,job=finapp-collector,policy=writes-semconv,sampled=false}
+healthy otelcol_processor_tail_sampling_count_traces_sampled{decision=sampled,instance=*,job=finapp-collector,policy=the-rest,sampled=true}
 healthy otelcol_processor_tail_sampling_count_traces_sampled{decision=sampled,instance=*,job=finapp-collector,policy=writes,sampled=true}
 healthy otelcol_processor_tail_sampling_global_count_traces_sampled{decision=sampled,instance=*,job=finapp-collector,sampled=true}
 healthy otelcol_processor_tail_sampling_new_trace_id_received{instance=*,job=finapp-collector}
@@ -127,4 +128,3 @@ failing otelcol_exporter_send_failed_log_records{exporter=otlp_http/loki,instanc
 failing otelcol_exporter_send_failed_spans{exporter=otlp_grpc/tempo,instance=*,job=finapp-collector,server.address=*,server.port=*}
 failing otelcol_processor_memory_limiter_refused_log_records{instance=*,job=finapp-collector,processor=memory_limiter}
 failing otelcol_processor_memory_limiter_refused_spans{instance=*,job=finapp-collector,processor=memory_limiter}
-failing otelcol_processor_tail_sampling_count_traces_sampled{decision=sampled,instance=*,job=finapp-collector,policy=the-rest,sampled=true}

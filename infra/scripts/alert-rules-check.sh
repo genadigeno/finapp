@@ -14,8 +14,9 @@
 #
 #   no-trial-balance   the alert LedgerTrialBalanceNonZero removed   promtool test rules, naming the alert
 #   bad-routing        a route naming a receiver that does not exist amtool check-config
-#   offset-term        TelemetryExportFailing's "new series" term    promtool test rules, naming the alert: its silent cases
-#                      written as `x offset 10m` (P15-TSK-032)       (an old count through a staleness marker and a gap) fire
+#   offset-term        TelemetryExportFailing's "born in the window" promtool test rules, naming the alert: its silent cases
+#                      term written as `x unless x offset 10m`       (an old count through a staleness marker and a gap, and
+#                      (P15-TSK-032)                                 one to a Prometheus with no history) fire
 #
 # SAME BYTES HERE AND IN CI: both tools are images pinned by digest in infra/scanner-pins.sh. PROMETHEUS_IMAGE and
 # ALERTMANAGER_IMAGE override an image for a machine whose TLS is intercepted (dependency-scan.sh allows the same); CI never sets them.
@@ -91,7 +92,7 @@ prometheus '
 '
 prometheus '
     rm -rf /tmp/plant && cp -R /prom /tmp/plant
-    sed "s/unless present_over_time(otelcol_exporter_send_failed_spans\[1h\] offset 10m)/unless otelcol_exporter_send_failed_spans offset 10m/" /prom/rules/telemetry.yml > /tmp/plant/rules/telemetry.yml
+    sed "s/(otelcol_exporter_send_failed_spans > 0 and count_over_time(otelcol_exporter_send_failed_spans\[10m\]) < on(job, instance) group_left count_over_time(otelcol_process_uptime\[10m\]))/(otelcol_exporter_send_failed_spans > 0 unless otelcol_exporter_send_failed_spans offset 10m)/" /prom/rules/telemetry.yml > /tmp/plant/rules/telemetry.yml
     if cmp -s /prom/rules/telemetry.yml /tmp/plant/rules/telemetry.yml; then
         echo "!!   plant offset-term was not planted: the term is gone or rewritten"; exit 1
     fi
