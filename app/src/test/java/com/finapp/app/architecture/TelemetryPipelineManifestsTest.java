@@ -197,6 +197,162 @@ class TelemetryPipelineManifestsTest {
     }
 
     @Test
+    @DisplayName("the platform's own lines come in on a receiver of their own, 4319, from the edge's controllers and the cluster watcher alone,"
+            + " and leave through a net of their own: the client's, the backend's and the host's names dropped by name, an unrouted path and a"
+            + " query cut, the edge's body rebuilt from what was kept, card numbers and amounts scrubbed (P16-TSK-003)")
+    @SuppressWarnings("unchecked")
+    void thePlatformsOwnLinesHaveTheirOwnNet() {
+        String config = read(COLLECTOR);
+        Map<String, Object> receivers = map(collector, "receivers");
+        assertThat(String.valueOf(map(map(map(receivers, "otlp/platform"), "protocols"), "http").get("endpoint"))).isEqualTo("${env:POD_IP}:4319");
+        Map<String, Object> pipelines = map(map(collector, "service"), "pipelines");
+        int fromThePlatform = 0;
+        for (Map.Entry<String, Object> pipeline : pipelines.entrySet()) {
+            Map<String, Object> declared = cast(pipeline.getValue());
+            if (stringList(declared.get("receivers")).contains("otlp/platform")) {
+                fromThePlatform++;
+                assertThat(stringList(declared.get("receivers"))).as(pipeline.getKey()).containsExactly("otlp/platform");
+                assertThat(stringList(declared.get("processors"))).as(pipeline.getKey()).contains("transform/scrub-platform")
+                        .doesNotContain("transform/scrub");
+            }
+        }
+        assertThat(fromThePlatform).as("one pipeline takes the platform's own lines").isEqualTo(1);
+        // The net, as the collector reads it: the statements of the platform's processor, in order.
+        List<String> statements = new ArrayList<>();
+        for (Object context : (List<Object>) map(map(collector, "processors"), "transform/scrub-platform").get("log_statements")) {
+            statements.addAll(stringList(((Map<String, Object>) context).get("statements")));
+        }
+        Set<String> kept = new TreeSet<>();
+        Set<String> resource = new TreeSet<>();
+        for (String statement : statements) {
+            Matcher keep = Pattern.compile("^keep_keys\\(attributes, \\[([^\\]]*)\\]\\)$").matcher(statement);
+            if (keep.find()) {
+                Set<String> keys = new TreeSet<>();
+                Matcher key = Pattern.compile("\"([^\"]+)\"").matcher(keep.group(1));
+                while (key.find()) {
+                    keys.add(key.group(1));
+                }
+                (keys.contains("service.name") ? resource : kept).addAll(keys);
+            }
+        }
+        assertThat(resource).containsExactlyInAnyOrderElementsOf(keptKeys(config, "context: resource\n"))
+                .doesNotContain("host.name", "process.command_args", "process.owner", "os.description");
+        assertThat(kept).contains("RequestMethod", "RequestPath", "DownstreamStatus", "RouterName", "Duration", "k8s.job.name", "otelcol.component.id")
+                .doesNotContain("ClientHost", "ClientAddr", "ClientPort", "ClientUsername", "RequestAddr", "RequestHost", "RequestPort",
+                        "ServiceURL", "ServiceAddr", "StartLocal", "StartUTC", "k8s.node.name", "host.name");
+        assertThat(statements).contains("delete_key(attributes, \"RequestPath\") where attributes[\"RouterName\"] == nil",
+                "replace_pattern(attributes[\"RequestPath\"], \"[?#].*$\", \"\")");
+        assertThat(statements).anySatisfy(statement -> assertThat(statement).startsWith("set(body, Format(")
+                .endsWith("where attributes[\"DownstreamStatus\"] != nil"));
+        // The same card-number and amount scrub as the application's own pipeline, on bodies and values.
+        List<String> theApplications = new ArrayList<>();
+        for (Object context : (List<Object>) map(map(collector, "processors"), "transform/scrub").get("log_statements")) {
+            for (String statement : stringList(((Map<String, Object>) context).get("statements"))) {
+                if (statement.startsWith("replace_pattern(body,")) {
+                    theApplications.add(statement);
+                }
+            }
+        }
+        assertThat(theApplications).hasSize(2);
+        assertThat(statements).containsAll(theApplications);
+        assertThat(statements.stream().filter(statement -> statement.startsWith("replace_all_patterns(attributes, \"value\",")).count()).isEqualTo(2);
+        // The order that makes it a net: the path cut and the body rebuilt before the allow-list, the scrub after it.
+        assertThat(statements.indexOf("delete_key(attributes, \"RequestPath\") where attributes[\"RouterName\"] == nil"))
+                .isLessThan(statements.indexOf(theApplications.get(0)));
+
+        // Its senders: the edge's controllers and the watcher, each exactly, on 4319 and nothing else there.
+        int platformRules = 0;
+        for (Map<String, Object> policy : policies) {
+            if (!"finapp-collector".equals(map(policy, "metadata").get("name"))) {
+                continue;
+            }
+            for (Object rule : (List<Object>) map(policy, "spec").get("ingress")) {
+                Map<String, Object> ingress = (Map<String, Object>) rule;
+                if (String.valueOf(ingress.get("ports")).contains("port=4319")) {
+                    platformRules++;
+                    assertThat(ingress.get("ports")).isEqualTo(List.of(Map.of("protocol", "TCP", "port", 4319)));
+                    assertThat(ingress.get("from")).isEqualTo(List.of(
+                            Map.of("namespaceSelector", Map.of("matchLabels", Map.of("kubernetes.io/metadata.name", "finapp-edge")),
+                                    "podSelector", Map.of("matchLabels", Map.of("finapp/role", "ingress-controller"))),
+                            Map.of("podSelector", Map.of("matchLabels", Map.of("finapp/role", "cluster-watch")))));
+                }
+            }
+        }
+        assertThat(platformRules).isEqualTo(1);
+        // And each sender names that port, never the application's: both edges' static files, the watcher's exporter, the collector's own log.
+        String platformEndpoint = "http://finapp-collector.finapp-observability.svc.cluster.local:4319";
+        for (String edge : List.of("deploy/edge/base/traefik.yaml", "deploy/edge/base/traefik-operator.yaml")) {
+            Map<String, Object> traefik = yaml(read(edge));
+            assertThat(map(traefik, "experimental")).containsEntry("otlpLogs", true);
+            assertThat(String.valueOf(map(map(map(traefik, "log"), "otlp"), "http").get("endpoint"))).isEqualTo(platformEndpoint + "/v1/logs");
+            Map<String, Object> access = map(traefik, "accessLog");
+            assertThat(String.valueOf(map(map(access, "otlp"), "http").get("endpoint"))).isEqualTo(platformEndpoint + "/v1/logs");
+            assertThat(map(map(access, "fields"), "queryParameters")).containsEntry("defaultMode", "drop");
+            assertThat(map(map(access, "fields"), "headers")).containsEntry("defaultMode", "drop");
+            assertThat(read(edge)).doesNotContain(":4318");
+        }
+        Map<String, Object> watcher = yaml(read(BASE + "cluster-watch.yaml"));
+        assertThat(String.valueOf(map(map(watcher, "exporters"), "otlp_http/platform").get("endpoint"))).isEqualTo(platformEndpoint);
+        assertThat(config).contains("endpoint: http://${env:POD_IP}:4319/v1/logs");
+    }
+
+    @Test
+    @DisplayName("the cluster watcher is the one pod of the namespace with a Kubernetes credential: the pinned collector, one replica, its"
+            + " account the controller list's one entry, its Role in finapp list and watch on the kinds its receiver reads, reached by the"
+            + " scraper alone and reaching the collector's platform receiver and DNS alone (P16-TSK-003)")
+    @SuppressWarnings("unchecked")
+    void theClusterWatcherReadsFinappAndNothingElse() {
+        List<Map<String, Object>> documents = yamlAll(read(BASE + "cluster-watch-workload.yaml"));
+        Map<String, Object> account = documents.stream().filter(document -> "ServiceAccount".equals(document.get("kind"))).findFirst().orElseThrow();
+        assertThat(account).containsEntry("automountServiceAccountToken", true);
+        Map<String, Object> deployment = documents.stream().filter(document -> "Deployment".equals(document.get("kind"))).findFirst().orElseThrow();
+        Map<String, Object> pod = map(map(map(deployment, "spec"), "template"), "spec");
+        assertThat(pod).containsEntry("serviceAccountName", "finapp-cluster-watch").containsEntry("automountServiceAccountToken", true);
+        assertThat(map(map(map(map(deployment, "spec"), "template"), "metadata"), "labels")).containsEntry("finapp/role", "cluster-watch");
+        assertThat(read(BASE + "cluster-watch-workload.yaml")).contains("opentelemetry-collector-contrib@" + pin(read(PINS), "COLLECTOR_DIGEST"));
+        // No other workload of the namespace holds a token.
+        for (String file : List.of(BASE + "collector-workload.yaml", KIND + "backends.yaml")) {
+            for (Map<String, Object> document : yamlAll(read(file))) {
+                if ("ServiceAccount".equals(document.get("kind"))) {
+                    assertThat(document).as(file).containsEntry("automountServiceAccountToken", false);
+                }
+            }
+        }
+        String policy = read("infra/scripts/manifest-policy/finapp.rego");
+        assertThat(policy).contains("controller_accounts := [\n\t{\"namespace\": \"finapp-observability\", \"name\": \"finapp-cluster-watch\"},\n]");
+        // Its read of finapp, in the application's own release.
+        List<Map<String, Object>> rbac = yamlAll(read("deploy/base/rbac-cluster-watch.yaml"));
+        Map<String, Object> role = rbac.stream().filter(document -> "Role".equals(document.get("kind"))).findFirst().orElseThrow();
+        Set<String> granted = new TreeSet<>();
+        for (Object rule : (List<Object>) role.get("rules")) {
+            Map<String, Object> declared = (Map<String, Object>) rule;
+            assertThat(stringList(declared.get("verbs"))).containsExactly("list", "watch");
+            for (String group : stringList(declared.get("apiGroups"))) {
+                for (String resource : stringList(declared.get("resources"))) {
+                    granted.add(group + "/" + resource);
+                }
+            }
+        }
+        assertThat(granted).containsExactlyInAnyOrder("/pods", "/events", "/services", "/replicationcontrollers", "/resourcequotas",
+                "apps/deployments", "apps/replicasets", "apps/statefulsets", "apps/daemonsets", "batch/jobs", "batch/cronjobs",
+                "autoscaling/horizontalpodautoscalers");
+        Map<String, Object> binding = rbac.stream().filter(document -> "RoleBinding".equals(document.get("kind"))).findFirst().orElseThrow();
+        assertThat(binding.get("subjects")).isEqualTo(List.of(
+                Map.of("kind", "ServiceAccount", "name", "finapp-cluster-watch", "namespace", "finapp-observability")));
+        assertThat(read("deploy/base/kustomization.yaml")).contains("  - rbac-cluster-watch.yaml");
+        assertThat(read(BASE + "kustomization.yaml")).contains("  - cluster-watch-workload.yaml").contains("config.yaml=cluster-watch.yaml");
+        // Its network: the scraper in, the collector's 4319 and DNS out, and no address block (the API server is its node's).
+        Map<String, Object> watch = policies.stream().filter(candidate -> "finapp-cluster-watch".equals(map(candidate, "metadata").get("name")))
+                .findFirst().orElseThrow();
+        assertThat(map(watch, "spec").get("ingress")).isEqualTo(List.of(Map.of(
+                "from", List.of(Map.of("podSelector", Map.of("matchLabels", Map.of("finapp/role", "metrics-scraper")))),
+                "ports", List.of(Map.of("protocol", "TCP", "port", 8889)))));
+        assertThat(String.valueOf(map(watch, "spec").get("egress"))).contains("port=4319").contains("k8s-app=kube-dns").doesNotContain("ipBlock");
+        assertThat(read(POLICY)).contains("[obs-cluster-watch-egress]").contains("[obs-platform-ingress]").contains("\"cluster-watch\": [{\"role\": \"metrics-scraper\"");
+        assertThat(policy).contains("[rbac-cluster-watch]").contains("not runs_as_a_listed_controller(doc, spec)");
+    }
+
+    @Test
     @DisplayName("the card-number pattern never matches inside a UUID, so a correlation id is never cut, and still matches every card shape")
     void thePatternLeavesIdentifiersAlone() {
         // The statement as the collector receives it, the pattern between the call's first two quotes.
@@ -415,8 +571,12 @@ class TelemetryPipelineManifestsTest {
     @DisplayName("the check runs the collector with the committed configuration and requires its probe red; CI runs it ungated with no secret, and it is committed executable")
     void ciRunsTheCheck() throws IOException {
         String script = read(SCRIPT);
-        assertThat(script).contains("cp \"$ROOT/deploy/observability/base/collector.yaml\"").contains("sed 's/transform\\/scrub, //'")
+        assertThat(script).contains("cp \"$ROOT/deploy/observability/base/collector.yaml\"").contains("sed -e 's/transform\\/scrub, //'")
+                .contains("-e 's/transform\\/scrub-platform, //'")
                 .contains("THE PROBE").contains("the probe stayed green").contains("-strict").contains("--namespace observability");
+        // The platform's own lines (P16-TSK-003): planted through 4319, none out, then the platform's net removed and the needles out.
+        assertThat(script).contains("http://$1:4319/v1/logs").contains("the platform probe stayed green")
+                .contains("needles exported from the platform's own lines");
         String workflow = read(".github/workflows/ci.yml");
         Matcher job = Pattern.compile("(?ms)^  manifests:\\R(.*?)(?=^  [a-z-]+:\\R|\\z)").matcher(workflow);
         assertThat(job.find()).isTrue();

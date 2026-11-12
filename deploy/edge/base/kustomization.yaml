@@ -9,6 +9,8 @@ namespace: finapp-edge
 resources:
   - controllers.yaml
   - networkpolicy.yaml
+  # Each edge's controllers found by the scraper (P16-TSK-003): headless, the TLS port alone named.
+  - scrape-services.yaml
 
 # Named with a content hash, so a changed route rolls the controllers and a revert is a manifest digest.
 configMapGenerator:

@@ -150,6 +150,9 @@ YAML
     edge_plant_on edge-reuse "$PUBLIC_EDGE" 's/maxIdleConnsPerHost: -1/maxIdleConnsPerHost: 200/'
 
     edge_plant_on edge-management-port "$CONTROLLERS" '1,/targetPort: https/s/targetPort: https/targetPort: management/'
+    # The scrape's Services (P16-TSK-003): the management port named on one, or one given a cluster address, each refused.
+    edge_plant_on edge-scrape-on-management edge/base/scrape-services.yaml '1,/targetPort: https/s/targetPort: https/targetPort: management/'
+    edge_plant_on edge-scrape-not-headless edge/base/scrape-services.yaml '1,/clusterIP: None/{/clusterIP: None/d}'
     edge_plant_on edge-operator-public "$PRODUCTION_EDGE" 's/aws-load-balancer-scheme: internal$/aws-load-balancer-scheme: internet-facing/'
     edge_plant_on edge-no-source-address edge/overlays/kind/kustomization.yaml '/name: finapp-edge-public/,/value: Local/{/op: add/{N;N;/externalTrafficPolicy/d}}' kind
     edge_plant_on edge-no-preserve "$PRODUCTION_EDGE" '1,/target-group-attributes/{/target-group-attributes/d}'
@@ -246,7 +249,7 @@ CERTS=$(mktemp -d)
 status=0
 
 cleanup() {
-    docker rm -f "$RUN-public" "$RUN-operator" "$RUN-spool" "$RUN-backend" "$RUN-client" >/dev/null 2>&1 || true
+    docker rm -f "$RUN-public" "$RUN-operator" "$RUN-spool" "$RUN-backend" "$RUN-client" "$RUN-collector" "$RUN-sink" "$RUN-hung" >/dev/null 2>&1 || true
     docker network rm "$NETWORK" >/dev/null 2>&1 || true
     docker volume rm -f "$VOLUME" "$VOLUME-public" "$VOLUME-operator" >/dev/null 2>&1 || true
     rm -rf "$CERTS"
@@ -350,6 +353,8 @@ edge_refused edge-person-role rbac-human-namespace
 edge_refused edge-sticky edge-no-affinity
 edge_refused edge-reuse edge-no-affinity
 edge_refused edge-management-port edge-service-port
+edge_refused edge-scrape-on-management edge-scrape-service
+edge_refused edge-scrape-not-headless edge-scrape-service
 edge_refused edge-operator-public edge-operator-internal
 edge_refused edge-no-source-address edge-source-address
 edge_refused edge-no-preserve edge-source-address
@@ -470,6 +475,46 @@ layout "$VOLUME-operator" operator-routes.yaml operator-edge.yaml operator
 
 docker run -d --name "$RUN-backend" --network "$NETWORK" --network-alias finapp-app.finapp.svc.cluster.local \
     "$WHOAMI_IMAGE" --port 8080 --verbose >/dev/null
+# The controllers ship their own log and their access log to the collector's platform receiver (P16-TSK-003): the committed collector runs
+# under the name the static files name, with a sink standing in for its back ends that prints everything it receives, so what the proxy
+# really sends is read where the collector has scrubbed it (the section after the routing, below).
+COLLECTOR_IMAGE="${COLLECTOR_REPOSITORY}@${COLLECTOR_DIGEST}"
+# A path as Docker on this host takes it: Git Bash's /tmp is not a path Docker Desktop can mount. Unchanged on Linux, where CI runs.
+dpath() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+cat > "$CERTS/sink.yaml" <<'YAML'
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        logs_url_path: /otlp/v1/logs
+exporters:
+  debug:
+    verbosity: detailed
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      exporters: [debug]
+YAML
+docker run -d --name "$RUN-sink" --network "$NETWORK" --network-alias "$RUN-sink" -v "$(dpath "$CERTS"):/cfg:ro" \
+    "$COLLECTOR_IMAGE" --config /cfg/sink.yaml >/dev/null
+docker run -d --name "$RUN-collector" --network "$NETWORK" --network-alias finapp-collector.finapp-observability.svc.cluster.local \
+    -v "$ROOT/deploy/observability/base/collector.yaml:/cfg/collector.yaml:ro" \
+    -e POD_IP=0.0.0.0 -e COLLECTOR_PEERS="$RUN-collector" -e TEMPO_ENDPOINT="$RUN-sink:4317" \
+    -e LOKI_ENDPOINT="http://$RUN-sink:4318/otlp" -e FINAPP_ENVIRONMENT=check -e TAIL_DECISION_WAIT=2s \
+    "$COLLECTOR_IMAGE" --config /cfg/collector.yaml >/dev/null
 start_controller public traefik.yaml
 start_controller operator traefik-operator.yaml
 docker run -d --name "$RUN-client" --network "$NETWORK" --entrypoint sleep "$CURL_IMAGE" 600 >/dev/null
@@ -868,6 +913,61 @@ if [ "$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$RUN-spool")" 
     echo "ok   the controller is still running, never restarted"
 else
     echo "!!   the controller did not survive a full spool"
+    status=1
+fi
+
+echo "==   the edge's own lines (P16-TSK-003): through the committed collector's platform receiver, none of the client's address, a header,"
+echo "     a query or an unrouted path out; and a collector that hangs costs a request nothing"
+CLIENT_ADDRESS=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$RUN-client")
+expect_code "a routed request carrying a query and a header" 200 -H "X-Needle-Header: needle-in-a-header" "$PUBLIC/v1/me?ref=needle-in-a-query"
+expect_code "an unrouted request whose path is the caller's text" 404 "$PUBLIC/needle-unrouted-path/4111111111111111"
+shipped=""
+i=0
+while [ "$i" -lt 30 ]; do
+    shipped=$(docker logs "$RUN-sink" 2>&1)
+    if printf '%s' "$shipped" | grep -qF -- "-> service.name: Str(finapp-edge)" && printf '%s' "$shipped" | grep -qF -- "GET 404 <nil>"; then
+        break
+    fi
+    i=$((i + 1))
+    sleep 1
+done
+found=""
+for needle in "$CLIENT_ADDRESS" needle-in-a-header needle-in-a-query needle-unrouted-path 4111111111111111 finapp.svc.cluster.local; do
+    printf '%s' "$shipped" | grep -qF -- "$needle" && found="$found $needle"
+done
+missing=""
+for control in "-> service.name: Str(finapp-edge)" "-> RouterName: Str(" "-> RequestPath: Str(/v1/me)" "GET 200 " "GET 404 <nil>" "-> DownstreamStatus: Int(404)"; do
+    printf '%s' "$shipped" | grep -qF -- "$control" || missing="$missing [$control]"
+done
+if [ -n "$found" ]; then
+    echo "!!   the edge's lines carried out:$found"
+    status=1
+elif [ -n "$missing" ]; then
+    printf '%s\n' "$shipped" | tail -40
+    echo "!!   the edge's lines did not arrive as the platform's net keeps them:$missing"
+    status=1
+else
+    echo "ok   the edge's lines arrived through the platform receiver with their router, path and status, and no needle"
+fi
+# The collector replaced by a stand-in that takes every connection and answers nothing, under the same name: the proxy's export is its own
+# SDK's, asynchronous and bounded, so every request is still answered at once.
+docker rm -f "$RUN-collector" >/dev/null
+docker run -d --name "$RUN-hung" --network "$NETWORK" --network-alias finapp-collector.finapp-observability.svc.cluster.local \
+    --entrypoint sh "$TRAEFIK_IMAGE" -c 'nc -lk -p 4319 >/dev/null' >/dev/null
+slowest=0
+for request in $(seq 1 30); do
+    took=$(client curl -sk --max-time 15 -o /dev/null -w '%{http_code} %{time_total}' "$PUBLIC/v1/me" || true)
+    case $took in
+        "200 "*) ;;
+        *) echo "!!   with the collector hung, request $request answered $took"; status=1 ;;
+    esac
+    seconds=$(printf '%s' "$took" | awk '{print int($2 * 1000)}')
+    [ "$seconds" -gt "$slowest" ] && slowest=$seconds
+done
+if [ "$slowest" -lt 5000 ]; then
+    echo "ok   with the collector hung, 30 requests each answered, the slowest in ${slowest} ms"
+else
+    echo "!!   with the collector hung, a request took ${slowest} ms: the export is holding requests"
     status=1
 fi
 

@@ -1,0 +1,366 @@
+# promtool unit tests for infra/prometheus/rules/platform.yml's platform-components group (P16-TSK-003; THREAT_MODEL.md section 6 item 43 (b)).
+# Run by infra/scripts/alert-rules-check.sh with every other case file. Each rule fires on its planted failure and is silent on health,
+# and on the healthy shapes that look like a failure for a moment: a retry inside the Job's backoff, a Job inside its deadline, a replaced
+# Job's predecessor still exported, a burst the hour does not carry, one controller of two, compose. The series and labels are the ones the
+# pinned images publish (infra/prometheus/platform-components-series.txt); two watchers or two controllers wherever a rule reads instances.
+
+rule_files:
+  - ../rules/platform.yml
+
+evaluation_interval: 15s
+
+tests:
+  # A migration fails at 1m15s (exit 10: the podFailurePolicy fails the Job, no pod active, none succeeded), seen by two watchers. It pages
+  # once its two minutes hold, as one alert for the Job.
+  - interval: 15s
+    input_series:
+      - series: 'k8s_job_failed_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u1"}'
+        values: '0x4 1x40'
+      - series: 'k8s_job_failed_pods{job="finapp-cluster-watch", instance="b:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u1"}'
+        values: '0x4 1x40'
+      - series: 'k8s_job_active_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u1"}'
+        values: '1x4 0x40'
+      - series: 'k8s_job_active_pods{job="finapp-cluster-watch", instance="b:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u1"}'
+        values: '1x4 0x40'
+      - series: 'k8s_job_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u1"}'
+        values: '0x44'
+      - series: 'k8s_job_successful_pods{job="finapp-cluster-watch", instance="b:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u1"}'
+        values: '0x44'
+      - series: 'k8s_job_desired_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u1"}'
+        values: '1x44'
+      - series: 'k8s_job_desired_successful_pods{job="finapp-cluster-watch", instance="b:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u1"}'
+        values: '1x44'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MigratorJobFailed
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: MigratorJobFailed
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: MigratorJobFailed
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              owner: platform
+              k8s_namespace_name: finapp
+              k8s_job_name: finapp-migrator
+            exp_annotations:
+              summary: "The migrator Job in finapp has failed"
+              description: "A migrator pod failed and no other is running or has succeeded, so the release is held. See OPERATIONS_RUNBOOK.md section 11.41."
+      - eval_time: 10m
+        alertname: MigratorJobOverdue
+        exp_alerts: []
+
+  # Two transient failures, each retried after the Job's backoff (seen once at 1m15s, for 10 s; then twice at 2m30s and 2m45s, for 20 s),
+  # and then a success at 5m: a failed pod with none active never holds for two minutes, so neither rule fires. Without the for, the
+  # failed rule pages at 2m45s.
+  - interval: 15s
+    input_series:
+      - series: 'k8s_job_failed_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u2"}'
+        values: '0x4 1x4 2x30'
+      - series: 'k8s_job_active_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u2"}'
+        values: '1x4 0x0 1x3 0x1 1x7 0x20'
+      - series: 'k8s_job_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u2"}'
+        values: '0x19 1x20'
+      - series: 'k8s_job_desired_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u2"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 1m15s
+        alertname: MigratorJobFailed
+        exp_alerts: []
+      - eval_time: 2m45s
+        alertname: MigratorJobFailed
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: MigratorJobFailed
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: MigratorJobFailed
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: MigratorJobOverdue
+        exp_alerts: []
+
+  # The next release's Job replaces a failed one under the same name: the predecessor's series are still exported for a minute beside the
+  # successor's, which runs and succeeds. The successor's own state wins, so nothing fires.
+  - interval: 15s
+    input_series:
+      - series: 'k8s_job_failed_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="old"}'
+        values: '1x3 stale'
+      - series: 'k8s_job_active_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="old"}'
+        values: '0x3 stale'
+      - series: 'k8s_job_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="old"}'
+        values: '0x3 stale'
+      - series: 'k8s_job_desired_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="old"}'
+        values: '1x3 stale'
+      - series: 'k8s_job_failed_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="new"}'
+        values: '0x40'
+      - series: 'k8s_job_active_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="new"}'
+        values: '1x19 0x20'
+      - series: 'k8s_job_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="new"}'
+        values: '0x19 1x20'
+      - series: 'k8s_job_desired_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="new"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: MigratorJobFailed
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: MigratorJobFailed
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: MigratorJobFailed
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: MigratorJobOverdue
+        exp_alerts: []
+
+  # A Job whose pod is never created (a quota, an admission refusal): no pod fails, none is active, none succeeds - measured on kind, the Job
+  # fails by its deadline with no failed pod. The failed rule cannot see it; the overdue rule pages once the deadline and its margin pass.
+  - interval: 15s
+    input_series:
+      - series: 'k8s_job_failed_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u3"}'
+        values: '0x80'
+      - series: 'k8s_job_failed_pods{job="finapp-cluster-watch", instance="b:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u3"}'
+        values: '0x80'
+      - series: 'k8s_job_active_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u3"}'
+        values: '0x80'
+      - series: 'k8s_job_active_pods{job="finapp-cluster-watch", instance="b:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u3"}'
+        values: '0x80'
+      - series: 'k8s_job_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u3"}'
+        values: '0x80'
+      - series: 'k8s_job_successful_pods{job="finapp-cluster-watch", instance="b:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u3"}'
+        values: '0x80'
+      - series: 'k8s_job_desired_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u3"}'
+        values: '1x80'
+      - series: 'k8s_job_desired_successful_pods{job="finapp-cluster-watch", instance="b:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u3"}'
+        values: '1x80'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: MigratorJobOverdue
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: MigratorJobOverdue
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              owner: platform
+              k8s_namespace_name: finapp
+              k8s_job_name: finapp-migrator
+            exp_annotations:
+              summary: "The migrator Job in finapp has not succeeded within its deadline"
+              description: "The migrator Job has not succeeded for longer than its deadline, so the release is held. See OPERATIONS_RUNBOOK.md section 11.41."
+      - eval_time: 18m
+        alertname: MigratorJobFailed
+        exp_alerts: []
+
+  # A long migration inside its deadline: running for fourteen minutes, then a success. Neither rule fires; without the for, the overdue rule
+  # would page at the first evaluation.
+  - interval: 15s
+    input_series:
+      - series: 'k8s_job_failed_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u4"}'
+        values: '0x80'
+      - series: 'k8s_job_active_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u4"}'
+        values: '1x55 0x24'
+      - series: 'k8s_job_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u4"}'
+        values: '0x55 1x24'
+      - series: 'k8s_job_desired_successful_pods{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_job_name="finapp-migrator", k8s_job_uid="u4"}'
+        values: '1x80'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MigratorJobOverdue
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: MigratorJobOverdue
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: MigratorJobOverdue
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: MigratorJobFailed
+        exp_alerts: []
+
+  # A deployed fleet scraped and no watcher publishing anything: the Job rules are blind, which tickets after fifteen minutes.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081", env="kind"}'
+        values: '1x80'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: ClusterWatchBlind
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: ClusterWatchBlind
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              owner: platform
+              k8s_namespace_name: finapp
+              k8s_deployment_name: finapp-app
+            exp_annotations:
+              summary: "The cluster watcher publishes nothing about finapp"
+              description: "No series of the finapp-app Deployment has been published for 15 minutes, so MigratorJobFailed and MigratorJobOverdue are blind. See OPERATIONS_RUNBOOK.md section 11.41."
+
+  # The watcher publishing the application's Deployment: silent. And compose, which runs no watcher (env="local"): silent too.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081", env="kind"}'
+        values: '1x80'
+      - series: 'k8s_deployment_desired{job="finapp-cluster-watch", instance="a:8889", k8s_namespace_name="finapp", k8s_deployment_name="finapp-app", k8s_deployment_uid="d1"}'
+        values: '3x80'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: ClusterWatchBlind
+        exp_alerts: []
+  - interval: 15s
+    input_series:
+      - series: 'up{job="finapp", instance="host.docker.internal:8081", env="local"}'
+        values: '1x80'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: ClusterWatchBlind
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: EdgeUnscraped
+        exp_alerts: []
+
+  # The public edge answering 502 from one of its two controllers, about 5.7% of its requests, over the hour and the last five minutes: one
+  # alert for the edge, its two controllers summed. The operator edge, healthy, is silent.
+  - interval: 15s
+    input_series:
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="public", instance="p1:8081", env="kind", entrypoint="websecure", code="200", method="POST", protocol="http"}'
+        values: '0+25x280'
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="public", instance="p1:8081", env="kind", entrypoint="websecure", code="502", method="POST", protocol="http"}'
+        values: '0+3x280'
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="public", instance="p2:8081", env="kind", entrypoint="websecure", code="200", method="POST", protocol="http"}'
+        values: '0+25x280'
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="operator", instance="o1:8081", env="kind", entrypoint="websecure", code="200", method="GET", protocol="http"}'
+        values: '0+10x280'
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="operator", instance="o2:8081", env="kind", entrypoint="websecure", code="200", method="GET", protocol="http"}'
+        values: '0+10x280'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: EdgeErrorRatioHigh
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: EdgeErrorRatioHigh
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              owner: platform
+              edge: public
+            exp_annotations:
+              summary: "The public edge is answering errors"
+              description: "Over 1.44% of the public edge's requests answered 5xx over both the last hour and the last five minutes. See OPERATIONS_RUNBOOK.md section 11.42."
+
+  # Healthy: one error in two hundred (0.5%), below the threshold, and the management entry point never read. Silent.
+  - interval: 15s
+    input_series:
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="public", instance="p1:8081", env="kind", entrypoint="websecure", code="200", method="POST", protocol="http"}'
+        values: '0+100x280'
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="public", instance="p1:8081", env="kind", entrypoint="websecure", code="503", method="POST", protocol="http"}'
+        values: '0+1x280'
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="public", instance="p2:8081", env="kind", entrypoint="websecure", code="200", method="POST", protocol="http"}'
+        values: '0+100x280'
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="public", instance="p2:8081", env="kind", entrypoint="management", code="500", method="GET", protocol="http"}'
+        values: '0+100x280'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: EdgeErrorRatioHigh
+        exp_alerts: []
+      - eval_time: 65m
+        alertname: EdgeErrorRatioHigh
+        exp_alerts: []
+
+  # A three-minute burst of 502 after an hour of health: over the threshold in the last five minutes, not over the hour, so it does not page.
+  # The 502 series is born at the burst's first scrape, as the proxy creates a code's counter at its first request.
+  - interval: 15s
+    input_series:
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="public", instance="p1:8081", env="kind", entrypoint="websecure", code="200", method="POST", protocol="http"}'
+        values: '0+25x280'
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="public", instance="p2:8081", env="kind", entrypoint="websecure", code="200", method="POST", protocol="http"}'
+        values: '0+25x280'
+      - series: 'traefik_entrypoint_requests_total{job="finapp-edge", edge="public", instance="p1:8081", env="kind", entrypoint="websecure", code="502", method="POST", protocol="http"}'
+        values: '_x240 5+5x11 60x27'
+    alert_rule_test:
+      - eval_time: 62m
+        alertname: EdgeErrorRatioHigh
+        exp_alerts: []
+      - eval_time: 63m
+        alertname: EdgeErrorRatioHigh
+        exp_alerts: []
+      - eval_time: 66m
+        alertname: EdgeErrorRatioHigh
+        exp_alerts: []
+
+  # Both controllers of the public edge stop answering at 1m15s; the operator edge's stay up. One page, for the public edge, once five
+  # minutes hold.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081", env="kind"}'
+        values: '1x44'
+      - series: 'up{job="finapp-edge", edge="public", instance="p1:8081", env="kind"}'
+        values: '1x4 0x40'
+      - series: 'up{job="finapp-edge", edge="public", instance="p2:8081", env="kind"}'
+        values: '1x4 0x40'
+      - series: 'up{job="finapp-edge", edge="operator", instance="o1:8081", env="kind"}'
+        values: '1x44'
+      - series: 'up{job="finapp-edge", edge="operator", instance="o2:8081", env="kind"}'
+        values: '1x44'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: EdgeUnscraped
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: EdgeUnscraped
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              owner: platform
+              edge: public
+            exp_annotations:
+              summary: "No controller of the public edge can be scraped"
+              description: "No controller of the public edge has answered its scrape for 5 minutes, so it may be down and its errors cannot be counted. See OPERATIONS_RUNBOOK.md section 11.42."
+
+  # One controller of two down: the other serves, and the edge is seen. Silent.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081", env="kind"}'
+        values: '1x44'
+      - series: 'up{job="finapp-edge", edge="public", instance="p1:8081", env="kind"}'
+        values: '1x4 0x40'
+      - series: 'up{job="finapp-edge", edge="public", instance="p2:8081", env="kind"}'
+        values: '1x44'
+      - series: 'up{job="finapp-edge", edge="operator", instance="o1:8081", env="kind"}'
+        values: '1x44'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: EdgeUnscraped
+        exp_alerts: []
+
+  # The operator edge with no controller to scrape at all (scaled to zero, or its Service gone) in a deployed fleet: its target is absent,
+  # which pages as an edge down.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081", env="kind"}'
+        values: '1x44'
+      - series: 'up{job="finapp-edge", edge="public", instance="p1:8081", env="kind"}'
+        values: '1x44'
+      - series: 'up{job="finapp-edge", edge="public", instance="p2:8081", env="kind"}'
+        values: '1x44'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: EdgeUnscraped
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: EdgeUnscraped
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              owner: platform
+              job: finapp-edge
+              edge: operator
+            exp_annotations:
+              summary: "No controller of the operator edge can be scraped"
+              description: "No controller of the operator edge has answered its scrape for 5 minutes, so it may be down and its errors cannot be counted. See OPERATIONS_RUNBOOK.md section 11.42."
