@@ -29290,6 +29290,13 @@ on none:
 - **Definition of done**: `DOD-TEST`, `DOD-DOC`.
 - **Operational documentation**: `CAPACITY_MODEL.md`.
 - **Risk**: Medium. **Cx**: M.
+- **Routed from `P16-TSK-006` (2026-11-13)**: the load harness drives every operation of the §4.3 mix but three, which its
+  profile (`infra/scripts/kind-rehearsal/load/demonstration.json`) declares undriven, each with its reason: BNPL purchases and
+  instalments, lending repayments and loan credit decisions. Each needs the platform scope's four-eyes activations (credit policy
+  and scorecard, lending capital and terms, BNPL terms) and its own customer flows (a decision request, an application and an offer,
+  an agreement), none of which the rehearsal client has. So the demonstration drives 4.51 of its 5 money movements a second. To fill
+  the measured columns for those three, this task first adds their setup and scenarios to the harness, which is code beside its
+  "no code", or the owner moves them to another task. `LoadRehearsalContractTest` names this task as their driver while it is live.
 
 **P16-TSK-008 — Hot rows, locks, deadlocks and plans under load** — `PLANNED`
 - **Objective**: measure every known contended financial resource and the database's behaviour under the concurrent-financial and

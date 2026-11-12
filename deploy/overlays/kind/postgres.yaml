@@ -87,6 +87,13 @@ spec:
             - ssl_key_file=/etc/finapp-postgres-tls/tls.key
             - -c
             - hba_file=/etc/finapp-postgres-hba/pg_hba.conf
+            # The load harness's statement statistics (P16-TSK-006, PHASE_16_PLAN.md section 5.2): loaded here, and the extension
+            # created by the load scope in the server's maintenance database alone, so the finapp database gains no object. A
+            # test-only server's setting: a managed database's statistics are its own (Performance Insights in the reference cloud).
+            - -c
+            - shared_preload_libraries=pg_stat_statements
+            - -c
+            - track_io_timing=on
           ports:
             - name: postgres
               containerPort: 5432

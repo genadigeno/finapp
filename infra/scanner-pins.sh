@@ -199,3 +199,12 @@ METRICS_SERVER_REPOSITORY=registry.k8s.io/metrics-server/metrics-server
 METRICS_SERVER_VERSION=v0.9.1
 METRICS_SERVER_DIGEST=sha256:9b0ba1926e1d3089673f45461c3c1416109dea33b3ba3434048defd380df329b
 METRICS_SERVER_MANIFEST_SHA256=3c7f57cdbee0f57fb0259a150e8f6d6cb4f29d72d1aa5dce8803151dd6d4c2a1
+
+# The load generator (P16-TSK-006, ADR-0126 decision 2, owner decision C5): k6, sourced by the kind rehearsal's load scope
+# (infra/scripts/kind-rehearsal/load.sh), which runs it as a container on the kind network against the real edge with
+# arrival-rate executors. A tool outside the build graph, like every image above: nothing of it reaches the application's
+# lockfiles or gradle/verification-metadata.xml. 2.3.0 rather than 2.4.0, a day old when this was pinned: a release that has
+# been out for weeks, not hours; the weekly check reports the newer one as it reports every other.
+K6_REPOSITORY=grafana/k6
+K6_VERSION=2.3.0
+K6_DIGEST=sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8

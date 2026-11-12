@@ -4427,6 +4427,85 @@ own series.
 **Failure and rollback.** A rule that cannot be evaluated pages nobody; `InstanceDown` and `FinappTargetsAbsent` (section 11.8) are what
 say the scrape is gone. Removing either rule is a change to `flows.yml`, which the tests above refuse.
 
+### 11.43 Running a load test and reading its artefacts (`P16-TSK-006`, ADR-0126)
+
+**What it is.** The `kind` rehearsal's `load` scope (`infra/scripts/kind-rehearsal.sh`, `kind-rehearsal/load.sh`): release N deployed,
+smoked and its census green as in every scope, then a load profile (`infra/scripts/kind-rehearsal/load/<profile>.json`) driven through
+the platform's real public edge by k6 (pinned by digest in `infra/scanner-pins.sh`) as an **open model**: each operation arrives at
+its profile's rate whatever the platform answers, so a slow answer queues work as real clients would and its waiting is counted.
+While it runs, every 30 s, the harness reads every correctness page of `SLOS.md` §3 from the cluster's Prometheus and every clause of
+`kind-rehearsal/census.sql` marked `[sampled during load]` inside one `REPEATABLE READ READ ONLY` transaction; every 10 s, PostgreSQL's
+own statistics and `pg_stat_statements`. After it, the full census. It runs on the reference machine, not in CI: a runner is another
+machine, and a number is always reported with its workload and its machine (ADR-0126 decision 1).
+
+**What it drives (the `demonstration` profile).** `CAPACITY_MODEL.md` §1's demonstration workload: transfers 1.325 a second, card or
+checkout payments 2.655, card top-ups 0.53 (the withdrawals of R2 folded into top-ups), balance reads 50, sign-ins 3.18 and merchant
+API reads 5.3 (the target's peak scaled by 5 / 10.47), each through its own scenario; the provider's signed callbacks, two per captured
+card payment, from `Rehearsal.java load-callbacks`, each naming the operation the platform minted; and one PSP settlement file of the
+run's captures at mid-run, uploaded and attested through the operator edge and reconciled during the load. One money-moving iteration
+in twenty sends each of its commands twice under one key, half before the first answer and half after it; one callback in twenty is
+delivered twice. **Not driven**: BNPL purchases and instalments, lending repayments and loan credit decisions (0.49 of the 5
+movements a second), each declared in the profile with its reason, routed to `P16-TSK-007`.
+
+**Running it.** One full cluster at a time on the machine. From the repository root, with the rehearsal's own prerequisites (§11.28):
+
+```
+REHEARSAL_SCOPE=load infra/scripts/kind-rehearsal.sh
+```
+
+`REHEARSAL_LOAD_PROFILE` names another profile file; `REHEARSAL_LOAD_DURATION` shortens the run, which then is not the profile's
+workload (`load/workload.txt` says so); `REHEARSAL_LOAD_CUSTOMERS` (20) is how many customers the load spreads over; `REHEARSAL_PROBE`
+takes `closed-model`, `sampler-disabled` or `unbalanced-entry`. The usual `REHEARSAL_KEEP`, `REHEARSAL_REUSE_CLUSTER`,
+`REHEARSAL_SKIP_BUILD` and `REHEARSAL_ARTEFACTS` apply. Exit 0 green, 1 an assertion failed, 2 a step could not run.
+
+**What a green run says, step by step** (each a line of `rehearsal.log` and `assertions.tsv`):
+- `load-preflight`, before anything is built: what k6 will run, read by `k6 inspect`; every scenario an arrival-rate executor, one per
+  operation the profile gives k6, TLS verified, no request cap.
+- `load-target`: the node the harness reaches is a node of the run's own cluster (kind's label), at the address the generator is given.
+- `load-setup`: the load's customers registered, made `ACTIVE`, each with a session, a wallet, a card and one funding top-up; the
+  fixture written for the generator; `pg_stat_statements` created in the server's maintenance database; every page a rule the
+  cluster's Prometheus loaded; a sample before the load, which must pass.
+- `load-run`: the load, the samplers, the callback sender and the settlement file. **A sample that fails or cannot read stops the load
+  at once and fails the run.**
+- `load-judge`: the samples covering the load (none missing at either end, no gap over 45 s, every one `PASS`); the generator holding
+  its model (no dropped iteration, every arrival rate within 2%, its CPU under 90% of its two cores); every money movement resolved by
+  its key and every retried key answered alike; each operation's error ratio within its objective; the callbacks two per capture, all
+  `204`; every ready replica serving each money-moving route; the settlement file taken whole and reconciled.
+- `load-census`: the full census with the generator's counts (one effect per key, the provider's keys, the wallets, the outbox drained,
+  no event lost, GL = ledger), a last sample, and the saturation signals exported.
+
+**Reading the artefacts** (under `$REHEARSAL_ARTEFACTS/load`, `build/rehearsal/load` by default):
+
+| File | What it holds | Read it for |
+|---|---|---|
+| `workload.txt` | The profile, whether this run is its workload, duration, replicas, commit, machine, the generator's pin, what was and was not driven | Whose number this is, before any number |
+| `k6/report.tsv` | Per operation: its rate, arrivals, resolved, refused, unresolved, attempts, failed attempts, `409`s, retried keys and those answered alike, p50, p95, p99 and max latency as the client saw it (connection and handshake included), the flow's p99 | Latency and errors per operation |
+| `k6/generator.tsv` | Dropped iterations, peak and allocated virtual users, requests, duration | Whether the generator held its model |
+| `k6/summary.json`, `k6/k6-series.csv.gz` | k6's summary, and every sample of every metric with its tags | Anything the report does not show; `P16-TSK-007`'s analysis |
+| `samples.tsv`, `samples/` | One line per 30 s sample (verdict, replicas scraped of ready, clauses, detail) and each sample's raw answers | The invariants during the load |
+| `sample.sql` | The exact clauses sampled, extracted from `census.sql` | What "the census during load" was |
+| `pg-*.tsv`, `pg-statements-final.txt` | Every 10 s: sessions by state and wait, lock waits, commits, rollbacks, deadlocks, temporary files, WAL, checkpoints, the busiest tables; the top statements by time | The database's side of saturation |
+| `containers.tsv` | Every 10 s: the node's, the generator's and the callback sender's CPU and memory | The machine, and the generator's own saturation |
+| `prometheus/*.json` | CPU, heap, GC, threads, busy request threads, Hikari active and pending and acquisition, the outbox's oldest publishable age, consumer lag, requests per replica, over the run | The application's side of saturation |
+| `callbacks-load.*`, `spread.tsv`, `settlement.*` | Each callback's answer; replicas per route; the settlement file and its reconciliation counts | The provider's, the edge's and reconciliation's share |
+| `../census-load.txt` | The full census after the load | One effect per key, counted |
+
+**When it is red.** A failed sample's line in `samples.tsv` names the page or the clause: treat it as the page itself (§11.20 for the
+trial balance or the projection, §11.22 for a duplicated effect, §11.6 for the outbox) on a cluster that is the run's own. The
+generator saturated, or a dropped iteration: the run is invalid, not slow; lower the profile or give the machine more room, and never
+read its latencies. An unreadable sample (Prometheus silent, a replica unscraped, a gauge no instance reads): the run passed nothing;
+find why the sampler was blind. A refused or unresolved movement: `k6/k6-series.csv.gz` has its status and tags.
+
+**The probes**, each seen red: `closed-model` (the generator's model replaced by a closed one: refused by the pre-flight before any
+cluster exists), `sampler-disabled` (the load with no sampler: refused by the coverage), `unbalanced-entry` (an entry of one debit line
+planted 60 s into the load by the test-only superuser: caught by the next sample, which stops the run).
+
+**Failure and rollback.** It touches nothing but the run's own cluster, which it deletes at exit unless kept; a kept cluster is deleted
+with `kind delete cluster`. Its only change outside the harness is the `kind` overlay's test-only server preloading
+`pg_stat_statements` (and `track_io_timing`), which no deployed overlay carries.
+
+**The last record.** *(Filled by the run that writes it.)*
+
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 
 A signed callback no longer concludes anything by itself on the payment, instant, FX or corridor doors. Its evidence and dedupe

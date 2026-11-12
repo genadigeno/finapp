@@ -1,0 +1,23 @@
+{
+  "name": "demonstration",
+  "workload": "the demonstration workload, docs/architecture/CAPACITY_MODEL.md section 1: 5 money movements a second for 10 minutes split in the proposed production target's proportions, reads at ten times that; the operations it names no rate for scaled from the target's peak by 5 / 10.47",
+  "duration": "10m",
+  "retryShare": 0.05,
+  "transferAmount": "0.01",
+  "topUpAmount": "5.00",
+  "topUpMinor": 500,
+  "checkoutMinor": 200,
+  "operations": [
+    {"name": "transfer", "generator": "k6", "exec": "transfer", "rate": 53, "per": "40s", "perSecond": 1.325, "preAllocatedVUs": 4, "maxVUs": 20, "money": true, "errorTarget": 0.001, "from": "26.5% of 5 money movements a second"},
+    {"name": "checkout", "generator": "k6", "exec": "checkout", "rate": 531, "per": "200s", "perSecond": 2.655, "preAllocatedVUs": 8, "maxVUs": 40, "money": true, "errorTarget": 0.001, "from": "53.1% of 5: card or checkout payments"},
+    {"name": "topup", "generator": "k6", "exec": "topup", "rate": 53, "per": "100s", "perSecond": 0.53, "preAllocatedVUs": 4, "maxVUs": 20, "money": true, "errorTarget": 0.001, "from": "10.6% of 5: top-ups and withdrawals, the withdrawals folded into card top-ups (reading R2: both write six events and one journal entry)"},
+    {"name": "read", "generator": "k6", "exec": "read", "rate": 50, "per": "1s", "perSecond": 50, "preAllocatedVUs": 20, "maxVUs": 500, "money": false, "errorTarget": 0.001, "from": "ten times the money movements: account balance reads"},
+    {"name": "signin", "generator": "k6", "exec": "signin", "rate": 191, "per": "60s", "perSecond": 3.183, "preAllocatedVUs": 5, "maxVUs": 40, "money": false, "errorTarget": 0.001, "from": "6.67 a second at the target's peak, times 5 / 10.47"},
+    {"name": "merchant", "generator": "k6", "exec": "merchant", "rate": 318, "per": "60s", "perSecond": 5.3, "preAllocatedVUs": 5, "maxVUs": 60, "money": false, "errorTarget": 0.001, "from": "11.1 a second at the target's peak, times 5 / 10.47"},
+    {"name": "callbacks", "generator": "callbacks", "money": false, "errorTarget": 0.0005, "from": "two per captured card payment (W4), sent by Rehearsal.java load-callbacks, provider-driven"},
+    {"name": "settlement", "generator": "harness", "money": false, "from": "one PSP settlement file of the run's captures at mid-run, uploaded and attested through the operator edge, reconciled during the load (W5 at this scale)"},
+    {"name": "bnpl", "generator": "none", "money": true, "reason": "9.3% of the movements: BNPL purchases and instalments need the platform scope's four-eyes activation of credit, lending capital and BNPL terms and a customer's agreement flow, which the rehearsal client does not have; routed to P16-TSK-007"},
+    {"name": "lending", "generator": "none", "money": true, "reason": "0.5% of the movements: a repayment needs a disbursed loan, so the four-eyes lending activation and the decision, application and offer flows; routed to P16-TSK-007"},
+    {"name": "credit", "generator": "none", "money": false, "reason": "loan credit decisions (R1) need the four-eyes credit policy and scorecard activation; routed to P16-TSK-007"}
+  ]
+}

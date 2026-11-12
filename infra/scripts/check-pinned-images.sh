@@ -295,6 +295,8 @@ check argocd-dex   "$ARGOCD_DEX_REPOSITORY"   "$ARGOCD_DEX_VERSION"   "$ARGOCD_D
 check argocd-redis "$ARGOCD_REDIS_REPOSITORY" "$ARGOCD_REDIS_VERSION" "$ARGOCD_REDIS_DIGEST" list_tags_ecr_library
 # metrics-server, for the kind delivery rehearsal (P15-TSK-032): its manifest moves with its version (METRICS_SERVER_MANIFEST_SHA256).
 check metrics-server "$METRICS_SERVER_REPOSITORY" "$METRICS_SERVER_VERSION" "$METRICS_SERVER_DIGEST" list_tags_registry_k8s
+# The load generator (P16-TSK-006): k6, for the kind rehearsal's load scope.
+check k6 "$K6_REPOSITORY" "$K6_VERSION" "$K6_DIGEST" list_tags_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue
