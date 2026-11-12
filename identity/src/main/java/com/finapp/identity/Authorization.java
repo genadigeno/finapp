@@ -218,7 +218,7 @@ public final class Authorization {
             RoleName role,
             IdentityId assignedBy,
             String reason) {
-        return assign(unitOfWork, identityId, role, assignedBy, reason, granted -> "");
+        return grant(unitOfWork, identityId, role, assignedBy, reason, granted -> "");
     }
 
     /**
@@ -230,6 +230,21 @@ public final class Authorization {
      * @param consequence given the unit of work; answers the words the record appends to {@code granted=<role>}, or empty
      */
     public boolean assign(
+            Connection unitOfWork,
+            IdentityId identityId,
+            RoleName role,
+            IdentityId assignedBy,
+            String reason,
+            java.util.function.Function<Connection, String> consequence) {
+        return grant(unitOfWork, identityId, role, assignedBy, reason, consequence);
+    }
+
+    /**
+     * Both {@code assign}s' one body. Named apart from them on purpose: {@code RoleGrantDoorTest} holds that nothing in
+     * production but {@code IdentityAdministration} calls a method named {@code assign} here, and an overload delegating to
+     * its sibling by that name would be a second caller the rule must then explain away.
+     */
+    private boolean grant(
             Connection unitOfWork,
             IdentityId identityId,
             RoleName role,

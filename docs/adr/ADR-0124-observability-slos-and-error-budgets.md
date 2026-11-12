@@ -82,7 +82,8 @@ exporter is configured. Several gaps remain:
      never answers costs a request thread nothing, and the `kind` run measured it with the collector stopped (a refusal) and hung (a stand-in
      that accepts and never answers; the first run's "black-holed" phase was in fact a refusal, kube-router rejecting what no policy admits). At
      a stop the SDK's last export is bounded at 2 s in the ordered shutdown (`TelemetryFlush`), so a hung collector cannot spend the pod's grace.
-     A public caller's `traceparent`, `tracestate` and `baggage` are removed at the public edge (ADR-0034's dated note).
+     A public caller's `traceparent`, `tracestate` and `baggage` are removed at the public edge (ADR-0034's dated note), and since
+     2026-11-12 an operator's at the operator edge (`P15-TSK-043`, ADR-0034's second dated note).
    - **Logs: the correction to "container logs".** A node agent reading `/var/log/pods` needs `hostPath` and root, which Pod Security `restricted`
      refuses on every namespace. So each replica ships the ECS line its console printed as an OTLP record's body (`OtlpLogAppender`), through the
      same one egress. The migrator Job's and the cluster components' own lines are not shipped; the node's rotation keeps them.

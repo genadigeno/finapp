@@ -287,7 +287,8 @@ public final class IdentityAdministration {
      * <p>A second role ends nothing: its holder's sessions were issued at doors that already knew it was staff, since the
      * public doors refuse staff. A retry of a first grant finds it held and ends nothing more - the first attempt ended them
      * or granted nothing. A re-grant after a revocation is a first role again, because in between the identity was a
-     * customer. A revocation ends nothing: the role stops granting on the next request and the sessions serve a customer.
+     * customer. A revocation ends nothing: the role stops granting on the next request, and the sessions serve what the
+     * identity still is. A request already past the interceptor when the grant commits completes as it began.
      */
     public RoleGrant assignRole(
             Connection unitOfWork,
@@ -313,7 +314,9 @@ public final class IdentityAdministration {
         }
         // Staff is any live role: the same read the interceptor types an act by (Standing.actorType). Under READ COMMITTED a
         // concurrent grant not yet committed is invisible, so this can only err towards "first", which ends the sessions once
-        // more, harmlessly; a committed role read here was a first role's grant, which ended them.
+        // more, harmlessly. A committed role read here came through this door, which ended them at its first role, or around it
+        // (a script, break-glass, a grant before this release), which ended nothing: the review asks after those
+        // (PRIVILEGED_ACCESS_REVIEW.md §5 question 6), and a session's absolute bound ends what they left.
         boolean firstRole = authorization.standingOf(unitOfWork, subject).roles().isEmpty();
         return authorization.assign(unitOfWork, subject, role, actor, reason,
                         granted -> firstRole

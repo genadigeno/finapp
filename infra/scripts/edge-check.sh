@@ -665,11 +665,12 @@ trace_context_seen "the operator host, an operator route" 0 $TRACE_CONTEXT "$OPE
 # tool's own reference still reaches the replica through the operator host, the trace context stripped beside it.
 # shellcheck disable=SC2086
 correlation=$(client curl -sk --max-time 15 -X POST -H 'X-Correlation-Id: staff-tool-ref-0043' $TRACE_CONTEXT "$OPERATOR/v1/authentications" | tr -d '\r')
-if printf '%s\n' "$correlation" | grep -qx 'X-Correlation-Id: staff-tool-ref-0043'; then
-    echo "ok   the operator host: a tool's X-Correlation-Id reached the backend as sent, beside no trace context"
+traced=$(printf '%s\n' "$correlation" | grep -ic '^\(traceparent\|tracestate\|baggage\):' || true)
+if printf '%s\n' "$correlation" | grep -qx 'X-Correlation-Id: staff-tool-ref-0043' && [ "$traced" = 0 ]; then
+    echo "ok   the operator host: a tool's X-Correlation-Id reached the backend as sent, and none of the trace context sent beside it"
 else
     printf '%s\n' "$correlation"
-    echo "!!   the operator host: a tool's X-Correlation-Id did not reach the backend as sent"
+    echo "!!   the operator host: a tool's X-Correlation-Id did not reach the backend as sent, or $traced of the trace context sent beside it did"
     status=1
 fi
 
