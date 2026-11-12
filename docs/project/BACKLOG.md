@@ -29071,7 +29071,7 @@ on none:
 - **Operational documentation**: the two new documents; `OPERATIONS_RUNBOOK.md` unchanged.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-002 — Guards that hold what they are named for (`P15-REM-004`)** — `PLANNED`
+**P16-TSK-002 — Guards that hold what they are named for (`P15-REM-004`)** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: `P15-REM-004`'s (a)–(g), Phase 16's first wave by that entry's horizon. Each guard named in it is made to hold
   what its name says.
 - **Affected components**: `app`'s guards: `SecurityScansAreWiredTest`, `TerraformIsPinnedAndCheckedTest`, `AlertCatalogueTest`,
@@ -29096,7 +29096,7 @@ on none:
 - **Operational documentation**: `SECRET_MANAGEMENT.md` §5.1's new rows.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-003 — The platform's own components watched: the edge, the migrator, the telemetry stack (`THREAT_MODEL.md` §6 item 43 (b))** — `PLANNED`
+**P16-TSK-003 — The platform's own components watched: the edge, the migrator, the telemetry stack (`THREAT_MODEL.md` §6 item 43 (b))** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: as decided 2026-11-12, in Phase 16's first wave: a migration that fails at night wakes someone, and the edge's
   errors are seen.
 - **Affected components**:
@@ -29136,7 +29136,7 @@ on none:
 - **Operational documentation**: two new runbook sections.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `PLANNED`
+**P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: as decided 2026-11-12, in the first wave.
   - (c) The quota part: a `ResourceQuota` for `finapp-edge` and `finapp-observability`, each sized from its own worst moment as
     `finapp`'s is.
@@ -29163,7 +29163,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's check list widened.
 - **Risk**: Low. **Cx**: S.
 
-**P16-TSK-005 — The edge, PostgreSQL and the broker rolled and rolled back on `kind` (`THREAT_MODEL.md` §6 item 43 (f))** — `PLANNED`
+**P16-TSK-005 — The edge, PostgreSQL and the broker rolled and rolled back on `kind` (`THREAT_MODEL.md` §6 item 43 (f))** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: as decided 2026-11-12, in the first wave. The three `kind` steps that need no account: each component changes
   version under a workload and comes back.
 - **Affected components**: the `kind` harness (a step per component), `deploy/edge/`, `deploy/overlays/kind/postgres.yaml`,

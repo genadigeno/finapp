@@ -1527,6 +1527,8 @@ Resolved during initiation:
 
 ## Next Task
 
+**Wave A started (2026-11-12, the owner: "start wave A"):** `P16-TSK-001`…`-005` run in parallel, each in its own branch from master `8d0120ee`; `-002`…`-005` newly `READY` (no dependency). Only `-005` takes the full `kind` cluster.
+
 **The owner's decisions for Phase 16 (2026-11-12):** C1–C12 accepted at their recommendations ("accept recommendations", `PHASE_16_PLAN.md` §2.2): Phase 16's load tests, failure experiments, drills and `P16-TST-001` are its substance and not postponed (C1); experiments run their own real stack while the Gradle database and Kafka tiers stay skipped per task (C2); the connection budget measured first, the `kind` server raised for the ten-replica drill, production `maxReplicas` 7 until decided (C3); designed-only criteria accepted with their local analogues executed (C4); k6 (C5); kubectl/docker primitives and Toxiproxy (C6); a test-only streaming-replication pair (C7); W1–W8 (C8); ADR-0128's recovery tiers (C9); one writer, multi-AZ active-passive (C10); a narrow PI-023 pre-flight before `-014` and PI-024's `incidents` steps as experiments (C11); rail availability decided on `-018`'s measured rates (C12). ADR-0126…0129 stay `Proposed` until the exit review, as Phase 15's did.
 
 **After `P16-INIT` (2026-11-12):** newly `READY`: **`P16-TSK-001` — The capacity model, the experiment register and its guard**. Wave A also holds four dependency-free items, each `PLANNED` until the coordinator marks it `READY` at the wave's start (`PHASE_16_PLAN.md` §22):
