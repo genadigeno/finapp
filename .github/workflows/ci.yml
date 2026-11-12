@@ -660,6 +660,11 @@ jobs:
             timeout: 150
           - scope: rotations
             timeout: 240
+          # P15-TSK-032: Argo CD on the cluster, syncing staging's overlay through a rehearsal root; promote.sh, the smoke, a rollback, a
+          # failed hook and its way back (OPERATIONS_RUNBOOK.md section 11.36). Nightly only (and by hand), as the design decided.
+          - scope: delivery
+            timeout: 180
+            nightly: true
     steps:
       - name: Check out, with the history N - 1 is built from
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -671,8 +676,11 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
+          NIGHTLY: ${{ matrix.nightly }}
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|infra/scripts/kind-rehearsal|infra/scripts/kind-secrets|infra/scripts/KeyCheckValue\.java$|infra/postgres/|infra/kafka/|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
+          if [ "$NIGHTLY" = true ] && [ "$EVENT" != schedule ] && [ "$EVENT" != workflow_dispatch ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" != pull_request ] || git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(deploy/|infra/scripts/kind-rehearsal|infra/scripts/kind-secrets|infra/scripts/KeyCheckValue\.java$|infra/postgres/|infra/kafka/|infra/scanner-pins\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

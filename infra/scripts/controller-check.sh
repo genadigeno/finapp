@@ -386,7 +386,7 @@ in_doc argocd-default-destination AppProject default 's/^  destinations: \[\]$/ 
 plant argocd-default-repositories argocd
 in_doc argocd-default-repositories AppProject default "s/^  sourceRepos: \[\]$/  sourceRepos:\n  - '*'/"
 plant argocd-default-cluster-kinds argocd
-in_doc argocd-default-cluster-kinds AppProject default 's/^  sourceNamespaces: \[\]$/  sourceNamespaces: []\n  clusterResourceWhitelist:\n  - group: "*"\n    kind: "*"/'
+in_doc argocd-default-cluster-kinds AppProject default 's/^  clusterResourceWhitelist: \[\]$/  clusterResourceWhitelist:\n  - group: "*"\n    kind: "*"/'
 plant argocd-default-blacklist-gone argocd
 in_doc argocd-default-blacklist-gone AppProject default '/^  namespaceResourceBlacklist:$/,$d'
 plant argocd-not-its-stream argocd

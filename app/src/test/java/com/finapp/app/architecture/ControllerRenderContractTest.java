@@ -174,7 +174,8 @@ class ControllerRenderContractTest {
         assertThat(spec.get("sourceNamespaces")).isEqualTo(List.of());
         assertThat(spec.get("destinations")).isEqualTo(List.of());
         assertThat(spec.get("namespaceResourceBlacklist")).isEqualTo(List.of(Map.of("group", "*", "kind", "*")));
-        assertThat(spec).doesNotContainKey("clusterResourceWhitelist").doesNotContainKey("namespaceResourceWhitelist");
+        assertThat(spec.get("clusterResourceWhitelist")).as("stated, empty, so applying it over an open default closes the field").isEqualTo(List.of());
+        assertThat(spec).doesNotContainKey("namespaceResourceWhitelist");
         assertThat(policy).as("the policy refuses each field stated with anything but none, and the project's absence")
                 .contains("\"sourceRepos\", \"sourceNamespaces\", \"destinations\", \"clusterResourceWhitelist\", \"namespaceResourceWhitelist\"")
                 .contains("the stream holds no `default` AppProject");

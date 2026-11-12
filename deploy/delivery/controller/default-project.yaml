@@ -6,9 +6,14 @@
 # WHY. As Argo CD installs it, `default` accepts any repository, any destination and any kind, and every Application names a project. So an
 # Application written in `argocd` by anyone who can write one there, or by a merged change under deploy/delivery/ that names no project of
 # this repository's, would reach the whole cluster. Restricted, it reaches nothing: no source repository, no source namespace, no
-# destination, every namespaced kind refused, and no cluster-scoped kind (the absence of a whitelist allows none). The shape is the one
-# Argo CD's own documentation gives for disabling the default project (read 2026-11-12). It cannot be deleted, only restricted, and Argo
-# CD creates it only when it is missing, so applying this before the controller starts is what keeps the open default from ever existing.
+# destination, every namespaced kind refused, and no cluster-scoped kind (an empty whitelist allows none). The shape is the one Argo CD's
+# own documentation gives for disabling the default project (read 2026-11-12). It cannot be deleted, only restricted.
+#
+# THE ORDER OF THE INSTALL. Argo CD creates `default`, open, whenever it starts and finds none. Applied in one stream with the install, this
+# object is refused (its kind is not yet known while the definitions are being created) and the controller then creates the open one: seen
+# on kind, 2026-11-12. So the pipeline role applies the definitions, waits for them, applies this, and only then the rest of the install.
+# Every field that could reach anything is stated, empty, so that applying this over an open default (server-side, taking the fields)
+# closes each of them rather than leaving a field another writer set.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -19,6 +24,7 @@ spec:
   sourceRepos: []
   sourceNamespaces: []
   destinations: []
+  clusterResourceWhitelist: []
   namespaceResourceBlacklist:
     - group: "*"
       kind: "*"

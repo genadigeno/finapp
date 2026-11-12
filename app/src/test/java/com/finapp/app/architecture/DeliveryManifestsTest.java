@@ -75,7 +75,9 @@ class DeliveryManifestsTest {
                         .containsEntry("namespace", entry.getKey().equals("finapp-edge") ? "finapp-edge" : "finapp");
                 Map<String, Object> policy = map(spec, "syncPolicy");
                 assertThat(policy).as("%s: no retry - a failed migration is fixed forward, never run again by the controller", name)
-                        .containsOnlyKeys("automated", "syncOptions");
+                        .containsOnlyKeys("automated", "syncOptions", "retry");
+                // Stated, because absent is not none: Argo CD 3.6.1 retries an automated sync that states no retry (P15-TSK-032's kind run).
+                assertThat(map(policy, "retry")).as("%s: retry.limit 0, stated", name).containsExactly(Map.entry("limit", 0));
                 Map<String, Object> automated = map(policy, "automated");
                 assertThat(automated).as(name).containsEntry("selfHeal", true)
                         .containsEntry("prune", !entry.getKey().equals("finapp-namespaces"));
