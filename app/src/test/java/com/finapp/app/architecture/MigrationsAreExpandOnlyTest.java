@@ -162,9 +162,13 @@ class MigrationsAreExpandOnlyTest {
         Outcome outcome = MigrationLint.tightenings(root, new Floor(MigrationLint.NO_RELEASE, floors));
         assertThat(outcome.refusals())
                 .filteredOn(refusal -> refusal.module().equals("accounting") && refusal.file().startsWith("V012"))
-                .extracting(Refusal::rule)
-                .isNotEmpty()
-                .containsOnly(Refused.TIGHTENED_OVER_OLD_ROWS);
+                .as("its two CHECKs, in one ALTER TABLE, each for its reason")
+                .hasSize(2)
+                .allSatisfy(refusal -> {
+                    assertThat(refusal.rule()).isEqualTo(Refused.TIGHTENED_OVER_OLD_ROWS);
+                    assertThat(refusal.statement()).startsWith("ALTER TABLE ACCOUNTING . VALUATION_RATE_SET ADD CONSTRAINT")
+                            .contains("(a CHECK judges every row)").contains("its contract marker names no data fix");
+                });
     }
 
     @Test

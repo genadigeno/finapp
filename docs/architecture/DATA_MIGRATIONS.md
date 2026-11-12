@@ -321,17 +321,18 @@ marker's claim is true: that release N − 1 runs on release N's schema is `P15-
 **The contract marker, whose form is fixed here for `P15-TSK-017`'s promotion script.** One `--` line starting at column 0
 in the file's header, before its first statement, matching exactly:
 
-`^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\.[0-9]+\.[0-9]+); waives=([A-Z_]+(?:,[A-Z_]+)*)(?:; data-fix=V([0-9]+(?:[._][0-9]+)*))?; reason=(\S.*)$`
+`^-- finapp-contract: first-conforming-release=(ANY|[0-9]+\.[0-9]+\.[0-9]+)(?=; waives=|; data-fix=)(?:; waives=([A-Z_]+(?:,[A-Z_]+)*))?(?:; data-fix=V([0-9]+(?:[._][0-9]+)*))?; reason=(\S.*)$`
 
 For example:
 
 ```sql
 -- finapp-contract: first-conforming-release=1.4.0; waives=DROP; reason=the last writer of legacy_status went in 1.4.0
 -- finapp-contract: first-conforming-release=ANY; waives=CHECK; data-fix=V0041; reason=V0041 raises every negative ceiling to zero
+-- finapp-contract: first-conforming-release=ANY; data-fix=V0057; reason=V0057 leaves no account without a code before the copy
 ```
 
-*(The optional `; data-fix=V<version>` was added 2026-11-12 by `P15-TSK-032`, below; every marker written without it reads as
-before, and the promotion script reads the same form.)*
+*(The optional `; data-fix=V<version>` was added 2026-11-12 by `P15-TSK-032`, below, and beside it `waives` may be left out;
+every marker written without them reads as before, and the promotion script reads the same form.)*
 
 - **`first-conforming-release`** names the first release whose code conforms to this migration. A release is named by the
   Gradle `version` it was built with (`/actuator/info` publishes it), compared as a version. A marker names a release, never a
@@ -351,48 +352,87 @@ before, and the promotion script reads the same form.)*
 - It cannot waive `UNREADABLE` (a file that cannot be read to its end), `NOT_A_MIGRATION` (a file in the directory that is
   not a `V<version>__<name>.sql` directly in it, which the migrator image would not stage), or a marker's own refusals.
 - **`data-fix`** names the migration that brings old rows into line before this file's tightening judges them: the next rule.
-  `waives` cannot name `TIGHTENED_OVER_OLD_ROWS`; only `data-fix` answers it.
+  `waives` cannot name `TIGHTENED_OVER_OLD_ROWS`; only `data-fix` answers it. A marker that answers only old rows, such as a
+  copy's, leaves `waives` out (`first-conforming-release=ANY; data-fix=V<version>; reason=…`): it waives nothing for release
+  N − 1. A marker carries `waives`, `data-fix` or both; one with neither is `MALFORMED_MARKER`.
 
 #### Enforced: a tightening over old rows names its data fix, or leaves the old rows to a later release (`P15-TSK-032`)
 
-*(Added 2026-11-12, `THREAT_MODEL.md` §6 item 42 (j), decided under the owner's standing word.)* A tightening judges every row the
-table already holds. It passes in the build and in staging, on their rows, and can fail on production's alone; and then staging,
-which has applied it, refuses any fix with a lower version (`outOfOrder = false`), so production has no forward fix at all and stays
-on the release before (`OPERATIONS_RUNBOOK.md` §11.4, "In production"). `MigrationsAreExpandOnlyTest` holds this second rule over
+*(Added 2026-11-12, `THREAT_MODEL.md` §6 item 42 (j), decided under the owner's standing word; widened the same day by its review
+to copies, to what the expand-only lint cannot read, and to the forms marked below.)* A tightening judges every row the table
+already holds. It passes in the build and in staging, on their rows, and can fail on production's alone; and then staging, which
+has applied it, refuses any fix with a lower version (`outOfOrder = false`), so production has no forward fix at all and stays on
+the release before (`OPERATIONS_RUNBOOK.md` §11.4, "In production"). `MigrationsAreExpandOnlyTest` holds this second rule over
 every module's migrations above the floor, through `MigrationLint.tightenings`, and `TighteningsOverOldRowsTest` holds it on planted
 files, through the same path. A refusal is `TIGHTENED_OVER_OLD_ROWS`.
 
-**What a tightening is**: on a table or domain **older than the migration's release**, an added `CHECK` (on the table, or inline in
-`ADD COLUMN`, or a new column typed by a domain with one), a foreign key (also an inline `REFERENCES`), a unique constraint,
-`PRIMARY KEY`, `EXCLUDE` or `CREATE UNIQUE INDEX`, `SET NOT NULL`, an `ADD COLUMN … NOT NULL` with no default, a domain's new
-`CHECK` or `SET NOT NULL`, and a `VALIDATE CONSTRAINT`. **Older than the release** reads the floor as the expand-only lint does:
-the release is the migrations above the module's line; a table or domain one of them certainly created (as the same-file exemption
-above counts certainty) is new and exempt, and every other one is old. **While no release has been cut** (`release: "none"`), the
-lines still divide the files and every table at or below them counts as old: staging, every developer's database and every
-rehearsal already hold rows in those tables, and a tightening left unjudged until the first cut would be found by it.
+**What a tightening is**, on a table or domain **older than the migration's release**:
 
-**Such a tightening passes in one of two ways, and no other:**
+- an added `CHECK`, foreign key, unique constraint, `PRIMARY KEY`, `EXCLUDE` or `CREATE UNIQUE INDEX`; PostgreSQL 18's
+  `ADD CONSTRAINT … NOT NULL <column>`; `SET NOT NULL`;
+- a column added `NOT NULL` with no default; with a `CHECK` or `PRIMARY KEY` of its own, or typed by a domain with a `CHECK` or
+  `NOT NULL`; `GENERATED ALWAYS AS (…) STORED`, whose expression is computed for every row; `UNIQUE NULLS NOT DISTINCT`; and
+  `UNIQUE` or `REFERENCES` when the old rows receive a value, from a default, an identity or serial, or a stored expression (with
+  none they receive a null, which neither judges);
+- a type change `USING` an expression, or to a domain with a `CHECK` or `NOT NULL`;
+- a domain's new `CHECK` or `NOT NULL`, or its `SET NOT NULL`; a domain's constraint is known however it came, with the domain or
+  added later;
+- a `VALIDATE CONSTRAINT`;
+- **a copy of old rows**: `INSERT … SELECT` or `INSERT … TABLE`, `UPDATE … FROM`, `MERGE`, `CREATE TABLE … AS` or `SELECT … INTO`
+  that reads anything not certainly new (a table at or below the floor, a view, a common table expression's name). It makes its
+  target old for the rest of the release, so a constraint added to it afterwards is judged as on any old table; and into a table
+  of this release that already carries a `CHECK`, `UNIQUE`, `PRIMARY KEY`, foreign key, `NOT NULL` or generated column, or takes
+  them through `LIKE` or `INHERITS`, the copy itself is the tightening. Renaming the old table aside and creating its name again
+  is this case;
+- **what the expand-only lint cannot vouch for**, which a `waives` answers for release N − 1 and not for the rows: a statement it
+  classes `OPAQUE_BLOCK` (a `DO` block, a top-level call of a function this module defined), `UNRECOGNISED` (for example
+  `ATTACH PARTITION`, which scans the partition, or `ALTER COLUMN … SET EXPRESSION`, which recomputes every row) or
+  `ALTERED_CONSTRAINT` (PostgreSQL 18's `ALTER CONSTRAINT … ENFORCED` checks every row), when it is on an old object. **What an
+  opaque block touches cannot be read, so it counts as old: the lint fails closed.** So does an unrecognised statement whose
+  object it cannot read. Such a statement is refused here whatever it does; one that judges no row needs the lint taught its
+  form, not a marker.
 
-1. **`NOT VALID`, then validated by a later release.** `ADD CONSTRAINT … CHECK (…) NOT VALID` and `ADD CONSTRAINT … FOREIGN KEY (…)
-   … NOT VALID` (and a domain's `ADD CONSTRAINT … NOT VALID`) judge new writes at once and leave the old rows alone. Its `VALIDATE
-   CONSTRAINT` passes only in a migration of a **later** release than the one that added it; validated in the same release it is a
-   tightening like any other. The release between is the time to find and fix what the old rows hold: the validation can still fail
-   on a row nobody fixed, so its release should carry the fix too, named as below when it does. **`SET NOT NULL` has no `NOT VALID`
-   form.** Its way is `ADD CONSTRAINT <name> CHECK (<column> IS NOT NULL) NOT VALID` in one release, `VALIDATE CONSTRAINT <name>` in
-   a later one, and then `SET NOT NULL`, which PostgreSQL proves from the validated check without a scan: a `SET NOT NULL` passes
-   once a migration has validated such a check on that column. A unique constraint or index has no `NOT VALID` form and no
-   such way: it takes the second.
-2. **A named data fix.** The file's contract marker carries `data-fix=V<version>`: a migration of the **same release**, of a lower
-   version, that writes rows (`INSERT`, `UPDATE` or `DELETE`). Wherever the release runs, production included, the fix runs first.
-   A version that is not lower, not in the release, or names a migration writing no row is refused. The lint holds that a fix is
-   named and comes first; what it fixes is the marker's reason, a person's statement.
+**Older than the release** reads the floor as the expand-only lint does: the release is the migrations above the module's line. A
+table, domain, sequence, index or view one of them certainly created (as the same-file exemption above counts certainty) is new
+and exempt until old rows reach it: a copy, a rename of an old table onto its name, an old partition attached to it, or, for a
+domain, an old table's column taking it. Every other one is old. **While no release has been cut** (`release: "none"`), the lines
+still divide the files and every table at or below them counts as old: staging, every developer's database and every rehearsal
+already hold rows in those tables, and a tightening left unjudged until the first cut would be found by it.
+
+**Such a tightening passes in one of these ways:**
+
+1. **`NOT VALID`, named, then validated by a later release.** `ADD CONSTRAINT <name> CHECK (…) NOT VALID`, `ADD CONSTRAINT <name>
+   FOREIGN KEY (…) … NOT VALID`, PostgreSQL 18's `ADD CONSTRAINT <name> NOT NULL <column> NOT VALID`, and a domain's `ADD
+   CONSTRAINT <name> CHECK (…) NOT VALID` judge new writes at once and leave the old rows alone. **A `NOT VALID` constraint must be
+   named**: its `VALIDATE CONSTRAINT <name>` is matched by that name, and the validation of one added without a name is refused.
+   The validation passes only in a migration of a **later** release than the one that added it; validated in the same release it
+   is a tightening like any other. **While the floor says `none`, "a later release" means a migration above the floor after the
+   floor has next been recorded past the one that added it**: until then the lint reads both as one release. The release between
+   is the time to find and fix what the old rows hold: the validation can still fail on a row nobody fixed, so its release should
+   carry the fix too, named as in 4 when it does.
+2. **`SET NOT NULL` over a proof.** `SET NOT NULL`, and PostgreSQL 18's `ADD CONSTRAINT … NOT NULL` without `NOT VALID`, pass once
+   a valid, enforced `CHECK (<column> IS NOT NULL)` stands on that column, from which PostgreSQL proves the column without a scan:
+   one validated as in 1, or one created valid, with its table or by an earlier release or with a named data fix; or once a
+   not-null constraint on the column has been validated as in 1. Once a constraint or column of the table is dropped, or a
+   constraint altered, the lint takes the proof as gone. *(Corrected 2026-11-12: this said `SET NOT NULL` has no `NOT VALID`
+   form. PostgreSQL 18, the version this repository runs, adds a not-null constraint `NOT VALID`; and `SET NOT NULL` on a column
+   whose not-null constraint is invalid validates it, scanning, so it is refused until that constraint has been validated.)*
+3. **`UNIQUE USING INDEX` on an index an earlier release built.** `ADD CONSTRAINT <name> UNIQUE USING INDEX <index>` judges no row
+   the index's build did not, when a migration at or below the floor built `<index>` unique. Built by this release, the index's
+   own `CREATE UNIQUE INDEX` is the tightening. `PRIMARY KEY USING INDEX` sets its columns `NOT NULL`, scanning, and stays one.
+4. **A named data fix.** The file's contract marker carries `data-fix=V<version>`: a migration of the **same release**, of a lower
+   version, that writes rows (`INSERT`, `UPDATE`, `DELETE` or `MERGE`). Wherever the release runs, production included, the fix runs
+   first. A version that is not lower, not in the release, or names a migration writing no row is refused. The lint holds that a
+   fix is named and comes first; what it fixes is the marker's reason, a person's statement. A unique constraint or index
+   otherwise has no `NOT VALID` form and no other way: it takes this one.
 
 **What it does not claim.** It reads statements, not data: a named fix that misses a row, or a validation in a later release over a
-row nobody fixed, fails as before, and the rule makes that the rare case rather than the usual one. A type change (`TYPE_CHANGE`)
-can fail on old rows too and is not judged here; the expand-only lint already asks a marker of it.
+row nobody fixed, fails as before, and the rule makes that the rare case rather than the usual one. A type change with no `USING`
+and to no constrained domain (a narrowed `varchar`, say) can fail on old rows too and is not judged here; the expand-only lint
+already asks a marker of it. A statement that reads an old table only to filter is counted a copy all the same.
 
-**Grandfathered: none.** No migration above the floor tightened an old table when the rule was written; the test holds the list
-(empty) so it cannot grow without a named version and a reason.
+**Grandfathered: none.** No migration above the floor tightened an old object when the rule was written, nor when it was widened;
+the test holds the list (empty) so it cannot grow without a named version and a reason.
 
 **The promotion script's rule (`P15-TSK-017`).** A rollback to release R is refused when any migration above R's own newest
 version in that module carries a marker naming a release newer than R. Past such a marker the way back is a forward fix.
