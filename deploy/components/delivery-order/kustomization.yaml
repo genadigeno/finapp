@@ -16,48 +16,60 @@
 # sync before the release's own change to them. In wave -1 of the Sync phase it is still a hook, still awaited, still the end of a sync
 # that it fails, and it runs after what it needs. No window is accepted.
 #
-# An annotation here is metadata of the ExternalSecrets too, and a change to an ExternalSecret's metadata makes the operator read the
-# store again (SECRET_MANAGEMENT.md section 3.5): these values are fixed, so that happens once, when an environment first adopts them.
+# Annotation transformers, not patches: they set one field and leave every other byte of the object as the overlay rendered it, so the
+# manifest policy reads the same stream it would without this component (a strategic merge would normalise a key stated with no value
+# away, and a defect with it). An annotation here is metadata of the ExternalSecrets too, and a change to an ExternalSecret's metadata
+# makes the operator read the store again (SECRET_MANAGEMENT.md section 3.5): these values are fixed, so that happens once, when an
+# environment first adopts them.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
-patches:
-  - target:
-      kind: (ServiceAccount|Role|RoleBinding|NetworkPolicy|ResourceQuota|LimitRange|SecretStore|Service|PodDisruptionBudget)
-    patch: |-
-      apiVersion: v1
-      kind: Placeholder
-      metadata:
-        name: placeholder
-        annotations:
-          argocd.argoproj.io/sync-wave: "-3"
-  - target:
-      kind: ExternalSecret
-    patch: |-
-      apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      metadata:
-        name: placeholder
-        annotations:
-          argocd.argoproj.io/sync-wave: "-2"
-  - target:
-      kind: Job
-      name: finapp-migrator
-    patch: |-
-      apiVersion: batch/v1
-      kind: Job
-      metadata:
-        name: finapp-migrator
-        annotations:
-          argocd.argoproj.io/hook: Sync
-          argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-          argocd.argoproj.io/sync-wave: "-1"
-  - target:
-      kind: (ConfigMap|Deployment|HorizontalPodAutoscaler)
-    patch: |-
-      apiVersion: v1
-      kind: Placeholder
-      metadata:
-        name: placeholder
-        annotations:
-          argocd.argoproj.io/sync-wave: "0"
+transformers:
+  - |-
+    apiVersion: builtin
+    kind: AnnotationsTransformer
+    metadata:
+      name: wave-what-the-pods-need
+    annotations:
+      argocd.argoproj.io/sync-wave: "-3"
+    fieldSpecs:
+      - {kind: ServiceAccount, path: metadata/annotations, create: true}
+      - {kind: Role, path: metadata/annotations, create: true}
+      - {kind: RoleBinding, path: metadata/annotations, create: true}
+      - {kind: NetworkPolicy, path: metadata/annotations, create: true}
+      - {kind: ResourceQuota, path: metadata/annotations, create: true}
+      - {kind: LimitRange, path: metadata/annotations, create: true}
+      - {kind: SecretStore, path: metadata/annotations, create: true}
+      - {kind: Service, path: metadata/annotations, create: true}
+      - {kind: PodDisruptionBudget, path: metadata/annotations, create: true}
+  - |-
+    apiVersion: builtin
+    kind: AnnotationsTransformer
+    metadata:
+      name: wave-the-external-secrets
+    annotations:
+      argocd.argoproj.io/sync-wave: "-2"
+    fieldSpecs:
+      - {kind: ExternalSecret, path: metadata/annotations, create: true}
+  - |-
+    apiVersion: builtin
+    kind: AnnotationsTransformer
+    metadata:
+      name: wave-the-migrator
+    annotations:
+      argocd.argoproj.io/hook: Sync
+      argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+      argocd.argoproj.io/sync-wave: "-1"
+    fieldSpecs:
+      - {kind: Job, path: metadata/annotations, create: true}
+  - |-
+    apiVersion: builtin
+    kind: AnnotationsTransformer
+    metadata:
+      name: wave-the-rollout
+    annotations:
+      argocd.argoproj.io/sync-wave: "0"
+    fieldSpecs:
+      - {kind: ConfigMap, path: metadata/annotations, create: true}
+      - {kind: Deployment, path: metadata/annotations, create: true}
+      - {kind: HorizontalPodAutoscaler, path: metadata/annotations, create: true}

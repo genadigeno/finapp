@@ -146,6 +146,23 @@ class CiWorkflowIsLockedDownTest {
     }
 
     @Test
+    @DisplayName("no job reaches an environment: none names a GitHub environment, none runs a GitOps controller's client, and the promotion is only judged again, never run (P15-TSK-017)")
+    void noJobReachesAnEnvironment() {
+        List<String> reaching = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            String line = withoutComment(lines.get(i));
+            if (line.matches("^\\s+environment:.*") || line.matches(".*\\bargocd\\s.*")
+                    || (line.contains("promote.sh") && !line.trim().equals("run: ./infra/scripts/promote.sh recheck"))) {
+                reaching.add("line " + (i + 1) + ": " + line.trim());
+            }
+        }
+        assertThat(reaching).as("delivery is pulled by each cluster's own controller: a job that names an environment, drives a controller"
+                + " or writes a promotion is a path from CI to production").isEmpty();
+        assertThat(lines).as("the recheck runs, so the absence above is not an empty workflow")
+                .anySatisfy(line -> assertThat(line.trim()).isEqualTo("run: ./infra/scripts/promote.sh recheck"));
+    }
+
+    @Test
     @DisplayName("every action is pinned to a full commit SHA, and the pins are proposed for update weekly")
     void everyActionIsPinnedToACommit() {
         List<String> uses = new ArrayList<>();

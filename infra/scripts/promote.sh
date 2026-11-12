@@ -24,6 +24,13 @@
 #       check, verify both images in the environment's registry, write deploy/overlays/<environment>/{kustomization,release}.yaml
 #   infra/scripts/promote.sh verify <repository>@<digest> <revision>
 #       the signature and both attestations of one image, each naming its digest, the provenance naming the revision
+#   infra/scripts/promote.sh recheck
+#       CI's judgement of a pull request: each GitOps overlay names exactly its release record's pair, and that record passes the
+#       repository's refusals (no registry is read, so a hand-edited change is held to everything but the signatures, which the
+#       cluster's admission holds)
+#
+# A ROLLBACK is a promotion of an older application with the migrator the schema already ran: the migrator stays the newest
+# release's, whose run on its own schema is a no-op, and is verified against the commit it was built from.
 # Env:
 #   PROMOTE_REGISTRY    the environment's registry host; its repositories are finapp-<environment>-app and -migrator
 #   PROMOTE_SIGNATURES  the environment's signature repository (cosign's COSIGN_REPOSITORY), finapp-<environment>-signatures
@@ -155,20 +162,30 @@ case ${1:-} in
         verify "$2" "$3"
         exit 0
         ;;
+    recheck)
+        # CI, on every pull request: what the change writes into each GitOps overlay, judged again with no registry.
+        [ $# -eq 1 ] || cannot "usage: $0 recheck"
+        exec java --source 21 "$(dpath "$TOOL")" recheck "$(dpath "$ROOT")"
+        ;;
     staging | production)
         [ $# -eq 4 ] || cannot "usage: $0 <staging|production> <app-digest> <migrator-digest> <revision>"
         ;;
     *)
-        cannot "usage: $0 <staging|production> <app-digest> <migrator-digest> <revision> | verify <reference> <revision>"
+        cannot "usage: $0 <staging|production> <app-digest> <migrator-digest> <revision> | verify <reference> <revision> | recheck"
         ;;
 esac
 
 ENVIRONMENT=$1 APP=$2 MIGRATOR=$3 REVISION=$4
-# The repository's refusals first: they need no registry, and a tag never reaches cosign.
-java --source 21 "$(dpath "$TOOL")" check "$(dpath "$ROOT")" "$ENVIRONMENT" "$APP" "$MIGRATOR" "$REVISION" || exit $?
+# The repository's refusals first: they need no registry, and a tag never reaches cosign. A rollback keeps the migrator the schema
+# already ran, so the commit the migrator must have been built from is the check's to say.
+checked=$(java --source 21 "$(dpath "$TOOL")" check "$(dpath "$ROOT")" "$ENVIRONMENT" "$APP" "$MIGRATOR" "$REVISION") && judged=0 || judged=$?
+printf '%s\n' "$checked"
+[ "$judged" -eq 0 ] || exit "$judged"
+MIGRATOR_REVISION=$(printf '%s\n' "$checked" | sed -n 's/^MIGRATOR-REVISION: \([0-9a-f]\{40\}\)$/\1/p')
+[ -n "$MIGRATOR_REVISION" ] || cannot "the check named no commit for the migrator"
 REGISTRY=${PROMOTE_REGISTRY:-}
 [ -n "$REGISTRY" ] || cannot "PROMOTE_REGISTRY names no registry, so neither image can be verified"
 verify "$REGISTRY/finapp-$ENVIRONMENT-app@$APP" "$REVISION"
-verify "$REGISTRY/finapp-$ENVIRONMENT-migrator@$MIGRATOR" "$REVISION"
+verify "$REGISTRY/finapp-$ENVIRONMENT-migrator@$MIGRATOR" "$MIGRATOR_REVISION"
 java --source 21 "$(dpath "$TOOL")" write "$(dpath "$ROOT")" "$ENVIRONMENT" "$APP" "$MIGRATOR" "$REVISION"
 echo "Commit deploy/overlays/$ENVIRONMENT/kustomization.yaml and release.yaml together, in a pull request of their own."

@@ -131,7 +131,7 @@ class PromotionTest {
         assertThat(forward.out()).contains("forward:");
         promoteAndCommit("staging", A2, M2, contracted);
 
-        Run back = tool("check", "staging", A1, M1, old);
+        Run back = tool("check", "staging", A1, M2, old);
         assertThat(back.status()).as(back.out()).isEqualTo(1);
         assertThat(back.out()).contains("crosses ledger/src/main/resources/db/migration/ledger/V002__contract.sql")
                 .contains("names 1.3.0").contains("forward fix");
@@ -156,7 +156,7 @@ class PromotionTest {
                 promoteAndCommit("staging", A1, M1, old);
                 String newer = release("1.3.0", marker);
                 promoteAndCommit("staging", A2, M2, newer);
-                Run back = tool("check", "staging", A1, M1, old);
+                Run back = tool("check", "staging", A1, M2, old);
                 assertThat(back.status()).as("%s: %s", marker, back.out()).isZero();
                 assertThat(back.out()).contains("crosses no contract marker");
             } finally {
@@ -178,7 +178,7 @@ class PromotionTest {
                 String old = start("1.2.0");
                 promoteAndCommit("staging", A1, M1, old);
                 promoteAndCommit("staging", A2, M2, release("1.3.0", marker));
-                Run back = tool("check", "staging", A1, M1, old);
+                Run back = tool("check", "staging", A1, M2, old);
                 assertThat(back.status()).as("%s: %s", marker, back.out()).isEqualTo(1);
                 assertThat(back.out()).containsAnyOf("cannot read", "which one binds cannot be told");
             } finally {
@@ -198,7 +198,59 @@ class PromotionTest {
         assertThat(after).contains("  - name: finapp-app\n    digest: " + A1).contains("  - name: finapp-migrator\n    digest: " + M1);
         assertThat(after.replace(A1, "sha256:" + "0".repeat(64)).replace(M1, "sha256:" + "0".repeat(64))).isEqualTo(before);
         assertThat(read("deploy/overlays/staging/release.yaml")).contains("release: \"1.2.0\"").contains("revision: \"" + revision + "\"")
-                .contains("app: \"" + A1 + "\"").contains("migrator: \"" + M1 + "\"").startsWith("# The release this environment runs");
+                .contains("app: \"" + A1 + "\"").contains("migrator: \"" + M1 + "\"").contains("migrator-revision: \"" + revision + "\"")
+                .startsWith("# The release this environment runs");
+    }
+
+    @Test
+    @DisplayName("a rollback moves the application alone: an older migrator is refused, the schema's own accepted and recorded with its commit")
+    void aRollbackKeepsTheSchemasMigrator() throws Exception {
+        String old = start("1.2.0");
+        promoteAndCommit("staging", A1, M1, old);
+        String newer = release("1.3.0", "-- an ordinary comment, and no marker");
+        promoteAndCommit("staging", A2, M2, newer);
+
+        Run olderMigrator = tool("check", "staging", A1, M1, old);
+        assertThat(olderMigrator.status()).as(olderMigrator.out()).isEqualTo(1);
+        assertThat(olderMigrator.out()).contains("a rollback moves the application alone").contains(M2);
+
+        Run back = tool("write", "staging", A1, M2, old);
+        assertThat(back.status()).as(back.out()).isZero();
+        assertThat(read("deploy/overlays/staging/release.yaml")).contains("revision: \"" + old + "\"").contains("migrator: \"" + M2 + "\"")
+                .contains("migrator-revision: \"" + newer + "\"");
+        commitAll("staging rolled back");
+        Run checked = tool("check", "staging", A1, M2, old);
+        assertThat(checked.out()).as("promote.sh verifies the migrator against the commit it was built from").contains("MIGRATOR-REVISION: " + newer);
+    }
+
+    // ------------------------------------------------------------------------------------------- what CI judges again
+
+    @Test
+    @DisplayName("CI judges again what a change writes: a hand-edited digest, a tag, a record that disagrees and a rollback past a contract are refused; the placeholders and a promoted pair pass")
+    void ciJudgesWhatAChangeWrites() throws Exception {
+        String old = start("1.2.0");
+        Run placeholders = tool("recheck");
+        assertThat(placeholders.status()).as(placeholders.out()).isZero();
+        assertThat(placeholders.out()).contains("staging has nothing promoted").contains("production has nothing promoted");
+
+        promoteAndCommit("staging", A1, M1, old);
+        Run promoted = tool("recheck");
+        assertThat(promoted.status()).as(promoted.out()).isZero();
+
+        String overlay = read("deploy/overlays/staging/kustomization.yaml");
+        write("deploy/overlays/staging/kustomization.yaml", overlay.replace(A1, A2));
+        assertThat(tool("recheck").out()).as("a digest edited by hand").contains("REFUSED").contains("its release record");
+        write("deploy/overlays/staging/kustomization.yaml", overlay.replace("    digest: " + A1, "    newTag: \"1.2.0\""));
+        assertThat(tool("recheck").out()).as("a tag").contains("REFUSED").contains("never written by a promotion");
+        write("deploy/overlays/staging/kustomization.yaml", overlay);
+
+        String contracted = release("1.3.0", "-- finapp-contract: first-conforming-release=1.3.0; waives=DROP; reason=the last reader went in 1.3.0");
+        promoteAndCommit("staging", A2, M2, contracted);
+        // A revert of the promotion, as a hand-made pull request would write it: back past the contract.
+        git("revert", "--no-edit", "--no-commit", "HEAD");
+        Run reverted = tool("recheck");
+        assertThat(reverted.status()).as(reverted.out()).isEqualTo(1);
+        assertThat(reverted.out()).containsAnyOf("crosses ledger/src/main/resources/db/migration/ledger/V002__contract.sql", "the migrator stays");
     }
 
     // ------------------------------------------------------------------------------------------- the smoke
@@ -331,7 +383,8 @@ class PromotionTest {
                 .contains("for type in slsaprovenance1 cyclonedx; do")
                 .contains("java --source 21 \"$(dpath \"$TOOL\")\" check \"$(dpath \"$ROOT\")\"");
         String workflow = EvidenceCitations.read(root.resolve(".github/workflows/ci.yml"));
-        assertThat(workflow).contains("run: ./infra/scripts/admission-check.sh").contains("infra/scripts/(admission-check|promote|Promotion)");
+        assertThat(workflow).contains("run: ./infra/scripts/admission-check.sh").contains("infra/scripts/(admission-check|promote|Promotion)")
+                .contains("run: ./infra/scripts/promote.sh recheck");
     }
 
     // ------------------------------------------------------------------------------------------- the fixture

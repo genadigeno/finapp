@@ -330,7 +330,10 @@ For example:
 
 **The promotion script's rule (`P15-TSK-017`).** A rollback to release R is refused when any migration above R's own newest
 version in that module carries a marker naming a release newer than R. Past such a marker the way back is a forward fix.
-`ANY` never refuses.
+`ANY` never refuses. *(Built 2026-11-12: `infra/scripts/Promotion.java`, run by `promote.sh` before it writes and by CI on the pull
+request. "The migrations" are those of the newest release the environment has ever run, read from its release record's history,
+because a schema is never rolled back; a marker it cannot read, or a second one, refuses; and a rollback keeps the migrator of that
+newest release, whose run on its own schema is a no-op. `OPERATIONS_RUNBOOK.md` §11.36.)*
 
 **Enforced at run time: the schema-version guard.** The build embeds each schema's newest version, read from the migrations
 on the application's runtime classpath. The readiness contributor `schemaVersion` answers `OUT_OF_SERVICE` while any schema

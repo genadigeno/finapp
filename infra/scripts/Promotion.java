@@ -86,14 +86,22 @@ public final class Promotion {
             switch (args[0]) {
                 case "check" -> {
                     arity(args, 6);
-                    check(Path.of(args[1]), args[2], args[3], args[4], args[5]).forEach(line -> System.out.println("ok   " + line));
+                    Judgement judged = check(Path.of(args[1]), args[2], args[3], args[4], args[5]);
+                    judged.said().forEach(line -> System.out.println("ok   " + line));
+                    System.out.println("MIGRATOR-REVISION: " + judged.migratorRevision());
                     System.out.println("ACCEPTED: " + args[2] + " may run " + args[3] + " and " + args[4]);
                 }
                 case "write" -> {
                     arity(args, 6);
-                    check(Path.of(args[1]), args[2], args[3], args[4], args[5]).forEach(line -> System.out.println("ok   " + line));
-                    write(Path.of(args[1]), args[2], args[3], args[4], args[5]);
+                    Judgement judged = check(Path.of(args[1]), args[2], args[3], args[4], args[5]);
+                    judged.said().forEach(line -> System.out.println("ok   " + line));
+                    write(Path.of(args[1]), args[2], args[3], args[4], args[5], judged.migratorRevision());
                     System.out.println("WRITTEN: deploy/overlays/" + args[2] + " now names " + args[3] + " and " + args[4]);
+                }
+                case "recheck" -> {
+                    arity(args, 2);
+                    recheck(Path.of(args[1])).forEach(line -> System.out.println("ok   " + line));
+                    System.out.println("ACCEPTED: every environment's overlay names what its release record does, and the record passes");
                 }
                 case "smoke" -> {
                     arity(args, 6);
@@ -125,7 +133,10 @@ public final class Promotion {
 
     // ------------------------------------------------------------------------------------------------- check
 
-    static List<String> check(Path root, String environment, String app, String migrator, String revision)
+    /** What the check said, and the commit the migrator digest must have been built from: the release's own, or on a rollback the newest's. */
+    record Judgement(List<String> said, String migratorRevision) {}
+
+    static Judgement check(Path root, String environment, String app, String migrator, String revision)
             throws Refused, CannotJudge, IOException {
         List<String> said = new ArrayList<>();
         if (!ENVIRONMENTS.contains(environment)) {
@@ -146,11 +157,12 @@ public final class Promotion {
         String release = releaseOf(root, revision);
         said.add("the revision is a commit of this branch, release " + release);
 
+        String[] schema = contractMarkers(root, environment, revision, release, migrator);
+        said.add(schema[0]);
         if (environment.equals("production")) {
             said.add(stagingEvidence(root, app, migrator, revision));
         }
-        said.add(contractMarkers(root, environment, revision, release));
-        return said;
+        return new Judgement(said, schema[1]);
     }
 
     /** A digest and nothing else: a tag can be moved, and a name beside the digest would let the overlay say two things. */
@@ -214,10 +226,16 @@ public final class Promotion {
      * DATA_MIGRATIONS.md section 4.1, the promotion's rule: a rollback to release R is refused when any migration above R's own
      * newest version in its module carries a marker naming a release newer than R; ANY never refuses. The schema the environment
      * holds is the newest release it has ever run, because a schema is never rolled back.
+     *
+     * <p>A rollback moves the application alone. The migrator stays the newest release's, whose run on its own schema is a no-op
+     * ({@code MigratorMatchesTheBuildTest}): an older migrator on a newer schema is a path no release was ever run on, and under GitOps
+     * the migrator runs again on every sync of a release. Returns what was said and the commit the migrator digest must come from.
      */
-    static String contractMarkers(Path root, String environment, String target, String release) throws Refused, CannotJudge, IOException {
+    static String[] contractMarkers(Path root, String environment, String target, String release, String migrator)
+            throws Refused, CannotJudge, IOException {
         Set<String> ran = new LinkedHashSet<>();
-        for (Map<String, String> record : releaseHistory(root, environment)) {
+        List<Map<String, String>> history = releaseHistory(root, environment);
+        for (Map<String, String> record : history) {
             String revision = record.get("revision");
             if (revision != null && !revision.equals("none")) {
                 if (!REVISION.matcher(revision).matches() || git(root, true, "cat-file", "-e", revision + "^{commit}") == null) {
@@ -228,7 +246,7 @@ public final class Promotion {
             }
         }
         if (ran.isEmpty()) {
-            return environment + " has run no release: nothing it holds can exclude this one";
+            return new String[] {environment + " has run no release: nothing it holds can exclude this one", target};
         }
         String newest = null;
         for (String candidate : ran) {
@@ -244,11 +262,22 @@ public final class Promotion {
             throw new CannotJudge(environment + "'s releases are not one line of history, so the schema it holds cannot be named");
         }
         if (ancestor(root, newest, target)) {
-            return "forward: " + target + " holds every migration " + environment + " has run (" + newest + ")";
+            return new String[] {"forward: " + target + " holds every migration " + environment + " has run (" + newest + ")", target};
         }
         if (!ancestor(root, target, newest)) {
             throw new Refused(target + " is neither before nor after " + newest + ", the newest release " + environment
                     + " has run: a release comes from one line of history");
+        }
+        Set<String> schemaMigrators = new LinkedHashSet<>();
+        for (Map<String, String> record : history) {
+            if (newest.equals(record.get("revision")) && record.get("migrator") != null) {
+                schemaMigrators.add(record.get("migrator"));
+            }
+        }
+        if (!schemaMigrators.contains(migrator)) {
+            throw new Refused("a rollback moves the application alone: the migrator stays " + schemaMigrators + ", the one " + environment
+                    + " ran with " + newest + ", whose run on its own schema is a no-op. An older migrator on a newer schema is a path no"
+                    + " release was run on, and a schema is never rolled back");
         }
 
         Map<String, String> newestAtTarget = new HashMap<>();
@@ -290,8 +319,8 @@ public final class Promotion {
                         + " forward fix (DATA_MIGRATIONS.md section 4.1)");
             }
         }
-        return "a rollback to " + target + " (release " + release + ") crosses no contract marker: " + read
-                + " migration(s) above its own newest read in " + newest;
+        return new String[] {"a rollback to " + target + " (release " + release + ") crosses no contract marker: " + read
+                + " migration(s) above its own newest read in " + newest + "; the migrator stays " + newest + "'s", newest};
     }
 
     static List<String> migrations(Path root, String revision) throws CannotJudge {
@@ -352,7 +381,8 @@ public final class Promotion {
         return fields;
     }
 
-    static void write(Path root, String environment, String app, String migrator, String revision) throws CannotJudge, IOException {
+    static void write(Path root, String environment, String app, String migrator, String revision, String migratorRevision)
+            throws CannotJudge, IOException {
         Path overlay = root.resolve("deploy/overlays/" + environment + "/kustomization.yaml");
         String text = Files.readString(overlay, StandardCharsets.UTF_8);
         for (String[] image : new String[][] {{"finapp-app", app}, {"finapp-migrator", migrator}}) {
@@ -372,7 +402,60 @@ public final class Promotion {
         }
         Files.writeString(overlay, text, StandardCharsets.UTF_8);
         Files.writeString(record, header + "release: \"" + releaseOf(root, revision) + "\"\nrevision: \"" + revision + "\"\napp: \"" + app
-                + "\"\nmigrator: \"" + migrator + "\"\n", StandardCharsets.UTF_8);
+                + "\"\nmigrator: \"" + migrator + "\"\nmigrator-revision: \"" + migratorRevision + "\"\n", StandardCharsets.UTF_8);
+    }
+
+    /**
+     * What CI judges on a pull request, with no registry and no credential: each GitOps overlay names exactly the pair its release
+     * record names, by digest alone, and that record passes the same check a promotion made, against the history before it. A hand
+     * edit of the digests, a tag, a rollback past a contract or a production pair with no staging evidence is refused here even when
+     * nobody ran promote.sh. The signatures are not: the cluster's admission refuses an unsigned digest whatever merged.
+     */
+    static List<String> recheck(Path root) throws Refused, CannotJudge, IOException {
+        List<String> said = new ArrayList<>();
+        for (String environment : List.of("staging", "production")) {
+            String overlay = Files.readString(root.resolve("deploy/overlays/" + environment + "/kustomization.yaml"), StandardCharsets.UTF_8);
+            Map<String, String> record = fields(Files.readString(root.resolve("deploy/overlays/" + environment + "/release.yaml"), StandardCharsets.UTF_8));
+            // The images: section, its lines other than blanks and comments: exactly two names, each with a digest and nothing else.
+            List<String> lines = new ArrayList<>();
+            boolean inside = false;
+            for (String line : overlay.split("\r?\n")) {
+                if (line.equals("images:")) {
+                    inside = true;
+                } else if (inside && !line.isEmpty() && !Character.isWhitespace(line.charAt(0)) && !line.startsWith("#")) {
+                    inside = false;
+                } else if (inside && !line.isBlank() && !line.strip().startsWith("#")) {
+                    lines.add(line);
+                }
+            }
+            Map<String, String> digests = new HashMap<>();
+            for (int i = 0; i + 1 < lines.size(); i += 2) {
+                Matcher name = Pattern.compile("  - name: (finapp-app|finapp-migrator)").matcher(lines.get(i));
+                Matcher digest = Pattern.compile("    digest: (\\S+)").matcher(lines.get(i + 1));
+                if (name.matches() && digest.matches()) {
+                    digests.put(name.group(1), digest.group(1));
+                }
+            }
+            if (lines.size() != 4 || digests.size() != 2) {
+                throw new Refused("deploy/overlays/" + environment + "'s images are not the two names with a digest each and nothing else: a tag,"
+                        + " a new name or a third image is never written by a promotion: " + lines);
+            }
+            if (!digests.get("finapp-app").equals(record.get("app")) || !digests.get("finapp-migrator").equals(record.get("migrator"))) {
+                throw new Refused("deploy/overlays/" + environment + " names " + digests + " and its release record " + record.get("app") + " and "
+                        + record.get("migrator") + ": the two are written together, by infra/scripts/promote.sh");
+            }
+            if ("none".equals(record.get("revision")) && digests.get("finapp-app").equals(ZERO_DIGEST) && digests.get("finapp-migrator").equals(ZERO_DIGEST)) {
+                said.add(environment + " has nothing promoted: the placeholders");
+                continue;
+            }
+            Judgement judged = check(root, environment, record.get("app"), record.get("migrator"), record.getOrDefault("revision", ""));
+            if (!judged.migratorRevision().equals(record.getOrDefault("migrator-revision", record.get("revision")))) {
+                throw new Refused("deploy/overlays/" + environment + "/release.yaml says its migrator was built from "
+                        + record.get("migrator-revision") + ", where the promotion's rule wants " + judged.migratorRevision());
+            }
+            judged.said().forEach(line -> said.add(environment + ": " + line));
+        }
+        return said;
     }
 
     // -------------------------------------------------------------------------------------- the smoke
