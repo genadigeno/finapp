@@ -544,11 +544,15 @@ public final class Rehearsal {
         void run() throws Exception;
     }
 
-    /** Every failed attempt counts, even one a retry then heals. Under {@code WORKLOAD_RETRY=retry} (the pod kill) a logical request is retried with the same key until it resolves or the bound runs out. */
+    /**
+     * Every failed attempt counts, even one a retry then heals. Under {@code WORKLOAD_RETRY=retry} (the pod kill) a logical request is retried with the
+     * same key until it resolves or the bound runs out: {@code WORKLOAD_RETRY_SECONDS}, 240 unless a step sets it (P16-TSK-005: the database's roll
+     * leaves a payment caught mid-call {@code PROCESSING} until the platform's own sweep asks the provider, past its dispatched age).
+     */
     private void counted(String flow, String key, java.util.function.BiConsumer<String, String> note, AtomicLong failed, AtomicLong ok,
             Map<String, AtomicLong> byFlow, Flow body) {
         boolean retry = "retry".equals(System.getenv("WORKLOAD_RETRY"));
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(240));
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(Long.parseLong(System.getenv().getOrDefault("WORKLOAD_RETRY_SECONDS", "240"))));
         while (true) {
             try {
                 body.run();

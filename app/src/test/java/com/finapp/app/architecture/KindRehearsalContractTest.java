@@ -251,7 +251,10 @@ class KindRehearsalContractTest {
                 .contains("-c edge -- traefik version");
         assertThat(rolls).as("PostgreSQL: retried by key and none unresolved, the server restarted onto the version asked on one volume claim, no replica"
                         + " restarted for it")
-                .contains("start_workload \"$label\" retry").contains("requests stayed unresolved").contains("the server's start time did not move")
+                .contains("WORKLOAD_RETRY_SECONDS=$ROLL_RETRY_SECONDS start_workload \"$label\" retry").contains("requests stayed unresolved")
+                .as("retried past the sweep that concludes a payment caught mid-call, its age read from the code")
+                .contains("sweeper\\.dispatched-age:PT").contains("ROLL_RETRY_SECONDS=$((ROLL_RETRY_MINUTES * 60 + 300))")
+                .contains("the server's start time did not move")
                 .contains("SHOW server_version").contains("a replica restarted for the database's restart")
                 .contains("the server's volume claim was replaced");
         assertThat(rolls).as("the broker: zero failed requests, every replica ready, the outbox seen holding rows, the version asked, one volume claim")

@@ -13,8 +13,9 @@
 #                  asked, read from the binary.
 #   roll-postgres  the test-only server's StatefulSet set to POSTGRES_ROLL_* and back to the overlay's pin, on the same volume claim: the
 #                  server restarted (its start time moved) onto the version asked (server_version); every request the workload made while
-#                  it was away retried with the same key until it resolved, none unresolved; no replica restarted, liveness being the
-#                  process and never the database; what each replica's readiness did, recorded.
+#                  it was away retried with the same key until it resolved, none unresolved - a card payment caught mid-call is concluded
+#                  by the platform's own sweep past its dispatched age, never sent again, so the retries are bounded past it; no replica
+#                  restarted, liveness being the process and never the database; what each replica's readiness did, recorded.
 #   roll-kafka     the test-only broker's StatefulSet set to KAFKA_ROLL_* and back: zero failed requests (the broker is on no request's
 #                  path), every replica ready throughout (a broker away is not a refusal), the outbox seen holding rows while it was away,
 #                  the version asked, and the topics, their offsets and the application's ACLs kept (the census's lag and lost-event
@@ -192,13 +193,29 @@ roll_edge() {
 # PostgreSQL.
 # ---------------------------------------------------------------------------------------------------
 
+# A request in flight when the server stops can leave a card payment PROCESSING with its provider call made and its outcome unwritten. Nothing
+# sends that call again: the platform's own sweep asks the provider once the dispatch is past its dispatched age, and only then does a retry
+# by key see the payment concluded. So the leg's retries are bounded past the longest such age the code declares (payments' and merchant
+# payouts', read from their placeholders, never copied), with five minutes for the sweep's poll, the claim's lease and the retry's pause.
+dispatched_minutes() {
+    for source in app/src/main/java/com/finapp/app/payments/PaymentSweeperSchedule.java app/src/main/java/com/finapp/app/merchant/MerchantPayoutBeans.java; do
+        sed -n 's/.*finapp\.\(payments\|merchant\.payout\)\.sweeper\.dispatched-age:PT\([0-9]*\)M}.*/\2/p' "$ROOT/$source"
+    done | sort -n | tail -1
+}
+ROLL_RETRY_MINUTES=$(dispatched_minutes)
+case $ROLL_RETRY_MINUTES in '' | *[!0-9]*) cannot "the payment sweep's dispatched age could not be read from the code" ;; esac
+if grep -Eq 'SWEEPER_DISPATCHED_?AGE' "$A/all.yaml"; then
+    cannot "the kind overlay sets a sweep's dispatched age, which this leg reads from the code's default"
+fi
+ROLL_RETRY_SECONDS=$((ROLL_RETRY_MINUTES * 60 + 300))
+
 # postgres_leg <label> <image> <version>: the server's pod replaced onto the image, its claim kept, the workload retrying by key.
 postgres_leg() {
     label=$1
     started_before=$(server_started)
     [ -n "$started_before" ] || cannot "postgres roll $label: the server's start time could not be read before the roll"
     restarts_before=$(app_restarts)
-    start_workload "$label" retry
+    WORKLOAD_RETRY_SECONDS=$ROLL_RETRY_SECONDS start_workload "$label" retry
     sleep 8
     start_sampler "$label"
     started=$(date +%s)
@@ -230,6 +247,8 @@ postgres_leg() {
     pass "postgres roll $label: the server restarted onto PostgreSQL $3 on the same volume claim"
     [ "$(workload_unresolved "$label")" = 0 ] || fail "postgres roll $label: $(workload_unresolved "$label") requests stayed unresolved, see workload-$label.tsv"
     pass "postgres roll $label: $(workload_failed "$label") attempts failed while the server was away and were retried with the same key; none unresolved"
+    swept=$(awk -F'\t' '$NF ~ /ended PROCESSING/ {print $1 "|" $2}' "$CLIENT/workload-$label.tsv" | sort -u | wc -l | tr -d ' ')
+    log "postgres roll $label: $swept payments caught mid-call stayed PROCESSING until the platform's sweep asked the provider, and were then answered"
     assert_flows_ran "$label"
     restarts_after=$(app_restarts)
     [ "$restarts_after" = "$restarts_before" ] || fail "postgres roll $label: a replica restarted for the database's restart: $restarts_before -> $restarts_after"

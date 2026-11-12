@@ -1375,12 +1375,13 @@ no_pod_terminating() {
 }
 
 # start_workload <label> [retry] [operator-edge]: the third adds a read on the operator host to the public flows (P16-TSK-005), for a step
-# that rolls the operator's controllers too.
+# that rolls the operator's controllers too. WORKLOAD_RETRY_SECONDS, when a step sets it, bounds a retried request (240 s otherwise).
 start_workload() {
     name="$CLUSTER-workload-$1"
     # shellcheck disable=SC2086
     dock run -d --name "$name" --network kind --add-host "public.finapp.test:$NODE_IP" --add-host "operator.finapp.test:$NODE_IP" \
-        -e "WORKLOAD_RETRY=${2:-}" -e "WORKLOAD_EDGE=${3:-}" -v "$(dpath "$CLIENT"):/work" -v "$(dpath "$DIR"):/src:ro" "$JDK_IMAGE" java --source 21 /src/Rehearsal.java /work workload "$1" >/dev/null \
+        -e "WORKLOAD_RETRY=${2:-}" -e "WORKLOAD_EDGE=${3:-}" -e "WORKLOAD_RETRY_SECONDS=${WORKLOAD_RETRY_SECONDS:-240}" \
+        -v "$(dpath "$CLIENT"):/work" -v "$(dpath "$DIR"):/src:ro" "$JDK_IMAGE" java --source 21 /src/Rehearsal.java /work workload "$1" >/dev/null \
         || cannot "the workload could not start"
     CONTAINERS="$CONTAINERS $name"
 }
