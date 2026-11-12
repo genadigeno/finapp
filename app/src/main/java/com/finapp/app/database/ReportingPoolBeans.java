@@ -13,11 +13,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
 /**
- * The reporting pool (`P15-TSK-021`): built from the writer's URL and the writer's driver properties - one database,
- * reached the same way, so the transport guard that judges the writer's connection judges this pool's too - and the
- * reporting role's own credential, which {@code DatabaseCredentialGuard} confines to loopback while it is the marked
- * local default. Absent settings are refused at startup, as the budget's are: a pool nobody sized is a number nobody
- * chose.
+ * The reporting pool (`P15-TSK-021`): built from the writer's URL, the writer's driver class where one is set, and the
+ * writer's driver properties - one database, reached the same way, so the transport guard that judges the writer's
+ * connection judges this pool's too - and the reporting role's own credential, which {@code DatabaseCredentialGuard}
+ * confines to loopback while it is the marked local default. Absent settings are refused at startup, as the budget's
+ * are: a pool nobody sized is a number nobody chose.
  *
  * <p><strong>Never a role that writes</strong> (the review's fix round, 2026-11-08): the pool exists so that report
  * generation cannot write whatever its transaction says. A {@code FINAPP_DB_REPORTING_USER} naming the application's
@@ -29,6 +29,9 @@ class ReportingPoolBeans {
 
     /** Where the writer's driver properties live - {@code sslmode} among them, when it is not in the URL. */
     static final String WRITER_DRIVER_PROPERTIES = "spring.datasource.hikari.data-source-properties";
+
+    /** The writer's driver class, where one is set: the reporting pool reaches the database through the same one (`P15-REM-005`). */
+    static final String WRITER_DRIVER_CLASS = "spring.datasource.driver-class-name";
 
     /**
      * Roles that write, whatever a deployment calls its application role: the migrator and the superuser; and since
@@ -44,6 +47,7 @@ class ReportingPoolBeans {
         refuseAWritingRole(username, writerUsername(environment));
         return new ReportingPool(
                 DatabaseEndpoint.url(environment),
+                Optional.ofNullable(environment.getProperty(WRITER_DRIVER_CLASS)).filter(name -> !name.isBlank()),
                 Binder.get(environment)
                         .bind(WRITER_DRIVER_PROPERTIES, Bindable.mapOf(String.class, String.class))
                         .orElse(Map.of()),
