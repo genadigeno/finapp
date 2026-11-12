@@ -2960,9 +2960,12 @@ factor, and a password session is answered `403 identity.AssuranceRequired`. Eac
      `RISK_CASE_APPROVE` holder on a stepped-up session (§9.9; `POST /v1/operator/risk/cases/{caseId}/risk-actions`, then its
      `/approval`). It suspends every identity of the party, and it is exempt from the last-administrator refusal by design, so
      that a compromised last administrator stays suspendable; it belongs to the risk desk, which owns the case. **It leaves no
-     active administrator**: nobody can then grant, revoke or reinstate through the platform, the steps below stop here, and the
-     only way back is `README.md` §5e's out-of-band database write (a role inserted for an active identity, or the suspended
-     one's status set back), which a deployed environment has no means for today (`THREAT_MODEL.md` §6 item 31(e)).
+     active administrator**: nobody can then grant, revoke or reinstate through the platform, and the steps below stop here. The
+     way back, for a suspension risk made, is first risk's own `REINSTATE_IDENTITY` on the same party case (four eyes, the
+     approval stepped up), where the holder can be trusted again; otherwise only `README.md` §5e's full out-of-band reset (a
+     granting role inserted for an active identity, or the status, `suspension_cause` and `status_changed_at` written back
+     together), which a deployed environment has no means for today (`THREAT_MODEL.md` §6 item 31(e)). *(Read "the only way back
+     is README.md §5e's out-of-band database write" until 2026-11-12.)*
 2. **Read what it did**, since the compromise may have begun: `platform.audit_record` by `actor_id`, in a read-only session (the
    review's query, below). Every `EMPLOYEE` act there is reviewed by its section's owner. An approval it gave had a second person
    on the other side. **What a door can set back is set back through it**: a kill switch it stopped, by the two-person restart
@@ -2997,7 +3000,7 @@ factor, and a password session is answered `403 identity.AssuranceRequired`. Eac
    `POST /v1/recoveries`, starts a request whose token nothing delivers (no channel adapter or notifier exists: the notifier is
    a business capability `PHASE_15_PLAN.md` §25 re-dated), so nobody can complete it today.
 7. **Re-grant the roles**, each with a reason naming the incident, on the administrator's stepped-up session: `POST
-   /v1/identities/{id}/roles`. A role that needs a factor (`ADMINISTRATOR`, and the roles that can redirect a merchant's money,
+   /v1/identities/{id}/roles`. A role that needs a factor (`ADMINISTRATOR`, the risk desk's approver `RISK_ANALYST`, and the roles that can redirect a merchant's money,
    `LEDGER_OPERATOR` and `MERCHANT_ADMINISTRATOR`) is refused `409 identity.FactorRequiredForRole` until the identity has one
    confirmed. The first ends every session again (`firstRole=true, sessionsRevoked=<n>`), the holder signs in again on the
    operator host (§11.37), and the next review asks its question 6 of the identity.
@@ -3008,7 +3011,7 @@ No administrative door creates an identity: **the person registers again**, `POS
 The old login stays taken for good, because a login is unique across every identity, closed ones included (identity `V002`), and
 the old identity stays suspended with its history. The new identity enrols its factor first (`POST /v1/me/mfa`, then its
 confirmation), and an administrator, on a stepped-up session, grants its roles afresh, each with a reason naming the incident: a
-role that needs a factor (`ADMINISTRATOR` among them) is refused until the factor is confirmed (`409
+role that needs a factor (`ADMINISTRATOR` and `RISK_ANALYST` among them) is refused until the factor is confirmed (`409
 identity.FactorRequiredForRole`), the first role ends the sessions it held as a customer, and the review asks question 6 of it,
 since that factor and its channels were added from the internet.
 

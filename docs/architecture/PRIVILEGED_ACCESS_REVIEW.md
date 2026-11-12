@@ -221,7 +221,7 @@ refusal whose record cannot be written is answered `500`, never without its reco
 word, 2026-11-12): **no identity administration on a password alone.** A role's grant (`POST /v1/identities/{id}/roles`), its
 revocation (`DELETE /v1/identities/{id}/roles/{role}`), a suspension (`POST /v1/identities/{id}/suspension`) and a reinstatement
 (`DELETE` on it) declare `MULTI_FACTOR`, and `ADMINISTRATOR` joins the roles that need an enrolled factor before they are
-granted. Both halves are needed: a password alone may enrol an identity's *first* factor (`MfaEnrolmentService.begin`; a
+granted, as the risk desk's approver (`RISK_ANALYST`, holding `RISK_CASE_APPROVE`) does since the same day. Both halves are needed: a password alone may enrol an identity's *first* factor (`MfaEnrolmentService.begin`; a
 second one needs a `MULTI_FACTOR` session once one is confirmed), so a step-up rule alone would let a factorless
 administrator's stolen password enrol the thief's factor and pass every one of these doors. **The tension, recorded
 knowingly**: the second ruling keeps "what stops a change" quick - a kill switch's stop needs no step-up - and a suspension
