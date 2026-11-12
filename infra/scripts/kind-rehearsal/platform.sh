@@ -127,7 +127,10 @@ prom_offer() {
     deadline=$(( $(date +%s) + 240 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
         kube create --raw "/api/v1/namespaces/finapp-observability/services/http:$PLATFORM_PROM/proxy/-/reload" -f - < /dev/null >/dev/null 2>&1 || true
-        [ "$(prom_value "count(up{job=\"finapp\",$1=\"$2\"})")" = 3 ] && { pass "the scrape labels the targets $1=\"$2\""; return 0; }
+        # Every target, however many replicas the moment holds (a paused rollout runs four): none left with the old value.
+        labelled=$(prom_value "count(up{job=\"finapp\",$1=\"$2\"})")
+        others=$(prom_value "count(up{job=\"finapp\",$1!=\"$2\"})")
+        [ "${labelled:-0}" -ge 3 ] && [ -z "$others" ] && { pass "the scrape labels every target $1=\"$2\" ($labelled)"; return 0; }
         sleep 15
     done
     fail "the scrape did not label the targets $1=\"$2\" within 240 s"
