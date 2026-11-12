@@ -255,7 +255,7 @@ postgres_leg() {
     restarts_after=$(app_restarts)
     [ "$restarts_after" = "$restarts_before" ] || fail "postgres roll $label: a replica restarted for the database's restart: $restarts_before -> $restarts_after"
     floor=$(ready_floor_of "$label")
-    pass "postgres roll $label: no replica restarted (liveness is the process); ready replicas fell to $floor and came back to three"
+    pass "postgres roll $label: no replica restarted (liveness is the process); the fewest ready replicas sampled was $floor, three again after"
     census "$label"
 }
 
