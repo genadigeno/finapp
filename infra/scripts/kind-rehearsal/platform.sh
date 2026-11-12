@@ -451,12 +451,16 @@ signals_telemetry() {
     [ "$(alert_state TelemetryExportFailing)" = none ] || fail "11.34: a rollout of the collectors raised TelemetryExportFailing: see alerts.tsv"
     pass "11.34: the collectors rolled under traffic, and no export failure raised"
     kube -n finapp-observability scale deployment/finapp-tempo --replicas=0 >> "$ART/apply.log" 2>&1 || fail "Tempo could not be stopped"
-    # The harness's smoke: every flow through the edge, its counts added to what the census expects; a failed one fails the step.
+    # Writes keep flowing through the plant, so the collectors keep failing to export kept traces (an export fails only once a kept
+    # trace is sent and its retries end); the smoke's every flow through the edge, its counts added to what the census expects.
+    start_workload telemetry-backend
     smoke telemetry-backend
     fires TelemetryBackendDown placeholder-ticket 900 "11.34, a trace back end gone" ',job="finapp-tempo"'
     # The exporter named: the load-balancing exporter between the collectors fails at every collectors' start (peers not yet resolvable),
     # so an unqualified firing could be that and not this.
     fires TelemetryExportFailing placeholder-ticket 900 "11.34, the collectors' export to it failing" ',exporter="otlp_grpc/tempo"'
+    stop_workload telemetry-backend
+    [ "$(workload_failed telemetry-backend)" = 0 ] || fail "11.34: $(workload_failed telemetry-backend) requests failed with the trace back end gone"
     kube -n finapp-observability scale deployment/finapp-tempo --replicas=1 >> "$ART/apply.log" 2>&1 || fail "Tempo could not be started again"
     kube -n finapp-observability rollout status deployment/finapp-tempo --timeout=300s >> "$ART/apply.log" 2>&1 || fail "Tempo did not come back"
     clears TelemetryBackendDown 900 "11.34, Tempo back" ',job="finapp-tempo"'
