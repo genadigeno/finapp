@@ -3221,6 +3221,27 @@ repository refusal of the promotion, the smoke's judgements and the activation h
 repository.** What it does with the files below is read from its documentation and source (2026-11-12) and declared, not observed;
 `P15-TSK-032` rehearses a promotion and a rollback through it on `kind`.)*
 
+*(`P15-TSK-032`, 2026-11-12: the controllers rendered under a rule, and Argo CD run on `kind`. **The render**: `infra/scripts/controller-check.sh`
+fetches Argo CD's install manifest at `ARGOCD_VERSION` (v3.6.1) and the External Secrets chart at `ESO_VERSION`, each refused unless its bytes
+are the pinned sha256 (`ARGOCD_INSTALL_SHA256`, `ESO_CHART_SHA256`), rewrites every image Argo CD's manifest names to the digests of
+`infra/scanner-pins.sh` (Argo CD, its Dex and its Redis), merges `deploy/delivery/controller/argocd-cm.yaml`'s keys and adds the restricted
+`default` project (`deploy/delivery/controller/default-project.yaml`), and holds both streams to `infra/scripts/manifest-policy/controllers.rego`:
+a `ClusterRole` only from the controller's named list, its `ClusterRoleBinding` only to that role and that controller's own ServiceAccount,
+`secrets` only in the namespaces listed for it (Argo CD's `argocd`, the operator's `finapp`), no aggregation, every image a pinned digest, and for
+Argo CD the committed configuration and the restricted default project; each rule refuses a plant in the same run (CI's `Controller manifests`).
+**What the list names, read from v3.6.1's manifest**: three cluster roles, `argocd-application-controller` (`*` on `*`), `argocd-server` (get,
+patch and delete on `*`) and `argocd-applicationset-controller` (get, list and watch on Secrets), **each of which reaches every Secret of the
+cluster**, as published; this platform writes no ApplicationSet. The operator holds no cluster role; its controller Role in `finapp` also
+creates `serviceaccounts/token`, so it can mint a token for any account in `finapp` (its JWT authentication's need, read, not decided here).
+**Its account on `controller_accounts`**: not added, because no binding of either controller is rendered into the overlays' stream that
+`finapp.rego` reads; `controllers.rego` holds them instead. **Seen on `kind`** (the delivery scope's development cluster, Argo CD v3.6.1, the
+policy controller v0.15.1 and the operator as rendered above, 2026-11-12), and corrected below where the text had read otherwise:
+the `default` project applied in one stream with the install is refused (its kind not yet defined) and the controller then creates an open one;
+an automated sync whose Application states no `retry` is retried five times; an `ExternalSecret` whose `Ready` is `False` is `Degraded` and
+fails its wave's sync rather than holding it; a name-only image override in an Application's own kustomize settings drops the overlay's digest;
+each v1beta1 `ClusterImagePolicy` carries `observedGeneration` equal to its generation once the controller has reconciled it, and the
+committed check judged the three `Healthy` on it. The full run's record is the last paragraph of this section.)*
+
 **What a release is.** A pair of digests, the application's and the migrator's, built once from one commit and never rebuilt for an
 environment. An environment runs the pair its overlay names (`deploy/overlays/<environment>/kustomization.yaml`), and the overlay's
 `release.yaml` beside it says which release (the Gradle version, `-SNAPSHOT` kept) and which commit that pair is: `promote.sh` writes the
@@ -3228,8 +3249,11 @@ two files in one step, and the manifest policy's `release-images` rule refuses a
 
 **How a change reaches an environment.** Pulled, never pushed. Each cluster runs Argo CD, installed by the pipeline role with the keys of
 `deploy/delivery/controller/argocd-cm.yaml` (§6 item 31 of the threat register) and with **the `default` project restricted to nothing**
-(`sourceRepos: []`, `sourceNamespaces: []`, `destinations: []`, every namespaced kind blacklisted, as Argo CD's own documentation shows), so
-an Application nobody placed in one of this repository's projects reaches nothing. One root Application,
+(`deploy/delivery/controller/default-project.yaml`: `sourceRepos: []`, `sourceNamespaces: []`, `destinations: []`, `clusterResourceWhitelist: []`,
+every namespaced kind blacklisted, as Argo CD's own documentation shows), so an Application nobody placed in one of this repository's projects
+reaches nothing. **In this order**: Argo CD's definitions, then the restricted project, then the rest of the install. Applied in one stream, the
+project is refused while its kind is being defined and the controller, finding no `default` when it starts, creates one open to everything
+(seen on `kind`); every field is stated, so applying the file over an open default closes each field. One root Application,
 `deploy/delivery/roots/<environment>.yaml`, is created once by that role after the controllers and the admission webhook's rules are in place
 (§11.32's order). Everything else follows from master: the root syncs `deploy/delivery/<environment>`, two projects and four Applications, in
 waves.
@@ -3252,7 +3276,11 @@ review, not a check: a refusal would also refuse every development change that s
 Inside `finapp`, the release's own order is `deploy/components/delivery-order`'s, the order the `kind` rehearsal ran by script (§11.28):
 wave −3 the accounts, roles, network policies, quota, the stores and the Services; wave −2 the two `ExternalSecret`s, healthy only once
 `Ready` (Argo CD's own check: it reads no generation, so after a change of annotations alone a `Ready` left from the sync before passes;
-step 3 of `SECRET_MANAGEMENT.md` §5.2 stays a person's reading); wave −1 **the migrator Job, a `Sync` hook awaited**; wave 0 the
+step 3 of `SECRET_MANAGEMENT.md` §5.2 stays a person's reading). **An `ExternalSecret` whose `Ready` is `False`** (its store lacks an entry)
+is `Degraded` under that check, and a `Degraded` resource ends the sync `Failed` at its wave: nothing of waves −1 and 0 is applied, and with no
+retry nothing runs again (seen on `kind`). Once the store holds the entry and the operator has read it, the same revision is synced once by
+hand, as after exit `12` below, and the root, whose own sync waited on the release and failed with it, likewise. Wave −1 **the migrator Job, a
+`Sync` hook awaited**; wave 0 the
 configuration, the Deployment and its autoscaler. A hook that fails fails the sync: a failed migration leaves the old replicas serving and
 the new Deployment never applied. **It is not a `PreSync` hook**, though the plan said one: Argo CD applies a `PreSync` hook before everything
 in the Sync phase, on the first sync too, so the migrator would start before its ServiceAccount, its Secret and the network policies that
@@ -3260,12 +3288,18 @@ hold it exist. No window is accepted.
 
 **Rules every Application keeps.** Automated sync with self-heal: a hand change is put back, while the Application's last sync succeeded
 (below). Prune last, and never for the namespaces. **No `CreateNamespace`**: it would create `finapp` with neither its Pod Security nor its
-admission labels (`DeliveryManifestsTest` refuses it). **No retry**: a failed migration is fixed forward. No finalizer: deleting an
+admission labels (`DeliveryManifestsTest` refuses it). **No retry**, stated as `retry.limit: 0`: a failed migration is fixed forward. Left out, it
+is not none: Argo CD v3.6.1 retried an automated sync whose Application stated no retry five times, with backoff, before ending it `Failed`
+(seen on `kind`); a retry is the sync operation run again, its hook with it (read, not seen: the run's retries stopped before the hook).
+No finalizer: deleting an
 Application leaves what it applied running. **Never Argo CD's own rollback**: it would leave the repository saying one release and the
 cluster running another; a rollback is a promotion, below.
 
-**After a failed migrator hook.** The sync is failed and stays failed: Argo CD does not re-attempt a commit whose sync failed, and a later
-commit that leaves this Application's rendered manifests unchanged counts as that same attempt. **Self-heal is suspended in that state**: a
+**After a failed migrator hook.** The sync is failed and stays failed: Argo CD does not re-attempt a commit whose sync failed. **But any
+later commit is a new attempt**, one that leaves this Application's rendered manifests unchanged included: on `kind`, a commit touching
+nothing the Application renders started a new sync of the failed Application, hooks and all (seen 2026-11-12; read before as counting for
+the same attempt). So while the failing migrator is still the overlay's, every merge to `master` runs it again, once each: hold merges to `master`
+until the forward fix is the next one, and a migration that is not transactional makes that a stop, not a caution. **Self-heal is suspended in that state**: a
 hand change is not put back until a sync succeeds. Read the cause before anything: `kubectl -n finapp logs job/finapp-migrator` and its exit
 code (§11.1b) with the read-only role. Exit `10`, a migration or a validation failed: never sync the same revision again; fix forward, in a
 new promotion. Exit `12`, the configuration, identity or credential refused: fix that (a store entry, a grant through the bootstrap step), and
@@ -3285,14 +3319,20 @@ Applications, through no transformer), and the restricted `default` project.
 **What each environment adds, outside this repository.** Its root carries, as kustomize patches of the Applications it renders, what is
 never committed here (`SECRET_MANAGEMENT.md` §3.5): the reader ServiceAccounts' role ARNs and the stores' region from its root module's
 outputs, the images' registry (an `images` new name, `finapp-<environment>-app` and `-migrator`, never a digest: the digest is the
-overlay's; another repository name is refused at admission), the data tier's and providers' addresses in place of the overlays'
+overlay's; another repository name is refused at admission), **carried as a kustomization of the environment's own layered over the overlay,
+not as the Application's `spec.source.kustomize.images`**: Argo CD applies those by `kustomize edit set image` in the overlay's own
+kustomization, which rewrites the overlay's entry and drops its digest (seen with v3.6.1's own kustomize, v5.8.3), while a layer above the
+overlay naming the registry alone keeps it; the data tier's and providers' addresses in place of the overlays'
 documentation ranges (never `0.0.0.0/0`, a link-local range or the cluster's own, which the manifest policy refuses), and the admission
 policies' authority and signature repository (the root module's `signature_repository_url` output). That copy is held with the environment's
 delivery configuration, under its own access control and two-person review.
 
 **What the delivery does not carry.** The controllers: Argo CD itself, the policy controller (§11.32's order) and the External Secrets
 Operator (`deploy/operators/external-secrets/values.yaml`, into its own namespace `external-secrets`) are the pipeline role's to install,
-as the first controllers of a cluster are (§6 item 31 of the threat register). **The one-time role bootstrap** (§11.1b) is not part of a
+as the first controllers of a cluster are (§6 item 31 of the threat register). Argo CD and the operator are installed from what
+`infra/scripts/controller-check.sh render <directory>` writes, each stream having passed `controllers.rego`: the bytes CI checked are the bytes
+installed. A new Argo CD release is a new install manifest, its sha256 and its three image digests moved together, and the named list read
+again against what the new manifest holds. **The one-time role bootstrap** (§11.1b) is not part of a
 release and not a hook: when a release adds a role, the pipeline role runs it before the promotion, as a Job in `finapp` with the signed
 migrator image alone. The `kind` rehearsal's bootstrap Job also carries a `wait-for-postgres` init container from the curl image, because its
 PostgreSQL starts in the same run; that image is not admitted in `finapp` (no policy names it), and a real environment's database is
@@ -3367,8 +3407,8 @@ after the other, and the contract-marker rule never reads a stale history); no f
 included**. **The required checks, as GitHub lists them** (each job's name in `.github/workflows/ci.yml`): `Build and tests`, `Database
 migrations`, `Secret scan`, `Dependency scan`, `Infrastructure as code`, `Kubernetes manifests`, `Key-ring activation order`, `Promotion
 recheck`, `Alert rules and routing`, `Static analysis`, `Application image`, `Migrator image`, `Kubernetes rehearsal (kind, release)`,
-`Kubernetes rehearsal (kind, rotations)`, `Restore rehearsal`, `Signing, provenance and admission (kind)`; not `Image pin freshness`, which
-runs on a schedule. A `production` environment, if a workflow ever names one, has required reviewers with self-review prevented and no
+`Kubernetes rehearsal (kind, rotations)`, `Restore rehearsal`, `Signing, provenance and admission (kind)`, `Controller manifests`; not `Image
+pin freshness`, which runs on a schedule, nor `Kubernetes rehearsal (kind, delivery)`, which runs nightly alone. A `production` environment, if a workflow ever names one, has required reviewers with self-review prevented and no
 secret; none does today (`CiWorkflowIsLockedDownTest`). `.github/CODEOWNERS` owns `deploy/`, `infra/`, the configuration register,
 `docs/migrations/`, `.github/`, and what the owned checks read (`build-logic/`, `gradle/`, every module's migrations, the architecture
 guards and the expand-only lint), because under pull-based GitOps each of them reaches production, or decides what does, at its merge. While

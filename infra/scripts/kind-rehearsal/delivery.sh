@@ -165,17 +165,26 @@ post_deploy_smoke() {
     sleep 45
     printf '#!/bin/sh\nMSYS_NO_PATHCONV=1 exec docker exec -i "%s" curl "$@"\n' "$NODE" > "$WORK/bin/curl"
     chmod +x "$WORK/bin/curl"
-    if ! PATH="$WORK/bin:$PATH" SMOKE_KUBECTL="kubectl --as=finapp-rehearsal-reader --as-group=finapp-read-only" \
-        SMOKE_PROMETHEUS="http://$PROMETHEUS_ADDRESS" sh "$CLONE/infra/scripts/post-deploy-smoke.sh" staging --record > "$ART/smoke-$1.txt" 2>&1; then
-        rm -f "$WORK/bin/curl"
-        fail "smoke $1: post-deploy-smoke.sh staging did not pass on the cluster: see smoke-$1.txt"
-    fi
+    # Run again, as section 11.36 says, while what it reads is still settling (a replica draining, the gauges' first scrape); four tries.
+    attempt=1
+    until PATH="$WORK/bin:$PATH" SMOKE_KUBECTL="kubectl --as=finapp-rehearsal-reader --as-group=finapp-read-only" \
+        SMOKE_PROMETHEUS="http://$PROMETHEUS_ADDRESS" sh "$CLONE/infra/scripts/post-deploy-smoke.sh" staging --record > "$ART/smoke-$1.txt" 2>&1; do
+        cp "$ART/smoke-$1.txt" "$ART/smoke-$1-try-$attempt.txt"
+        attempt=$((attempt + 1))
+        if [ "$attempt" -gt 4 ]; then
+            rm -f "$WORK/bin/curl"
+            fail "smoke $1: post-deploy-smoke.sh staging did not pass on the cluster in four tries: see smoke-$1.txt"
+        fi
+        sleep 60
+    done
     rm -f "$WORK/bin/curl"
+    record "smoke $1: passed on try $attempt"
     recorded=$(git_clone status --porcelain -- deploy/evidence/staging | wc -l | tr -d ' ')
     [ "$recorded" -ge 1 ] || fail "smoke $1: the smoke passed and wrote no record under deploy/evidence/staging of the clone"
     [ -z "$(git -C "$(dpath "$ROOT")" status --porcelain -- deploy/evidence)" ] || fail "smoke $1: a record was written into the repository itself"
     commit_clone "The rehearsal: staging's smoke record ($1), as written"
     SMOKE_COMMIT=$(push_clone "the smoke record")
+    record "smoke $1: its record committed to the run's repository as $SMOKE_COMMIT"
     pass "smoke $1: post-deploy-smoke.sh staging passed on a real API server under the read-only role, its record committed to the run's repository alone"
 }
 
@@ -267,6 +276,10 @@ FAILING_DIGEST=$(push_image finapp-migrator:delivery-failing finapp-staging-migr
     printf 'app.n=%s\nmigrator.n=%s\napp.older=%s\napp.unsigned=%s\nmigrator.failing=%s\n' "$APP_DIGEST" "$MIGRATOR_DIGEST" "$OLDER_DIGEST" "$UNSIGNED_DIGEST" "$FAILING_DIGEST"
     printf 'revision=%s\nolder.revision=%s\nregistry=%s\n' "$REVISION" "$OLDER_REVISION" "$REG"
 } > "$ART/delivery-images.txt"
+# Read in a subshell, so a push that could not run left an empty value here: refused before anything uses one.
+for pushed in "$APP_DIGEST" "$MIGRATOR_DIGEST" "$OLDER_DIGEST" "$UNSIGNED_DIGEST" "$FAILING_DIGEST"; do
+    printf '%s' "$pushed" | grep -Eq '^sha256:[0-9a-f]{64}$' || cannot "an image was not pushed: see delivery-images.txt and push.log"
+done
 [ "$APP_DIGEST" != "$OLDER_DIGEST" ] && [ "$APP_DIGEST" != "$UNSIGNED_DIGEST" ] && [ "$MIGRATOR_DIGEST" != "$FAILING_DIGEST" ] \
     || cannot "a stand-in has its original's digest, so its case would test nothing"
 
@@ -405,6 +418,7 @@ mkdir -p "$CLONE/rehearsal/default-probe"
 printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: delivery-default-probe\n  namespace: default\ndata:\n  reached: "yes"\n' > "$CLONE/rehearsal/default-probe/configmap.yaml"
 commit_clone "The rehearsal: a ConfigMap only an Application in the default project would apply"
 DEFAULT_COMMIT=$(push_clone "the default project's probe")
+record "the default project's probe: a ConfigMap at $DEFAULT_COMMIT"
 cat <<YAML | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "the Application in the default project could not be written"
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -755,7 +769,9 @@ render_overlay kindpolicies overlays/kind
 for workload in app migrator; do
     {
         printf -- '- op: replace\n  path: /spec/egress\n  value:\n'
-        sed -n '/^  egress:$/,$p' "$WORK/render/kindpolicies/NetworkPolicy.finapp-$workload-data-tier.yaml" | sed '1d' | sed 's/^/  /'
+        # The egress list alone: from the line after `  egress:` to the next key of spec.
+        awk '/^  egress:$/ {inside = 1; next} inside && /^  [A-Za-z]/ {inside = 0} inside {print "  " $0}' \
+            "$WORK/render/kindpolicies/NetworkPolicy.finapp-$workload-data-tier.yaml"
     } > "$R/overlays/staging/$workload-data-tier.yaml"
     grep -q 'finapp-postgres' "$R/overlays/staging/$workload-data-tier.yaml" || cannot "the $workload data-tier policy was not read from the kind overlay"
 done
@@ -1062,7 +1078,10 @@ FAILING_COMMIT=$(push_clone "the failing migrator")
 if synced finapp "$FAILING_COMMIT" 1200 failed-hook; then
     fail "the sync with a failing migrator succeeded"
 fi
-[ "$(argo application finapp '{.status.operationState.phase}')" = Failed ] || fail "the sync with a failing migrator did not end Failed"
+failed_phase=$(argo application finapp '{.status.operationState.phase}')
+[ "$failed_phase" = Failed ] || [ "$failed_phase" = Error ] || fail "the sync with a failing migrator ended '$failed_phase', not Failed"
+retries=$(argo application finapp '{.status.operationState.retryCount}')
+[ -z "$retries" ] || [ "$retries" = 0 ] || fail "the sync with a failing migrator was retried $retries times"
 failed_started=$(argo application finapp '{.status.operationState.startedAt}')
 exit_codes=$(kube -n finapp get pods -l job-name=finapp-migrator -o jsonpath='{range .items[*]}{.status.containerStatuses[0].state.terminated.exitCode}{"\n"}{end}')
 [ "$(printf '%s\n' "$exit_codes" | grep -c .)" = 1 ] && [ "$exit_codes" = 10 ] || fail "the failing hook's pods exited '$(printf '%s' "$exit_codes" | tr '\n' ' ')', not one exit 10"

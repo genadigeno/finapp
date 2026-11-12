@@ -98,12 +98,15 @@ class DeliveryRehearsalContractTest {
     }
 
     @Test
-    @DisplayName("an ExternalSecret whose store lacks a key holds its wave: no hook, no Deployment, the sync Running, for at least a minute")
+    @DisplayName("an ExternalSecret whose store lacks a key holds its wave: the sync ends Failed there, no hook, no Deployment, not retried, for at least a minute; then one sync by hand")
     void anExternalSecretNotReadyHoldsItsWave() {
         assertThat(delivery).contains("delivery_store \"$HELD_KEY\"")
+                .contains("{ [ \"$phase\" = Failed ] || [ \"$phase\" = Error ]; }")
                 .contains("kube -n finapp get job finapp-migrator >/dev/null 2>&1 && fail \"the migrator hook ran while an ExternalSecret")
                 .contains("kube -n finapp get deployment finapp-app >/dev/null 2>&1 && fail \"the Deployment was applied while")
-                .contains("[ \"$phase\" = Running ] || fail").contains("-ge 60 ]");
+                .contains("fail \"the release's failed sync was started again on its own\"")
+                .contains("fail \"the release's sync was retried: retry count $retries\"").contains("-ge 60 ]")
+                .contains("manual_sync finapp \"$PROMOTED_COMMIT\" first-release");
         assertThat(delivery).as("the store's entries reach the store object alone, never a file of the clone or an Application")
                 .contains("} | kube apply -f - >> \"$ART/apply.log\" 2>&1 || cannot \"the store finapp-$store-store could not be written\"")
                 .contains("value:\n          fake:\n            data: []").contains("RespectIgnoreDifferences=true")
