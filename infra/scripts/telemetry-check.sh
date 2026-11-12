@@ -71,6 +71,7 @@ WORKLOAD=observability/base/collector-workload.yaml
 CONFIG=observability/base/collector.yaml
 APP=base/deployment.yaml
 BACKENDS=observability/overlays/kind/networkpolicy-backends.yaml
+PEOPLE=observability/base/rbac-humans.yaml
 
 plant_all() {
     # The general hardening, reused from finapp.rego, on the collector.
@@ -104,6 +105,95 @@ plant_all() {
     obs_plant_on obs-alerts-from-collector "$BACKENDS" '/name: finapp-alert-router/,$s/finapp\/role: metrics-scraper/finapp\/role: telemetry-collector/'
     # The scraper reachable at all (the review's MINOR 7): on kind its lifecycle endpoints answer anyone who reaches its port.
     obs_plant_on obs-scraper-reachable "$POLICY" '/name: finapp-metrics-scraper/,$s/^  egress:$/  ingress:\n    - from:\n        - podSelector:\n            matchLabels:\n              finapp\/role: telemetry-collector\n      ports:\n        - protocol: TCP\n          port: 9090\n  egress:/'
+
+    # A person's roles here (P15-TSK-032, item 42 (k)), held by finapp.rego's rules through this stream and by observability.rego: a person's
+    # binding in a third namespace (through the namespaces root, which no transformer rewrites), the read-only role reading Secrets, and
+    # break-glass deleting a pod or reaching inside one.
+    obs_plant obs-person-third-namespace
+    { printf -- '---\n'; cat; } >> "$PLANTS/obs-person-third-namespace/deploy/namespaces/namespaces.yaml" <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: finapp-read-only
+  namespace: finapp-edge
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-read-only
+  namespace: finapp-edge
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-read-only
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-read-only
+YAML
+    obs_plant_on obs-read-only-secrets "$PEOPLE" 's/resources: \[pods, pods\/log, events\]/resources: [pods, pods\/log, events, secrets]/'
+    obs_plant_on obs-break-glass-delete "$PEOPLE" '/^  name: finapp-break-glass$/,/^rules:$/s/^rules:$/rules:\n  - apiGroups: [""]\n    resources: [pods]\n    verbs: [delete]/'
+    obs_plant_on obs-break-glass-exec "$PEOPLE" '/^  name: finapp-break-glass$/,/^rules:$/s/^rules:$/rules:\n  - apiGroups: [""]\n    resources: [pods\/exec]\n    verbs: [create]/'
+    # Exactly those reads (the review of item 42 (k)): an overlay's patch giving read-only a ConfigMap, or break-glass a list of pods, passes
+    # every rule that refuses what no person may hold, and must be refused here.
+    obs_plant obs-read-only-configmaps
+    cat >> "$PLANTS/obs-read-only-configmaps/deploy/observability/overlays/kind/kustomization.yaml" <<'YAML'
+patches:
+  - target:
+      kind: Role
+      name: finapp-read-only
+    patch: |-
+      - op: add
+        path: /rules/-
+        value:
+          apiGroups: [""]
+          resources: [configmaps]
+          verbs: [get, list, watch]
+YAML
+    obs_plant obs-break-glass-reads
+    cat >> "$PLANTS/obs-break-glass-reads/deploy/observability/overlays/kind/kustomization.yaml" <<'YAML'
+patches:
+  - target:
+      kind: Role
+      name: finapp-break-glass
+    patch: |-
+      - op: add
+        path: /rules/-
+        value:
+          apiGroups: [""]
+          resources: [pods]
+          verbs: [list]
+YAML
+    # Break-glass reached through a ClusterRole of its name, bound here to its group: no Role of this namespace carries the delete, so only
+    # the group-keyed reading of [obs-break-glass-evictions] sees it.
+    obs_plant obs-break-glass-cluster-role
+    { printf -- '---\n'; cat; } >> "$PLANTS/obs-break-glass-cluster-role/deploy/$PEOPLE" <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: finapp-break-glass
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-break-glass-cluster
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: finapp-break-glass
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: finapp-break-glass
+YAML
 
     # The application's endpoint: anything but the cluster's own collector is refused, in the base and in an overlay of its own.
     obs_plant_on obs-endpoint-external "$APP" 's|http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/traces|https://otlp.example.invalid/v1/traces|'
@@ -280,6 +370,13 @@ obs_refused obs-scraper-whole-cert-manager obs-scraper-egress
 obs_refused obs-logs-from-anywhere obs-store-ingress
 obs_refused obs-alerts-from-collector obs-store-ingress
 obs_refused obs-scraper-reachable obs-store-ingress
+obs_refused obs-person-third-namespace rbac-human-namespace
+obs_refused obs-read-only-secrets rbac-human-secrets
+obs_refused obs-break-glass-delete obs-break-glass-evictions
+obs_refused obs-break-glass-exec rbac-human-subresource
+obs_refused obs-read-only-configmaps obs-person-reads
+obs_refused obs-break-glass-reads obs-person-reads
+obs_refused obs-break-glass-cluster-role obs-break-glass-evictions
 obs_refused obs-endpoint-external obs-endpoint
 obs_refused obs-endpoint-staging obs-endpoint
 obs_refused obs-peers-from-anywhere obs-collector-peers

@@ -221,7 +221,7 @@ class NamespaceSecurityManifestsTest {
     @DisplayName("a person's standing role only reads, and is held through its own group: nobody is named, and no binding reaches past the namespace")
     void aPersonsStandingRoleOnlyReads() {
         List<Map<String, Object>> everything = everyCommittedDocument();
-        Map<String, Object> readOnly = role(everything, "finapp-read-only");
+        Map<String, Object> readOnly = role(everything, "finapp", "finapp-read-only");
         for (Map<String, Object> rule : list(readOnly, "rules")) {
             assertThat(READ_VERBS).as("%s", rule).containsAll(strings(rule.get("verbs")));
             if (strings(rule.get("apiGroups")).contains("external-secrets.io")) {
@@ -234,7 +234,8 @@ class NamespaceSecurityManifestsTest {
                     assertThat(subject.get("kind")).as("%s", binding.get("metadata")).isEqualTo("Group");
                     assertThat(subject.get("name")).as("each group is its role's").isEqualTo(map(binding, "roleRef").get("name"));
                     assertThat(binding.get("kind")).as("a person's access is one namespace's").isEqualTo("RoleBinding");
-                    assertThat(namespaceOf(binding)).as("and this namespace's alone").isEqualTo("finapp");
+                    // And the application's or the telemetry pipeline's alone (P15-TSK-032, THREAT_MODEL.md section 6 item 42 (k)).
+                    assertThat(namespaceOf(binding)).as("and these namespaces' alone").isIn("finapp", "finapp-observability");
                 }
             }
         }
@@ -261,7 +262,7 @@ class NamespaceSecurityManifestsTest {
     @Test
     @DisplayName("the break-glass role's writes are exactly: delete a pod, evict a pod, change a Deployment's scale. Nothing that could mount a Secret")
     void breakGlassWritesAreAClosedList() {
-        Map<String, Object> breakGlass = role(everyCommittedDocument(), "finapp-break-glass");
+        Map<String, Object> breakGlass = role(everyCommittedDocument(), "finapp", "finapp-break-glass");
         Set<String> writes = new TreeSet<>();
         for (Map<String, Object> rule : list(breakGlass, "rules")) {
             for (String verb : strings(rule.get("verbs"))) {
@@ -273,6 +274,29 @@ class NamespaceSecurityManifestsTest {
             }
         }
         assertThat(writes).containsExactlyInAnyOrder("delete pods", "create pods/eviction", "patch deployments/scale", "update deployments/scale");
+    }
+
+    @Test
+    @DisplayName("in the telemetry pipeline's namespace a person reads pods, their logs, Deployments and events, and break-glass evicts a pod"
+            + " and does nothing else; each bound to its own group, as in finapp (P15-TSK-032, item 42 (k))")
+    void aPersonReadsTheTelemetryPipelineAndBreakGlassEvicts() {
+        List<Map<String, Object>> everything = everyCommittedDocument();
+        Map<String, Object> readOnly = role(everything, "finapp-observability", "finapp-read-only");
+        assertThat(list(readOnly, "rules")).containsExactly(
+                Map.of("apiGroups", List.of(""), "resources", List.of("pods", "pods/log", "events"), "verbs", List.of("get", "list", "watch")),
+                Map.of("apiGroups", List.of("apps"), "resources", List.of("deployments"), "verbs", List.of("get", "list", "watch")));
+        Map<String, Object> breakGlass = role(everything, "finapp-observability", "finapp-break-glass");
+        assertThat(list(breakGlass, "rules")).containsExactly(
+                Map.of("apiGroups", List.of(""), "resources", List.of("pods/eviction"), "verbs", List.of("create")));
+        for (String name : List.of("finapp-read-only", "finapp-break-glass")) {
+            List<Map<String, Object>> bound = bindings(everything).stream()
+                    .filter(binding -> "finapp-observability".equals(namespaceOf(binding)) && name.equals(map(binding, "roleRef").get("name")))
+                    .toList();
+            assertThat(bound).as("%s is bound once in finapp-observability", name).hasSize(1);
+            assertThat(map(only(bound), "roleRef")).containsEntry("kind", "Role");
+            assertThat(list(only(bound), "subjects")).containsExactly(
+                    Map.of("apiGroup", "rbac.authorization.k8s.io", "kind", "Group", "name", name));
+        }
     }
 
     @Test
@@ -481,8 +505,10 @@ class NamespaceSecurityManifestsTest {
         return bindings;
     }
 
-    private static Map<String, Object> role(List<Map<String, Object>> stream, String name) {
-        return only(ofKind(stream, "Role").stream().filter(role -> name.equals(map(role, "metadata").get("name"))).toList());
+    /** The Role of that name in that namespace: since P15-TSK-032 two namespaces each hold a person's roles of the same names. */
+    private static Map<String, Object> role(List<Map<String, Object>> stream, String namespace, String name) {
+        return only(ofKind(stream, "Role").stream()
+                .filter(role -> name.equals(map(role, "metadata").get("name")) && namespace.equals(namespaceOf(role))).toList());
     }
 
     private static BigDecimal quantity(Object value) {

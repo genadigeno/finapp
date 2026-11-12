@@ -1400,12 +1400,20 @@ deny contains msg if {
 	msg := sprintf("[rbac-aggregate-label] %s carries %s, so the cluster would merge it into a built-in role", [label(role), key])
 }
 
-# A person's access is this namespace's. A Role and binding of the same names elsewhere would pass every rule above there.
+# A person's access is these namespaces': the application's, and the telemetry pipeline's (P15-TSK-032, THREAT_MODEL.md section 6 item 42 (k):
+# deploy/observability/base/rbac-humans.yaml, held by these rules through observability.rego). A Role and binding of the same names anywhere
+# else would pass every rule above there.
+person_namespaces := {"finapp", "finapp-observability"}
+
+in_a_person_namespace(binding) if {
+	namespace_of(binding) in person_namespaces
+}
+
 deny contains msg if {
 	some binding in rbac_bindings
 	some subject in list_of(binding, "subjects")
 	not is_service_account(subject)
-	namespace_of(binding) != "finapp"
+	not in_a_person_namespace(binding)
 	msg := sprintf("[rbac-human-namespace] %s gives a person access in namespace %v", [label(binding), namespace_of(binding)])
 }
 
