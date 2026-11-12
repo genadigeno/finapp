@@ -1480,7 +1480,7 @@ The proofs write nothing and decide nothing: each reading takes one read-only sn
   two floors in a row - `by (instance)`, each reading its own: a statement past its bound, a lost connection, a refused start - the `Could not read the risk proofs` warn lines
   name the class) and `RiskProofReadingsStalled` (no `completed` reading on an instance in two floors: a reading stuck on a
   connection the network black-holed - the data source sets no socket timeout - or killed by an `Error`; restart that
-  instance, nothing is lost). While either stands, the velocity proof and the censuses are not watched: read the four
+  instance, that one pod, evicted under break-glass (section 11.25; section 11's fleet rule), nothing is lost). While either stands, the velocity proof and the censuses are not watched: read the four
   reports by hand for today until the readings complete. The rules' figures are floors of the default
   `finapp.risk.proofs.refresh` (15 min, `RiskObjectives.proofReadingFloors`): the failing rule's window and wait two
   floors each (`[30m]`, `for: 30m`), the stalled rule's window two floors and its wait one (`[30m]`, `for: 15m`) - a
@@ -1560,7 +1560,7 @@ and the month's readiness is unknown.
 
 **Diagnose.** (1) `finapp.accounting.sweeper.enabled` per instance: `0` everywhere means the schedule is switched off (`finapp.accounting.sweeper.enabled=false`). (2)
 `finapp.accounting.close.leg.failed{leg="checks"}` rising, and the application log's `The accounting close schedule's checks leg failed` with its exception's class: the leg runs and fails. (3) `GET
-/v1/operator/accounting/periods/{periodId}/operational-reports/CLOSE_STATUS` (`ACCOUNTING_READ`): `runState` `STALLED`, with `lockedAt` and `asOf`. (4) **The flag says on, nothing fails, and nothing is born: an overtaken worker can hold the leg.** Each instance runs the check leg on one thread, and a judge runs on it to its end, so a judge that outlives its lease (its heartbeat stops at `finapp.accounting.close.max-run`, 2 hours by default) is overtaken and still holds that thread until its statements return. `finapp.accounting.close.check{outcome="overtaken"}` rising says one concluded late; a rising `reclaims` on `GET .../periods/{periodId}/close-run` says an attempt was taken from a holder. A thread dump of the instance shows a thread named `accounting-close` inside a judge. Restarting that instance frees it and loses nothing: nothing of an unconcluded attempt is recorded, and the next worker reclaims it. Past three reclaims the next worker concludes it `FAILED`, `WORKERS_EXHAUSTED`, unjudged, and a person re-runs it (section 10.9). A leg that stops *after* the run's birth is section 10.9's.
+/v1/operator/accounting/periods/{periodId}/operational-reports/CLOSE_STATUS` (`ACCOUNTING_READ`): `runState` `STALLED`, with `lockedAt` and `asOf`. (4) **The flag says on, nothing fails, and nothing is born: an overtaken worker can hold the leg.** Each instance runs the check leg on one thread, and a judge runs on it to its end, so a judge that outlives its lease (its heartbeat stops at `finapp.accounting.close.max-run`, 2 hours by default) is overtaken and still holds that thread until its statements return. `finapp.accounting.close.check{outcome="overtaken"}` rising says one concluded late; a rising `reclaims` on `GET .../periods/{periodId}/close-run` says an attempt was taken from a holder. Which instance holds it is read from outside, because nobody can take a thread dump in a deployed environment (no role may exec into a pod, and the management port exposes health, info and the scrape alone): the overtaken count rising on one instance's series and no other, and that instance's checks no longer concluding while the others' do. Restarting that instance (that one pod, evicted under break-glass, section 11.25) frees it and loses nothing: nothing of an unconcluded attempt is recorded, and the next worker reclaims it *(read "A thread dump of the instance shows a thread named `accounting-close` inside a judge" until 2026-11-12)*. Past three reclaims the next worker concludes it `FAILED`, `WORKERS_EXHAUSTED`, unjudged, and a person re-runs it (section 10.9). A leg that stops *after* the run's birth is section 10.9's.
 
 **Act.** Restore the leg - switch the schedule on, or fix what it fails on. Within one poll it births the run and its nine attempts, insert-if-absent, whichever instance gets there first, and the gauge falls
 within 15 s. **Never** insert a run by hand: the edge trigger refuses a run not under the present lock, and an attempt is the check leg's. **Do not unlock** to clear the alert: an unlock is four-eyes, moves the
@@ -1804,7 +1804,7 @@ refusing a role that can write: section 11.37, `P15-TSK-043`.)*
 
 **`AccountingGaugesUnreadable`, `RegulatoryAttentionUnreadable`, and the two stall rules' unreadable sections.** A gauge publishing NaN for 15 minutes **in scrapes that complete**: an accounting read is failing while the rest of the scrape is not, such as one statement past its bound or a grant gone. While a gauge is NaN **its threshold alert cannot fire**: whether a close has stalled is unknown, not fine. Every instance runs every read, so `pg_stat_activity` shows them by their statement. Raising the timeout is a choice to wait longer on that one thread, so on every other accounting gauge behind it.
 
-**A read that never returns: restart that instance.** The data source sets no `socketTimeout`, so a socket the network black-holed never returns and no statement timeout reaches it. It holds the one thread, so **every gauge on that instance, every module's, goes to no value**: it stands on its last reading until its ask has gone unanswered for `finapp.gauges.stale-after` (2 minutes), and then says so, and `GaugesStale` tickets on that instance (section 11.8). That is the right signal: nothing is being read. A thread dump shows `gauge-refresher` inside a read. Nothing else frees it; nothing is lost by the restart, since a gauge decides nothing. *(Until `P15-TSK-024`: "every accounting gauge", standing "for four floors, a minute for most and four for the two with the 60 s floor".)*
+**A read that never returns: restart that instance.** The data source sets no `socketTimeout`, so a socket the network black-holed never returns and no statement timeout reaches it. It holds the one thread, so **every gauge on that instance, every module's, goes to no value**: it stands on its last reading until its ask has gone unanswered for `finapp.gauges.stale-after` (2 minutes), and then says so, and `GaugesStale` tickets on that instance (section 11.8). That is the right signal: nothing is being read. Tell it from a thread merely behind by what an operator can read, since nobody can take a thread dump in a deployed environment (no role may exec into a pod, and the management port exposes health, info and the scrape alone): that instance's gauge canary holds at no value without a break, where a thread behind alternates between a number and none; its pool is not starved, its threads waiting for a connection at nought; and the other instances, on the same database, keep reading. *(Read "A thread dump shows `gauge-refresher` inside a read" until 2026-11-12.)* Nothing else frees it; nothing is lost by the restart, since a gauge decides nothing. The restart is of that one pod, evicted under break-glass (section 11.25), never of the fleet (section 11's fleet rule). *(Until `P15-TSK-024`: "every accounting gauge", standing "for four floors, a minute for most and four for the two with the 60 s floor".)*
 
 **The whole scrape holds.** Since `P15-TSK-024` no gauge reads on the scrape thread, so with the pool exhausted or the database gone a scrape still completes at once: `up` stays 1, each read gauge publishes NaN once its read fails, and the unreadable rules above hold their 15 minutes. A database in trouble makes every read wait the pool's 5 s (`spring.datasource.hikari.connection-timeout`) and fail, about sixty classes in turn, so the one thread falls behind: each failed read is NaN at every scrape, so the unreadable rules hold, and the canary, a constant read between them, is NaN for most of each pass, which `GaugesStale` counts (section 11.8). A database that answers slowly but answers is the harder case: every gauge alternates between a number and NaN, no `for` above holds, and only `GaugesStale` sees it *(the fix round of 2026-11-08; until then this paragraph said every gauge of the instance went NaN past `finapp.gauges.stale-after`, and `GaugesStale` waited for its canary to hold NaN for 5 minutes, which a thread behind by less than about seven minutes never gives)*. *(Until `P15-TSK-024` about sixty other modules' classes read on the scrape thread: measured with the database gone, one scrape took 96.7 s against the local 5 s timeout, `up` went to 0, no NaN was stored, and none of these rules could hold its `for`.)*
 
@@ -1849,43 +1849,77 @@ refusing a role that can write: section 11.37, `P15-TSK-043`.)*
 
 ---
 
-## 11. Platform operations (Phase 15) — planned
+## 11. Platform operations (Phase 15)
 
-*(Planned by the Phase 14 → 15 transition, 2026-11-07 — `PHASE_15_PLAN.md` §11, §12, ADR-0120…0125, `Proposed`. Nothing
-below is a procedure yet: each subsection is written by the task named, from the code and manifests it lands, linked from
-its alerts, and **rehearsed on `kind` or compose with the result recorded** (`P15-TSK-032`); §1–§10 are each rehearsed by a counted sample of at least one procedure in the same task (`PHASE_GATES.md` §5 Phase 15, criterion 4). Until then no platform
-procedure exists and no deployed environment exists to apply one to.)*
+*(Planned by the Phase 14 → 15 transition, 2026-11-07 — `PHASE_15_PLAN.md` §11, §12, ADR-0120…0125, `Proposed`. Each
+subsection below is written by the task named, from the code and manifests it lands, linked from its alerts, and
+**rehearsed on `kind` or compose with the result recorded** (`P15-TSK-032`); §1–§10 are each rehearsed by a counted sample of
+at least one procedure in the same task (`PHASE_GATES.md` §5 Phase 15, criterion 4). Section 11.38 holds the count, a row per
+section with its owner. No deployed environment exists to apply any of it to: where a procedure names a real environment's
+service, that part is written from the service's documentation and the repository's plans, and says so. *(Read "Nothing below
+is a procedure yet … Until then no platform procedure exists" until 2026-11-12, when every planned row but 11.2, 11.3, 11.5 and
+11.10 had its section and those four had theirs under other numbers.)*)*
 
-| Planned subsection | Written by | Rehearsed by |
-|---|---|---|
-| 11.1 Deploy: the bootstrap step when a role is added, the migration Job, then the rolling update; what a stopping pod does; **a release that adds a consumer handler to an existing group**: after the rollout, the audited replay of that event type over the rollout window (an N − 1 replica commits a record it has no handler for), or the new group with recorded starting offsets | `P15-TSK-004`, `-008`, `-012`, `-017`, `-027`, `-028` | `-012` |
-| 11.2 Promote a release by digest; the production approval boundary *(written 2026-11-12 as §11.36, below)* | `-017` | `-032` (through the controller, on `kind`) |
-| 11.3 Roll back by digest (a schema is never rolled back; never across a contract marker; an added handler's type replayed over the rollback window after the re-roll) *(the promotion's half written 2026-11-12 in §11.36, below)* | `-005`, `-012`, `-017`, `-027` | `-012` |
-| 11.4 A failed migration (forward fix only) | `-004`, `-005` | `-032` |
-| 11.5 Restore, then verify financially before any money moves *(written 2026-11-11 as §11.35, below)* | `-030` | `-030` |
-| 11.6 Broker outage, consumer lag, a poison record, dead letters and replay | `-026`, `-028` | `-028`, `-032` |
-| 11.7 Rotation and revocation per secret class; a key compromise *(the cloud half written 2026-11-09, below; the fleet's half is `SECRET_MANAGEMENT.md` §5.1 and §5.2)* | `-016`, `-018`…`-020` | `-020` |
-| 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `P15-TSK-024` (instance down, stale gauges: written below, 2026-11-08), `P15-TSK-025` (burn rate and certificates: written below, 2026-11-08) | `-032` |
-| 11.9 A failing scan *(written 2026-11-08, below)*; a refused image *(§11.32 since 2026-11-11)* | `P15-TSK-006` (the failing scan), `P15-TSK-007` (the refused image, §11.32) | `P15-TSK-007` |
-| 11.10 Edge and abuse *(the break-glass half is §11.25, since 2026-11-09; this row read "Edge, abuse and break-glass" until then)* | `-011`, `-022` | `-032` |
-| 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
-| 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |
-| 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) |
-| 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads *(written 2026-11-08, below)* | `-009` | `-009` (the check runs on Docker, each plant refused) |
-| 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below)* | `-029` | `-032` |
-| 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` |
-| 11.26 The edge: two controllers, the generated route lists, a renewed certificate *(written 2026-11-09, below)* | `-011` | `-012`, `-020` |
-| 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` |
-| 11.28 The `kind` rehearsal: running it, reading it, the last record *(written 2026-11-09, below)* | `P15-TSK-012` | `P15-TSK-012` |
-| 11.30 Abuse limits: the doors' per-source limits, a door that refuses everyone, a store that cannot count, raising a limit, rotating the bucket key *(written 2026-11-09, below)* | `P15-TSK-022` | `-032` |
-| 11.29 Key rotation and key compromise: the field-level key rings and the callback window *(written 2026-11-09, below)* | `P15-TSK-019` | `-020` |
-| 11.31 Changing configuration: which class, which way, and `ConfigFingerprintDisagrees` *(written 2026-11-09, below)* | `P15-TSK-031` | `-032` |
-| 11.32 A refused image: signing, admission, the controller down, the install order, where signatures live *(written 2026-11-11, below)* | `P15-TSK-007` | `P15-TSK-007` (on `kind`: every case, each beside its control) |
-| 11.33 Rotations rehearsed on `kind`: running them, reading them, the last record *(written 2026-11-11, below)* | `P15-TSK-020` | `P15-TSK-020` |
-| 11.34 Telemetry: the collector and its second net, retention by class, finding one payment, the collector down *(written 2026-11-11, below)* | `P15-TSK-023` | `P15-TSK-023` (on `kind`), `-032` |
-| 11.35 Restore, held until the platform's own checks pass on it; the restore rehearsal and its last record *(written 2026-11-11, below)* | `P15-TSK-030` | `P15-TSK-030` (the logical restore, on containers); the managed restore is `THREAT_MODEL.md` §6 item 38 |
-| 11.36 Promote and roll back by digest; the delivery's order; a failed migrator hook; the production approval boundary and the rules only the owner can apply *(written 2026-11-12, below; revised the same day by its review)* | `P15-TSK-017` | `P15-TSK-017` (the refusals on repositories built per test, the signature and statement refusals on a registry of the admission check's own); `-032` (through the controller, on `kind`) |
-| 11.37 Staff refused where staff are refused: the page on a proven password, the ticket on an unmarked refusal, a first role's sign-in again; a reporting pool that refuses its role *(written 2026-11-12, below)* | `P15-TSK-043` | `-032` |
+**How any procedure here changes the fleet: N replicas, never one process.** Every replica runs every schedule, consumer and
+relay (`PHASE_15_PLAN.md` C5), so no step in this runbook means "the" pod unless the alert it answers names one instance, and
+then it names that one. A procedure changes the fleet in exactly three ways:
+
+1. **A change rolls through the overlay.** A commit to the environment's overlay (a configuration literal; or, when nothing else
+   should change, the pod template's `finapp/rotation-generation`, `SECRET_MANAGEMENT.md` §5.2 step 3) is synced by Argo CD
+   (§11.36) and becomes one rolling update under `maxUnavailable: 0` and `maxSurge: 1`: a new pod ready before an old one stops,
+   one at a time. **"Roll the fleet", "roll" and "a rolling restart" in this runbook mean that commit.**
+2. **One pod, under break-glass** (§11.25): an eviction, which the disruption budget (`maxUnavailable: 1`) admits one at a time;
+   the ReplicaSet starts its replacement, and every claim the pod held lapses to another replica. **"Restart that instance"
+   means this, for the instance its alert names.**
+3. **The whole fleet stops only by scale**, under break-glass: to zero, and back to the autoscaler's `minReplicas` (§11.25's
+   "Stop the fleet"). Pending work waits durably in PostgreSQL meanwhile.
+
+**Never `kubectl rollout restart`, `rollout undo`, `edit`, `set` or `patch` on the Deployment.** No person holds `patch` on it:
+the break-glass role is refused it by design (§11.25), because a pod template can mount every Secret in the namespace. A change
+made beside the repository is one nobody reviewed and the repository cannot show, and `rollout undo` is reverted by self-heal
+(§11.36). What Argo CD's self-heal does with the annotation `rollout restart` adds has not been observed here: its default
+comparison is a three-way diff over the last applied configuration, which would leave a field it never applied alone, and Argo
+CD ships a restart action of its own for a Deployment. Whichever it is, the rolling restart this runbook means is the commit in
+(1). **And never restart every replica at once**: a simultaneous restart drops every claim and every consumer's membership
+together, leaves nothing serving, and makes every group rebalance on the way back.
+
+| Planned subsection | Written by | Rehearsed by | Owner |
+|---|---|---|---|
+| 11.1 Deploy: the bootstrap step when a role is added, the migration Job, then the rolling update; what a stopping pod does; **a release that adds a consumer handler to an existing group**: after the rollout, the audited replay of that event type over the rollout window (an N − 1 replica commits a record it has no handler for), or the new group with recorded starting offsets | `P15-TSK-004`, `-008`, `-012`, `-017`, `-027`, `-028` | `-012`; `-032` (the new group, on `kind`) | `platform`, `migrator` |
+| 11.2 Promote a release by digest; the production approval boundary *(written 2026-11-12 as §11.36, below)* | `-017` | `-032` (through the controller, on `kind`) | `platform` |
+| 11.3 Roll back by digest (a schema is never rolled back; never across a contract marker; an added handler's type replayed over the rollback window after the re-roll) *(the promotion's half written 2026-11-12 in §11.36, below)* | `-005`, `-012`, `-017`, `-027` | `-012` | `platform` |
+| 11.4 A failed migration (forward fix only) | `-004`, `-005` | `-032` | `migrator` |
+| 11.5 Restore, then verify financially before any money moves *(written 2026-11-11 as §11.35, below)* | `-030` | `-030` | `platform` |
+| 11.6 Broker outage, consumer lag, a poison record, dead letters and replay | `-026`, `-028` | `-028`, `-032` | `platform` |
+| 11.7 Rotation and revocation per secret class; a key compromise *(the cloud half written 2026-11-09, below; the fleet's half is `SECRET_MANAGEMENT.md` §5.1 and §5.2)* | `-016`, `-018`…`-020` | `-020` (the fleet's half); the cloud half procedure only (no account) | `platform` |
+| 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `P15-TSK-024` (instance down, stale gauges: written below, 2026-11-08), `P15-TSK-025` (burn rate and certificates: written below, 2026-11-08) | `-032` | `platform` |
+| 11.9 A failing scan *(written 2026-11-08, below)*; a refused image *(§11.32 since 2026-11-11)* | `P15-TSK-006` (the failing scan), `P15-TSK-007` (the refused image, §11.32) | `P15-TSK-006` (the scans' plants, on Docker), `P15-TSK-007` | `platform` |
+| 11.10 Edge and abuse *(the break-glass half is §11.25, since 2026-11-09; this row read "Edge, abuse and break-glass" until then; written as §11.26, the edge, and §11.30, abuse limits: no section 11.10 is written, 2026-11-12)* | `-011`, `-022` | `-012` and `-020` (§11.26), `-032` (§11.26's operators' half, §11.30) | `platform`, `identity` |
+| 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted); beside it a book refund to a closed payer wallet *(written 2026-11-12, below)* | `-032` | `-032` | `reconciliation`, `payments` |
+| 11.12 Incident response: severity, roles, communication, the freeze, a restore decided, a compromised operator credential, post-incident review *(written 2026-11-12, below)* | `-032` | `-032` (a game day, on `kind`) | `platform` |
+| 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) | `platform` |
+| 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads *(written 2026-11-08, below)* | `-009` | `-009` (the check runs on Docker, each plant refused) | `platform` |
+| 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below)* | `-029` | `-032` | `platform` |
+| 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` | `platform` |
+| 11.26 The edge: two controllers, the generated route lists, a renewed certificate *(written 2026-11-09, below)* | `-011` | `-012`, `-020` | `platform`, `identity` |
+| 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` | `accounting` |
+| 11.28 The `kind` rehearsal: running it, reading it, the last record *(written 2026-11-09, below)* | `P15-TSK-012` | `P15-TSK-012` | `platform` |
+| 11.30 Abuse limits: the doors' per-source limits, a door that refuses everyone, a store that cannot count, raising a limit, rotating the bucket key *(written 2026-11-09, below)* | `P15-TSK-022` | `-032` | `platform` |
+| 11.29 Key rotation and key compromise: the field-level key rings and the callback window *(written 2026-11-09, below)* | `P15-TSK-019` | `-020` | `platform` |
+| 11.31 Changing configuration: which class, which way, and `ConfigFingerprintDisagrees` *(written 2026-11-09, below)* | `P15-TSK-031` | `-032` | `platform` |
+| 11.32 A refused image: signing, admission, the controller down, the install order, where signatures live *(written 2026-11-11, below)* | `P15-TSK-007` | `P15-TSK-007` (on `kind`: every case, each beside its control) | `platform` |
+| 11.33 Rotations rehearsed on `kind`: running them, reading them, the last record *(written 2026-11-11, below)* | `P15-TSK-020` | `P15-TSK-020` | `platform` |
+| 11.34 Telemetry: the collector and its second net, retention by class, finding one payment, the collector down *(written 2026-11-11, below)* | `P15-TSK-023` | `P15-TSK-023` (on `kind`), `-032` | `platform` |
+| 11.35 Restore, held until the platform's own checks pass on it; the restore rehearsal and its last record *(written 2026-11-11, below)* | `P15-TSK-030` | `P15-TSK-030` (the logical restore, on containers); the managed restore is `THREAT_MODEL.md` §6 item 38 | `platform` |
+| 11.36 Promote and roll back by digest; the delivery's order; a failed migrator hook; the production approval boundary and the rules only the owner can apply *(written 2026-11-12, below; revised the same day by its review)* | `P15-TSK-017` | `P15-TSK-017` (the refusals on repositories built per test, the signature and statement refusals on a registry of the admission check's own); `-032` (through the controller, on `kind`) | `platform` |
+| 11.37 Staff refused where staff are refused: the page on a proven password, the ticket on an unmarked refusal, a first role's sign-in again; a reporting pool that refuses its role *(written 2026-11-12, below)* | `P15-TSK-043` | `-032` | `identity`, `accounting` |
+| 11.38 The platform rehearsals: the record and the count per section *(written 2026-11-12, below)* | `-032` | — (a record; `RunbookRehearsalCountTest` holds its form) | `platform` |
+| 11.39 A row that fails every tick: a corrupt id that stalls a sweep, a row at a sweep's head, a rematch residual *(written 2026-11-12, below)* | `-032` | `-032` | `payments`, `merchant`, `reconciliation`, `risk` |
+| 11.40 Database failover: what the fleet does and what a person does *(written 2026-11-12, below; procedure only, the drill is Phase 16's)* | `-032` | `-032` (a database restart on `kind`, never a failover) | `platform` |
+
+The table's rows are the plan's; the sections below them are numbered as written, not in this order. Rows 11.2, 11.3 and 11.5
+are written under 11.36 and 11.35, and row 11.10 under 11.26 and 11.30. *(The owner column added 2026-11-12, `P15-TSK-032`:
+the owning module of each row, as the readiness standard's Ownership row asks; a person or a rota needs a real environment.)*
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -1941,8 +1975,10 @@ the `preStop` pause, the application does this, in this order:
 **Reading it.** A WARN in step 3 or 4 is not an incident: the interrupted work's claim lapses to another instance and
 its records redeliver into the dedupe. It is a signal that a tick or a batch ran longer than 10 s, which the schedule's
 own latency metrics explain. Steps 1-6 together take at most 71 s (read "57 s" until `P15-TSK-009` counted Tomcat's two
-stops and their worker pools, and removed the 10 s a scrape in flight could hold step 5 for, the child context's own phase timeout). `terminationGracePeriodSeconds` is 115: the 10 s
-`preStop` pause, those 71 s, step 7's 30 s and 4 s for the JVM's exit (§11.14). A pod still running when the grace ends
+stops and their worker pools, and removed the 10 s a scrape in flight could hold step 5 for, the child context's own phase timeout). `terminationGracePeriodSeconds` is 117: the 10 s
+`preStop` pause, those 71 s, step 7's 30 s, the telemetry SDK's last export's 2 s (`TelemetryFlush.BOUND`, `P15-TSK-023`) and 4 s
+for the JVM's exit (§11.14; `infra/scripts/manifest-policy/shutdown-budget.yaml` holds each bound). *(Read "is 115", without the
+export, until 2026-11-12: the manifest and the budget file had moved to 117 with `P15-TSK-023`.)* A pod still running when the grace ends
 is killed - the same as any kill, and as correct.
 
 ### 11.1.1 A release that changes the handler set, or an event's contract (`P15-TSK-027`)
@@ -2274,7 +2310,7 @@ the previous one stays as `AWSPREVIOUS` until the next write. **To go back**, mo
 **Rotate a key.** Every KMS key rotates its material yearly, and old material stays to decrypt what it encrypted, so nothing is re-encrypted and
 nothing rolls. To rotate one early: `aws kms rotate-key-on-demand --key-id <arn>`. A KMS rotation is not a rotation of the secret under it.
 
-**Revoke a reader or a person.** A reader's token is the operator's: to cut one, remove the ServiceAccount's annotation and restart the operator, or
+**Revoke a reader or a person.** A reader's token is the operator's: to cut one, remove the ServiceAccount's annotation and restart the operator's pods (the External Secrets Operator is the pipeline role's install, outside the delivery, §11.36, so that role rolls its Deployment; the application's fleet is not touched), or
 detach the role's policy. To end every session already issued for a role, attach an inline policy denying everything for sessions issued before now
 (`aws:TokenIssueTime`), which is what the console's "Revoke active sessions" does. A person is removed from `human_users`, and the plan removes them
 with their password, device and any access key, and from the group and the trust. Delete any access key by hand: the next plan fails until it is gone.
@@ -2292,13 +2328,13 @@ used a key is the account's own, and no module creates one (`THREAT_MODEL.md` §
 
 **How every gauge reads.** Every `finapp.` gauge of an instance is read on one thread, `gauge-refresher`, never on the scrape. A scrape answers each gauge's last read and asks the thread for another once that read is 5 s old; each gauge class keeps its own floor and bounds on top (accounting's: section 10.14). So a scrape does no database work on its own thread, whatever the database is doing, and every gauge of an instance together holds at most one connection of its pool. A gauge answers no value (NaN) before its first read, when its read failed, and once its ask has gone unanswered for `finapp.gauges.stale-after` (2 minutes): never a zero nobody read, and never its last number for good. The library series (`jvm_*`, `hikaricp_*`, `http_server_*`) read memory and stay on the scrape. Each instance reads the shared database for itself; a fleet-wide gauge aggregates with `max()`.
 
-**`InstanceDown` (page).** `up` has been 0 for one instance for 2 minutes: Prometheus could not scrape it. A slow or absent database no longer costs a scrape, so read this as the instance itself: stopped, crashed, out of memory, unreachable on its port, or unable to answer at all. One alert per instance, so healthy neighbours never hide it. Look at the process or pod first (its state, its last log lines, its restart count). Every instance runs every schedule and consumer, so the others take its work; if every instance is down, nothing is taken. Restart or replace it: nothing is lost, since a gauge decides nothing and every claim it held has a lease that expires (`DISTRIBUTED_EXECUTION.md` section 3).
+**`InstanceDown` (page).** `up` has been 0 for one instance for 2 minutes: Prometheus could not scrape it. A slow or absent database no longer costs a scrape, so read this as the instance itself: stopped, crashed, out of memory, unreachable on its port, or unable to answer at all. One alert per instance, so healthy neighbours never hide it. Look at the process or pod first (its state, its last log lines, its restart count). Every instance runs every schedule and consumer, so the others take its work; if every instance is down, nothing is taken. Restart or replace it, that one instance and no other: a container whose liveness fails (the same port the scrape reads) is restarted by the kubelet by itself; one that is not, evict that pod under break-glass (section 11.25), and its ReplicaSet starts another (section 11's fleet rule). Nothing is lost, since a gauge decides nothing and every claim it held has a lease that expires (`DISTRIBUTED_EXECUTION.md` section 3).
 
 **`FinappTargetsAbsent` (page).** No target of the `finapp` job for 5 minutes: the fleet is gone from the discovery (scaled to zero, every pod deleted), or the scrape configuration lost the job. `up == 0` cannot see this, since a target that is gone leaves no `up` at all. Every rule on a `finapp_*` series is then green for the wrong reason, and the domain absent rules (`AccountingGaugesAbsent`) ticket beside it. Check the deployment and the scrape configuration first.
 
 **`GaugesStale` (ticket).** The instance answers its scrapes, but its canary, `finapp.gauges.refreshed` (a constant 1 read through the same thread), was no value at more than 6 of the last 30 minutes' 120 evaluations, over 90 s: the gauge thread left asks unanswered past `finapp.gauges.stale-after`, and every `finapp` gauge of that instance was stale with it. **It counts; it does not wait for NaN to hold.** A thread behind but not stuck answers each ask about one pass of its queue (C) after it, so the canary, and every gauge whose read succeeds, is a number for about two minutes after each answer and NaN for the rest, about C - 120 s of every C. A rule that needs NaN to hold for its `for` fires only once C - 120 s outlasts that `for` (for 5 minutes, a pass over seven), and every threshold rule's `for` on that instance restarts at each NaN. So while this fires, **that instance's threshold rules cannot be trusted**: they are not merely late. A fleet-wide `max()` still reads the instances whose thread answers, so one instance behind blinds only its own per-instance rules (the `…SweeperOff` switches among them); every instance behind at once, a database in trouble, blinds the fleet's. The count fires five minutes after the seventh stale evaluation, about eight and a half minutes after a read hangs. A start whose first reads take a minute, or one short burst, stays under it. Two causes:
 
-- **A read that never returns** holds the one thread. The data source sets no `socketTimeout`, so a socket the network black-holed never returns and no statement timeout reaches it. A thread dump shows `gauge-refresher` inside a read. **Restart that instance**: nothing else frees it.
+- **A read that never returns** holds the one thread. The data source sets no `socketTimeout`, so a socket the network black-holed never returns and no statement timeout reaches it. Nobody can take a thread dump in a deployed environment (no role may exec into a pod; the management port exposes `health`, `info` and `prometheus` alone), so read it from outside: that instance's canary, `finapp_gauges_refreshed`, holds at no value without a break, where a thread behind alternates; `hikaricp_connections_pending` on that instance stays at nought, so its pool is not starved; and the other instances, on the same database, keep reading. *(Read "A thread dump shows `gauge-refresher` inside a read" until 2026-11-12.)* **Restart that instance**, that one pod, evicted under break-glass (section 11.25; section 11's fleet rule): nothing else frees it.
 - **The thread behind its asks.** Either the reads wait on a database in trouble (each up to the pool's 5 s, `spring.datasource.hikari.connection-timeout`, then fails; about sixty classes in turn make a pass near 300 s), or they are simply slow (the proofs at volume, `CURRENT_STATE.md`'s owner item (a) of `P15-TSK-024`). A read that fails is NaN at every scrape, so its module's unreadable rule holds its `for` and fires beside this. A read that succeeds slowly alternates as above, and only this alert sees it. The instance's requests fail the same way: read the database and `hikaricp_connections_pending` directly. When the reads are fast again, the thread catches up and the count leaves its 30-minute window with no restart.
 
 One gauge NaN while the canary is 1 is not this alert: that gauge's read is failing (a statement past its bound, a grant gone), and its module's unreadable rule answers it. **Every gauge an alert reads has one**, and `PlatformAlertRulesTest#everyGaugeAnAlertReadsCanBeSeenUnreadable` holds that over every rule file: accounting's, BNPL's, credit's, lending's and risk's `…GaugesUnreadable` and their stall and attention rules, `MustBeZeroGaugeUnreadable`, `ReferenceRateNeverFetched`, `SettlementSourceNeverAccepted`, and, since `P15-TSK-024`'s fix round (2026-11-08), **`FxGaugesUnreadable`** (`infra/prometheus/rules/fx.yml`: the cover ages, the FX books proof and plan verdict, the outbound credits' ages, the in-transit age, the counterparty review age, the missing rule sets) and **`ReconciliationGaugesUnreadable`** (`settlement-reconciliation.yml`: the run, file, suspense and break ages and the overdue expectations), with `BnplGaugesUnreadable` now reading the negative merchant payables too. Each of those two names the series in its `gauge` label and the instance; for either, check that instance's database connectivity and its log, where the gauge's class names its failed read, and if `GaugesStale` fires on the same instance start there. Only the sweeps' switches (`…sweeper.enabled`) have no unreadable rule: they are configuration constants, read from no database, so their only NaN is the canary's, which this alert counts. *(Until the fix round this paragraph claimed the domain rules covered every gauge; fifteen gauges had none, six of them read by seven paging rules.)*
@@ -2384,7 +2420,7 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 | Alert | What it says | First steps | Owner |
 |---|---|---|---|
 | `AuthenticationRefusalsSpike` (ticket) | Over half of the last 15 minutes' authentications refused, at least 50 | Read `finapp.identity.authentication`. A bad release looks like it, and a credential-stuffing campaign does too: check `AccountLockoutSpike` beside it, and the audit trail for which accounts | identity |
-| `AccountLockoutSpike` (page) | Over 20 accounts locked in 15 minutes | A credential-stuffing campaign until shown otherwise. Audit trail by the action, then rate-limit at the edge (§11.10) | identity |
+| `AccountLockoutSpike` (page) | Over 20 accounts locked in 15 minutes | A credential-stuffing campaign until shown otherwise. Audit trail by the action, then the edge's and the doors' limits (§11.26, §11.30; this read "rate-limit at the edge (§11.10)", a section never written, until 2026-11-12) | identity |
 | `LedgerPostingsRefused` (ticket) | Over 50 journal writes refused in 15 minutes | A refused posting wrote nothing and is not a loss. Read `finapp.accounting.cutoff.refused` first (a closed period, §10.8), then the callers' logs | ledger |
 | `CustomerWalletNegative` (ticket) | A customer wallet below zero | Legal after a chargeback, and a receivable from the customer. Follow the collections process; never absorb it | ledger |
 | `PaymentUnknownAged` (page) | An operation unknown for over 15 minutes | The provider has not answered. Its resolution sweep is the path; never decide by hand. If nothing is sweeping (`finapp.payments.sweeper.enabled` false on every instance), restore that first | payments |
@@ -2408,7 +2444,7 @@ No amount appears in any of them: the audited operator reports answer the figure
 | Alert | What it says | First steps |
 |---|---|---|
 | `PositionProofFailing`, `CashProofFailing`, `UnattributedLinesOnReconciledPosition` (page) | The reconciled position or the cash proof fails, or a reconciled position has lines attributed to nobody (`INV-REC-06`) | Correctness: read the operator report for that purpose or currency. The first two page on their first sample (`docs/architecture/SLOS.md` section 3). Never adjust a line to clear it |
-| `SuspenseItemUnowned` (page) | A suspense item has no owner | Assign it in the queue: an unowned item is one nobody will ever resolve |
+| `SuspenseItemUnowned` (page) | A suspense item with a remainder whose owning break is missing or already `RESOLVED` (`INV-REC-09`: it must read nought) | A defect detector, not a queue to work: read the suspense register for the item and the break it names, find how the break closed over value it still owned, and treat it as an incident (§11.12). Parked value (§11.11) is owned by its open break and never fires this. *(Read "A suspense item has no owner … Assign it in the queue" until 2026-11-12: the gauge counts items no open break answers for, `finapp.reconciliation.suspense.unowned`, not items no person is assigned)* |
 | `ReconciliationRunBlocked` (page) | A source's run is blocked | Read that run's blocking reason; a blocked run also blocks what depends on it |
 | `ReconciliationRunStalled` (ticket) | A run has aged past an hour | Read its schedule's log and claim; another instance takes a lapsed claim |
 | `SettlementSourceSilent`, `SettlementSourceNeverAccepted` (ticket) | A source has delivered nothing for a day, or has never been accepted | Check the source: a delivery may be missing, or a configuration wrong |
@@ -2473,7 +2509,8 @@ beyond a rollout (`PHASE_15_PLAN.md` §6.1).
   genuinely stuck.
 - **Stop the fleet** (a defect moving money the wrong way, say): scale the Deployment to zero. The autoscaler treats zero as
   disabled and leaves it. It does not drain anything you did not ask for, and pending work stays in PostgreSQL. To restart, scale to the
-  autoscaler's `minReplicas` (3) and it resumes.
+  autoscaler's `minReplicas` (3) and it resumes. Argo CD's self-heal should leave a scale alone: the Deployment states no replica count, the
+  autoscaler owns it (`deploy/base/deployment.yaml`); read, not yet seen on a controller. Never stop the fleet by deleting its pods: the ReplicaSet replaces each at once.
 - Don't scale above the autoscaler's maximum: the connection budget counts on it.
 
 **Close.** Before the end time, however the incident stands:
@@ -2657,6 +2694,491 @@ what a new scanner version breaking a check looks like.
 published yet. A statement built from a constant that another file declares and only its name vouches for
 (`THREAT_MODEL.md` T45's residual).
 
+### 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return; a book refund to a closed wallet (`P15-TSK-032`)
+
+*(Written by `P15-TSK-032`, 2026-11-12, from reconciliation's resolution rules (ADR-0069's per-type table, ADR-0070 §4, ADR-0073
+§5, ADR-0079 §6) and the payments refund door, read against the code. Paying any of this value out is a new payment operation with
+its own consent, a later payments phase's (`PHASE_15_PLAN.md` §25, C15); this section is what a person does until then. Its
+rehearsal is recorded below once run.)*
+
+**The rule for all of it: the value stays where the platform put it, owned, aged and alerted.** Nothing is posted to clear it,
+nothing is written off to make an age go away, no break is closed without its evidence or a reason-coded resolution (four eyes
+where value is at issue, ADR-0069), and no manual ledger adjustment moves it to another account: that would be the deferred
+payment operation by another name, with none of its consent. Each parked item below is a CREDIT suspense item on
+`SUSPENSE_UNMATCHED`, owned by exactly one open break (`INV-REC-09`). So `SuspenseItemUnowned`, which reads items whose break is
+missing or already resolved, stays silent for it; beside one of these it is a defect detector firing (§11.23), not this
+procedure.
+
+| The value | Where it parks, and its break | Its exits today |
+|---|---|---|
+| **A credit no party on the platform owns** (an inbound payment naming no account: the sender's to have back, return-to-sender) | `SUSPENSE_UNMATCHED`; `UNKNOWN_EXTERNAL` | Its evidence; a four-eyes `TRANSFER_TO_ACCOUNT` once an owner on the platform is identified; a four-eyes `RECOGNISE_GAIN` only past the minimum age of the rule set the break pins, `gain_min_age_days`, refused before it (`reconciliation.GainNotYetEligible`): 90 days for the four sources reconciliation `V002` seeds; for a source settlement `V015`–`V017` added, whatever its version 1's proposer sent (§3) |
+| **A payout returned to a merchant closed since** | `SUSPENSE_UNMATCHED`; at the line's grace, `REVERSAL_MISMATCH`, cause `RETURN_NOT_APPLICABLE`, HIGH (the close closed the payable's ledger account) | Its evidence (the provider's own claw-back naming the line); a four-eyes `TRANSFER_TO_ACCOUNT` to an `ACTIVE` payable in the currency, which a closed merchant does not have: refused at the proposal, `422 reconciliation.ResolutionTargetRefused`. **Never a gain**: the type admits none, the value is the merchant's |
+| **A corridor return for a customer closed since** | `SUSPENSE_UNMATCHED`; `REVERSAL_MISMATCH(RETURN_NOT_APPLICABLE)`, HIGH | Its evidence; a four-eyes `TRANSFER_TO_ACCOUNT` to the customer's wallet in the item's currency, which records the return too (ADR-0079 §6): refused while the wallet is closed, as above. **Never a gain** |
+
+**What a person does, for each.**
+
+1. **Find it.** `GET /v1/operator/reconciliation/breaks` (`RECONCILIATION_INVESTIGATE`) for the open breaks, by type and
+   severity; `GET /v1/operator/reconciliation/breaks/{id}/trace` for one break's line, run and decisions;
+   `GET /v1/operator/reports/reconciliation/suspense` for the suspense register, every read audited. No amount is in an alert.
+2. **Own it.** Assign the break to a named person, `POST /v1/operator/reconciliation/breaks/{id}/assignment`
+   (`reconciliation.BreakAssigned`), and write why it stands, `POST .../breaks/{id}/notes`: "parked value with no attributable
+   owner (§11.11): the platform has no account to pay it to; returning it is a later payments phase's operation". For the first
+   case, write who the evidence says sent it, if it says.
+3. **Do not take the gain on value whose sender the evidence names.** The ruling for this value is that it stays parked (C15):
+   a sender the provider's line identifies is owed it back, and the platform has no outbound to do that with yet. The gain past
+   the minimum age is for a credit whose owner nobody can find: proposed and approved under `RECONCILIATION_RESOLVE` by two
+   different `RECONCILIATION_OPERATOR`s, with a narrative saying why the value is nobody's (ADR-0070 §4). A
+   `RECONCILIATION_CONTROLLER` cannot approve it: that role can shorten the minimum age through a new rule-set version, and by
+   design never releases the gains it would bring forward. The other two types admit no gain at all.
+4. **Keep it aged and alerted, and know what the alerts do not show.** These breaks are HIGH, so `BreakAgeHigh` pages once one
+   has stood a day, and the item's age raises `SuspenseItemAged` past 30 days. **Both read the oldest only**
+   (`max(...) > ...`): while a parked item stands, each stays firing on it, and a new HIGH break or a newly aged item behind it
+   raises nothing new. So with parked value standing, read the open HIGH breaks (`GET .../breaks`) and the suspense register
+   every working day; the page will not tell you of the next one.
+5. **Escalate.** Each such item is listed, with its age and its owner, in the incident or review record that tracks parked
+   value, for the owner to decide when the later payments phase's operation is scheduled. Nothing else moves it.
+
+**Beside them: a book refund to a payer wallet closed since** (Phase 7 residue #40). The operator's refund door,
+`POST /v1/payments/{id}/refund` (`PAYMENT_REFUND`), completes a book refund in its own transaction, the credit to the payer's
+wallet among it; with the wallet closed the ledger refuses the line, and the door answers `409 ledger.AccountNotPostable` with
+nothing written: no refund, no hold, no posting. The refusal is recorded (`door.ActRefused`, its summary starting `code=ledger.AccountNotPostable, status=409`). **Nothing parks:
+the value is still the merchant's, in its payable**, where the merchant's next payout takes it; the platform's books owe the
+closed customer nothing, so no break, suspense item or alert follows it, and this paragraph is its only procedure. So: confirm
+from the refusal and the wallet's account that it is the closed wallet and nothing else; do not retry, and never reach the
+customer's money by another door (a manual adjustment from the payable to another wallet is the deferred operation by another
+name); record the case with the closed customer's identity and the merchant's, and tell the merchant's administrator the refund
+was not made. The value's procedure is the closed customer's, as the corridor return's; its remedy is a later payments
+phase's.
+
+**The last record.** Not yet rehearsed: the `kind` incidents run records it here (a merchant closed after a payout and the
+payout returned; a customer closed before a corridor return; an inbound credit no party owns; a book refund to a closed payer
+wallet), each with the census after.
+
+### 11.12 Incident response: severity, roles, communication, the freeze, a restore decided, a compromised operator credential, the post-incident review (`P15-TSK-032`)
+
+*(Written by `P15-TSK-032`, 2026-11-12, from the alert rules, the doors and the audit records the platform already has. A
+human procedure: no on-call tool, rota or paging receiver exists (every alert reaches a placeholder receiver,
+`infra/alertmanager/alertmanager.yml`), and a real rota is outside Phase 15, so the roles below are filled per incident by
+whoever is there, by name. Its rehearsal, a game day on `kind`, is recorded below once run.)*
+
+**What makes an incident.** Anything that may have moved money wrongly, put the financial record in doubt, exposed a credential,
+a key or a restricted value, or stopped a money-moving flow for customers; any page whose section says to declare one; and
+**every break-glass session, `SEV-3` at least**, whatever opened it: a single pod evicted under §11's fleet rule is break-glass
+(§11.25), and its incident record is where its reason, its approver and its acts are kept. Otherwise a ticket handled by its own
+section with none of those effects is not one. When in doubt, declare: an incident declared and stood down costs a record, one
+never declared costs the record of what was done.
+
+**Severity, decided by the first question answered yes.** The questions decide, not the alert's name: the signals are examples.
+The lead may move the severity up or down at any time, and the record says when, why and who.
+
+| Severity | The question | For example |
+|---|---|---|
+| `SEV-1` | Is the financial record in doubt, is money moving the wrong way, or is a credential or key in someone else's hands? | A correctness page that says the record disagrees with itself: `LedgerTrialBalanceNonZero`, `GlNotEqualLedger`, `LedgerProjectionDrift`, a failing product or FX proof (`docs/architecture/SLOS.md` §3), `JournalEntryUnsourced` reading `UNSOURCED`; `OperatorPasswordProvenOnPublic` no rollout explains (§11.37); a webhook key read as compromised ("Provider callbacks are hints"); a restricted value found in telemetry (§11.34); a corrupt id a raw writer left (§11.39); any restore being considered |
+| `SEV-2` | Is a money-moving flow stopped or failing for customers, or is the platform blind to its own correctness, with the record itself not in doubt? | A fast burn on a request objective (§11.8); `PaymentUnknownAged`, `WithdrawalUnknownAged`, `MerchantPayoutUnknownAged` (§11.22); a sweep stalled on every instance (§11.39); a broker outage past what the outbox absorbs unnoticed (§11.6); `GaugesStaleAcrossTheFleet`, `CorrectnessUnverifiable` (§11.27, §11.20); `FinappTargetsAbsent` nobody ordered (§11.8); a database failover (§11.40) |
+| `SEV-3` | Is the platform degraded with a way round, money safe and moving? | `InstanceDown` with the others serving; one row failing every tick (§11.39); a slow burn; a parked or poison record (§11.6) |
+
+**Roles.** Named in the record when the incident is declared. One person may hold two at `SEV-3`; at `SEV-1` the lead holds no
+other, and never may one person both hold a break-glass session and approve it, or run a restore and approve it.
+
+- **Incident lead.** Declares, sets the severity, decides (the freeze, asking for break-glass, a restore, standing down) and
+  owns the record. Asks before acting where a section says a second person decides.
+- **Communications.** Writes every message inside and outside, from the record's facts only.
+- **Scribe.** Keeps the record's timeline as it happens (below).
+- **Approver.** A second person, who approves a break-glass session (§11.25) and confirms a restore's decision; never the person
+  who will hold the session or run the restore.
+- **Financial controller.** A holder of `FINANCIAL_CONTROLLER`, on every `SEV-1` that touches the record: agrees a restore, reads
+  its verification, and says when money may move again.
+- **The section's owner.** The owning module §11.38 names for the section in play, for what its procedures need decided.
+
+**Declaring and running it.**
+
+1. **Open the record**: an id (`INC-<yyyymmdd>-<n>`), the severity and the answer that set it, the time declared (UTC), the
+   signal, the roles and who holds each, and the state.
+2. **Contain before repairing.** Stop the harm by the platform's own means: a kill switch (§2, §3b), a door's own refusal, a
+   sweep's switch, or, for a defect moving money the wrong way, the fleet stopped under break-glass (§11.25). Never an edit of a
+   financial row (§11.20): a correction is a reversal or a compensating entry through the doors, once the cause is understood.
+3. **Follow the signal's own section**, and say in the record which.
+4. **Every act leaves its trace, and the scribe writes it down**: time, who, the operation, its target, why, the trace it left
+   (an operator door's answer carries `X-Correlation-Id`, its row in `platform.audit_record` the same correlation id; a cluster
+   act its API audit id; a change its commit), and what came of it. A retried money-moving command reuses its
+   `Idempotency-Key`: a lost answer is retried with the same key, never a new one.
+5. **States**: `DECLARED` → `MITIGATING` → `MONITORING` → `RESOLVED` → `REVIEWED`, each move recorded with its time and who
+   moved it. `RESOLVED` only when the signal is clear and the section's own check, or the census, says the money is whole;
+   `REVIEWED` when the review below is written.
+
+**Communication.** *Inside*: one channel per incident, the record its source of truth; an update at each change of state, and
+at least every 30 minutes at `SEV-1` and every hour at `SEV-2`. *Outside* (customers, merchants, a provider): what is known,
+what is not, what they should do, and when the next word comes; never a figure the record does not hold, a cause not yet
+established or a date nobody has. A provider is told what the platform saw, with the platform's own references, and no customer
+data beyond what the provider already holds for that operation. Whether anyone else must be told is the owner's decision,
+recorded with its reason: this plan sets no such obligation.
+
+**The freeze on deployments.** At `SEV-1` and `SEV-2` the lead declares it in the record: nothing reaches an environment but
+the incident's own fix. What holds it is the path every change takes: nothing reaches an environment except through a change
+under `deploy/` (a promotion or an overlay's change, §11.36), which `.github/CODEOWNERS` owns, so the code owner approves no such
+change but the incident's fix, reviewed as any change is. The application's own code is not owned there and may still merge, and
+reaches nothing until a promotion names it; migrations are owned, and a release's Job runs only with its promotion. It is held
+by people: nothing in Argo CD enforces it (no sync window is configured). Self-heal stays on: it is what keeps the cluster to the
+repository while people act. Break-glass acts are not
+frozen; they are the incident's tools. A rollback by digest is a promotion (§11.36), and the incident's own fix when the lead says
+so. The error-budget policy's freeze (`docs/architecture/SLOS.md` §4) is separate and may outlast the incident.
+
+#### A restore, decided
+
+A restore is an incident act, always `SEV-1`. **Decided** by the incident lead **with** the financial controller, each named in
+the record with the reason: what was lost or corrupted, why no forward correction through the doors serves, which backup and its
+instant T, and what will be outside the books afterwards (§11.35, the paragraph after its procedure). The approver confirms it.
+A third person runs §11.35. **The roles are released (§11.35 step 7) only on the financial controller's word in the record, given
+after reading every `PASS` line of the verification**; the person who ran the restore executes it. A refusal is a finding of its
+own (§11.35 step 8), never corrected to pass.
+
+#### A compromised operator credential
+
+*Signals*: `OperatorPasswordProvenOnPublic` (§11.37); a recovery channel or a factor its holder does not recognise
+(`PRIVILEGED_ACCESS_REVIEW.md` §5 question 6); an act in `platform.audit_record` its actor did not take. `SEV-1`.
+
+**In this order.** A suspended identity can neither sign in (the credential check refuses `SUSPENDED`) nor start a recovery
+(only an `ACTIVE` identity's is admitted, and a refused one answers as an admitted one does), so the credential is dealt with
+after the identity is reinstated, never before; and reinstating before the roles are gone would hand whoever holds the password
+an identity that is staff.
+
+1. **Suspend.** An `ADMINISTRATOR`, never the suspected identity, `POST /v1/identities/{id}/suspension` with a reason naming the
+   incident (`422 api.ValidationFailed` for oneself). The suspension ends every session the identity holds, in its own
+   transaction: `identity.IdentitySuspended`, and `identity.SessionRevoked` naming the administrator when any ended. Effective on
+   the next request on every replica: sessions and roles are read per request from the database. If the door refuses because
+   the identity is the last active one able to grant roles, grant that role to a second person first, then suspend.
+2. **Read what it did**, since the compromise may have begun: `platform.audit_record` by `actor_id`, in a read-only session (the
+   review's query, below). Every `EMPLOYEE` act there is reviewed by its section's owner. An approval it gave had a second person
+   on the other side. **What a door can set back is set back through it**: a kill switch it stopped, by the two-person restart
+   (§2, §3b); a proposal it made and nobody approved, by its rejection; a role it granted, by the revocation below; a merchant
+   API key it issued, by its revocation; a transfer, by the transfer's reversal door. **A completed payout or refund has no door
+   that undoes it**: the money left with its recipient. That is a recovery case for the section's owner, recorded in the
+   incident (the money asked back from whoever received it, outside the platform, and the books following the evidence through
+   reconciliation or a four-eyes adjustment through the ledger's own door), and never a ledger edit.
+3. **Revoke every role it holds**, each with a reason: `DELETE /v1/identities/{id}/roles/{role}` (`ROLE_ASSIGN`, on a
+   `MULTI_FACTOR` session, the operator surface only). Its answers: `204` when revoked, and `204` too when the role was not held,
+   with nothing written, recorded or ended; `422` for oneself or for a missing reason; `404 api.NotFound` for an unknown
+   identity; `400 api.MalformedRequest` for a role that does not exist; `409 identity.LastRoleGranter` when the role can grant
+   roles and the subject is its last `ACTIVE` holder (a suspended subject is not one); `403 identity.AssuranceRequired` below
+   `MULTI_FACTOR`. Each revocation is `identity.RoleAssigned` saying `revoked=<ROLE>, lastRole=false`, or
+   `revoked=<ROLE>, lastRole=true, sessionsRevoked=<n>` for the last, beside an `identity.SessionRevoked` when it ended any
+   (here none: the suspension did). Every replica stops granting the role on the next request.
+4. **Confirm every channel and factor with the holder**, reached by a channel the incident already held, never one the record
+   or a caller offers: each verified recovery channel (`identity.contact_channel`) and the enrolled factor
+   (`identity.mfa_enrolment`, `ACTIVE`) is theirs (`PRIVILEGED_ACCESS_REVIEW.md` §5 question 6). **One they do not recognise
+   ends this path**: no door removes a confirmed factor or a verified channel (`PRIVILEGED_ACCESS_REVIEW.md` §6), so the identity
+   stays suspended for good and the answer is a new identity (below).
+5. **Reinstate**: `DELETE /v1/identities/{id}/suspension` with a reason (`identity.IdentityReinstated`). Sessions are not
+   restored, and the identity is now a customer: step 3 left it no role.
+6. **The credential.** **If the holder still knows the current password**, they sign in at once on the operator host, step up
+   with their own factor, and change the password, `POST /v1/me/credential` (`identity.CredentialChanged`), which ends every
+   other session the identity holds. An identity with an enrolled factor cannot change its password on a password-only session
+   (`403 identity.AssuranceRequired`), so whoever holds only the stolen password cannot change it first; an identity with no
+   factor has no such protection between steps 5 and 6, so do the two in the same minute and, for one without a factor, prefer a
+   new identity. **If an attacker changed the password**, nothing restores the holder's access but a new identity: a recovery,
+   `POST /v1/recoveries`, starts a request whose token nothing delivers (no channel adapter or notifier exists: the notifier is
+   a business capability `PHASE_15_PLAN.md` §25 re-dated), so nobody can complete it today.
+7. **Re-grant the roles**, each with a reason naming the incident: `POST /v1/identities/{id}/roles`. The first ends every
+   session again (`firstRole=true, sessionsRevoked=<n>`), the holder signs in again on the operator host (§11.37), and the next
+   review asks its question 6 of the identity.
+
+**When the answer is a new identity, and how one comes about.** An attacker's factor or channel on the identity (nothing removes
+it), a password the holder no longer knows (no recovery completes), or a holder with no factor whom step 6 would leave exposed.
+No administrative door creates an identity: **the person registers again**, `POST /v1/registrations`, under a different login.
+The old login stays taken for good, because a login is unique across every identity, closed ones included (identity `V002`), and
+the old identity stays suspended with its history. The new identity enrols its factor (`POST /v1/me/mfa`), and an administrator
+grants its roles afresh, each with a reason naming the incident: a role that can redirect a merchant's money is refused until the
+factor is confirmed (`409 identity.FactorRequiredForRole`), the first role ends the sessions it held as a customer, and the review
+asks question 6 of it, since that factor and its channels were added from the internet.
+
+**Other credentials** are their own sections': a merchant's API key, `DELETE /v1/operator/merchants/{id}/api-keys/{keyId}` with a
+reason (`MERCHANT_ADMINISTER`; `merchant.MerchantApiKeyRevoked`), the old key refused at once; a callback key or a field-level
+key, §11.29's compromise steps; a webhook key, "Provider callbacks are hints" then §11.29; a cluster credential, §11.25's close; a
+cloud credential, §11.7; a signing authority, §11.36 (a revocation is an authority change, never a deletion alone).
+
+#### The post-incident review
+
+Written by the lead within five working days of `RESOLVED`, read by the approver, and kept with the record. It is about the
+system, not about people, and it is written from the records, never from memory:
+
+- **The application's acts**: `platform.audit_record` over the incident's window, in a `START TRANSACTION READ ONLY` session:
+  `SELECT audit_id, occurred_at, actor_type, actor_id, operation, target_type, target_id, reason, outcome, correlation_id,
+  change_summary FROM platform.audit_record WHERE occurred_at >= <declared, less the time before it the signal covers> AND
+  occurred_at < <resolved> ORDER BY occurred_at`. Every act appears with its id, actor, time, operation, target, reason,
+  outcome, correlation and what it changed (`revoked=<ROLE>`, `sessionsRevoked=<n>`, a refusal's `code=`); the record cites
+  each by its `audit_id`. A refused one appears too (`identity.AuthorizationDenied`, `identity.StepUpRefused`,
+  `door.ActRefused`). No person in a deployed environment yet has a session that reaches the database (`THREAT_MODEL.md` §6 item 31(e)); until one does, this read is the rehearsal's.
+- **The cluster's acts**: the API server's audit log over the window. Each break-glass call with its user (the incident in the
+  session's name), time, verb, object, response code and audit id (§11.25); each sync made by hand (§11.36).
+- **The repository's**: every commit and promotion merged under the incident.
+- **Joined to the record** by time, incident id and correlation id. An act in either log that the record does not explain is a
+  security event of its own (§11.25's "Afterwards").
+
+It states the timeline; what was harmed, and what the census or the section's check showed after; each decision, who took it
+and why; what held and what did not; and the follow-ups, each a backlog entry or a postponed issue with an owner, never a fix
+promised only in prose.
+
+**The last record.** Not yet rehearsed: the `kind` incidents run's game day records it here (two raw writes planted, an incident
+declared at its severity, roles held, the freeze, break-glass opened and closed through §11.25, the decision whether to restore
+taken and recorded, the plants' removal recorded as their teardown, and the review written from the two logs).
+
+### 11.38 The platform rehearsals: the record and the count per section (`P15-TSK-032`)
+
+*(Written by `P15-TSK-032`, 2026-11-12. A record, not a procedure. `RunbookRehearsalCountTest` holds its form, one row per section
+of this runbook read from the runbook's own headings, and **is not evidence that anything was rehearsed**: it checks that a date
+parses and a commit is hexadecimal, not that the run happened. What a run asserted is in the last record of the section it
+rehearsed. A cell reading `pending` is filled from the task's `kind` runs at its gate, and from then none may.)*
+
+**What counts as rehearsed.** A procedure counts as rehearsed only when **its own steps ran**: a run planted the condition the
+procedure is for, executed the procedure's steps against it through the doors, commands and reads an operator would use
+(scripted, never a shortcut no operator has), asserted the outcome (the alert fired and reached its receiver, the door answered,
+the state came back), and, where money was near, ended in the financial census (§11.28's). A run that showed the control a
+procedure relies on, without performing the procedure's steps, counts it as read. A plant may write what no door can (a raw
+unbalanced line, a drifted balance row) as the throwaway database's superuser: the record then says which plant the procedure
+itself repaired and which the harness removed as its teardown, and no procedure here gains a raw write.
+
+**What counts as read.** Read against the code: its steps, doors, signals and refusals checked against what the code, manifests
+and rules do, without a run. **Every procedure is one or the other**: a filled row's rehearsed and read add up to its
+procedures, so one that was read differs from one nobody looked at, which a filled row cannot hold.
+
+**What a procedure is, for the count.** A section's sub-headings one level down, each one procedure; in a section without them,
+each response it writes under a bold lead or a table row of its own (an alert's, a refusal's, a sequence of steps), a
+description not counted. The test holds a floor under that, and only a floor: no row counts fewer procedures than its section
+has sub-headings, so a sub-heading added with its row unchanged is refused. A procedure added as a paragraph moves no floor, and
+the row's author keeps the count.
+
+**Why a section may stand unrehearsed: a closed list.** `no account` (it needs a cloud account or a managed service, which
+Phase 15 never applies); `Phase 16 drill` (the plan gives it to Phase 16's drills: a failover, chaos, load, ten instances);
+`real provider` (it needs a provider's own behaviour, not a simulator's); `real person` (it needs a real environment's people or
+holders). A row rehearsed in part may name one for the rest. A §1–§10 row may not stand at nought: criterion 4 asks a sample of
+each.
+
+**Where, on what, which run.** `kind` (one cluster on one machine, §11.28), `compose`, or `containers` (a script's own, as
+§11.13's, §11.14's and §11.35's). The commit is each one its record names, or the branch head that carried the run; the date the
+latest; the run, as its record names it.
+
+| Section | Owner | Rehearsed | Read | Procedures | Where | Date | Commit | Run | Procedure only because |
+|---|---|---|---|---|---|---|---|---|---|
+| §1 | `reconciliation` | pending | pending | 2 | pending | pending | pending | pending | — |
+| §2 | `fx` | pending | pending | 3 | pending | pending | pending | pending | — |
+| §3 | `reconciliation` | pending | pending | 2 | pending | pending | pending | pending | — |
+| §3b | `crossborder` | pending | pending | 3 | pending | pending | pending | pending | — |
+| §4 | `fx` | pending | pending | 4 | pending | pending | pending | pending | — |
+| §5 | `fx` | pending | pending | 2 | pending | pending | pending | pending | — |
+| §6 | `credit` | pending | pending | 3 | pending | pending | pending | pending | — |
+| §7 | `lending` | pending | pending | 13 | pending | pending | pending | pending | — |
+| §8 | `bnpl` | pending | pending | 9 | pending | pending | pending | pending | — |
+| §9 | `risk` | pending | pending | 14 | pending | pending | pending | pending | — |
+| §10 | `accounting` | pending | pending | 17 | pending | pending | pending | pending | — |
+| §11.1 | `platform` | 1 | 0 | 1 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
+| §11.1.1 | `platform` | 2 | 4 | 6 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
+| §11.1b | `migrator` | 2 | 1 | 3 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
+| §11.1c | `platform` | 2 | 2 | 4 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
+| §11.4 | `migrator` | pending | pending | 3 | pending | pending | pending | pending | — |
+| §11.6 | `platform` | pending | pending | 7 | pending | pending | pending | pending | — |
+| §11.7 | `platform` | 0 | 5 | 5 | — | — | — | — | no account |
+| §11.8 | `platform` | pending | pending | 5 | pending | pending | pending | pending | — |
+| §11.9 | `platform` | 1 | 2 | 3 | containers | 2026-11-08 | `05e8de31` | `image-scan.sh and sast.sh with their plants, P15-TSK-006` | — |
+| §11.11 | `reconciliation`, `payments` | pending | pending | 4 | pending | pending | pending | pending | — |
+| §11.12 | `platform` | pending | pending | 4 | pending | pending | pending | pending | — |
+| §11.13 | `platform` | 1 | 2 | 3 | containers | 2026-11-12 | `59d8b87e` | `terraform-check.sh, 43 plants, P15-TSK-017's final bytes` | — |
+| §11.14 | `platform` | 1 | 2 | 3 | containers | 2026-11-12 | `59d8b87e` | `manifest-check.sh, 283 plants, P15-TSK-017's final bytes` | — |
+| §11.15 | `platform` | pending | pending | 4 | pending | pending | pending | pending | — |
+| §11.20 | `ledger`, `accounting`, `platform`, `payments` | pending | pending | 8 | pending | pending | pending | pending | — |
+| §11.21 | `platform` | pending | pending | 5 | pending | pending | pending | pending | — |
+| §11.22 | `identity`, `ledger`, `payments`, `transfers`, `checkout`, `merchant`, `kyc`, `consent` | pending | pending | 15 | pending | pending | pending | pending | — |
+| §11.23 | `reconciliation`, `settlement` | pending | pending | 11 | pending | pending | pending | pending | — |
+| §11.24 | `fx`, `crossborder` | pending | pending | 9 | pending | pending | pending | pending | — |
+| §11.25 | `platform` | pending | pending | 4 | pending | pending | pending | pending | — |
+| §11.26 | `platform`, `identity` | 2 | 10 | 12 | containers, kind | 2026-11-12 | `e0ed74f2`, `59d8b87e` | `§11.33 run 3; edge-check.sh on P15-TSK-017's final bytes` | — |
+| §11.27 | `accounting` | pending | pending | 7 | pending | pending | pending | pending | — |
+| §11.28 | `platform` | 1 | 0 | 1 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
+| §11.29 | `platform` | 3 | 6 | 9 | kind | 2026-11-11 | `38576191`, `e0ed74f2`, `4e29b4fd` | `§11.33 runs 2, 3 and 5` | — |
+| §11.30 | `platform` | pending | pending | 5 | pending | pending | pending | pending | — |
+| §11.31 | `platform` | pending | pending | 4 | pending | pending | pending | pending | — |
+| §11.32 | `platform` | 2 | 2 | 4 | kind | 2026-11-11 | `aa622a19` | `§11.32's last record` | — |
+| §11.33 | `platform` | 1 | 0 | 1 | kind | 2026-11-11 | `4e29b4fd` | `§11.33 run 5` | — |
+| §11.34 | `platform` | 3 | 2 | 5 | kind, containers | 2026-11-12 | `12f9b929`, `59d8b87e` | `§11.34's full run; telemetry-check.sh on P15-TSK-017's final bytes` | — |
+| §11.35 | `platform` | 2 | 2 | 4 | containers, kind | 2026-11-11 | `0f5921e9` | `§11.35's seeded and kind-source records` | no account |
+| §11.36 | `platform` | pending | pending | 8 | pending | pending | pending | pending | — |
+| §11.37 | `identity`, `accounting` | pending | pending | 6 | pending | pending | pending | pending | — |
+| §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | pending | pending | 3 | pending | pending | pending | pending | — |
+| §11.40 | `platform` | pending | pending | 2 | pending | pending | pending | pending | Phase 16 drill |
+| Provider callbacks are hints | `payments` | pending | pending | 6 | pending | pending | pending | pending | — |
+
+**The rows filled before the task's runs, read from their records, and what each counts.**
+
+- **§11.1, §11.28**: §11.28's run (a stop under a rolling update and under a kill; running and reading the rehearsal).
+- **§11.1.1**: rehearsed, a handler added (the audited replay over the rollout window) and a rollback (the replay over the
+  rollback window after the re-roll), both in §11.28's run. Read: a handler removed, a new `eventVersion`, rolling the catalogues
+  forward, and **a handler in a new group, named for the `incidents` run** (the offsets set with the fleet stopped).
+- **§11.1b**: rehearsed, the bootstrap step and the migration Job then the rollout (`result=APPLIED`). Read: a Job that ends
+  `TRANSIENT`, `FAILED` or `REFUSED` (the failed migration is §11.4's).
+- **§11.1c**: rehearsed, a replica held unready on an older schema (the hold) and a rollback onto a newer schema with no marker.
+  Read: the schema-version read refused or failing, and a rollback past a contract marker (`PromotionTest` refuses it on
+  repositories built per test, not a place criterion 4 counts).
+- **§11.9**: rehearsed, the scans run locally with every plant refused by name. Read: reading a real red line, and changing a pin.
+- **§11.13 and §11.14**: rehearsed, the check run with every plant refused. Read: changing a pin or a version (§11.13), changing a
+  number the budget reads and the quota following (§11.14).
+- **§11.26**: rehearsed, the checks run (`edge-check.sh`) and a renewed certificate and its rollback by a new issuance
+  (§11.33 run 3). Read: the other ten, among them **the operators' half and the rollout order, named for the `signals` run**.
+  A route answered `404` on the public host and a forged address counted once were §11.28's controls, not these procedures' steps.
+- **§11.29**: rehearsed, a key's two-step, its rollback, and a callback secret's rotation with its window (§11.33). Read: a replica
+  that will not start, both compromises (**a callback key's, named for the `incidents` run**), retiring a version, a base
+  version other than 1, and a third version.
+- **§11.32**: rehearsed, the check run, and the controller down and brought back (a signed image refused while it was away,
+  admitted once it returned). Read: a denied apply (the run asserted each refusal by name, the control, not a person's steps
+  from it) and the install order.
+- **§11.33**: its own last record.
+- **§11.34**: rehearsed, finding one payment, the collector down (stopped and hung, requests unaffected), and the check run.
+  Read: a needle found (the sweep found none, so the procedure's steps never ran) and **the telemetry stack's own alerts, named for
+  the `signals` run**.
+- **§11.35**: rehearsed, the logical restore and its verification (steps 1 to 5, the roles released in step 7, and step 8's
+  refusals, every plant refused and never released), and running the rehearsal. Read: **step 6, bringing the broker to the
+  restored position, which has run nowhere and is named for the `incidents` run**; and the managed half (`no account`).
+- **§11.7**: the cloud half, which no account exists to run; its fleet half is §11.33's.
+
+A row named for a run above is updated from that run's record at the gate, with the rest.
+
+### 11.39 A row that fails every tick: a corrupt id that stalls a sweep, a row at a sweep's head, a rematch residual (`P15-TSK-032`)
+
+*(Written by `P15-TSK-032`, 2026-11-12, from the sweeps' code and three rows of `CURRENT_STATE.md`'s debt whose code change is
+Phase 16's (C15): the skip-and-count at listing, a failure count or a backoff column, a durable exclusion. Nothing here repairs a
+row by an edit: the way out is a release, or the cause fixed. Its rehearsal is recorded below once run.)*
+
+**Why each is an incident.** No door writes such a row. `EntityId` refuses an id that is not a UUIDv7 when it is minted, and
+every store insert goes through it (ADR-0013), so a corrupt id is a raw writer's: the migrator's credential, or a person's SQL.
+That is §11.12's `SEV-1`, and the source-join census (§11.27) and the audit trail are read for whatever else that writer did. A
+row that fails for a reason of its own (a provider's answer the adapter cannot read, a row it depends on gone) is a defect or a
+provider's change: `SEV-3` while every other row is still reached, `SEV-2` once a whole sweep stops.
+
+**Finding the row in a read-only session.** In a deployed environment no person yet has a session that reaches the database
+(`THREAT_MODEL.md` §6 item 31(e)); the reads below are the rehearsal's until one does. A UUID's version is its fifteenth
+character as text, so a corrupt id is `substr(id::text, 15, 1) <> '7'`: a full read of the table, run once.
+
+#### (a) A corrupt id stalls a whole sweep
+
+The card sweep lists its candidates by rehydrating their typed ids before its per-row containment starts, so one
+`payments.payment_attempt.id` that is not a UUIDv7, on a row the sweep would take (dispatched or unknown past its bound), throws
+in the listing: the whole tick fails, **on every instance, every
+tick**, and no candidate is reached. The same holds for the withdrawal, dispute-answer, return and pay-in initiation sweeps,
+for risk's monitoring sweep (a customer account whose ledger `owner_ref` is not a v7 rolls back each batch with its watermark)
+and for the rescreening enumeration (one party). One door fails the same way: the opening position,
+`POST /v1/operator/reconciliation/opening-position`, walks the payout returns and answers `500` on a corrupt `journal_entry_id`
+among them, every time it is asked.
+
+- *What on-call sees*: the schedule's own WARN line every tick on every replica, the failure's class and no identifier, for the
+  card sweep `Payment sweep failed: <class>`. The flow's alert follows only if something else is waiting:
+  `PaymentUnknownAged` reads `finapp_payments_unknown_age`, which counts `*_UNKNOWN` operations alone, so **a corrupt
+  `*_DISPATCHED` row with nothing else unknown pages nothing, and the WARN line is the only signal**; an attempt that turns
+  `*_UNKNOWN` meanwhile (a provider timing out on a request) is left unresolved and raises the page after 15 minutes. Likewise `WithdrawalUnknownAged` (§11.22), `RiskMonitoringLagging`,
+  `RiskRescreeningFailing` (§9).
+- *What is delayed and what is not lost*: nothing in that sweep concludes while it lasts. An attempt stays `*_DISPATCHED` or
+  `*_UNKNOWN`, nothing posts for it, and the customer's money stays where its last concluded state left it (a hold stays a hold).
+  The provider's answers wait at the provider and in its settlement files; the platform has misjudged nothing, it is late.
+- *The way out is a release.* The listing that skips and counts an unrehydratable row is Phase 16's change (C15); under the
+  incident it may be brought forward as a reviewed fix, and it is the only thing that restores the sweep while the row stands.
+  The row itself is the evidence of the raw write: no procedure edits, deletes or re-keys it. What it describes stays
+  unconcluded until the incident decides, and settlement reconciliation is the backstop for whatever the provider did with it,
+  as for any outcome the platform never concluded.
+
+#### (b) A row that fails every tick at a sweep's head
+
+The payments and payout sweeps, and the withdrawal, pay-in initiation, return and dispute-answer sweeps, take the oldest
+candidates first, contain each row in its own transaction, log a failing one and go on. A row that fails every tick stays oldest
+and takes one slot of every batch.
+
+- *What on-call sees*: the row's line every tick, its identifier and the failure's class, on whichever replica's batch held it
+  (no lease: the replicas race, so the same row appears in the logs of every replica that took it): `Sweeping attempt <id>
+  failed with <class>; the sweep continues and the next tick will retry this row`, `Resolving payout <id> failed with <class>;
+  ...`, `withdrawal sweep could not resolve <id>: <class>`; and the tick's tally counting it among `failed` (`Payment sweep: <n>
+  candidates, ... <k> failed, ...`).
+- *What is delayed and what is not lost*: one batch slot per tick; every other row is still reached. Many rows failing at once
+  is a release or a provider, not a row: §11.8's "check a deploy first".
+- *The way out*: read the row and its evidence by the identifier in the line; the class says which cause. A provider's answer
+  the adapter cannot read: fix the adapter ("Provider callbacks are hints" reads the same case). A row it depends on gone: (a)'s
+  incident. A defect: fix it forward. The next tick takes the row. Never conclude it by hand (§11.22): its sweep, or its own
+  door, is the only path.
+
+#### (c) A rematch residual that faults every tick
+
+Reconciliation's rematch leg tries each residual item against later evidence in a savepoint of its own; a fault rolls that one
+item back and logs `A rematch candidate was skipped: <class>` at WARN, and the leg goes on. A residual that faults every tick
+re-heads the worklist with only that line to show: no durable record, no meter.
+
+- *What on-call sees*: the same line repeating across ticks under one `correlationId` in the structured log. That id is the
+  reconciliation run the residual came from (`reconciliation.reconciliation_batch.correlation_id`), not the item: read the run's
+  items still `UNMATCHED` or `PARKED`, and the one whose break never moves while the line repeats is it. The item's break is
+  aged and alerted as any (§11.23).
+- *What is delayed and what is not lost*: one chunk slot per tick. The residual keeps its committed record and its break; every
+  other residual is reached.
+- *The way out*: the class names the cause, usually a defect or a row the rematch reads gone; fix it forward and the next tick
+  allocates or examines the item. A person may also work the break through its own door (§11.23). A durable exclusion is Phase
+  16's.
+
+**The last record.** Not yet rehearsed: the `kind` incidents run records it here (a v4 id at the head of the card sweep, the line
+on every replica and no attempt concluded, then removed by the harness as the plant's teardown and the sweep resuming; a row
+failing every tick with every other row still reached; the residual where it can be planted without a switch in production
+code, or recorded unproven with the reason).
+
+### 11.40 Database failover: what the fleet does and what a person does (`P15-TSK-032`)
+
+*(Written by `P15-TSK-032`, 2026-11-12, from the application's configuration, its probes and `infra/terraform/modules/postgres`
+(Multi-AZ with a synchronous standby, never applied). **Procedure only: the failover drill is Phase 16's**, and no managed database
+exists to fail over. What RDS does is read from its documentation and the module's plan, and is unverified here. The `kind`
+rehearsal restarts one database and never fails one over; what that does and does not show is below.)*
+
+**What a failover is here.** RDS moves the instance's endpoint to its standby in another zone. The standby is synchronous, so
+every transaction the primary acknowledged is on it; nothing committed is lost, and nothing is restored. How long the endpoint is
+away has not been measured (Phase 16). A database that comes back *older* than the primary was (a restore, an asynchronous copy
+promoted) is not this section: it is §11.35's restore, decided as §11.12 says.
+
+**What every replica does by itself**, the same on each of N:
+
+- **Readiness goes down, liveness does not.** The pool's connections to the old primary fail, and readiness's `db` contributor
+  answers `503` on every replica once its check fails (the pool's 5 s wait, `spring.datasource.hikari.connection-timeout`, inside
+  the probe's 7 s), so the Service routes nothing to them. Liveness never reads the database (ADR-0016), so **no replica
+  restarts**, which is right: a restart adds a cold start and a rebalance of every group to the outage.
+- **Requests in flight fail, and a retry with the same key is safe.** A money-moving command whose client retries with the same
+  `Idempotency-Key` takes one effect: one that committed before the failover answers its stored result, one that did not runs
+  once (`INV-IDEM-*`). "The database committed and the answer was lost" is that case.
+- **Schedules and consumers stop and resume.** Each tick and poll fails while the database is away. A claim whose lease ran out
+  is taken by whichever replica claims next (`DISTRIBUTED_EXECUTION.md` §3), and a consumer commits an offset only after its
+  inbox transaction, so a record whose transaction died is redelivered into the dedupe.
+- **New connections reach the new primary** as the endpoint's name resolves to it, and readiness returns at the next probe that
+  borrows one; the schema guard's verdict stands across the outage (a failed read moves no verdict, §11.1c).
+- **A connection the network black-holed never returns**, because the data source sets no socket timeout
+  (`application.yaml`). On the gauge thread it leaves that replica's gauges stale (`GaugesStale`, §11.8); the abuse doors' counts
+  give their place back after 2 s (§11.30); a request or a tick holding one waits until the operating system gives the connection
+  up. Only replacing that pod frees it.
+- **The abuse counters start again**: `platform.window_counter` is unlogged, so a failover empties it, every source with a fresh
+  window (§11.30).
+
+**What a person does.**
+
+1. **Declare** per §11.12: `SEV-2` (money-moving flows stopped, the record not in doubt).
+2. **Leave the fleet alone.** Do not restart or scale it. Watch readiness come back on every replica (`kubectl get pods -n finapp`
+   with the read-only role) and the database alerts clear.
+3. **A replica still unready, or still failing requests, once the others serve**: replace that one pod by eviction under
+   break-glass (§11.25), one at a time (§11's fleet rule).
+4. **Verify after**: the trial balance silent (`LedgerTrialBalanceNonZero`), the outbox draining (`OutboxPublicationStalled`
+   clears), the unknown-outcome alerts clearing as the sweeps resume (§11.22), nothing dead-lettered or parked that the outage
+   explains (§11.6). Nothing is repaired: a synchronous standby holds every acknowledged commit.
+5. **Record** the provider's event time, each replica's unready and ready times (the kubelet's events), the requests failed
+   (`http_server_requests_seconds_count` with a `5xx` status) and any pod replaced.
+
+**What this does not cover.** The drill: a real failover under load, its measured interruption and how long the application takes
+to see the new primary (Phase 16). A socket timeout, which would bound the black-holed connection above and is unset by an
+earlier decision (`application.yaml`'s note). A read replica or another region (Phase 16).
+
+**The `kind` restart, and what it shows.** On `kind` the database is one PostgreSQL pod whose data lives in an `emptyDir`
+(`deploy/overlays/kind/postgres.yaml`): **deleting that pod deletes the database**, so the rehearsal restarts its container in
+place (the pod, and its data, kept), and by killing the server rather than shutting it down: PostgreSQL empties an unlogged table
+after a crash and keeps it across a clean shutdown, and a standby promoted by a failover never held an unlogged table's rows. It
+shows readiness down and back on every replica with none restarted, claims lapsing and
+taken, and the abuse table empty after. It does not show a standby taking over, an endpoint moving, a connection black-holed (a
+stopped server resets its connections), or anything of the managed service's own. **The last record**: not yet run.
+
 ### 11.13 Infrastructure code: running the Terraform checks, and changing a pin
 
 **When.** Before pushing any change under `infra/terraform/`, and when Dependabot proposes a provider update or
@@ -2832,10 +3354,13 @@ parked records, discard decisions or callback hints (`DATA_RETENTION.md`).
 
 **A table still growing.** Compare `finapp.retention.swept` with the table's arrival rate. An outbox that keeps
 growing with a healthy sweep is usually a backlog (pending rows, which are never swept): §11.6. If the sweep is merely behind,
-raise `finapp.retention.sweep.batch-size` up to its limit, or shorten the interval, on a rolling restart.
+raise `finapp.retention.sweep.batch-size` up to its limit, or shorten the interval, by a change to the environment's overlay
+(§11.31), which rolls the fleet (§11's fleet rule).
 
-**Pause the sweeps.** Set `finapp.retention.sweep.enabled=false` and restart. Correctness does not depend on them: a row that
-is not deleted costs storage only, so pausing is always safe.
+**Pause the sweeps.** Set `finapp.retention.sweep.enabled=false` in the environment's overlay (§11.31) and let the fleet roll
+(§11's fleet rule); each replica stops sweeping as it is replaced, so for a rollout's length some sweep and some do not, which is
+harmless. Correctness does not depend on them: a row that is not deleted costs storage only, so pausing is always safe. *(Read
+"and restart" until 2026-11-12.)*
 
 **Move a bound.**
 
@@ -2890,7 +3415,7 @@ the controller pods do not start.
 
 **Rolling it out, and back.** The edge first, then the application: an application that requires the marker must never meet an edge that does not send it. The order is always safe, because an application without this change ignores the header. To roll back, the application first, then the edge if at all; the header left on the edge harms nothing. Wherever nothing is deployed in front of the application - no edge network named (`FINAPP_EDGE_PROXIES` blank) and its database on loopback: a laptop, the test tiers - it needs no marker and the one port serves both surfaces, as before the edge. A deployment whose database is reached through a sidecar on 127.0.0.1 is still behind the edge, because its overlay names the edge network.
 
-**An operator cannot sign in.** First: are they on the operator host? On the public one their own password is refused with the same `401` as a wrong one, by design, and nothing is counted against their lockout there. Read `identity.PublicSurfaceRefused` for their identity (`platform.audit_record`, `target_id` the identity): `surface=public` means they used the public host; `credential=proven` on it means their correct password was presented from the internet: treat it as a phished credential to be replaced on the operator host, and the identity's sessions ended, not as a support ticket. `surface=unmarked` means the request reached the application with no usable marker: the edge was rolled after the application, or something other than the edge reached it. `finapp_identity_surface_refusal_total{kind="unmarked"}` rising across operators says the first, and its ticket, `StaffRefusedUnmarked` (section 11.37), says it within ten minutes of the first refusal; roll the edge forward (or the application back), and check `finapp-app-ingress` before anything else if the edge is as built. Customers are served throughout, so this is never an outage for them. A person given their first role cannot use the sessions they held as a customer: the grant ended them, and they sign in again on the operator host (section 11.37). An operator who only lost their password recovers on the operator host; the public host answers their recovery request `202` and does nothing. A staff member who banks on the platform with the same login cannot sign in from the internet to their own accounts either; they use them from the operator host, or keep a second, customer-only login (`THREAT_MODEL.md` section 6 item 39 (c)). `finapp_identity_surface_refusal_total{outcome="credential_proven"}` counts the refused sign-ins whose password was right: any increase pages, `OperatorPasswordProvenOnPublic` (section 11.37), and is a phished credential until a rollout explains an unmarked one.
+**An operator cannot sign in.** First: are they on the operator host? On the public one their own password is refused with the same `401` as a wrong one, by design, and nothing is counted against their lockout there. Read `identity.PublicSurfaceRefused` for their identity (`platform.audit_record`, `target_id` the identity): `surface=public` means they used the public host; `credential=proven` on it means their correct password was presented from the internet: treat it as a phished credential to be replaced on the operator host, and the identity's sessions ended, not as a support ticket. `surface=unmarked` means the request reached the application with no usable marker: the edge was rolled after the application, or something other than the edge reached it. `finapp_identity_surface_refusal_total{kind="unmarked"}` rising across operators says the first, and its ticket, `StaffRefusedUnmarked` (section 11.37), says it within ten minutes of the first refusal; roll the edge forward (or the application back), and check `finapp-app-ingress` before anything else if the edge is as built. Customers are served throughout, so this is never an outage for them. A person given their first role cannot use the sessions they held as a customer: the grant ended them, and they sign in again on the operator host (section 11.37). An operator who only lost their password would recover on the operator host, and the public host answers their recovery request `202` and does nothing; but no recovery can be completed today, because nothing delivers its token (no channel adapter or notifier exists, section 11.12's compromise step 6), so a lost password has no way back but a new identity (section 11.12). *(Read "recovers on the operator host" as if recovery completed until 2026-11-12.)* A staff member who banks on the platform with the same login cannot sign in from the internet to their own accounts either; they use them from the operator host, or keep a second, customer-only login (`THREAT_MODEL.md` section 6 item 39 (c)). `finapp_identity_surface_refusal_total{outcome="credential_proven"}` counts the refused sign-ins whose password was right: any increase pages, `OperatorPasswordProvenOnPublic` (section 11.37), and is a phished credential until a rollout explains an unmarked one.
 
 **Staff's tooling and the trace** *(`P15-TSK-043`, 2026-11-12; `THREAT_MODEL.md` section 6 item 37 (f))*. The operator edge removes a caller's `traceparent`, `tracestate` and `baggage`, as the public edge does (`operator-edge.yaml`'s `edge-headers`), so every operator request starts a trace of its own and no member of staff can switch tracing off for their own requests. Find an operator's request by the `X-Correlation-Id` its answer carries: section 11.34's Tempo and Loki queries find its spans, where the tail policy kept its trace, and the lines it logged, and a tool that sends its own `X-Correlation-Id` gets it back as `X-Client-Correlation-Id` (ADR-0034). Neither edge sets or removes either header.
 
@@ -3412,16 +3937,18 @@ the hour before the last ten minutes, so a failed scrape or a gap of minutes in 
 **`OperatorPasswordProvenOnPublic` (page): treat it as a compromised credential in use now.** Read `identity.PublicSurfaceRefused` in
 `platform.audit_record` for the last ten minutes (`change_summary` carrying `credential=proven`); `target_id` is the identity.
 - `kind="public"`: an operator's correct password arrived through the public edge, from the internet. The sign-in was refused and nothing
-  was counted against the operator's lockout. Reach the operator by a channel you already hold - not one the record or a caller gives
-  you - and have the credential replaced on the operator host (recovery or a password change there). If the operator cannot be reached,
-  or did not sign in from the internet, an `ADMINISTRATOR` suspends the identity with a reason naming the incident: the suspension ends
-  every session it holds.
+  was counted against the operator's lockout. Follow section 11.12's "A compromised operator credential" in its order: an
+  `ADMINISTRATOR` suspends the identity first, with a reason naming the incident, which ends every session it holds; then the
+  operator is reached by a channel the incident already holds - not one the record or a caller gives you - and the password is
+  changed only after the identity is reinstated, because a suspended identity can neither sign in nor recover. *(Read "have the
+  credential replaced on the operator host (recovery or a password change there). If the operator cannot be reached … suspends
+  the identity" until 2026-11-12: the order could not be followed, and recovery delivers no token, section 11.12 step 6.)*
 - `kind="unmarked"`, with `StaffRefusedUnmarked` beside it: most likely an operator signing in on the operator host while the application
   is ahead of the edge - the rollout below - and the right password is theirs. It pages by the owner's ruling, any proven refusal: confirm
   the rollout explains it (the ticket, the edge's revision, more than one operator refused) before standing it down. An unmarked proven
   refusal with no rollout to explain it is a caller that reached the application without either edge, holding an operator's password: both
   a compromise and a hole in `finapp-app-ingress`, so the policy is checked first.
-- Either way, the incident's own procedure is section 11.12's, which `P15-TSK-032` writes.
+- Either way, the incident's own procedure is section 11.12's: "A compromised operator credential".
 
 **An old count raised once.** A Prometheus with no history - a new one, or one whose storage was lost - or one back from an outage longer
 than the hour the second term looks back over sees a replica's old non-zero count as new, and raises each alert once for ten minutes,
@@ -3442,6 +3969,20 @@ administrator when `n` > 0). They sign in on the operator host; their customer s
 A second role ends nothing. The grant's review confirms the recovery channels and the factor the identity added as a customer
 (`PRIVILEGED_ACCESS_REVIEW.md` section 5, question 6).
 
+**A person whose last role is revoked signs in again, as a customer** (`P15-TSK-032`). `DELETE /v1/identities/{id}/roles/{role}`,
+an `ADMINISTRATOR` (`ROLE_ASSIGN`) on a `MULTI_FACTOR` session, from the operator surface, with a reason in the body, takes one
+role. Taking the identity's last one ends every session it holds, in the revocation's transaction: `identity.SessionRevoked`
+naming the administrator when any ended, then `identity.RoleAssigned` saying `revoked=<ROLE>, lastRole=true,
+sessionsRevoked=<n>`, each with the actor, the target, the reason, the correlation and the outcome; every replica refuses those
+sessions at its next request. The person signs in again as the customer they now are, on either host. A role taken beside
+another ends nothing (`lastRole=false`): the role stops granting on the next request and the sessions serve what the identity
+still is. A retry, or a role not held, answers `204` again and writes, records and ends nothing. `409 identity.LastRoleGranter`
+means the role can grant roles and the identity is its last `ACTIVE` holder: grant it to a second person first, then revoke;
+nothing was taken. An administrator cannot revoke their own role (`422 api.ValidationFailed`); another administrator does it.
+`422` too for a missing reason, `404 api.NotFound` for an unknown identity, `400 api.MalformedRequest` for a role that does not
+exist, `403 identity.AssuranceRequired` below `MULTI_FACTOR`, and each refusal is recorded. Break-glass's close in the
+application, the access review's revocations and section 11.12's compromise steps use this door.
+
 **A reporting pool that refuses its role** (`P15-TSK-043`; `PRIVILEGED_ACCESS_REVIEW.md` section 8). Report generation's pool asks the
 database, as each connection's first statement, whether its role can write, and a connection whose role can is a connection that failed:
 no report run generates, every replica keeps serving everything else. What on-call sees: the database's own log line, `ERROR:  finapp
@@ -3455,7 +3996,7 @@ column grant), and take away the write - a grant, a membership, a `PUBLIC` grant
 pass, and never point the pool at another role. The next connection is judged again, so nothing restarts. **Connections already open
 keep serving as the changed role** until Hikari's `maxLifetime` (its default, 30 minutes; this pool does not set it) replaces them, and
 those connections read inside `REPEATABLE READ READ ONLY` snapshots, which refuse a write at the transaction; to end them sooner, roll
-the fleet.
+the fleet (a commit to the overlay, section 11's fleet rule).
 
 **Testing it.** `infra/prometheus/tests/identity-surface.test.yml`: each rule fires on its series and on a replica first scraped already
 counting, and is silent on the other's series, on an old count, and on an old count through a staleness marker or a six-minute gap; run

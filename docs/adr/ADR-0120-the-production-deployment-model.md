@@ -143,7 +143,9 @@ so break-glass's time limit belongs to the identity layer. Stated and checked; n
 the overlays `kind`, `staging`, `production`. The HorizontalPodAutoscaler alone owns the replica count: the Deployment
 states no `replicas`, because a manifest that does resets the HPA at every apply, and a reset from seven to three is four
 terminating pods at once, past the rule's `+ 1`; N ≥ 3 is `minReplicas`. The `preStop` is a `sleep` action (Kubernetes
-1.30 or later), the image having no shell. **The grace**, `terminationGracePeriodSeconds: 115`: the 10 s pause, HTTP 30, schedules 12,
+1.30 or later), the image having no shell. **The grace**, `terminationGracePeriodSeconds: 115` *(as built; 117 s since 2026-11-11,
+the telemetry SDK's last export, `TelemetryFlush.BOUND`, 2 s, joining the ordered stop: the dated note below; this pointer added
+2026-11-12, `P15-TSK-032`)*: the 10 s pause, HTTP 30, schedules 12,
 consumers 12, the management server 2 and its worker pool 5, the API server 2 and its worker pool 5, the gauge refresher 3, the producer 10, each pool's abort loop 10,
 and 4 for the JVM's exit; `minReadySeconds` equals it. The lifecycle's 57 s above was low: a scrape in flight held the management
 server's graceful close for that child context's own phase timeout, Spring's default 10 s, the property binding only the parent's
