@@ -205,8 +205,10 @@ class LoadRehearsalContractTest {
         assertThat(judge).as("the generator, never trusted to have kept up")
                 .contains("[ \"$dropped\" = 0 ] || fail \"the generator dropped $dropped iterations")
                 .contains("$3 < want * 0.98 || $3 > want * 1.02 + 1").contains("(c < 90)")
-                .as("errors judged against each operation's objective, never left unread")
-                .contains("chance=$(load_errors_chance \"$failed\" \"$attempts\" \"$target\")").contains("(c >= 0.01)");
+                .as("each operation's 5xx recorded beside the chance its objective explains them, never left unread")
+                .contains("chance=$(load_errors_chance \"$server\" \"$attempts\" \"$target\")").contains("log \"recorded $op: 5xx $server");
+        assertThat(function("load_report")).as("every answer that was not a success counted per operation and status")
+                .contains("k6/statuses.tsv").contains("$1 == \"http_reqs\" && $c[\"status\"] !~ /^2/");
         assertThat(generatorCommand()).as("each instance's CPU is bounded, so its saturation can be read").contains("--cpus 1");
         assertThat(generatorCommand()).as("the generator arrives from several addresses, each running its exact share of every rate")
                 .contains("--execution-segment \"$i/$LOAD_GENERATORS:$((i + 1))/$LOAD_GENERATORS\"")
@@ -215,6 +217,8 @@ class LoadRehearsalContractTest {
                 .contains("gzip -dc \"$series\"").contains("-v m=\"latency_$op\"").contains("sort -k1,1 -k2,2g");
         assertThat(function("load_statistics")).as("PostgreSQL's statistics and the containers every 10 s")
                 .contains("statistics.sql").contains("statements.sql").contains("dock stats --no-stream").contains("started + 10");
+        assertThat(function("load_census")).as("a statistics read at least every 12 s of the load, or the run fails")
+                .contains("/ 12 )) ] || fail \"PostgreSQL's statistics were read");
         assertThat(function("load_census")).as("the saturation signals exported, and absent ones refused")
                 .contains("/api/v1/query_range").contains("fail \"saturation signals absent from Prometheus");
         assertThat(read("deploy/overlays/kind/postgres.yaml")).contains("shared_preload_libraries=pg_stat_statements");
@@ -322,6 +326,9 @@ class LoadRehearsalContractTest {
         assertThat(plant).as("the release's own Job, its image a shell printing migrator-shaped lines with a card number and an amount, exit 10")
                 .contains("\"$A/Job.finapp-migrator.yaml\"").contains("card $SIGNALS_MIGRATOR_PAN for $SIGNALS_AMOUNT EUR")
                 .contains("exit 10").contains("kube -n finapp delete job finapp-migrator");
+        assertThat(plant).as("the control before the plant: neither page active, so what fires afterwards is the plant's")
+                .contains("for alert in MigratorJobFailed MigratorJobOverdue; do").contains("signals_await \"$alert\" none");
+        assertThat(plant.indexOf("signals_await \"$alert\" none")).isLessThan(plant.indexOf("SIGNALS_FROM=$(date +%s)"));
         assertThat(plant).as("the edge's needles: a routed and an unrouted path, a query and a header, through the real public edge")
                 .contains("\"/v1/me/accounts/$SIGNALS_PAN/balance\" \"/v1/nowhere/$SIGNALS_PAN\"").contains("-H \"X-Card: $SIGNALS_PAN_SPACED\"")
                 .contains("--cacert /work/edge-ca.crt");

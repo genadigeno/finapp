@@ -4583,7 +4583,7 @@ and measured them instead of the platform (the first run below). Each instance h
 `k6/<n>/`, and the harness's `k6/report.tsv` adds their counts and takes the percentiles from all their samples together.
 
 **The same run rehearses the platform's own signals** (`THREAT_MODEL.md` §6 item 47 (c); §11.41 and §11.42 hold the procedures).
-Before the load a migrator Job is planted to fail (the release's own Job, its image a shell printing migrator-shaped lines with a
+Before the load, once neither page is active (the control, so what fires afterwards is the plant's), a migrator Job is planted to fail (the release's own Job, its image a shell printing migrator-shaped lines with a
 card number and an amount, exiting 10) and two requests carrying a card number go through the public edge; after the load's census
 the run reads `MigratorJobFailed` and `MigratorJobOverdue` firing and held by Alertmanager on `placeholder-page`, the failed run's
 lines in Loki under `finapp-migrator` with the exit code and the scrub's mark, and sweeps the edge's, the migrator's, the collectors'
@@ -4624,11 +4624,12 @@ takes `closed-model`, `sampler-disabled` or `unbalanced-entry`. The usual `REHEA
   at once and fails the run.**
 - `load-judge`: the samples covering the load (none missing at either end, no gap over 45 s, every one `PASS`); the generator holding
   its model (no dropped iteration, every arrival rate within 2%, each instance's CPU under 90% of its core); every money movement resolved by
-  its key and every retried key answered alike; each operation's errors no more than its objective explains (`load_errors_chance`: the
-  chance that an operation meeting 99.9% errs this often in this many attempts, failing below 1%, so one 5xx in 800 transfers is
-  recorded and forty are a red run); the callbacks two per capture and their refusals judged the same way at 99.95%; every ready
-  replica serving each money-moving route; the settlement file taken whole and reconciled. Latency is recorded against each target and
-  never fails the run (`PHASE_16_PLAN.md` §5.3: a run fails on correctness, whatever the latency did).
+  its key and every retried key answered alike; the callbacks two per capture, every delivery answered and a duplicate accepted; every
+  ready replica serving each money-moving route; the settlement file taken whole and reconciled. **Errors and latency are recorded,
+  never a verdict** (`PHASE_16_PLAN.md` §5.3: a run fails on correctness, whatever the latency did; §5.2: error rates by status): a
+  `recorded` line per operation gives its 5xx beside the chance an operation meeting its objective errs that often in that many
+  attempts (`load_errors_chance`, a one-sided test; below 1% the 5xx are more than the objective explains), its other answers by
+  status, and its percentiles; the objectives under load are `P16-TSK-029`'s to judge.
 - `load-census`: the full census with the generator's counts (one effect per key, the provider's keys, the wallets, the outbox drained,
   no event lost, GL = ledger), a last sample, and the saturation signals exported.
 
@@ -4638,6 +4639,7 @@ takes `closed-model`, `sampler-disabled` or `unbalanced-entry`. The usual `REHEA
 |---|---|---|
 | `workload.txt` | The profile, whether this run is its workload, duration, replicas, commit, machine, the generator's pin, what was and was not driven | Whose number this is, before any number |
 | `k6/report.tsv` | Per operation: its rate, arrivals, resolved, refused, unresolved, attempts, failed attempts, `409`s, retried keys and those answered alike, p50, p95, p99 and max latency as the client saw it (connection and handshake included), the flow's p99 | Latency and errors per operation |
+| `k6/statuses.tsv` | Per operation, every answer that was not a success by status (`0`: none, a timeout or a refused connection) | Errors by status: the platform's `5xx`, the edge's `429`, a `409` |
 | `k6/generator.tsv` | Dropped iterations, peak and allocated virtual users, requests, duration | Whether the generator held its model |
 | `k6/<n>/summary.json`, `k6/<n>/k6-series.csv.gz`, `k6-<n>.log` | Each instance's summary, every sample of every metric with its tags, and its log | Anything the report does not show; `P16-TSK-007`'s analysis |
 | `samples.tsv`, `samples/` | One line per 30 s sample (verdict, replicas scraped of ready, clauses, detail) and each sample's raw answers | The invariants during the load |

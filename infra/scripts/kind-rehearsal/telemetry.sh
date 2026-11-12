@@ -566,8 +566,15 @@ signals_count() {
 }
 
 platform_signals_plant() {
-    SIGNALS_FROM=$(date +%s)
     : > "$ART/signals-alerts.tsv"
+    # The control before the plant: neither page active once the release's own Job has succeeded, so what fires afterwards is the plant's
+    # (on a reused cluster an earlier run's plant clears here, the deploy having run the release's Job again).
+    for alert in MigratorJobFailed MigratorJobOverdue; do
+        signals_await "$alert" none $(( $(date +%s) + 300 )) \
+            || fail "signals: $alert still active 5 min after the release's own Job, before any plant: see signals-alerts.tsv"
+    done
+    pass "signals: before the plant, neither MigratorJobFailed nor MigratorJobOverdue active"
+    SIGNALS_FROM=$(date +%s)
     # The migrator Job planted to fail: the release's own Job as rendered, its image the pinned Prometheus image's shell printing migrator-shaped
     # lines - a card number and an amount among them, for the sweep - and exiting 10, which the Job's podFailurePolicy fails at once. Nothing
     # else of the Job is changed. The release's own Job, completed, is removed first: the next one takes its name.
