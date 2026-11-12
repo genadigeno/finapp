@@ -25,6 +25,49 @@ public interface RoleAssignmentStore<T> {
     Set<RoleName> liveRolesOf(T unitOfWork, IdentityId identityId);
 
     /**
+     * {@link #liveRolesOf}, each live row read locked {@code FOR SHARE} until the caller's transaction ends (`P15-TSK-032`): the
+     * grant's read of whether this is the identity's first role. A revocation of one of these rows locks it for update first
+     * ({@link #lockForRevocation}), so the two serialise: a grant that read a role live finishes before that role's revocation
+     * reads what is left, and one that waited reads the revocation committed. Without it a grant reading a role a concurrent
+     * revocation is removing would call its own role a second one, and the revocation, not seeing the uncommitted grant, would
+     * call the removed role the last: the sessions would end before the grant committed, and a sign-in in between would serve
+     * the new member of staff. Readers that decide nothing - the interceptor, the public doors - keep {@link #liveRolesOf}.
+     */
+    Set<RoleName> lockLiveRolesOf(T unitOfWork, IdentityId identityId);
+
+    /**
+     * What a revocation decides by, read in <strong>one statement</strong> with every row it returns locked {@code FOR UPDATE}
+     * until the caller's transaction ends (`P15-TSK-032`): the identity's own live holdings, and every live holding of
+     * {@code granting} - the roles that can grant roles - with whether its holder is {@code ACTIVE}. Empty {@code granting}
+     * reads the identity's own holdings alone.
+     *
+     * <p><strong>"Last" is read after any revocation it raced.</strong> The rows are locked in their primary key's order, so
+     * two revocations contend for the same rows in the same order and never deadlock; the second waits for the first to
+     * commit, and PostgreSQL then re-reads each row it waited on and drops one the first revoked ({@code READ COMMITTED}'s
+     * re-check of a locked row). So two administrators revoking each other's role at once see each other's revocation: one
+     * is the last and is refused. A grant committed after the statement began is not seen, which errs towards "last", the
+     * refusing side. A holder's status is read with the row, not locked: a suspension committed before the statement is seen.
+     */
+    RevocationHoldings lockForRevocation(T unitOfWork, IdentityId identityId, Set<RoleName> granting);
+
+    /**
+     * What {@link #lockForRevocation} read.
+     *
+     * @param held the identity's live roles
+     * @param activeGranting each live holding of a granting role whose identity is {@code ACTIVE}, the identity's own among them
+     */
+    record RevocationHoldings(Set<RoleName> held, Set<Holding> activeGranting) {
+
+        public RevocationHoldings {
+            held = Set.copyOf(java.util.Objects.requireNonNull(held, "held must not be null"));
+            activeGranting = Set.copyOf(java.util.Objects.requireNonNull(activeGranting, "activeGranting must not be null"));
+        }
+    }
+
+    /** One live holding: who, which role. */
+    record Holding(IdentityId identityId, RoleName role) {}
+
+    /**
      * The identity signing in as {@code login}, if it holds a live role now (`P15-TSK-042`): one statement, whatever the
      * identifier names, so an unknown identifier, a customer's and a role-holder's cost the same read.
      *
@@ -63,7 +106,8 @@ public interface RoleAssignmentStore<T> {
      * Revokes a role.
      *
      * <p>Conditional on the assignment still being live, and the row count is the outcome — so two
-     * instances revoking at once produce one transition and one audit record.
+     * instances revoking at once produce one transition and one audit record. The revocation door reads
+     * {@link #lockForRevocation} first, so its decision and this write see the same rows.
      *
      * <p>The row is <strong>marked, never deleted</strong>: the application role holds no
      * {@code DELETE}, and a role somebody held for a month is a fact about the past that an

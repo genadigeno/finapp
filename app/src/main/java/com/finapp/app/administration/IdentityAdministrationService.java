@@ -67,6 +67,16 @@ public class IdentityAdministrationService {
                 unitOfWork -> administration.assignRole(unitOfWork, subject, role, actor, reason));
     }
 
+    /**
+     * A role taken from an identity (`P15-TSK-032`): the locked read, the row, a last role's session revocation and the
+     * record, in one transaction, so none commits without the others.
+     */
+    public IdentityAdministration.RoleRevocation revokeRole(
+            IdentityId subject, RoleName role, IdentityId actor, String reason) {
+        return inOneTransaction(
+                unitOfWork -> administration.revokeRole(unitOfWork, subject, role, actor, reason));
+    }
+
     /** The check of standing holdings without a factor (`P15-TSK-039`), read and recorded in one transaction. */
     public IdentityAdministration.FactorlessHoldings factorlessHoldings(int mostServed) {
         return inOneTransaction(unitOfWork -> administration.factorlessHoldings(unitOfWork, mostServed));

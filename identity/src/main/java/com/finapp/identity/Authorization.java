@@ -81,6 +81,38 @@ public final class Authorization {
     }
 
     /**
+     * {@link #standingOf}, read for a change to it (`P15-TSK-032`): each live role's row locked {@code FOR SHARE} until the
+     * caller's transaction ends, so a revocation of one of them cannot commit between this read and the caller's write. The
+     * grant's read of whether this is a first role; see {@link RoleAssignmentStore#lockLiveRolesOf}.
+     */
+    public Standing standingForChange(Connection unitOfWork, IdentityId identityId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(identityId, "identityId must not be null");
+        return new Standing(assignments.lockLiveRolesOf(unitOfWork, identityId));
+    }
+
+    /**
+     * What a revocation of {@code identityId}'s role decides by, every row read locked for update (`P15-TSK-032`): its live
+     * roles, and every {@code ACTIVE} identity's live holding of a role that can grant roles ({@link PermissionName#ROLE_ASSIGN})
+     * when {@code role} is one, or none when it is not. See {@link RoleAssignmentStore#lockForRevocation}.
+     */
+    public RoleAssignmentStore.RevocationHoldings holdingsForRevocation(
+            Connection unitOfWork, IdentityId identityId, RoleName role) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(identityId, "identityId must not be null");
+        Objects.requireNonNull(role, "role must not be null");
+        return assignments.lockForRevocation(unitOfWork, identityId,
+                role.permissions().contains(PermissionName.ROLE_ASSIGN) ? rolesGranting(PermissionName.ROLE_ASSIGN) : Set.of());
+    }
+
+    /** Every role whose grants include {@code permission}: read from the code, so a permission moved takes the rule along. */
+    static Set<RoleName> rolesGranting(PermissionName permission) {
+        return java.util.Arrays.stream(RoleName.values())
+                .filter(role -> role.permissions().contains(permission))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    /**
      * An identity's live roles at one instant (`P15-TSK-021`; {@code INV-IDN-03}, {@code INV-IDN-04}).
      *
      * <p><strong>Holding a role makes a person staff.</strong> Every {@link RoleName} is an operational role - a customer
@@ -279,6 +311,11 @@ public final class Authorization {
      * <p>Effective on the identity's <strong>next request</strong>, because permissions are resolved
      * per request. That is the property this whole design exists for, and it is asserted rather than
      * assumed.
+     *
+     * <p><strong>Ends no session and checks nothing</strong>: kept for the database fixtures that take a role away around the
+     * door. A production revocation goes through {@code IdentityAdministration.revokeRole} and the overload below, which
+     * refuses the last identity able to grant roles and ends a last role's sessions; {@code RoleGrantDoorTest} refuses any
+     * production call of this one (`P15-TSK-032`).
      */
     public boolean revoke(
             Connection unitOfWork,
@@ -286,17 +323,52 @@ public final class Authorization {
             RoleName role,
             IdentityId revokedBy,
             String reason) {
+        return withdraw(unitOfWork, identityId, role, revokedBy, reason, revoked -> "");
+    }
+
+    /**
+     * Revokes a role, and runs {@code consequence} on the same unit of work after the row is marked and before the record is
+     * written (`P15-TSK-032`, the six-argument {@code assign}'s shape): a last role ends the identity's sessions here, so one
+     * record says both, and a
+     * consequence that fails leaves no record and rolls the revocation back with the caller's transaction. Not run when the
+     * role was not held: nothing was revoked.
+     *
+     * @param consequence given the unit of work; answers the words the record appends to {@code revoked=<role>}, or empty
+     */
+    public boolean revoke(
+            Connection unitOfWork,
+            IdentityId identityId,
+            RoleName role,
+            IdentityId revokedBy,
+            String reason,
+            java.util.function.Function<Connection, String> consequence) {
+        return withdraw(unitOfWork, identityId, role, revokedBy, reason, consequence);
+    }
+
+    /**
+     * Both {@code revoke}s' one body, named apart from them for {@code grant}'s reason: {@code RoleGrantDoorTest} holds that
+     * nothing in production but {@code IdentityAdministration} calls a method named {@code revoke} here.
+     */
+    private boolean withdraw(
+            Connection unitOfWork,
+            IdentityId identityId,
+            RoleName role,
+            IdentityId revokedBy,
+            String reason,
+            java.util.function.Function<Connection, String> consequence) {
         Objects.requireNonNull(reason, "reason must not be null");
+        Objects.requireNonNull(consequence, "consequence must not be null");
 
         Instant at = Instant.now(clock);
         boolean revoked = assignments.revoke(unitOfWork, identityId, role, revokedBy, at);
         if (revoked) {
+            String also = Objects.requireNonNull(consequence.apply(unitOfWork), "a consequence answers its words, or empty");
             audit(
                     unitOfWork,
                     identityId,
                     IdentityAuditAction.IDENTITY_ROLE_ASSIGNED,
                     AuditOutcome.SUCCEEDED,
-                    "revoked=" + role,
+                    "revoked=" + role + (also.isEmpty() ? "" : ", " + also),
                     Optional.of(reason));
         }
         return revoked;

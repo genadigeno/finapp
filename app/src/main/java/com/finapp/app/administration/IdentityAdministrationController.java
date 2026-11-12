@@ -201,6 +201,48 @@ public class IdentityAdministrationController {
         }
     }
 
+    /**
+     * Takes a role from an identity (`P15-TSK-032`): {@code DELETE} on the role the grant created, the reason in the body
+     * ({@link RoleRevocationRequest}). The permission is {@code ROLE_ASSIGN}, the grant's - "grant or revoke a role" - and the
+     * session must have stepped up to {@code MULTI_FACTOR}, the decided Q1: a revocation of the last role ends every session
+     * its holder has, and of a granting role it can lock others out of administration, so a stolen password must not be
+     * enough. On the operator surface, as every permission-guarded route is. Its refusals are recorded as the grant's are.
+     */
+    @DeleteMapping("/{id}/roles/{role}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RequiresPermission(PermissionName.ROLE_ASSIGN)
+    @com.finapp.app.session.RequiresAssurance(com.finapp.identity.AssuranceLevel.MULTI_FACTOR)
+    @com.finapp.app.session.RecordsRefusals
+    public void revokeRole(
+            @PathVariable String id,
+            @PathVariable com.finapp.identity.RoleName role,
+            @Valid @RequestBody RoleRevocationRequest body,
+            HttpServletRequest request) {
+
+        IdentityAdministration.RoleRevocation outcome =
+                administration.revokeRole(subject(id), role, actor(request), body.reason());
+
+        switch (outcome) {
+            case REVOKED, NOT_HELD -> {
+                // Idempotent in effect, as the grant is: the caller asked for the identity not to hold the role, and it
+                // does not. A retry after a lost answer must not look like a failure.
+            }
+            case SELF ->
+                    throw new ApiException(
+                            PlatformErrorCode.VALIDATION_FAILED,
+                            "An administrator named themselves as the subject of a role revocation",
+                            "an administrator cannot revoke a role from their own identity");
+            case NOT_FOUND ->
+                    throw new ApiException(
+                            PlatformErrorCode.NOT_FOUND, "No identity matched the given identifier");
+            case LAST_ROLE_GRANTER ->
+                    throw new ApiException(
+                            com.finapp.identity.IdentityErrorCode.LAST_ROLE_GRANTER,
+                            "A revocation would have left no active identity holding a role that can grant roles",
+                            "grant this role to another person first.");
+        }
+    }
+
     // -----------------------------------------------------------------
 
     private static IdentityId subject(String id) {
