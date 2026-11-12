@@ -306,6 +306,34 @@ class ReconciliationOutcomeMetersTest {
     }
 
     @Test
+    @DisplayName("a recorded rematch fault counts on its own series, eager at zero, after its batch commits, and never at a"
+            + " rollback (P16-TSK-017)")
+    void rematchFaultedCountsAfterCommit() {
+        ReconciliationOutcomeMeters meters = meters();
+        Counter faulted = registry.get(ReconciliationOutcomeMeters.REMATCH_FAULTED).counter();
+        assertThat(faulted.count()).as("eager").isZero();
+
+        TransactionSynchronizationManager.initSynchronization();
+        meters.rematchFaulted();
+        assertThat(faulted.count()).as("not before the commit").isZero();
+        List<org.springframework.transaction.support.TransactionSynchronization> committed =
+                TransactionSynchronizationManager.getSynchronizations();
+        committed.forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+        clearSynchronization();
+        assertThat(faulted.count()).isEqualTo(1.0d);
+
+        TransactionSynchronizationManager.initSynchronization();
+        meters.rematchFaulted();
+        List<org.springframework.transaction.support.TransactionSynchronization> rolledBack =
+                TransactionSynchronizationManager.getSynchronizations();
+        rolledBack.forEach(sync -> sync.afterCompletion(
+                org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK));
+        clearSynchronization();
+        assertThat(faulted.count()).as("a rolled-back batch's fault was never recorded").isEqualTo(1.0d);
+        assertThat(rematch(PSP, DecisionOutcome.MATCHED).count()).isZero();
+    }
+
+    @Test
     @DisplayName("a late leg's decision counts on the rematch series, never the item series")
     void rematchedCounts() {
         ReconciliationOutcomeMeters meters = meters();

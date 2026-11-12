@@ -2,6 +2,7 @@ package com.finapp.app.payments;
 
 import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.app.lifecycle.ShutdownOrder;
+import com.finapp.app.telemetry.SweepMeters;
 import com.finapp.payments.PayInResolution;
 import java.time.Duration;
 import java.util.Objects;
@@ -23,10 +24,15 @@ public final class PayInResolutionSchedule implements SmartLifecycle {
     private final PayInResolution resolution;
     private final Duration pollInterval;
 
+    /** The pay-in sweep's failure counters (`P16-TSK-017`): a tick failing whole, and the tally's unreadable and failed rows. */
+    private final SweepMeters.Sweep meters;
+
     private final ScheduleDrain drain = new ScheduleDrain("payin-resolution");
 
-    public PayInResolutionSchedule(PayInResolution resolution, Duration pollInterval) {
+    public PayInResolutionSchedule(
+            PayInResolution resolution, Duration pollInterval, SweepMeters.Sweep meters) {
         this.resolution = Objects.requireNonNull(resolution, "resolution must not be null");
+        this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval must not be null");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
             throw new IllegalArgumentException("pollInterval must be positive: " + pollInterval);
@@ -53,7 +59,8 @@ public final class PayInResolutionSchedule implements SmartLifecycle {
     private void sweepQuietly() {
         try {
             PayInResolution.SweepResult result = resolution.sweep();
-            if (result.candidates() > 0) {
+            meters.rows(result.unreadable(), result.failedRows());
+            if (result.candidates() + result.unreadable() > 0) {
                 // Counts only - identifiers live in the sweep's own per-row lines.
                 log.info(
                         "Pay-in sweep: {} candidates, {} contacted, {} resolved",
@@ -63,6 +70,7 @@ public final class PayInResolutionSchedule implements SmartLifecycle {
             }
         } catch (RuntimeException failure) {
             // The class only: a JDBC or scheme message can name hosts and identifiers.
+            meters.tickFailed();
             log.warn("Pay-in sweep failed: {}", failure.getClass().getSimpleName());
         }
     }

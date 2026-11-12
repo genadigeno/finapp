@@ -1,5 +1,6 @@
 package com.finapp.payments;
 
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
@@ -65,7 +66,7 @@ public interface RefundStore<T> {
      * UNKNOWN} whose move into {@code UNKNOWN} is at or before {@code unknownBefore} — oldest
      * first, at most {@code limit}. The attempt store's {@code findSweepable}, for the refund.
      */
-    List<Refund> findSweepable(
+    SweepListing<Refund> findSweepable(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
 
     /**
@@ -75,8 +76,16 @@ public interface RefundStore<T> {
      * about our reference would hear {@code UNRECOGNISED} and re-drive against facts the
      * row does not carry (the attempt sweep's partition, at the refund).
      */
-    List<Refund> findSweepableReturns(
+    SweepListing<Refund> findSweepableReturns(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
+
+    /**
+     * Records one failure of {@code refund} in {@code leg}'s listing - {@link SweepLeg#CARD_REFUND} or
+     * {@link SweepLeg#RETURN}, the two this store lists - and backs the row off on the database's
+     * clock (`P16-TSK-017`; {@link PaymentAttemptStore#recordSweepFailure}'s rule). Both listings
+     * leave out a row whose retry is still ahead, and skip and report a row they cannot read.
+     */
+    boolean recordSweepFailure(T unitOfWork, SweepLeg leg, java.util.UUID refund, String failure);
 
     /**
      * The refunds stuck right now — every {@code UNKNOWN}, and every {@code DISPATCHED} whose

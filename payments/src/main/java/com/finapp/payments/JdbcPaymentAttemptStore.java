@@ -1,6 +1,7 @@
 package com.finapp.payments;
 
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
@@ -154,8 +155,37 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         }
     }
 
+    /**
+     * A listing leaves out a row whose failure record's retry is still ahead on the database's clock
+     * (`P16-TSK-017`, payments {@code V040}): the primary key's probe, one per candidate row. One
+     * constant per listing, each naming its own leg and alias.
+     */
+    private static final String CARD_ATTEMPT_DUE =
+            " AND NOT EXISTS (SELECT 1 FROM payments.sweep_row_failure f"
+                    + " WHERE f.leg = 'CARD_ATTEMPT' AND f.row_id = a.id"
+                    + " AND f.retry_at > statement_timestamp())";
+
+    private static final String CARD_STRANDED_DUE =
+            " AND NOT EXISTS (SELECT 1 FROM payments.sweep_row_failure f"
+                    + " WHERE f.leg = 'CARD_STRANDED' AND f.row_id = a.id"
+                    + " AND f.retry_at > statement_timestamp())";
+
+    private static final String PAY_IN_DUE =
+            " AND NOT EXISTS (SELECT 1 FROM payments.sweep_row_failure f"
+                    + " WHERE f.leg = 'PAY_IN' AND f.row_id = payment_attempt.id"
+                    + " AND f.retry_at > statement_timestamp())";
+
     @Override
-    public List<PaymentAttempt> findSweepable(
+    public boolean recordSweepFailure(
+            Connection unitOfWork, SweepLeg leg, UUID attempt, String failure) {
+        if (leg != SweepLeg.CARD_ATTEMPT && leg != SweepLeg.CARD_STRANDED && leg != SweepLeg.PAY_IN) {
+            throw new IllegalArgumentException("the attempt store lists no " + leg + " rows");
+        }
+        return SweepRowFailures.record(unitOfWork, leg, attempt, failure);
+    }
+
+    @Override
+    public SweepListing<PaymentAttempt> findSweepable(
             Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
         Objects.requireNonNull(dispatchedBefore, "dispatchedBefore must not be null");
         Objects.requireNonNull(unknownBefore, "unknownBefore must not be null");
@@ -184,17 +214,15 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                                 + "    OR (a.status IN ('AUTH_UNKNOWN', 'CAPTURE_UNKNOWN',"
                                 + "                     'VOID_UNKNOWN')"
                                 + "        AND COALESCE(h.entered, a.created_at) <= ?))"
+                                + CARD_ATTEMPT_DUE
                                 + " ORDER BY a.created_at, a.id"
                                 + " LIMIT ?")) {
             read.setTimestamp(1, java.sql.Timestamp.from(dispatchedBefore));
             read.setTimestamp(2, java.sql.Timestamp.from(unknownBefore));
             read.setInt(3, limit);
             try (ResultSet rows = read.executeQuery()) {
-                List<PaymentAttempt> sweepable = new ArrayList<>();
-                while (rows.next()) {
-                    sweepable.add(rehydrate(rows));
-                }
-                return List.copyOf(sweepable);
+                // A row that cannot be rehydrated is skipped and reported, never the listing's end.
+                return SweepListing.read(rows, "id", JdbcPaymentAttemptStore::rehydrate);
             }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -203,7 +231,7 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
     }
 
     @Override
-    public List<PaymentAttempt> findStrandedAuthorizations(
+    public SweepListing<PaymentAttempt> findStrandedAuthorizations(
             Connection unitOfWork, Instant authorizedBefore, int limit) {
         Objects.requireNonNull(authorizedBefore, "authorizedBefore must not be null");
         if (limit <= 0) {
@@ -231,16 +259,13 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                                 + "   AND NOT EXISTS (SELECT 1 FROM payments.payment_capture_hold ch"
                                 + "     WHERE ch.attempt_id = a.id AND ch.resolution IS DISTINCT FROM 'CAPTURE')"
                                 + "   AND COALESCE(h.entered, a.created_at) <= ?"
+                                + CARD_STRANDED_DUE
                                 + " ORDER BY a.created_at, a.id"
                                 + " LIMIT ?")) {
             read.setTimestamp(1, java.sql.Timestamp.from(authorizedBefore));
             read.setInt(2, limit);
             try (ResultSet rows = read.executeQuery()) {
-                List<PaymentAttempt> stranded = new ArrayList<>();
-                while (rows.next()) {
-                    stranded.add(rehydrate(rows));
-                }
-                return List.copyOf(stranded);
+                return SweepListing.read(rows, "id", JdbcPaymentAttemptStore::rehydrate);
             }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -732,7 +757,7 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
     }
 
     @Override
-    public List<PaymentAttempt> findResolvableInitiations(
+    public SweepListing<PaymentAttempt> findResolvableInitiations(
             Connection unitOfWork, Instant contactedBefore, int limit) {
         Objects.requireNonNull(contactedBefore, "contactedBefore must not be null");
         if (limit <= 0) {
@@ -744,16 +769,13 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                                 + " WHERE interaction_model = 'PUSH'"
                                 + " AND status = 'AWAITING_PAYER'"
                                 + " AND last_dispatched_at <= ?"
+                                + PAY_IN_DUE
                                 + " ORDER BY last_dispatched_at, id"
                                 + " LIMIT ?")) {
             read.setTimestamp(1, Timestamp.from(contactedBefore));
             read.setInt(2, limit);
             try (ResultSet rows = read.executeQuery()) {
-                List<PaymentAttempt> resolvable = new ArrayList<>();
-                while (rows.next()) {
-                    resolvable.add(rehydrate(rows));
-                }
-                return List.copyOf(resolvable);
+                return SweepListing.read(rows, "id", JdbcPaymentAttemptStore::rehydrate);
             }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(

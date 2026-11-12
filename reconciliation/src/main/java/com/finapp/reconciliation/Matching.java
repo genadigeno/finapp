@@ -7,6 +7,7 @@ import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.outbox.OutboxWriter;
+import com.finapp.platform.persistence.SweepBackoff;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -558,6 +559,12 @@ public class Matching {
                     log.warn(
                             "A rematch candidate was skipped: {}",
                             poisoned.getClass().getSimpleName());
+                    // ...and its fault recorded in this batch's transaction, under the source's
+                    // try-lock and the item's row lock (`P16-TSK-017`): the worklist leaves it out
+                    // until its retry, so a residual faulting every tick no longer re-heads it. The
+                    // item, its decisions, parks and break are untouched - it stays a break. Counted
+                    // after the batch commits, with the record.
+                    recordRematchFault(unitOfWork, residual.item(), poisoned);
                 }
             }
         }
@@ -571,6 +578,40 @@ public class Matching {
         }
         acted[0] += allocated;
         return progressed;
+    }
+
+    /**
+     * Records a rematch candidate's fault under a savepoint of its own (`P16-TSK-017`): a record that
+     * fails rolls back alone and is logged by class, so the batch - its other items' allocations and
+     * examinations - still commits, and the residual is tried again on the next tick as before the
+     * record existed. Counted after the batch commits, and only when the record counted it.
+     */
+    private void recordRematchFault(
+            Connection unitOfWork, MatchingStore.ChunkItem item, RuntimeException fault) {
+        Savepoint beforeRecord;
+        try {
+            beforeRecord = unitOfWork.setSavepoint("rematch_fault_" + item.lineNo());
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not set the rematch fault's savepoint", failure);
+        }
+        try {
+            if (store.recordRematchFault(
+                    unitOfWork, item.id(), SweepBackoff.failureClass(fault))) {
+                telemetry.rematchFaulted();
+            }
+        } catch (RuntimeException notRecorded) {
+            try {
+                unitOfWork.rollback(beforeRecord);
+            } catch (SQLException failure) {
+                throw new ReconciliationStorageException(
+                        "could not contain the rematch fault's record", failure);
+            }
+            log.warn(
+                    "A rematch candidate's fault could not be recorded ({}); the next tick tries it"
+                            + " again",
+                    SweepBackoff.failureClass(notRecorded));
+        }
     }
 
     /** What one rematch did: allocated, recorded its examination, or left the item unjudged. */

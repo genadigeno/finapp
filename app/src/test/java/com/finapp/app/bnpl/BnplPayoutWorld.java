@@ -913,14 +913,20 @@ final class BnplPayoutWorld implements AutoCloseable {
         }
 
         @Override
-        public List<MerchantPayout> findSweepable(Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore,
-                int limit) {
-            return state.payouts.values().stream()
+        public com.finapp.platform.persistence.SweepListing<MerchantPayout> findSweepable(Connection unitOfWork,
+                Instant dispatchedBefore, Instant unknownBefore, int limit) {
+            return com.finapp.platform.persistence.SweepListing.of(state.payouts.values().stream()
                     .filter(p -> (p.status() == MerchantPayoutStatus.DISPATCHED
                                     && !p.lastDispatchedAt().isAfter(dispatchedBefore))
                             || (p.status() == MerchantPayoutStatus.UNKNOWN
                                     && !state.enteredAt.get(p.id()).isAfter(unknownBefore)))
-                    .limit(limit).toList();
+                    .limit(limit).toList());
+        }
+
+        /** merchant.sweep_row_failure is not modelled here: every row stays due, as before P16-TSK-017. */
+        @Override
+        public boolean recordSweepFailure(Connection unitOfWork, java.util.UUID payout, String failure) {
+            return true;
         }
 
         @Override

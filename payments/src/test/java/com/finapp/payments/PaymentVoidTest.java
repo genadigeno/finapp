@@ -683,7 +683,7 @@ class PaymentVoidTest {
         }
 
         @Override
-        public java.util.List<PaymentAttempt> findResolvableInitiations(
+        public com.finapp.platform.persistence.SweepListing<PaymentAttempt> findResolvableInitiations(
                 Connection uow, java.time.Instant contactedBefore, int limit) {
             throw new UnsupportedOperationException("not exercised here");
         }
@@ -716,15 +716,21 @@ class PaymentVoidTest {
         }
 
         @Override
-        public java.util.List<PaymentAttempt> findStrandedAuthorizations(
+        public com.finapp.platform.persistence.SweepListing<PaymentAttempt> findStrandedAuthorizations(
                 Connection uow, java.time.Instant authorizedBefore, int limit) {
             throw new UnsupportedOperationException("not exercised here");
         }
 
         @Override
-        public java.util.List<PaymentAttempt> findSweepable(
+        public com.finapp.platform.persistence.SweepListing<PaymentAttempt> findSweepable(
                 Connection uow, java.time.Instant dispatchedBefore,
                 java.time.Instant unknownBefore, int limit) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean recordSweepFailure(
+                Connection uow, SweepLeg leg, java.util.UUID attempt, String failure) {
             throw new UnsupportedOperationException("not exercised here");
         }
 

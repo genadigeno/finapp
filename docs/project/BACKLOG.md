@@ -29310,7 +29310,11 @@ on none:
     - the source lock;
     - the rescreening census and the whole-day proofs;
     - the capital row and L6 across BNPL's waits;
-    - capital tranches.
+    - capital tranches;
+    - *(routed by `P16-TSK-017`, 2026-11-13)* the sweeps' failure records: the eight sweep listings' plans and latency with their
+      added `NOT EXISTS` probe on `payments.sweep_row_failure` and `merchant.sweep_row_failure`, with the tables empty and with a
+      failure storm's rows (every candidate failing through a provider outage), and the record tables' write rate and bloat in that
+      storm. `-017` built them as side tables, no column on the hot tables, so no `ALTER` of a contended table is left to measure.
 
   **Exclusions**: building a mechanism without an ADR; any isolation change.
 - **Workload assumptions**: the concurrent-financial profile (many clients, few accounts) at the engineering workload and at the

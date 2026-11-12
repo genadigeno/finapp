@@ -238,9 +238,10 @@ public class MerchantPayoutBeans {
     MerchantPayoutResolutionSchedule merchantPayoutResolutionSchedule(
             MerchantPayoutResolution merchantPayoutResolution,
             com.finapp.app.telemetry.MerchantMeters merchantMeters,
-            @Value("${finapp.merchant.payout.sweeper.poll-interval:PT30S}") Duration pollInterval) {
+            @Value("${finapp.merchant.payout.sweeper.poll-interval:PT30S}") Duration pollInterval,
+            com.finapp.app.telemetry.SweepMeters sweepMeters) {
         return new MerchantPayoutResolutionSchedule(
-                merchantPayoutResolution, merchantMeters, pollInterval);
+                merchantPayoutResolution, merchantMeters, pollInterval, sweepMeters.payouts());
     }
 
     /** The payout return fact's store (`P8-TSK-019`, merchant `V008`). */

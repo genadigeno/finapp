@@ -34,14 +34,15 @@ class PaymentSweeperScheduleTest {
                         throw new IllegalStateException("an expiry tick failed");
                     }
                     return new com.finapp.payments.HeldPayments.ExpiryTally(1, 1, 0);
-                }, Duration.ofMillis(50));
+                }, Duration.ofMillis(50), com.finapp.app.telemetry.SweepMeters.Sweep.NONE);
         schedule.start();
         try {
             await().atMost(Duration.ofSeconds(5)).until(() -> expiries.get() >= 3 && ticks.get() >= 3);
         } finally {
             schedule.stop();
         }
-        assertThatThrownBy(() -> new PaymentSweeperSchedule(ticking(ticks, false), null, Duration.ofMillis(50)))
+        assertThatThrownBy(() -> new PaymentSweeperSchedule(ticking(ticks, false), null, Duration.ofMillis(50),
+                com.finapp.app.telemetry.SweepMeters.Sweep.NONE))
                 .as("the deadline is required: a composition cannot drop it").isInstanceOf(NullPointerException.class);
     }
 
@@ -50,7 +51,8 @@ class PaymentSweeperScheduleTest {
     void ticksInvokeTheSweeper() {
         AtomicInteger ticks = new AtomicInteger();
         PaymentSweeperSchedule schedule =
-                new PaymentSweeperSchedule(ticking(ticks, false), NO_HOLDS, Duration.ofMillis(50));
+                new PaymentSweeperSchedule(ticking(ticks, false), NO_HOLDS, Duration.ofMillis(50),
+                        com.finapp.app.telemetry.SweepMeters.Sweep.NONE);
         schedule.start();
         try {
             assertThat(schedule.isRunning()).isTrue();
@@ -68,7 +70,8 @@ class PaymentSweeperScheduleTest {
     void aThrowingTickDoesNotKillTheSchedule() {
         AtomicInteger ticks = new AtomicInteger();
         PaymentSweeperSchedule schedule =
-                new PaymentSweeperSchedule(ticking(ticks, true), NO_HOLDS, Duration.ofMillis(50));
+                new PaymentSweeperSchedule(ticking(ticks, true), NO_HOLDS, Duration.ofMillis(50),
+                        com.finapp.app.telemetry.SweepMeters.Sweep.NONE);
         schedule.start();
         try {
             await().atMost(Duration.ofSeconds(5)).until(() -> ticks.get() >= 3);
@@ -82,13 +85,86 @@ class PaymentSweeperScheduleTest {
     void aNonPositiveIntervalIsRefused() {
         AtomicInteger ticks = new AtomicInteger();
         assertThatThrownBy(
-                        () -> new PaymentSweeperSchedule(ticking(ticks, false), NO_HOLDS, Duration.ZERO))
+                        () -> new PaymentSweeperSchedule(ticking(ticks, false), NO_HOLDS, Duration.ZERO,
+                                com.finapp.app.telemetry.SweepMeters.Sweep.NONE))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
                         () ->
                                 new PaymentSweeperSchedule(
-                                        ticking(ticks, false), NO_HOLDS, Duration.ofMillis(-1)))
+                                        ticking(ticks, false), NO_HOLDS, Duration.ofMillis(-1),
+                                        com.finapp.app.telemetry.SweepMeters.Sweep.NONE))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /**
+     * `P16-TSK-017` ({@code THREAT_MODEL.md} section 6 item 42 (i); runbook §11.39 (a) and (b)): the REAL card sweep over a
+     * scripted connection. An attempt whose id no domain writer could mint sits at the head of the listing, a readable one
+     * behind it whose provider question throws. Before this task the first threw in the listing and the whole tick failed, on
+     * every instance, every tick: the row behind it, the stranded leg and the refund leg were never reached.
+     */
+    @Test
+    @DisplayName("a corrupt id at the card sweep's head is skipped and recorded, never judged; the row behind it is reached and its"
+            + " failure recorded; the stranded and refund legs run; the schedule counts both rows and no failed tick (P16-TSK-017)")
+    void aPoisonedHeadNeverStallsTheCardSweep() {
+        com.finapp.sharedkernel.id.IdGenerator ids = ids();
+        java.util.UUID corrupt = com.finapp.platform.testing.ScriptedListingConnection.versionFour();
+        java.util.UUID behind = ids.next();
+        java.time.Instant now = java.time.Instant.parse("2026-11-13T10:00:00Z");
+        com.finapp.platform.testing.ScriptedListingConnection jdbc =
+                new com.finapp.platform.testing.ScriptedListingConnection(now)
+                        .answering("f.leg = 'CARD_ATTEMPT'", java.util.List.of(
+                                com.finapp.platform.testing.ScriptedListingConnection.row("id", corrupt),
+                                com.finapp.platform.testing.ScriptedListingConnection.row(
+                                        "id", behind,
+                                        "intent_id", ids.next(),
+                                        "rail", "card",
+                                        "interaction_model", "TWO_STEP",
+                                        "auth_reference", "auth-behind-the-poisoned-row",
+                                        "status", "AUTH_DISPATCHED",
+                                        "created_at", java.sql.Timestamp.from(now.minus(Duration.ofHours(1))))));
+        com.finapp.payments.TransactionRunner runner = new com.finapp.payments.TransactionRunner() {
+            @Override
+            public <R> R inTransaction(java.util.function.Function<java.sql.Connection, R> work) {
+                return work.apply(jdbc.connection());
+            }
+        };
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        PaymentSweeperSchedule schedule = new PaymentSweeperSchedule(
+                sweeper(runner, Duration.ofMinutes(10), Duration.ofMinutes(1)), NO_HOLDS, Duration.ofSeconds(30),
+                new com.finapp.app.telemetry.SweepMeters(registry)
+                        .payments(com.finapp.app.telemetry.SweepMeters.PaymentSweep.CARD));
+        schedule.sweepQuietly();
+
+        java.util.List<com.finapp.platform.testing.ScriptedListingConnection.Sent> recorded =
+                jdbc.sentContaining("INSERT INTO payments.sweep_row_failure");
+        assertThat(recorded).as("the unread row first, then the row behind it, each under the attempt leg").hasSize(2);
+        assertThat(recorded.get(0).parameters()).containsEntry(1, "CARD_ATTEMPT").containsEntry(2, corrupt)
+                .containsEntry(4, "UnreadableRow");
+        assertThat(recorded.get(1).parameters()).containsEntry(1, "CARD_ATTEMPT").containsEntry(2, behind)
+                .containsEntry(4, "UnsupportedOperationException");
+        assertThat(jdbc.sentContaining("f.leg = 'CARD_STRANDED'")).as("the stranded leg ran").hasSize(1);
+        assertThat(jdbc.sentContaining("f.leg = 'CARD_REFUND'")).as("the refund leg ran").hasSize(1);
+        assertThat(jdbc.sentContaining("UPDATE payments.payment_attempt")).as("nothing judged").isEmpty();
+        assertThat(registry.get("finapp.payments.sweep.row.unreadable").tag("leg", "card").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("finapp.payments.sweep.row.failed").tag("leg", "card").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("finapp.payments.sweep.tick.failed").tag("leg", "card").counter().count())
+                .as("the tick ended: nothing pages as a stalled sweep").isZero();
+    }
+
+    @Test
+    @DisplayName("a tick that fails whole is counted where its WARN line is written - item 42 (i) (i)'s meter (P16-TSK-017)")
+    void aFailedTickIsCounted() {
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        com.finapp.app.telemetry.SweepMeters meters = new com.finapp.app.telemetry.SweepMeters(registry);
+        new PaymentSweeperSchedule(ticking(new AtomicInteger(), true), NO_HOLDS, Duration.ofSeconds(30),
+                meters.payments(com.finapp.app.telemetry.SweepMeters.PaymentSweep.CARD)).sweepQuietly();
+        assertThat(registry.get("finapp.payments.sweep.tick.failed").tag("leg", "card").counter().count()).isEqualTo(1.0);
+        new PaymentSweeperSchedule(ticking(new AtomicInteger(), false), NO_HOLDS, Duration.ofSeconds(30),
+                meters.payments(com.finapp.app.telemetry.SweepMeters.PaymentSweep.CARD)).sweepQuietly();
+        assertThat(registry.get("finapp.payments.sweep.tick.failed").tag("leg", "card").counter().count())
+                .as("a tick that ends counts nothing").isEqualTo(1.0);
     }
 
     /**
@@ -144,7 +220,7 @@ class PaymentSweeperScheduleTest {
                             throw new IllegalStateException("tick made to fail");
                         }
                         @SuppressWarnings("unchecked")
-                        R empty = (R) java.util.List.of();
+                        R empty = (R) com.finapp.platform.persistence.SweepListing.of(java.util.List.of());
                         return empty;
                     }
                 };

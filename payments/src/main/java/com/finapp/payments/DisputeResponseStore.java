@@ -1,5 +1,6 @@
 package com.finapp.payments;
 
+import com.finapp.platform.persistence.SweepListing;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -61,9 +62,19 @@ public interface DisputeResponseStore<T> {
      * What the resolution sweep may look at: {@code DISPATCHED} responses whose latest permit is
      * older than {@code dispatchedBefore} (a flight that crashed between its dispatch and its
      * outcome) and {@code UNKNOWN} ones older than {@code unknownBefore}, oldest first.
+     *
+     * <p>Since `P16-TSK-017` a row whose {@link SweepLeg#DISPUTE_ANSWER} retry is still ahead on the
+     * database's clock is left out, and a row that cannot be read is skipped and reported by its id.
      */
-    List<DisputeResponse> findSweepable(
+    SweepListing<DisputeResponse> findSweepable(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
+
+    /**
+     * Records one failure of {@code response} in the {@link SweepLeg#DISPUTE_ANSWER} listing and backs
+     * the row off on the database's clock (`P16-TSK-017`; {@link PaymentAttemptStore#recordSweepFailure}'s
+     * rule): true when this call counted it.
+     */
+    boolean recordSweepFailure(T unitOfWork, java.util.UUID response, String failure);
 
     /**
      * How many dispute answers wait past their due for the PSP's word, and how long the oldest

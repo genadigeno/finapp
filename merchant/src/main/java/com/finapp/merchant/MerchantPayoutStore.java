@@ -1,5 +1,6 @@
 package com.finapp.merchant;
 
+import com.finapp.platform.persistence.SweepListing;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -77,8 +78,21 @@ public interface MerchantPayoutStore<T> {
      */
     List<MerchantPayout> pageCompleted(T unitOfWork, java.util.UUID after, int limit);
 
-    List<MerchantPayout> findSweepable(
+    /**
+     * The payouts the resolution sweep asks about; since `P16-TSK-017` a payout whose failure record's
+     * retry is still ahead on the database's clock is left out, and a row that cannot be read is
+     * skipped and reported by its id ({@link SweepListing}).
+     */
+    SweepListing<MerchantPayout> findSweepable(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
+
+    /**
+     * Records one failure of {@code payout} in the sweep's listing ({@code merchant.sweep_row_failure},
+     * leg {@code PAYOUT}) and backs the row off on the database's clock (`P16-TSK-017`): true when this
+     * call counted it, false while the row's backoff still runs, so ten instances failing one row
+     * count once. {@code failure} is a class name, nothing else ({@code INV-AUD-02}).
+     */
+    boolean recordSweepFailure(T unitOfWork, java.util.UUID payout, String failure);
 
     /**
      * The stuck-payout gauges' one reading (`P6-TSK-013`): the payouts the platform has no answer

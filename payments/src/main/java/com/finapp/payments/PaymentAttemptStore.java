@@ -1,5 +1,6 @@
 package com.finapp.payments;
 
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.security.Sensitive;
@@ -47,8 +48,12 @@ public interface PaymentAttemptStore<T> {
      * {@code *_UNKNOWN} past {@code unknownBefore}. Bounded ({@code limit}) and oldest first,
      * the relay's batching posture. Stale answers are harmless: every resolution re-reads and
      * applies conditionally.
+     *
+     * <p>Since `P16-TSK-017`: a row whose {@link SweepLeg#CARD_ATTEMPT} failure record's retry is
+     * still ahead on the database's clock is left out, and a row that cannot be read is skipped
+     * and reported by its id rather than failing the listing ({@link SweepListing}).
      */
-    List<PaymentAttempt> findSweepable(
+    SweepListing<PaymentAttempt> findSweepable(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
 
     /**
@@ -60,9 +65,20 @@ public interface PaymentAttemptStore<T> {
      * instance crashed between its commit and the chain, rested in {@code AUTHORIZED} with no
      * resolver and no gauge until the customer happened to retry. The sweep now chains these
      * captures ({@link PaymentCapture}, which converges), and the gauge counts them.
+     *
+     * <p>Backed off and skipped as {@link #findSweepable} is, in {@link SweepLeg#CARD_STRANDED}.
      */
-    List<PaymentAttempt> findStrandedAuthorizations(
+    SweepListing<PaymentAttempt> findStrandedAuthorizations(
             T unitOfWork, Instant authorizedBefore, int limit);
+
+    /**
+     * Records one failure of {@code attempt} in {@code leg}'s listing - {@link SweepLeg#CARD_ATTEMPT},
+     * {@link SweepLeg#CARD_STRANDED} or {@link SweepLeg#PAY_IN}, the three this store lists - and
+     * backs the row off on the database's clock (`P16-TSK-017`). True when this call counted it,
+     * false when the row's backoff was still running: ten instances failing one row count once.
+     * {@code failure} is a class name, nothing else ({@code INV-AUD-02}).
+     */
+    boolean recordSweepFailure(T unitOfWork, SweepLeg leg, java.util.UUID attempt, String failure);
 
     /**
      * How many attempts are stuck right now, and how long the oldest has waited (`P5-TSK-017`,
@@ -237,7 +253,8 @@ public interface PaymentAttemptStore<T> {
     List<PaymentAttempt> pageByStatus(
             T unitOfWork, PaymentAttemptStatus status, java.util.UUID after, int limit);
 
-    List<PaymentAttempt> findResolvableInitiations(
+    /** Backed off and skipped as {@link #findSweepable} is, in {@link SweepLeg#PAY_IN} (`P16-TSK-017`). */
+    SweepListing<PaymentAttempt> findResolvableInitiations(
             T unitOfWork, Instant contactedBefore, int limit);
 
     /**

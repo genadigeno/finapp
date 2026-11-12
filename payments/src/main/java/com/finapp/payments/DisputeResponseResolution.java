@@ -2,6 +2,8 @@ package com.finapp.payments;
 
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.persistence.DatabaseTime;
+import com.finapp.platform.persistence.SweepBackoff;
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -13,6 +15,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -84,8 +87,12 @@ public final class DisputeResponseResolution {
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
     }
 
-    /** One tick's tally — telemetry, never the count of record ({@code PaymentSweeper}'s rule). */
-    public record SweepResult(int candidates, int applied, int skipped) {}
+    /**
+     * One tick's tally — telemetry, never the count of record ({@code PaymentSweeper}'s rule):
+     * {@code failedRows} threw, {@code unreadable} could not be read and were skipped, each
+     * recorded and backed off, never concluded (`P16-TSK-017`).
+     */
+    public record SweepResult(int candidates, int applied, int skipped, int failedRows, int unreadable) {}
 
     /** A re-send's facts, read under the renewed permit. */
     private record Resend(
@@ -94,7 +101,7 @@ public final class DisputeResponseResolution {
     @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
     public SweepResult sweep() {
         Instant now = Instant.now(clock);
-        List<DisputeResponse> candidates =
+        SweepListing<DisputeResponse> listed =
                 transactions.inTransaction(
                         uow ->
                                 responses.findSweepable(
@@ -103,8 +110,17 @@ public final class DisputeResponseResolution {
                                         DatabaseTime.now(uow).minus(config.dispatchedAge()),
                                         now.minus(config.unknownAge()),
                                         config.batchSize()));
+        List<DisputeResponse> candidates = listed.candidates();
+        for (UUID row : listed.unreadable()) {
+            log.warn(
+                    "A dispute answer sweep candidate {} could not be read: skipped and counted,"
+                            + " never judged, and listed again after its backoff",
+                    row);
+            recordFailure(row, SweepBackoff.UNREADABLE);
+        }
         int applied = 0;
         int skipped = 0;
+        int failedRows = 0;
         for (DisputeResponse candidate : candidates) {
             // Per-row containment: one candidate's failure never starves the rest.
             try (SecurityContext.Scope platform = SecurityContext.enterSystem();
@@ -118,13 +134,31 @@ public final class DisputeResponseResolution {
                 }
             } catch (RuntimeException oneRowFailed) {
                 // Identifier and failure class only - never PSP bytes (INV-AUD-02).
+                failedRows++;
                 log.warn(
                         "dispute response sweep could not resolve response {}: {}",
                         candidate.id(),
                         oneRowFailed.getClass().getSimpleName());
+                recordFailure(candidate.id().value(), SweepBackoff.failureClass(oneRowFailed));
             }
         }
-        return new SweepResult(candidates.size(), applied, skipped);
+        return new SweepResult(candidates.size(), applied, skipped, failedRows, listed.unreadable().size());
+    }
+
+    /**
+     * Records the failure in its own transaction (the row's own rolled back), and contains a
+     * failure to record it: the row is then retried on the next tick, and the rest still reached.
+     */
+    private void recordFailure(UUID row, String failure) {
+        try {
+            transactions.inTransaction(uow -> responses.recordSweepFailure(uow, row, failure));
+        } catch (RuntimeException notRecorded) {
+            log.warn(
+                    "The dispute answer sweep could not record row {}'s failure ({}); the next tick"
+                            + " retries the row",
+                    row,
+                    SweepBackoff.failureClass(notRecorded));
+        }
     }
 
     /** One row's wire call(s) and outcome transaction; true when its conditional acted. */

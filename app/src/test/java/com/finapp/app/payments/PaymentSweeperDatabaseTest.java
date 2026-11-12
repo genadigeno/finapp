@@ -670,6 +670,94 @@ class PaymentSweeperDatabaseTest {
                 .isZero();
     }
 
+    /**
+     * `P16-TSK-017` on PostgreSQL (written, owed to PI-023's pass under C2): a v4 attempt at the stranded leg's head is skipped
+     * and reported and the row behind it listed; ten instances failing that row at once count one failure; the listing leaves it
+     * out until its retry, judged on the database's clock, which doubles at the next failure. The planted row and both records
+     * are removed by the superuser at the end - the plant's teardown, never a procedure - so no later suite's sweep meets them.
+     */
+    @Test
+    @DisplayName("a v4 attempt is skipped and reported, the row behind it listed; ten recorders count one failure; the row is left"
+            + " out until its retry, which doubles (P16-TSK-017)")
+    void aPoisonedRowIsSkippedCountedOnceAndBackedOff() throws Exception {
+        UUID corrupt = UUID.randomUUID();
+        assertThat(corrupt.version()).as("a raw writer's id").isEqualTo(4);
+        UUID healthy = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            seedAgedAuthorized(app, corrupt, "AUTOMATIC");
+            seedAgedAuthorized(app, healthy, "AUTOMATIC");
+        }
+        try {
+            com.finapp.platform.persistence.SweepListing<PaymentAttempt> listed = stranded();
+            assertThat(listed.unreadable()).contains(corrupt);
+            assertThat(listed.candidates()).extracting(attempt -> attempt.id().value()).contains(healthy).doesNotContain(corrupt);
+
+            ExecutorService pool = Executors.newFixedThreadPool(10);
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<Boolean>> recorders = new java.util.ArrayList<>();
+            try {
+                for (int instance = 0; instance < 10; instance++) {
+                    recorders.add(pool.submit(() -> {
+                        try (Connection app = DatabaseRoles.application()) {
+                            start.await();
+                            return attempts.recordSweepFailure(
+                                    app, com.finapp.payments.SweepLeg.CARD_STRANDED, healthy, "IllegalStateException");
+                        }
+                    }));
+                }
+                start.countDown();
+                long counted = 0;
+                for (Future<Boolean> recorder : recorders) {
+                    counted += recorder.get(120, java.util.concurrent.TimeUnit.SECONDS) ? 1 : 0;
+                }
+                assertThat(counted).as("one failure per window, not ten").isEqualTo(1);
+            } finally {
+                pool.shutdownNow();
+            }
+            assertThat(failureOf(healthy)).containsExactly(1L, SECONDS_OF_BASE);
+            assertThat(stranded().candidates()).extracting(attempt -> attempt.id().value())
+                    .as("left out while its retry is ahead on the database's clock").doesNotContain(healthy);
+
+            try (Connection app = DatabaseRoles.application()) {
+                execute(app, "UPDATE payments.sweep_row_failure SET first_failed_at = first_failed_at - interval '5 minutes',"
+                        + " last_failed_at = last_failed_at - interval '5 minutes', retry_at = retry_at - interval '5 minutes'"
+                        + " WHERE leg = 'CARD_STRANDED' AND row_id = ?", healthy);
+                assertThat(stranded().candidates()).extracting(attempt -> attempt.id().value())
+                        .as("listed again once its retry is due").contains(healthy);
+                assertThat(attempts.recordSweepFailure(app, com.finapp.payments.SweepLeg.CARD_STRANDED, healthy,
+                        "IllegalStateException")).isTrue();
+            }
+            assertThat(failureOf(healthy)).containsExactly(2L, 2 * SECONDS_OF_BASE);
+        } finally {
+            try (Connection root = DatabaseRoles.bootstrap()) {
+                execute(root, "DELETE FROM payments.sweep_row_failure WHERE row_id = ? OR row_id = ?", healthy, corrupt);
+                execute(root, "DELETE FROM payments.payment_attempt WHERE id = ?", corrupt);
+            }
+        }
+    }
+
+    private static final long SECONDS_OF_BASE = com.finapp.platform.persistence.SweepBackoff.BASE.toSeconds();
+
+    private com.finapp.platform.persistence.SweepListing<PaymentAttempt> stranded() throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            return attempts.findStrandedAuthorizations(app, Instant.now(CLOCK), 2_000);
+        }
+    }
+
+    /** The record's count and its wait in whole seconds, as the database computed them. */
+    private static List<Long> failureOf(UUID row) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(
+                        "SELECT failures, round(EXTRACT(EPOCH FROM retry_at - last_failed_at))::bigint"
+                                + " FROM payments.sweep_row_failure WHERE leg = 'CARD_STRANDED' AND row_id = ?")) {
+            read.setObject(1, row);
+            try (ResultSet found = read.executeQuery()) {
+                assertThat(found.next()).as("a record for the row").isTrue();
+                return List.of(found.getLong(1), found.getLong(2));
+            }
+        }
+    }
+
     // -----------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------

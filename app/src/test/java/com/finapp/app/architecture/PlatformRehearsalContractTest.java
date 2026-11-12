@@ -252,6 +252,22 @@ class PlatformRehearsalContractTest {
     }
 
     @Test
+    @DisplayName("a corrupt id at the card sweep's head is skipped and paged, never judged, no tick fails whole, and its row and"
+            + " record are removed as the plant's teardown (P16-TSK-017, runbook 11.39 (a))")
+    void aCorruptIdAtTheSweepsHeadIsSkippedAndPaged() {
+        String step = function("incidents_poisoned_rows");
+        assertThat(step).contains("'id', '$POISON', 'status', 'CAPTURE_DISPATCHED'")
+                .contains("fires PaymentSweepRowUnreadable placeholder-page 600")
+                .contains("FROM payments.sweep_row_failure WHERE leg = 'CARD_ATTEMPT' AND row_id = '$POISON'")
+                .contains("[ \"$status\" = CAPTURE_DISPATCHED ] || fail")
+                .contains("grep -q 'Payment sweep failed'").contains("[ \"$stalled\" = 0 ] || fail")
+                .contains("[ \"$(alert_state PaymentSweepFailing)\" = none ] || fail")
+                .contains("DELETE FROM payments.sweep_row_failure WHERE row_id = '$POISON';")
+                .contains("census poisoned-rows")
+                .doesNotContain("sleep 240");
+    }
+
+    @Test
     @DisplayName("the raw writes to the books are found by their own pages, triaged read-only, and removed as the plant's teardown,"
             + " never as a procedure; the census is whole after")
     void theRawWritesAreFoundByTheirPagesAndRemovedAsTeardown() {

@@ -2944,9 +2944,9 @@ The lead may move the severity up or down at any time, and the record says when,
 
 | Severity | The question | For example |
 |---|---|---|
-| `SEV-1` | Is the financial record in doubt, is money moving the wrong way, or is a credential or key in someone else's hands? | A correctness page that says the record disagrees with itself: `LedgerTrialBalanceNonZero`, `GlNotEqualLedger`, `LedgerProjectionDrift`, a failing product or FX proof (`docs/architecture/SLOS.md` §3), `JournalEntryUnsourced` reading `UNSOURCED`; `OperatorPasswordProvenOnPublic` no rollout explains (§11.37); a webhook key read as compromised ("Provider callbacks are hints"); a restricted value found in telemetry (§11.34); a corrupt id a raw writer left (§11.39); any restore being considered |
-| `SEV-2` | Is a money-moving flow stopped or failing for customers, or is the platform blind to its own correctness, with the record itself not in doubt? | A fast burn on a request objective (§11.8); `PaymentUnknownAged`, `WithdrawalUnknownAged`, `MerchantPayoutUnknownAged` (§11.22); a sweep stalled on every instance (§11.39); a broker outage past what the outbox absorbs unnoticed (§11.6); `GaugesStaleAcrossTheFleet`, `CorrectnessUnverifiable` (§11.27, §11.20); `FinappTargetsAbsent` nobody ordered (§11.8); a database failover (§11.40) |
-| `SEV-3` | Is the platform degraded with a way round, money safe and moving? | `InstanceDown` with the others serving; one row failing every tick (§11.39); a slow burn; a parked or poison record (§11.6) |
+| `SEV-1` | Is the financial record in doubt, is money moving the wrong way, or is a credential or key in someone else's hands? | A correctness page that says the record disagrees with itself: `LedgerTrialBalanceNonZero`, `GlNotEqualLedger`, `LedgerProjectionDrift`, a failing product or FX proof (`docs/architecture/SLOS.md` §3), `JournalEntryUnsourced` reading `UNSOURCED`; `OperatorPasswordProvenOnPublic` no rollout explains (§11.37); a webhook key read as compromised ("Provider callbacks are hints"); a restricted value found in telemetry (§11.34); a corrupt id a raw writer left (`PaymentSweepRowUnreadable`, `MerchantPayoutSweepRowUnreadable`, §11.39); any restore being considered |
+| `SEV-2` | Is a money-moving flow stopped or failing for customers, or is the platform blind to its own correctness, with the record itself not in doubt? | A fast burn on a request objective (§11.8); `PaymentUnknownAged`, `WithdrawalUnknownAged`, `MerchantPayoutUnknownAged` (§11.22); a sweep stalled on every instance (`PaymentSweepFailing`, `MerchantPayoutSweepFailing`, §11.39); a broker outage past what the outbox absorbs unnoticed (§11.6); `GaugesStaleAcrossTheFleet`, `CorrectnessUnverifiable` (§11.27, §11.20); `FinappTargetsAbsent` nobody ordered (§11.8); a database failover (§11.40) |
+| `SEV-3` | Is the platform degraded with a way round, money safe and moving? | `InstanceDown` with the others serving; one row failing every tick (`PaymentSweepRowFailing`, `MerchantPayoutSweepRowFailing`, `RematchResidualFaulting`, §11.39); a slow burn; a parked or poison record (§11.6) |
 
 **Roles.** Named in the record when the incident is declared. One person may hold two at `SEV-3`; at `SEV-1` the lead holds no
 other, and never may one person both hold a break-glass session and approve it, or run a restore and approve it.
@@ -3276,87 +3276,102 @@ latest; the run, as its record names it.
 
 A step held for a run above and not run is PI-024's: its row changes when that item's runs are made.
 
-### 11.39 A row that fails every tick: a corrupt id that stalls a sweep, a row at a sweep's head, a rematch residual (`P15-TSK-032`)
+### 11.39 A row that fails every tick: a corrupt id at a sweep's head, a row that keeps failing, a rematch residual (`P15-TSK-032`; `P16-TSK-017`)
 
-*(Written by `P15-TSK-032`, 2026-11-12, from the sweeps' code and three rows of `CURRENT_STATE.md`'s debt whose code change is
-Phase 16's (C15): the skip-and-count at listing, a failure count or a backoff column, a durable exclusion. Nothing here repairs a
-row by an edit: the way out is a release, or the cause fixed. Its rehearsal is recorded below once run.)*
+*(Written by `P15-TSK-032`, 2026-11-12, from the sweeps' code and three rows of `CURRENT_STATE.md`'s debt; rewritten by
+`P16-TSK-017`, 2026-11-13, when those rows' code change was built: each listing skips and records a row it cannot read, a row
+that fails is backed off, a rematch residual that faults gains a bounded exclusion, and each is metered and alerted. Nothing here
+repairs a row by an edit: the way out is a release, or the cause fixed.)*
 
-**Why each is an incident.** No door writes such a row. `EntityId` refuses an id that is not a UUIDv7 when it is minted, and
-every store insert goes through it (ADR-0013), so a corrupt id is a raw writer's: the migrator's credential, or a person's SQL.
-That is §11.12's `SEV-1`, and the source-join census (§11.27) and the audit trail are read for whatever else that writer did. A
-row that fails for a reason of its own (a provider's answer the adapter cannot read, a row it depends on gone) is a defect or a
-provider's change: `SEV-3` while every other row is still reached, `SEV-2` once a whole sweep stops.
+**What the sweeps do now.** The card sweep (its attempt, stranded-authorization and refund listings), the withdrawal, dispute
+answer, return and pay-in initiation sweeps, and the payout sweep each read their candidates oldest first, and each:
+
+- **skips a row its listing cannot read** (a typed id refusing a value, an unknown status, a required column missing), keeps its
+  raw id, logs `A <LEG> sweep candidate <id> could not be read: skipped and counted, never judged, and listed again after its
+  backoff`, and goes on to every other row. A store failure (a lost connection) is never read as such a row: it fails the tick;
+- **records a row that failed or could not be read** in `payments.sweep_row_failure` or `merchant.sweep_row_failure` (one row per
+  listing and swept row: its consecutive `failures`, `retry_at`, and `last_failure`, the failure's class name only), and the
+  listing leaves the row out until `retry_at`, judged on the database's clock: 1 minute after the first failure, doubling, at most
+  10 minutes, so a row that recovers is listed again within 10.5 minutes, inside `PaymentUnknownAged`'s 15. Ten instances failing
+  one row in one tick count one failure: the record's own conditional is the arbiter. A failure more than 20 minutes after the
+  last starts the count again;
+- **never concludes either row**: it stays `*_DISPATCHED` or `*_UNKNOWN`, its money where its last concluded state left it.
+
+The leg names are the table's: `CARD_ATTEMPT`, `CARD_STRANDED`, `CARD_REFUND`, `RETURN`, `WITHDRAWAL`, `DISPUTE_ANSWER`,
+`PAY_IN`, and `PAYOUT` in `merchant`. Each schedule counts its tick's tally: `finapp.payments.sweep.tick.failed`,
+`.row.unreadable` and `.row.failed` by `leg` (`card`, `withdrawal`, `dispute_answer`, `return`, `pay_in`), and the same three
+under `finapp.merchant.payout.sweep.`. No page names a row (ADR-0072); the row's id is in the WARN line and in the record.
 
 **Finding the row in a read-only session.** In a deployed environment no person yet has a session that reaches the database
-(`THREAT_MODEL.md` §6 item 31(e)); the reads below are the rehearsal's until one does. A UUID's version is its fifteenth
-character as text, so a corrupt id is `substr(id::text, 15, 1) <> '7'`: a full read of the table, run once.
+(`THREAT_MODEL.md` §6 item 31(e)); the reads below are the rehearsal's until one does.
+`SELECT leg, row_id, failures, first_failed_at, retry_at, last_failure FROM payments.sweep_row_failure WHERE retry_at > now() -
+interval '30 minutes' ORDER BY last_failed_at DESC` (and the same in `merchant`) names every row failing now. A UUID's version is
+its fifteenth character as text: `substr(row_id::text, 15, 1) <> '7'` is a raw writer's id.
 
-#### (a) A corrupt id stalls a whole sweep
+#### (a) A corrupt id at a sweep's head
 
-The card sweep lists its candidates by rehydrating their typed ids before its per-row containment starts, so one
-`payments.payment_attempt.id` that is not a UUIDv7, on a row the sweep would take (dispatched or unknown past its bound), throws
-in the listing: the whole tick fails, **on every instance, every
-tick**, and no candidate is reached. The same holds for the withdrawal, dispute-answer, return and pay-in initiation sweeps,
-for risk's monitoring sweep (a customer account whose ledger `owner_ref` is not a v7 rolls back each batch with its watermark)
-and for the rescreening enumeration (one party). One door fails the same way: the opening position,
-`POST /v1/operator/reconciliation/opening-position`, walks the payout returns and answers `500` on a corrupt `journal_entry_id`
-among them, every time it is asked.
+No door writes such a row: `EntityId` refuses an id that is not a UUIDv7 when it is minted, and every store insert goes through
+it (ADR-0013). A corrupt id is a raw writer's: the migrator's credential, or a person's SQL. That is §11.12's `SEV-1`, and the
+source-join census (§11.27) and the audit trail are read for whatever else that writer did.
 
-- *What on-call sees*: the schedule's own WARN line every tick on every replica, the failure's class and no identifier, for the
-  card sweep `Payment sweep failed: <class>`. The flow's alert follows only if something else is waiting:
-  `PaymentUnknownAged` reads `finapp_payments_unknown_age`, which counts `*_UNKNOWN` operations alone, so **a corrupt
-  `*_DISPATCHED` row with nothing else unknown pages nothing, and the WARN line is the only signal**; an attempt that turns
-  `*_UNKNOWN` meanwhile (a provider timing out on a request) is left unresolved and raises the page after 15 minutes. Likewise `WithdrawalUnknownAged` (§11.22), `RiskMonitoringLagging`,
-  `RiskRescreeningFailing` (§9).
-- *What is delayed and what is not lost*: nothing in that sweep concludes while it lasts. An attempt stays `*_DISPATCHED` or
-  `*_UNKNOWN`, nothing posts for it, and the customer's money stays where its last concluded state left it (a hold stays a hold).
-  The provider's answers wait at the provider and in its settlement files; the platform has misjudged nothing, it is late.
-- *The way out is a release.* The listing that skips and counts an unrehydratable row is Phase 16's change (C15); under the
-  incident it may be brought forward as a reviewed fix, and it is the only thing that restores the sweep while the row stands.
-  The row itself is the evidence of the raw write: no procedure edits, deletes or re-keys it. What it describes stays
-  unconcluded until the incident decides, and settlement reconciliation is the backstop for whatever the provider did with it,
-  as for any outcome the platform never concluded.
+- *What on-call sees*: `PaymentSweepRowUnreadable` (by `leg`) or `MerchantPayoutSweepRowUnreadable` pages within about two
+  minutes of the first skip (a tick, a scrape and its one-minute `for`), and stays firing while the row stands, read again at each
+  backoff; the WARN line on whichever replica read it, with the id. `PaymentSweepFailing` stays silent: the sweep is not stalled.
+- *What is delayed and what is not lost*: only that row, which waits unconcluded, as before; every other row is reached. A raw
+  writer who corrupted many rows fills no batch for long: each is recorded and left out until its retry, and the healthy rows
+  behind are listed.
+- *The way out*: the incident. The row is the evidence of the raw write: no procedure edits, deletes or re-keys it, and the record
+  is not an edit of it. What it describes stays unconcluded until the incident decides; settlement reconciliation is the backstop
+  for whatever the provider did with it, as for any outcome the platform never concluded.
+- *Outside these sweeps*: risk's monitoring sweep (one journal entry whose customer account's `owner_ref` is not a v7 rolls back
+  each batch with its watermark), the rescreening enumeration (one party) and the opening position
+  (`POST /v1/operator/reconciliation/opening-position`, `500` on a corrupt `journal_entry_id` among the payout returns) still fail
+  closed: a total that skipped a row would misstate the position, and monitoring that skipped one movement would skip exactly the
+  one a raw writer touched. `RiskMonitoringLagging` and `RiskRescreeningFailing` (§9) page for the first two; the third answers its
+  operator. Whether to change that is `THREAT_MODEL.md` §6 item 51's.
 
-#### (b) A row that fails every tick at a sweep's head
+#### (b) A row that keeps failing, and a sweep that fails whole
 
-The payments and payout sweeps, and the withdrawal, pay-in initiation, return and dispute-answer sweeps, take the oldest
-candidates first, contain each row in its own transaction, log a failing one and go on. A row that fails every tick stays oldest
-and takes one slot of every batch.
+A row that fails for a reason of its own (a provider's answer the adapter cannot read, a row it depends on gone, a defect) is
+logged with its id and class, recorded and backed off; every other row is reached. `SEV-3` while every other row is reached.
 
-- *What on-call sees*: the row's line every tick, its identifier and the failure's class, on whichever replica's batch held it
-  (no lease: the replicas race, so the same row appears in the logs of every replica that took it): `Sweeping attempt <id>
-  failed with <class>; the sweep continues and the next tick will retry this row`, `Resolving payout <id> failed with <class>;
-  ...`, `withdrawal sweep could not resolve <id>: <class>`; and the tick's tally counting it among `failed` (`Payment sweep: <n>
-  candidates, ... <k> failed, ...`).
-- *What is delayed and what is not lost*: one batch slot per tick; every other row is still reached. Many rows failing at once
-  is a release or a provider, not a row: §11.8's "check a deploy first".
-- *The way out*: read the row and its evidence by the identifier in the line; the class says which cause. A provider's answer
-  the adapter cannot read: fix the adapter ("Provider callbacks are hints" reads the same case). A row it depends on gone: (a)'s
-  incident. A defect: fix it forward. The next tick takes the row. Never conclude it by hand (§11.22): its sweep, or its own
-  door, is the only path.
+- *What on-call sees*: the row's line at each retry (`Sweeping attempt <id> failed with <class>; the sweep continues and the row is
+  retried after its backoff`, `Resolving payout <id> failed with <class>; ...`, `withdrawal sweep could not resolve <id>: <class>`),
+  the tick's tally (`... <k> failed, <u> unreadable ...`), and, after an hour of failures, `PaymentSweepRowFailing` (by `leg`) or
+  `MerchantPayoutSweepRowFailing`, a ticket. Many rows failing at once is a release or a provider, not a row: §11.8's "check a
+  deploy first". If the flow's own unknown-age page fires meanwhile (§11.22), the row is also unknown and waiting.
+- *The way out*: read the row and its evidence by the identifier in the line, and its record; the class says which cause. A
+  provider's answer the adapter cannot read: fix the adapter ("Provider callbacks are hints" reads the same case). A row it depends
+  on gone: (a)'s incident. A defect: fix it forward; the row is listed again within its backoff, at most ten minutes. Never
+  conclude it by hand (§11.22): its sweep, or its own door, is the only path.
+
+A tick that fails whole (the database unreachable, a defect in the listing itself) reaches nothing in that sweep: the schedule's
+WARN line (`Payment sweep failed: <class>`, `Withdrawal sweep failed: <class>`, `Merchant payout resolution failed: <class>`, ...)
+on every replica it reaches, counted. `PaymentSweepFailing` (by `leg`) or `MerchantPayoutSweepFailing` pages once every
+five-minute window of a quarter hour holds a failed tick: §11.12's `SEV-2`, a money-moving flow's resolution stopped. Read the
+class: a database class is §11.40's; anything else is a release (§11.8).
 
 #### (c) A rematch residual that faults every tick
 
 Reconciliation's rematch leg tries each residual item against later evidence in a savepoint of its own; a fault rolls that one
-item back and logs `A rematch candidate was skipped: <class>` at WARN, and the leg goes on. A residual that faults every tick
-re-heads the worklist with only that line to show: no durable record, no meter.
+item back, logs `A rematch candidate was skipped: <class>` at WARN, and now records the fault in `reconciliation.rematch_fault`
+in the same batch transaction, under the source's try-lock and the item's row lock, so ten instances record one. The rematch
+worklist leaves the residual out until `retry_at`: 1 minute, doubling, at most an hour. The exclusion touches nothing else: the
+item keeps its status, decisions, parks and break, the grace leg and a person's reprocess run still read it, and the run still
+counts it as a pending rematch, so it stays a break, aged and alerted as any (§11.23).
 
-- *What on-call sees*: the same line repeating across ticks under one `correlationId` in the structured log. That id is the
-  reconciliation run the residual came from (`reconciliation.reconciliation_batch.correlation_id`), not the item: read the run's
-  items still `UNMATCHED` or `PARKED`, and the one whose break never moves while the line repeats is it. The item's break is
-  aged and alerted as any (§11.23).
-- *What is delayed and what is not lost*: one chunk slot per tick. The residual keeps its committed record and its break; every
-  other residual is reached.
-- *The way out*: the class names the cause, usually a defect or a row the rematch reads gone; fix it forward and the next tick
-  allocates or examines the item. A person may also work the break through its own door (§11.23). A durable exclusion is Phase
-  16's.
+- *What on-call sees*: the WARN line under the run's `correlationId`, the record by `external_item_id`, and after three hours of
+  faults at every retry `RematchResidualFaulting`, a ticket.
+- *The way out*: the class names the cause, usually a defect or a row the rematch reads gone; fix it forward and the next retry,
+  within the hour, allocates or examines the item. A person may also work the break through its own door, or open a reprocess run
+  (§11.23).
 
-**The last record.** Not rehearsed. The `incidents` scope's poisoned-rows step holds the first procedure (a captured card attempt
-copied under a v4 id into `CAPTURE_DISPATCHED`, its references made new and its capture's facts taken off; the `Payment sweep
-failed` line asserted on every replica; the row removed by the harness as the plant's teardown) and never ran, the owner having
-postponed the platform scopes' remaining runs (`POSTPONED_ISSUES.md` PI-024). The other two, a row failing every tick with every other row
-still reached and the rematch residual, hold no step. §11.38 counts the three read.
+**The last record.** (a) on `kind`: the `incidents` scope's `platform-poisoned-rows` step plants a captured card attempt copied
+under a v4 id into `CAPTURE_DISPATCHED` an hour old, waits for `PaymentSweepRowUnreadable` to reach `placeholder-page`, asserts
+the record, the row unjudged, no `Payment sweep failed` line on any replica and `PaymentSweepFailing` silent, and removes the row
+and its record as the plant's teardown. Not yet run: its record is entered here when it is (`RESILIENCE_EXPERIMENTS.md` E27). (b)
+and (c) hold no step: their behaviour is proven hermetically (`WithdrawalSweepPoisonedRowTest`, `PaymentSweeperScheduleTest`,
+`RematchFaultTest`) and their PostgreSQL cases are written and owed (PI-023). §11.38 counts the three read.
 
 ### 11.40 Database failover: what the fleet does and what a person does (`P15-TSK-032`)
 

@@ -26,6 +26,13 @@ public interface ReconciliationTelemetry {
      */
     default void rematched(UUID sourceId, DecisionOutcome outcome) {}
 
+    /**
+     * A rematch candidate faulted and its fault was recorded, leaving it out of the rematch
+     * worklist until its retry (`P16-TSK-017`): counted once its batch commits, one per backoff
+     * window - the record's own conditional - whichever instance held the source.
+     */
+    default void rematchFaulted() {}
+
     /** A resolution ended; {@code sinceRaised} for a break-subject resolution. */
     default void resolved(
             ResolutionKind kind, ResolutionOutcome outcome, Optional<Duration> sinceRaised) {}

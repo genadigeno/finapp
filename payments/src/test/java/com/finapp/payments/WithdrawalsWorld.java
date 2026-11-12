@@ -119,6 +119,9 @@ final class WithdrawalsWorld {
         final List<EventEnvelope> outbox = new ArrayList<>();
         final List<RoutingDecision> decisions = new ArrayList<>();
         final List<String> evidence = new ArrayList<>();
+        /** payments.sweep_row_failure's withdrawal rows: consecutive failures and the next retry, per row (P16-TSK-017). */
+        final Map<UUID, Integer> sweepFailures = new LinkedHashMap<>();
+        final Map<UUID, Instant> sweepRetries = new HashMap<>();
 
         State copy() {
             State copy = new State();
@@ -131,6 +134,8 @@ final class WithdrawalsWorld {
             copy.outbox.addAll(outbox);
             copy.decisions.addAll(decisions);
             copy.evidence.addAll(evidence);
+            copy.sweepFailures.putAll(sweepFailures);
+            copy.sweepRetries.putAll(sweepRetries);
             return copy;
         }
     }
@@ -156,11 +161,57 @@ final class WithdrawalsWorld {
     PushAnswer answer = PushAnswer.indeterminate();
     final List<PushRail.CreditTransfer> sends = new ArrayList<>();
 
+    /** What the scheme's inquiry throws, when a suite plants a row that fails every tick (P16-TSK-017). */
+    RuntimeException inquiryFailure;
+
     final Withdrawals engine;
     final WithdrawalOutcomes outcomes;
     final WithdrawalResolution resolution;
     final HoldService holdService;
     final InMemoryWithdrawals store = new InMemoryWithdrawals();
+
+    /**
+     * The connection the runner hands its work: the world's, answering one statement more - the database's clock
+     * ({@code DatabaseTime}), read by the inquiry sweep since its listing bounds a permit (X-TSK-013) - as the world's clock.
+     */
+    final Connection clocked = (Connection) Proxy.newProxyInstance(WithdrawalsWorld.class.getClassLoader(),
+            new Class<?>[] {Connection.class}, (self, method, args) -> {
+                switch (method.getName()) {
+                    case "toString":
+                        return "the-world's-clocked-connection";
+                    case "hashCode":
+                        return System.identityHashCode(self);
+                    case "equals":
+                        return self == args[0];
+                    case "createStatement":
+                        break;
+                    default:
+                        throw new AssertionError("the withdrawal world's connection was used: " + method.getName());
+                }
+                return Proxy.newProxyInstance(WithdrawalsWorld.class.getClassLoader(), new Class<?>[] {java.sql.Statement.class},
+                        (statement, call, sql) -> switch (call.getName()) {
+                            case "executeQuery" -> Proxy.newProxyInstance(WithdrawalsWorld.class.getClassLoader(),
+                                    new Class<?>[] {java.sql.ResultSet.class}, new java.lang.reflect.InvocationHandler() {
+                                        private boolean read;
+
+                                        @Override
+                                        public Object invoke(Object rows, java.lang.reflect.Method at, Object[] column) {
+                                            return switch (at.getName()) {
+                                                case "next" -> {
+                                                    boolean first = !read;
+                                                    read = true;
+                                                    yield first;
+                                                }
+                                                case "getTimestamp" -> java.sql.Timestamp.from(clock.instant());
+                                                case "close" -> null;
+                                                default -> throw new AssertionError("the clock's row answers " + at.getName());
+                                            };
+                                        }
+                                    });
+                            case "close" -> null;
+                            default -> throw new AssertionError("the clock's statement answers " + call.getName());
+                        });
+            });
 
     WithdrawalsWorld() {
         wallet = LedgerAccount.owned(ids, clock, AccountType.LIABILITY, AccountPurpose.CUSTOMER_WALLET, EUR, product);
@@ -201,6 +252,12 @@ final class WithdrawalsWorld {
                     sends.add((PushRail.CreditTransfer) args[0]);
                     return answer;
                 },
+                "inquire", args -> {
+                    if (inquiryFailure != null) {
+                        throw inquiryFailure;
+                    }
+                    throw new AssertionError("the withdrawal world answers no inquiry it was not told to fail");
+                },
                 "schemeName", args -> "simulated-instant-scheme"));
         IdempotentExecutor executor = new IdempotentExecutor(new InMemoryClaims(), clock, Duration.ofDays(1),
                 Duration.ofMinutes(5));
@@ -209,7 +266,7 @@ final class WithdrawalsWorld {
             public <R> R inTransaction(Function<Connection, R> work) {
                 State before = state.copy();
                 try {
-                    return work.apply(CONNECTION);
+                    return work.apply(clocked);
                 } catch (RuntimeException rolledBack) {
                     state = before;
                     throw rolledBack;
@@ -280,6 +337,33 @@ final class WithdrawalsWorld {
 
     /** payments.withdrawal in memory: V033's conditional edges, the database clock the world's. */
     final class InMemoryWithdrawals implements WithdrawalStore<Connection> {
+
+        /** Ids a suite plants as rows the listing cannot read: a raw writer's non-v7 id (P16-TSK-017). */
+        final List<UUID> unreadable = new ArrayList<>();
+
+        /** What recording a failure throws, when a suite makes the record itself fail. */
+        RuntimeException recordFailure;
+
+        private boolean due(UUID row) {
+            Instant retry = state.sweepRetries.get(row);
+            return retry == null || !retry.isAfter(clock.instant());
+        }
+
+        /** V040's statement in memory: one count per backoff window, the base doubled per failure, capped. */
+        @Override
+        public boolean recordSweepFailure(Connection unitOfWork, UUID withdrawal, String failure) {
+            if (recordFailure != null) {
+                throw recordFailure;
+            }
+            if (!due(withdrawal)) {
+                return false;
+            }
+            int failures = state.sweepFailures.merge(withdrawal, 1, Integer::sum);
+            Duration wait = com.finapp.platform.persistence.SweepBackoff.BASE.multipliedBy(1L << Math.min(failures - 1, 20));
+            Duration cap = com.finapp.platform.persistence.SweepBackoff.CAP;
+            state.sweepRetries.put(withdrawal, clock.instant().plus(wait.compareTo(cap) > 0 ? cap : wait));
+            return true;
+        }
 
         @Override
         public Stored insert(Connection unitOfWork, Withdrawal born, String dispatchKey) {
@@ -395,13 +479,16 @@ final class WithdrawalsWorld {
         }
 
         @Override
-        public List<Withdrawal> findSweepable(Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore,
-                int limit) {
-            return state.withdrawals.values().stream()
+        public com.finapp.platform.persistence.SweepListing<Withdrawal> findSweepable(Connection unitOfWork,
+                Instant dispatchedBefore, Instant unknownBefore, int limit) {
+            List<UUID> unread = unreadable.stream().filter(this::due).toList();
+            List<Withdrawal> read = state.withdrawals.values().stream()
                     .filter(row -> row.status().isResolvable())
                     .filter(row -> !row.lastDispatchedAt().isAfter(dispatchedBefore))
-                    .limit(limit)
+                    .filter(row -> due(row.id().value()))
+                    .limit(Math.max(0, limit - unread.size()))
                     .toList();
+            return new com.finapp.platform.persistence.SweepListing<>(read, unread);
         }
 
         @Override

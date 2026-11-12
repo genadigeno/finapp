@@ -2,6 +2,8 @@ package com.finapp.payments;
 
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.persistence.DatabaseTime;
+import com.finapp.platform.persistence.SweepBackoff;
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -14,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -56,6 +59,13 @@ import lombok.extern.slf4j.Slf4j;
  * <p>Each candidate resolves in its own transaction; a failing resolution is logged
  * (identifiers and failure class only, {@code INV-AUD-02}) and the sweep continues — the
  * anti-stall posture, because the rows behind a poisoned one are other customers' money.
+ *
+ * <p><strong>Nor hold the head, nor stop the listing</strong> (`P16-TSK-017`). A failing row is
+ * recorded in {@code payments.sweep_row_failure} and its listing leaves it out until its retry,
+ * doubling to {@link SweepBackoff#CAP} on the database's clock; a row a listing cannot read (an id
+ * no domain writer could mint) is skipped, reported, recorded and backed off the same way, so the
+ * rows and the legs behind it are reached. Neither is ever concluded ({@code INV-LIFE-03}); the
+ * schedule counts both from the tally, and the rules page on them.
  *
  * <h2>Two legs added by the Phase 6 → 7 transition</h2>
  *
@@ -169,12 +179,18 @@ public final class PaymentSweeper {
      * are the schedule's log tally since `P7-TSK-015`: the meters no longer read them,
      * because every applier reports its acting judgements to its
      * {@link RailOutcomeObserver}, where each door's are counted once, after commit.
+     *
+     * <p>{@code failedRows} are the rows whose resolution threw, and {@code unreadable} the rows a
+     * listing could not read and skipped (`P16-TSK-017`): each recorded and backed off, neither
+     * concluded, both counted by the schedule ({@code finapp.payments.sweep.row.failed} and
+     * {@code .row.unreadable}). {@code candidates} counts the rows read.
      */
     public record SweepResult(
             int candidates,
             int applied,
             int skipped,
             int failedRows,
+            int unreadable,
             List<PaymentAttemptStatus> actingJudgements,
             List<RefundStatus> refundJudgements) {
 
@@ -195,7 +211,7 @@ public final class PaymentSweeper {
     @SuppressWarnings("try") // The Scope is used for its close side effect.
     public SweepResult sweep() {
         Instant now = Instant.now(clock);
-        List<PaymentAttempt> candidates =
+        SweepListing<PaymentAttempt> listed =
                 transactions.inTransaction(
                         uow ->
                                 attempts.findSweepable(
@@ -203,6 +219,8 @@ public final class PaymentSweeper {
                                         now.minus(dispatchedAge),
                                         now.minus(unknownAge),
                                         batchSize));
+        List<PaymentAttempt> candidates = listed.candidates();
+        int unreadable = skipUnreadable(SweepLeg.CARD_ATTEMPT, listed.unreadable());
         int applied = 0;
         int skipped = 0;
         int failedRows = 0;
@@ -233,20 +251,23 @@ public final class PaymentSweeper {
                 // money. Identifiers and class only - never provider bytes (INV-AUD-02).
                 failedRows++;
                 log.warn(
-                        "Sweeping attempt {} failed with {}; the sweep continues and the next"
-                                + " tick will retry this row",
+                        "Sweeping attempt {} failed with {}; the sweep continues and the row is"
+                                + " retried after its backoff",
                         candidate.id(),
                         oneRowsFailure.getClass().getSimpleName());
+                recordFailure(SweepLeg.CARD_ATTEMPT, candidate.id().value(), oneRowsFailure);
             }
         }
 
         // THE STRANDED CHAIN: an authorization nothing captured. The capture command runs its
         // own Tx1 / provider call / Tx2 and converges, so this holds no connection across it.
-        List<PaymentAttempt> stranded =
+        SweepListing<PaymentAttempt> strandedListed =
                 transactions.inTransaction(
                         uow ->
                                 attempts.findStrandedAuthorizations(
                                         uow, now.minus(dispatchedAge), batchSize));
+        List<PaymentAttempt> stranded = strandedListed.candidates();
+        unreadable += skipUnreadable(SweepLeg.CARD_STRANDED, strandedListed.unreadable());
         for (PaymentAttempt authorized : stranded) {
             try (CorrelationContext.Scope flow =
                             CorrelationContext.enter(
@@ -264,15 +285,16 @@ public final class PaymentSweeper {
             } catch (RuntimeException oneRowsFailure) {
                 failedRows++;
                 log.warn(
-                        "Chaining the capture of stranded attempt {} failed with {}; the next"
-                                + " tick will retry this row",
+                        "Chaining the capture of stranded attempt {} failed with {}; the row is"
+                                + " retried after its backoff",
                         authorized.id(),
                         oneRowsFailure.getClass().getSimpleName());
+                recordFailure(SweepLeg.CARD_STRANDED, authorized.id().value(), oneRowsFailure);
             }
         }
 
         // THE REFUND LEG.
-        List<Refund> refundCandidates =
+        SweepListing<Refund> refundsListed =
                 transactions.inTransaction(
                         uow ->
                                 refunds.findSweepable(
@@ -281,6 +303,8 @@ public final class PaymentSweeper {
                                         DatabaseTime.now(uow).minus(dispatchedAge),
                                         now.minus(unknownAge),
                                         batchSize));
+        List<Refund> refundCandidates = refundsListed.candidates();
+        unreadable += skipUnreadable(SweepLeg.CARD_REFUND, refundsListed.unreadable());
         List<RefundStatus> refundActing = new ArrayList<>();
         for (Refund candidate : refundCandidates) {
             try (CorrelationContext.Scope flow =
@@ -297,10 +321,11 @@ public final class PaymentSweeper {
             } catch (RuntimeException oneRowsFailure) {
                 failedRows++;
                 log.warn(
-                        "Sweeping refund {} failed with {}; the sweep continues and the next"
-                                + " tick will retry this row",
+                        "Sweeping refund {} failed with {}; the sweep continues and the row is"
+                                + " retried after its backoff",
                         candidate.id(),
                         oneRowsFailure.getClass().getSimpleName());
+                recordFailure(SweepLeg.CARD_REFUND, candidate.id().value(), oneRowsFailure);
             }
         }
         return new SweepResult(
@@ -308,8 +333,53 @@ public final class PaymentSweeper {
                 applied,
                 skipped,
                 failedRows,
+                unreadable,
                 acting,
                 refundActing);
+    }
+
+    /**
+     * The rows {@code leg}'s listing could not read: each reported by its id and recorded, so
+     * the listing leaves it out until its retry (`P16-TSK-017`). Never judged: an unread row is
+     * a raw writer's mark ({@code OPERATIONS_RUNBOOK.md} §11.39 (a)), and the record is not an
+     * edit of it. Returns how many.
+     */
+    private int skipUnreadable(SweepLeg leg, List<UUID> unreadable) {
+        for (UUID row : unreadable) {
+            log.warn(
+                    "A {} sweep candidate {} could not be read: skipped and counted, never"
+                            + " judged, and listed again after its backoff",
+                    leg,
+                    row);
+            recordFailure(leg, row, SweepBackoff.UNREADABLE);
+        }
+        return unreadable.size();
+    }
+
+    private void recordFailure(SweepLeg leg, UUID row, RuntimeException failure) {
+        recordFailure(leg, row, SweepBackoff.failureClass(failure));
+    }
+
+    /**
+     * Records the failure in its own transaction - the row's own has rolled back - and contains
+     * a failure to record it: the row is then retried on the next tick, as before this record
+     * existed, and the rows behind it are still reached.
+     */
+    private void recordFailure(SweepLeg leg, UUID row, String failure) {
+        try {
+            transactions.inTransaction(
+                    uow ->
+                            leg == SweepLeg.CARD_REFUND
+                                    ? refunds.recordSweepFailure(uow, leg, row, failure)
+                                    : attempts.recordSweepFailure(uow, leg, row, failure));
+        } catch (RuntimeException notRecorded) {
+            log.warn(
+                    "The {} sweep could not record row {}'s failure ({}); the next tick retries"
+                            + " the row",
+                    leg,
+                    row,
+                    SweepBackoff.failureClass(notRecorded));
+        }
     }
 
     /** The refund leg's per-row answer, the attempt leg's {@link Resolution} in refund words. */

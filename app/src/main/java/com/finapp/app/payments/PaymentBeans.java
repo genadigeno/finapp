@@ -508,8 +508,10 @@ public class PaymentBeans {
     WithdrawalResolutionSchedule withdrawalResolutionSchedule(
             com.finapp.payments.WithdrawalResolution withdrawalResolution,
             @Value("${finapp.payments.withdrawal.sweeper.poll:PT30S}")
-                    java.time.Duration pollInterval) {
-        return new WithdrawalResolutionSchedule(withdrawalResolution, pollInterval);
+                    java.time.Duration pollInterval,
+            com.finapp.app.telemetry.SweepMeters sweepMeters) {
+        return new WithdrawalResolutionSchedule(withdrawalResolution, pollInterval,
+                sweepMeters.payments(com.finapp.app.telemetry.SweepMeters.PaymentSweep.WITHDRAWAL));
     }
 
     // ------------------------------------------------------------------
@@ -606,8 +608,10 @@ public class PaymentBeans {
     PayInResolutionSchedule payInResolutionSchedule(
             com.finapp.payments.PayInResolution payInResolution,
             @Value("${finapp.payments.payin.sweeper.poll:PT30S}")
-                    java.time.Duration pollInterval) {
-        return new PayInResolutionSchedule(payInResolution, pollInterval);
+                    java.time.Duration pollInterval,
+            com.finapp.app.telemetry.SweepMeters sweepMeters) {
+        return new PayInResolutionSchedule(payInResolution, pollInterval,
+                sweepMeters.payments(com.finapp.app.telemetry.SweepMeters.PaymentSweep.PAY_IN));
     }
 
     /**
@@ -660,8 +664,10 @@ public class PaymentBeans {
     ReturnResolutionSchedule returnResolutionSchedule(
             com.finapp.payments.ReturnResolution returnResolution,
             @Value("${finapp.payments.return.sweeper.poll:PT30S}")
-                    java.time.Duration pollInterval) {
-        return new ReturnResolutionSchedule(returnResolution, pollInterval);
+                    java.time.Duration pollInterval,
+            com.finapp.app.telemetry.SweepMeters sweepMeters) {
+        return new ReturnResolutionSchedule(returnResolution, pollInterval,
+                sweepMeters.payments(com.finapp.app.telemetry.SweepMeters.PaymentSweep.RETURN));
     }
 
     @Bean
@@ -1022,8 +1028,10 @@ public class PaymentBeans {
     DisputeResponseResolutionSchedule disputeResponseResolutionSchedule(
             com.finapp.payments.DisputeResponseResolution disputeResponseResolution,
             @Value("${finapp.payments.dispute-response.sweeper.poll:PT30S}")
-                    java.time.Duration pollInterval) {
-        return new DisputeResponseResolutionSchedule(disputeResponseResolution, pollInterval);
+                    java.time.Duration pollInterval,
+            com.finapp.app.telemetry.SweepMeters sweepMeters) {
+        return new DisputeResponseResolutionSchedule(disputeResponseResolution, pollInterval,
+                sweepMeters.payments(com.finapp.app.telemetry.SweepMeters.PaymentSweep.DISPUTE_ANSWER));
     }
 
     @Bean
@@ -1656,9 +1664,11 @@ public class PaymentBeans {
             com.finapp.payments.PaymentSweeper paymentSweeper,
             com.finapp.payments.HeldPayments heldPayments,
             @Value("${finapp.payments.sweeper.poll-interval:PT30S}")
-                    java.time.Duration pollInterval) {
+                    java.time.Duration pollInterval,
+            com.finapp.app.telemetry.SweepMeters sweepMeters) {
         // Two legs a tick, each contained (P13-TSK-010): the sweep, then the held card payments' deadline.
-        return new PaymentSweeperSchedule(paymentSweeper, heldPayments::expireHolds, pollInterval);
+        return new PaymentSweeperSchedule(paymentSweeper, heldPayments::expireHolds, pollInterval,
+                sweepMeters.payments(com.finapp.app.telemetry.SweepMeters.PaymentSweep.CARD));
     }
 
     /** The held card payments' capture holds (`P13-TSK-010`, payments {@code V034}). */

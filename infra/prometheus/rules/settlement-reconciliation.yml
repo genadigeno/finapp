@@ -227,3 +227,20 @@ groups:
         annotations:
           summary: "A settlement or reconciliation gauge has no value: {{ $labels.gauge }}"
           description: "{{ $labels.gauge }} on {{ $labels.instance }} reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # P16-TSK-017 (OPERATIONS_RUNBOOK.md section 11.39 (c)): a rematch residual faulting at every retry. It stays a break, aged and
+  # alerted as any; this says the rematch cannot examine it.
+  - name: reconciliation-rematch
+    labels:
+      owner: reconciliation
+    rules:
+      - alert: RematchResidualFaulting
+        # Aggregation: sum() - counters are per instance
+        # Backed off to at most an hour, so a residual faulting at each retry keeps a fault in every 2-hour window.
+        expr: sum(increase(finapp_reconciliation_rematch_faulted_total[2h])) > 0
+        for: 3h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A rematch residual keeps faulting"
+          description: "The rematch has faulted on a residual at every retry for 3 hours; it stays a break. See OPERATIONS_RUNBOOK.md section 11.39."

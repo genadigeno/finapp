@@ -591,3 +591,34 @@ tests:
       - eval_time: 1d1h30m
         alertname: SettlementSourceNeverAccepted
         exp_alerts: []
+
+  # P16-TSK-017. RematchResidualFaulting: a residual faulting at each retry, its backoff doubling to an hour, for six hours: a
+  # ticket after three; it stays a break meanwhile.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_reconciliation_rematch_faulted_total{job="finapp", instance="a:8081"}'
+        values: '0 1 2x1 3x3 4x7 5x15 6x31 7x59 8x59 9x59 10x59 11x59'
+      - series: 'finapp_reconciliation_rematch_faulted_total{job="finapp", instance="b:8081"}'
+        values: '0x360'
+    alert_rule_test:
+      - eval_time: 4h
+        alertname: RematchResidualFaulting
+        exp_alerts:
+          - exp_labels:
+              owner: reconciliation
+              severity: ticket
+            exp_annotations:
+              summary: "A rematch residual keeps faulting"
+              description: "The rematch has faulted on a residual at every retry for 3 hours; it stays a break. See OPERATIONS_RUNBOOK.md section 11.39."
+
+  # RematchResidualFaulting: one fault, the residual examined on its retry: silent past the three hours.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_reconciliation_rematch_faulted_total{job="finapp", instance="a:8081"}'
+        values: '0 1x360'
+      - series: 'finapp_reconciliation_rematch_faulted_total{job="finapp", instance="b:8081"}'
+        values: '0x360'
+    alert_rule_test:
+      - eval_time: 5h
+        alertname: RematchResidualFaulting
+        exp_alerts: []

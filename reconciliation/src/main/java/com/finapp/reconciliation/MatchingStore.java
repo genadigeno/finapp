@@ -552,6 +552,16 @@ public interface MatchingStore {
     List<UUID> rematchReach(Connection unitOfWork, UUID itemId);
 
     /**
+     * Records one fault of a rematch candidate (`P16-TSK-017`, {@code reconciliation.rematch_fault}),
+     * in the batch's own transaction after the item's savepoint rolled back - under the source's
+     * try-lock and the item's row lock - and leaves the residual out of the rematch worklist until
+     * its retry, the base doubled per consecutive fault and capped, on the database's clock. Never
+     * touches the item, its decisions, parks or breaks: an excluded residual stays a break. True
+     * when this call counted the fault. {@code fault} is a class name, nothing else ({@code INV-AUD-02}).
+     */
+    boolean recordRematchFault(Connection unitOfWork, UUID itemId, String fault);
+
+    /**
      * Records the expectations a late leg's examination reached and judged
      * ({@code reconciliation.match_reach}, `V016`): consumed once, so the rematch predicate
      * never re-locks a reach a decision has already judged.

@@ -229,3 +229,70 @@ groups:
         annotations:
           summary: "A series the critical-flow alerts read is gone"
           description: "A gauge a critical-flow alert reads has not been published for 5 minutes, so that alert is blind. See OPERATIONS_RUNBOOK.md section 11.22."
+  # P16-TSK-017 (THREAT_MODEL.md section 6 item 42 (i)): a resolution sweep that stops, a row its listing cannot read (a raw
+  # writer's id), a row that keeps failing. Counters from each sweep's schedule; the leg names the sweep, never a row.
+  - name: payments-sweeps
+    labels:
+      owner: payments
+    rules:
+      - alert: PaymentSweepFailing
+        # Aggregation: sum by (leg) - counters are per instance, and any instance's failed tick is the sweep's
+        # Counted in every 5-minute window for 15 minutes: the sweep has reached nothing for a quarter of an hour.
+        expr: sum by (leg) (increase(finapp_payments_sweep_tick_failed_total[5m])) > 0
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "The {{ $labels.leg }} payment sweep keeps failing whole"
+          description: "Every tick of the {{ $labels.leg }} sweep has failed for 15 minutes: nothing it resolves is reached. See OPERATIONS_RUNBOOK.md section 11.39."
+      - alert: PaymentSweepRowUnreadable
+        # Aggregation: sum by (leg) - counters are per instance
+        # A row skipped and backed off for at most 10 minutes is read again within the window while it stands.
+        expr: sum by (leg) (increase(finapp_payments_sweep_row_unreadable_total[30m])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "The {{ $labels.leg }} payment sweep skips a row it cannot read"
+          description: "A row whose id no domain writer could mint is skipped by the {{ $labels.leg }} sweep: a raw writer's mark. See OPERATIONS_RUNBOOK.md section 11.39."
+      - alert: PaymentSweepRowFailing
+        # Aggregation: sum by (leg) - counters are per instance
+        # A failure in every 30-minute window for an hour: a row failing at each retry, not a blip.
+        expr: sum by (leg) (increase(finapp_payments_sweep_row_failed_total[30m])) > 0
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A {{ $labels.leg }} payment sweep row keeps failing"
+          description: "Rows of the {{ $labels.leg }} sweep have failed for an hour, each backed off and retried. See OPERATIONS_RUNBOOK.md section 11.39."
+  - name: merchant-sweeps
+    labels:
+      owner: merchant
+    rules:
+      - alert: MerchantPayoutSweepFailing
+        # Aggregation: sum() - counters are per instance, and any instance's failed tick is the sweep's
+        expr: sum(increase(finapp_merchant_payout_sweep_tick_failed_total[5m])) > 0
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "The payout sweep keeps failing whole"
+          description: "Every tick of the payout sweep has failed for 15 minutes: no payout is reached. See OPERATIONS_RUNBOOK.md section 11.39."
+      - alert: MerchantPayoutSweepRowUnreadable
+        # Aggregation: sum() - counters are per instance
+        expr: sum(increase(finapp_merchant_payout_sweep_row_unreadable_total[30m])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "The payout sweep skips a row it cannot read"
+          description: "A payout whose id no domain writer could mint is skipped: a raw writer's mark. See OPERATIONS_RUNBOOK.md section 11.39."
+      - alert: MerchantPayoutSweepRowFailing
+        # Aggregation: sum() - counters are per instance
+        expr: sum(increase(finapp_merchant_payout_sweep_row_failed_total[30m])) > 0
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A payout sweep row keeps failing"
+          description: "Payouts have failed in the sweep for an hour, each backed off and retried. See OPERATIONS_RUNBOOK.md section 11.39."

@@ -1,5 +1,6 @@
 package com.finapp.reconciliation;
 
+import com.finapp.platform.persistence.SweepBackoff;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;
@@ -519,6 +520,67 @@ public final class JdbcMatchingStore implements MatchingStore {
                     + " OR EXISTS (SELECT 1" + ANCHORED_REACH + ")"
                     + " OR EXISTS (SELECT 1" + GROUP_REACH + "))";
 
+    /**
+     * The rematch WORKLIST (`P16-TSK-017`, reconciliation {@code V025}): {@link #REMATCH_PREDICATE}
+     * less the residuals whose recorded fault's retry is still ahead on the database's clock. A
+     * durable exclusion, bounded in time: a residual faulting every tick no longer re-heads the
+     * worklist, and a transient fault is still retried. It filters the rematch leg's three reads
+     * alone - never {@link #pendingRematchOf}, the grace, run or reprocess legs, nor any break or
+     * suspense read - so an excluded residual stays a pending rematch and a break.
+     */
+    private static final String REMATCH_WORKLIST =
+            REMATCH_PREDICATE
+                    + " AND NOT EXISTS (SELECT 1 FROM reconciliation.rematch_fault rf"
+                    + " WHERE rf.external_item_id = i.id AND rf.retry_at > statement_timestamp())";
+
+    /**
+     * A rematch fault's record (`P16-TSK-017`): written in the batch's own transaction under the
+     * source's try-lock and the item's row lock, so ten instances record one fault per tick. The base
+     * doubled per consecutive fault, capped, on {@code statement_timestamp()}; a fault more than twice
+     * the cap after the last starts the count again; the conditional {@code WHERE} counts one per
+     * backoff window whoever writes.
+     */
+    private static final String RECORD_REMATCH_FAULT =
+            "INSERT INTO reconciliation.rematch_fault AS rf"
+                    + " (external_item_id, faults, first_faulted_at, last_faulted_at, retry_at, last_fault)"
+                    + " VALUES (?, 1, statement_timestamp(), statement_timestamp(),"
+                    + " statement_timestamp() + make_interval(secs => ?), ?)"
+                    + " ON CONFLICT (external_item_id) DO UPDATE SET"
+                    + " faults = CASE WHEN rf.last_faulted_at < statement_timestamp() - make_interval(secs => ?)"
+                    + " THEN 1 ELSE rf.faults + 1 END,"
+                    + " first_faulted_at = CASE WHEN rf.last_faulted_at < statement_timestamp() - make_interval(secs => ?)"
+                    + " THEN statement_timestamp() ELSE rf.first_faulted_at END,"
+                    + " last_faulted_at = statement_timestamp(),"
+                    + " retry_at = statement_timestamp() + CASE"
+                    + " WHEN rf.last_faulted_at < statement_timestamp() - make_interval(secs => ?) THEN make_interval(secs => ?)"
+                    + " ELSE LEAST(make_interval(secs => CAST(? AS double precision) * power(2, LEAST(rf.faults, 20))),"
+                    + " make_interval(secs => ?)) END,"
+                    + " last_fault = EXCLUDED.last_fault"
+                    + " WHERE rf.retry_at <= statement_timestamp()";
+
+    @Override
+    public boolean recordRematchFault(Connection unitOfWork, UUID itemId, String fault) {
+        java.util.Objects.requireNonNull(itemId, "itemId must not be null");
+        java.util.Objects.requireNonNull(fault, "fault must not be null");
+        long base = SweepBackoff.BASE.toSeconds();
+        long cap = SweepBackoff.REMATCH_CAP.toSeconds();
+        long recovered = 2 * cap;
+        try (PreparedStatement upsert = unitOfWork.prepareStatement(RECORD_REMATCH_FAULT)) {
+            upsert.setObject(1, itemId);
+            upsert.setLong(2, base);
+            upsert.setString(3, fault);
+            upsert.setLong(4, recovered);
+            upsert.setLong(5, recovered);
+            upsert.setLong(6, recovered);
+            upsert.setLong(7, base);
+            upsert.setLong(8, base);
+            upsert.setLong(9, cap);
+            return upsert.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not record the rematch fault", failure);
+        }
+    }
+
     /** The predicate's reach for one item, every clause's expectation once. */
     private static final String REMATCH_REACH =
             "SELECT DISTINCT x.id FROM reconciliation.external_item i CROSS JOIN LATERAL ("
@@ -583,7 +645,7 @@ public final class JdbcMatchingStore implements MatchingStore {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT DISTINCT i.source_id FROM reconciliation.external_item i"
-                                + " WHERE" + REMATCH_PREDICATE
+                                + " WHERE" + REMATCH_WORKLIST
                                 + " ORDER BY i.source_id")) {
             try (ResultSet rows = read.executeQuery()) {
                 List<UUID> sources = new ArrayList<>();
@@ -604,7 +666,7 @@ public final class JdbcMatchingStore implements MatchingStore {
                 unitOfWork,
                 "SELECT DISTINCT i.attributed_source_id FROM reconciliation.external_item i"
                         + " WHERE i.source_id = ? AND i.attributed_source_id IS NOT NULL"
-                        + " AND" + REMATCH_PREDICATE,
+                        + " AND" + REMATCH_WORKLIST,
                 sourceId);
     }
 
@@ -618,7 +680,7 @@ public final class JdbcMatchingStore implements MatchingStore {
         return lockedResiduals(
                 unitOfWork,
                 RESIDUAL_COLUMNS
-                        + " WHERE i.source_id = ? AND" + REMATCH_PREDICATE + HELD_ATTRIBUTION
+                        + " WHERE i.source_id = ? AND" + REMATCH_WORKLIST + HELD_ATTRIBUTION
                         + " ORDER BY r.source_sequence, i.line_no, i.id LIMIT ? FOR UPDATE OF i",
                 sourceId,
                 heldAttributions,

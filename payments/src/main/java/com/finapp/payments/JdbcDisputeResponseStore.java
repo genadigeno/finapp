@@ -1,6 +1,7 @@
 package com.finapp.payments;
 
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import java.sql.Array;
@@ -222,8 +223,19 @@ public final class JdbcDisputeResponseStore implements DisputeResponseStore<Conn
         }
     }
 
+    /** A dispute answer whose {@link SweepLeg#DISPUTE_ANSWER} retry is still ahead is left out (`P16-TSK-017`). */
+    private static final String DISPUTE_ANSWER_DUE =
+            " AND NOT EXISTS (SELECT 1 FROM payments.sweep_row_failure f"
+                    + " WHERE f.leg = 'DISPUTE_ANSWER' AND f.row_id = r.id"
+                    + " AND f.retry_at > statement_timestamp())";
+
     @Override
-    public List<DisputeResponse> findSweepable(
+    public boolean recordSweepFailure(Connection unitOfWork, java.util.UUID response, String failure) {
+        return SweepRowFailures.record(unitOfWork, SweepLeg.DISPUTE_ANSWER, response, failure);
+    }
+
+    @Override
+    public SweepListing<DisputeResponse> findSweepable(
             Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
         Objects.requireNonNull(dispatchedBefore, "dispatchedBefore must not be null");
         Objects.requireNonNull(unknownBefore, "unknownBefore must not be null");
@@ -239,15 +251,19 @@ public final class JdbcDisputeResponseStore implements DisputeResponseStore<Conn
                                 + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
                                 + "   FROM payments.dispute_response_event e"
                                 + "   WHERE e.response_id = r.id) h ON true"
-                                + " WHERE (r.status = 'DISPATCHED' AND r.send_permit <= ?)"
+                                // The two states in their own parentheses: the backoff below binds to both.
+                                + " WHERE ((r.status = 'DISPATCHED' AND r.send_permit <= ?)"
                                 + "    OR (r.status = 'UNKNOWN'"
-                                + "        AND COALESCE(h.entered, r.created_at) <= ?)"
+                                + "        AND COALESCE(h.entered, r.created_at) <= ?))"
+                                + DISPUTE_ANSWER_DUE
                                 + " ORDER BY r.created_at, r.id"
                                 + " LIMIT ?")) {
             select.setTimestamp(1, Timestamp.from(dispatchedBefore));
             select.setTimestamp(2, Timestamp.from(unknownBefore));
             select.setInt(3, limit);
-            return all(select);
+            try (ResultSet rows = select.executeQuery()) {
+                return SweepListing.read(rows, "id", JdbcDisputeResponseStore::map);
+            }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("reading sweepable dispute responses", failure));

@@ -2,6 +2,7 @@ package com.finapp.payments;
 
 import com.finapp.ledger.HoldId;
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
@@ -131,8 +132,28 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
         }
     }
 
+    /** The card refunds whose {@link SweepLeg#CARD_REFUND} retry is still ahead are left out (`P16-TSK-017`). */
+    private static final String CARD_REFUND_DUE =
+            " AND NOT EXISTS (SELECT 1 FROM payments.sweep_row_failure f"
+                    + " WHERE f.leg = 'CARD_REFUND' AND f.row_id = r.id"
+                    + " AND f.retry_at > statement_timestamp())";
+
+    /** The returns whose {@link SweepLeg#RETURN} retry is still ahead are left out (`P16-TSK-017`). */
+    private static final String RETURN_DUE =
+            " AND NOT EXISTS (SELECT 1 FROM payments.sweep_row_failure f"
+                    + " WHERE f.leg = 'RETURN' AND f.row_id = r.id"
+                    + " AND f.retry_at > statement_timestamp())";
+
     @Override
-    public List<Refund> findSweepable(
+    public boolean recordSweepFailure(Connection unitOfWork, SweepLeg leg, UUID refund, String failure) {
+        if (leg != SweepLeg.CARD_REFUND && leg != SweepLeg.RETURN) {
+            throw new IllegalArgumentException("the refund store lists no " + leg + " rows");
+        }
+        return SweepRowFailures.record(unitOfWork, leg, refund, failure);
+    }
+
+    @Override
+    public SweepListing<Refund> findSweepable(
             Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
         Objects.requireNonNull(dispatchedBefore, "dispatchedBefore must not be null");
         Objects.requireNonNull(unknownBefore, "unknownBefore must not be null");
@@ -159,17 +180,14 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
                                 + " AND ((r.status = 'DISPATCHED' AND r.last_dispatched_at <= ?)"
                                 + "    OR (r.status = 'UNKNOWN'"
                                 + "        AND COALESCE(h.entered, r.created_at) <= ?))"
+                                + CARD_REFUND_DUE
                                 + " ORDER BY r.created_at, r.id"
                                 + " LIMIT ?")) {
             read.setTimestamp(1, Timestamp.from(dispatchedBefore));
             read.setTimestamp(2, Timestamp.from(unknownBefore));
             read.setInt(3, limit);
             try (ResultSet rows = read.executeQuery()) {
-                List<Refund> sweepable = new ArrayList<>();
-                while (rows.next()) {
-                    sweepable.add(rehydrate(rows));
-                }
-                return List.copyOf(sweepable);
+                return SweepListing.read(rows, "id", JdbcRefundStore::rehydrate);
             }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -178,7 +196,7 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
     }
 
     @Override
-    public List<Refund> findSweepableReturns(
+    public SweepListing<Refund> findSweepableReturns(
             Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
         Objects.requireNonNull(dispatchedBefore, "dispatchedBefore must not be null");
         Objects.requireNonNull(unknownBefore, "unknownBefore must not be null");
@@ -198,17 +216,14 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
                                 + " AND ((r.status = 'DISPATCHED' AND r.last_dispatched_at <= ?)"
                                 + "    OR (r.status = 'UNKNOWN'"
                                 + "        AND COALESCE(h.entered, r.created_at) <= ?))"
+                                + RETURN_DUE
                                 + " ORDER BY r.created_at, r.id"
                                 + " LIMIT ?")) {
             read.setTimestamp(1, Timestamp.from(dispatchedBefore));
             read.setTimestamp(2, Timestamp.from(unknownBefore));
             read.setInt(3, limit);
             try (ResultSet rows = read.executeQuery()) {
-                List<Refund> sweepable = new ArrayList<>();
-                while (rows.next()) {
-                    sweepable.add(rehydrate(rows));
-                }
-                return List.copyOf(sweepable);
+                return SweepListing.read(rows, "id", JdbcRefundStore::rehydrate);
             }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(

@@ -615,3 +615,198 @@ tests:
       - eval_time: 20m
         alertname: FlowGaugesUnreadable
         exp_alerts: []
+
+  # P16-TSK-017 (THREAT_MODEL.md section 6 item 42 (i)). PaymentSweepFailing: the card sweep's ticks fail on one instance
+  # of two, every tick, for half an hour: the sum by leg pages once the failures have filled 15 minutes.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_sweep_tick_failed_total{job="finapp", instance="a:8081", leg="card"}'
+        values: '0+2x30'
+      - series: 'finapp_payments_sweep_tick_failed_total{job="finapp", instance="b:8081", leg="card"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: PaymentSweepFailing
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: page
+              leg: card
+            exp_annotations:
+              summary: "The card payment sweep keeps failing whole"
+              description: "Every tick of the card sweep has failed for 15 minutes: nothing it resolves is reached. See OPERATIONS_RUNBOOK.md section 11.39."
+
+  # PaymentSweepFailing: one failed tick, then every tick ends - a blip, silent well past the quarter hour.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_sweep_tick_failed_total{job="finapp", instance="a:8081", leg="card"}'
+        values: '0 0 0 1x30'
+      - series: 'finapp_payments_sweep_tick_failed_total{job="finapp", instance="b:8081", leg="card"}'
+        values: '0x33'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: PaymentSweepFailing
+        exp_alerts: []
+
+  # PaymentSweepRowUnreadable: a withdrawal row no domain writer could mint, read again each time its backoff ends (the 1, 2,
+  # 4, 8 and 10-minute waits): it pages within a minute or two of the first skip and stays paged while the row stands.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_sweep_row_unreadable_total{job="finapp", instance="a:8081", leg="withdrawal"}'
+        values: '0 0 1 2x1 3x3 4x7 5x9 6x9 7x9'
+      - series: 'finapp_payments_sweep_row_unreadable_total{job="finapp", instance="b:8081", leg="withdrawal"}'
+        values: '0x45'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PaymentSweepRowUnreadable
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: page
+              leg: withdrawal
+            exp_annotations:
+              summary: "The withdrawal payment sweep skips a row it cannot read"
+              description: "A row whose id no domain writer could mint is skipped by the withdrawal sweep: a raw writer's mark. See OPERATIONS_RUNBOOK.md section 11.39."
+      - eval_time: 45m
+        alertname: PaymentSweepRowUnreadable
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: page
+              leg: withdrawal
+            exp_annotations:
+              summary: "The withdrawal payment sweep skips a row it cannot read"
+              description: "A row whose id no domain writer could mint is skipped by the withdrawal sweep: a raw writer's mark. See OPERATIONS_RUNBOOK.md section 11.39."
+
+  # PaymentSweepRowUnreadable: the row was skipped once and is gone; half an hour on, silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_sweep_row_unreadable_total{job="finapp", instance="a:8081", leg="withdrawal"}'
+        values: '0 1x45'
+      - series: 'finapp_payments_sweep_row_unreadable_total{job="finapp", instance="b:8081", leg="withdrawal"}'
+        values: '0x45'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: PaymentSweepRowUnreadable
+        exp_alerts: []
+
+  # PaymentSweepRowFailing: a card row failing at each retry, its backoff capped at 10 minutes, for two hours: a ticket.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_sweep_row_failed_total{job="finapp", instance="a:8081", leg="card"}'
+        values: '0 1x9 2x9 3x9 4x9 5x9 6x9 7x9 8x9 9x9 10x9 11x9 12x9'
+      - series: 'finapp_payments_sweep_row_failed_total{job="finapp", instance="b:8081", leg="card"}'
+        values: '0x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: PaymentSweepRowFailing
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: ticket
+              leg: card
+            exp_annotations:
+              summary: "A card payment sweep row keeps failing"
+              description: "Rows of the card sweep have failed for an hour, each backed off and retried. See OPERATIONS_RUNBOOK.md section 11.39."
+
+  # PaymentSweepRowFailing: one transient failure, retried and resolved: silent past the hour.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_sweep_row_failed_total{job="finapp", instance="a:8081", leg="card"}'
+        values: '0x4 1x115'
+      - series: 'finapp_payments_sweep_row_failed_total{job="finapp", instance="b:8081", leg="card"}'
+        values: '0x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: PaymentSweepRowFailing
+        exp_alerts: []
+
+  # MerchantPayoutSweepFailing: every tick fails on one instance of two for half an hour.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_merchant_payout_sweep_tick_failed_total{job="finapp", instance="a:8081"}'
+        values: '0+2x30'
+      - series: 'finapp_merchant_payout_sweep_tick_failed_total{job="finapp", instance="b:8081"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: MerchantPayoutSweepFailing
+        exp_alerts:
+          - exp_labels:
+              owner: merchant
+              severity: page
+            exp_annotations:
+              summary: "The payout sweep keeps failing whole"
+              description: "Every tick of the payout sweep has failed for 15 minutes: no payout is reached. See OPERATIONS_RUNBOOK.md section 11.39."
+
+  # MerchantPayoutSweepFailing: one failed tick: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_merchant_payout_sweep_tick_failed_total{job="finapp", instance="a:8081"}'
+        values: '0 0 0 1x30'
+      - series: 'finapp_merchant_payout_sweep_tick_failed_total{job="finapp", instance="b:8081"}'
+        values: '0x33'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: MerchantPayoutSweepFailing
+        exp_alerts: []
+
+  # MerchantPayoutSweepRowUnreadable: a corrupt payout read again at each backoff's end.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_merchant_payout_sweep_row_unreadable_total{job="finapp", instance="a:8081"}'
+        values: '0 0 1 2x1 3x3 4x7 5x9 6x9 7x9'
+      - series: 'finapp_merchant_payout_sweep_row_unreadable_total{job="finapp", instance="b:8081"}'
+        values: '0x45'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: MerchantPayoutSweepRowUnreadable
+        exp_alerts:
+          - exp_labels:
+              owner: merchant
+              severity: page
+            exp_annotations:
+              summary: "The payout sweep skips a row it cannot read"
+              description: "A payout whose id no domain writer could mint is skipped: a raw writer's mark. See OPERATIONS_RUNBOOK.md section 11.39."
+
+  # MerchantPayoutSweepRowUnreadable: skipped once, gone: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_merchant_payout_sweep_row_unreadable_total{job="finapp", instance="a:8081"}'
+        values: '0 1x45'
+      - series: 'finapp_merchant_payout_sweep_row_unreadable_total{job="finapp", instance="b:8081"}'
+        values: '0x45'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: MerchantPayoutSweepRowUnreadable
+        exp_alerts: []
+
+  # MerchantPayoutSweepRowFailing: a payout failing at each retry for two hours.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_merchant_payout_sweep_row_failed_total{job="finapp", instance="a:8081"}'
+        values: '0 1x9 2x9 3x9 4x9 5x9 6x9 7x9 8x9 9x9 10x9 11x9 12x9'
+      - series: 'finapp_merchant_payout_sweep_row_failed_total{job="finapp", instance="b:8081"}'
+        values: '0x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: MerchantPayoutSweepRowFailing
+        exp_alerts:
+          - exp_labels:
+              owner: merchant
+              severity: ticket
+            exp_annotations:
+              summary: "A payout sweep row keeps failing"
+              description: "Payouts have failed in the sweep for an hour, each backed off and retried. See OPERATIONS_RUNBOOK.md section 11.39."
+
+  # MerchantPayoutSweepRowFailing: one transient failure: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_merchant_payout_sweep_row_failed_total{job="finapp", instance="a:8081"}'
+        values: '0x4 1x115'
+      - series: 'finapp_merchant_payout_sweep_row_failed_total{job="finapp", instance="b:8081"}'
+        values: '0x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: MerchantPayoutSweepRowFailing
+        exp_alerts: []

@@ -48,9 +48,13 @@ public final class ReconciliationOutcomeMeters implements ReconciliationTelemetr
     public static final String RESOLUTION_LATENCY = "finapp.reconciliation.resolution.latency";
     public static final String ADJUSTMENT = "finapp.reconciliation.adjustment";
 
+    /** {@code finapp.reconciliation.rematch.faulted} - rematch candidates whose fault was recorded and backed off (`P16-TSK-017`). */
+    public static final String REMATCH_FAULTED = "finapp.reconciliation.rematch.faulted";
+
     private final MeterRegistry registry;
     private final Function<UUID, Optional<String>> sourceCodes;
     private final Spans spans;
+    private final Counter rematchFaulted;
 
     /**
      * @param sourceCodes a reconciliation source id onto its declared code - the seeded
@@ -64,6 +68,15 @@ public final class ReconciliationOutcomeMeters implements ReconciliationTelemetr
         this.registry = Objects.requireNonNull(registry, "registry must not be null");
         this.sourceCodes = Objects.requireNonNull(sourceCodes, "sourceCodes must not be null");
         this.spans = Objects.requireNonNull(spans, "spans must not be null");
+        rematchFaulted =
+                Counter.builder(REMATCH_FAULTED)
+                        .description(
+                                "Rematch candidates whose fault was recorded, leaving them out of the rematch"
+                                        + " worklist until their retry (P16-TSK-017): one per backoff window per residual,"
+                                        + " counted once its batch commits, whichever instance held the source. Any rise"
+                                        + " that persists is a residual faulting every retry: it stays a break. Per"
+                                        + " instance; increase() and sum() aggregate")
+                        .register(registry);
         for (SettlementSourceDescriptor source : sources.declared()) {
             for (DecisionOutcome outcome : DecisionOutcome.values()) {
                 item(source.code(), outcome);
@@ -104,6 +117,11 @@ public final class ReconciliationOutcomeMeters implements ReconciliationTelemetr
         afterCommit(
                 () -> sourceCodes.apply(sourceId)
                         .ifPresent(code -> rematch(code, outcome).increment()));
+    }
+
+    @Override
+    public void rematchFaulted() {
+        afterCommit(rematchFaulted::increment);
     }
 
     @Override

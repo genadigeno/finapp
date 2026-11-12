@@ -456,6 +456,16 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The resolution sweeps' failure counters (`P16-TSK-017`, {@code THREAT_MODEL.md} section 6 item 42 (i)): a tick failing
+     * whole, a row its listing could not read, a row whose resolution threw - per payments sweep and for the payout sweep. Eager
+     * and unconditional for the {@code PaymentMeters} reason: the rules read them before they have ever been non-zero.
+     */
+    @Bean
+    SweepMeters sweepMeters(MeterRegistry registry) {
+        return new SweepMeters(registry);
+    }
+
+    /**
      * The stuck-payout gauges (`P6-TSK-013`): the {@code PaymentMetrics} stance verbatim — the
      * scrape is the schedule, one floored read-only aggregate per instance, no leader, nothing
      * written, and NaN rather than a false zero when the database cannot be read — over the

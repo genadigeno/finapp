@@ -160,7 +160,9 @@ class ReconciliationMigrationTest {
                         "match_reach",
                         // V022 (P11-TSK-004): which recognition entry each recognised capital
                         // contribution explains.
-                        "capital_recognition");
+                        "capital_recognition",
+                        // V025 (P16-TSK-017): a rematch residual's recorded fault and its retry.
+                        "rematch_fault");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

@@ -2,6 +2,7 @@ package com.finapp.app.payments;
 
 import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.app.lifecycle.ShutdownOrder;
+import com.finapp.app.telemetry.SweepMeters;
 import com.finapp.payments.HeldPayments;
 import com.finapp.payments.PaymentSweeper;
 import java.time.Duration;
@@ -66,12 +67,22 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
 
     private final Duration pollInterval;
 
+    /**
+     * The card sweep's failure counters (`P16-TSK-017`, {@code THREAT_MODEL.md} section 6 item 42 (i)): a tick failing whole,
+     * counted where its WARN line is written, and the tick's unreadable and failed rows from its tally.
+     */
+    private final SweepMeters.Sweep meters;
+
     private final ScheduleDrain drain = new ScheduleDrain("payment-sweeper");
 
     public PaymentSweeperSchedule(
-            PaymentSweeper sweeper, Supplier<HeldPayments.ExpiryTally> expiry, Duration pollInterval) {
+            PaymentSweeper sweeper,
+            Supplier<HeldPayments.ExpiryTally> expiry,
+            Duration pollInterval,
+            SweepMeters.Sweep meters) {
         this.sweeper = Objects.requireNonNull(sweeper, "sweeper must not be null");
         this.expiry = Objects.requireNonNull(expiry, "expiry must not be null");
+        this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval must not be null");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
             throw new IllegalArgumentException("pollInterval must be positive: " + pollInterval);
@@ -95,23 +106,27 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
         drain.started(executor);
     }
 
-    private void sweepQuietly() {
+    /** One tick: both legs, each contained. Package-visible for the schedule's own suite. */
+    void sweepQuietly() {
         try {
             PaymentSweeper.SweepResult result = sweeper.sweep();
-            if (result.candidates() > 0) {
+            meters.rows(result.unreadable(), result.failedRows());
+            if (result.candidates() + result.unreadable() > 0) {
                 // Counts only - identifiers live in the sweeper's own per-row lines.
                 log.info(
                         "Payment sweep: {} candidates, {} applied, {} skipped, {} failed,"
-                                + " {} attempt and {} refund judgements acted",
+                                + " {} unreadable, {} attempt and {} refund judgements acted",
                         result.candidates(),
                         result.applied(),
                         result.skipped(),
                         result.failedRows(),
+                        result.unreadable(),
                         result.actingJudgements().size(),
                         result.refundJudgements().size());
             }
         } catch (RuntimeException failure) {
             // The class only: a JDBC or provider message can name hosts and identifiers.
+            meters.tickFailed();
             log.warn("Payment sweep failed: {}", failure.getClass().getSimpleName());
         }
         // The second leg, contained on its own: a failed sweep never starves the deadline, nor the reverse.

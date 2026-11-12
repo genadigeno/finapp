@@ -2,6 +2,7 @@ package com.finapp.app.payments;
 
 import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.app.lifecycle.ShutdownOrder;
+import com.finapp.app.telemetry.SweepMeters;
 import com.finapp.payments.WithdrawalResolution;
 import java.time.Duration;
 import java.util.Objects;
@@ -38,10 +39,15 @@ public final class WithdrawalResolutionSchedule implements SmartLifecycle {
     private final WithdrawalResolution resolution;
     private final Duration pollInterval;
 
+    /** The inquiry sweep's failure counters (`P16-TSK-017`): a tick failing whole, and the tally's unreadable and failed rows. */
+    private final SweepMeters.Sweep meters;
+
     private final ScheduleDrain drain = new ScheduleDrain("withdrawal-resolution");
 
-    public WithdrawalResolutionSchedule(WithdrawalResolution resolution, Duration pollInterval) {
+    public WithdrawalResolutionSchedule(
+            WithdrawalResolution resolution, Duration pollInterval, SweepMeters.Sweep meters) {
         this.resolution = Objects.requireNonNull(resolution, "resolution must not be null");
+        this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval must not be null");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
             throw new IllegalArgumentException("pollInterval must be positive: " + pollInterval);
@@ -89,15 +95,19 @@ public final class WithdrawalResolutionSchedule implements SmartLifecycle {
     private void sweepInquiries() {
         try {
             WithdrawalResolution.SweepResult result = resolution.sweep();
-            if (result.candidates() > 0) {
+            meters.rows(result.unreadable(), result.failedRows());
+            if (result.candidates() + result.unreadable() > 0) {
                 // Counts only - identifiers live in the sweep's own per-row lines.
                 log.info(
-                        "Withdrawal sweep: {} candidates, {} resolved ({})",
+                        "Withdrawal sweep: {} candidates, {} resolved ({}), {} failed, {} unreadable",
                         result.candidates(),
                         result.resolved(),
-                        result.actingJudgements());
+                        result.actingJudgements(),
+                        result.failedRows(),
+                        result.unreadable());
             }
         } catch (RuntimeException failure) {
+            meters.tickFailed();
             // The class only: a JDBC or scheme message can name hosts and identifiers.
             log.warn("Withdrawal sweep failed: {}", failure.getClass().getSimpleName());
         }

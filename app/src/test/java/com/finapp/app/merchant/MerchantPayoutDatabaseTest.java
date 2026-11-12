@@ -569,7 +569,8 @@ class MerchantPayoutDatabaseTest {
                 new MerchantPayoutResolutionSchedule(
                         resolution(Duration.ZERO),
                         new MerchantMeters(registry),
-                        Duration.ofMillis(50));
+                        Duration.ofMillis(50),
+                        com.finapp.app.telemetry.SweepMeters.Sweep.NONE);
         schedule.start();
         try {
             await().atMost(Duration.ofSeconds(20)).until(() -> completedPayouts(registry) >= 1.0d);

@@ -963,11 +963,13 @@ SQL
 }
 
 incidents_poisoned_rows() {
-    # Section 11.39 (P15-TSK-002's three rows): a non-v7 payment attempt in a candidate state. The card sweep fails every tick on every
-    # instance with one WARN line; nothing is concluded meanwhile; the row's removal is the plant's teardown.
-    # A copy of a captured card attempt, under a v4 id, put back in flight at the capture's dispatch: every unique reference made new and
-    # the capture's facts taken off (the table holds them exactly on a captured row), so the only thing wrong with the row is the id no
-    # domain writer could mint.
+    # Section 11.39 (a), PI-024's poisoned-row step, run under C11 as P16-TSK-017's experiment: a non-v7 payment attempt at the card
+    # sweep's head. The listing skips it and records it, the sweep goes on, PaymentSweepRowUnreadable pages naming no identifier, the
+    # row is never judged, and no replica's tick fails whole (PaymentSweepFailing stays silent). The removal of the row and of its
+    # record is the plant's teardown, never a procedure.
+    # A copy of a captured card attempt, under a v4 id, put back in flight at the capture's dispatch an hour ago: every unique
+    # reference made new and the capture's facts taken off (the table holds them exactly on a captured row), so the only thing wrong
+    # with the row is the id no domain writer could mint.
     SOURCE_ATTEMPT=$(psql_query -c "SELECT id FROM payments.payment_attempt WHERE status = 'CAPTURED' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')
     [ -n "$SOURCE_ATTEMPT" ] || cannot "no captured payment attempt to copy"
     POISON=$(psql_query -c "SELECT gen_random_uuid()" | tr -d '[:space:]')
@@ -979,18 +981,32 @@ INSERT INTO payments.payment_attempt SELECT (jsonb_populate_record(NULL::payment
         'auth_provider_reference', 'poison-pa-$POISON', 'capture_provider_reference', NULL,
         'captured_amount_minor', NULL, 'captured_currency', NULL, 'captured_scale', NULL,
         'void_reference', NULL, 'void_provider_reference', NULL, 'end_to_end_reference', NULL, 'scheme_reference', NULL,
-        'failure_reason', NULL))).* FROM payments.payment_attempt a WHERE a.id = '$SOURCE_ATTEMPT';
+        'failure_reason', NULL, 'created_at', now() - interval '1 hour'))).* FROM payments.payment_attempt a
+    WHERE a.id = '$SOURCE_ATTEMPT';
 SQL
     POISONED_AT=$(date +%s)
-    sleep 240
-    lines=0
+    fires PaymentSweepRowUnreadable placeholder-page 600 "11.39 (a), a corrupt id at the card sweep's head" ',leg="card"'
+    failures=$(psql_query -c "SELECT failures FROM payments.sweep_row_failure WHERE leg = 'CARD_ATTEMPT' AND row_id = '$POISON'" | tr -d '[:space:]')
+    [ "${failures:-0}" -ge 1 ] || fail "11.39: the corrupt attempt has no failure record"
+    status=$(psql_query -c "SELECT status FROM payments.payment_attempt WHERE id = '$POISON'" | tr -d '[:space:]')
+    [ "$status" = CAPTURE_DISPATCHED ] || fail "11.39: the corrupt attempt was judged: $status"
+    since=$(( $(date +%s) - POISONED_AT + 60 ))
+    stalled=0
+    skipped=0
     for pod in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name); do
-        count=$(kube -n finapp logs "$pod" --since=5m 2>/dev/null | grep -c 'Payment sweep failed' || true)
-        [ "$count" -ge 2 ] && lines=$((lines + 1))
+        kube -n finapp logs "$pod" --since="${since}s" > "$WORK/poisoned-rows.log" 2>/dev/null || true
+        grep -q 'Payment sweep failed' "$WORK/poisoned-rows.log" && stalled=$((stalled + 1))
+        grep -q "A CARD_ATTEMPT sweep candidate $POISON could not be read" "$WORK/poisoned-rows.log" && skipped=$((skipped + 1))
     done
-    [ "$lines" = 3 ] || fail "11.39: the sweep's failure was repeated on $lines replicas of 3"
-    pass "11.39: one non-v7 attempt fails the card sweep every tick on all three replicas ('Payment sweep failed')"
-    psql_query -c "DELETE FROM payments.payment_attempt WHERE id = '$POISON'" >> "$ART/plants.log" 2>&1 || cannot "the poisoned row could not be removed"
+    [ "$stalled" = 0 ] || fail "11.39: the card sweep failed whole on $stalled replicas while the corrupt attempt stood"
+    [ "$skipped" -ge 1 ] || fail "11.39: no replica logged the corrupt attempt's skip"
+    [ "$(alert_state PaymentSweepFailing)" = none ] || fail "11.39: PaymentSweepFailing is $(alert_state PaymentSweepFailing)"
+    pass "11.39 (a): the corrupt attempt skipped and recorded ($failures failure(s)) on $skipped replica(s), never judged; no tick failed whole"
+    psql_query -f - >> "$ART/plants.log" 2>&1 <<SQL || cannot "the poisoned row could not be removed"
+\set ON_ERROR_STOP on
+DELETE FROM payments.sweep_row_failure WHERE row_id = '$POISON';
+DELETE FROM payments.payment_attempt WHERE id = '$POISON';
+SQL
     census poisoned-rows
 }
 

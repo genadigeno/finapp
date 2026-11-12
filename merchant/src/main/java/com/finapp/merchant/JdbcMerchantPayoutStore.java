@@ -2,6 +2,8 @@ package com.finapp.merchant;
 
 import com.finapp.ledger.HoldId;
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.persistence.SweepBackoff;
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
@@ -224,8 +226,62 @@ public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connec
         return true;
     }
 
+    /** A payout whose failure record's retry is still ahead is left out (`P16-TSK-017`, merchant {@code V016}). */
+    private static final String PAYOUT_DUE =
+            " AND NOT EXISTS (SELECT 1 FROM merchant.sweep_row_failure f"
+                    + " WHERE f.leg = 'PAYOUT' AND f.row_id = p.id"
+                    + " AND f.retry_at > statement_timestamp())";
+
+    /**
+     * The payments {@code SweepRowFailures} statement in this schema (`P16-TSK-017`): one count per backoff window however
+     * many instances failed the payout - the conflicting recorder re-reads the {@code WHERE} against the committed row and
+     * updates nothing - the base doubled per consecutive failure and capped, on {@code statement_timestamp()}, reset when the
+     * last failure is older than twice the cap.
+     */
+    private static final String RECORD_SWEEP_FAILURE =
+            "INSERT INTO merchant.sweep_row_failure AS f"
+                    + " (leg, row_id, failures, first_failed_at, last_failed_at, retry_at, last_failure)"
+                    + " VALUES ('PAYOUT', ?, 1, statement_timestamp(), statement_timestamp(),"
+                    + " statement_timestamp() + make_interval(secs => ?), ?)"
+                    + " ON CONFLICT (leg, row_id) DO UPDATE SET"
+                    + " failures = CASE WHEN f.last_failed_at < statement_timestamp() - make_interval(secs => ?)"
+                    + " THEN 1 ELSE f.failures + 1 END,"
+                    + " first_failed_at = CASE WHEN f.last_failed_at < statement_timestamp() - make_interval(secs => ?)"
+                    + " THEN statement_timestamp() ELSE f.first_failed_at END,"
+                    + " last_failed_at = statement_timestamp(),"
+                    + " retry_at = statement_timestamp() + CASE"
+                    + " WHEN f.last_failed_at < statement_timestamp() - make_interval(secs => ?) THEN make_interval(secs => ?)"
+                    + " ELSE LEAST(make_interval(secs => CAST(? AS double precision) * power(2, LEAST(f.failures, 20))),"
+                    + " make_interval(secs => ?)) END,"
+                    + " last_failure = EXCLUDED.last_failure"
+                    + " WHERE f.retry_at <= statement_timestamp()";
+
     @Override
-    public List<MerchantPayout> findSweepable(
+    public boolean recordSweepFailure(Connection unitOfWork, UUID payout, String failure) {
+        Objects.requireNonNull(payout, "payout must not be null");
+        Objects.requireNonNull(failure, "failure must not be null");
+        long base = SweepBackoff.BASE.toSeconds();
+        long cap = SweepBackoff.CAP.toSeconds();
+        long recovered = 2 * cap;
+        try (PreparedStatement upsert = unitOfWork.prepareStatement(RECORD_SWEEP_FAILURE)) {
+            upsert.setObject(1, payout);
+            upsert.setLong(2, base);
+            upsert.setString(3, failure);
+            upsert.setLong(4, recovered);
+            upsert.setLong(5, recovered);
+            upsert.setLong(6, recovered);
+            upsert.setLong(7, base);
+            upsert.setLong(8, base);
+            upsert.setLong(9, cap);
+            return upsert.executeUpdate() == 1;
+        } catch (SQLException failed) {
+            throw new MerchantStorageException(
+                    DatabaseFailure.describe("recording a payout sweep row's failure", failed));
+        }
+    }
+
+    @Override
+    public SweepListing<MerchantPayout> findSweepable(
             Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
         // A DISPATCHED row ages from its latest send permit - a takeover's re-send restarts the
         // clock, which is what keeps NEVER_RECEIVED from racing it; an UNKNOWN row ages from the
@@ -237,21 +293,20 @@ public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connec
                                 + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
                                 + "   FROM merchant.merchant_payout_event e"
                                 + "   WHERE e.payout_id = p.id) h ON true"
-                                + " WHERE (p.status = 'DISPATCHED' AND p.last_dispatched_at <= ?)"
+                                // The two states in their own parentheses: the backoff below binds to both.
+                                + " WHERE ((p.status = 'DISPATCHED' AND p.last_dispatched_at <= ?)"
                                 + "    OR (p.status = 'UNKNOWN'"
-                                + "        AND COALESCE(h.entered, p.created_at) <= ?)"
+                                + "        AND COALESCE(h.entered, p.created_at) <= ?))"
+                                + PAYOUT_DUE
                                 + " ORDER BY p.created_at, p.id"
                                 + " LIMIT ?")) {
             select.setTimestamp(1, Timestamp.from(dispatchedBefore));
             select.setTimestamp(2, Timestamp.from(unknownBefore));
             select.setInt(3, limit);
-            List<MerchantPayout> sweepable = new ArrayList<>();
-            try (ResultSet row = select.executeQuery()) {
-                while (row.next()) {
-                    sweepable.add(map(row));
-                }
+            try (ResultSet rows = select.executeQuery()) {
+                // A row that cannot be rehydrated is skipped and reported, never the listing's end.
+                return SweepListing.read(rows, "id", JdbcMerchantPayoutStore::map);
             }
-            return sweepable;
         } catch (SQLException failure) {
             throw new MerchantStorageException(
                     DatabaseFailure.describe("reading sweepable merchant payouts", failure));

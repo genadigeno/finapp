@@ -3,6 +3,7 @@ package com.finapp.payments;
 import com.finapp.ledger.HoldId;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.money.MoneyColumns;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
@@ -365,8 +366,19 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
         }
     }
 
+    /** A withdrawal whose {@link SweepLeg#WITHDRAWAL} retry is still ahead is left out (`P16-TSK-017`). */
+    private static final String WITHDRAWAL_DUE =
+            " AND NOT EXISTS (SELECT 1 FROM payments.sweep_row_failure f"
+                    + " WHERE f.leg = 'WITHDRAWAL' AND f.row_id = w.id"
+                    + " AND f.retry_at > statement_timestamp())";
+
     @Override
-    public List<Withdrawal> findSweepable(
+    public boolean recordSweepFailure(Connection unitOfWork, UUID withdrawal, String failure) {
+        return SweepRowFailures.record(unitOfWork, SweepLeg.WITHDRAWAL, withdrawal, failure);
+    }
+
+    @Override
+    public SweepListing<Withdrawal> findSweepable(
             Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
         // A DISPATCHED row ages from its latest send permit - a takeover's re-send restarts
         // the clock, which is what keeps NEVER_RECEIVED from racing it; an UNKNOWN row ages
@@ -377,22 +389,20 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
                                 + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
                                 + "   FROM payments.withdrawal_event e"
                                 + "   WHERE e.withdrawal_id = w.id) h ON true"
-                                + " WHERE (w.status = 'DISPATCHED'"
+                                // The two states in their own parentheses: the backoff below binds to both.
+                                + " WHERE ((w.status = 'DISPATCHED'"
                                 + "        AND w.last_dispatched_at <= ?)"
                                 + "    OR (w.status = 'UNKNOWN'"
-                                + "        AND COALESCE(h.entered, w.created_at) <= ?)"
+                                + "        AND COALESCE(h.entered, w.created_at) <= ?))"
+                                + WITHDRAWAL_DUE
                                 + " ORDER BY w.created_at, w.id"
                                 + " LIMIT ?")) {
             select.setTimestamp(1, Timestamp.from(dispatchedBefore));
             select.setTimestamp(2, Timestamp.from(unknownBefore));
             select.setInt(3, limit);
-            List<Withdrawal> sweepable = new ArrayList<>();
-            try (ResultSet row = select.executeQuery()) {
-                while (row.next()) {
-                    sweepable.add(map(row));
-                }
+            try (ResultSet rows = select.executeQuery()) {
+                return SweepListing.read(rows, "id", JdbcWithdrawalStore::map);
             }
-            return sweepable;
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("reading sweepable withdrawals", failure));

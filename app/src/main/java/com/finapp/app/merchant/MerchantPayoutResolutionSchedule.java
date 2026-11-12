@@ -3,6 +3,7 @@ package com.finapp.app.merchant;
 import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.app.telemetry.MerchantMeters;
+import com.finapp.app.telemetry.SweepMeters;
 import com.finapp.merchant.MerchantPayoutResolution;
 import java.time.Duration;
 import java.util.Objects;
@@ -42,11 +43,18 @@ public final class MerchantPayoutResolutionSchedule implements SmartLifecycle {
     private final MerchantPayoutResolution resolution;
     private final MerchantMeters meters;
     private final Duration pollInterval;
+
+    /** The payout sweep's failure counters (`P16-TSK-017`): a tick failing whole, and the tally's unreadable and failed rows. */
+    private final SweepMeters.Sweep sweepMeters;
     private final ScheduleDrain drain = new ScheduleDrain("merchant-payout-resolution");
 
     public MerchantPayoutResolutionSchedule(
-            MerchantPayoutResolution resolution, MerchantMeters meters, Duration pollInterval) {
+            MerchantPayoutResolution resolution,
+            MerchantMeters meters,
+            Duration pollInterval,
+            SweepMeters.Sweep sweepMeters) {
         this.resolution = Objects.requireNonNull(resolution, "resolution must not be null");
+        this.sweepMeters = Objects.requireNonNull(sweepMeters, "sweepMeters must not be null");
         this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval must not be null");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
@@ -71,25 +79,28 @@ public final class MerchantPayoutResolutionSchedule implements SmartLifecycle {
         drain.started(executor);
     }
 
-    private void sweepQuietly() {
+    void sweepQuietly() {
         try {
             MerchantPayoutResolution.SweepResult result = resolution.sweep();
             // The tick's OWN acting judgements, counted after their per-row transactions
             // committed (P6-TSK-013, the PaymentSweeperSchedule seam): a resolution racing a
             // sibling sweep or the synchronous answer is counted by whichever won, once.
             result.actingJudgements().forEach(meters::payoutJudged);
-            if (result.candidates() > 0) {
+            sweepMeters.rows(result.unreadable(), result.failedRows());
+            if (result.candidates() + result.unreadable() > 0) {
                 // Counts only - identifiers live in the sweep's own per-row lines.
                 log.info(
                         "Merchant payout resolution: {} candidates, {} resolved, {} skipped,"
-                                + " {} failed",
+                                + " {} failed, {} unreadable",
                         result.candidates(),
                         result.resolved(),
                         result.skipped(),
-                        result.failedRows());
+                        result.failedRows(),
+                        result.unreadable());
             }
         } catch (RuntimeException failure) {
             // The class only: a JDBC message can name hosts, identifiers and values.
+            sweepMeters.tickFailed();
             log.warn("Merchant payout resolution failed: {}", failure.getClass().getSimpleName());
         }
     }

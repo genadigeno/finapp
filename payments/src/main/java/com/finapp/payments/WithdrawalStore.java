@@ -1,5 +1,6 @@
 package com.finapp.payments;
 
+import com.finapp.platform.persistence.SweepListing;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -125,8 +126,20 @@ public interface WithdrawalStore<T> {
      */
     List<Withdrawal> pageCompleted(T unitOfWork, UUID after, int limit);
 
-    List<Withdrawal> findSweepable(
+    /**
+     * The withdrawals the inquiry sweep asks about; since `P16-TSK-017` a row whose
+     * {@link SweepLeg#WITHDRAWAL} retry is still ahead on the database's clock is left out, and a row
+     * that cannot be read is skipped and reported by its id ({@link SweepListing}).
+     */
+    SweepListing<Withdrawal> findSweepable(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
+
+    /**
+     * Records one failure of {@code withdrawal} in the {@link SweepLeg#WITHDRAWAL} listing and backs
+     * the row off on the database's clock (`P16-TSK-017`; {@link PaymentAttemptStore#recordSweepFailure}'s
+     * rule): true when this call counted it.
+     */
+    boolean recordSweepFailure(T unitOfWork, UUID withdrawal, String failure);
 
     /**
      * How many withdrawals wait past their due for the scheme's word, and how long the oldest has

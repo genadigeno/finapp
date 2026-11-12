@@ -2,6 +2,8 @@ package com.finapp.payments;
 
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.persistence.DatabaseTime;
+import com.finapp.platform.persistence.SweepBackoff;
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -15,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -107,19 +110,29 @@ public final class WithdrawalResolution {
      * quietly (the {@code PaymentSweeper} shape).
      */
     public record SweepResult(
-            int candidates, int resolved, Map<WithdrawalStatus, Integer> actingJudgements) {
+            int candidates,
+            int resolved,
+            Map<WithdrawalStatus, Integer> actingJudgements,
+            int failedRows,
+            int unreadable) {
 
         public SweepResult {
             Objects.requireNonNull(actingJudgements, "actingJudgements must not be null");
         }
     }
 
+    /**
+     * One inquiry pass. Since `P16-TSK-017` a row whose resolution throws is recorded and backed
+     * off ({@code payments.sweep_row_failure}, leg {@link SweepLeg#WITHDRAWAL}), and a row the
+     * listing cannot read is skipped, reported and recorded the same way: neither is ever
+     * concluded, and the schedule counts both from the tally.
+     */
     @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
     public SweepResult sweep() {
         Instant now = Instant.now(clock);
         // A DISPATCHED row ages from its permit, so on the permit's own clock - the
         // database's (X-TSK-013); an UNKNOWN row ages from its event, stamped by an instance.
-        List<Withdrawal> candidates =
+        SweepListing<Withdrawal> listed =
                 transactions.inTransaction(
                         uow ->
                                 withdrawals.findSweepable(
@@ -127,6 +140,15 @@ public final class WithdrawalResolution {
                                         DatabaseTime.now(uow).minus(config.dispatchedAge()),
                                         now.minus(config.unknownAge()),
                                         config.batchSize()));
+        List<Withdrawal> candidates = listed.candidates();
+        for (UUID row : listed.unreadable()) {
+            log.warn(
+                    "A withdrawal sweep candidate {} could not be read: skipped and counted, never"
+                            + " judged, and listed again after its backoff",
+                    row);
+            recordFailure(row, SweepBackoff.UNREADABLE);
+        }
+        int failedRows = 0;
         int resolved = 0;
         Map<WithdrawalStatus, Integer> judgements = new TreeMap<>();
         for (Withdrawal candidate : new ArrayList<>(candidates)) {
@@ -174,13 +196,32 @@ public final class WithdrawalResolution {
                 }
             } catch (RuntimeException oneRowFailed) {
                 // Identifier and failure class only - never scheme bytes (INV-AUD-02).
+                failedRows++;
                 log.warn(
                         "withdrawal sweep could not resolve {}: {}",
                         candidate.id(),
                         oneRowFailed.getClass().getSimpleName());
+                recordFailure(candidate.id().value(), SweepBackoff.failureClass(oneRowFailed));
             }
         }
-        return new SweepResult(candidates.size(), resolved, judgements);
+        return new SweepResult(
+                candidates.size(), resolved, judgements, failedRows, listed.unreadable().size());
+    }
+
+    /**
+     * Records the failure in its own transaction (the row's own rolled back), and contains a
+     * failure to record it: the row is then retried on the next tick, and the rest still reached.
+     */
+    private void recordFailure(UUID row, String failure) {
+        try {
+            transactions.inTransaction(uow -> withdrawals.recordSweepFailure(uow, row, failure));
+        } catch (RuntimeException notRecorded) {
+            log.warn(
+                    "The withdrawal sweep could not record row {}'s failure ({}); the next tick"
+                            + " retries the row",
+                    row,
+                    SweepBackoff.failureClass(notRecorded));
+        }
     }
 
     /** One expiry pass's tally — telemetry, never the count of record. */

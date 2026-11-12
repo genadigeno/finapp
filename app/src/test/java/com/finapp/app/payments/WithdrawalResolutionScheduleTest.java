@@ -2,7 +2,9 @@ package com.finapp.app.payments;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.telemetry.SweepMeters;
 import com.finapp.payments.TransactionRunner;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -23,6 +25,7 @@ class WithdrawalResolutionScheduleTest {
     @Test
     @DisplayName("a tick runs the inquiry sweep and then the expiry leg; both failing, the tick still returns")
     void aTickRunsBothLegsContained() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
         List<String> transactions = new ArrayList<>();
         TransactionRunner failing = new TransactionRunner() {
             @Override
@@ -32,9 +35,14 @@ class WithdrawalResolutionScheduleTest {
             }
         };
         WithdrawalResolutionSchedule schedule = new WithdrawalResolutionSchedule(
-                WithdrawalDoorComposition.resolution(failing), Duration.ofSeconds(30));
+                WithdrawalDoorComposition.resolution(failing), Duration.ofSeconds(30),
+                new SweepMeters(registry).payments(SweepMeters.PaymentSweep.WITHDRAWAL));
         schedule.sweepQuietly();
         assertThat(transactions).as("the sweep's candidate read, then the expiry's first claim").hasSize(2);
+        // The inquiry leg's whole-tick failure is counted where its WARN line is written (P16-TSK-017, item 42 (i) (i)); the
+        // expiry leg is not this counter's.
+        assertThat(registry.get("finapp.payments.sweep.tick.failed").tag("leg", "withdrawal").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("finapp.payments.sweep.tick.failed").tag("leg", "card").counter().count()).isZero();
         assertThat(schedule.isRunning()).isFalse();
     }
 }

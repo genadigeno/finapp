@@ -2,6 +2,8 @@ package com.finapp.payments;
 
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.persistence.DatabaseTime;
+import com.finapp.platform.persistence.SweepBackoff;
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -14,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -91,22 +94,35 @@ public final class PayInResolution {
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
     }
 
-    /** One tick's tally — telemetry, never the count of record ({@code PaymentSweeper}'s rule). */
-    public record SweepResult(int candidates, int contacted, int resolved) {}
+    /**
+     * One tick's tally — telemetry, never the count of record ({@code PaymentSweeper}'s rule):
+     * {@code failedRows} threw, {@code unreadable} could not be read and were skipped, each
+     * recorded and backed off, never concluded (`P16-TSK-017`).
+     */
+    public record SweepResult(int candidates, int contacted, int resolved, int failedRows, int unreadable) {}
 
     @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
     public SweepResult sweep() {
         // The bound on the DATABASE clock, the permit's own (X-TSK-013): this instance's clock
         // judged against a database-stamped permit would see it older than it is when ahead.
-        List<PaymentAttempt> candidates =
+        SweepListing<PaymentAttempt> listed =
                 transactions.inTransaction(
                         uow ->
                                 attempts.findResolvableInitiations(
                                         uow,
                                         DatabaseTime.now(uow).minus(config.initiationAge()),
                                         config.batchSize()));
+        List<PaymentAttempt> candidates = listed.candidates();
+        for (UUID row : listed.unreadable()) {
+            log.warn(
+                    "A pay-in sweep candidate {} could not be read: skipped and counted, never"
+                            + " judged, and listed again after its backoff",
+                    row);
+            recordFailure(row, SweepBackoff.UNREADABLE);
+        }
         int contacted = 0;
         int resolved = 0;
+        int failedRows = 0;
         for (PaymentAttempt candidate : new ArrayList<>(candidates)) {
             // Per-row containment: one candidate's failure never starves the rest.
             try (SecurityContext.Scope platform = SecurityContext.enterSystem();
@@ -131,13 +147,32 @@ public final class PayInResolution {
                 }
             } catch (RuntimeException oneRowFailed) {
                 // Identifier and failure class only - never scheme bytes (INV-AUD-02).
+                failedRows++;
                 log.warn(
                         "pay-in sweep could not resolve attempt {}: {}",
                         candidate.id(),
                         oneRowFailed.getClass().getSimpleName());
+                recordFailure(candidate.id().value(), SweepBackoff.failureClass(oneRowFailed));
             }
         }
-        return new SweepResult(candidates.size(), contacted, resolved);
+        return new SweepResult(candidates.size(), contacted, resolved, failedRows, listed.unreadable().size());
+    }
+
+    /**
+     * Records the failure in its own transaction (the row's own rolled back), and contains a
+     * failure to record it: the row is then retried on the next tick, and the rest still reached.
+     */
+    private void recordFailure(UUID row, String failure) {
+        try {
+            transactions.inTransaction(
+                    uow -> attempts.recordSweepFailure(uow, SweepLeg.PAY_IN, row, failure));
+        } catch (RuntimeException notRecorded) {
+            log.warn(
+                    "The pay-in sweep could not record row {}'s failure ({}); the next tick retries"
+                            + " the row",
+                    row,
+                    SweepBackoff.failureClass(notRecorded));
+        }
     }
 
     /** One row's wire call and outcome transaction; true when this tick's own conditional acted. */

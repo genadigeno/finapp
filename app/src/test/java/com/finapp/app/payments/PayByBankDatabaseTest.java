@@ -1936,6 +1936,7 @@ class PayByBankDatabaseTest {
         Instant wide = Instant.now(CLOCK).plusSeconds(60);
         assertThat(transactions.inTransaction(
                                 uow -> refundsBean.findSweepable(uow, wide, wide, 2_000))
+                        .candidates()
                         .stream()
                         .map(com.finapp.payments.Refund::id))
                 .doesNotContain(id);
@@ -1943,6 +1944,7 @@ class PayByBankDatabaseTest {
                                 uow ->
                                         refundsBean.findSweepableReturns(
                                                 uow, wide, wide, 2_000))
+                        .candidates()
                         .stream()
                         .map(com.finapp.payments.Refund::id))
                 .contains(id);

@@ -2,6 +2,8 @@ package com.finapp.merchant;
 
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.persistence.DatabaseTime;
+import com.finapp.platform.persistence.SweepBackoff;
+import com.finapp.platform.persistence.SweepListing;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -14,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -103,6 +106,7 @@ public final class MerchantPayoutResolution {
             int resolved,
             int skipped,
             int failedRows,
+            int unreadable,
             List<MerchantPayoutStatus> actingJudgements) {
 
         public SweepResult {
@@ -115,11 +119,16 @@ public final class MerchantPayoutResolution {
         }
     }
 
-    /** One sweep: bounded candidates, one transaction per row. */
+    /**
+     * One sweep: bounded candidates, one transaction per row. Since `P16-TSK-017` a payout whose
+     * resolution throws is recorded and backed off ({@code merchant.sweep_row_failure}), and a row the
+     * listing cannot read is skipped, reported and recorded the same way: neither is concluded, and
+     * the schedule counts both from the tally ({@code failedRows}, {@code unreadable}).
+     */
     @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
     public SweepResult sweep() {
         Instant now = Instant.now(clock);
-        List<MerchantPayout> candidates =
+        SweepListing<MerchantPayout> listed =
                 transactions.inTransaction(
                         uow ->
                                 payouts.findSweepable(
@@ -128,6 +137,14 @@ public final class MerchantPayoutResolution {
                                         DatabaseTime.now(uow).minus(dispatchedAge),
                                         now.minus(unknownAge),
                                         batchSize));
+        List<MerchantPayout> candidates = listed.candidates();
+        for (UUID row : listed.unreadable()) {
+            log.warn(
+                    "A payout sweep candidate {} could not be read: skipped and counted, never"
+                            + " judged, and listed again after its backoff",
+                    row);
+            recordFailure(row, SweepBackoff.UNREADABLE);
+        }
         List<MerchantPayoutStatus> judged = new ArrayList<>();
         int skipped = 0;
         int failedRows = 0;
@@ -147,13 +164,31 @@ public final class MerchantPayoutResolution {
                 // Identifier and failure class only - never provider bytes (INV-AUD-02).
                 failedRows++;
                 log.warn(
-                        "Resolving payout {} failed with {}; the sweep continues and the next"
-                                + " tick will retry this row",
+                        "Resolving payout {} failed with {}; the sweep continues and the row is"
+                                + " retried after its backoff",
                         candidate.id(),
                         oneRowsFailure.getClass().getSimpleName());
+                recordFailure(candidate.id().value(), SweepBackoff.failureClass(oneRowsFailure));
             }
         }
-        return new SweepResult(candidates.size(), judged.size(), skipped, failedRows, judged);
+        return new SweepResult(
+                candidates.size(), judged.size(), skipped, failedRows, listed.unreadable().size(), judged);
+    }
+
+    /**
+     * Records the failure in its own transaction (the row's own rolled back), and contains a
+     * failure to record it: the row is then retried on the next tick, and the rest still reached.
+     */
+    private void recordFailure(UUID row, String failure) {
+        try {
+            transactions.inTransaction(uow -> payouts.recordSweepFailure(uow, row, failure));
+        } catch (RuntimeException notRecorded) {
+            log.warn(
+                    "The payout sweep could not record row {}'s failure ({}); the next tick retries"
+                            + " the row",
+                    row,
+                    SweepBackoff.failureClass(notRecorded));
+        }
     }
 
     /** The status THIS call's own transition committed, or empty when it moved nothing. */
