@@ -54,3 +54,22 @@ scrape_configs:
           # Production's expected state is "false" until OPERATIONS_RUNBOOK.md section 9.1's activation gate opens -
           # every seam answering ALLOW with NO_POLICY_ACTIVE recorded; its last step sets this to "true".
           risk_judging: "false"
+
+  # The telemetry pipeline's own counters (P15-TSK-032; rules/telemetry.yml): compose's collector and its two reference back ends, by their
+  # service names on compose's network, under the job names a deployment keeps. A developer who runs the application without
+  # `docker compose up otel-collector tempo loki` sees TelemetryCollectorDown and TelemetryBackendDown here, which page nobody.
+  - job_name: finapp-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]
+        labels:
+          env: local
+  - job_name: finapp-tempo
+    static_configs:
+      - targets: ["tempo:3200"]
+        labels:
+          env: local
+  - job_name: finapp-loki
+    static_configs:
+      - targets: ["loki:3100"]
+        labels:
+          env: local

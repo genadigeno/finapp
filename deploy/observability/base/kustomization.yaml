@@ -1,7 +1,7 @@
 # The telemetry pipeline, a release of its own (P15-TSK-023, ADR-0124 decision 1): the collector every replica exports to, and the namespace's
 # default-deny written with its workloads (THREAT_MODEL.md section 6 item 21, decided 2026-11-09). Render an overlay, never this directory:
 # each overlay names the backends the collector exports to (FINAPP_ENVIRONMENT, TEMPO_ENDPOINT, LOKI_ENDPOINT, TAIL_DECISION_WAIT) and the
-# flows to them. kind's overlay brings Tempo, Loki and Prometheus as reference backends; a real environment's backends are not chosen yet.
+# flows to them. kind's overlay brings Tempo, Loki, Prometheus and Alertmanager as reference backends; a real environment's backends are not chosen yet.
 # infra/scripts/telemetry-check.sh renders the overlay beside the application's and runs both through the policies.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

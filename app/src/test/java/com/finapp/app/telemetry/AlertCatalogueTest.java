@@ -44,8 +44,12 @@ class AlertCatalogueTest {
     private static final String PINS = "infra/scanner-pins.sh";
     private static final String WORKFLOW = ".github/workflows/ci.yml";
 
-    /** The rule files this task wrote whole: each states its aggregation per rule. */
-    private static final Set<String> STATED_FILES = Set.of("slo.yml", "correctness.yml", "flows.yml", "platform.yml");
+    /** The rule files this task wrote whole, and the telemetry stack's own (`P15-TSK-032`): each states its aggregation per rule. */
+    private static final Set<String> STATED_FILES = Set.of("slo.yml", "correctness.yml", "flows.yml", "platform.yml", "telemetry.yml");
+
+    /** Where kind's Prometheus loads every rule file from (`P15-TSK-032`): a byte-for-byte copy, kustomize reading no file outside it. */
+    private static final String KIND_RULES = "deploy/observability/overlays/kind/rules/";
+    private static final String KIND_KUSTOMIZATION = "deploy/observability/overlays/kind/kustomization.yaml";
 
     private static final Pattern SECTIONS =
             Pattern.compile("OPERATIONS_RUNBOOK\\.md,? sections? ([0-9]+(?:\\.[0-9]+)*(?:(?:, | and )[0-9]+(?:\\.[0-9]+)*)*)");
@@ -92,6 +96,47 @@ class AlertCatalogueTest {
             }
             assertThat(named).as("a section %s cites names it (%s)", alert.name(), sections).isTrue();
         }
+    }
+
+    /** kubectl's annotations cap, which a client-side apply's copy of the object counts against (`P15-TSK-032`'s review). */
+    private static final int ANNOTATIONS_CAP = 262_144;
+
+    /** What is left for the rule files to grow before the build fails, and before an apply would: 32 KiB. */
+    private static final int MARGIN = 32_768;
+
+    @Test
+    @DisplayName("kind's rules ConfigMap fits a client-side apply's annotation with 32 KiB to spare, measured as kubectl writes it: every file"
+            + " JSON-escaped, < > & as six bytes each, plus a kilobyte for the object around them (P15-TSK-032)")
+    void theRulesConfigMapFitsAClientSideApply() throws IOException {
+        long serialised = 1_024;
+        int files = 0;
+        try (Stream<Path> copies = Files.list(RepositoryPaths.locate(KIND_RULES + "slo.yml").getParent())) {
+            for (Path file : copies.sorted().toList()) {
+                serialised += file.getFileName().toString().length() + 6 + escapedLength(Files.readString(file));
+                files++;
+            }
+        }
+        assertThat(files).as("the copies were read").isGreaterThanOrEqualTo(13);
+        assertThat(serialised).as("the rules ConfigMap as kubectl's last-applied annotation holds it: past %s bytes split the ConfigMap, or"
+                + " apply the overlay server-side, before it reaches the %s-byte cap", ANNOTATIONS_CAP - MARGIN, ANNOTATIONS_CAP)
+                .isLessThanOrEqualTo(ANNOTATIONS_CAP - MARGIN).isGreaterThan(150_000);
+    }
+
+    /** A string's length as Go's encoding/json writes it, which kubectl uses: HTML-escaped. */
+    private static long escapedLength(String text) {
+        long length = 0;
+        for (int at = 0; at < text.length(); ) {
+            int point = text.codePointAt(at);
+            at += Character.charCount(point);
+            if (point == '"' || point == '\\' || point == '\n' || point == '\r' || point == '\t') {
+                length += 2;
+            } else if (point < 0x20 || point == '<' || point == '>' || point == '&' || point == 0x2028 || point == 0x2029) {
+                length += 6;
+            } else {
+                length += new String(Character.toChars(point)).getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            }
+        }
+        return length;
     }
 
     @Test
@@ -241,6 +286,36 @@ class AlertCatalogueTest {
         }
         assertThat(RepositoryPaths.read(DEPLOYED_ALERTMANAGER)).isEqualTo(RepositoryPaths.read(COMPOSE_ALERTMANAGER));
         assertThat(RepositoryPaths.read("infra/prometheus/prometheus.yml")).contains("alerting:").contains("alertmanager:9093");
+    }
+
+    @Test
+    @DisplayName("kind's Prometheus loads every rule file as committed: its copy holds each file byte for byte and nothing else, the overlay"
+            + " lists each, and deploy/'s Alertmanager is generated from the committed routing (P15-TSK-032)")
+    void kindLoadsEveryRuleFileAsCommitted() throws IOException {
+        Set<String> source = new TreeSet<>();
+        try (Stream<Path> files = Files.list(rulesDirectory())) {
+            files.map(path -> path.getFileName().toString()).filter(name -> name.endsWith(".yml")).forEach(source::add);
+        }
+        Set<String> copied = new TreeSet<>();
+        try (Stream<Path> files = Files.list(RepositoryPaths.locate(KIND_RULES + "slo.yml").getParent())) {
+            files.map(path -> path.getFileName().toString()).forEach(copied::add);
+        }
+        assertThat(copied).as("kind's copy is every rule file and only those: copy a new or changed rule file into %s", KIND_RULES)
+                .isEqualTo(source);
+        for (String file : source) {
+            assertThat(RepositoryPaths.read(KIND_RULES + file)).as("%s%s is infra/prometheus/rules/%s byte for byte: copy it", KIND_RULES, file, file)
+                    .isEqualTo(RepositoryPaths.read("infra/prometheus/rules/" + file));
+        }
+        String kustomization = RepositoryPaths.read(KIND_KUSTOMIZATION).replace("\r\n", "\n");
+        Matcher listed = Pattern.compile("(?m)^      - rules/(\\S+)$").matcher(kustomization);
+        Set<String> generated = new TreeSet<>();
+        while (listed.find()) {
+            generated.add(listed.group(1));
+        }
+        assertThat(generated).as("the rules ConfigMap lists every file").isEqualTo(source);
+        assertThat(kustomization).contains("  - name: finapp-prometheus-rules\n").contains("  - ../../alertmanager\n");
+        assertThat(RepositoryPaths.read("deploy/observability/alertmanager/kustomization.yaml").replace("\r\n", "\n"))
+                .contains("  - name: finapp-alertmanager-config\n    files:\n      - alertmanager.yml\n");
     }
 
     @Test

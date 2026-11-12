@@ -204,6 +204,93 @@ deny contains "[obs-scraper] no policy lets a pod labelled finapp/role: metrics-
 	not scraper_reaches_the_application
 }
 
+# ------------------------------------------------------------------------------------------- what the scraper reaches, and who reaches a backend
+
+# P15-TSK-032: the scraper reads the alerts' inputs and sends what fires to Alertmanager, so it reaches more than the application. Every flow
+# is named here, each target by its peer exactly and with the ports it answers on: a metrics port, Alertmanager's API, DNS. Every egress rule
+# of a policy that may select the scraper is one of these, every peer of the rule the same target and every port that target's. A target added
+# to the scrape is added here in the same review, and a widened peer (cert-manager's whole namespace, its webhook's port) is refused.
+scrape_targets := [
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "finapp"}}, "podSelector": {"matchLabels": {"app.kubernetes.io/name": "finapp-app"}}}, "ports": {["TCP", 8081]}},
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "finapp-edge"}}, "podSelector": {"matchLabels": {"finapp/role": "ingress-controller"}}}, "ports": {["TCP", 8081]}},
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "telemetry-collector"}}}, "ports": {["TCP", 8888]}},
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "trace-store"}}}, "ports": {["TCP", 3200]}},
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "log-store"}}}, "ports": {["TCP", 3100]}},
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "alert-router"}}}, "ports": {["TCP", 9193]}},
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "cert-manager"}}, "podSelector": {"matchLabels": {"app.kubernetes.io/name": "cert-manager", "app.kubernetes.io/component": "controller"}}}, "ports": {["TCP", 9402]}},
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}, "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}, "ports": {["UDP", 53], ["TCP", 53]}},
+]
+
+# The labels a rendered workload of this namespace carries on its pods, by role; the role alone where none is rendered.
+pod_labels(role) := labels if {
+	some doc in main.of_kind("Deployment")
+	in_namespace(doc)
+	labels := object.get(object.get(object.get(doc.spec, "template", {}), "metadata", {}), "labels", {})
+	labels["finapp/role"] == role
+} else := {"finapp/role": role}
+
+# A policy reaches a pod by what it selects: an empty selector, one whose every label the pod carries, or one with expressions, read as
+# selecting it.
+may_select(policy, labels) if {
+	selector := main.section(policy.spec, "podSelector")
+	count(main.list_of(selector, "matchExpressions")) > 0
+}
+
+may_select(policy, labels) if {
+	selector := main.section(policy.spec, "podSelector")
+	count(main.list_of(selector, "matchExpressions")) == 0
+	every key, value in main.section(selector, "matchLabels") {
+		labels[key] == value
+	}
+}
+
+reaches_a_scrape_target(rule) if {
+	some target in scrape_targets
+	count(main.list_of(rule, "to")) > 0
+	every peer in main.list_of(rule, "to") {
+		peer == target.peer
+	}
+	main.ports_within(rule, target.ports)
+}
+
+deny contains msg if {
+	some policy in main.of_kind("NetworkPolicy")
+	in_namespace(policy)
+	may_select(policy, pod_labels("metrics-scraper"))
+	some rule in main.list_of(policy.spec, "egress")
+	not reaches_a_scrape_target(rule)
+	msg := sprintf("[obs-scraper-egress] %s lets the scraper reach something other than a scrape target's own port, Alertmanager or DNS", [main.label(policy)])
+}
+
+# Who may reach a backend, and on which port: the collectors on its ingest port and the scraper on its counters' port; Alertmanager the
+# scraper alone; and the scraper itself nobody (P15-TSK-032's review): on kind it runs with --web.enable-lifecycle, whose /-/reload and
+# /-/quit answer anyone who reaches it, so only its node (the API server's proxy) may. Each peer exactly a role of this namespace.
+store_admits := {
+	"trace-store": [{"role": "telemetry-collector", "ports": {["TCP", 4317]}}, {"role": "metrics-scraper", "ports": {["TCP", 3200]}}],
+	"log-store": [{"role": "telemetry-collector", "ports": {["TCP", 3100]}}, {"role": "metrics-scraper", "ports": {["TCP", 3100]}}],
+	"alert-router": [{"role": "metrics-scraper", "ports": {["TCP", 9193]}}],
+	"metrics-scraper": [],
+}
+
+admitted_to_store(rule, role) if {
+	some admitted in store_admits[role]
+	count(main.list_of(rule, "from")) > 0
+	every peer in main.list_of(rule, "from") {
+		peer == {"podSelector": {"matchLabels": {"finapp/role": admitted.role}}}
+	}
+	main.ports_within(rule, admitted.ports)
+}
+
+deny contains msg if {
+	some role, _ in store_admits
+	some policy in main.of_kind("NetworkPolicy")
+	in_namespace(policy)
+	may_select(policy, pod_labels(role))
+	some rule in main.list_of(policy.spec, "ingress")
+	not admitted_to_store(rule, role)
+	msg := sprintf("[obs-store-ingress] %s admits to the %s a peer or a port its list does not name", [main.label(policy), role])
+}
+
 # ------------------------------------------------------------------------------------------- the application's one endpoint
 
 collector_endpoints := {

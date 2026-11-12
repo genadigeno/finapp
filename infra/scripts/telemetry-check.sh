@@ -70,6 +70,7 @@ POLICY=observability/base/networkpolicy.yaml
 WORKLOAD=observability/base/collector-workload.yaml
 CONFIG=observability/base/collector.yaml
 APP=base/deployment.yaml
+BACKENDS=observability/overlays/kind/networkpolicy-backends.yaml
 
 plant_all() {
     # The general hardening, reused from finapp.rego, on the collector.
@@ -95,6 +96,15 @@ plant_all() {
     # The scraper's flow.
     obs_plant_on obs-no-scraper "$POLICY" 's/^      finapp\/role: metrics-scraper$/      finapp\/role: nobody/'
 
+    # The alerts' flows (P15-TSK-032), each named in observability.rego: the scraper to cert-manager's webhook port, and to every pod of
+    # cert-manager's namespace; Loki's ingest open to every namespace; Alertmanager admitting the collectors.
+    obs_plant_on obs-scraper-to-webhook "$BACKENDS" 's/port: 9402/port: 10250/'
+    obs_plant_on obs-scraper-whole-cert-manager "$BACKENDS" '/app.kubernetes.io\/component: controller/d'
+    obs_plant_on obs-logs-from-anywhere "$BACKENDS" '/name: finapp-log-store/,/name: finapp-scraper-to-backends/s/^  ingress:$/  ingress:\n    - from:\n        - namespaceSelector: {}\n      ports:\n        - protocol: TCP\n          port: 3100/'
+    obs_plant_on obs-alerts-from-collector "$BACKENDS" '/name: finapp-alert-router/,$s/finapp\/role: metrics-scraper/finapp\/role: telemetry-collector/'
+    # The scraper reachable at all (the review's MINOR 7): on kind its lifecycle endpoints answer anyone who reaches its port.
+    obs_plant_on obs-scraper-reachable "$POLICY" '/name: finapp-metrics-scraper/,$s/^  egress:$/  ingress:\n    - from:\n        - podSelector:\n            matchLabels:\n              finapp\/role: telemetry-collector\n      ports:\n        - protocol: TCP\n          port: 9090\n  egress:/'
+
     # The application's endpoint: anything but the cluster's own collector is refused, in the base and in an overlay of its own.
     obs_plant_on obs-endpoint-external "$APP" 's|http://finapp-collector.finapp-observability.svc.cluster.local:4318/v1/traces|https://otlp.example.invalid/v1/traces|'
     obs_plant_on obs-endpoint-staging overlays/staging/kustomization.yaml 's/^patches:$/patches:\n  - target:\n      kind: Deployment\n      name: finapp-app\n    patch: |-\n      apiVersion: apps\/v1\n      kind: Deployment\n      metadata:\n        name: finapp-app\n      spec:\n        template:\n          spec:\n            containers:\n              - name: app\n                env:\n                  - name: FINAPP_TELEMETRY_TRACESENDPOINT\n                    value: https:\/\/otlp.example.invalid\/v1\/traces/'
@@ -116,6 +126,9 @@ in_container() {
             printf 'overlay: kind\n' > /scratch/rendered/kind.data.yaml
             # The pipeline's rules hold where it is rendered: the kind stream must render it, or they would hold nothing.
             grep -q '^  namespace: finapp-observability$' /scratch/rendered/kind.yaml || { echo "the kind stream renders no finapp-observability" >&2; exit 1; }
+            # The alerts on kind (P15-TSK-032): every rule file in the scraper's ConfigMap and Alertmanager beside it, or a rehearsal reads no alert.
+            grep -q '^  name: finapp-prometheus-rules-' /scratch/rendered/kind.yaml || { echo "the kind stream renders no rules ConfigMap" >&2; exit 1; }
+            grep -q '^  name: finapp-alertmanager$' /scratch/rendered/kind.yaml || { echo "the kind stream renders no Alertmanager" >&2; exit 1; }
             # Staging's and production's application overlays, alone: held to the endpoint rule, the pipeline having no overlay there.
             for overlay in staging production; do
                 kustomize build "/repo/deploy/overlays/$overlay" > "/scratch/rendered/$overlay.yaml"
@@ -262,6 +275,11 @@ obs_refused obs-egress-database obs-egress
 obs_refused obs-egress-anywhere obs-egress
 obs_refused obs-egress-block obs-egress
 obs_refused obs-no-scraper obs-scraper
+obs_refused obs-scraper-to-webhook obs-scraper-egress
+obs_refused obs-scraper-whole-cert-manager obs-scraper-egress
+obs_refused obs-logs-from-anywhere obs-store-ingress
+obs_refused obs-alerts-from-collector obs-store-ingress
+obs_refused obs-scraper-reachable obs-store-ingress
 obs_refused obs-endpoint-external obs-endpoint
 obs_refused obs-endpoint-staging obs-endpoint
 obs_refused obs-peers-from-anywhere obs-collector-peers

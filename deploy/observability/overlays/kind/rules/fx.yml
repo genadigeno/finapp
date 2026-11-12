@@ -1,0 +1,177 @@
+# FX alerts (P9-TSK-005 onward, PHASE_9_PLAN.md section 15, ADR-0075's operational impact).
+#
+# Every expression names a series the application publishes - AlertRulesResolveTest checks each one
+# against a live scrape, as it does the settlement and reconciliation rules.
+#
+# Conventions (settlement-reconciliation.yml's):
+# - Gauges read the shared database, so every instance publishes the same reading: aggregate with
+#   max(), never sum(). Counters are per instance: sum(increase(...)).
+# - A gauge that cannot be read, or a pair never fetched, is NaN, never zero; x != x holds only for
+#   NaN, so the threshold rule cannot see it and the never-fetched rule can, and FxGaugesUnreadable
+#   for every other gauge read here (P15-TSK-024's fix round: since that task a gauge is also NaN
+#   while its instance's gauge refresher is behind).
+# - Never a rate anywhere: labels and annotations name pairs and outcomes only (ADR-0072, D32).
+# - Routed by severity in infra/alertmanager/alertmanager.yml (P15-TSK-025), to a placeholder receiver until an on-call tool exists.
+
+groups:
+  - name: fx
+    labels:
+      owner: fx
+    rules:
+      - alert: ReferenceRateStale
+        # A reference older than five minutes. Quoting already fails closed past the pricing
+        # policy's reference_max_age (INV-FX-02); this makes the outage loud long before customers
+        # see a 503 fx.RateUnavailable.
+        expr: max by (pair) (finapp_fx_rate_age) > 300
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "The reference rate for {{ $labels.pair }} is stale"
+          description: "The latest {{ $labels.pair }} reference snapshot was received {{ $value | humanizeDuration }} ago on the database clock. Quotes in this pair fail closed. Check the simulated-reference source and finapp_fx_rate_fetch_total by outcome. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: ReferenceRateNeverFetched
+        # NaN: never fetched, or unreadable - a reference that never arrives must stay visible.
+        expr: max by (pair) (finapp_fx_rate_age != finapp_fx_rate_age)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "No reference rate has ever been read for {{ $labels.pair }}"
+          description: "The {{ $labels.pair }} age gauge is unreadable or no snapshot exists. Confirm finapp.fx.reference.url is configured and the database is reachable. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      # ---- P9-TSK-027: the rest of PHASE_9_PLAN.md section 15's alerts ----
+
+      - alert: FxQuoteImplausibleRefusals
+        # A provider quoting outside the reference band - every such quote refused, never priced (INV-FX-02).
+        expr: sum by (pair) (increase(finapp_fx_quote_total{outcome="refused_implausible"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Implausible provider quotes refused for {{ $labels.pair }}"
+          description: "At least one {{ $labels.pair }} firm quote fell outside the reference band in five minutes. Check the provider's rates against the reference source. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: FxCoverUnknownAged
+        # INV-LIFE-03 for covers: an execution the platform has no answer for, older than five minutes.
+        expr: max by (provider) (finapp_fx_cover_unknown_age_seconds) > 300
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "An FX cover on {{ $labels.provider }} has had no answer for over five minutes"
+          description: "The oldest UNKNOWN cover on {{ $labels.provider }} has waited {{ $value | humanizeDuration }}. The cover sweep inquires by our reference; check the provider's availability. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: FxCoverOpenAged
+        # The oldest uncovered position leg - FX_POSITION carrying open risk longer than five minutes.
+        expr: max by (provider) (finapp_fx_cover_open_age_seconds) > 300
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "An FX position leg on {{ $labels.provider }} has been uncovered for over five minutes"
+          description: "The oldest open cover on {{ $labels.provider }} is {{ $value | humanizeDuration }} old. The platform carries that position until it executes. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: FxBooksUnexplained
+        # The FX books proof: any currency failing must read 0 - never a repair, always a person.
+        expr: max by (purpose) (finapp_fx_proof) > 0
+        for: 0s
+        labels:
+          severity: page
+        annotations:
+          summary: "The FX books proof fails for {{ $labels.purpose }}"
+          description: "{{ $value }} currencies of {{ $labels.purpose }} do not equal what fx's rows say they must. Read the FX position report and the books proof's lines. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: FxPlanDiverged
+        # The plan replay: a booked trade whose entry no longer recomputes from its frozen inputs.
+        expr: max(finapp_fx_plan_verdict) == 0
+        for: 0s
+        labels:
+          severity: page
+        annotations:
+          summary: "A booked FX plan no longer replays"
+          description: "The plan verdict reads diverged: a trade's posted entry differs from its recomputed plan. Read the trade's provenance. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: OutboundCreditUnknownAged
+        # INV-LIFE-03 for outbound credits: a customer's money behind a hold with no answer for fifteen minutes.
+        expr: max(finapp_payments_outbound_unknown_age) > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A cross-border outbound credit has had no answer for over fifteen minutes"
+          description: "The oldest unanswered outbound credit has waited {{ $value | humanizeDuration }}. The resolution sweep inquires by our reference; check the corridor provider. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: OutboundCreditUndecided
+        # The provider holds a credit RECEIVED past its declared decision deadline (four hours for corridor-sim-a/-b).
+        expr: max(finapp_payments_outbound_received_age) > 14400
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A corridor provider has held a credit undecided past its decision deadline"
+          description: "The oldest RECEIVED outbound credit has waited {{ $value | humanizeDuration }} for the provider's decision. Raise it with the provider. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: CrossBorderPaymentUndelivered
+        # The oldest payment in transit, past the corridor's delivery estimate (one day).
+        expr: max by (corridor) (finapp_crossborder_payment_in_transit_age) > 86400
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A payment on {{ $labels.corridor }} is undelivered past its delivery estimate"
+          description: "The oldest in-transit payment on {{ $labels.corridor }} has waited {{ $value | humanizeDuration }} since the provider accepted it. Read its trace. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: CounterpartyReviewAged
+        # A counterparty screening hit waiting for a reviewer longer than a day - a beneficiary held unpayable.
+        expr: max(finapp_kyc_counterparty_review_age_seconds) > 86400
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A counterparty screening review has waited over a day"
+          description: "The oldest open counterparty review has waited {{ $value | humanizeDuration }}. A beneficiary stays unpayable until a reviewer decides. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: ReconciliationRuleSetMissing
+        # A declared settlement source with no ACTIVE rule set: its reports cannot be matched.
+        expr: max by (source) (finapp_reconciliation_rule_set_missing) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The settlement source {{ $labels.source }} has no active rule set"
+          description: "Reports from {{ $labels.source }} cannot be matched until two controllers activate its rule set v1, and they wait PARSED, so an accounting month cannot have its run: RECONCILIATION_DISCLOSURE stands MONTH_NOT_RUN (P14-TSK-012, OPERATIONS_RUNBOOK.md section 10.3)."
+
+      - alert: CrossBorderCancellationSpike
+        # The free-option watch: cancellations above a fifth of the payments submitted in an hour.
+        expr: sum(increase(finapp_crossborder_cancellation_total[1h])) / clamp_min(sum(increase(finapp_crossborder_payment_total{outcome="submitted"}[1h])), 1) > 0.2
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Cross-border cancellations exceed a fifth of submitted payments"
+          description: "The cancellation rate over the last hour is {{ $value | humanizePercentage }} - customers may be using recalls as a free option against the rate. See OPERATIONS_RUNBOOK.md section 11.24."
+
+      - alert: FxGaugesUnreadable
+        # P15-TSK-024's fix round (2026-11-08): every gauge a threshold rule above compares, NaN on an instance - its read
+        # failed there, or that instance's gauge refresher is behind (platform.yml's GaugesStale says which). A threshold
+        # never compares a NaN, so while one is NaN its alert cannot fire there: an unknown cover, an unexplained book or a
+        # stuck credit is unknown, not fine. Every one reads NaN only when unread, 0 when nothing is aged (the reference age,
+        # whose NaN also means never fetched, keeps ReferenceRateNeverFetched). Per instance, each leg naming its series in
+        # a `gauge` label, because an alert drops the metric name (MustBeZeroGaugeUnreadable's pattern). x != x holds only for NaN.
+        expr: >-
+          label_replace(max by (job, instance) (finapp_fx_cover_unknown_age_seconds != finapp_fx_cover_unknown_age_seconds), "gauge", "finapp_fx_cover_unknown_age_seconds", "", "")
+          or label_replace(max by (job, instance) (finapp_fx_cover_open_age_seconds != finapp_fx_cover_open_age_seconds), "gauge", "finapp_fx_cover_open_age_seconds", "", "")
+          or label_replace(max by (job, instance) (finapp_fx_proof != finapp_fx_proof), "gauge", "finapp_fx_proof", "", "")
+          or label_replace(max by (job, instance) (finapp_fx_plan_verdict != finapp_fx_plan_verdict), "gauge", "finapp_fx_plan_verdict", "", "")
+          or label_replace(max by (job, instance) (finapp_payments_outbound_unknown_age != finapp_payments_outbound_unknown_age), "gauge", "finapp_payments_outbound_unknown_age", "", "")
+          or label_replace(max by (job, instance) (finapp_payments_outbound_received_age != finapp_payments_outbound_received_age), "gauge", "finapp_payments_outbound_received_age", "", "")
+          or label_replace(max by (job, instance) (finapp_crossborder_payment_in_transit_age != finapp_crossborder_payment_in_transit_age), "gauge", "finapp_crossborder_payment_in_transit_age", "", "")
+          or label_replace(max by (job, instance) (finapp_kyc_counterparty_review_age_seconds != finapp_kyc_counterparty_review_age_seconds), "gauge", "finapp_kyc_counterparty_review_age_seconds", "", "")
+          or label_replace(max by (job, instance) (finapp_reconciliation_rule_set_missing != finapp_reconciliation_rule_set_missing), "gauge", "finapp_reconciliation_rule_set_missing", "", "")
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An FX or cross-border gauge has no value: {{ $labels.gauge }}"
+          description: "{{ $labels.gauge }} on {{ $labels.instance }} reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."

@@ -1,0 +1,159 @@
+# The correctness pages (P15-TSK-025; docs/architecture/SLOS.md section 3; ADR-0124 decision 4; C10). A correctness signal is not an SLO and has no
+# budget: money is right or it is an incident, so each pages on its first breach and carries no for. The product proofs and the
+# replays that already exist page the same way from their own files (bnpl, credit, fx, lending, risk, settlement-reconciliation),
+# each with for: 0s since this task; SLOS.md section 3 is the register and AlertCatalogueTest holds it. The source-join census
+# joined this routing (P15-TSK-035): its page is routed as these are, and it stands beside them in the register.
+#
+# No amount anywhere: these are verdicts and counts, and the audited operator reports answer the figures.
+
+groups:
+  - name: correctness
+    rules:
+      - alert: LedgerTrialBalanceNonZero
+        # Aggregation: max by (currency) - every instance sweeps the same journal, so any one instance's 1 is the fleet's, and a NaN instance neither hides nor fakes it
+        # INV-ACC-01: total debits equal total credits per currency. The gauge is a verdict, 0 balanced and 1 not, never an amount.
+        # Pages on its first non-zero sample: no for, no budget. Local development pages nobody; routing is alertmanager.yml.
+        expr: max by (currency) (finapp_ledger_trial_balance) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: ledger
+        annotations:
+          summary: "The trial balance for {{ $labels.currency }} is not zero"
+          description: "Total debits differ from total credits in {{ $labels.currency }} (INV-ACC-01). Never correct it from here. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: LedgerProjectionDrift
+        # Aggregation: max() - every instance recomputes the same projection; a NaN instance is ignored
+        # INV-BAL-02: a balance projection disagrees with its recomputation from postings.
+        expr: max(finapp_ledger_projection_drift) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: ledger
+        annotations:
+          summary: "A balance projection disagrees with the journal"
+          description: "{{ $value }} accounts have a projection that differs from the journal (INV-BAL-02). The journal is the truth. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: GlNotEqualLedger
+        # Aggregation: sum() - the close-check counter is per instance, and any instance judging GL = ledger failed is the fact
+        # INV-ACC-06: the General Ledger is a function of the journal. A counter, so increase() over an hour: the first failed judgement fires at once.
+        # AccountingCloseCheckFailed tickets the same counter beside it; this one is the page.
+        expr: sum(increase(finapp_accounting_close_check_total{check="GL_EQUALS_LEDGER",outcome="failed"}[1h])) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: accounting
+        annotations:
+          summary: "GL = ledger failed"
+          description: "The close check GL_EQUALS_LEDGER failed in the last hour (INV-ACC-06): a month cannot close on it. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: OutboxDeadLetter
+        # Aggregation: max() - every instance reads the same outbox table; a NaN instance is ignored
+        # An abandoned event blocks its aggregate until a person resolves it: the gauge is a count of what stands now, so the page lasts as long as the row does.
+        expr: max(finapp_outbox_deadlettered) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: platform
+        annotations:
+          summary: "An outbox event is dead-lettered"
+          description: "{{ $value }} outbox events were abandoned and still block their aggregates. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: InboxDeadLetterParked
+        # Aggregation: max() - every instance reads the same parked records; a NaN instance is ignored
+        # A parked inbox record is a poison message set aside (the meter finapp.deadletter.parked, PHASE_15_PLAN.md section 11.2).
+        expr: max(finapp_deadletter_parked) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: platform
+        annotations:
+          summary: "An inbox record is parked"
+          description: "{{ $value }} inbox records are parked and were never applied. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: PaymentWebhookUnmappable
+        # Aggregation: sum() - counters are per instance, and any instance counting one is the fact
+        # A signed provider callback that names no operation we minted, or that the provider's own inquiry denied past its bound, contradicted, or answered unreadably (ADR-0083): both what a stolen webhook key looks like and what a wire change looks like.
+        # The door and the hint sweep both count on this series (HintedOutcome.isBreak, CallbackHintObserver), so one rule reads them; a counter, so the first one fires at once.
+        expr: sum(increase(finapp_payments_webhook_total{outcome="unmappable"}[15m])) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: payments
+        annotations:
+          summary: "A provider callback could not be believed"
+          description: "A signed provider callback named no operation this platform minted, was denied or contradicted by the provider's own inquiry, or its answer could not be read. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: JournalEntryUnsourced
+        # Aggregation: max by (kind) - every instance reads the same findings; a NaN instance neither hides nor fakes it
+        # A journal entry with no domain record behind it, or whose record's figures differ from its lines (THREAT_MODEL.md T15). Pages on its first non-zero sample: no for, no budget.
+        # A finding stands in the gauge for finapp.accounting.source-census.standing (24 hours) and stays in the records for good: the page ends, the evidence does not.
+        expr: max by (kind) (finapp_accounting_source_census_breaks) > 0
+        for: 0s
+        labels:
+          severity: page
+          owner: accounting
+        annotations:
+          summary: "A journal entry is {{ $labels.kind }}"
+          description: "{{ $value }} journal entries found {{ $labels.kind }} by the source-join census. Never correct it from here. See OPERATIONS_RUNBOOK.md section 11.27."
+      - alert: SourceCensusLagging
+        # Aggregation: max() - every instance reads the same head; a NaN instance is ignored
+        # The walk is more than fifteen minutes behind: a batch keeps failing, or a transaction holding an xid has stayed open (the walk reads only finished transactions). A ticket, not a page: a stall loses nothing, and the entries wait. SourceCensusStalled pages if it stays.
+        expr: max(finapp_accounting_source_census_lag_seconds) > 900
+        for: 5m
+        labels:
+          severity: ticket
+          owner: accounting
+        annotations:
+          summary: "The source-join census is behind"
+          description: "The census's walk is {{ $value }} seconds behind the journal: a long-open transaction is holding its fence, or a batch keeps failing. See OPERATIONS_RUNBOOK.md section 11.27."
+      - alert: SourceCensusStalled
+        # Aggregation: max() - every instance reads the same head; a NaN instance is ignored
+        # An hour behind: longer than a slow transaction or a day's catch-up batch, short enough that a held row or a held transaction does not stop the census unseen. A page because this is the case that stops T15's detective control with nothing in the journal to say so, including a session holding the head row (the same credential can take that lock). The gauge is published while the census is unhealthy, so a walk that cannot run can still page.
+        expr: max(finapp_accounting_source_census_lag_seconds) > 3600
+        for: 5m
+        labels:
+          severity: page
+          owner: accounting
+        annotations:
+          summary: "The source-join census has stopped reading the journal"
+          description: "The census has been {{ $value }} seconds behind the journal, past its hour's bound: entries are waiting and none are being judged. See OPERATIONS_RUNBOOK.md section 11.27."
+      - alert: SourceCensusFindingsRecent
+        # Aggregation: max() - every instance reads the same findings; a NaN instance is ignored
+        # A finding stands in the page for 24 hours; this ticket counts them for 30 days (finapp.accounting.source-census.recent), so the page's end is not the end of anyone being told. A finding has no door to close it: this is a ticket that ages out, not one a person resolves.
+        expr: max(finapp_accounting_source_census_findings) > 0
+        for: 0s
+        labels:
+          severity: ticket
+          owner: accounting
+        annotations:
+          summary: "The source-join census has recent findings"
+          description: "{{ $value }} journal entries were counted by the source-join census within its ticket window. See OPERATIONS_RUNBOOK.md section 11.27."
+      - alert: GaugesStaleAcrossTheFleet
+        # Aggregation: count() - the fleet-wide question, every instance's canary at once, never one instance's
+        # The count of instances whose gauge canary is stale equals the count that are up, for five minutes: each instance's own GaugesStale is a ticket, but when the whole fleet's refreshers are stale, every fleet-wide max() on a gauge reads NaN and every correctness page on a gauge is blind. The owner's ruling of 2026-11-09 (P15-TSK-025's owner item).
+        # One stale instance is not this rule: the others still answer, and GaugesStale tickets it.
+        expr: count(finapp_gauges_refreshed{job="finapp"} != finapp_gauges_refreshed{job="finapp"}) == count(up{job="finapp"} == 1)
+        for: 5m
+        labels:
+          severity: page
+          owner: platform
+        annotations:
+          summary: "Every finapp instance's gauges are stale"
+          description: "{{ $value }} instances are up and every one's gauge canary is stale: every correctness page on a gauge is blind. See OPERATIONS_RUNBOOK.md section 11.27."
+      - alert: CorrectnessGaugesUnreadable
+        # Aggregation: per instance by (job, instance) - x != x holds for NaN alone, and one instance unable to read is that instance's fault
+        # While a correctness gauge is NaN it answers nothing: max() still reads the instances that can, but this names the one that cannot.
+        expr: label_replace(max by (job, instance) (finapp_ledger_trial_balance != finapp_ledger_trial_balance), "gauge", "finapp_ledger_trial_balance", "", "") or label_replace(max by (job, instance) (finapp_ledger_projection_drift != finapp_ledger_projection_drift), "gauge", "finapp_ledger_projection_drift", "", "") or label_replace(max by (job, instance) (finapp_outbox_deadlettered != finapp_outbox_deadlettered), "gauge", "finapp_outbox_deadlettered", "", "") or label_replace(max by (job, instance) (finapp_deadletter_parked != finapp_deadletter_parked), "gauge", "finapp_deadletter_parked", "", "") or label_replace(max by (job, instance) (finapp_accounting_source_census_breaks != finapp_accounting_source_census_breaks), "gauge", "finapp_accounting_source_census_breaks", "", "") or label_replace(max by (job, instance) (finapp_accounting_source_census_lag_seconds != finapp_accounting_source_census_lag_seconds), "gauge", "finapp_accounting_source_census_lag_seconds", "", "") or label_replace(max by (job, instance) (finapp_accounting_source_census_findings != finapp_accounting_source_census_findings), "gauge", "finapp_accounting_source_census_findings", "", "")
+        for: 15m
+        labels:
+          severity: ticket
+          owner: platform
+        annotations:
+          summary: "A correctness gauge cannot be read on {{ $labels.instance }}"
+          description: "{{ $labels.gauge }} is NaN on {{ $labels.instance }} for 15 minutes: its read is failing or the instance's gauge refresher is behind. See OPERATIONS_RUNBOOK.md section 11.20."
+      - alert: CorrectnessUnverifiable
+        # Aggregation: none - absent(x == x) is true when no instance holds a number, which is the fleet-wide question
+        # A rule that cannot evaluate fires its absent-series alert: no instance publishing a number means every rule above is silent for the wrong reason.
+        expr: absent(finapp_ledger_trial_balance == finapp_ledger_trial_balance) or absent(finapp_ledger_projection_drift == finapp_ledger_projection_drift) or absent(finapp_outbox_deadlettered == finapp_outbox_deadlettered) or absent(finapp_accounting_source_census_breaks == finapp_accounting_source_census_breaks) or absent(finapp_accounting_source_census_lag_seconds == finapp_accounting_source_census_lag_seconds) or absent(finapp_accounting_source_census_findings == finapp_accounting_source_census_findings)
+        for: 15m
+        labels:
+          severity: ticket
+          owner: platform
+        annotations:
+          summary: "No instance can verify the books"
+          description: "No instance has published a number for a correctness gauge for 15 minutes, so the correctness pages are silent for the wrong reason. See OPERATIONS_RUNBOOK.md section 11.20."

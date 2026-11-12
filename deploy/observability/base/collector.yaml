@@ -138,6 +138,18 @@ exporters:
   # The first tier's only exit: each span to the peer that owns its trace id.
   load_balancing:
     routing_key: traceID
+    # A BATCH THAT FAILS IS ROUTED AGAIN (P15-TSK-032's review): the exporter's own retry and queue, at this level, re-route a failed
+    # batch against the peers as the resolver knows them by then. Without them a collector drops every span it is given until its
+    # resolver first reads the peers' name, and nothing retries a peer that has just gone: measured on this image, a first apply with
+    # the name resolving 30 s late dropped 170 to 200 spans a collector, a collector joining a roll 35 to 37; with them, none - at the start,
+    # across the roll, on the survivor (OPERATIONS_RUNBOOK.md section 11.34). Two minutes outlast the cluster DNS's 30 s cache and this
+    # resolver's 15 s interval with room; the queue is the back ends' size.
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 120s
+    sending_queue:
+      enabled: true
+      queue_size: 1000
     protocol:
       otlp:
         timeout: 5s

@@ -1,0 +1,111 @@
+# The SLI recording rules (P15-TSK-025; docs/architecture/SLOS.md; ADR-0124 decision 3). One error ratio per objective and window: the
+# 5m, 30m, 1h and 6h that the burn-rate alerts in slo.yml read. Every error ratio is a fleet-wide fact, never an instance's.
+#
+# Aggregation, stated per kind and tested over two instances that differ (infra/prometheus/tests/slo.test.yml):
+# - Request SLIs: sum(rate(...)) over every instance, errors divided by total. Counters are per instance; a per-instance ratio
+#   would let one busy instance hide behind an idle one. "or on() vector(0)" keeps zero errors a 0 rather than no sample, and
+#   no traffic is no sample at all (0/0), so an idle route never burns.
+# - Time-based SLIs (event freshness, consumption): a boolean per evaluation, then avg_over_time, so the ratio is the share of
+#   evaluations that were bad. max(x == x) and sum(x == x) drop a NaN instance first: max() would have ignored it, but sum()
+#   is poisoned by it, and a bool comparison on NaN reads 0 - a good minute nobody measured. All NaN is no sample, so an
+#   unmeasured minute is neither good nor bad; CorrectnessGaugesUnreadable and PlatformGaugesUnreadable name the blindness.
+# - The latency SLIs read the 1 s boundary that com.finapp.app.telemetry.SloLatencyBuckets adds to these routes alone.
+# - No group label here: an SLI belongs to no owner; its alert does.
+
+groups:
+  - name: slo-recording
+    rules:
+      # authentication_availability: the authentication and session routes, 99.9% non-5xx over 30 days (error budget 0.001).
+      - record: finapp:slo_authentication_availability:error_ratio_rate5m
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?",status=~"5.."}[5m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?"}[5m]))
+      - record: finapp:slo_authentication_availability:error_ratio_rate30m
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?",status=~"5.."}[30m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?"}[30m]))
+      - record: finapp:slo_authentication_availability:error_ratio_rate1h
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?",status=~"5.."}[1h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?"}[1h]))
+      - record: finapp:slo_authentication_availability:error_ratio_rate6h
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?",status=~"5.."}[6h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?"}[6h]))
+      # authentication_latency: the authentication and session routes, 95% within 1 s over 30 days (error budget 0.05).
+      - record: finapp:slo_authentication_latency:error_ratio_rate5m
+        expr: 1 - (sum(rate(http_server_requests_seconds_bucket{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?",le="1.0"}[5m])) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?"}[5m])))
+      - record: finapp:slo_authentication_latency:error_ratio_rate30m
+        expr: 1 - (sum(rate(http_server_requests_seconds_bucket{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?",le="1.0"}[30m])) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?"}[30m])))
+      - record: finapp:slo_authentication_latency:error_ratio_rate1h
+        expr: 1 - (sum(rate(http_server_requests_seconds_bucket{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?",le="1.0"}[1h])) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?"}[1h])))
+      - record: finapp:slo_authentication_latency:error_ratio_rate6h
+        expr: 1 - (sum(rate(http_server_requests_seconds_bucket{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?",le="1.0"}[6h])) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/authentications(/mfa)?|/v1/sessions(/current|/\\{id\\})?"}[6h])))
+      # transfer_availability: POST /v1/transfers, 99.9% non-5xx over 30 days (error budget 0.001).
+      - record: finapp:slo_transfer_availability:error_ratio_rate5m
+        expr: (sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers",status=~"5.."}[5m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers"}[5m]))
+      - record: finapp:slo_transfer_availability:error_ratio_rate30m
+        expr: (sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers",status=~"5.."}[30m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers"}[30m]))
+      - record: finapp:slo_transfer_availability:error_ratio_rate1h
+        expr: (sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers",status=~"5.."}[1h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers"}[1h]))
+      - record: finapp:slo_transfer_availability:error_ratio_rate6h
+        expr: (sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers",status=~"5.."}[6h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers"}[6h]))
+      # transfer_latency: POST /v1/transfers, 99% within 1 s over 30 days (error budget 0.01).
+      - record: finapp:slo_transfer_latency:error_ratio_rate5m
+        expr: 1 - (sum(rate(http_server_requests_seconds_bucket{method="POST",uri="/v1/transfers",le="1.0"}[5m])) / sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers"}[5m])))
+      - record: finapp:slo_transfer_latency:error_ratio_rate30m
+        expr: 1 - (sum(rate(http_server_requests_seconds_bucket{method="POST",uri="/v1/transfers",le="1.0"}[30m])) / sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers"}[30m])))
+      - record: finapp:slo_transfer_latency:error_ratio_rate1h
+        expr: 1 - (sum(rate(http_server_requests_seconds_bucket{method="POST",uri="/v1/transfers",le="1.0"}[1h])) / sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers"}[1h])))
+      - record: finapp:slo_transfer_latency:error_ratio_rate6h
+        expr: 1 - (sum(rate(http_server_requests_seconds_bucket{method="POST",uri="/v1/transfers",le="1.0"}[6h])) / sum(rate(http_server_requests_seconds_count{method="POST",uri="/v1/transfers"}[6h])))
+      # payment_checkout: the payment and checkout commands, 99.9% non-5xx over 30 days (error budget 0.001).
+      - record: finapp:slo_payment_checkout:error_ratio_rate5m
+        expr: (sum(rate(http_server_requests_seconds_count{method!="GET",uri=~"/v1/payments(/.*)?|/v1/checkout/.*",status=~"5.."}[5m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{method!="GET",uri=~"/v1/payments(/.*)?|/v1/checkout/.*"}[5m]))
+      - record: finapp:slo_payment_checkout:error_ratio_rate30m
+        expr: (sum(rate(http_server_requests_seconds_count{method!="GET",uri=~"/v1/payments(/.*)?|/v1/checkout/.*",status=~"5.."}[30m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{method!="GET",uri=~"/v1/payments(/.*)?|/v1/checkout/.*"}[30m]))
+      - record: finapp:slo_payment_checkout:error_ratio_rate1h
+        expr: (sum(rate(http_server_requests_seconds_count{method!="GET",uri=~"/v1/payments(/.*)?|/v1/checkout/.*",status=~"5.."}[1h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{method!="GET",uri=~"/v1/payments(/.*)?|/v1/checkout/.*"}[1h]))
+      - record: finapp:slo_payment_checkout:error_ratio_rate6h
+        expr: (sum(rate(http_server_requests_seconds_count{method!="GET",uri=~"/v1/payments(/.*)?|/v1/checkout/.*",status=~"5.."}[6h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{method!="GET",uri=~"/v1/payments(/.*)?|/v1/checkout/.*"}[6h]))
+      # merchant_api: the merchant API, 99.9% non-5xx over 30 days (error budget 0.001).
+      - record: finapp:slo_merchant_api:error_ratio_rate5m
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/merchant/.*",status=~"5.."}[5m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/merchant/.*"}[5m]))
+      - record: finapp:slo_merchant_api:error_ratio_rate30m
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/merchant/.*",status=~"5.."}[30m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/merchant/.*"}[30m]))
+      - record: finapp:slo_merchant_api:error_ratio_rate1h
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/merchant/.*",status=~"5.."}[1h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/merchant/.*"}[1h]))
+      - record: finapp:slo_merchant_api:error_ratio_rate6h
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/merchant/.*",status=~"5.."}[6h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/merchant/.*"}[6h]))
+      # provider_callbacks: the provider callbacks, 99.95% accepted or deduplicated over 30 days (error budget 0.0005).
+      - record: finapp:slo_provider_callbacks:error_ratio_rate5m
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/providers/.*",status=~"5.."}[5m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/providers/.*",status=~"2..|5.."}[5m]))
+      - record: finapp:slo_provider_callbacks:error_ratio_rate30m
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/providers/.*",status=~"5.."}[30m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/providers/.*",status=~"2..|5.."}[30m]))
+      - record: finapp:slo_provider_callbacks:error_ratio_rate1h
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/providers/.*",status=~"5.."}[1h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/providers/.*",status=~"2..|5.."}[1h]))
+      - record: finapp:slo_provider_callbacks:error_ratio_rate6h
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/providers/.*",status=~"5.."}[6h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/providers/.*",status=~"2..|5.."}[6h]))
+      # operator_surface: the operator surface, 99.5% non-5xx over 30 days (error budget 0.005).
+      - record: finapp:slo_operator_surface:error_ratio_rate5m
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/operator/.*",status=~"5.."}[5m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/operator/.*"}[5m]))
+      - record: finapp:slo_operator_surface:error_ratio_rate30m
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/operator/.*",status=~"5.."}[30m])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/operator/.*"}[30m]))
+      - record: finapp:slo_operator_surface:error_ratio_rate1h
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/operator/.*",status=~"5.."}[1h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/operator/.*"}[1h]))
+      - record: finapp:slo_operator_surface:error_ratio_rate6h
+        expr: (sum(rate(http_server_requests_seconds_count{uri=~"/v1/operator/.*",status=~"5.."}[6h])) or on() vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~"/v1/operator/.*"}[6h]))
+      # event_freshness: event freshness, 99% of minutes under 60 s over 30 days (error budget 0.01).
+      - record: finapp:slo_event_freshness:bad
+        expr: max(finapp_outbox_oldest_publishable_seconds == finapp_outbox_oldest_publishable_seconds) >= bool 60
+      - record: finapp:slo_event_freshness:error_ratio_rate5m
+        expr: avg_over_time(finapp:slo_event_freshness:bad[5m])
+      - record: finapp:slo_event_freshness:error_ratio_rate30m
+        expr: avg_over_time(finapp:slo_event_freshness:bad[30m])
+      - record: finapp:slo_event_freshness:error_ratio_rate1h
+        expr: avg_over_time(finapp:slo_event_freshness:bad[1h])
+      - record: finapp:slo_event_freshness:error_ratio_rate6h
+        expr: avg_over_time(finapp:slo_event_freshness:bad[6h])
+      # consumption: consumption, 99% of minutes under 1000 records over 30 days (error budget 0.01).
+      - record: finapp:slo_consumption:bad
+        expr: sum by (module) (finapp_inbox_lag == finapp_inbox_lag) >= bool 1000
+      - record: finapp:slo_consumption:error_ratio_rate5m
+        expr: avg_over_time(finapp:slo_consumption:bad[5m])
+      - record: finapp:slo_consumption:error_ratio_rate30m
+        expr: avg_over_time(finapp:slo_consumption:bad[30m])
+      - record: finapp:slo_consumption:error_ratio_rate1h
+        expr: avg_over_time(finapp:slo_consumption:bad[1h])
+      - record: finapp:slo_consumption:error_ratio_rate6h
+        expr: avg_over_time(finapp:slo_consumption:bad[6h])
