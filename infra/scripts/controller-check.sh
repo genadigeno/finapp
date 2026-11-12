@@ -10,21 +10,27 @@
 #                     restricted to nothing (deploy/delivery/controller/default-project.yaml).
 #   external-secrets  the External Secrets chart at ESO_VERSION, fetched and refused unless its archive is ESO_CHART_SHA256, rendered with
 #                     deploy/operators/external-secrets/values.yaml.
+#   metrics-server    for the kind delivery rehearsal alone: metrics-server's release manifest at METRICS_SERVER_VERSION, refused unless
+#                     its bytes are METRICS_SERVER_MANIFEST_SHA256, its image by digest, its aggregated reader role deleted, and told not to
+#                     verify the kubelets' serving certificates, which kind signs with nothing it can trust. A real environment brings its
+#                     own metrics source (OPERATIONS_RUNBOOK.md section 11.36); kind has none, and without one the release's autoscaler is
+#                     Degraded under Argo CD's own check and the root's last wave never comes.
 # Each is held to infra/scripts/manifest-policy/controllers.rego: a ClusterRole only from the controller's named list, its
-# ClusterRoleBinding only to that role and that controller's own ServiceAccount, Secrets only in the namespaces listed for it, no
-# aggregation, every image a pinned digest, and for Argo CD the committed configuration and the restricted default project.
+# ClusterRoleBinding only to that role and that controller's own ServiceAccount, a RoleBinding only to a role the stream holds, a binding
+# to a role of the cluster's own only where the list names it, Secrets only in the namespaces listed for it, no aggregation, every image a
+# pinned digest, and for Argo CD the committed configuration and the restricted default project.
 #
 # THEN EACH RULE AGAIN, OVER A PLANT IT MUST REFUSE. A policy that is wired but cannot fail reads as assurance it does not give. Each plant
 # is a copy of a render (or the chart rendered with changed values) with one defect; the check must fail AND name the rule. A plant
 # accepted, refused for another reason, or no longer planted (its mutation found nothing to change) fails this script.
 # ControllerRenderContractTest requires the plants to cover every rule id in controllers.rego.
 #
-# `render <directory>` writes the two streams, each having passed its policy, as argocd.yaml and external-secrets.yaml, and runs no plant:
-# the kind rehearsal's delivery scope installs exactly what this script checked.
+# `render <directory>` writes the three streams, each having passed its policy, as argocd.yaml, external-secrets.yaml and
+# metrics-server.yaml, and runs no plant: the kind rehearsal's delivery scope installs exactly what this script checked.
 #
 # WHAT IT NEVER DOES. It talks to no cluster and holds no credential: no container is given a variable from the host, the repository is
 # mounted read-only, and its working directory is a temporary one removed at exit. The network is used for the pinned images and for the
-# two release files, each refused unless it is the pinned bytes. KUSTOMIZE_IMAGE, KUBECONFORM_IMAGE, CONFTEST_IMAGE and HELM_IMAGE
+# three release files, each refused unless it is the pinned bytes. KUSTOMIZE_IMAGE, KUBECONFORM_IMAGE, CONFTEST_IMAGE and HELM_IMAGE
 # override an image, for a machine whose TLS is intercepted (OPERATIONS_RUNBOOK.md section 11.13); CI never sets them.
 #
 # Usage:   infra/scripts/controller-check.sh [render <directory>]
@@ -45,9 +51,12 @@ HELM_IMAGE="${HELM_IMAGE:-${HELM_REPOSITORY}:${HELM_VERSION}@${HELM_DIGEST}}"
 ARGOCD_INSTALL_URL="https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
 ESO_CHART_VERSION=${ESO_VERSION#v}
 ESO_CHART_URL="https://github.com/external-secrets/external-secrets/releases/download/helm-chart-${ESO_CHART_VERSION}/external-secrets-${ESO_CHART_VERSION}.tgz"
+METRICS_SERVER_URL="https://github.com/kubernetes-sigs/metrics-server/releases/download/${METRICS_SERVER_VERSION}/components.yaml"
 
 ARGOCD_IMAGES="${ARGOCD_REPOSITORY}@${ARGOCD_DIGEST} ${ARGOCD_DEX_REPOSITORY}@${ARGOCD_DEX_DIGEST} ${ARGOCD_REDIS_REPOSITORY}@${ARGOCD_REDIS_DIGEST}"
 ESO_IMAGES="${ESO_REPOSITORY}:${ESO_VERSION}@${ESO_DIGEST}"
+METRICS_SERVER_IMAGES="${METRICS_SERVER_REPOSITORY}@${METRICS_SERVER_DIGEST}"
+STREAMS="argocd external-secrets metrics-server"
 
 SCHEMAS="https://raw.githubusercontent.com/yannh/kubernetes-json-schema/${KUBERNETES_SCHEMAS_COMMIT}/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json"
 CRD_SCHEMAS="https://raw.githubusercontent.com/datreeio/CRDs-catalog/${ESO_CRD_SCHEMAS_COMMIT}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
@@ -92,7 +101,7 @@ done
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 trap 'exit 130' INT TERM
-mkdir -p "$WORK/fetched" "$WORK/argocd" "$WORK/eso-values" "$WORK/rendered" "$WORK/plants"
+mkdir -p "$WORK/fetched" "$WORK/argocd" "$WORK/eso-values" "$WORK/metrics-server" "$WORK/rendered" "$WORK/plants"
 
 # fetch <url> <file> <pinned sha256>: the release's bytes, or nothing: a mismatch is a moved tag or a substituted file, and is refused.
 fetch() {
@@ -107,6 +116,7 @@ fetch() {
 
 fetch "$ARGOCD_INSTALL_URL" "$WORK/fetched/install.yaml" "$ARGOCD_INSTALL_SHA256"
 fetch "$ESO_CHART_URL" "$WORK/fetched/external-secrets.tgz" "$ESO_CHART_SHA256"
+fetch "$METRICS_SERVER_URL" "$WORK/fetched/metrics-server.yaml" "$METRICS_SERVER_MANIFEST_SHA256"
 
 # ---------------------------------------------------------------------------------------------------
 # Rendering.
@@ -148,6 +158,38 @@ render_eso() {
         || cannot "helm could not render the External Secrets chart"
 }
 
+# render_metrics_server <output file>: the pinned release manifest, its image by digest, its aggregated reader deleted (nothing here needs
+# `kubectl top`, and the label would merge it into view, edit and admin), and the kubelets' serving certificates not verified: kind's are
+# signed by no authority metrics-server is given. Both changes are the kind rehearsal's; a real environment's metrics source is its own.
+render_metrics_server() {
+    cp "$WORK/fetched/metrics-server.yaml" "$WORK/metrics-server/components.yaml"
+    cat > "$WORK/metrics-server/kustomization.yaml" <<YAML
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - components.yaml
+patches:
+  - patch: |-
+      \$patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: system:aggregated-metrics-reader
+  - target:
+      kind: Deployment
+      name: metrics-server
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --kubelet-insecure-tls
+images:
+  - name: $METRICS_SERVER_REPOSITORY
+    digest: $METRICS_SERVER_DIGEST
+YAML
+    docker run --rm -v "$(dpath "$WORK/metrics-server"):/work:ro" "$KUSTOMIZE_IMAGE" build /work > "$1" \
+        || cannot "kustomize could not render metrics-server's manifest"
+}
+
 # data_file <controller> <namespace> <images...>: what the policy is told about the stream.
 data_file() {
     printf 'controller:\n  name: %s\n  namespace: %s\n  images:\n' "$1" "$2"
@@ -160,11 +202,14 @@ data_file() {
 render_argocd "$WORK/rendered/argocd.yaml"
 cp "$ROOT/deploy/operators/external-secrets/values.yaml" "$WORK/eso-values/values.yaml"
 render_eso "$WORK/eso-values" "$WORK/rendered/external-secrets.yaml"
+render_metrics_server "$WORK/rendered/metrics-server.yaml"
 # shellcheck disable=SC2086
 data_file argocd argocd $ARGOCD_IMAGES > "$WORK/rendered/argocd.data.yaml"
 # shellcheck disable=SC2086
 data_file external-secrets external-secrets $ESO_IMAGES > "$WORK/rendered/external-secrets.data.yaml"
-for stream in argocd external-secrets; do
+# shellcheck disable=SC2086
+data_file metrics-server kube-system $METRICS_SERVER_IMAGES > "$WORK/rendered/metrics-server.data.yaml"
+for stream in $STREAMS; do
     [ -s "$WORK/rendered/$stream.yaml" ] || cannot "the $stream render is empty"
 done
 
@@ -200,19 +245,19 @@ check() {
     fi
 }
 
-for stream in argocd external-secrets; do
+for stream in $STREAMS; do
     check "the policy on $stream" conftest_on "$WORK/rendered/$stream.yaml" "$WORK/rendered/$stream.data.yaml"
 done
 
 if [ "$MODE" = render ]; then
     [ "$status" -eq 0 ] || exit 1
     mkdir -p "$OUT"
-    cp "$WORK/rendered/argocd.yaml" "$WORK/rendered/external-secrets.yaml" "$OUT/"
-    echo "ok   rendered into $OUT: argocd.yaml and external-secrets.yaml, each passing its policy"
+    cp "$WORK/rendered/argocd.yaml" "$WORK/rendered/external-secrets.yaml" "$WORK/rendered/metrics-server.yaml" "$OUT/"
+    echo "ok   rendered into $OUT: argocd.yaml, external-secrets.yaml and metrics-server.yaml, each passing its policy"
     exit 0
 fi
 
-for stream in argocd external-secrets; do
+for stream in $STREAMS; do
     check "kubeconform $stream" kubeconform_on "$WORK/rendered/$stream.yaml"
 done
 
@@ -220,7 +265,7 @@ done
 # The plants.
 # ---------------------------------------------------------------------------------------------------
 
-# plant <name> <argocd|external-secrets>: a copy of that render, and its data file.
+# plant <name> <argocd|external-secrets|metrics-server>: a copy of that render, and its data file.
 plant() {
     mkdir -p "$WORK/plants/$1"
     cp "$WORK/rendered/$2.yaml" "$WORK/plants/$1/stream.yaml"
@@ -414,6 +459,72 @@ refused argocd-default-cluster-kinds "[controller-default-project] the default p
 refused argocd-default-blacklist-gone "[controller-default-project] the default project does not refuse every namespaced kind"
 refused argocd-not-its-stream "[controller-stream] no StatefulSet argocd-application-controller"
 refused argocd-unknown-controller "[controller-stream] the data names controller"
+
+# A RoleBinding to a role the stream does not hold: the operator given `admin` in finapp.
+plant eso-admin-in-finapp external-secrets
+append eso-admin-in-finapp <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: external-secrets-admin
+  namespace: finapp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+- kind: ServiceAccount
+  name: external-secrets
+  namespace: external-secrets
+YAML
+refused eso-admin-in-finapp "[controller-role-binding] RoleBinding/external-secrets-admin in finapp gives ClusterRole admin"
+
+# metrics-server: its role, its bindings to its own role and to the cluster's, its image, and the aggregated reader its release ships.
+plant metrics-cluster-role-unlisted metrics-server
+in_doc metrics-cluster-role-unlisted ClusterRole system:metrics-server 's/^  name: system:metrics-server$/  name: system:metrics-server-wider/'
+plant metrics-binding-to-a-group metrics-server
+in_doc metrics-binding-to-a-group ClusterRoleBinding system:metrics-server 's/^subjects:$/subjects:\n- apiGroup: rbac.authorization.k8s.io\n  kind: Group\n  name: system:authenticated/'
+plant metrics-delegator-wider metrics-server
+in_doc metrics-delegator-wider ClusterRoleBinding metrics-server:system:auth-delegator '/^roleRef:$/,/^subjects:$/s/^  name: system:auth-delegator$/  name: cluster-admin/'
+plant metrics-reader-elsewhere metrics-server
+in_doc metrics-reader-elsewhere RoleBinding metrics-server-auth-reader '/^roleRef:$/,/^subjects:$/s/^  kind: Role$/  kind: ClusterRole/;/^roleRef:$/,/^subjects:$/s/^  name: extension-apiserver-authentication-reader$/  name: admin/'
+plant metrics-reads-secrets metrics-server
+in_doc metrics-reads-secrets ClusterRole system:metrics-server 's/^  - nodes\/metrics$/  - nodes\/metrics\n  - secrets/'
+plant metrics-aggregated metrics-server
+append metrics-aggregated <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    k8s-app: metrics-server
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+  name: system:aggregated-metrics-reader
+rules:
+- apiGroups:
+  - metrics.k8s.io
+  resources:
+  - pods
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+YAML
+plant metrics-image-tag metrics-server
+whole metrics-image-tag "s#image: $METRICS_SERVER_REPOSITORY@$METRICS_SERVER_DIGEST#image: $METRICS_SERVER_REPOSITORY:$METRICS_SERVER_VERSION#"
+plant metrics-not-its-stream metrics-server
+cp "$WORK/rendered/external-secrets.yaml" "$WORK/plants/metrics-not-its-stream/stream.yaml"
+
+refused metrics-cluster-role-unlisted "[controller-cluster-role]"
+refused metrics-binding-to-a-group "[controller-cluster-binding] ClusterRoleBinding/system:metrics-server"
+refused metrics-delegator-wider "[controller-cluster-binding] ClusterRoleBinding/metrics-server:system:auth-delegator"
+refused metrics-reader-elsewhere "[controller-role-binding] RoleBinding/metrics-server-auth-reader in kube-system gives ClusterRole admin"
+refused metrics-reads-secrets "[controller-secrets] ClusterRole/system:metrics-server reaches Secrets in every namespace"
+refused metrics-aggregated "[controller-aggregate] ClusterRole/system:aggregated-metrics-reader"
+refused metrics-image-tag "[controller-images]"
+refused metrics-not-its-stream "[controller-stream] no Deployment metrics-server"
 
 if [ "$status" -eq 0 ]; then
     echo "ok   every check green, every plant refused for its reason"

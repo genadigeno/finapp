@@ -3225,10 +3225,14 @@ repository.** What it does with the files below is read from its documentation a
 fetches Argo CD's install manifest at `ARGOCD_VERSION` (v3.6.1) and the External Secrets chart at `ESO_VERSION`, each refused unless its bytes
 are the pinned sha256 (`ARGOCD_INSTALL_SHA256`, `ESO_CHART_SHA256`), rewrites every image Argo CD's manifest names to the digests of
 `infra/scanner-pins.sh` (Argo CD, its Dex and its Redis), merges `deploy/delivery/controller/argocd-cm.yaml`'s keys and adds the restricted
-`default` project (`deploy/delivery/controller/default-project.yaml`), and holds both streams to `infra/scripts/manifest-policy/controllers.rego`:
-a `ClusterRole` only from the controller's named list, its `ClusterRoleBinding` only to that role and that controller's own ServiceAccount,
-`secrets` only in the namespaces listed for it (Argo CD's `argocd`, the operator's `finapp`), no aggregation, every image a pinned digest, and for
-Argo CD the committed configuration and the restricted default project; each rule refuses a plant in the same run (CI's `Controller manifests`).
+`default` project (`deploy/delivery/controller/default-project.yaml`), renders the `kind` rehearsal's metrics source (below) from
+metrics-server's release manifest at `METRICS_SERVER_VERSION` (`METRICS_SERVER_MANIFEST_SHA256`, its image by digest), and holds the three
+streams to `infra/scripts/manifest-policy/controllers.rego`: a `ClusterRole` only from the controller's named list, its `ClusterRoleBinding`
+only to that role and the ServiceAccount the list names for it, a `RoleBinding` only to a role the stream itself holds, a binding to a role of
+the cluster's own only where the list names it (metrics-server's two: `system:auth-delegator` and `extension-apiserver-authentication-reader`),
+`secrets` only in the namespaces listed for it (Argo CD's `argocd`, the operator's `finapp`, metrics-server none), no aggregation, every image a
+pinned digest, and for Argo CD the committed configuration and the restricted default project; each rule refuses a plant in the same run (CI's
+`Controller manifests`).
 **What the list names, read from v3.6.1's manifest**: three cluster roles, `argocd-application-controller` (`*` on `*`), `argocd-server` (get,
 patch and delete on `*`) and `argocd-applicationset-controller` (get, list and watch on Secrets), **each of which reaches every Secret of the
 cluster**, as published; this platform writes no ApplicationSet. The operator holds no cluster role; its controller Role in `finapp` also
@@ -3239,8 +3243,13 @@ policy controller v0.15.1 and the operator as rendered above, 2026-11-12), and c
 the `default` project applied in one stream with the install is refused (its kind not yet defined) and the controller then creates an open one;
 an automated sync whose Application states no `retry` is retried five times; an `ExternalSecret` whose `Ready` is `False` is `Degraded` and
 fails its wave's sync rather than holding it; a name-only image override in an Application's own kustomize settings drops the overlay's digest;
-each v1beta1 `ClusterImagePolicy` carries `observedGeneration` equal to its generation once the controller has reconciled it, and the
-committed check judged the three `Healthy` on it. The full run's record is the last paragraph of this section.)*
+each v1beta1 `ClusterImagePolicy` carries `observedGeneration` equal to its generation once the controller has reconciled it; **Argo CD v3.6.1
+keeps no health per resource in an Application's `status.resources`** (each entry's `health` is absent), so a resource's health is read
+from the Application's own health, or by running the installed check with Argo CD's own code (`argocd admin settings resource-overrides
+health <object> --argocd-cm-path <argocd-cm>`, offline in its pinned image), which the rehearsal does for each live policy and for the same
+policy with its generation unobserved; and **a `HorizontalPodAutoscaler` with no metrics API is `Degraded`** under Argo CD's own check, so the
+release was never healthy and the root's last wave never came (below, a metrics source). The full run's record is the last paragraph of this
+section.)*
 
 **What a release is.** A pair of digests, the application's and the migrator's, built once from one commit and never rebuilt for an
 environment. An environment runs the pair its overlay names (`deploy/overlays/<environment>/kustomization.yaml`), and the overlay's
@@ -3254,8 +3263,8 @@ every namespaced kind blacklisted, as Argo CD's own documentation shows), so an 
 reaches nothing. **In this order**: Argo CD's definitions, then the restricted project, then the rest of the install. Applied in one stream, the
 project is refused while its kind is being defined and the controller, finding no `default` when it starts, creates one open to everything
 (seen on `kind`); every field is stated, so applying the file over an open default closes each field. One root Application,
-`deploy/delivery/roots/<environment>.yaml`, is created once by that role after the controllers and the admission webhook's rules are in place
-(§11.32's order). Everything else follows from master: the root syncs `deploy/delivery/<environment>`, two projects and four Applications, in
+`deploy/delivery/roots/<environment>.yaml`, is created once by that role after the controllers, the admission webhook's rules (§11.32's order)
+and a metrics API (below) are in place. Everything else follows from master: the root syncs `deploy/delivery/<environment>`, two projects and four Applications, in
 waves, **the two projects first, in wave −1**: in one wave the root created an Application a second before its project, that Application's
 first sync failed for want of the project, and with no retry it stayed failed until a sync by hand (seen on `kind`).
 
@@ -3279,8 +3288,14 @@ wave −3 the accounts, roles, network policies, quota, the stores and the Servi
 `Ready` (Argo CD's own check: it reads no generation, so after a change of annotations alone a `Ready` left from the sync before passes;
 step 3 of `SECRET_MANAGEMENT.md` §5.2 stays a person's reading). **An `ExternalSecret` whose `Ready` is `False`** (its store lacks an entry)
 is `Degraded` under that check, and a `Degraded` resource ends the sync `Failed` at its wave: nothing of waves −1 and 0 is applied, and with no
-retry nothing runs again (seen on `kind`). Once the store holds the entry and the operator has read it, the same revision is synced once by
-hand, as after exit `12` below, and the root, whose own sync waited on the release and failed with it, likewise. Wave −1 **the migrator Job, a
+retry nothing runs again (seen on `kind`). **The way back, and who takes it.** Once the store holds the entry and the operator has read it
+(the `ExternalSecret`'s `Ready` is `True`), a person holding Argo CD's `sync` on the release's Application (as after exit `12` below: the
+break-glass group, §11.25) syncs the same revision once, by hand. **Then the root, only if its own sync failed at the release's wave**: the
+root's sync applied the release's Application and waits on its health, and if the hold failed it there (its operation names the release's
+Application as the failed resource, at a time before the release's sync by hand), the same person syncs the root once, by hand, at the same
+revision, **after** the release shows synced and healthy and not before: a root synced while the release is still held fails again at the same
+wave. A root still running needs nothing; it goes on by itself. A root failed on anything else, or after the release was healthy, is a fault of
+its own: read it, never sync past it. Write each manual sync into the incident's record (§11.12). Wave −1 **the migrator Job, a
 `Sync` hook awaited**; wave 0 the
 configuration, the Deployment and its autoscaler. A hook that fails fails the sync: a failed migration leaves the old replicas serving and
 the new Deployment never applied. **It is not a `PreSync` hook**, though the plan said one: Argo CD applies a `PreSync` hook before everything
@@ -3333,7 +3348,15 @@ Operator (`deploy/operators/external-secrets/values.yaml`, into its own namespac
 as the first controllers of a cluster are (§6 item 31 of the threat register). Argo CD and the operator are installed from what
 `infra/scripts/controller-check.sh render <directory>` writes, each stream having passed `controllers.rego`: the bytes CI checked are the bytes
 installed. A new Argo CD release is a new install manifest, its sha256 and its three image digests moved together, and the named list read
-again against what the new manifest holds. **The one-time role bootstrap** (§11.1b) is not part of a
+again against what the new manifest holds. **A metrics source is a prerequisite of the root.** The release's `HorizontalPodAutoscaler` is
+judged by Argo CD's own check, and with no metrics API (`v1beta1.metrics.k8s.io` not `Available`) it is `Degraded` (seen on `kind`): the
+release is never healthy, so the root's sync never passes the release's wave and the edge is never applied, and every later sync of the
+release ends with the release degraded. EKS ships none by default either: the environment installs one (the metrics-server add-on, or its
+own) with the controllers, and its API is `Available` before the root is created. The `kind` rehearsal installs metrics-server from
+`controller-check.sh`'s render: the pinned manifest bytes and image digest, its `system:aggregated-metrics-reader` deleted (labelled into
+`view`, `edit` and `admin`, and nobody here needs `kubectl top`; the autoscaler reads metrics through its own built-in role), and
+`--kubelet-insecure-tls`, because `kind`'s kubelets serve certificates signed by nothing it is given: that flag is `kind`'s alone, never an
+environment's. **The one-time role bootstrap** (§11.1b) is not part of a
 release and not a hook: when a release adds a role, the pipeline role runs it before the promotion, as a Job in `finapp` with the signed
 migrator image alone. The `kind` rehearsal's bootstrap Job also carries a `wait-for-postgres` init container from the curl image, because its
 PostgreSQL starts in the same run; that image is not admitted in `finapp` (no policy names it), and a real environment's database is

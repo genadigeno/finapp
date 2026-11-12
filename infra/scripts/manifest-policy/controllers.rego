@@ -2,15 +2,17 @@
 #
 # Run by infra/scripts/controller-check.sh, conftest with --combine over one controller's rendered stream: Argo CD's install manifest at
 # ARGOCD_VERSION (its file's sha256 the pin), its images rewritten to the pinned digests, with this repository's argocd-cm keys and its
-# restricted `default` project; and the External Secrets chart at ESO_VERSION (its archive's sha256 the pin) with the committed values.
+# restricted `default` project; the External Secrets chart at ESO_VERSION (its archive's sha256 the pin) with the committed values; and,
+# for the kind delivery rehearsal alone, metrics-server's release manifest at METRICS_SERVER_VERSION (its file's sha256 the pin).
 # These are the first controllers of a cluster, installed by the pipeline role and not by any Application (THREAT_MODEL.md section 6 item
 # 31), so nothing else reads what they are given: a chart or a release that widened its own rights would reach the cluster unread.
 #
 #   data.controller   {name, namespace, images}: which controller this stream is, the namespace it is installed into, and the
 #                     images it may run, each by digest, from infra/scanner-pins.sh
 #
-# WHAT A CONTROLLER MAY HOLD is the named list below and nothing else: a ClusterRole by name, its ClusterRoleBinding by name to
-# exactly that role and exactly that controller's own ServiceAccount, and Secrets only in the namespaces listed for it. Every message
+# WHAT A CONTROLLER MAY HOLD is the named lists below and nothing else: a ClusterRole by name, its ClusterRoleBinding by name to
+# exactly that role and exactly that controller's own ServiceAccount, a RoleBinding only to a role the stream holds, a binding to a role
+# the cluster itself holds only where held_bindings names it, and Secrets only in the namespaces listed for it. Every message
 # begins with [rule-id]; controller-check.sh plants a violation of every rule id here and requires the id back, and
 # ControllerRenderContractTest requires that list to be this file's.
 #
@@ -34,6 +36,11 @@ import rego.v1
 #   argocd-server                   get, patch and delete on `*`: the API server's view of every managed object, Secrets included;
 #   argocd-applicationset-controller  get, list and watch on Secrets everywhere. This platform writes no ApplicationSet.
 # The External Secrets Operator holds none: its rights are a Role in finapp (deploy/operators/external-secrets/values.yaml, scopedRBAC).
+# metrics-server (v0.9.1's components.yaml, read 2026-11-12; the kind delivery rehearsal's alone, OPERATIONS_RUNBOOK.md section 11.36):
+#   system:metrics-server           get on nodes/metrics, and get, list and watch on pods and nodes: what it scrapes, no Secret. Bound to
+#                                   its own account, `metrics-server`, which is not the role's name.
+# Its release also ships system:aggregated-metrics-reader, labelled into view, edit and admin; the render deletes it (controller-check.sh),
+# since the autoscaler reads metrics through its own built-in role and nobody here needs `kubectl top`.
 cluster_roles := {
 	"argocd": {
 		"argocd-application-controller": {"secrets": true},
@@ -41,19 +48,40 @@ cluster_roles := {
 		"argocd-applicationset-controller": {"secrets": true},
 	},
 	"external-secrets": {},
+	"metrics-server": {
+		"system:metrics-server": {"secrets": false, "account": "metrics-server"},
+	},
+}
+
+# THE ROLES THE CLUSTER ITSELF HOLDS that a controller's stream may bind, by the binding's name, and no others. Their rules are the
+# cluster's and not in the stream, so nothing here can read them: this list says what each grants, read from Kubernetes' bootstrap policy.
+#   system:auth-delegator                       (ClusterRole) create on tokenreviews and subjectaccessreviews: an aggregated API server
+#                                               asks the cluster who a caller is and whether it may, and is granted nothing by the answer
+#   extension-apiserver-authentication-reader   (Role in kube-system) get, list and watch on the ConfigMap holding the client CA that the
+#                                               API server's proxied requests are signed with
+held_bindings := {
+	"argocd": {},
+	"external-secrets": {},
+	"metrics-server": {
+		"metrics-server:system:auth-delegator": {"kind": "ClusterRoleBinding", "role": {"kind": "ClusterRole", "name": "system:auth-delegator"}, "account": "metrics-server"},
+		"metrics-server-auth-reader": {"kind": "RoleBinding", "namespace": "kube-system", "role": {"kind": "Role", "name": "extension-apiserver-authentication-reader"}, "account": "metrics-server"},
+	},
 }
 
 # Where each controller may read or write a Secret through a Role or a RoleBinding: Argo CD its own namespace (its configuration, its
-# repository and cluster credentials), the operator finapp alone, the one namespace whose Secrets it writes (SECRET_MANAGEMENT.md 3.5).
+# repository and cluster credentials), the operator finapp alone, the one namespace whose Secrets it writes (SECRET_MANAGEMENT.md 3.5),
+# metrics-server none.
 secret_namespaces := {
 	"argocd": {"argocd"},
 	"external-secrets": {"finapp"},
+	"metrics-server": set(),
 }
 
 # The workload that says the stream is the controller's own render, not an empty file or another chart.
 anchors := {
 	"argocd": {"kind": "StatefulSet", "name": "argocd-application-controller"},
 	"external-secrets": {"kind": "Deployment", "name": "external-secrets"},
+	"metrics-server": {"kind": "Deployment", "name": "metrics-server"},
 }
 
 # ------------------------------------------------------------------------------------- reading the stream
@@ -174,25 +202,70 @@ deny contains msg if {
 	msg := sprintf("[controller-cluster-role] %s is not on %s's list of the cluster roles it may hold", [label(role), controller])
 }
 
-# A listed binding is the role of its own name, given to exactly the controller's ServiceAccount of that name in its namespace. Any other
-# subject, a Group or a User or a second account, is the role handed to someone the list never named.
+# A listed binding is the role of its own name, given to exactly the controller's ServiceAccount the list names for it (the role's own name
+# unless it says another) in its namespace. Any other subject, a Group or a User or a second account, is the role handed to someone the
+# list never named.
+account_of(role) := object.get(listed_cluster_roles[role], "account", role)
+
+only_subject_is(binding, account) if {
+	subjects := list_of(binding, "subjects")
+	count(subjects) == 1
+	subject := subjects[0]
+	subject.kind == "ServiceAccount"
+	subject.name == account
+	object.get(subject, "namespace", "absent") == controller_namespace
+}
+
 the_listed_binding(binding) if {
 	listed_cluster_roles[name_of(binding)]
 	ref := section(binding, "roleRef")
 	ref.kind == "ClusterRole"
 	ref.name == name_of(binding)
-	subjects := list_of(binding, "subjects")
-	count(subjects) == 1
-	subject := subjects[0]
-	subject.kind == "ServiceAccount"
-	subject.name == name_of(binding)
-	object.get(subject, "namespace", "absent") == controller_namespace
+	only_subject_is(binding, account_of(name_of(binding)))
+}
+
+# A binding to a role the cluster holds: on held_bindings by its name, of that kind, in that namespace, to exactly that role and account.
+held_binding(binding) if {
+	entry := object.get(held_bindings, controller, {})[name_of(binding)]
+	binding.kind == entry.kind
+	object.get(entry, "namespace", "") == object.get(section(binding, "metadata"), "namespace", "")
+	ref := section(binding, "roleRef")
+	ref.kind == entry.role.kind
+	ref.name == entry.role.name
+	only_subject_is(binding, entry.account)
 }
 
 deny contains msg if {
 	some binding in of_kind("ClusterRoleBinding")
 	not the_listed_binding(binding)
+	not held_binding(binding)
 	msg := sprintf("[controller-cluster-binding] %s is not on %s's list, or gives %v to %v and not its own role to its own ServiceAccount in %s", [label(binding), controller, section(binding, "roleRef"), list_of(binding, "subjects"), controller_namespace])
+}
+
+# A RoleBinding gives a Role of the stream in its own namespace, a ClusterRole of the stream (whose reach the Secrets rules below read), or
+# a binding held_bindings names. Any other role is one this check cannot read: `admin` or `cluster-admin` bound inside a namespace, say,
+# which would reach every Secret there with no rule below seeing it.
+binds_a_role_of_the_stream(binding) if {
+	ref := section(binding, "roleRef")
+	ref.kind == "Role"
+	some role in of_kind("Role")
+	name_of(role) == ref.name
+	namespace_of(role) == namespace_of(binding)
+}
+
+binds_a_role_of_the_stream(binding) if {
+	ref := section(binding, "roleRef")
+	ref.kind == "ClusterRole"
+	some role in of_kind("ClusterRole")
+	name_of(role) == ref.name
+}
+
+deny contains msg if {
+	some binding in of_kind("RoleBinding")
+	not binds_a_role_of_the_stream(binding)
+	not held_binding(binding)
+	ref := section(binding, "roleRef")
+	msg := sprintf("[controller-role-binding] %s in %v gives %v %v, which the stream does not hold and no list names: nothing here can read what it grants", [label(binding), namespace_of(binding), object.get(ref, "kind", "(no kind)"), object.get(ref, "name", "(no name)")])
 }
 
 # The cluster merges a role carrying one of these labels into view, edit or admin, so every person holding those would gain it; and an

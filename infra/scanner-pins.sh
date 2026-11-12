@@ -190,3 +190,11 @@ ARGOCD_REDIS_DIGEST=sha256:ef216d85ec44f4fdf7c0e6df2d1757a4734ed32fbb278cabd3181
 # The External Secrets chart's archive at ESO_VERSION without its leading v: a classic Helm repository prints no digest, so the archive's
 # own sha256 is the pin. The same value kind-rehearsal/rotations.sh pulls by, which ControllerRenderContractTest holds equal.
 ESO_CHART_SHA256=0a6d9e91b1ff50adfdbf24b50b582babfa7c5b7df42b21974ca4b3fb88ee5e34
+
+# metrics-server, for the kind delivery rehearsal alone (P15-TSK-032): kind has no metrics source, so the release's HorizontalPodAutoscaler
+# is Degraded under Argo CD's own check and the root never applies the edge's wave. Installed from its release's manifest, held by the
+# file's sha256, its image by this digest. A real environment brings its own metrics source (OPERATIONS_RUNBOOK.md section 11.36).
+METRICS_SERVER_REPOSITORY=registry.k8s.io/metrics-server/metrics-server
+METRICS_SERVER_VERSION=v0.9.1
+METRICS_SERVER_DIGEST=sha256:9b0ba1926e1d3089673f45461c3c1416109dea33b3ba3434048defd380df329b
+METRICS_SERVER_MANIFEST_SHA256=3c7f57cdbee0f57fb0259a150e8f6d6cb4f29d72d1aa5dce8803151dd6d4c2a1

@@ -3,18 +3,21 @@
 # census and the client are defined: every function and variable of the harness is in scope here. Nothing of the release is applied by
 # this script: Argo CD applies it, from a repository the run serves, through the committed delivery.
 #
-# WHAT A GREEN RUN SAYS. On a real API server, with the controllers installed as the pipeline role installs them (Argo CD and the External
-# Secrets chart exactly as infra/scripts/controller-check.sh rendered and held them to its rule, the policy controller from its pinned chart):
+# WHAT A GREEN RUN SAYS. On a real API server, with the controllers installed as the pipeline role installs them (Argo CD, the External
+# Secrets chart and the run's metrics source, metrics-server, exactly as infra/scripts/controller-check.sh rendered and held them to its
+# rule, the policy controller from its pinned chart):
 #   - the `default` project reaches nothing: an Application placed in it is refused and creates nothing;
 #   - infra/scripts/promote.sh refuses a tag and an unsigned digest by name and writes nothing; it writes the pair, and the merge (a push
 #     to the run's repository) is the deploy;
 #   - the root's four Applications sync in their waves, each created only once the one before had finished its sync, through the
 #     committed Application health; each admission policy is healthy only once the policy controller has observed its generation and
-#     says Ready (read from the pinned controller's v1beta1 status);
-#   - inside the release, an ExternalSecret whose store lacks one key holds its wave: no migrator Job and no Deployment while it does;
-#     the role bootstrap runs meanwhile as a real environment runs it, in finapp, the signed migrator image alone and no init container,
-#     admitted; with the key in the store the ExternalSecret turns Ready, the migrator Sync hook runs and is awaited, and only then is the
-#     Deployment applied;
+#     says Ready (the pinned controller's v1beta1 status, and the installed check run by Argo CD's own code on each live policy and on it
+#     one generation unobserved);
+#   - inside the release, an ExternalSecret whose store lacks one key holds its wave: the sync ends Failed there, no migrator Job and no
+#     Deployment, nothing retried; the role bootstrap runs meanwhile as a real environment runs it, in finapp, the signed migrator image
+#     alone and no init container, admitted; with the key in the store the ExternalSecret turns Ready, section 11.36's one sync by hand
+#     runs the migrator Sync hook, awaited, and only then is the Deployment applied; the root is synced by hand only if its own sync failed
+#     at the release's wave during the hold, as section 11.36 says, and any other failure of the root stops the run;
 #   - the read-only post-deploy smoke passes on that cluster, under the read-only role's own identity, and its record is committed only to
 #     the run's repository;
 #   - self-heal puts back a hand change; a rollback written by promote.sh, the migrator kept, syncs the same way;
@@ -370,6 +373,18 @@ until [ -n "$(kube get validatingwebhookconfiguration policy.sigstore.dev -o jso
     sleep 2
 done
 
+# metrics-server, exactly as controller-check.sh rendered and held it. kind has no metrics source, and without one the release's autoscaler
+# is Degraded under Argo CD's own check, so the release never turns healthy and the root never applies the edge's wave (seen on kind,
+# 2026-11-12). A real environment brings its own (section 11.36): this one is the rehearsal's, by digest, told not to verify kind's kubelets.
+dock exec "$NODE" crictl pull "$METRICS_SERVER_REPOSITORY@$METRICS_SERVER_DIGEST" >> "$ART/images.log" 2>&1 || cannot "the node could not pull metrics-server"
+kube apply --server-side -f - < "$CONTROLLERS/metrics-server.yaml" >> "$ART/apply.log" 2>&1 || cannot "could not apply metrics-server"
+kube -n kube-system rollout status deployment/metrics-server --timeout=240s >> "$ART/apply.log" 2>&1 || fail "metrics-server did not become ready"
+deadline=$(( $(date +%s) + 180 ))
+until [ "$(kube get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null)" = True ]; do
+    [ "$(date +%s)" -lt "$deadline" ] || fail "the metrics API was not available within three minutes of metrics-server's rollout"
+    sleep 3
+done
+
 # The External Secrets Operator and Argo CD, exactly as controller-check.sh rendered and held them.
 kube create namespace external-secrets >> "$ART/apply.log" 2>&1 || cannot "could not create the operator's namespace"
 dock exec "$NODE" crictl pull "$ESO_REPOSITORY@$ESO_DIGEST" >> "$ART/images.log" 2>&1 || cannot "the node could not pull the operator"
@@ -409,7 +424,7 @@ for image in $running; do
         *) fail "Argo CD runs $image, which is not a pinned digest" ;;
     esac
 done
-pass "the controllers: Argo CD $ARGOCD_VERSION and the External Secrets Operator from the render controller-check.sh held to its rule, the policy controller from its pinned chart; every Argo CD image a pinned digest"
+pass "the controllers: Argo CD $ARGOCD_VERSION, the External Secrets Operator and metrics-server from the render controller-check.sh held to its rule, the policy controller from its pinned chart; every Argo CD image a pinned digest; the metrics API available"
 
 # ---------------------------------------------------------------------------------------------------
 # The default project reaches nothing.
@@ -921,20 +936,36 @@ done
 ready_at=$(kube -n finapp get externalsecret finapp-app-secrets -o jsonpath='{.status.conditions[?(@.type=="Ready")].lastTransitionTime}')
 record "the ExternalSecret turned Ready at $ready_at, $(( $(date -u -d "$ready_at" +%s) - KEY_ADDED )) s after the store gained the key"
 manual_sync finapp "$PROMOTED_COMMIT" first-release || fail "the release's sync by hand, once the store held its key, did not succeed"
-# The root's own sync waited on the release and failed with it; the same, by hand, applies the edge's wave.
-if [ "$(argo application finapp-edge '{.status.health.status}')" != Healthy ]; then
-    root_phase=$(argo application finapp-staging '{.status.operationState.phase}')
-    record "the root's sync is $root_phase while the release is healthy: the edge's wave waits for it"
-    if [ "$root_phase" != Running ]; then
-        manual_sync finapp-staging "$PROMOTED_COMMIT" root || fail "the root's sync by hand did not succeed"
-    fi
-fi
+RELEASE_SYNCED=$(date +%s)
+# The root's own sync applied the release's Application and waits on its health. If it ended Failed at the release's wave during the hold,
+# section 11.36's recovery: the person who synced the release syncs the root once, by hand, at the same revision, now that the release is
+# synced and healthy. That is the one sync by hand the root is given here: a root failed on anything else, or after the release was
+# healthy, is a defect, and the run stops on it rather than syncing past it.
+root_line=$(argo application finapp-staging '{.status.operationState.phase}|{.status.operationState.finishedAt}')
+root_phase=${root_line%%|*}
+record "the root's sync is $root_phase once the release is synced and healthy"
+case $root_phase in
+    Failed | Error)
+        root_finished=${root_line#*|}
+        root_failed_on=$(argo application finapp-staging '{range .status.operationState.syncResult.resources[?(@.hookPhase=="Failed")]}{.kind}/{.name} {end}')
+        record "the root's sync ended $root_phase at $root_finished on '$root_failed_on': $(argo application finapp-staging '{.status.operationState.message}')"
+        [ "$root_failed_on" = "Application/finapp " ] && [ "$(date -u -d "$root_finished" +%s)" -le "$RELEASE_SYNCED" ] \
+            || fail "the root's sync failed on something other than the release held at its wave: section 11.36's recovery does not apply"
+        manual_sync finapp-staging "$PROMOTED_COMMIT" root-recovery || fail "the root's sync by hand, section 11.36's recovery after the hold, did not succeed"
+        ;;
+esac
 deadline=$(( $(date +%s) + 900 ))
 done_root=""
 while [ "$(date +%s)" -lt "$deadline" ]; do
     root_state=$(argo application finapp-staging '{.status.sync.status}|{.status.health.status}')
     edge_state=$(argo application finapp-edge '{.status.sync.status}|{.status.health.status}')
     if [ "$root_state" = "Synced|Healthy" ] && [ "$edge_state" = "Synced|Healthy" ]; then done_root=1; break; fi
+    case $(argo application finapp-staging '{.status.operationState.phase}') in
+        Failed | Error)
+            kube -n argocd get applications -o yaml > "$ART/applications-first-sync.yaml" 2>&1 || true
+            fail "the root's sync failed after the release was synced and healthy ($(argo application finapp-staging '{.status.operationState.message}')): a defect, not the hold, and not synced past: see applications-first-sync.yaml"
+            ;;
+    esac
     sleep 10
 done
 kube -n argocd get applications -o yaml > "$ART/applications-first-sync.yaml" 2>&1 || true
@@ -966,9 +997,31 @@ while IFS='|' read -r policy generation observed ready_status; do
     [ -n "$observed" ] && [ "$observed" = "$generation" ] && [ "$ready_status" = True ] \
         || fail "admission: $policy is at generation $generation, observed '$observed', Ready '$ready_status'"
 done < "$ART/policies-status.txt"
-argo application finapp-admission '{range .status.resources[*]}{.kind}|{.name}|{.health.status}{"\n"}{end}' > "$ART/admission-health.txt"
-[ "$(grep -c '^ClusterImagePolicy|.*|Healthy$' "$ART/admission-health.txt")" = 3 ] || fail "admission: Argo CD does not judge the three policies Healthy: see admission-health.txt"
-pass "admission: each v1beta1 policy carries observedGeneration equal to its generation and Ready True, and Argo CD's check judged the three Healthy on that"
+# Argo CD v3.x keeps no health per resource in an Application's status (status.resources carries none: seen on kind), so the check is read
+# two ways: the Application's own health, and the installed check run by Argo CD's own code, offline in its pinned image, on each live policy
+# and on the same policy with its generation not yet observed, which must not be Healthy: the check judges, it does not pass by default.
+admission_state=$(argo application finapp-admission '{.status.sync.status}|{.status.health.status}')
+[ "$admission_state" = "Synced|Healthy" ] || fail "admission: finapp-admission is $admission_state, not Synced and Healthy"
+mkdir -p "$WORK/admission-health"
+kube -n argocd get configmap argocd-cm -o yaml > "$WORK/admission-health/argocd-cm.yaml" || cannot "argocd-cm could not be read"
+# health_of <file>: Argo CD's verdict on that object under the installed argocd-cm.
+health_of() {
+    dock run --rm --network none -v "$(dpath "$WORK/admission-health"):/w:ro" "$ARGOCD_REPOSITORY@$ARGOCD_DIGEST" \
+        argocd admin settings resource-overrides health "/w/$1" --argocd-cm-path /w/argocd-cm.yaml 2>/dev/null | sed -n 's/^STATUS: //p'
+}
+: > "$ART/admission-health.txt"
+# Every command in this loop reads /dev/null: kube is `docker exec -i`, and would take the rest of the list as its input.
+while IFS='|' read -r policy generation observed ready_status; do
+    kube get clusterimagepolicy "$policy" -o yaml < /dev/null > "$WORK/admission-health/$policy.yaml" || cannot "the policy $policy could not be read"
+    sed "s/^  observedGeneration: $observed\$/  observedGeneration: $((observed - 1))/" "$WORK/admission-health/$policy.yaml" > "$WORK/admission-health/$policy-unobserved.yaml"
+    cmp -s "$WORK/admission-health/$policy.yaml" "$WORK/admission-health/$policy-unobserved.yaml" && cannot "the policy $policy's observedGeneration could not be moved back"
+    live=$(health_of "$policy.yaml" < /dev/null)
+    unobserved=$(health_of "$policy-unobserved.yaml" < /dev/null)
+    printf '%s|%s|%s\n' "$policy" "$live" "$unobserved" >> "$ART/admission-health.txt"
+    [ "$live" = Healthy ] && [ -n "$unobserved" ] && [ "$unobserved" != Healthy ] \
+        || fail "admission: the installed check judged $policy '$live', and the same policy one generation unobserved '$unobserved': see admission-health.txt"
+done < "$ART/policies-status.txt"
+pass "admission: each v1beta1 policy carries observedGeneration equal to its generation and Ready True; finapp-admission Synced and Healthy; the installed check, run by Argo CD's own code, judged each live policy Healthy and the same policy one generation unobserved not ($(tr '\n' ';' < "$ART/admission-health.txt"))"
 
 # Inside the release: the hook after the ExternalSecrets, the Deployment after the hook.
 job_created=$(kube -n finapp get job finapp-migrator -o jsonpath='{.metadata.creationTimestamp}')

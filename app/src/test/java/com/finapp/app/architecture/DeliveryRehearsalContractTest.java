@@ -49,12 +49,17 @@ class DeliveryRehearsalContractTest {
     }
 
     @Test
-    @DisplayName("the controller installed is the render controller-check.sh held to its rule, every image a pinned digest")
+    @DisplayName("the controllers installed are the render controller-check.sh held to its rule, every Argo CD image a pinned digest, metrics-server's API available before the root")
     void theControllerInstalledIsTheCheckedRender() {
         assertThat(delivery).contains("sh \"$ROOT/infra/scripts/controller-check.sh\" render \"$CONTROLLERS\"")
                 .contains("ARGOCD_STREAM=\"$CONTROLLERS/argocd.yaml\"").contains("< \"$CONTROLLERS/external-secrets.yaml\"")
                 .contains("kube apply --server-side --force-conflicts -f - < \"$ARGOCD_STREAM\"")
                 .contains("fail \"Argo CD runs $image, which is not a pinned digest\"");
+        assertThat(delivery).as("the release's autoscaler has a metrics source, from the checked render, before the root is applied")
+                .contains("kube apply --server-side -f - < \"$CONTROLLERS/metrics-server.yaml\"")
+                .contains("kube get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type==\"Available\")].status}'")
+                .contains("crictl pull \"$METRICS_SERVER_REPOSITORY@$METRICS_SERVER_DIGEST\"");
+        assertThat(delivery.indexOf("\"$CONTROLLERS/metrics-server.yaml\"")).isLessThan(delivery.indexOf("step delivery-root"));
     }
 
     @Test
@@ -90,11 +95,18 @@ class DeliveryRehearsalContractTest {
     }
 
     @Test
-    @DisplayName("an admission policy is healthy only on the controller's observed generation and Ready, read from the live v1beta1 status")
+    @DisplayName("an admission policy is healthy only on the controller's observed generation and Ready: the live v1beta1 status, the Application's health, and the installed check run by Argo CD's own code on each live policy and on it unobserved")
     void theAdmissionPolicyHealthIsObserved() {
         assertThat(delivery).contains("{.status.observedGeneration}|{.status.conditions[?(@.type==\"Ready\")].status}")
                 .contains("[ -n \"$observed\" ] && [ \"$observed\" = \"$generation\" ] && [ \"$ready_status\" = True ]")
-                .contains("grep -c '^ClusterImagePolicy|.*|Healthy$'");
+                .contains("[ \"$admission_state\" = \"Synced|Healthy\" ] || fail");
+        assertThat(delivery).as("the check itself, as installed, judges: Healthy on the live policy, not Healthy one generation unobserved")
+                .contains("kube -n argocd get configmap argocd-cm -o yaml > \"$WORK/admission-health/argocd-cm.yaml\"")
+                .contains("argocd admin settings resource-overrides health \"/w/$1\" --argocd-cm-path /w/argocd-cm.yaml")
+                .contains("s/^  observedGeneration: $observed\\$/  observedGeneration: $((observed - 1))/")
+                .contains("[ \"$live\" = Healthy ] && [ -n \"$unobserved\" ] && [ \"$unobserved\" != Healthy ]");
+        assertThat(delivery).as("Argo CD v3 keeps no health per resource in status.resources, so nothing reads it there")
+                .doesNotContain("{.health.status}{\"\\n\"}");
     }
 
     @Test
@@ -107,6 +119,11 @@ class DeliveryRehearsalContractTest {
                 .contains("fail \"the release's failed sync was started again on its own\"")
                 .contains("fail \"the release's sync was retried: retry count $retries\"").contains("-ge 60 ]")
                 .contains("manual_sync finapp \"$PROMOTED_COMMIT\" first-release");
+        assertThat(delivery).as("the root synced by hand only as section 11.36's recovery: failed on the release's Application, before the release was synced; any other failure stops the run")
+                .contains("[ \"$root_failed_on\" = \"Application/finapp \" ] && [ \"$(date -u -d \"$root_finished\" +%s)\" -le \"$RELEASE_SYNCED\" ]")
+                .contains("manual_sync finapp-staging \"$PROMOTED_COMMIT\" root-recovery")
+                .contains("a defect, not the hold, and not synced past");
+        assertThat(delivery.split("manual_sync finapp-staging ", -1)).as("one sync of the root by hand, no other").hasSize(2);
         assertThat(delivery).as("the store's entries reach the store object alone, never a file of the clone or an Application")
                 .contains("} | kube apply -f - >> \"$ART/apply.log\" 2>&1 || cannot \"the store finapp-$store-store could not be written\"")
                 .contains("value:\n          fake:\n            data: []").contains("RespectIgnoreDifferences=true")
