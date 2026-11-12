@@ -105,6 +105,7 @@ class LastRoleGranterTest {
     void twoRevocationsOfTheLastTwo() throws Exception {
         for (int round = 0; round < 20; round++) {
             RevocationWorld locked = new RevocationWorld();
+            locked.meetAtTheLock = true; // the second reaches the lock before the first commits, every round
             locked.holds(FIRST, RoleName.ADMINISTRATOR);
             locked.holds(SECOND, RoleName.ADMINISTRATOR);
 

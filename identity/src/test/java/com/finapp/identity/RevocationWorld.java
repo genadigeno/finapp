@@ -22,20 +22,28 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
-import org.springframework.objenesis.SpringObjenesis;
+import java.util.function.Supplier;
 
 /**
- * The role revocation's world for a hermetic test (`P15-TSK-032`): {@link IdentityAdministration} over stores that are fakes
- * recording every call in order, the {@code FirstRoleEndsSessionsTest} shape. The live holdings are one in-memory table of
- * {@code (identity, role, ACTIVE?)} rows; what the database's statements do with them - which rows a locked read returns, and
- * which it waits for - is {@code RoleAssignmentConcurrencyDatabaseTest}'s and {@code IdentityAdministrationDatabaseTest}'s,
- * owed (C14).
+ * The role revocation's and the administrator's suspension's world for a hermetic test (`P15-TSK-032`):
+ * {@link IdentityAdministration} over stores that are fakes recording every call in order, the {@code FirstRoleEndsSessionsTest}
+ * shape. The live holdings are an in-memory table of {@code (identity, role)} rows and the suspended identities a set; what the
+ * database's statements do with them - which rows a locked read returns, and which it waits for - is
+ * {@code RoleAssignmentConcurrencyDatabaseTest}'s, {@code IdentityAdministrationDatabaseTest}'s and
+ * {@code LastAdministratorDatabaseTest}'s, owed (C14).
  *
- * <p>{@link #serialised} models what {@code FOR UPDATE} gives the read of the granting holdings: one transaction at a time
- * from that read to its commit. Without it, each read sees the rows as they stood before the other wrote, which is what
- * {@code READ COMMITTED} gives two unlocked reads. The identity's own lock ({@code lockForRoleChange}) is recorded, not
- * modelled: the cases that race here revoke two different identities' roles, which that lock does not serialise.
+ * <p><strong>{@code READ COMMITTED}, modelled.</strong> Each act runs as one transaction on its own thread: its writes - a role
+ * row marked, a status moved - are held until it ends, and every read sees only what other acts committed. With
+ * {@link #serialised}, the lock on the granting holdings ({@code lockHoldingsOf}) is one transaction at a time from the lock to
+ * the commit, which is what {@code FOR UPDATE} gives; without it, each act reads the table as it stood before the other
+ * committed. {@link #meetAtTheLock} holds the first act to reach that lock until the other has reached it too, so whatever
+ * either read before the lock was read before either committed: a race is decided by what the code reads where, not by which
+ * thread was faster. The identity's own
+ * lock ({@code lockForRoleChange}) is recorded, not modelled: the cases that race here act on two different identities.
  */
 @SuppressWarnings("try") // The scopes are used for their close side effect (the established idiom).
 final class RevocationWorld {
@@ -45,30 +53,38 @@ final class RevocationWorld {
     static final Connection UNIT_OF_WORK = (Connection) Proxy.newProxyInstance(
             Connection.class.getClassLoader(), new Class<?>[] {Connection.class}, (proxy, method, args) -> null);
 
-    /** A live holding, and whether its identity is {@code ACTIVE}. */
-    record Row(IdentityId identity, RoleName role, boolean active) {}
+    /** A live holding. */
+    record Row(IdentityId identity, RoleName role) {}
 
-    /** Every call that reached a store or the trail, in order. */
+    /** Every call that reached a store, the trail or the outbox, in order. */
     final List<String> calls = Collections.synchronizedList(new ArrayList<>());
     final List<AuditRecord> written = Collections.synchronizedList(new ArrayList<>());
-    /** The live holdings: what the database would answer. */
+    /** The committed live holdings: what the database would answer. */
     final Set<Row> live = Collections.synchronizedSet(new HashSet<>());
-    /** The granting roles each locked read of the holdings was asked for, in order. */
+    /** The committed suspended identities. */
+    final Set<IdentityId> suspended = Collections.synchronizedSet(new HashSet<>());
+    /** The granting roles each lock of the holdings was asked for, in order. */
     final List<Set<RoleName>> grantingAsked = Collections.synchronizedList(new ArrayList<>());
     int liveSessions = 2;
     RuntimeException sessionRevocationFails;
     boolean serialised = true;
-    /** Run inside the read of the granting holdings after the rows are read, before it answers: where a test makes two meet. */
+    boolean meetAtTheLock;
+    /** Run when a count of the granting holdings has been read, before it answers: where a test makes two counts meet. */
     Runnable afterRead = () -> { };
 
-    private final ReentrantLock rows = new ReentrantLock();
+    private final ReentrantLock holdings = new ReentrantLock();
+    private final CountDownLatch otherReachedTheHoldings = new CountDownLatch(1);
+    private final java.util.concurrent.atomic.AtomicBoolean firstLockTaken = new java.util.concurrent.atomic.AtomicBoolean();
+    /** This thread's transaction's writes, applied at its commit. */
+    private final ThreadLocal<List<Runnable>> pending = ThreadLocal.withInitial(ArrayList::new);
 
     void holds(IdentityId identity, RoleName role) {
-        live.add(new Row(identity, role, true));
+        live.add(new Row(identity, role));
     }
 
     void holdsSuspended(IdentityId identity, RoleName role) {
-        live.add(new Row(identity, role, false));
+        live.add(new Row(identity, role));
+        suspended.add(identity);
     }
 
     Set<RoleName> rolesOf(IdentityId identity) {
@@ -79,15 +95,44 @@ final class RevocationWorld {
         }
     }
 
-    /** Revokes as the door runs it: under the request's scopes, by {@code actor}, one transaction committed at the end. */
+    /** The committed identities holding a role that grants roles and not suspended. */
+    Set<IdentityId> activeGranters() {
+        synchronized (live) {
+            Set<IdentityId> granters = new HashSet<>();
+            live.stream().filter(row -> Authorization.grantsRoles(row.role()) && !suspended.contains(row.identity()))
+                    .forEach(row -> granters.add(row.identity()));
+            return granters;
+        }
+    }
+
+    /** Revokes as the door does: under the request's scopes, by {@code actor}, one transaction committed at the end. */
     IdentityAdministration.RoleRevocation revoke(IdentityId subject, RoleName role, IdentityId actor) {
+        return inATransaction(actor, () -> administration(true)
+                .revokeRole(UNIT_OF_WORK, subject, role, actor, "the incident closed, OPS-8812"));
+    }
+
+    /** Suspends as the door does ({@code ADMINISTRATOR}), or as risk's action does ({@code RISK}). */
+    IdentityAdministration.Suspension suspend(IdentityId subject, IdentityId actor, SuspensionCause cause) {
+        return inATransaction(actor, () -> administration(true)
+                .suspend(UNIT_OF_WORK, subject, actor, "the account is compromised, OPS-9001", cause));
+    }
+
+    private <T> T inATransaction(IdentityId actor, Supplier<T> act) {
+        pending.get().clear();
+        boolean committed = false;
         try (var correlation = CorrelationContext.enter(Correlation.startingWith(CorrelationId.of("the-revocation")));
                 var acting = SecurityContext.enter(new Actor(actor.value().toString(), ActorType.EMPLOYEE))) {
-            return administration(true).revokeRole(UNIT_OF_WORK, subject, role, actor, "the incident closed, OPS-8812");
+            T outcome = act.get();
+            committed = true;
+            return outcome;
         } finally {
-            // The commit: the locked rows are released with the transaction.
-            if (rows.isHeldByCurrentThread()) {
-                rows.unlock();
+            if (committed) {
+                pending.get().forEach(Runnable::run);
+            }
+            pending.get().clear();
+            // The commit, or the rollback: the locked rows are released with the transaction.
+            if (holdings.isHeldByCurrentThread()) {
+                holdings.unlock();
             }
         }
     }
@@ -96,15 +141,33 @@ final class RevocationWorld {
     IdentityAdministration administration(boolean subjectExists) {
         IdentityStore<Connection> identities = (IdentityStore<Connection>) Proxy.newProxyInstance(IdentityStore.class.getClassLoader(),
                 new Class<?>[] {IdentityStore.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("findById")) {
-                        calls.add("findById");
-                        return subjectExists ? Optional.of(new SpringObjenesis().newInstance(Identity.class)) : Optional.empty();
+                    switch (method.getName()) {
+                        case "findById" -> {
+                            calls.add("findById");
+                            if (!subjectExists) {
+                                return Optional.empty();
+                            }
+                            IdentityId id = (IdentityId) args[1];
+                            return Optional.of(Identity.rehydrate(id, UUID.randomUUID(), new LoginIdentifier("revocation-world"),
+                                    suspended.contains(id) ? IdentityStatus.SUSPENDED : IdentityStatus.ACTIVE,
+                                    CLOCK.instant().minusSeconds(3600), CLOCK.instant().minusSeconds(3600)));
+                        }
+                        case "moveStatus" -> {
+                            IdentityId id = (IdentityId) args[1];
+                            calls.add("moveStatus " + ((Identity) args[3]).status());
+                            assertThat(((Optional<SuspensionCause>) args[4])).isPresent();
+                            if (suspended.contains(id)) {
+                                return false;
+                            }
+                            pending.get().add(() -> suspended.add(id));
+                            return true;
+                        }
+                        default -> throw new UnsupportedOperationException(method.getName());
                     }
-                    throw new UnsupportedOperationException(method.getName());
                 });
         RoleAssignmentStore<Connection> assignments = (RoleAssignmentStore<Connection>) Proxy.newProxyInstance(
                 RoleAssignmentStore.class.getClassLoader(), new Class<?>[] {RoleAssignmentStore.class}, (proxy, method, args) -> {
-                    assertThat(args[0]).as("%s on the revocation's unit of work", method.getName()).isSameAs(UNIT_OF_WORK);
+                    assertThat(args[0]).as("%s on the act's unit of work", method.getName()).isSameAs(UNIT_OF_WORK);
                     switch (method.getName()) {
                         case "lockForRoleChange" -> {
                             calls.add("lockForRoleChange");
@@ -114,17 +177,30 @@ final class RevocationWorld {
                             calls.add("liveRolesOf");
                             return Set.copyOf(rolesOf((IdentityId) args[1]));
                         }
-                        case "lockActiveHoldingsOf" -> {
-                            calls.add("lockActiveHoldingsOf");
-                            Set<RoleName> granting = (Set<RoleName>) args[1];
-                            grantingAsked.add(Set.copyOf(granting));
-                            if (serialised) {
-                                rows.lock();
+                        case "lockHoldingsOf" -> {
+                            calls.add("lockHoldingsOf");
+                            grantingAsked.add(Set.copyOf((Set<RoleName>) args[1]));
+                            boolean first = firstLockTaken.compareAndSet(false, true);
+                            if (!first) {
+                                otherReachedTheHoldings.countDown();
                             }
+                            if (serialised) {
+                                holdings.lock();
+                            }
+                            if (meetAtTheLock && first) {
+                                // Hold the first act here until the other has reached the lock - everything it reads before
+                                // the lock is then read before this act commits - or give up waiting.
+                                otherReachedTheHoldings.await(5, TimeUnit.SECONDS);
+                            }
+                            return null;
+                        }
+                        case "activeHoldingsOf" -> {
+                            calls.add("activeHoldingsOf");
+                            Set<RoleName> granting = (Set<RoleName>) args[1];
                             Set<RoleAssignmentStore.Holding> active = new HashSet<>();
                             synchronized (live) {
                                 for (Row row : live) {
-                                    if (granting.contains(row.role()) && row.active()) {
+                                    if (granting.contains(row.role()) && !suspended.contains(row.identity())) {
                                         active.add(new RoleAssignmentStore.Holding(row.identity(), row.role()));
                                     }
                                 }
@@ -135,7 +211,12 @@ final class RevocationWorld {
                         case "revoke" -> {
                             calls.add("revoke " + args[2]);
                             assertThat(args[3]).as("revoked by the actor").isNotEqualTo(args[1]);
-                            return live.removeIf(row -> row.identity().equals(args[1]) && row.role() == args[2]);
+                            Row row = new Row((IdentityId) args[1], (RoleName) args[2]);
+                            if (!live.contains(row)) {
+                                return false;
+                            }
+                            pending.get().add(() -> live.remove(row));
+                            return true;
                         }
                         default -> throw new UnsupportedOperationException(method.getName());
                     }
@@ -145,7 +226,7 @@ final class RevocationWorld {
                     if (!method.getName().equals("revokeAllFor")) {
                         throw new UnsupportedOperationException(method.getName());
                     }
-                    assertThat(args[0]).as("the session revocation joins the revocation's unit of work").isSameAs(UNIT_OF_WORK);
+                    assertThat(args[0]).as("the session revocation joins the act's unit of work").isSameAs(UNIT_OF_WORK);
                     calls.add("revokeAllFor " + args[1]);
                     if (sessionRevocationFails != null) {
                         throw sessionRevocationFails;
@@ -156,7 +237,7 @@ final class RevocationWorld {
                 });
         MfaEnrolmentStore<Connection> enrolments = (MfaEnrolmentStore<Connection>) Proxy.newProxyInstance(
                 MfaEnrolmentStore.class.getClassLoader(), new Class<?>[] {MfaEnrolmentStore.class}, (proxy, method, args) -> {
-                    throw new UnsupportedOperationException("a revocation reads no factor");
+                    throw new UnsupportedOperationException("a revocation and a suspension read no factor");
                 });
         com.finapp.platform.audit.AuditWriter<Connection> trail = (uow, record) -> {
             calls.add("audit " + record.operation().code());
@@ -164,8 +245,6 @@ final class RevocationWorld {
         };
         return new IdentityAdministration(IDS, CLOCK, identities, new Authorization(assignments, IDS, CLOCK, trail),
                 new SessionRevocation(sessionStore, IDS, CLOCK, trail), trail,
-                (uow, envelope, payload, mediaType) -> {
-                    throw new UnsupportedOperationException("a revocation announces no event");
-                }, enrolments);
+                (uow, envelope, payload, mediaType) -> calls.add("outbox " + envelope.eventType()), enrolments);
     }
 }

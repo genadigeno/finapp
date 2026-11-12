@@ -94,16 +94,22 @@ public final class Authorization {
     }
 
     /**
-     * Who else could grant roles if {@code role} were revoked (`P15-TSK-032`): every {@code ACTIVE} identity's live holding of
-     * a role that can grant roles ({@link PermissionName#ROLE_ASSIGN}), each row locked for update, when {@code role} is one;
-     * none, and nothing locked, when it is not. See {@link RoleAssignmentStore#lockActiveHoldingsOf}.
+     * Who can grant roles now (`P15-TSK-032`): every {@code ACTIVE} identity's live holding of a role that can grant roles
+     * ({@link PermissionName#ROLE_ASSIGN}), counted by a fresh statement <em>after</em> every live holding of such a role is
+     * locked for update. The lock serialises the revocations and administrators' suspensions that could take the last one away;
+     * the fresh count sees what each that the lock waited for committed, a suspension included, which the locking statement
+     * itself cannot ({@link RoleAssignmentStore#lockHoldingsOf}).
      */
-    public Set<RoleAssignmentStore.Holding> lockGrantingHoldings(Connection unitOfWork, RoleName role) {
+    public Set<RoleAssignmentStore.Holding> lockActiveGranters(Connection unitOfWork) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        Objects.requireNonNull(role, "role must not be null");
-        return role.permissions().contains(PermissionName.ROLE_ASSIGN)
-                ? assignments.lockActiveHoldingsOf(unitOfWork, rolesGranting(PermissionName.ROLE_ASSIGN))
-                : Set.of();
+        Set<RoleName> granting = rolesGranting(PermissionName.ROLE_ASSIGN);
+        assignments.lockHoldingsOf(unitOfWork, granting);
+        return assignments.activeHoldingsOf(unitOfWork, granting);
+    }
+
+    /** Whether {@code role} can grant roles: holds {@link PermissionName#ROLE_ASSIGN}. Read from the code. */
+    public static boolean grantsRoles(RoleName role) {
+        return Objects.requireNonNull(role, "role must not be null").permissions().contains(PermissionName.ROLE_ASSIGN);
     }
 
     /** Every role whose grants include {@code permission}: read from the code, so a permission moved takes the rule along. */

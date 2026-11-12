@@ -148,7 +148,7 @@ class LastRoleEndsSessionsTest {
 
         world.revoke(SUBJECT, RoleName.KYC_REVIEWER, ADMINISTRATOR);
 
-        assertThat(world.calls).doesNotContain("lockActiveHoldingsOf");
+        assertThat(world.calls).doesNotContain("lockHoldingsOf", "activeHoldingsOf");
         assertThat(world.grantingAsked).isEmpty();
     }
 }

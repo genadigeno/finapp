@@ -41,19 +41,26 @@ public interface RoleAssignmentStore<T> {
     void lockForRoleChange(T unitOfWork, IdentityId identityId);
 
     /**
-     * Every live holding of {@code roles} whose identity is {@code ACTIVE}, each row locked {@code FOR UPDATE} until the
-     * caller's transaction ends, locked in the primary key's order (`P15-TSK-032`): the revocation's read of who else can grant
-     * roles, the one read that spans identities.
+     * Locks every live holding of {@code roles}, each row {@code FOR UPDATE} until the caller's transaction ends, in the primary
+     * key's order (`P15-TSK-032`): the lock a revocation of a granting role and an administrator's suspension of a holder take
+     * before they count who else can grant roles, the one lock that spans identities. Two of them lock the same rows in the same
+     * order, so they never deadlock on them: the second waits for the first to commit.
      *
-     * <p><strong>"Last" is read after any revocation it raced.</strong> Two revocations of a granting role lock the same rows in
-     * the same order, so they never deadlock on them: the second waits for the first to commit, and PostgreSQL then re-reads
-     * each row it waited on and drops one the first revoked ({@code READ COMMITTED}'s re-check of a locked row). So two
-     * administrators revoking each other's role at once see each other's revocation, and one of them is the last. A grant
-     * committed after the statement began is not seen, which errs towards "last", the refusing side. The holder's status is read
-     * with the row and not locked: a suspension committed before the statement is seen, one still in flight is not (its own
-     * door's question).
+     * <p><strong>It reads nothing a caller decides by.</strong> The statement that waited answers from the snapshot it began
+     * with: PostgreSQL re-checks only the rows another transaction updated, so a holder's status joined to it would be the
+     * status before a suspension that committed while it waited. The count is {@link #activeHoldingsOf}, a statement of its
+     * own taken after this one returns.
      */
-    Set<Holding> lockActiveHoldingsOf(T unitOfWork, Set<RoleName> roles);
+    void lockHoldingsOf(T unitOfWork, Set<RoleName> roles);
+
+    /**
+     * Every live holding of {@code roles} whose identity is {@code ACTIVE}, read by a statement of its own (`P15-TSK-032`). After
+     * {@link #lockHoldingsOf}, under {@code READ COMMITTED}, it sees every revocation and suspension that committed while the
+     * lock waited, and none can commit after it until the caller's transaction ends: each of them takes the same lock first.
+     * A grant committed later is not seen, which errs towards "last", the refusing side; risk's automated suspension takes no
+     * such lock (it is not bound by the rule).
+     */
+    Set<Holding> activeHoldingsOf(T unitOfWork, Set<RoleName> roles);
 
     /** One live holding: who, which role. */
     record Holding(IdentityId identityId, RoleName role) {}

@@ -119,6 +119,28 @@ public final class IdentityAdministration {
      * {@code V024}; the Phase 13 gate, owner item 25) - {@link SuspensionCause#RISK} for risk's action, so only risk's
      * own suspension is lifted by risk ({@link #reinstate(Connection, IdentityId, IdentityId, String,
      * SuspensionCause)}). An identity already suspended answers {@link Suspension#NOT_ACTIVE} and keeps its cause.
+     *
+     * <h2>An administrator never suspends the last identity that can grant roles</h2>
+     *
+     * <p>`P15-TSK-032`, item 42 (d) as decided: with {@link SuspensionCause#ADMINISTRATOR}, a subject that is the last
+     * {@code ACTIVE} identity holding a role that can grant roles is refused, {@link Suspension#LAST_ROLE_GRANTER}, nothing
+     * written - the same rule a revocation keeps ({@link #revokeRole}). Two administrators suspending each other at once leave
+     * exactly one. <strong>The locks come before the status write, in the revocation's order</strong>: the subject's row
+     * ({@link RoleAssignmentStore#lockForRoleChange}), then every live holding of a granting role in key order; then the
+     * status update and the session revocation's {@code FOR UPDATE} of the subject's row. Taken after the status write, the
+     * holdings' lock would deadlock with a revocation whose actor is the subject: that revocation holds the holdings and then
+     * takes {@code KEY SHARE} on its actor's row for {@code revoked_by}'s foreign key, which a held {@code FOR UPDATE} blocks.
+     * <strong>The count is a fresh statement after the locks</strong> ({@link Authorization#lockActiveGranters}), so a
+     * suspension or revocation that committed while they waited is seen. A subject holding no granting role takes the
+     * identity's lock alone.
+     *
+     * <p><strong>Risk's automated suspension is not bound by it</strong> ({@link SuspensionCause#RISK}, risk's
+     * {@code SUSPEND_IDENTITY}): a compromised last administrator must still be suspendable, so security wins over
+     * availability there, and risk's path takes none of these locks. If it suspends the last one, nobody can grant, revoke,
+     * suspend or reinstate through the platform; the only way back is the out-of-band write of {@code README.md} §5e - a
+     * granting role inserted for an {@code ACTIVE} identity, or the suspended one's status set back - by someone holding a
+     * database credential that can write {@code identity}'s tables. In a deployed environment no person has such a session
+     * today ({@code THREAT_MODEL.md} §6 item 31 (e)).
      */
     public Suspension suspend(
             Connection unitOfWork, IdentityId subject, IdentityId actor, String reason, SuspensionCause cause) {
@@ -139,6 +161,14 @@ public final class IdentityAdministration {
         Identity identity = found.get();
         if (identity.status() != IdentityStatus.ACTIVE) {
             return Suspension.NOT_ACTIVE;
+        }
+
+        if (cause == SuspensionCause.ADMINISTRATOR
+                && authorization.standingForChange(unitOfWork, subject).roles().stream().anyMatch(Authorization::grantsRoles)) {
+            java.util.Set<RoleAssignmentStore.Holding> granters = authorization.lockActiveGranters(unitOfWork);
+            if (!granters.isEmpty() && granters.stream().allMatch(holding -> holding.identityId().equals(subject))) {
+                return Suspension.LAST_ROLE_GRANTER;
+            }
         }
 
         // The aggregate decides whether the transition is legal (INV-LIFE-02: rejected by the
@@ -268,7 +298,8 @@ public final class IdentityAdministration {
      * storage exception rendered {@code 500}, which is our fault reported for a caller's typo.
      *
      * <p><strong>A role that can redirect a merchant's money needs a factor first</strong> (`P15-TSK-039`;
-     * {@code PRIVILEGED_ACCESS_REVIEW.md} §6): read here, on the grant's own unit of work, per decision. No door removes a
+     * {@code PRIVILEGED_ACCESS_REVIEW.md} §6), and since `P15-TSK-032` so does the role that grants roles and suspends
+     * identities ({@link RoleName#requiresEnrolledFactor}): read here, on the grant's own unit of work, per decision. No door removes a
      * confirmed factor, so a factor seen here cannot be taken away between this read and the grant. A retried grant to
      * someone already holding the role without a factor is refused too: the answer says what the holding lacks, where
      * reporting success would tell the administrator the rule was satisfied.
@@ -350,13 +381,14 @@ public final class IdentityAdministration {
      *
      * <p>A role holding {@link PermissionName#ROLE_ASSIGN} (today {@code ADMINISTRATOR}, read from what each role grants) is
      * not revoked from the last {@code ACTIVE} identity holding one: {@link RoleRevocation#LAST_ROLE_GRANTER}, nothing written.
-     * With nobody left, nobody grants, revokes, suspends or reinstates through the platform again. <strong>"Last" is read with
-     * every live holding of such a role locked</strong> ({@link RoleAssignmentStore#lockActiveHoldingsOf}), the one read here
-     * that spans identities: two revocations of the last two holders - two administrators revoking each other - lock the same
-     * rows in the same order, the second waits for the first and re-reads them, so it sees the first's revocation and is
-     * refused. A suspended holder does not count - a suspended administrator cannot sign in - and a grant still in flight is
-     * not seen, which errs towards refusing. Not held: a suspension of the other holder that its door admitted before this
-     * revocation committed and completes after it, since the suspension door has no such rule of its own.
+     * With nobody left, nobody grants, revokes, suspends or reinstates through the platform again. <strong>"Last" is counted
+     * after every live holding of such a role is locked</strong> ({@link Authorization#lockActiveGranters}), the one lock here
+     * that spans identities, and by a fresh statement after it: two revocations of the last two holders - two administrators
+     * revoking each other - or a revocation and an administrator's suspension of the other holder lock the same rows in the
+     * same order, the second waits for the first, and its count sees what the first committed, a suspension included. A
+     * suspended holder does not count - a suspended administrator cannot sign in - and a grant still in flight is not seen,
+     * which errs towards refusing. Risk's automated suspension takes no such lock and is not bound by the rule
+     * ({@link #suspend(Connection, IdentityId, IdentityId, String, SuspensionCause)}).
      *
      * <h2>The last role ends every session the identity holds</h2>
      *
@@ -382,9 +414,14 @@ public final class IdentityAdministration {
      *
      * <h2>The order of the locks</h2>
      *
-     * <p>The identity's row, then - for a granting role only - every live holding of a granting role, in the primary key's
-     * order; then the row's own update, and for a last role the session revocation's {@code FOR UPDATE} of the identity's row,
-     * which this transaction already holds. Two revocations of granting roles meet first on those holdings, in one order.
+     * <p>The subject's row, {@code FOR NO KEY UPDATE}; then - for a granting role only - every live holding of a granting role,
+     * {@code FOR UPDATE} in the primary key's order, and the fresh count; then the role row's update, whose {@code revoked_by}
+     * foreign key takes {@code KEY SHARE} on the <em>actor's</em> row; then, for a last role, the session revocation's
+     * {@code FOR UPDATE} of the subject's row - an upgrade of the {@code NO KEY UPDATE} this transaction holds, which waits for
+     * any transaction holding {@code KEY SHARE} on that row: a session insert in flight (its foreign key) or an act whose actor
+     * is the subject. An administrator's suspension takes the same first two locks in the same order before its status write
+     * ({@link #suspend(Connection, IdentityId, IdentityId, String, SuspensionCause)}), so the two never wait on each other in
+     * a cycle; two revocations or suspensions touching granting roles meet first on the holdings, in one order.
      */
     public RoleRevocation revokeRole(
             Connection unitOfWork,
@@ -408,10 +445,12 @@ public final class IdentityAdministration {
         if (!held.contains(role)) {
             return RoleRevocation.NOT_HELD;
         }
-        java.util.Set<RoleAssignmentStore.Holding> granting = authorization.lockGrantingHoldings(unitOfWork, role);
-        RoleAssignmentStore.Holding revoking = new RoleAssignmentStore.Holding(subject, role);
-        if (granting.contains(revoking) && granting.stream().allMatch(revoking::equals)) {
-            return RoleRevocation.LAST_ROLE_GRANTER;
+        if (Authorization.grantsRoles(role)) {
+            java.util.Set<RoleAssignmentStore.Holding> granters = authorization.lockActiveGranters(unitOfWork);
+            RoleAssignmentStore.Holding revoking = new RoleAssignmentStore.Holding(subject, role);
+            if (granters.contains(revoking) && granters.stream().allMatch(revoking::equals)) {
+                return RoleRevocation.LAST_ROLE_GRANTER;
+            }
         }
         boolean lastRole = held.equals(java.util.Set.of(role));
         return authorization.revoke(unitOfWork, subject, role, actor, reason,
@@ -443,7 +482,12 @@ public final class IdentityAdministration {
 
         NOT_FOUND,
         /** The administrator named themselves. */
-        SELF
+        SELF,
+        /**
+         * An administrator's suspension of the last {@code ACTIVE} identity holding a role that can grant roles (`P15-TSK-032`).
+         * Nothing was written. Never answered to risk's suspension, which the rule does not bind.
+         */
+        LAST_ROLE_GRANTER
     }
 
     /** What a reinstatement attempt did (`P1-TSK-032`). */

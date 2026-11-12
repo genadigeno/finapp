@@ -66,18 +66,34 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
     }
 
     @Override
-    public Set<Holding> lockActiveHoldingsOf(Connection unitOfWork, Set<RoleName> roles) {
+    public void lockHoldingsOf(Connection unitOfWork, Set<RoleName> roles) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(roles, "roles must not be null");
 
-        // Every live holding of the roles by an ACTIVE identity, locked FOR UPDATE in the primary key's order (`P15-TSK-032`):
-        // two revocations lock the same rows in the same order, so the second waits on the first and PostgreSQL re-checks each
-        // row it waited on, dropping one the first revoked. The holder's status is read with the row, not locked.
+        // Every live holding of the roles, locked FOR UPDATE in the primary key's order (`P15-TSK-032`): two revocations or
+        // suspensions lock the same rows in the same order, so the second waits on the first. Nothing is read from it: the
+        // statement that waited answers from its starting snapshot, so the count is activeHoldingsOf's, a statement of its own.
+        String sql =
+                "SELECT id FROM " + TABLE + " WHERE revoked_at IS NULL AND role_name = ANY (?) ORDER BY id FOR UPDATE";
+        try (PreparedStatement lock = unitOfWork.prepareStatement(sql)) {
+            lock.setArray(1, unitOfWork.createArrayOf("text", roles.stream().map(RoleName::name).toArray()));
+            lock.executeQuery().close();
+        } catch (SQLException e) {
+            throw new IdentityStorageException(DatabaseFailure.describe("Could not lock the holdings of " + roles, e));
+        }
+    }
+
+    @Override
+    public Set<Holding> activeHoldingsOf(Connection unitOfWork, Set<RoleName> roles) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(roles, "roles must not be null");
+
+        // A fresh statement, after lockHoldingsOf (`P15-TSK-032`): under READ COMMITTED it sees every revocation and suspension
+        // committed while the lock waited, the holder's status included.
         String sql =
                 "SELECT held.identity_id, held.role_name FROM " + TABLE + " held"
                         + " JOIN identity.identity holder ON holder.id = held.identity_id"
-                        + " WHERE held.revoked_at IS NULL AND held.role_name = ANY (?) AND holder.status = 'ACTIVE'"
-                        + " ORDER BY held.id FOR UPDATE OF held";
+                        + " WHERE held.revoked_at IS NULL AND held.role_name = ANY (?) AND holder.status = 'ACTIVE'";
         try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
             select.setArray(1, unitOfWork.createArrayOf("text", roles.stream().map(RoleName::name).toArray()));
             try (ResultSet rows = select.executeQuery()) {
@@ -90,7 +106,7 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
                 return Set.copyOf(holdings);
             }
         } catch (SQLException e) {
-            throw new IdentityStorageException(DatabaseFailure.describe("Could not lock the holdings of " + roles, e));
+            throw new IdentityStorageException(DatabaseFailure.describe("Could not read the active holdings of " + roles, e));
         }
     }
 

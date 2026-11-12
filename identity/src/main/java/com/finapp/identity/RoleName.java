@@ -402,14 +402,19 @@ public enum RoleName {
     }
 
     /**
-     * Whether this role can redirect a merchant's money, so may not be granted to an identity with no enrolled factor
-     * (`P15-TSK-039`; {@code PRIVILEGED_ACCESS_REVIEW.md} §6). Decided from what the role grants, so a permission moved to
-     * another role takes the rule with it: proposing a payout destination, approving one, paying out.
+     * Whether this role may not be granted to an identity with no enrolled factor (`P15-TSK-039`;
+     * {@code PRIVILEGED_ACCESS_REVIEW.md} §6). Decided from what the role grants, so a permission moved to another role takes
+     * the rule with it: proposing a payout destination, approving one, paying out - a merchant's money redirected - and,
+     * since `P15-TSK-032`, granting roles or suspending identities. Every administrative door demands a {@code MULTI_FACTOR}
+     * session, and a password alone may enrol an identity's <em>first</em> factor, so a factorless administrator's stolen
+     * password would otherwise pass every one of those doors after enrolling the thief's own factor.
      */
     public boolean requiresEnrolledFactor() {
         return permissions.contains(PermissionName.MERCHANT_ADMINISTER)
                 || permissions.contains(PermissionName.PAYOUT_DESTINATION_APPROVE)
-                || permissions.contains(PermissionName.MERCHANT_PAYOUT);
+                || permissions.contains(PermissionName.MERCHANT_PAYOUT)
+                || permissions.contains(PermissionName.ROLE_ASSIGN)
+                || permissions.contains(PermissionName.IDENTITY_SUSPEND);
     }
 
     public static String sqlValueList() {

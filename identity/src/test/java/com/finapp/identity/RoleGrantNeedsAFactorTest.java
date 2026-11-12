@@ -50,16 +50,17 @@ class RoleGrantNeedsAFactorTest {
     private int standing = 1;
 
     @Test
-    @DisplayName("exactly the roles granting a payout destination's proposal, its approval or a payout need one")
+    @DisplayName("exactly the roles granting a payout destination's proposal, its approval or a payout need one - and, since"
+            + " P15-TSK-032, the role that grants roles and suspends identities")
     void whichRolesNeedAFactor() {
         assertThat(Arrays.stream(RoleName.values()).filter(RoleName::requiresEnrolledFactor).collect(Collectors.toSet()))
-                .isEqualTo(Set.of(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR));
+                .isEqualTo(Set.of(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR, RoleName.ADMINISTRATOR));
     }
 
     @Test
-    @DisplayName("no factor: refused, nothing granted, nothing written")
+    @DisplayName("no factor: refused, nothing granted, nothing written - an administrator's role among them (P15-TSK-032)")
     void aGrantWithNoFactorIsRefused() {
-        for (RoleName role : List.of(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR)) {
+        for (RoleName role : List.of(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR, RoleName.ADMINISTRATOR)) {
             assertThat(assign(role)).as(role.name()).isEqualTo(IdentityAdministration.RoleGrant.FACTOR_REQUIRED);
         }
         assertThat(grants).hasValue(0);
@@ -173,7 +174,9 @@ class RoleGrantNeedsAFactorTest {
                         return Set.of();
                     }
                     if (method.getName().equals("holdingsWithoutFactor")) {
-                        assertThat((Set<RoleName>) args[1]).containsExactlyInAnyOrder(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR);
+                        // P15-TSK-032: a factorless administrator is named by the review's check too.
+                        assertThat((Set<RoleName>) args[1]).containsExactlyInAnyOrder(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR,
+                                RoleName.ADMINISTRATOR);
                         return java.util.Collections.nCopies(standing,
                                 new RoleAssignmentStore.FactorlessHolding(SUBJECT, RoleName.LEDGER_OPERATOR, Instant.now(CLOCK)));
                     }
