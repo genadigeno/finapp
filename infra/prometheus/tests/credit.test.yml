@@ -41,3 +41,30 @@ tests:
         alertname: CreditScorecardMissing
         exp_alerts: []
 
+
+  # CreditPolicyMissing (P15-TSK-032): the meter's own labels, the enum's names. A lending product at 0 fires after 15 minutes; the BNPL
+  # products at 0, BNPL's expected state, never do. Written after the kind rehearsal saw them fire under a lower-case exclusion.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_credit_policy_active{job="finapp", instance="a:8081", product="PERSONAL_LOAN"}'
+        values: '0x20'
+      - series: 'finapp_credit_policy_active{job="finapp", instance="a:8081", product="CREDIT_LINE"}'
+        values: '1x20'
+      - series: 'finapp_credit_policy_active{job="finapp", instance="a:8081", product="BNPL_PAY_IN_4"}'
+        values: '0x20'
+      - series: 'finapp_credit_policy_active{job="finapp", instance="a:8081", product="BNPL_PAY_IN_N"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: CreditPolicyMissing
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: CreditPolicyMissing
+        exp_alerts:
+          - exp_labels:
+              owner: credit
+              severity: ticket
+              product: PERSONAL_LOAN
+            exp_annotations:
+              summary: "The credit product PERSONAL_LOAN has no active policy"
+              description: "No PERSONAL_LOAN request is accepted or decided until a policy version is activated by a person other than its proposer - the seeded v1 by one officer (ADR-0086; OPERATIONS_RUNBOOK.md section 6)."

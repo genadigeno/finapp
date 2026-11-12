@@ -79,8 +79,10 @@ groups:
         # A product with no ACTIVE policy: none of its requests is accepted (credit.ProductNotOffered) or decided until a
         # person other than its proposer activates a version - the seeded v1, proposed by its migration, by one officer.
         # The lending products only (P12-TSK-001): a BNPL product has no seed and production activates none
-        # (PHASE_12_PLAN.md section 1.1), so its 0 is the expected state, not a gap - P12-TSK-026 owns BNPL's alerts.
-        expr: min by (product) (finapp_credit_policy_active{product!~"bnpl_.*"}) == 0
+        # (PHASE_12_PLAN.md section 1.1), so its 0 is the expected state, not a gap - P12-TSK-026 owns BNPL's alerts. The meter tags
+        # the enum's name, BNPL_PAY_IN_4 and BNPL_PAY_IN_N: matched as written (this read `bnpl_.*` until 2026-11-12, and excluded
+        # nothing: the kind rehearsal saw the BNPL products fire, P15-TSK-032).
+        expr: min by (product) (finapp_credit_policy_active{product!~"BNPL_.*"}) == 0
         for: 15m
         labels:
           severity: ticket
