@@ -106,7 +106,11 @@ by identity at the act.
 
 **Granting.** Only `ROLE_ASSIGN` (the `ADMINISTRATOR`) grants or revokes a role; an administrator cannot grant a role
 to their own identity (`IdentityAdministration`'s `SELF`); every grant and revocation is `identity.RoleAssigned`, with
-the actor, the target, the role and a required reason.
+the actor, the target, the role and a required reason. The grant is `POST /v1/identities/{id}/roles` (`granted=<role>`); the
+revocation, since `P15-TSK-032`, is `DELETE /v1/identities/{id}/roles/{role}` with a reason, on a `MULTI_FACTOR` session
+(`revoked=<role>`), refused for oneself and for the last active identity holding a role that can grant roles. *(Until then
+no door revoked a role: `Authorization.revoke` existed and nothing reachable called it, so a role could be ended only by
+suspending the whole identity or by a write around the door.)*
 
 ## 5. The review
 
@@ -136,7 +140,29 @@ list held five since `P15-TSK-039`)*:
    asked this question as if it had one.
 
 The review is a human procedure: the owner sets its cadence and its reviewer, and a leaver's roles are revoked on the
-day they leave. Its first performance is `P15-TSK-032`'s, with the runbook's break-glass and compromise procedures.
+day they leave. Its first performance was rehearsed on `kind` over the rehearsal's own identities (below), with the runbook's
+break-glass (`OPERATIONS_RUNBOOK.md` §11.25) and compromise procedures (§11.12, "A compromised operator credential"); its first
+performance over a real environment's holders needs that environment (`THREAT_MODEL.md` §6 item 42 (c)).
+
+**What one performance writes down.** A performance is a record, kept with this document's history, that a second person can
+check against the authoritative rows without asking the reviewer anything:
+
+| Field | What it holds |
+|---|---|
+| When, who | The date; the reviewer; the second person who reads the record. Neither holds a role the review judges in that performance without saying so |
+| The holdings read | The instant the live rows of `identity.role_assignment` (granted, not revoked) were read, per role, with the count; the `identity.RoleAssigned` records since the last performance, by `granted=` and `revoked=`; the answer of `GET /v1/operator/access-review/factorless-holdings`, audited as `identity.FactorlessHoldingsRead` (its audit id) |
+| Holdings with no grant record | Each live row with no `identity.RoleAssigned` record of its grant: a holding written around the door (a script, a database fixture, break-glass). Each is asked every question below as if it had been granted, question 6 included |
+| Per question, 1 to 6 | Every holding it named, and for each the resolution: kept, with the justification; revoked, with the revocation's audit id (`revoked=<role>`); the holder enrolled (the `identity.MfaEnrolmentConfirmed` id); confirmed by the holder (question 6), with how they were reached; or suspended with a reason (`identity.IdentitySuspended`'s id). "None" where it named none |
+| What is left | Each item not resolved in the performance, with an owner and a date; or "none". The factorless-holdings read is empty after the performance, or names exactly what this field carries |
+
+Every act a performance takes goes through the doors named above and leaves its own `platform.audit_record` row; the record
+cites those rows by id and never restates a credential, a channel's value or a factor.
+
+**The performances.**
+
+| Date | Where | Reviewer, second person | Named | Resolved | Left |
+|---|---|---|---|---|---|
+| pending | `kind` (the rehearsal's own identities) | pending | pending | pending | pending |
 
 ## 6. Step-up and refused attempts
 
@@ -192,15 +218,20 @@ operator doors, a payout destination's among them.
 There is no standing emergency identity in the application, and none is created. Break-glass is two procedures:
 
 - **In the application.** An incident that needs a permission nobody on duty holds is met by an `ADMINISTRATOR`
-  granting the role to a named person, with a reason naming the incident, and revoking it when the incident closes,
-  with a reason. Both acts are `identity.RoleAssigned`; a grant left standing is found by the next review (§5, question
-  1). Every act the person takes under the role is recorded `EMPLOYEE` and, at a four-eyes door, still needs a second
-  person.
+  granting the role to a named person, `POST /v1/identities/{id}/roles` with a reason naming the incident, and revoking it
+  when the incident closes, `DELETE /v1/identities/{id}/roles/{role}` with a reason. Both acts are `identity.RoleAssigned`
+  (`granted=<role>`, `revoked=<role>`); a grant left standing is found by the next review (§5, question 1). A role granted
+  to someone holding none is a first role, and ends the sessions they held (§2); a revocation of the last role they hold
+  ends their sessions again (`lastRole=true`). Every act the person takes under the role is recorded `EMPLOYEE` and, at a
+  four-eyes door, still needs a second person. *(Read "Both acts are `identity.RoleAssigned`" alone until 2026-11-12: the
+  revocation had no door, so the close could only suspend the whole identity or write around the door.)*
 - **Beneath the application.** Human access to the cluster and the database is never standing: a time-bound, audited
   break-glass role in the cluster (`P15-TSK-010`), the database's bootstrap credential held only by the one-time
   bootstrap step (`P15-TSK-004`) in the secret store (`P15-TSK-018`).
 
-`P15-TSK-032` writes and rehearses the runbook's break-glass and compromise procedures (`OPERATIONS_RUNBOOK.md` 11.10).
+The runbook's procedures for both are `OPERATIONS_RUNBOOK.md` §11.25 (break-glass beneath the application) and §11.12 (an
+incident, its approver and roles, and a compromised operator credential), written and rehearsed by `P15-TSK-032`. *(Read
+"(`OPERATIONS_RUNBOOK.md` 11.10)" until 2026-11-12: row 11.10 of the runbook's plan was never written under that number.)*
 
 ## 8. Report generation reads, and cannot write
 
@@ -226,6 +257,6 @@ initialisation script creates it, and in a deployed database the one-time bootst
 ## 9. What this review does not claim
 
 It does not claim that the holding rule of §4 is enforced (owner item 9), that the holdings §6's check names have been
-resolved or that the review of §5 has been performed, its question 6 included (a human procedure, first performed by
-`P15-TSK-032`), that
+resolved or that the review of §5 has been performed over a real environment's holders, its question 6 included (a human
+procedure; §5's performances say where it has run, and over whose identities), that
 operator routes are off the public edge (`P15-TSK-011`), or any conformity with a standard.
