@@ -24,8 +24,8 @@ import javax.net.ssl.SSLContext;
  * built or published for it.
  *
  * <p>It speaks only the words the adapters' code defines (SimulatedCardPspAdapter, SimulatedTokenisationAdapter,
- * SimulatedPayoutProvider) and it always succeeds: the rehearsal is about a deployment, and a provider that fails on demand is the
- * test harness's job. It behaves as a real provider must in one respect, because the census reads it: <strong>one effect per
+ * SimulatedPayoutProvider) and it succeeds, but for the two holds below: the rehearsal is about a deployment, and a provider that fails
+ * on demand is the test harness's job. It behaves as a real provider must in one respect, because the census reads it: <strong>one effect per
  * Idempotency-Key</strong>. A key seen before gets the answer it got the first time, and {@code /tmp/counts.txt}, rewritten every two
  * seconds, says how many requests arrived and how many distinct keys, per path, so "one effect per key" is counted on the provider's
  * side as well as the ledger's. The rehearsal reads it with {@code kubectl exec}; no port serves it.
@@ -33,6 +33,15 @@ import javax.net.ssl.SSLContext;
  * <p>While {@code /tmp/hold-payouts} exists, a payout's answer is held after its effect is taken, for at most twenty seconds, and the
  * caller's address and key are written to {@code /tmp/held.txt}. That is the worst moment for a replica to die, and the kill needs one
  * it can name: the provider has moved the money and the platform has not heard.
+ *
+ * <p>The payout rail's inquiry ({@code GET /payouts/{reference}}, SimulatedPayoutProvider's query, which the payout resolution sweep sends
+ * for a payout it holds UNKNOWN) answers what this provider knows of that reference: the answer its creation got, or
+ * {@code {"status":"unrecognised"}} for a reference it never saw. It takes no effect and holds no key.
+ *
+ * <p>While {@code /tmp/hold-inquiries} exists (P15-TSK-032: the {@code MerchantPayoutUnknownAged} page, runbook 11.22), the rail is a
+ * provider that has gone quiet: a payout's creation takes its effect and is then left unanswered for as long as the file exists, at most
+ * two minutes, past the application's payout timeout, so the platform holds the payout UNKNOWN; and every inquiry is answered {@code 503},
+ * which the adapter reads as no answer, so the sweep cannot conclude it. Removing the file lets the next inquiry find the payout paid.
  *
  * <p>No port serves plain HTTP. It holds no credential and verifies none: a bearer key is the adapter's confinement rule to meet, and a
  * simulator that checked it would prove only that the rehearsal's generator and the application agree.
@@ -44,6 +53,8 @@ public final class Simulator {
     private static final Map<String, AtomicLong> KEYS = new ConcurrentHashMap<>();
     private static final Path HOLD = Path.of("/tmp/hold-payouts");
     private static final Path HELD = Path.of("/tmp/held.txt");
+    private static final Path HOLD_INQUIRIES = Path.of("/tmp/hold-inquiries");
+    private static final String PAYOUTS = "/payouts";
 
     private Simulator() {}
 
@@ -117,6 +128,10 @@ public final class Simulator {
     private static void answer(HttpExchange exchange, String path, Answer answer) throws IOException {
         exchange.getRequestBody().readAllBytes();
         REQUESTS.computeIfAbsent(path, ignored -> new AtomicLong()).incrementAndGet();
+        if (PAYOUTS.equals(path) && "GET".equals(exchange.getRequestMethod())) {
+            inquiry(exchange);
+            return;
+        }
         String key = exchange.getRequestHeaders().getFirst("Idempotency-Key");
         String body;
         if (key == null) {
@@ -130,7 +145,39 @@ public final class Simulator {
         if ("/payouts".equals(path) && key != null && Files.exists(HOLD)) {
             hold(exchange, key);
         }
+        if (PAYOUTS.equals(path) && key != null && Files.exists(HOLD_INQUIRIES)) {
+            // The effect is taken; the answer waits past the platform's timeout, which has stopped listening by then.
+            waitWhile(HOLD_INQUIRIES, 1200);
+            try {
+                send(exchange, 200, body);
+            } catch (IOException gone) {
+                // The caller gave up: what the hold is for.
+            }
+            return;
+        }
         send(exchange, 200, body);
+    }
+
+    /** {@code GET /payouts/{reference}}: the provider's own record of the reference, or no answer at all while inquiries are held. */
+    private static void inquiry(HttpExchange exchange) throws IOException {
+        if (Files.exists(HOLD_INQUIRIES)) {
+            send(exchange, 503, "{\"status\":\"unavailable\"}");
+            return;
+        }
+        String requested = exchange.getRequestURI().getPath();
+        String reference = requested.length() > PAYOUTS.length() + 1 ? requested.substring(PAYOUTS.length() + 1) : "";
+        String known = reference.isEmpty() ? null : ANSWERED.get(PAYOUTS + "|" + reference);
+        send(exchange, 200, known != null ? known : "{\"status\":\"unrecognised\"}");
+    }
+
+    private static void waitWhile(Path file, int tenthsOfASecond) {
+        try {
+            for (int waited = 0; waited < tenthsOfASecond && Files.exists(file); waited++) {
+                Thread.sleep(100);
+            }
+        } catch (InterruptedException stop) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static void hold(HttpExchange exchange, String key) throws IOException {
