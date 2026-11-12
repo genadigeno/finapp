@@ -10,9 +10,10 @@ resources:
   - secret-store.yaml
   - networkpolicy-data-tier.yaml
 
-# Endpoints and credentials, read from the store by the two ExternalSecrets.
+# Endpoints and credentials, read from the store by the two ExternalSecrets; and the order a GitOps sync applies a release in.
 components:
   - ../../components/secret-delivery
+  - ../../components/delivery-order
 
 images:
   - name: finapp-app
