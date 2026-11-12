@@ -451,7 +451,7 @@ class CommittedConfigurationHoldsNoSecretTest {
         String key = "resource.customizations.health.external-secrets.io_ExternalSecret";
         assertThat(offencesIn(key + ": |\n    hs = {}\n    return hs", false)).isEmpty();
         assertThat(offencesIn(key + ": hunter2", false)).isNotEmpty();
-        assertThat(offencesIn(key + ": \"|\"", false)).as("only the bare block indicator").isNotEmpty();
+        assertThat(offencesIn(key + ": |hunter2", false)).as("only the block indicator alone").isNotEmpty();
         assertThat(offencesIn("resource.customizations.health.example.io_Secret: |", false)).as("only that kind's key").isNotEmpty();
     }
 
