@@ -2210,6 +2210,13 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     answer's copy alone (the request's copy of the same name is the caller's text), once what the pinned proxy writes for each copy is
     measured; **(ii)** accept the route and the time as the join. *Recommendation*: **(i)**, a small change with its measurement first.
 
+    **Decided 2026-11-13** by the owner ("accept recommendations"): every part as recommended. (a) **(i)**: the kind back ends' consoles are not
+    shipped. (b) **(ii)**: a successful run's lines stay on the node, and each schema's migration history is the record. (c) **(i)**:
+    the steps are added to the harness and run on the full cluster by `P16-TSK-006`, the load harness, whose entry says so; §4's T46
+    row stays a `GAP` until they run. (d) **(i)**: each environment's observability overlay carries the rule, with item 43 (c)'s
+    remainder, before the first real environment; §4's T4 row stays a `GAP`. (e) **(i)**: the answer's `X-Correlation-Id` kept in the
+    edge's access line once what the pinned proxy writes for each copy is measured, by `P16-TSK-020`, whose entry says so.
+
 48. **T4's residual: the findings the manifest scan carries** *(added 2026-11-12 by the graded scan of every overlay, item 44 (b))*.
     `trivy config` 0.76.2 over every kustomize root under `deploy/` read two HIGH findings and no CRITICAL on 2026-11-12, both
     `KSV-0109` ("ConfigMap with secrets"), both on the kind overlay, and both false readings. Each is carried by

@@ -21,6 +21,7 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 | Date | Change |
 |------|--------|
+| 2026-11-13 | The owner's decisions on `THREAT_MODEL.md` §6 item 47 ("accept recommendations"): (a) (i), (b) (ii), (c) (i) to `P16-TSK-006`, (d) (i) with item 43 (c)'s remainder, (e) (i) to `P16-TSK-020`; both entries widened. |
 | 2026-11-13 | `P16-TSK-003` merged (master `0cecb95c`, a fast-forward of branch `P16-TSK-003`, which had merged master `c9c07831`): Phase 16 at 4 of 34, M16.1 at 4 of 5; `P16-TSK-002`'s record archived (TASK_HISTORY 428 → 429); no task newly eligible; item 47 put to the owner. |
 | 2026-11-13 | The owner's decisions ("accept recommendations, start wave B"): `THREAT_MODEL.md` §6 item 48 decided (i), the two `KSV-0109` carries accepted until 2027-06-30; `CAPACITY_MODEL.md`'s W7 reading, R1 and R5 accepted by a dated note; `--disable-telemetry` and `--skip-version-check` on every Trivy call in `terraform-check.sh` and `image-scan.sh`; wave B started, `P16-TSK-006` and `P16-TSK-017` marked `READY`. |
 | 2026-11-13 | `P16-TSK-002` merged (master `d4bf8fef`, a merge of branch `P16-TSK-002` at `73216ada` into `12360818`; CURRENT_STATE, MUTATION_TESTING and CHANGE_LOG resolved keeping both sides): Phase 16 at 3 of 34, M16.1 at 3 of 5; `P16-TSK-004`'s record archived (TASK_HISTORY 427 → 428); no task newly eligible. |

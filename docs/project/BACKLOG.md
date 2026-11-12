@@ -29305,6 +29305,12 @@ on none:
   saturation signals in the artefacts; each probe red.
 - **Definition of done**: `DOD-BUILD`, `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: a runbook section on running a load test and reading its artefacts.
+- **Widened by the owner's decision on `THREAT_MODEL.md` §6 item 47 (c) (2026-11-13, "accept recommendations")**: the rehearsal's steps for the
+  platform's own signals, added to `infra/scripts/kind-rehearsal.sh` and run to their end once on the full cluster: a migrator Job
+  planted to fail, raising `MigratorJobFailed` and `MigratorJobOverdue` through the committed rules and routing; and the needle
+  sweep reading the edge's, the migrator's and the telemetry stack's streams as it reads the application's (`OPERATIONS_RUNBOOK.md`
+  §11.41 and §11.42 hold the procedures). §4's T46 row then moves from `GAP` to `EXISTS`, or stays a `GAP` with the reason if a
+  step cannot run; item 47 (c) is closed by a dated note that cites no finished task.
 - **Risk**: Medium. **Cx**: L.
 
 **P16-TSK-007 — The workload baseline: the demonstration run and the engineering workload measured** — `PLANNED`
@@ -29742,6 +29748,11 @@ on none:
 - **Measurable acceptance criteria**: each experiment's success criteria met and recorded, or a remediation task named.
 - **Definition of done**: `DOD-TEST`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.8 rehearsed (PI-024's part, under C11).
+- **Widened by the owner's decision on `THREAT_MODEL.md` §6 item 47 (e) (2026-11-13, "accept recommendations")**: measure what the pinned proxy writes
+  for the request's and the answer's `X-Correlation-Id`, then keep the answer's copy alone in the edge's access line and in the
+  collector's platform pipeline (the request's copy is the caller's text and stays dropped), so a 5xx the edge counted under a
+  pod's or the edge controller's loss is joined to the replica's records by its flow; `edge-check.sh` and the collector's scrub keep
+  refusing every other header. Item 47 (e) is closed by a dated note that cites no finished task.
 - **Risk**: Medium. **Cx**: M.
 
 **P16-TSK-021 — Network, DNS, connection and disk faults** — `PLANNED`
