@@ -215,11 +215,18 @@ class SecurityScansAreWiredTest {
                 .contains("readNBytes(BOUND + 1)");
     }
 
+    /**
+     * Until 2026-11-12 this held each row's rule, file, reason and date and the whole under a ratio, and nothing held the rows
+     * to what the owner accepted, which is how three rows went unrecorded (`P15-REM-004` (b)): the rows, counted by their
+     * date, are now the tally owner item 12 states, so a row added, removed or re-dated without the item saying so is red.
+     */
     @Test
-    @DisplayName("every baseline row names a real rule and file and carries a reason and an unexpired date, and the"
-            + " baseline stays a small fraction of the statements")
+    @DisplayName("every baseline row names a real rule and file and carries a reason and an unexpired date, the rows by count and date are"
+            + " the tally owner item 12 accepted, and the baseline stays a small fraction of the statements")
     void theBaselineIsSmallAndReasoned() {
         List<String> rows = baselineRows(baseline);
+        assertThat(rows).as("not vacuous: the baseline's rows were read").hasSizeGreaterThan(50);
+        assertThat(baselineTallyViolations(rows, threatModel)).as("%s against the register's owner item 12", BASELINE).isEmpty();
         assertThat(baselineViolations(rows, ruleIds, relative -> Files.exists(root.resolve(relative)),
                 LocalDate.now(Clock.systemUTC()))).as(BASELINE).isEmpty();
         assertThat(statements).as("the tree's statements were counted").isGreaterThan(1000);
@@ -268,6 +275,16 @@ class SecurityScansAreWiredTest {
                 List.of("0123456789abcdef\tno-such-rule\ta/b.java\tx\t2026-12-31\ta reason long enough to read as one"),
                 ruleIds, path -> true, today))
                 .as("a row for a rule that does not exist").isNotEmpty();
+
+        String row = "0123456789abcdef\tfinapp-sql-text-not-constant\ta/b.java\tx\t2027-06-30\ta reason long enough to read as one";
+        String tallied = "12. **The scan findings**\n   (b) 2 rows accepted until 2027-06-30.\n13. other\n";
+        assertThat(baselineTallyViolations(List.of(row, row), tallied)).as("the rows the tally accepted").isEmpty();
+        assertThat(baselineTallyViolations(List.of(row, row, row), tallied)).as("a row the owner did not accept").isNotEmpty();
+        assertThat(baselineTallyViolations(List.of(row), tallied)).as("an accepted row the file no longer holds").isNotEmpty();
+        assertThat(baselineTallyViolations(List.of(row, row.replace("2027-06-30", "2027-12-31")), tallied))
+                .as("a row carried to a date the owner did not accept").isNotEmpty();
+        assertThat(baselineTallyViolations(List.of(row, row), "12. **The scan findings**\n   two rows\n13. other\n"))
+                .as("an item that states no tally").isNotEmpty();
 
         String register = "12. **The scan findings**\n   - `CVE-1` until 2026-12-31\n13. other\n";
         assertThat(acceptedViolations("vulnerabilities:\n  - id: CVE-1\n    expired_at: 2026-12-31\n", register, today))
@@ -383,6 +400,42 @@ class SecurityScansAreWiredTest {
             if (!entries.containsKey(listed.group(1))) {
                 problems.add(listed.group(1) + " is in the register's owner item 12 and is not carried by " + ACCEPTED);
             }
+        }
+        return problems;
+    }
+
+    /** A line of owner item 12's tally: "N rows accepted until YYYY-MM-DD", one per date. */
+    private static final Pattern TALLY = Pattern.compile("(\\d+) rows accepted until (\\d{4}-\\d{2}-\\d{2})");
+
+    /** The baseline's rows, counted by their until date, equal the tally owner item 12 states: no row more or less, none re-dated. */
+    static List<String> baselineTallyViolations(List<String> rows, String register) {
+        List<String> problems = new ArrayList<>();
+        String item = ownerItem12(register);
+        if (item == null) {
+            problems.add("the register has no owner item 12 carrying the static analysis's accepted rows");
+            return problems;
+        }
+        Map<String, Integer> accepted = new java.util.TreeMap<>();
+        Matcher line = TALLY.matcher(item);
+        while (line.find()) {
+            if (accepted.put(line.group(2), Integer.parseInt(line.group(1))) != null) {
+                problems.add("owner item 12's tally states " + line.group(2) + " twice");
+            }
+        }
+        if (accepted.isEmpty()) {
+            problems.add("owner item 12 states no tally of the rows it accepted (\"N rows accepted until YYYY-MM-DD\")");
+            return problems;
+        }
+        Map<String, Integer> held = new java.util.TreeMap<>();
+        for (String row : rows) {
+            String[] columns = row.split("\t", -1);
+            if (columns.length == BASELINE_COLUMNS) {
+                held.merge(columns[4], 1, Integer::sum);
+            }
+        }
+        if (!held.equals(accepted)) {
+            problems.add(BASELINE + " holds " + held + " rows by date, and owner item 12 accepted " + accepted
+                    + ": a row the owner did not accept, or an acceptance the file no longer holds");
         }
         return problems;
     }
