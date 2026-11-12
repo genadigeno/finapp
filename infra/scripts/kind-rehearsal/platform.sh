@@ -22,6 +22,10 @@ PLATFORM_START=$(date +%s)
 INCIDENT="INC-$(date -u +%Y%m%d)-$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n')"
 CONFIG_MAP=$(kube -n finapp get deployment finapp-app -o jsonpath='{.spec.template.spec.containers[0].envFrom[0].configMapRef.name}')
 [ -n "$CONFIG_MAP" ] || cannot "the application's ConfigMap could not be read from its Deployment"
+# The provider's signing key as the delivered Secret holds it, for the client's signed callbacks: in the run's directory alone, removed at exit.
+kube -n finapp get secret finapp-app-secrets -o jsonpath='{.data.FINAPP_PAYMENTS_WEBHOOK_KEY}' | base64 -d > "$CLIENT/provider-key" \
+    || cannot "the payment webhook's key could not be read from the delivered Secret"
+[ -s "$CLIENT/provider-key" ] || cannot "the delivered Secret holds no payment webhook key"
 : > "$ART/alerts.tsv"
 printf 'alert\tstate\tafter_seconds\tstep\n' >> "$ART/alerts.tsv"
 
@@ -553,6 +557,33 @@ incidents_dead_letters() {
     census dead-letters
 }
 
+incidents_callback_compromise() {
+    # Section 11.29, a callback key compromised: the *current* key. A window does not help: a fresh current key, the compromised one never
+    # made previous, the fleet rolled, and callbacks signed with the old key refused while the provider signs with the new one.
+    client callback-unmappable before-rotation >> "$ART/platform-client.log" 2>&1 || true
+    grep -q '^platform callback-unmappable status=204 label=before-rotation' "$ART/platform-client.log" \
+        || fail "11.29: a callback signed with the current key was not accepted before the rotation: $(grep 'before-rotation' "$ART/platform-client.log")"
+    cp "$CLIENT/provider-key" "$WORK/compromised-key"
+    head -c 32 /dev/urandom | base64 -w0 > "$WORK/fresh-key"
+    [ -s "$WORK/fresh-key" ] || cannot "a fresh key could not be generated"
+    printf '{"data":{"FINAPP_PAYMENTS_WEBHOOK_KEY":"%s"}}' "$(base64 -w0 < "$WORK/fresh-key")" > "$WORK/key-patch.json"
+    kube -n finapp patch secret finapp-app-secrets --type=merge --patch-file=/dev/stdin < "$WORK/key-patch.json" >> "$ART/apply.log" 2>&1 \
+        || dock exec -i "$NODE" sh -c 'cat > /tmp/key-patch.json && kubectl --kubeconfig=/etc/kubernetes/admin.conf -n finapp patch secret finapp-app-secrets --type=merge --patch-file=/tmp/key-patch.json; status=$?; rm -f /tmp/key-patch.json; exit $status' \
+            < "$WORK/key-patch.json" >> "$ART/apply.log" 2>&1 || fail "the fresh key could not be written to the Secret"
+    rm -f "$WORK/key-patch.json"
+    rollout callback-key config=callback-key "" no
+    client callback-unmappable compromised-key >> "$ART/platform-client.log" 2>&1 || true
+    grep -q '^platform callback-unmappable status=204 label=compromised-key' "$ART/platform-client.log" \
+        && fail "11.29: a callback signed with the compromised key was accepted after the rotation"
+    printf '%s\n' "$(cat "$WORK/fresh-key")" > "$CLIENT/provider-key"
+    client callback-unmappable fresh-key >> "$ART/platform-client.log" 2>&1 || true
+    grep -q '^platform callback-unmappable status=204 label=fresh-key' "$ART/platform-client.log" \
+        || fail "11.29: a callback signed with the fresh key was not accepted: $(grep 'label=fresh-key' "$ART/platform-client.log")"
+    rm -f "$WORK/compromised-key" "$WORK/fresh-key"
+    pass "11.29: the compromised current key replaced and rolled, never made previous: its callbacks refused, the fresh key's accepted"
+    census callback-compromise
+}
+
 incidents_instance_down() {
     # Section 11.8: one instance's process stopped. Only that instance pages; the others take its work.
     VICTIM=$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{.items[0].metadata.name}')
@@ -768,6 +799,19 @@ patch deployments --subresource=scale: yes'
         [ "$(date +%s)" -lt "$deadline" ] || fail "11.25: the fleet did not stop"
         sleep 5
     done
+    # Section 11.35 step 6.1, its broker half, with no restore around it: every group to the end of every partition with no member, a dry
+    # run read first, then executed, then described with no lag. Its 6.3, the audited replay of the window, follows once the fleet is back.
+    STOPPED_AT=$(date +%s)
+    for each in $(kafka_admin kafka-consumer-groups.sh --list 2>/dev/null | grep '^finapp\.' | sort); do
+        kafka_admin kafka-consumer-groups.sh --group "$each" --reset-offsets --to-latest --all-topics >> "$ART/groups-to-latest.txt" 2>&1 \
+            || fail "11.35 step 6: the dry run for $each could not be read"
+        kafka_admin kafka-consumer-groups.sh --group "$each" --reset-offsets --to-latest --all-topics --execute >> "$ART/groups-to-latest.txt" 2>&1 \
+            || fail "11.35 step 6: $each could not be moved to the end"
+    done
+    kafka_admin kafka-consumer-groups.sh --describe --all-groups > "$ART/groups-at-latest.txt" 2>/dev/null || true
+    [ "$(awk '$1 ~ /^finapp\./ && $6 + 0 > 0' "$ART/groups-at-latest.txt" | wc -l)" = 0 ] || fail "11.35 step 6: a group still lags after its reset: see groups-at-latest.txt"
+    incident_note pipeline reset-offsets "every finapp group" "section 11.35 step 6.1: to the end, the fleet stopped" "no lag"
+    pass "11.35 step 6.1: every group moved to the end with no member, a dry run read first, none lagging"
     group=$(kafka_admin kafka-consumer-groups.sh --list 2>/dev/null | grep '^finapp\.' | sort | head -1)
     [ -n "$group" ] || fail "11.1.1: no consumer group of the application to set"
     kafka_admin kafka-consumer-groups.sh --group "$group" --reset-offsets --all-topics --to-datetime "$RESET_FROM" --execute > "$ART/group-reset.txt" 2>&1 \
@@ -783,6 +827,21 @@ patch deployments --subresource=scale: yes'
     duplicates_after=$(psql_query -c "SELECT count(*) FROM platform.inbox_message WHERE consumer LIKE '${group#finapp.}%'" | tr -d '[:space:]')
     [ "$duplicates_after" = "$duplicates_before" ] || log "11.1.1: the reset group's inbox grew by $((duplicates_after - duplicates_before)) records: events published during the stop"
     pass "11.1.1: a group's offsets set with no member, the replayed window absorbed by the inbox"
+    # Section 11.35 step 6.3: the audited replay, per event type, over the window of first publication before the stop. Whatever a group
+    # skipped by the move to the end is applied once; whatever it had handled is refused by its dedupe row. The census's lost-event check
+    # judges it.
+    window_from=$(date -u -d "@$((STOPPED_AT - 600))" +%Y-%m-%dT%H:%M:%SZ)
+    window_to=$(date -u -d "@$STOPPED_AT" +%Y-%m-%dT%H:%M:%SZ)
+    types=$(psql_query -c "SELECT DISTINCT event_type FROM platform.outbox_event WHERE coalesce(first_published_at, published_at)
+        >= to_timestamp($((STOPPED_AT - 600))) AND coalesce(first_published_at, published_at) < to_timestamp($STOPPED_AT) ORDER BY 1")
+    replayed=0
+    for type in $types; do
+        client replay "$type" "$window_from" "$window_to" "section 11.35 step 6.3, $INCIDENT" >> "$ART/client.log" 2>&1 \
+            || fail "11.35 step 6.3: the replay of $type was refused: see client.log"
+        replayed=$((replayed + 1))
+    done
+    incident_note operator replay "$replayed event types" "section 11.35 step 6.3, [$window_from, $window_to)" ordered
+    pass "11.35 step 6.3: $replayed event types replayed over the ten minutes before the stop, through the audited door"
     # The credential ends by itself: after its expiry the same certificate is refused.
     wait_for=$(( BG_ISSUED + 620 - $(date +%s) ))
     [ "$wait_for" -le 0 ] || sleep "$wait_for"
@@ -922,6 +981,7 @@ else
     wanted platform-prepare && { step platform-prepare; incidents_prepare; }
     wanted platform-broker && { step platform-broker; incidents_broker; }
     wanted platform-dead-letters && { step platform-dead-letters; incidents_dead_letters; }
+    wanted platform-callback-compromise && { step platform-callback-compromise; incidents_callback_compromise; }
     wanted platform-instance-down && { step platform-instance-down; incidents_instance_down; }
     wanted platform-fleet-blind && { step platform-fleet-blind; incidents_fleet_blind; }
     wanted platform-retention-and-abuse && { step platform-retention-and-abuse; incidents_retention_and_abuse; }

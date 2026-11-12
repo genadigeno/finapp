@@ -212,6 +212,27 @@ class PlatformRehearsalContractTest {
     }
 
     @Test
+    @DisplayName("a compromised current callback key: a fresh one written and rolled, never the old made previous, the old one's"
+            + " callbacks refused and the fresh one's accepted")
+    void aCompromisedCallbackKeyIsReplacedAndRefused() {
+        assertThat(function("incidents_callback_compromise")).contains("status=204 label=before-rotation")
+                .contains("FINAPP_PAYMENTS_WEBHOOK_KEY").contains("rollout callback-key config=callback-key")
+                .contains("a callback signed with the compromised key was accepted after the rotation")
+                .contains("status=204 label=fresh-key").contains("census callback-compromise");
+        assertThat(platform).as("dispatched").contains("incidents_callback_compromise;");
+    }
+
+    @Test
+    @DisplayName("section 11.35 step 6 on a real broker: every group moved to the end with no member, a dry run first, none lagging,"
+            + " then the audited replay of the window before the stop")
+    void theRestoresBrokerStepRunsOnARealBroker() {
+        String breakGlass = function("incidents_break_glass");
+        assertThat(breakGlass).contains("--reset-offsets --to-latest --all-topics >>")
+                .contains("--reset-offsets --to-latest --all-topics --execute").contains("a group still lags after its reset")
+                .contains("client replay \"$type\"").contains("section 11.35 step 6.3");
+    }
+
+    @Test
     @DisplayName("dead letters: a poison record parked, refused release and discarded by two persons; an abandoned event retried")
     void theDeadLettersAreResolvedThroughTheirDoors() {
         assertThat(function("incidents_dead_letters")).contains("fires InboxDeadLetterParked placeholder-page")
