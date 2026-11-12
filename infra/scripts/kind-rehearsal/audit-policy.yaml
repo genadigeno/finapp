@@ -1,0 +1,41 @@
+# The API server's audit policy for the platform rehearsals (P15-TSK-032; OPERATIONS_RUNBOOK.md sections 11.25 and 11.38), and only for them
+# (the design's Q12): the release and rotations scopes keep their measured shape and run with no audit log.
+#
+# WHY. What a break-glass holder did is in the API server's audit log and nowhere else: an application's log is not an audit trail. The
+# rehearsal reads this log back and joins each event to the incident record by the incident id in the holder's certificate name.
+#
+# METADATA, NEVER A BODY. Every rule below records Metadata or nothing: who, when, the verb, the object, the outcome code, the audit id.
+# No request or response body is ever written, so no Secret value, token or key can reach the log, whoever reads what. The quiet rules
+# drop only the control plane's own chatter, which is most of the volume and none of the evidence.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+rules:
+  - level: None
+    users:
+      - system:kube-proxy
+      - system:kube-scheduler
+      - system:kube-controller-manager
+      - system:apiserver
+  - level: None
+    userGroups:
+      - system:nodes
+      - system:serviceaccounts:kube-system
+  - level: None
+    verbs:
+      - watch
+  - level: None
+    resources:
+      - group: coordination.k8s.io
+        resources:
+          - leases
+  - level: None
+    nonResourceURLs:
+      - /healthz*
+      - /livez*
+      - /readyz*
+      - /version
+      - /openapi*
+      - /metrics
+  - level: Metadata

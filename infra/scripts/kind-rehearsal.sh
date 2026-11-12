@@ -23,6 +23,14 @@
 #
 # THE SCOPES (REHEARSAL_SCOPE). `release`, the default: the walk above. `rotations` (P15-TSK-020): release N alone, then every rotation
 # of kind-rehearsal/rotations.sh (REHEARSAL_ROTATIONS selects some), each under the workload, with the census after it and its rollback.
+# `signals` and `incidents` (P15-TSK-032, OPERATIONS_RUNBOOK.md section 11.38): release N alone, the API server writing an audit log, then the
+# runbook's procedures of kind-rehearsal/platform.sh, each against its planted condition, with the census after each group. `signals` holds
+# the activation gates of sections 1-10 and the alerts a plant raises without stopping anything; `incidents` holds the outages, the rolls,
+# break-glass and the incident itself.
+#
+# A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
+# common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
+# that a kept cluster is what it is used against, and refused whenever CI is set: a record is only ever of a whole run.
 #
 # Usage:   infra/scripts/kind-rehearsal.sh
 # Needs:   Docker with buildx, kind (KIND, default `kind`), git, openssl, a JDK for Gradle, sha256sum, tar, base64.
@@ -52,7 +60,28 @@ ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 # What the run rehearses: `release` (the default, P15-TSK-012's walk from N - 1 to N and back) or `rotations` (P15-TSK-020: release N alone,
 # then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
 SCOPE=${REHEARSAL_SCOPE:-release}
-case $SCOPE in release | rotations) ;; *) echo "?? REHEARSAL_SCOPE is release or rotations, not $SCOPE" >&2; exit 2 ;; esac
+case $SCOPE in release | rotations | signals | incidents) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals or incidents, not $SCOPE" >&2; exit 2 ;; esac
+# Every scope but `release` deploys release N alone: the steps below that name N - 1 deploy N.
+N_ONLY=""
+case $SCOPE in rotations | signals | incidents) N_ONLY=1 ;; esac
+# The platform scopes' API audit log (Q12): only they write one.
+AUDITED=""
+case $SCOPE in signals | incidents) AUDITED=1 ;; esac
+
+# The development mode (Q11): never in CI, never against a cluster the run will delete.
+STEPS=${REHEARSAL_STEPS:-}
+if [ -n "$STEPS" ]; then
+    [ -z "${CI:-}" ] || { echo "?? REHEARSAL_STEPS is a development mode, refused under CI: a record is only ever of a whole run" >&2; exit 2; }
+    [ "$KEEP" = 1 ] || { echo "?? REHEARSAL_STEPS needs REHEARSAL_KEEP=1: it is run against a kept cluster" >&2; exit 2; }
+fi
+
+# wanted <step>: whether a scope's own step runs. Every one does, unless REHEARSAL_STEPS names some.
+wanted() {
+    [ -z "$STEPS" ] && return 0
+    case " $STEPS " in *" $1 "*) return 0 ;; esac
+    log "skipping $1: not in REHEARSAL_STEPS"
+    return 1
+}
 
 KIND_NODE_IMAGE="$KIND_NODE_REPOSITORY:$KIND_NODE_VERSION@$KIND_NODE_DIGEST"
 KUSTOMIZE_IMAGE="$KUSTOMIZE_REPOSITORY:$KUSTOMIZE_VERSION@$KUSTOMIZE_DIGEST"
@@ -385,7 +414,7 @@ wait_job() {
 step build-images
 if [ -z "${REHEARSAL_SKIP_BUILD:-}" ]; then
     build_tree "$ROOT" n
-    [ -n "${REHEARSAL_REUSE_NMINUS1:-}" ] || [ "$SCOPE" = rotations ] || build_nminus1
+    [ -n "${REHEARSAL_REUSE_NMINUS1:-}" ] || [ -n "$N_ONLY" ] || build_nminus1
 elif [ -n "${REHEARSAL_NMINUS1_REF:-}" ]; then
     # A reused build still has to say which tree N - 1 was: the hold step reads it, and without it reports itself not exercised.
     printf '%s\n' "$REHEARSAL_NMINUS1_REF" > "$ART/nminus1.ref"
@@ -408,7 +437,44 @@ if [ -n "$REUSING" ]; then
 else
 dock pull --quiet "$KIND_NODE_IMAGE" >/dev/null || cannot "could not pull the node image"
 "$KIND_BIN" delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true
-"$KIND_BIN" create cluster --name "$CLUSTER" --image "$KIND_NODE_IMAGE" --config "$(dpath "$DIR/kind-cluster.yaml")" \
+CLUSTER_CONFIG="$DIR/kind-cluster.yaml"
+if [ -n "$AUDITED" ]; then
+    # The platform scopes (Q12): the committed cluster, its API server writing kind-rehearsal/audit-policy.yaml's log. The policy is mounted
+    # from the artefacts, which outlive the run, so a kept cluster's API server can still restart; it holds no value of any kind.
+    mkdir -p "$ART/audit-policy"
+    cp "$DIR/audit-policy.yaml" "$ART/audit-policy/policy.yaml"
+    CLUSTER_CONFIG="$WORK/kind-cluster.yaml"
+    {
+        cat "$DIR/kind-cluster.yaml"
+        cat <<YAML
+    extraMounts:
+      - hostPath: $(dpath "$ART/audit-policy")
+        containerPath: /etc/kubernetes/audit-policy
+        readOnly: true
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            audit-policy-file: /etc/kubernetes/audit-policy/policy.yaml
+            audit-log-path: /var/log/kubernetes/audit/audit.log
+            audit-log-maxsize: "200"
+            audit-log-maxbackup: "3"
+          extraVolumes:
+            - name: audit-policy
+              hostPath: /etc/kubernetes/audit-policy
+              mountPath: /etc/kubernetes/audit-policy
+              readOnly: true
+              pathType: DirectoryOrCreate
+            - name: audit-log
+              hostPath: /var/log/kubernetes/audit
+              mountPath: /var/log/kubernetes/audit
+              readOnly: false
+              pathType: DirectoryOrCreate
+YAML
+    } > "$CLUSTER_CONFIG"
+fi
+"$KIND_BIN" create cluster --name "$CLUSTER" --image "$KIND_NODE_IMAGE" --config "$(dpath "$CLUSTER_CONFIG")" \
     --kubeconfig "$(dpath "$WORK/kubeconfig")" --wait 180s >> "$ART/cluster.log" 2>&1 || cannot "the cluster did not come up: see cluster.log"
 CLUSTER_UP=1
 fi
@@ -440,7 +506,7 @@ step images-loaded
 if [ -n "$REUSING" ]; then
     IMAGE_APP_N=$(ref_of_built finapp-app:rehearsal-n)
     IMAGE_MIGRATOR_N=$(ref_of_built finapp-migrator:rehearsal-n)
-    if [ "$SCOPE" = rotations ]; then
+    if [ -n "$N_ONLY" ]; then
         IMAGE_APP_NM1=$IMAGE_APP_N
         IMAGE_MIGRATOR_NM1=$IMAGE_MIGRATOR_N
     else
@@ -459,8 +525,9 @@ load_tagged "$TRAEFIK_REPOSITORY" "$TRAEFIK_VERSION" "$TRAEFIK_DIGEST"
 load_tagged "$CURL_REPOSITORY" "$CURL_VERSION" "$CURL_DIGEST"
 IMAGE_APP_N=$(load_built finapp-app:rehearsal-n)
 IMAGE_MIGRATOR_N=$(load_built finapp-migrator:rehearsal-n)
-if [ "$SCOPE" = rotations ]; then
-    # Rotations are rehearsed on release N alone: the first deployment is N's, so every step below that names N - 1 deploys N.
+if [ -n "$N_ONLY" ]; then
+    # Rotations and the platform's procedures are rehearsed on release N alone: the first deployment is N's, so every step below that
+    # names N - 1 deploys N.
     IMAGE_APP_NM1=$IMAGE_APP_N
     IMAGE_MIGRATOR_NM1=$IMAGE_MIGRATOR_N
 else
