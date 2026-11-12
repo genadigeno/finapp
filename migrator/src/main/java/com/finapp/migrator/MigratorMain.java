@@ -28,6 +28,11 @@ public final class MigratorMain {
     }
 
     static ExitCode run(String[] args, Map<String, String> environment, Path sqlRoot, PrintStream out) {
+        return run(args, environment, sqlRoot, out, FirstConnection.standard(out, "finapp-migrator"));
+    }
+
+    /** The same, with the first connection's retry given: a test's pauses are not slept. */
+    static ExitCode run(String[] args, Map<String, String> environment, Path sqlRoot, PrintStream out, FirstConnection firstConnection) {
         try {
             if (args.length != 0) {
                 throw new RefusedConfiguration("this process takes no arguments");
@@ -36,7 +41,8 @@ public final class MigratorMain {
             List<String> schemas = MigrationPlan.schemasInBuildOrder();
             verifyEveryScriptIsHere(schemas, sqlRoot);
             DataSource dataSource = configuration.dataSource();
-            try (Connection connection = dataSource.getConnection()) {
+            // A new pod's first connection may be refused until the cluster's network policy has reached it (FirstConnection).
+            try (Connection connection = firstConnection.open(dataSource)) {
                 ConnectedRole.verify(connection, MigrationPlan.LOCK_TIMEOUT.toMillis());
             }
             return new MigrationRun(

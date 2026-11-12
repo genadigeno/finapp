@@ -3337,7 +3337,11 @@ again against what the new manifest holds. **The one-time role bootstrap** (§11
 release and not a hook: when a release adds a role, the pipeline role runs it before the promotion, as a Job in `finapp` with the signed
 migrator image alone. The `kind` rehearsal's bootstrap Job also carries a `wait-for-postgres` init container from the curl image, because its
 PostgreSQL starts in the same run; that image is not admitted in `finapp` (no policy names it), and a real environment's database is
-already up, so the real Job carries no init container; that it is admitted and runs is `-032`'s to show on `kind`. The edge's TLS Secrets and
+already up, so the real Job carries no init container; that it is admitted and runs is `-032`'s to show on `kind`. *(`P15-TSK-032`: without
+it, on `kind` under kube-router, the bootstrap failed four pods in eighty seconds, each new pod's first connection refused before the network
+policy had reached its address, the same asynchronous policy Calico and Cilium apply. The wait now lives in the program, for the bootstrap and
+the migrator alike: the first connection tried ten times, ten seconds apart, a refused or unanswered connection alone (DATA_MIGRATIONS.md
+§2.1's exit `11`).)* The edge's TLS Secrets and
 the load balancer controller its Services' annotations assume are the environment's; a certificate comes from outside the namespace or by a
 DNS-01 solver, because a solver pod in `finapp-edge` would be refused at admission. The telemetry pipeline (`deploy/observability`) has a
 `kind` overlay alone, so no environment's root syncs it until a back end is chosen (§6 item 37 (a)): a promoted release exports to nothing
