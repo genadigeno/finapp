@@ -1015,6 +1015,8 @@ were added on 2026-11-09 and await the owner." until then.)* **Items 35, 36, 38 
 (f) the same day, after the owner's word, and the owner decided them on 2026-11-12, accepting each recommendation.** *(This sentence
 read "... and they await the owner." until then.)* **Item 40 was added on 2026-11-12 by the delivery's task and decided the same
 day under the owner's standing word for waves G and H ("start H after G, accept all recommendations"), as recommended.**
+**Item 42 was added on 2026-11-12 by the runbooks' rehearsal and decided the same day under the same standing word, each part as
+recommended; its parts (d) and (e) were built the same day.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1714,6 +1716,235 @@ day under the owner's standing word for waves G and H ("start H after G, accept 
     **Decided 2026-11-12**: (a') as recommended, under the owner's standing word for waves G and H: `IMMUTABLE_WITH_EXCLUSION` for
     `sha256-*` on the signature repositories, AWS-0031 accepted on them alone until 2027-06-30, as built; who may push there stays
     item 35 (d).
+
+42. **T3's, T12's, T14's, T15's, T18's, T23's and T33's residuals: what the runbooks' rehearsal leaves** *(added 2026-11-12 by the
+    runbooks' rehearsal)*. Ten things, each a decision; (d) and (e) built the same day.
+
+    **(a) The age alerts read the oldest alone** (T23). `BreakAgeHigh` pages on `max by (severity)
+    (finapp_reconciliation_break_age{severity="high"}) > 86400`, and `SuspenseItemAged` raises a ticket on
+    `max(finapp_reconciliation_suspense_age_seconds) > 2592000` (`infra/prometheus/rules/settlement-reconciliation.yml`). Each series
+    is the age of the oldest open break of its severity, or of the oldest open suspense item, so each rule is one alert. Parked value
+    with no attributable owner (`OPERATIONS_RUNBOOK.md` §11.11) is a HIGH break and a suspense item that stand until a later payments
+    phase's operation pays the value out. While one stands, both alerts stay firing on it, and a new HIGH break or a newly aged item
+    behind it raises nothing new: the alert on-call already has is the only one they get. `BreakAgeMedium` and `BreakAgeLow` read the
+    same way; parked value stands at HIGH. Runbook §11.11 step 4 has a person read the open HIGH breaks and the suspense register
+    every working day meanwhile. The options:
+    - **(i) Count what is past its bound.** A gauge per severity of the open breaks older than that severity's bound, and one of the
+      suspense items older than thirty days, read in the same refresh as today's series, counts and never an identifier or an amount
+      (ADR-0072); and beside each of today's rules, one that fires when its count rises, so a newly aged break or item raises an alert
+      of its own while the oldest stands. Two meters, two rules and their promtool cases; nothing reconciliation decides changes.
+    - **(ii) Keep the rules, and §11.11's daily read.** Nothing built: the next HIGH break is found by a person's habit rather than a
+      page, for as long as parked value stands.
+    - **(iii) Leave parked items out of what the alerts read** (an assigned break with its note, or the causes §11.11 names). It
+      silences the standing alert, and with it the alert on a parked item nobody is working. Suspense is never a resting place
+      (`INV-REC-05`), and this would make it one.
+
+    *Recommendation*: **(i)**, built in Phase 16 before any environment holds parked value, this item holding the gap until then, with (ii) the control meanwhile. No
+    environment holds parked value yet; once one does, it stands for months, and an alert that started firing months ago says nothing
+    of the break raised today. (iii) hides value from the alert meant to see it. **Decided 2026-11-12** under the owner's standing
+    word ("accept all recommendations", waves G and H): as recommended.
+
+    **(b) A migration outside a transaction** (T12, T33). The build refuses one: `EveryMigrationRunsInATransactionTest` reads every
+    script with the pinned Flyway's own parser and refuses each form Flyway would run outside a transaction (`CREATE INDEX
+    CONCURRENTLY` and the others its PostgreSQL parser names, `executeInTransaction=false` beside a script, and the setting made for
+    every script at once). The failed-migration rehearsal showed why (runbook §11.4): on the pinned Flyway with PostgreSQL's default
+    transactional lock, such a migration that fails leaves no row in the history and leaves its effect (an `INVALID` index), every
+    later run is refused by that leftover, and `flywayRepair` has nothing to remove. Only the schema's owner dropping the leftover
+    clears it, and in a deployed environment no person can (item 31 (e)). What stays open is a reviewed migrator mode for such a
+    migration, and the price of doing without one. The options:
+    - **(i) Keep the build's refusal until a real need arises**, every index built in its migration's transaction, as ledger `V029`
+      builds one. A plain `CREATE INDEX` blocks every write to its table for as long as it builds; the migrator's `lock_timeout`
+      (3 s) bounds the wait for that lock, not the build once it holds it. On a large live table that stops the table's writes for
+      the build's length, which nothing has measured, and no table is large yet.
+    - **(ii) A reviewed mode in the migrator**: Flyway's per-session lock (set through the pinned Flyway's
+      `PostgreSQLConfigurationExtension`), under which a failure leaves a `success = false` row refusing every later run until an
+      audited repair removes it, the files known good and the reason recorded; or an audited drop of a leftover, its lock bounded.
+      Either needs a person's way in (item 31 (e)) to read what was left and decide, and the rehearsal found that a per-session lock
+      moves, rather than closes, the gap a run stopped mid-way leaves (§11.4).
+    - **(iii) An audited operational procedure ahead of the release**: the index built by a person, `CONCURRENTLY`, before the release
+      whose migration then finds it. The same way in, and an index the history does not record until that migration runs.
+
+    *Recommendation*: **(i)**, until a table's transactional build is measured and its write stop found unacceptable (Phase 16's load
+    characterisation measures that); then (ii) in the migrator or (iii), whichever the measurement favours, through item 31 (e)'s way
+    in. A mode that can leave a failed row or a leftover in production needs a person to finish it, and nobody can today; the refusal
+    costs nothing until a table is large. **Decided 2026-11-12** under the owner's standing word ("accept all recommendations",
+    waves G and H): as recommended. Runbook §11.4 cites this part.
+
+    **(c) The access review over a real environment's holders** (T3, T18). `PRIVILEGED_ACCESS_REVIEW.md` §5's review has been
+    performed only as a rehearsal, on `kind`, over the rehearsal's own identities (its performances table). Over a real environment's
+    holders it needs that environment, and two things more. An environment's first holding is written around the door (the first
+    administrator, `README.md` §5e), so it has no grant record and is asked every question as if it had one; and that write needs a
+    person with database access. And the review's read of the holdings is not a door: the live rows of `identity.role_assignment` and
+    their `identity.RoleAssigned` records are read from the database, and question 5's factorless-holdings read is the only one the
+    application serves. In a deployed environment no person reaches the database today (item 31 (e)). The options:
+    - **(i) The first performance before the environment holds a customer's money**, once its first roles are granted, the holdings
+      read through item 31 (e)'s way in, in a read-only session; then at the owner's cadence, each performance recorded in §5's table
+      by the reviewer and a second person.
+    - **(ii) A read door for the review**: the live holdings with their grant records, on a `MULTI_FACTOR` session, audited as the
+      factorless-holdings read is, so the review needs no database session. A new standing read of every staff holding, for a human
+      procedure whose cadence the owner sets.
+    - **(iii) The first performance at the owner's first scheduled review after go-live**, leaving the first administrator's holding,
+      and whatever was granted while the environment was set up, unasked until then.
+
+    *Recommendation*: **(i)**. An environment's first holdings are the ones no door recorded, so the review that reads them comes
+    before money does; and the way in it needs is the one runbook §11.12's review query and §11.39's reads already wait on.
+    **Decided 2026-11-12** under the owner's standing word ("accept all recommendations", waves G and H): as recommended.
+
+    **(d) An administrator's suspension of the last administrator** (T3). The role-revocation door refuses to take a role that can
+    grant roles from the last `ACTIVE` identity holding one (`409 identity.LastRoleGranter`). The suspension door had no such rule, so
+    an administrator could suspend the last other administrator (a suspended holder does not count: it cannot sign in), and leave
+    nobody able to grant, revoke, suspend or reinstate through the platform's doors. The options:
+    - **(i) The suspension door refuses the last `ACTIVE` identity that can grant roles**, as the revocation does, and risk's
+      suspension is not bound by it.
+    - **(ii) Bind risk's suspension too**: administration always survives, and a compromised last administrator cannot be stopped by
+      risk.
+    - **(iii) No rule**: the suspension stays the way round the revocation's refusal.
+
+    *Recommendation*: **(i)**: where availability and security meet, security wins, so risk can still suspend a compromised last
+    administrator. **Decided 2026-11-12** under the owner's standing word ("accept all recommendations", waves G and H): as
+    recommended. **Built 2026-11-12**: `POST /v1/identities/{id}/suspension` refuses a subject that is the last `ACTIVE` identity
+    holding a role that can grant roles, `409 identity.LastRoleGranter`, nothing written. Like the revocation, it locks the subject's
+    row and then every live holding of a granting role, in key order, before the status write, and counts the holders by a fresh
+    statement after the locks, so two administrators suspending each other at once, or a suspension racing a revocation, leave
+    exactly one (`LastAdministratorSuspensionTest`; the database cases owed). Risk's suspension, a party case's `SUSPEND_IDENTITY`
+    proposed by its investigator, approved by a second risk analyst and carried out by the platform, takes none of these locks and is
+    not refused. If it takes the last administrator, administration comes back by one of two ways. Where the holder can be trusted
+    again, risk lifts its own suspension: a `REINSTATE_IDENTITY` on a case of that party (opened by hand if the first is disposed),
+    proposed and approved by two risk analysts, after which the identity is `ACTIVE` with its roles and no session, and runbook
+    §11.12 step 6 follows. Where it cannot (an attacker's factor on it, (g)), only the out-of-band write of `README.md` §5e restores an
+    administrator, a granting role inserted for an `ACTIVE` identity, by someone holding a database credential that can write
+    `identity`'s tables; in a deployed environment no person has one today (item 31 (e)).
+
+    **(e) The administrative doors' step-up** (T3). The grant and the reinstatement served a password session: a grant widens every
+    other authorization decision, and a quiet reinstatement is how an accomplice undoes an incident response. So did the suspension,
+    so a stolen administrator's password could suspend every other administrator, the responders among them, down to the last, which
+    (d) keeps and which is then the thief's own. The role-revocation door already stepped up. And a password alone may enrol an
+    identity's first factor, so a factorless administrator's stolen password could enrol the thief's factor and then pass every
+    `MULTI_FACTOR` door. The options:
+    - **(i) Step up all three, and make `ADMINISTRATOR` need an enrolled factor**, as the roles that can redirect a merchant's money
+      already do.
+    - **(ii) Step up the grant and the reinstatement, and leave the suspension on the session its administrator holds**: quicker to
+      stop an identity, and the stolen password still suspends every other administrator.
+    - **(iii) Leave all three as they were.**
+
+    *Recommendation*: **(i)**. It is in tension with a principle the platform holds elsewhere, "stopping is the fail-safe direction"
+    (`PRIVILEGED_ACCESS_REVIEW.md` §6's second ruling), by which a kill switch's stop stays one person's act on the session they hold.
+    A suspension stops an identity, and a responder on a password session is now refused (`403 identity.AssuranceRequired`, recorded
+    `identity.StepUpRefused`) until they step up. It is accepted because a suspension takes access away from another person and ends
+    their sessions, where a kill switch's stop halts a flow; because an administrator granted through the door now holds a factor,
+    so the step-up costs a genuine one seconds; and because what stops money stays quick: a kill switch's stop still needs no step-up. **Decided 2026-11-12**
+    under the owner's standing word ("accept all recommendations", waves G and H): as recommended. **Built 2026-11-12**:
+    `POST /v1/identities/{id}/roles`, `POST /v1/identities/{id}/suspension` and `DELETE /v1/identities/{id}/suspension` declare
+    `MULTI_FACTOR` beside the revocation, and their refusals are recorded; a grant of `ADMINISTRATOR` (decided from what the role
+    grants: granting roles, suspending identities) is refused `409 identity.FactorRequiredForRole` until the subject has a confirmed
+    factor (`RoleGrantNeedsAFactorTest`), and §5 question 5's factorless-holdings read names a factorless administrator too.
+    `PRIVILEGED_ACCESS_REVIEW.md` §6's third ruling records the tension. A holding written around the door has no such check: a
+    factorless administrator from before the rule, or written in by `README.md` §5e without a factor, reaches no administrative door
+    until they enrol, which is self-service on a password session, so the review's check is what finds them.
+
+    **(f) Recovery delivers no token** (T3). `POST /v1/recoveries` starts a request whose token is never in a response and is
+    delivered nowhere (`RecoveryController`), and no channel's verification challenge is delivered either. The notifier that would
+    deliver them is a business capability: `PHASE_15_PLAN.md` §25 re-dated it, and §22 forbids Phase 15 to add one. `DECISIONS.md`
+    §Deliberately Deferred names its owner only as "the phase that adds a channel notifier", and no plan names that phase:
+    `ROADMAP.md`'s phases include none for notification, and `CAPABILITY_MAP.md` lists "Notification" and "Account recovery"
+    with no phase. So no recovery completes today, a member of staff's or a customer's. Runbook §11.12 step 6 is the way round it for
+    a compromised operator credential: if the holder still knows the current password, they sign in at once on the operator host, step
+    up with their own factor and change it (`POST /v1/me/credential`, which ends every other session; an identity with a factor cannot
+    change its password on a password session, `403 identity.AssuranceRequired`); otherwise the person registers a new identity under
+    a different login. The options:
+    - **(i) Keep that fallback until the notifier's phase.**
+    - **(ii) An administrator's reset of another identity's credential**: no channel needed, and a door by which one administrator's
+      stolen session takes over any identity. Phase 13 ruled that the platform never resets a credential, even in answer to an account
+      takeover (its C10, ADR-0112).
+    - **(iii) A notifier in Phase 15**: a business capability, which §22 forbids.
+
+    *Recommendation*: **(i)**. A new identity costs a person a login and keeps the old one's history whole; a reset door would make
+    every identity as safe as the least safe administrator's session. **Decided 2026-11-12** under the owner's standing word ("accept
+    all recommendations", waves G and H): as recommended, until the phase that adds a channel notifier, which no plan names yet.
+
+    **(g) No door removes a confirmed factor or a verified channel** (T3). `MfaFactorStatus` has no state past `ACTIVE`, and no door
+    or store method reaches a confirmed factor (`PRIVILEGED_ACCESS_REVIEW.md` §6). Its holder cannot replace one either: replacing a
+    confirmed factor needs a `MULTI_FACTOR` session, which only that factor gives. A verified channel is never replaced (`INV-IDN-06`:
+    a second verification is refused `409 identity.VerifiedChannelAlreadyExists`), and changing one waits for the notifier. So a
+    compromised identity carrying an attacker's factor, or a channel its holder does not recognise, cannot be cleaned and reinstated:
+    runbook §11.12 step 4 leaves it suspended for good, and the answer is a new identity. No challenge is delivered today, so no
+    channel can be verified in a deployed environment yet; a channel becomes this case when the notifier arrives. The options:
+    - **(i) Keep it**: the old identity suspended with its history and its login taken for good; the person registers again, enrols
+      a factor, and is granted roles afresh, each grant with a reason naming the incident, the first ending the sessions it held as a
+      customer, and the next review asking its question 6 of the new identity.
+    - **(ii) An administrator's door removing a factor or a channel from a suspended identity**, reasoned, stepped up and audited,
+      refusing removal while a role needing a factor is held, as `PRIVILEGED_ACCESS_REVIEW.md` §6 requires of any removal. The
+      identity left with a password alone may enrol its first factor on a password session, so whoever holds the password races its
+      holder again; and the door lets one stepped-up administrator disarm any identity's second factor.
+
+    *Recommendation*: **(i)**, with removal re-dated beside the verified channel's change to the phase that adds a channel notifier,
+    whose step-up, notice to the channel replaced and cooling-off a removal needs as much as a change does (`DECISIONS.md`
+    §Deliberately Deferred). A new identity carries nothing the attacker added; its cost is one person's new login. **Decided
+    2026-11-12** under the owner's standing word ("accept all recommendations", waves G and H): as recommended.
+
+    **(h) No socket timeout on the database connection** (T14). `application.yaml` sets the driver's `connectTimeout` (5 s) and no
+    `socketTimeout`, and says why: "It belongs with Phase 3, where the queries exist." That note is stale: Phase 3 is long complete,
+    and the queries exist. After a database failover a connection the network black-holed never returns (runbook §11.40): a request
+    or a tick holding one waits until the operating system gives the connection up, holding its thread and one of its pool's seven
+    connections, and only replacing that pod frees them sooner. Two reads bound their own wait, the schema guard's (3 s) and the
+    abuse counters' (2 s), each by a network timeout on its connection. The `statement_timeout` the code arms on other reads is the
+    server's, and a black-holed connection never hears the server. The `kind` rehearsal cannot show the case: a stopped server resets
+    its connections. The options:
+    - **(i) A socket timeout on the data source now**, above the longest bound the code arms (the accounting checks' 30 s). Every
+      statement that arms none gets an unmeasured bound, and one that runs longer than the guess fails every time it runs.
+    - **(ii) A network timeout per schedule**, on the threads a held connection stalls longest, as the two reads above already set
+      theirs, requests left to the pool. Narrower, and still a guess per schedule.
+    - **(iii) Correct the note now, and re-date the socket timeout to Phase 16's failover drill**, which measures both the
+      interruption and the longest statement under load. Until then, runbook §11.40 step 3: a replica still unready, or still failing
+      requests once the others serve, is replaced by eviction under break-glass.
+
+    *Recommendation*: **(iii)**. A held thread costs one replica part of its capacity, and a person can free it. A socket timeout
+    below a legitimate statement makes that statement fail every time it runs, and a proof or a census that never finishes leaves the
+    platform blind to its own correctness. The number is a measurement under load, which Phase 16 owns. **Decided 2026-11-12** under
+    the owner's standing word ("accept all recommendations", waves G and H): as recommended.
+
+    **(i) A corrupt card attempt stalls the whole sweep, and nothing pages** (T15, T23). The card sweep rehydrates its candidates'
+    typed ids while listing them, before its per-row containment, so one `payments.payment_attempt.id` that is not a UUIDv7, on a row
+    the sweep would take (dispatched, or unknown past its bound), fails every tick on every instance, and no candidate is reached
+    (runbook §11.39 (a)). No door writes such an id: it is a raw writer's. The only sign is the schedule's WARN line, `Payment sweep
+    failed: <class>`. `PaymentUnknownAged` reads `finapp_payments_unknown_age`, which counts `*_UNKNOWN` operations alone
+    (`infra/prometheus/rules/flows.yml`), so a corrupt `*_DISPATCHED` attempt with nothing else unknown pages nothing; a page comes only
+    when another attempt turns unknown meanwhile and ages past the rule's bound. The withdrawal, dispute-answer, return and pay-in
+    initiation sweeps list the same way. The options:
+    - **(i) A meter on a sweep's failed tick, with a page**: a counter per sweep where its schedule logs the failure, and a rule paging
+      when it has counted in each of the last fifteen minutes, as BNPL's and risk's sweep claim-failure rules count theirs. It sees any
+      tick that fails whole, a corrupt id or anything else.
+    - **(ii) Bring Phase 16's change forward**: each listing skips and counts a row it cannot rehydrate, as the per-row loop does
+      (`CURRENT_STATE.md`'s debt row, re-dated to Phase 16's resilience work). A change to every such sweep's listing.
+    - **(iii) Leave it**: the WARN line, and the flows' own alerts once something else waits.
+
+    *Recommendation*: **(i)**, built in Phase 16 beside (ii) and before production use, this item holding the gap until then, for the card sweep and each sweep runbook §11.39
+    (a) names whose only sign is its WARN line; (ii) stays Phase 16's. A stalled sweep leaves money unattended, not misjudged, but the
+    row behind it is a raw writer's mark and runbook §11.12's `SEV-1`, and an incident nobody is paged for is found late. **Decided
+    2026-11-12** under the owner's standing word ("accept all recommendations", waves G and H): as recommended.
+
+    **(j) A data-dependent migration that fails in production, with staging ahead** (T12, T33). A pair reaches production only after
+    staging ran the same pair with a passing smoke (runbook §11.36), so a migration that fails on production's data, a new `CHECK`
+    say, has already applied in staging. A fix ordered below it is then refused in staging (`outOfOrder = false`: `Detected resolved
+    migration not applied to database`, rehearsed) and can never be promoted. Nobody reaches production's data to fix it by hand
+    (item 31 (e)), and after a failed migrator hook §11.36 forbids syncing the same revision again. Production stays on N − 1,
+    serving: the failed migration changed nothing, the release's earlier ones are expand-only or marked, and the rollout never
+    started. But every later release carries the same migration, so production takes none until its data is fixed. The options:
+    - **(i) A tightening migration's contract marker names the data fix that precedes it in the same release**, and the build refuses
+      one that names none: a constraint never ships without the fix meant to make every row meet it. The fix is still written without
+      reading production's rows, so a row it misses ends at (iii) all the same.
+    - **(ii) A reviewed data-fix mode in the migrator**, running an audited fix carried in the release before the same revision runs
+      again: a second path by which the migrator's credential changes financial data, beside the reviewed migrations it already runs
+      (T33).
+    - **(iii) Production stays on N − 1 until a person can reach the data**; the data is then fixed by an audited operational
+      procedure written into the incident's record (§11.12), and the same revision synced once more by a reviewed manual sync,
+      §11.36's one exception, which runbook §11.4 states.
+
+    *Recommendation*: **(iii)**. N − 1 serves on a schema the failed migration did not touch, so no money is at risk while production
+    waits; (i) still ends at (iii) whenever its fix misses a row; and (ii) widens the migrator's reach over financial data to answer a
+    case that one reviewed, recorded human act answers. Its cost is that production takes no release until a person can reach the
+    data, which is item 31 (e)'s way in. **Decided 2026-11-12** under the owner's standing word ("accept all recommendations", waves G
+    and H): as recommended.
 
 ## 7. Decided against
 
