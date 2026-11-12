@@ -108,11 +108,8 @@ assignment is `THREAT_MODEL.md` §6 owner item 9. Four-eyes inside one role (`LO
 by identity at the act.
 
 **Granting.** Only `ROLE_ASSIGN` (the `ADMINISTRATOR`) grants or revokes a role; an administrator cannot grant a role
-to their own identity, nor revoke one from it (`IdentityAdministration`'s `SELF`); every grant and revocation is
-`identity.RoleAssigned`, with the actor, the target, the role and a required reason. A role is revoked through `DELETE
-/v1/identities/{id}/roles/{role}` on a `MULTI_FACTOR` session (`P15-TSK-032`), which refuses to take a role that can grant
-roles from the last `ACTIVE` identity holding one (`409 identity.LastRoleGranter`), so the platform never leaves nobody
-able to grant; the out-of-band step of `README.md` §5e is for the first administrator alone.
+to their own identity (`IdentityAdministration`'s `SELF`); every grant and revocation is `identity.RoleAssigned`, with
+the actor, the target, the role and a required reason.
 
 ## 5. The review
 
