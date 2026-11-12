@@ -29136,7 +29136,7 @@ on none:
 - **Operational documentation**: two new runbook sections.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
+**P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `IN_PROGRESS` (2026-11-12; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: as decided 2026-11-12, in the first wave.
   - (c) The quota part: a `ResourceQuota` for `finapp-edge` and `finapp-observability`, each sized from its own worst moment as
     `finapp`'s is.
