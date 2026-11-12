@@ -300,10 +300,11 @@ class TelemetryPipelineManifestsTest {
         Map<String, Object> scraper = pod(backends, "finapp-prometheus");
         Map<String, Object> container = cast(((List<Object>) scraper.get("containers")).get(0));
         assertThat(stringList(container.get("args"))).contains("--config.file=/etc/prometheus/prometheus.yml", "--web.enable-lifecycle");
-        assertThat((List<Object>) container.get("volumeMounts")).as("directories, never a subPath: an edited ConfigMap reaches the pod only so")
-                .allSatisfy(mount -> assertThat(cast(mount)).doesNotContainKey("subPath"))
-                .anySatisfy(mount -> assertThat(cast(mount)).containsEntry("name", "rules").containsEntry("mountPath", "/etc/prometheus-rules"))
-                .anySatisfy(mount -> assertThat(cast(mount)).containsEntry("name", "config").containsEntry("mountPath", "/etc/prometheus"));
+        List<Map<String, Object>> mounts = (List<Map<String, Object>>) container.get("volumeMounts");
+        assertThat(mounts).as("directories, never a subPath: an edited ConfigMap reaches the pod only so")
+                .allSatisfy(mount -> assertThat(mount).doesNotContainKey("subPath"))
+                .anySatisfy(mount -> assertThat(mount).containsEntry("name", "rules").containsEntry("mountPath", "/etc/prometheus-rules"))
+                .anySatisfy(mount -> assertThat(mount).containsEntry("name", "config").containsEntry("mountPath", "/etc/prometheus"));
         assertThat(String.valueOf(scraper.get("volumes"))).contains("name=finapp-prometheus-rules").contains("name=finapp-prometheus-config");
         assertThat(read(KIND + "kustomization.yaml")).contains("  - name: finapp-prometheus-config\n    files:\n      - prometheus.yml\n"
                 + "    options:\n      disableNameSuffixHash: true\n");

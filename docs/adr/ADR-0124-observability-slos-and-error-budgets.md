@@ -100,6 +100,17 @@ exporter is configured. Several gaps remain:
      item, run) joins them, as `PHASE_8_PLAN.md` §15 decided the durable trace would. `THREAT_MODEL.md` section 6 item 37 holds the choice.
    - **Backends.** Tempo 2.10 and Loki 3.7 on `kind` and in compose; a real environment's backends and their identity are not chosen.
 
+   *(As built by `P15-TSK-032`, 2026-11-12, the telemetry stack's own alerts, `THREAT_MODEL.md` section 6 item 37 (d) (i) as the owner decided it;
+   decisions 1 and 5 are unchanged, and this note records how the second net is watched.)*
+   - **The rules.** `infra/prometheus/rules/telemetry.yml`, every one a `ticket` naming `OPERATIONS_RUNBOOK.md` §11.34: a collector down or the
+     collectors gone from the scrape; per collector, telemetry dropped after an exporter's retries, refused at a full sending queue, or refused at a
+     receiver; a back end down; and each back end's own ingest against what the collectors had to deliver.
+   - **Written to the stored names.** As the pinned Prometheus stores them from the pinned collector, the collector's counters carry no `_total`, and
+     its failure counters do not exist before the first failure and are born above zero. `infra/prometheus/telemetry-series.txt` is what the pinned
+     images stored (`infra/scripts/telemetry-series.sh`), and `TelemetryAlertRulesTest` holds every name, label and value the rules read to it.
+   - **On `kind`.** Prometheus loads every committed rule file and sends to an Alertmanager running the committed routing, so an alert can be read at
+     its receiver on a real cluster and not only in `promtool`'s cases.
+
 ## Alternatives Considered
 
 ### A vendor agent per signal
