@@ -523,7 +523,9 @@ docker compose exec postgres psql -U finapp_migrator -d finapp -c "INSERT INTO i
 **The consequence is recorded rather than hidden: that first assignment has no actor in the audit
 trail**, because no authenticated actor performed it — `assigned_by` names the subject itself, which
 is the one self-grant the platform contains and the reason `IdentityAdministration` refuses every
-later one. Every subsequent assignment names two parties.
+later one. Every subsequent assignment names two parties. `DELETE /v1/identities/{id}/roles/{role}`
+refuses to take `ADMINISTRATOR` from the last active identity holding it (`identity.LastRoleGranter`), so a
+revocation through the platform's own door never leaves it with no administrator.
 
 An operator doing this is a privileged-access event in its own right, and Phase 15 owns the controls
 for that (`CURRENT_STATE.md` §Known Architectural Debt).

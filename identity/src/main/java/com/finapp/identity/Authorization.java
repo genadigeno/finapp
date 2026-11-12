@@ -81,28 +81,29 @@ public final class Authorization {
     }
 
     /**
-     * {@link #standingOf}, read for a change to it (`P15-TSK-032`): each live role's row locked {@code FOR SHARE} until the
-     * caller's transaction ends, so a revocation of one of them cannot commit between this read and the caller's write. The
-     * grant's read of whether this is a first role; see {@link RoleAssignmentStore#lockLiveRolesOf}.
+     * {@link #standingOf}, read for a change to it (`P15-TSK-032`): the identity's row locked first, the lock every grant and
+     * revocation of this identity takes ({@link RoleAssignmentStore#lockForRoleChange}), and the roles read after it, so they
+     * are the ones the caller's write changes - no other role change of this identity commits until the caller's transaction
+     * ends. The grant's read of whether a role is the first, and the revocation's of whether it is the last.
      */
     public Standing standingForChange(Connection unitOfWork, IdentityId identityId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(identityId, "identityId must not be null");
-        return new Standing(assignments.lockLiveRolesOf(unitOfWork, identityId));
+        assignments.lockForRoleChange(unitOfWork, identityId);
+        return new Standing(assignments.liveRolesOf(unitOfWork, identityId));
     }
 
     /**
-     * What a revocation of {@code identityId}'s role decides by, every row read locked for update (`P15-TSK-032`): its live
-     * roles, and every {@code ACTIVE} identity's live holding of a role that can grant roles ({@link PermissionName#ROLE_ASSIGN})
-     * when {@code role} is one, or none when it is not. See {@link RoleAssignmentStore#lockForRevocation}.
+     * Who else could grant roles if {@code role} were revoked (`P15-TSK-032`): every {@code ACTIVE} identity's live holding of
+     * a role that can grant roles ({@link PermissionName#ROLE_ASSIGN}), each row locked for update, when {@code role} is one;
+     * none, and nothing locked, when it is not. See {@link RoleAssignmentStore#lockActiveHoldingsOf}.
      */
-    public RoleAssignmentStore.RevocationHoldings holdingsForRevocation(
-            Connection unitOfWork, IdentityId identityId, RoleName role) {
+    public Set<RoleAssignmentStore.Holding> lockGrantingHoldings(Connection unitOfWork, RoleName role) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        Objects.requireNonNull(identityId, "identityId must not be null");
         Objects.requireNonNull(role, "role must not be null");
-        return assignments.lockForRevocation(unitOfWork, identityId,
-                role.permissions().contains(PermissionName.ROLE_ASSIGN) ? rolesGranting(PermissionName.ROLE_ASSIGN) : Set.of());
+        return role.permissions().contains(PermissionName.ROLE_ASSIGN)
+                ? assignments.lockActiveHoldingsOf(unitOfWork, rolesGranting(PermissionName.ROLE_ASSIGN))
+                : Set.of();
     }
 
     /** Every role whose grants include {@code permission}: read from the code, so a permission moved takes the rule along. */

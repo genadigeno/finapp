@@ -61,7 +61,7 @@ class FirstRoleEndsSessionsTest {
     void aFirstRoleEndsEverySession() {
         assertThat(assign(RoleName.KYC_REVIEWER)).isEqualTo(IdentityAdministration.RoleGrant.GRANTED);
 
-        assertThat(calls).containsExactly("lockLiveRolesOf", "assign KYC_REVIEWER", "revokeAllFor " + SUBJECT,
+        assertThat(calls).containsExactly("lockForRoleChange", "liveRolesOf", "assign KYC_REVIEWER", "revokeAllFor " + SUBJECT,
                 "audit identity.SessionRevoked", "audit identity.RoleAssigned");
         assertThat(written).filteredOn(record -> record.operation() == IdentityAuditAction.IDENTITY_ROLE_ASSIGNED)
                 .singleElement().satisfies(record -> {
@@ -119,7 +119,7 @@ class FirstRoleEndsSessionsTest {
     @Test
     @DisplayName("a re-grant after a revocation is a first role again: only live roles decide, and in between it was a customer")
     void aReGrantAfterARevocationIsAFirstRoleAgain() {
-        // The revoked holding is a row the database keeps; lockLiveRolesOf's statement filters it out (revoked_at IS NULL), which
+        // The revoked holding is a row the database keeps; liveRolesOf's statement filters it out (revoked_at IS NULL), which
         // this fake models by answering the live set only. The statement itself is IdentityAdministrationDatabaseTest's.
         assertThat(assign(RoleName.KYC_REVIEWER)).isEqualTo(IdentityAdministration.RoleGrant.GRANTED);
         live.clear();
@@ -181,9 +181,13 @@ class FirstRoleEndsSessionsTest {
                 RoleAssignmentStore.class.getClassLoader(), new Class<?>[] {RoleAssignmentStore.class}, (proxy, method, args) -> {
                     assertThat(args[0]).as("%s on the grant's unit of work", method.getName()).isSameAs(UNIT_OF_WORK);
                     switch (method.getName()) {
-                        // P15-TSK-032: the grant's read locks the rows it read, so a revocation of one waits for the grant.
-                        case "lockLiveRolesOf" -> {
-                            calls.add("lockLiveRolesOf");
+                        // P15-TSK-032: the identity's lock, taken before the read, so a revocation of it waits for the grant.
+                        case "lockForRoleChange" -> {
+                            calls.add("lockForRoleChange");
+                            return null;
+                        }
+                        case "liveRolesOf" -> {
+                            calls.add("liveRolesOf");
                             return Set.copyOf(live);
                         }
                         case "assign" -> {

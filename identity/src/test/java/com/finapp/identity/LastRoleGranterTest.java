@@ -121,7 +121,7 @@ class LastRoleGranterTest {
         unlocked.holds(SECOND, RoleName.ADMINISTRATOR);
         // Both reads meet before either writes: READ COMMITTED with no lock.
         CyclicBarrier bothRead = new CyclicBarrier(2);
-        unlocked.afterRead = subject -> {
+        unlocked.afterRead = () -> {
             try {
                 bothRead.await(10, TimeUnit.SECONDS);
             } catch (Exception e) {

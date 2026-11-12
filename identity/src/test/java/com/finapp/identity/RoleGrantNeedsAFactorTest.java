@@ -163,10 +163,13 @@ class RoleGrantNeedsAFactorTest {
                         grants.incrementAndGet();
                         return true;
                     }
-                    // P15-TSK-043: a grant reads whether this is the subject's first role (locked since P15-TSK-032). None
-                    // held: a first role, whose sessions end - the fake store below has none open. FirstRoleEndsSessionsTest
-                    // holds that half.
-                    if (method.getName().equals("lockLiveRolesOf")) {
+                    // P15-TSK-043: a grant reads whether this is the subject's first role, after the identity's lock since
+                    // P15-TSK-032. None held: a first role, whose sessions end - the fake store below has none open.
+                    // FirstRoleEndsSessionsTest holds that half.
+                    if (method.getName().equals("lockForRoleChange")) {
+                        return null;
+                    }
+                    if (method.getName().equals("liveRolesOf")) {
                         return Set.of();
                     }
                     if (method.getName().equals("holdingsWithoutFactor")) {

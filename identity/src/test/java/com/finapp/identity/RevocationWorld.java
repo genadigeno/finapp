@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Consumer;
 import org.springframework.objenesis.SpringObjenesis;
 
 /**
@@ -33,9 +32,10 @@ import org.springframework.objenesis.SpringObjenesis;
  * which it waits for - is {@code RoleAssignmentConcurrencyDatabaseTest}'s and {@code IdentityAdministrationDatabaseTest}'s,
  * owed (C14).
  *
- * <p>{@link #serialised} models what {@code FOR UPDATE} gives the revocation's read: one transaction at a time from the read
- * to its commit. Without it, each read sees the rows as they stood before the other wrote, which is what {@code READ
- * COMMITTED} gives two unlocked reads.
+ * <p>{@link #serialised} models what {@code FOR UPDATE} gives the read of the granting holdings: one transaction at a time
+ * from that read to its commit. Without it, each read sees the rows as they stood before the other wrote, which is what
+ * {@code READ COMMITTED} gives two unlocked reads. The identity's own lock ({@code lockForRoleChange}) is recorded, not
+ * modelled: the cases that race here revoke two different identities' roles, which that lock does not serialise.
  */
 @SuppressWarnings("try") // The scopes are used for their close side effect (the established idiom).
 final class RevocationWorld {
@@ -53,13 +53,13 @@ final class RevocationWorld {
     final List<AuditRecord> written = Collections.synchronizedList(new ArrayList<>());
     /** The live holdings: what the database would answer. */
     final Set<Row> live = Collections.synchronizedSet(new HashSet<>());
-    /** The granting roles each locked read was asked for, in order. */
+    /** The granting roles each locked read of the holdings was asked for, in order. */
     final List<Set<RoleName>> grantingAsked = Collections.synchronizedList(new ArrayList<>());
     int liveSessions = 2;
     RuntimeException sessionRevocationFails;
     boolean serialised = true;
-    /** Run inside the locked read after the rows are read, before it answers: where a test makes two reads meet. */
-    Consumer<IdentityId> afterRead = identity -> { };
+    /** Run inside the read of the granting holdings after the rows are read, before it answers: where a test makes two meet. */
+    Runnable afterRead = () -> { };
 
     private final ReentrantLock rows = new ReentrantLock();
 
@@ -106,28 +106,31 @@ final class RevocationWorld {
                 RoleAssignmentStore.class.getClassLoader(), new Class<?>[] {RoleAssignmentStore.class}, (proxy, method, args) -> {
                     assertThat(args[0]).as("%s on the revocation's unit of work", method.getName()).isSameAs(UNIT_OF_WORK);
                     switch (method.getName()) {
-                        case "lockForRevocation" -> {
-                            calls.add("lockForRevocation");
-                            IdentityId subject = (IdentityId) args[1];
-                            Set<RoleName> granting = (Set<RoleName>) args[2];
+                        case "lockForRoleChange" -> {
+                            calls.add("lockForRoleChange");
+                            return null;
+                        }
+                        case "liveRolesOf" -> {
+                            calls.add("liveRolesOf");
+                            return Set.copyOf(rolesOf((IdentityId) args[1]));
+                        }
+                        case "lockActiveHoldingsOf" -> {
+                            calls.add("lockActiveHoldingsOf");
+                            Set<RoleName> granting = (Set<RoleName>) args[1];
                             grantingAsked.add(Set.copyOf(granting));
                             if (serialised) {
                                 rows.lock();
                             }
-                            Set<RoleName> held = new HashSet<>();
-                            Set<RoleAssignmentStore.Holding> activeGranting = new HashSet<>();
+                            Set<RoleAssignmentStore.Holding> active = new HashSet<>();
                             synchronized (live) {
                                 for (Row row : live) {
-                                    if (row.identity().equals(subject)) {
-                                        held.add(row.role());
-                                    }
                                     if (granting.contains(row.role()) && row.active()) {
-                                        activeGranting.add(new RoleAssignmentStore.Holding(row.identity(), row.role()));
+                                        active.add(new RoleAssignmentStore.Holding(row.identity(), row.role()));
                                     }
                                 }
                             }
-                            afterRead.accept(subject);
-                            return new RoleAssignmentStore.RevocationHoldings(held, activeGranting);
+                            afterRead.run();
+                            return Set.copyOf(active);
                         }
                         case "revoke" -> {
                             calls.add("revoke " + args[2]);

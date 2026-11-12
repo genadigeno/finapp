@@ -34,7 +34,10 @@ enters the decision. A **first** role - the identity held no live role - ends ev
 grant's own transaction, so a session a customer stepped up from the internet never serves a member of staff: the grantee
 signs in again on the operator surface (`P15-TSK-043`; `FirstRoleEndsSessionsTest`, `IdentityAdministrationDatabaseTest`,
 owed). A further role granted mid-session is honoured on the next request; a role revoked mid-session stops working on the
-next request, as `INV-IDN-03` requires, and ends no session: the identity's sessions then serve what it is. A role holder acting on their own wallet, payment or loan
+next request, as `INV-IDN-03` requires. A role revoked beside another ends no session: the identity's sessions then serve what
+it is, staff. The **last** live role revoked ends every session the identity holds, in the revocation's own transaction, so a
+session issued at the operator surface never serves a person who is staff no more: they sign in again as a customer
+(`P15-TSK-032`; `LastRoleEndsSessionsTest`, `IdentityAdministrationDatabaseTest`, owed). A role holder acting on their own wallet, payment or loan
 application is a customer in that act. Operator acts recorded before `P15-TSK-021` read `CUSTOMER` and stay as written
 (history is append-only; the `*_by_type` columns are frozen by trigger). An idempotency scope keys a person once,
 whatever population a request types them in (`Actor.keyedType`), so a retry crossing a role change or the release that
@@ -105,8 +108,11 @@ assignment is `THREAT_MODEL.md` §6 owner item 9. Four-eyes inside one role (`LO
 by identity at the act.
 
 **Granting.** Only `ROLE_ASSIGN` (the `ADMINISTRATOR`) grants or revokes a role; an administrator cannot grant a role
-to their own identity (`IdentityAdministration`'s `SELF`); every grant and revocation is `identity.RoleAssigned`, with
-the actor, the target, the role and a required reason.
+to their own identity, nor revoke one from it (`IdentityAdministration`'s `SELF`); every grant and revocation is
+`identity.RoleAssigned`, with the actor, the target, the role and a required reason. A role is revoked through `DELETE
+/v1/identities/{id}/roles/{role}` on a `MULTI_FACTOR` session (`P15-TSK-032`), which refuses to take a role that can grant
+roles from the last `ACTIVE` identity holding one (`409 identity.LastRoleGranter`), so the platform never leaves nobody
+able to grant; the out-of-band step of `README.md` §5e is for the first administrator alone.
 
 ## 5. The review
 
@@ -140,8 +146,9 @@ day they leave. Its first performance is `P15-TSK-032`'s, with the runbook's bre
 
 ## 6. Step-up and refused attempts
 
-36 handlers declare `@RequiresAssurance(MULTI_FACTOR)`, every one on the method: Phase 13's risk doors, Phase 14's
-accounting, ledger and write-off approvals, the dead-letter doors, the rulings below and §5's check. About thirty operations demand
+37 handlers declare `@RequiresAssurance(MULTI_FACTOR)`, every one on the method: Phase 13's risk doors, Phase 14's
+accounting, ledger and write-off approvals, the dead-letter doors, the rulings below, §5's check and a role's revocation
+(`P15-TSK-032`; a role's grant declares none). About thirty operations demand
 the step-up themselves - a bank-account registration, a withdrawal, a wallet payment, the lending and BNPL doors - some
 only when the caller has a factor, by one component (`ConditionalStepUp`). Not every four-eyes door steps up: a break's
 resolution and the mapping activation are `P14-REM-001`'s and `P14-REM-002`'s. **Every refused privileged

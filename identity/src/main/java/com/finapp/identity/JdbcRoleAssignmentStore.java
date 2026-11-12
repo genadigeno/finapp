@@ -48,66 +48,49 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
     }
 
     @Override
-    public Set<RoleName> lockLiveRolesOf(Connection unitOfWork, IdentityId identityId) {
+    public void lockForRoleChange(Connection unitOfWork, IdentityId identityId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(identityId, "identityId must not be null");
 
-        // FOR SHARE, in the primary key's order (`P15-TSK-032`): a grant's read conflicts with a revocation's FOR UPDATE of the
-        // same rows and with nothing a second grant takes. `revoked_at IS NULL` in the statement, for liveRolesOf's reason.
-        String sql =
-                "SELECT role_name FROM " + TABLE
-                        + " WHERE identity_id = ? AND revoked_at IS NULL ORDER BY id FOR SHARE";
-        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
-            select.setObject(1, identityId.value());
-            try (ResultSet rows = select.executeQuery()) {
-                Set<RoleName> roles = EnumSet.noneOf(RoleName.class);
-                while (rows.next()) {
-                    roles.add(RoleName.valueOf(rows.getString("role_name")));
-                }
-                return Set.copyOf(roles);
-            }
+        // The identity's own row, FOR NO KEY UPDATE (`P15-TSK-032`): every grant and revocation of this identity takes it first,
+        // so they serialise and each reads the roles the other committed. NO KEY: a session insert's foreign key (KEY SHARE)
+        // passes; JdbcSessionStore's bulk revocation still takes FOR UPDATE on the same row to hold issuance back.
+        try (PreparedStatement lock = unitOfWork.prepareStatement(
+                "SELECT 1 FROM identity.identity WHERE id = ? FOR NO KEY UPDATE")) {
+            lock.setObject(1, identityId.value());
+            lock.executeQuery().close();
         } catch (SQLException e) {
             throw new IdentityStorageException(
-                    DatabaseFailure.describe("Could not lock the roles of " + identityId, e));
+                    DatabaseFailure.describe("Could not lock identity " + identityId + " for a role change", e));
         }
     }
 
     @Override
-    public RevocationHoldings lockForRevocation(Connection unitOfWork, IdentityId identityId, Set<RoleName> granting) {
+    public Set<Holding> lockActiveHoldingsOf(Connection unitOfWork, Set<RoleName> roles) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        Objects.requireNonNull(identityId, "identityId must not be null");
-        Objects.requireNonNull(granting, "granting must not be null");
+        Objects.requireNonNull(roles, "roles must not be null");
 
-        // ONE statement, every row it returns locked FOR UPDATE in the primary key's order (`P15-TSK-032`): the identity's own
-        // live holdings and every live holding of a granting role. Two revocations lock the same rows in the same order, so the
-        // second waits on the first and PostgreSQL re-checks each row it waited on, dropping one the first revoked. The holder's
-        // status rides on the row and is not locked.
+        // Every live holding of the roles by an ACTIVE identity, locked FOR UPDATE in the primary key's order (`P15-TSK-032`):
+        // two revocations lock the same rows in the same order, so the second waits on the first and PostgreSQL re-checks each
+        // row it waited on, dropping one the first revoked. The holder's status is read with the row, not locked.
         String sql =
-                "SELECT held.identity_id, held.role_name, holder.status FROM " + TABLE + " held"
+                "SELECT held.identity_id, held.role_name FROM " + TABLE + " held"
                         + " JOIN identity.identity holder ON holder.id = held.identity_id"
-                        + " WHERE held.revoked_at IS NULL AND (held.identity_id = ? OR held.role_name = ANY (?))"
+                        + " WHERE held.revoked_at IS NULL AND held.role_name = ANY (?) AND holder.status = 'ACTIVE'"
                         + " ORDER BY held.id FOR UPDATE OF held";
         try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
-            select.setObject(1, identityId.value());
-            select.setArray(2, unitOfWork.createArrayOf("text", granting.stream().map(RoleName::name).toArray()));
+            select.setArray(1, unitOfWork.createArrayOf("text", roles.stream().map(RoleName::name).toArray()));
             try (ResultSet rows = select.executeQuery()) {
-                Set<RoleName> held = EnumSet.noneOf(RoleName.class);
-                Set<Holding> activeGranting = new java.util.HashSet<>();
+                Set<Holding> holdings = new java.util.HashSet<>();
                 while (rows.next()) {
-                    IdentityId holder = IdentityId.of(rows.getObject("identity_id", java.util.UUID.class));
-                    RoleName role = RoleName.valueOf(rows.getString("role_name"));
-                    if (holder.equals(identityId)) {
-                        held.add(role);
-                    }
-                    if (granting.contains(role) && IdentityStatus.ACTIVE.name().equals(rows.getString("status"))) {
-                        activeGranting.add(new Holding(holder, role));
-                    }
+                    holdings.add(new Holding(
+                            IdentityId.of(rows.getObject("identity_id", java.util.UUID.class)),
+                            RoleName.valueOf(rows.getString("role_name"))));
                 }
-                return new RevocationHoldings(held, activeGranting);
+                return Set.copyOf(holdings);
             }
         } catch (SQLException e) {
-            throw new IdentityStorageException(
-                    DatabaseFailure.describe("Could not lock the holdings a revocation of " + identityId + " reads", e));
+            throw new IdentityStorageException(DatabaseFailure.describe("Could not lock the holdings of " + roles, e));
         }
     }
 

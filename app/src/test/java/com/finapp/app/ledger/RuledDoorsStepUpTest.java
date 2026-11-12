@@ -52,7 +52,9 @@ class RuledDoorsStepUpTest {
                 door(CorridorAdministrationController.class, "approveCorridorEnableRequest", RoleName.FX_CONTROLLER),
                 door(FxTradeReversalController.class, "proposeFxTradeReversal", RoleName.LEDGER_OPERATOR),
                 door(FxTradeReversalController.class, "approveFxTradeReversal", RoleName.LEDGER_OPERATOR),
-                door(AccessReviewController.class, "listFactorlessHoldings", RoleName.ADMINISTRATOR));
+                door(AccessReviewController.class, "listFactorlessHoldings", RoleName.ADMINISTRATOR),
+                // P15-TSK-032: a role's revocation (the design's Q1, decided). The grant's door declares no step-up.
+                door(com.finapp.app.administration.IdentityAdministrationController.class, "revokeRole", RoleName.ADMINISTRATOR));
     }
 
     @Test

@@ -29,7 +29,9 @@ import org.springframework.mock.web.MockHttpServletRequest;
 
 /**
  * The role grant's refusal and the check of standing holdings, at their doors (`P15-TSK-039`). The grant's rule is
- * {@code RoleGrantNeedsAFactorTest}'s; a real row is {@code IdentityAdministrationDatabaseTest}'s, owed.
+ * {@code RoleGrantNeedsAFactorTest}'s; a real row is {@code IdentityAdministrationDatabaseTest}'s, owed. Since `P15-TSK-032` it
+ * also holds that the revocation door is the only production path that takes a role away, as the grant's is the only one that
+ * gives one; that door's own answers are {@code RoleRevocationDoorTest}'s.
  */
 @org.junit.jupiter.api.Tag("architecture")
 @DisplayName("the grant refused without a factor, and the standing holdings named, at the doors (P15-TSK-039)")
@@ -122,6 +124,44 @@ class RoleGrantDoorTest {
                 .as("%s calls the overload that runs the grant's consequence", call.getOrigin().getFullName())
                 .hasSize(6)
                 .last().satisfies(consequence -> assertThat(consequence.isEquivalentTo(java.util.function.Function.class)).isTrue()));
+    }
+
+    @Test
+    @DisplayName("the only production path that takes a role away is the revocation door's: no other caller of Authorization.revoke,"
+            + " and that one through the overload that carries the last role's session end (P15-TSK-032)")
+    void theOnlyRevocationIsTheDoors() {
+        var calls = new com.tngtech.archunit.core.importer.ClassFileImporter()
+                .withImportOption(com.tngtech.archunit.core.importer.ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPackages("com.finapp")
+                .stream()
+                .flatMap(javaClass -> javaClass.getMethodCallsFromSelf().stream())
+                .filter(call -> call.getName().equals("revoke")
+                        && call.getTargetOwner().isEquivalentTo(com.finapp.identity.Authorization.class))
+                .toList();
+
+        assertThat(calls.stream().map(call -> call.getOrigin().getFullName()).collect(java.util.stream.Collectors.toSet()))
+                .as("a new caller of Authorization.revoke takes a role away past the last-granter rule and the last role's session end")
+                .singleElement().satisfies(origin -> assertThat(origin).startsWith(
+                        com.finapp.identity.IdentityAdministration.class.getName() + ".revokeRole("));
+        // The five-argument revoke stays for the database fixtures and ends no session: a production revocation through it would
+        // leave a former member of staff's operator sessions serving.
+        assertThat(calls).as("not vacuous").isNotEmpty().allSatisfy(call -> assertThat(call.getTarget().getRawParameterTypes())
+                .as("%s calls the overload that runs the revocation's consequence", call.getOrigin().getFullName())
+                .hasSize(6)
+                .last().satisfies(consequence -> assertThat(consequence.isEquivalentTo(java.util.function.Function.class)).isTrue()));
+        // And the store's revoke has one caller, Authorization's one body: no path marks a row around both.
+        assertThat(new com.tngtech.archunit.core.importer.ClassFileImporter()
+                        .withImportOption(com.tngtech.archunit.core.importer.ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                        .importPackages("com.finapp")
+                        .stream()
+                        .flatMap(javaClass -> javaClass.getMethodCallsFromSelf().stream())
+                        .filter(call -> call.getName().equals("revoke")
+                                && call.getTargetOwner().isAssignableTo(com.finapp.identity.RoleAssignmentStore.class)
+                                // The compiler's bridge from the generic interface to the store's own method is no caller.
+                                && !call.getOrigin().getModifiers().contains(com.tngtech.archunit.core.domain.JavaModifier.BRIDGE))
+                        .map(call -> call.getOriginOwner().getSimpleName())
+                        .collect(java.util.stream.Collectors.toSet()))
+                .containsExactly("Authorization");
     }
 
     private static MockHttpServletRequest requestWithSession() {

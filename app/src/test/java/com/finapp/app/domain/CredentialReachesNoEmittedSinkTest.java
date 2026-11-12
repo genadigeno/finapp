@@ -279,6 +279,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // legitimately appears - never returned and never in a URL or header.
                         "ChangePasswordRequest",
                         "RoleAssignmentRequest",
+                        // P15-TSK-032: the revocation's body - a reason, never a secret, the ReinstatementRequest shape with
+                        // the same bounds cited from the same constants; the role travels in the path, an enum.
+                        "RoleRevocationRequest",
                         // P2-TSK-012: the reviewer's resolution reason - free prose, never a
                         // secret, the SuspensionRequest shape with the same bounds cited from the
                         // same constants. What bounds the prose is that it reaches exactly two

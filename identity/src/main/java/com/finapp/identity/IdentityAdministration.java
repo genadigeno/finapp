@@ -291,9 +291,10 @@ public final class IdentityAdministration {
      * sessions serve what the identity still is; a revocation of the <em>last</em> role ends them ({@link #revokeRole}). A
      * request already past the interceptor when the grant commits completes as it began.
      *
-     * <p><strong>The first-role read locks what it read</strong> (`P15-TSK-032`): each live role's row {@code FOR SHARE}, so a
-     * revocation of one of them waits for this grant, then sees its role and ends nothing, or commits first and this read,
-     * having waited, sees it gone and calls the role first.
+     * <p><strong>The first-role read is taken under the identity's lock</strong> (`P15-TSK-032`;
+     * {@link RoleAssignmentStore#lockForRoleChange}), the lock every grant and revocation of the identity takes first. A
+     * revocation of the identity's last role either committed before - and this read, taken after the lock, sees it gone and
+     * calls the role first - or waits for this grant, and then sees its role and ends nothing.
      */
     public RoleGrant assignRole(
             Connection unitOfWork,
@@ -317,12 +318,12 @@ public final class IdentityAdministration {
                 && enrolments.findActive(unitOfWork, subject, MfaFactorType.TOTP).isEmpty()) {
             return RoleGrant.FACTOR_REQUIRED;
         }
-        // Staff is any live role: the same rows the interceptor types an act by (Standing.actorType), read here locked FOR
-        // SHARE (P15-TSK-032), so a concurrent revocation of a role read live waits for this grant and then finds it. Under READ
-        // COMMITTED a concurrent grant not yet committed is invisible, so this can only err towards "first", which ends the
-        // sessions once more, harmlessly. A committed role read here came through this door, which ended them at its first
-        // role, or around it (a script, break-glass, a grant before this release), which ended nothing: the review asks after
-        // those (PRIVILEGED_ACCESS_REVIEW.md §5 question 6), and a session's absolute bound ends what they left.
+        // Staff is any live role: the same rows the interceptor types an act by (Standing.actorType), read here after the
+        // identity's lock (P15-TSK-032), so no other grant or revocation of this identity commits between this read and this
+        // grant's commit, and the read is the state the grant changes. A committed role read here came through this door, which
+        // ended them at its first role, or around it (a script, break-glass, a grant before this release), which ended nothing:
+        // the review asks after those (PRIVILEGED_ACCESS_REVIEW.md §5 question 6), and a session's absolute bound ends what they
+        // left.
         boolean firstRole = authorization.standingForChange(unitOfWork, subject).roles().isEmpty();
         return authorization.assign(unitOfWork, subject, role, actor, reason,
                         granted -> firstRole
@@ -350,11 +351,12 @@ public final class IdentityAdministration {
      * <p>A role holding {@link PermissionName#ROLE_ASSIGN} (today {@code ADMINISTRATOR}, read from what each role grants) is
      * not revoked from the last {@code ACTIVE} identity holding one: {@link RoleRevocation#LAST_ROLE_GRANTER}, nothing written.
      * With nobody left, nobody grants, revokes, suspends or reinstates through the platform again. <strong>"Last" is read with
-     * every live holding of such a role locked</strong>, in one statement with the subject's own
-     * ({@link RoleAssignmentStore#lockForRevocation}): two revocations of the last two holders lock the same rows in the same
-     * order, the second waits for the first and re-reads them, so it sees the first's revocation and is refused. A suspended
-     * holder does not count - a suspended administrator cannot sign in - and a grant still in flight is not seen, which errs
-     * towards refusing.
+     * every live holding of such a role locked</strong> ({@link RoleAssignmentStore#lockActiveHoldingsOf}), the one read here
+     * that spans identities: two revocations of the last two holders - two administrators revoking each other - lock the same
+     * rows in the same order, the second waits for the first and re-reads them, so it sees the first's revocation and is
+     * refused. A suspended holder does not count - a suspended administrator cannot sign in - and a grant still in flight is
+     * not seen, which errs towards refusing. Not held: a suspension of the other holder that its door admitted before this
+     * revocation committed and completes after it, since the suspension door has no such rule of its own.
      *
      * <h2>The last role ends every session the identity holds</h2>
      *
@@ -365,16 +367,24 @@ public final class IdentityAdministration {
      * its record, which says {@code lastRole=true, sessionsRevoked=<n>}: a revocation that commits has ended them, one that
      * rolls back, the session revocation's failure included, has not. Every replica reads sessions from PostgreSQL per request,
      * so the next request on any of them is refused; the person signs in again as a customer. A role revoked beside another
-     * ends nothing ({@code lastRole=false}): the sessions serve what the identity still is. Which role is last is read from the
-     * locked rows, so a concurrent revocation of another role of the same identity waits, and a concurrent grant either
-     * finished before (its role read live: not last) or waits for this one ({@link #assignRole}'s locked read).
+     * ends nothing ({@code lastRole=false}): the sessions serve what the identity still is. Which role is last is read after
+     * the identity's lock ({@link RoleAssignmentStore#lockForRoleChange}), which every grant and revocation of the identity
+     * takes first: a concurrent revocation of its other role, or a grant to it, either committed before - and is read - or
+     * waits for this one. So two revocations of an identity's last two roles end its sessions once, the second, and a grant
+     * racing a revocation never leaves "last" said of a role that was not.
      *
      * <h2>Idempotent in effect</h2>
      *
      * <p>A role the identity does not hold - never held, or revoked already - answers {@link RoleRevocation#NOT_HELD}: the
      * caller asked for the identity not to hold it, and it does not. Nothing is written, recorded or ended, so a retry after a
-     * lost answer changes nothing. A grant of the same role racing this ends in one defined state: the grant committed before
-     * this read is revoked, one committed after it stands, and each act's record says what it did.
+     * lost answer changes nothing. A grant of the same role racing this ends in one defined state, serialised by the identity's
+     * lock: a grant that committed first is revoked, one that waited stands, and each act's record says what it did.
+     *
+     * <h2>The order of the locks</h2>
+     *
+     * <p>The identity's row, then - for a granting role only - every live holding of a granting role, in the primary key's
+     * order; then the row's own update, and for a last role the session revocation's {@code FOR UPDATE} of the identity's row,
+     * which this transaction already holds. Two revocations of granting roles meet first on those holdings, in one order.
      */
     public RoleRevocation revokeRole(
             Connection unitOfWork,
@@ -394,24 +404,22 @@ public final class IdentityAdministration {
         if (identities.findById(unitOfWork, subject).isEmpty()) {
             return RoleRevocation.NOT_FOUND;
         }
-        RoleAssignmentStore.RevocationHoldings holdings = authorization.holdingsForRevocation(unitOfWork, subject, role);
-        if (!holdings.held().contains(role)) {
-            // Not read again by the write: a grant committing between the two statements would otherwise be revoked here,
-            // judged by a read that never saw it.
+        java.util.Set<RoleName> held = authorization.standingForChange(unitOfWork, subject).roles();
+        if (!held.contains(role)) {
             return RoleRevocation.NOT_HELD;
         }
+        java.util.Set<RoleAssignmentStore.Holding> granting = authorization.lockGrantingHoldings(unitOfWork, role);
         RoleAssignmentStore.Holding revoking = new RoleAssignmentStore.Holding(subject, role);
-        if (holdings.activeGranting().contains(revoking)
-                && holdings.activeGranting().stream().allMatch(revoking::equals)) {
+        if (granting.contains(revoking) && granting.stream().allMatch(revoking::equals)) {
             return RoleRevocation.LAST_ROLE_GRANTER;
         }
-        boolean lastRole = holdings.held().equals(java.util.Set.of(role));
+        boolean lastRole = held.equals(java.util.Set.of(role));
         return authorization.revoke(unitOfWork, subject, role, actor, reason,
                         revoked -> lastRole
                                 ? "lastRole=true, sessionsRevoked=" + sessions.revokeAll(revoked, subject)
                                 : "lastRole=false")
                 ? RoleRevocation.REVOKED
-                // Unreachable while the row is locked: nothing else can have revoked it since the read.
+                // Unreachable under the identity's lock: no other revocation of it can have committed since the read.
                 : RoleRevocation.NOT_HELD;
     }
 

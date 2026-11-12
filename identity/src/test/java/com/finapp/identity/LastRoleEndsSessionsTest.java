@@ -24,15 +24,16 @@ class LastRoleEndsSessionsTest {
     private final RevocationWorld world = new RevocationWorld();
 
     @Test
-    @DisplayName("the last role: revoked after a locked read, every session revoked on the revocation's unit of work, after the row"
-            + " and before the record, which names the actor, the target, the role, the reason, the correlation and the outcome")
+    @DisplayName("the last role: read after the identity's lock, revoked, every session revoked on the revocation's unit of work,"
+            + " after the row and before the record, which names the actor, the target, the role, the reason, the correlation and"
+            + " the outcome")
     void theLastRoleEndsEverySession() {
         world.holds(SUBJECT, RoleName.KYC_REVIEWER);
 
         assertThat(world.revoke(SUBJECT, RoleName.KYC_REVIEWER, ADMINISTRATOR)).isEqualTo(IdentityAdministration.RoleRevocation.REVOKED);
 
-        assertThat(world.calls).containsExactly("findById", "lockForRevocation", "revoke KYC_REVIEWER", "revokeAllFor " + SUBJECT,
-                "audit identity.SessionRevoked", "audit identity.RoleAssigned");
+        assertThat(world.calls).containsExactly("findById", "lockForRoleChange", "liveRolesOf", "revoke KYC_REVIEWER",
+                "revokeAllFor " + SUBJECT, "audit identity.SessionRevoked", "audit identity.RoleAssigned");
         assertThat(world.written).filteredOn(record -> record.operation() == IdentityAuditAction.IDENTITY_ROLE_ASSIGNED)
                 .singleElement().satisfies(record -> {
                     assertThat(record.actor().id()).isEqualTo(ADMINISTRATOR.value().toString());
@@ -92,7 +93,7 @@ class LastRoleEndsSessionsTest {
 
         assertThat(world.revoke(SUBJECT, RoleName.KYC_REVIEWER, ADMINISTRATOR)).isEqualTo(IdentityAdministration.RoleRevocation.NOT_HELD);
 
-        assertThat(world.calls).as("read, and nothing written").containsExactly("findById", "lockForRevocation");
+        assertThat(world.calls).as("read, and nothing written").containsExactly("findById", "lockForRoleChange", "liveRolesOf");
         assertThat(world.written).isEmpty();
         assertThat(world.liveSessions).as("a customer's session the second attempt had no business ending").isEqualTo(1);
     }
@@ -121,7 +122,7 @@ class LastRoleEndsSessionsTest {
         assertThat(world.administration(false).revokeRole(RevocationWorld.UNIT_OF_WORK, SUBJECT, RoleName.KYC_REVIEWER,
                 ADMINISTRATOR, "because")).isEqualTo(IdentityAdministration.RoleRevocation.NOT_FOUND);
 
-        assertThat(world.calls).doesNotContain("lockForRevocation");
+        assertThat(world.calls).doesNotContain("lockForRoleChange", "liveRolesOf");
         assertThat(world.written).isEmpty();
         assertThat(world.liveSessions).isEqualTo(2);
         assertThat(world.rolesOf(ADMINISTRATOR)).containsExactly(RoleName.KYC_REVIEWER);
@@ -141,12 +142,13 @@ class LastRoleEndsSessionsTest {
     }
 
     @Test
-    @DisplayName("the read asks for no granting role when the role grants none: a desk's role reads its holder's rows alone")
+    @DisplayName("a desk's role locks no other identity's holdings: only a role that can grant roles reads who else holds one")
     void aDesksRoleLocksItsHoldersRowsAlone() {
         world.holds(SUBJECT, RoleName.KYC_REVIEWER);
 
         world.revoke(SUBJECT, RoleName.KYC_REVIEWER, ADMINISTRATOR);
 
-        assertThat(world.grantingAsked).containsExactly(Set.of());
+        assertThat(world.calls).doesNotContain("lockActiveHoldingsOf");
+        assertThat(world.grantingAsked).isEmpty();
     }
 }
