@@ -28910,6 +28910,1094 @@ in a real environment**, its run with PI-024's
 
 ---
 
+# Phase 16 — Scale, Resilience and Disaster Recovery
+
+Status: `READY` (2026-11-12 — entry gate passed by the Phase 15 → 16 transition: Phase 15 confirmed with its recorded deviations by
+its completion gate, `P15-GATE`, [`reviews/PHASE_15_TO_16_TRANSITION.md`](reviews/PHASE_15_TO_16_TRANSITION.md)), initialised as
+documents only by the same transition (branch `P16-INIT` from master `3d5089d9`) and elaborated to task granularity: thirty-four
+items (`P16-TSK-001`…`-031`, `P16-TST-001`, `P16-TST-002`, `P16-DOC-001`) across thirteen milestones, with `P16-TSK-001` marked
+`READY` and every other item `PLANNED`. The engineering plan is [`PHASE_16_PLAN.md`](PHASE_16_PLAN.md); decisions are
+ADR-0126…ADR-0129 (`Proposed`). The roadmap's title is kept ("Scale, Resilience and Disaster Recovery"); the owner's brief calls
+the phase "Scale, Resilience, High Availability and Disaster Recovery", and its Parts 10–28 are the plan's scope. **No new
+invariant**: the phase proves the catalogue's existing ones — `INV-LED-*`, `INV-BAL-*`, `INV-ACC-01`, `INV-ACC-06`, `INV-ACC-12`,
+`INV-HIST-01`, `INV-IDEM-*`, `INV-EVT-*`, `INV-REC-*`, `INV-FX-*` — under load, failure, partial availability and recovery.
+
+**The objective is financial correctness under load, failure, partial availability and recovery, not throughput**
+(`PHASE_16_PLAN.md` §1). Phase 16 adds no business capability. It changes a financial rule in three places only, each decided
+and each `DOD-FIN`: the posting scope made unique before any idempotency record is swept (`-011`); load shedding that refuses
+before the financial effect (`-016`); and whatever a hot-row measurement proves necessary, decided by an ADR first (`-008`).
+
+**The honest environment boundary** (`PHASE_16_PLAN.md` §1.1). The project has no cloud account, and every cluster run is a local
+`kind` on one development machine. Each task says what it **executes here** (`kind`, containers, a test-only synchronous standby
+pair, three test-only brokers, a local point-in-time restore, a cluster rebuilt from the repository, Terraform checked with mock
+providers) and what is **designed-only** (managed failovers, a zone's or a region's loss, a real provider's outage, real DDoS
+protection, KMS across regions). A designed-only criterion is never claimed as executed; the owner accepts it as designed-only or
+holds it open (C4).
+
+**Every task below states the fields the owner's brief Part 27 lists**: ID, objective, affected services and components,
+dependencies, scope and exclusions, workload assumptions, infrastructure and code changes, financial correctness implications,
+multi-instance and distributed-system concerns, failure scenarios, security considerations, test and experiment methodology,
+measurable acceptance criteria, definition of done and operational documentation. Each also carries a **probe** (the deliberate
+break the completion gate performs and must see caught) and its risk and complexity. A task's design may correct its entry and
+says so. The ten-instance question is answered per task, `PASS` only on the counted run named.
+
+**Testing** (`PHASE_16_PLAN.md` §19, C2): per task, the changed classes' tests, the guards that read the changed files and the
+harness's contract tests, by name (the owner's rule); the Gradle `databaseTest`, `kafkaTest` and own-container tiers skipped per
+task, with any database case a task writes owed to PI-023's pass. The **experiments run their own stack** (the `kind` cluster or
+container stack each run creates, with real PostgreSQL and Kafka), are the phase's substance, and are recorded with artefacts in
+`docs/architecture/RESILIENCE_EXPERIMENTS.md`.
+
+**Milestones** (acceptance in `PHASE_16_PLAN.md` §20):
+- M16.1 Foundations and the first wave (`-001`…`-005`)
+- M16.2 The load harness and the workload baseline (`-006`, `-007`)
+- M16.3 Database load and concurrency (`-008`…`-012`)
+- M16.4 The event pipeline at load (`-013`)
+- M16.5 Scaling the application (`-014`, `-015`)
+- M16.6 Resilience patterns (`-016`…`-018`)
+- M16.7 Controlled failure injection (`-019`…`-021`)
+- M16.8 High availability (`-022`, `-023`)
+- M16.9 Backup and restoration (`-024`)
+- M16.10 Disaster recovery (`-025`)
+- M16.11 The multi-region assessment (`-026`)
+- M16.12 Financial correctness under failure (`-027`, `-028`)
+- M16.13 Capacity and the operational review (`-029`…`-031`, `P16-TST-001`, `P16-TST-002`, `P16-DOC-001`)
+
+**Parallel waves** (`PHASE_16_PLAN.md` §22):
+- **A** `-001`, `-002`, `-003`, `-004`, `-005`: the first wave, the owner's decided inputs.
+- **B** `-006`, `-017`.
+- **C** `-007`, `-019`.
+- **D** `-008`, `-009`, `-010`, `-013`, `-016`, `-018`, `-021`, `-022`, `-024`.
+- **E** `-011`, `-012`, `-014`, `-023`, with `P15-REM-001`, which the owner schedules before `-030`.
+- **F** `-015`, `-020`, `-025`, `-028`, `-029`, `-030`.
+- **G** `-026`, `-027`.
+- **H** `-031`, `P16-TST-001`.
+- **I** `P16-TST-002`.
+- **J** `P16-DOC-001`.
+
+**Critical path**: `-001` → `-006` → `-007` → `-009` → `-014` → `-020` → `-027` → `-031` → `TST-002` → `DOC-001`. The
+equal-length branch runs `-007` → `-022` → `-023` → `-025` → `-026` → `-031`.
+
+**If the phase must shrink**, cut in this order: `-012`'s replica route (its decision stays), then `-030` (re-dated), then `-026`'s
+Terraform variants (the assessment stays), then `-021`'s DNS and disk-pressure experiments. Each deferral is recorded with its
+owner. **Never cut**: `-001`, `-006`, `-007`, `-014`, `-022`, `-024`, `-025`, `-027`, `P16-TST-001`.
+
+**What Phase 16 must not implement** (`PHASE_16_PLAN.md` §25):
+- a business capability;
+- a financial rule changed beyond the three above;
+- an asynchronous balance, a balance changed outside a posting, or a weaker isolation for money;
+- a retry of an ambiguous financial call;
+- a cache in front of a financial decision;
+- Redis or any new datastore (no code uses Redis: `PHASE_16_PLAN.md` §3; the local copy is `P15-REM-006`'s);
+- a read replica serving an authoritative read;
+- active-active writes;
+- a microservice built;
+- a `CronJob`, a leader election or any single-instance mechanism;
+- an experiment against anything the run did not create;
+- an apply to a real account;
+- a claim of production readiness, compliance or certification.
+
+A reviewer finding any of it refuses the change.
+
+**The owner decisions** (2026-11-12, C1–C12, `PHASE_16_PLAN.md` §2.2), **proposed and awaiting the owner**; the first task depends
+on none:
+- **C1**: the experiments, drills and the integrated soak (`P16-TST-001`) are the phase's substance and are not postponed. No new
+  in-process storm is written. The storms of Phases 13–15 stay PI-004's.
+- **C2**: the experiments run their own stack, and the fleet tiers stay skipped per task.
+- **C3**: the connection budget at ten is decided by measurement (`-009`). The `kind` drill raises the test-only server.
+- **C4**: designed-only criteria are accepted as such, each with its local analogue executed.
+- **C5**: the load tool is k6, pinned by digest.
+- **C6**: faults are injected with primitives plus Toxiproxy.
+- **C7**: a test-only streaming-replication pair serves as the local failover.
+- **C8**: the reference production workload is W1–W8.
+- **C9**: the RTO/RPO tiers are ADR-0128's.
+- **C10**: one region, multi-AZ active-passive, with no active-active writes.
+- **C11**: a narrow pre-flight of PI-023's suites runs before the ten-instance drill, and PI-024's `incidents` steps are run as
+  Phase 16's experiments.
+- **C12**: automatic rail availability is decided on measured failure rates.
+
+**P16-TSK-001 — The capacity model, the experiment register and its guard** — `READY` (marked by the Phase 15 → 16 transition, 2026-11-12)
+- **Objective**: give every later task one place to measure into and one register to record into, held by a guard, before any
+  measurement or experiment exists.
+- **Affected components**: documents (`docs/architecture/CAPACITY_MODEL.md` new, `docs/architecture/RESILIENCE_EXPERIMENTS.md` new,
+  `PRODUCTION_READINESS.md`, `THREAT_MODEL.md` §6 item 43 (g) by a dated note); one guard test in `app`
+  (`com.finapp.app.architecture`).
+- **Dependencies**: Phase 15 confirmed by its completion gate (`P15-GATE`).
+- **Scope**:
+  - `CAPACITY_MODEL.md` carries `PHASE_16_PLAN.md` §4: the three workloads, W1–W8 and the per-operation table, with the resource
+    columns left for `-007`. W7's events per movement are read from the catalogues. It also carries §6.2's budget arithmetic and
+    §14's strategies.
+  - `RESILIENCE_EXPERIMENTS.md` carries §9.2's experiments and §13's fifteen scenarios. Every field is filled, and the result and
+    remediation slots are left empty.
+  - `ResilienceExperimentsAreRegisteredTest`.
+  - The readiness cells that read "a Phase 16 drill no backlog entry holds" are re-pointed at `-022` and `-023`, and item 43 (g)
+    gains a dated note naming them. No finished task is cited.
+  - **Exclusions**: any measurement, harness or experiment.
+- **Workload assumptions**: W1–W8 written as the owner's to change (C8). No number invented without its assumption.
+- **Infrastructure and code changes**: none at runtime; one test class.
+- **Financial correctness implications**: none directly. The register's census column is where every later result proves the
+  seven checks of `PHASE_16_PLAN.md` §13.
+- **Multi-instance concerns**: the register requires every experiment to state its instance count. `PASS` vacuously, recorded.
+- **Failure scenarios**: a document; reverted by a commit.
+- **Security considerations**: the register names no credential or endpoint. The safety column is mandatory.
+- **Test and experiment methodology**: the guard holds the following, and the document guards (`AdrRegistersAreReconciledTest`,
+  `ProductionReadinessIsEvidencedTest`, `ThreatModelIsCompleteTest`) stay green:
+  - every experiment carries hypothesis, affected units, expected behaviour, safety, success criteria, stop, result and
+    remediation;
+  - a filled result names its date, commit and artefacts path;
+  - a `FAILED` result names a live backlog task;
+  - every scenario of §13 maps to at least one experiment;
+  - an `N/A` names its reason.
+- **Probe**: these plants each turn the guard red:
+  - a register row without a stop condition;
+  - a `FAILED` result naming a `COMPLETE` task;
+  - a scenario with no experiment.
+- **Measurable acceptance criteria**: the two documents exist with every row; the guard is green, and red on each probe; the
+  readiness and threat-model notes are in place.
+- **Definition of done**: `DOD-ARCH`, `DOD-DOC`, `DOD-TEST`.
+- **Operational documentation**: the two new documents; `OPERATIONS_RUNBOOK.md` unchanged.
+- **Risk**: Low. **Cx**: M.
+
+**P16-TSK-002 — Guards that hold what they are named for (`P15-REM-004`)** — `PLANNED`
+- **Objective**: `P15-REM-004`'s (a)–(g), Phase 16's first wave by that entry's horizon. Each guard named in it is made to hold
+  what its name says.
+- **Affected components**: `app`'s guards: `SecurityScansAreWiredTest`, `TerraformIsPinnedAndCheckedTest`, `AlertCatalogueTest`,
+  `ConfigurationRegisterIsCompleteTest`, a new `DISTRIBUTED_EXECUTION.md` §3 guard. Also `SECRET_MANAGEMENT.md` §5.1, and three
+  production comments.
+- **Dependencies**: none.
+- **Scope**: as `P15-REM-004` lists, (a) to (g). **Exclusions**: any production behaviour (only comments in production sources).
+- **Workload assumptions**: none.
+- **Infrastructure and code changes**: tests and documents; three comments in production sources.
+- **Financial correctness implications**: none moves; a guard that passes a defect hides one.
+- **Multi-instance concerns**: (a) holds the component register both ways against the lifecycle beans and the arbitration classes,
+  so a new arbiter cannot land without its row.
+- **Failure scenarios**: none at runtime.
+- **Security considerations**: (b) holds the static-analysis baseline to `THREAT_MODEL.md` §6 item 12's accepted rows; (e) adds the
+  TLS certificate and image-signing classes to the rotation table with a revocation procedure each.
+- **Test and experiment methodology**: each tightened guard gets a planted defect, seen red.
+- **Probe**: a lifecycle bean missing from §3; a fourth baseline row; a Terraform directory with no test file; a promtool case that
+  names an alert and never fires it.
+- **Measurable acceptance criteria**: (a)–(g) each closed with its guard green and its plant red; `P15-REM-004` marked `COMPLETE`
+  by this task's gate.
+- **Definition of done**: `DOD-TEST`, `DOD-DOC`.
+- **Operational documentation**: `SECRET_MANAGEMENT.md` §5.1's new rows.
+- **Risk**: Low. **Cx**: M.
+
+**P16-TSK-003 — The platform's own components watched: the edge, the migrator, the telemetry stack (`THREAT_MODEL.md` §6 item 43 (b))** — `PLANNED`
+- **Objective**: as decided 2026-11-12, in Phase 16's first wave: a migration that fails at night wakes someone, and the edge's
+  errors are seen.
+- **Affected components**:
+  - `deploy/observability/` (scrape configuration, collector pipelines);
+  - `deploy/edge/` (metrics and access-log shipping);
+  - `infra/prometheus/rules/platform.yml` and its `infra/prometheus/tests/`;
+  - `OPERATIONS_RUNBOOK.md` §11;
+  - the `kind` harness's telemetry steps.
+- **Dependencies**: none.
+- **Scope**:
+  - the edge's metrics scraped;
+  - the edge's, the migrator's and the telemetry stack's lines shipped through the collector, structured where the source allows,
+    with the scrub applied;
+  - a rule on a failed or overdue migrator Job;
+  - a rule on the edge's error ratio, owned by `platform`;
+  - promtool cases for each rule, firing on a synthetic failure and silent on health;
+  - a runbook section for each.
+
+  **Exclusions**: the managed services' own signals (item 43 (a), the first real environment).
+- **Workload assumptions**: none; the error-ratio threshold proposed from the SLOs and recalibrated by `-029`.
+- **Infrastructure and code changes**: manifests, collector configuration, rules, tests; no application code.
+- **Financial correctness implications**: a stalled migrator holds a release, never money. Seeing it shortens the window a release
+  waits.
+- **Multi-instance concerns**: the edge has two controllers per edge, and the error ratio sums over both.
+- **Failure scenarios**: a failed Job; a Job past its deadline; an edge answering `5xx`; the collector down (existing
+  `TelemetryCollectorDown`).
+- **Security considerations**: shipped access logs pass the needle sweep (`DATA_CLASSIFICATION.md`). No credential, token or query
+  string with an identifier is shipped.
+- **Test and experiment methodology**:
+  - `promtool test rules` cases;
+  - the alert catalogue's guard;
+  - on `kind`: a planted failing migrator Job raises the alert, and the edge's lines found in Loki carry no needle.
+- **Probe**: remove the Job rule's `for:`, and its silent case goes red; plant a needle in an access log, and the sweep goes red.
+- **Measurable acceptance criteria**: the edge scrape target is up; three new log streams are searchable; two rules each fire and
+  stay silent as their cases say; the readiness cells of item 43 (b) can be re-ruled with evidence.
+- **Definition of done**: `DOD-OBS`, `DOD-BUILD`.
+- **Operational documentation**: two new runbook sections.
+- **Risk**: Low. **Cx**: M.
+
+**P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `PLANNED`
+- **Objective**: as decided 2026-11-12, in the first wave.
+  - (c) The quota part: a `ResourceQuota` for `finapp-edge` and `finapp-observability`, each sized from its own worst moment as
+    `finapp`'s is.
+  - (b) `trivy config` at HIGH and CRITICAL over every rendered overlay in the `manifests` job, a second net beside the policies, a
+    finding carried as item 12's are.
+- **Affected components**: `deploy/edge/`, `deploy/observability/`, `infra/scripts/manifest-check.sh`, `infra/scripts/manifest-policy/`,
+  `.github/workflows/ci.yml`, `infra/trivy/`.
+- **Dependencies**: none.
+- **Scope**: as above, and ADR-0122 decision 2 corrected by a dated note. **Exclusions**: the observability overlay per
+  environment (item 43 (c)'s other half, before the first real environment).
+- **Workload assumptions**: the quotas are sized from the manifests' own requests and limits plus surge, not from load. `-015`
+  revisits them with measured numbers.
+- **Infrastructure and code changes**: manifests, the check script, CI; the scanner is pinned already.
+- **Financial correctness implications**: none.
+- **Multi-instance concerns**: each quota admits its namespace's maximum replicas plus surge, as `finapp`'s formula does.
+- **Failure scenarios**: a quota too tight refuses a rollout's surge; the policy checks it.
+- **Security considerations**: a misconfiguration catalogue the platform did not write now reads every overlay.
+- **Test and experiment methodology**: the manifest check runs locally and in CI; a planted privileged container in one overlay is
+  found by Trivy; a planted over-quota surge is refused by the policy.
+- **Probe**: remove the quota from `finapp-edge`, and the policy goes red; plant a `hostPath` mount, and Trivy reports it.
+- **Measurable acceptance criteria**: both quotas exist and are held by policy; Trivy reports zero HIGH and CRITICAL findings on
+  every overlay, or each finding is recorded with an expiry in item 12's form.
+- **Definition of done**: `DOD-BUILD`, `DOD-SEC`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's check list widened.
+- **Risk**: Low. **Cx**: S.
+
+**P16-TSK-005 — The edge, PostgreSQL and the broker rolled and rolled back on `kind` (`THREAT_MODEL.md` §6 item 43 (f))** — `PLANNED`
+- **Objective**: as decided 2026-11-12, in the first wave. The three `kind` steps that need no account: each component changes
+  version under a workload and comes back.
+- **Affected components**: the `kind` harness (a step per component), `deploy/edge/`, `deploy/overlays/kind/postgres.yaml`,
+  `deploy/overlays/kind/kafka.yaml`.
+- **Dependencies**: none (the harness exists).
+- **Scope**: the steps below, each run under the rehearsal's workload with the census after:
+  - the edge's controller image rolled one version forward and back;
+  - the test-only PostgreSQL restarted onto a newer patch image and back;
+  - the test-only broker likewise.
+
+  **Exclusions**: a managed minor upgrade (the first real environment).
+- **Workload assumptions**: the rehearsal's existing workload (demonstration scale).
+- **Infrastructure and code changes**: harness steps; pinned image pairs in `infra/scanner-pins.sh`.
+- **Financial correctness implications**: a database restart under traffic must lose nothing committed. The census, with one effect
+  per key, checks it.
+- **Multi-instance concerns**: three application replicas through each roll; the edge's two controllers roll one at a time.
+- **Failure scenarios**: a controller rolled while serving; the database away during its restart (readiness down, liveness up); the
+  broker away (outbox waits).
+- **Security considerations**: pinned digests only; nothing pulled by tag.
+- **Test and experiment methodology**: the `kind` run with its record; the harness's contract test holds the steps' text.
+- **Probe**: the edge's `maxUnavailable` set to its replica count, and the step's zero-failed-requests assertion goes red.
+- **Measurable acceptance criteria**: three steps green in one recorded run; failed requests through the edge's roll equal zero;
+  the census green after each step.
+- **Definition of done**: `DOD-BUILD`, `DOD-TEST`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.26's roll procedure and §11.28's record.
+- **Risk**: Medium (machine load). **Cx**: M.
+
+**P16-TSK-006 — The load harness: k6 through the real edge, invariants sampled during load (ADR-0126, C5)** — `PLANNED`
+- **Objective**: one reproducible way to drive every profile of `PHASE_16_PLAN.md` §5.1 through the deployed platform's real edge,
+  with the financial invariants read while the load runs.
+- **Affected components**:
+  - `infra/scanner-pins.sh` (k6 pinned by digest);
+  - a `load` scope in the `kind` harness;
+  - k6 scenarios under `infra/scripts/kind-rehearsal/load/`;
+  - `Rehearsal.java` (setup of customers, sessions and signed callbacks only);
+  - the census sampler;
+  - the run's artefacts directory.
+- **Dependencies**: `-001`.
+- **Scope**:
+  - the §4.3 operation mix as scenarios, with arrival-rate executors;
+  - 5% same-key retries;
+  - the sampler, every 30 s: the correctness signals from Prometheus and `census.sql`'s committed-fact clauses in a read-only
+    repeatable-read snapshot, plus PostgreSQL's statistics every 10 s (`pg_stat_statements` enabled in the test-only server);
+  - the demonstration run, green.
+
+  **Exclusions**: the engineering measurement (`-007`); any change to the application.
+- **Workload assumptions**: the demonstration workload, 5 money movements a second for 10 minutes with reads at ten times that.
+- **Infrastructure and code changes**: tooling only; the test-only server's `shared_preload_libraries` in the `kind` overlay.
+- **Financial correctness implications**: the sampler is the during-load half of `PHASE_GATES.md` §5 Phase 16 criterion 1. A
+  failing sample fails the run.
+- **Multi-instance concerns**: the generator reaches the replicas through the edge, never one pod; the same-key retries land on
+  different replicas.
+- **Failure scenarios**:
+  - the generator itself saturated: recorded, and the run invalid;
+  - the sampler unable to read: the run fails, never passes blind.
+- **Security considerations**: the generator holds only the run's generated credentials; the harness refuses a foreign context.
+- **Test and experiment methodology**: the harness's contract test; the demonstration run recorded in the register.
+- **Probe**: these runs must each fail:
+  - a run with the sampler disabled;
+  - a planted unbalanced entry inserted by the test-only superuser mid-run (the sample catches it);
+  - a run whose generator drops its open model.
+- **Measurable acceptance criteria**: the demonstration run green with every sample recorded; the latency percentiles, errors and
+  saturation signals in the artefacts; each probe red.
+- **Definition of done**: `DOD-BUILD`, `DOD-TEST`, `DOD-FIN`.
+- **Operational documentation**: a runbook section on running a load test and reading its artefacts.
+- **Risk**: Medium. **Cx**: L.
+
+**P16-TSK-007 — The workload baseline: the demonstration run and the engineering workload measured** — `PLANNED`
+- **Objective**: measure the engineering test workload and name the platform's first limit on the reference machine, with the
+  evidence.
+- **Affected components**: `CAPACITY_MODEL.md` (filled); the register; no code.
+- **Dependencies**: `-006`.
+- **Scope**:
+  - the normal, peak, sustained (2 h) and stress profiles;
+  - per operation: throughput, p50/p95/p99, errors, CPU, memory, GC, threads, pool, database time;
+  - the first limit named in `PHASE_16_PLAN.md` §5.4's order;
+  - the ratio of the proposed production target to what was carried.
+
+  **Exclusions**: fixing the limit; the soak (`P16-TST-001`).
+- **Workload assumptions**: W1–W8 for the target; the engineering workload is found, never chosen.
+- **Infrastructure and code changes**: none.
+- **Financial correctness implications**: every run with the invariants during load; any failure is a defect, owned by a task.
+- **Multi-instance concerns**: three replicas (today's minimum) and seven (today's ceiling); per-replica saturation compared.
+- **Failure scenarios**: a run killed by the machine (memory, disk) recorded as an environment limit with its numbers.
+- **Security considerations**: none beyond `-006`'s.
+- **Test and experiment methodology**: the recorded runs; each number traceable to its artefact.
+- **Probe**: a planted slow statement (a missing index on a test-only copy); the stress profile names the database as the first
+  limit.
+- **Measurable acceptance criteria**: the capacity model's measured columns filled for every §4.3 operation; the first limit named
+  with evidence; the demonstration run's invariants green at every sample.
+- **Definition of done**: `DOD-TEST`, `DOD-DOC`.
+- **Operational documentation**: `CAPACITY_MODEL.md`.
+- **Risk**: Medium. **Cx**: M.
+
+**P16-TSK-008 — Hot rows, locks, deadlocks and plans under load** — `PLANNED`
+- **Objective**: measure every known contended financial resource and the database's behaviour under the concurrent-financial and
+  soak profiles, and decide by measurement whether any needs a mechanism (`PHASE_16_PLAN.md` §6.3–§6.5, §6.7).
+- **Affected components**: `ledger` (the projection's hot rows), `fx` (`FX_POSITION`, `FX_SPREAD_REVENUE`), `lending` and `bnpl`
+  (`LENDING_CAPITAL`, `BNPL_MERCHANT_FEE_INCOME`), `settlement` (`settlement.source FOR UPDATE`), `platform` (the window counter, the
+  idempotency claim), `risk` (the whole-day proofs, the rescreening census).
+- **Dependencies**: `-007`.
+- **Scope**:
+  - lock waits per hot row;
+  - deadlocks and serialisation failures, each explained;
+  - the top statements' plans;
+  - autovacuum, WAL and checkpoints over a soak;
+  - the transactional index build's write stop on a large table (item 42 (b));
+  - the debt rows re-dated here, each read and ruled:
+    - #52 the claim's lock order;
+    - #53 the namespace 3 hash;
+    - the source lock;
+    - the rescreening census and the whole-day proofs;
+    - the capital row and L6 across BNPL's waits;
+    - capital tranches.
+
+  **Exclusions**: building a mechanism without an ADR; any isolation change.
+- **Workload assumptions**: the concurrent-financial profile (many clients, few accounts) at the engineering workload and at the
+  target's burst.
+- **Infrastructure and code changes**: none, unless an ADR this task writes decides a mechanism (sub-accounts by purpose, ADR-0041),
+  in which case it is built here with its proofs summing the buckets.
+- **Financial correctness implications**: the mechanism, if any, keeps every posting one balanced entry and every proof whole. The
+  never-list of §6.4 binds.
+- **Multi-instance concerns**: the contention is the instances' contention, measured at seven replicas.
+- **Failure scenarios**: a deadlock storm; a lock queue past its objective; an index build stopping a table's writes.
+- **Security considerations**: none.
+- **Test and experiment methodology**: experiments with the census; any mechanism gets database cases written (owed, C2) and a
+  hermetic proof where possible.
+- **Probe**: remove `lockBalancesInOrder` from one multi-entry path on a throwaway branch; the deadlock count rises and is attributed
+  to that path.
+- **Measurable acceptance criteria**: every hot row with its wait distribution; every deadlock explained; every debt row ruled with
+  its measurement; an ADR for any mechanism, or a recorded "no mechanism needed at the target".
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`.
+- **Operational documentation**: `CAPACITY_MODEL.md`'s contention section; the debt rows' dispositions.
+- **Risk**: Medium. **Cx**: L.
+
+**P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `PLANNED`
+- **Objective**: make ten replicas possible without breaking the connection budget, decided by measurement, and give the HPA a
+  metric to act on. Today `maxReplicas` 7 + 2 × `maxSurge` 1 + 1 = 10 = `FINAPP_DB_INSTANCES`. Ten replicas need 13 instances and
+  104 connections, against 88 usable. The `kind` rehearsal installs no metrics source, so the HPA has never scaled (`P15-REM-007`,
+  the Phase 15 gate's G-3).
+- **Affected components**:
+  - `deploy/base/horizontalpodautoscaler.yaml`, `deploy/base/kustomization.yaml`, `deploy/base/resourcequota.yaml`;
+  - the overlays;
+  - `infra/terraform/modules/postgres` (`max_connections`, instance class);
+  - `application.yaml`'s budget;
+  - `ConnectionPoolSizingGuard`'s inputs;
+  - the `kind` overlay (a pinned metrics-server, test-only; a raised `max_connections`);
+  - a PgBouncer evaluation in containers.
+- **Dependencies**: `-007`.
+- **Scope**:
+  - measure pool utilisation and wait per replica at the engineering workload;
+  - evaluate a transaction-mode pooler for the server-side prepared statements question (`PHASE_15_PLAN.md` §12);
+  - decide, per environment, a larger server, a smaller pool or a pooler (C3);
+  - for `kind`, set the overlay to the formula for ten;
+  - install a metrics source on `kind`;
+  - re-prove `KubernetesManifestsTest` and the policy.
+
+  **Exclusions**: production `maxReplicas` above 7 before the decision; a pooler in a deployed overlay without an ADR.
+- **Workload assumptions**: the engineering workload; the target's peak per replica.
+- **Infrastructure and code changes**: manifests, Terraform variables, the budget's numbers; a pooler only if decided (with an ADR
+  and its own manifest).
+- **Financial correctness implications**: the budget protects operator access during an incident. A pooler must preserve every
+  transaction-scoped lock and setting the arbiters use (only transaction-scoped ones exist); the evaluation proves it with the
+  arbiters' cases (owed, C2) and an experiment.
+- **Multi-instance concerns**: the subject. The peak `pg_stat_activity` for `application_name = 'finapp'` is measured during a
+  rollout at the new maximum.
+- **Failure scenarios**: budget exceeded (the guard refuses to start); pooler down (every replica unready); a prepared statement
+  invalid under pooling.
+- **Security considerations**: a pooler terminates and re-originates TLS; `verify-full` must hold on both hops.
+- **Test and experiment methodology**: the measurement runs; the manifest guard and policy with the new numbers; the planted
+  over-budget ceiling refused.
+- **Probe**: `maxReplicas` raised without the budget; the policy goes red.
+- **Measurable acceptance criteria**: the decision recorded with its measurement; the `kind` overlay admitting ten replicas within
+  its budget; the HPA's metric available on `kind`; the formula re-proved; an operator connection admitted at the measured peak.
+- **Definition of done**: `DOD-ARCH`, `DOD-BUILD`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's budget procedure; `DISTRIBUTED_EXECUTION.md` §4a.
+- **Risk**: Medium. **Cx**: M.
+
+**P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `PLANNED`
+- **Objective**: as decided 2026-11-09, scheduled into Phase 16's archival:
+  - the audit archival designed in `DATA_RETENTION.md` §3 is built;
+  - expired session rows are swept, sized by the volume `-007` measured.
+- **Affected components**: `platform` (audit), `identity` (sessions), `DATA_RETENTION.md`, the retention sweeps' schedule family, the
+  archive (a local object store on `kind`; Object Lock designed for the real bucket).
+- **Dependencies**: `-007`.
+- **Scope**:
+  - archival copies audit records past their period to write-once storage, verifies the copy and only then marks them archived,
+    queryable through a read path;
+  - **no audit record is deleted unless its archived copy is verified**, and deletion waits on the jurisdiction's period (`OPEN`,
+    item 21 (b)), so this task archives and keeps the rows;
+  - the session sweep removes only rows past expiry plus a grace, never a live session.
+
+  **Exclusions**: any purge of financial evidence (C12 of Phase 15); a retention period invented for a jurisdiction.
+- **Workload assumptions**: W1's sessions; audit rows per day measured by `-007`.
+- **Infrastructure and code changes**: two leaderless, batched schedules (`SKIP LOCKED`); a migration for the archive marker; the
+  sweeps' meters.
+- **Financial correctness implications**: none moves; the audit trail stays complete (`INV-AUD-*`'s family, ADR-0010) and queryable.
+- **Multi-instance concerns**: the sweeps are leaderless and claim in batches; ten instances archive each row once (a born-once
+  marker). Each sweep gets its `DISTRIBUTED_EXECUTION.md` §3 row.
+- **Failure scenarios**: the archive store unavailable (nothing marked, retried); a crash between copy and mark (the copy verified
+  again, idempotent by key).
+- **Security considerations**: the archive is encrypted and write-once; the application role never gains `DELETE` on audit.
+- **Test and experiment methodology**: hermetic tests of the batching and the refusal to mark an unverified copy; database cases
+  written and owed (C2); an experiment on `kind` with the archive store stopped mid-run.
+- **Probe**: mark before the copy is verified; the test goes red.
+- **Measurable acceptance criteria**:
+  - archival and sweep run at ten instances with each row once;
+  - an unavailable store loses nothing;
+  - the sessions table bounded over the soak;
+  - the readiness and threat-model rows of item 18 re-ruled.
+- **Definition of done**: `DOD-KERNEL`, `DOD-SEC`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.15 widened.
+- **Risk**: Medium. **Cx**: L.
+
+**P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `PLANNED`
+- **Objective**: as decided:
+  - land a uniqueness on the posting scope (`journal_entry.idempotency_scope` is not `UNIQUE`);
+  - then sweep expired idempotency records, which today would remove the second rank of posting once-ness;
+  - revoke the application's unused `DELETE` on the idempotency record.
+- **Affected components**: `ledger` (a migration; the posting path's conflict handling), `platform` (the idempotency store and a sweep),
+  the grants.
+- **Dependencies**: `-008`, because the uniqueness is measured on the posting hot path.
+- **Scope**:
+  - an expand-safe migration;
+  - the existing rows proven unique first, by a census;
+  - the conflict on insert mapped to the stored outcome, never a second entry;
+  - the sweep of records past their bound;
+  - the grant revoked (the sweep runs as the role that keeps `DELETE`, or through a definer function).
+
+  **Exclusions**: any change to what an idempotency key means.
+- **Workload assumptions**: postings per day from W1–W7; the sweep's batch sized from `-007`.
+- **Infrastructure and code changes**: ledger and platform migrations; a schedule; a grant change.
+- **Financial correctness implications**: `INV-IDEM-*` and `INV-LED-*`. The posting stays once after its record is swept. A
+  duplicate posting attempt answers the stored outcome.
+- **Multi-instance concerns**: ten instances posting the same scope give one entry by the constraint; the sweep is leaderless.
+- **Failure scenarios**: the migration finds a duplicate (it stops, and the duplicate becomes a finding, never deleted); a retry after
+  the sweep finds the posting by its scope.
+- **Security considerations**: least privilege by the revoked grant.
+- **Test and experiment methodology**: database cases written and owed (C2); a hermetic proof of the mapping; on `kind`, the
+  same-key retries of `-006` after a forced sweep, with one effect per key.
+- **Probe**: drop the constraint on a throwaway branch, and the concurrent same-scope case shows two entries.
+- **Measurable acceptance criteria**: the constraint in place; zero duplicate scopes found; the sweep running; the grant revoked; the
+  census green after a sweep under load.
+- **Definition of done**: `DOD-FIN`, `DOD-KERNEL`.
+- **Operational documentation**: `DATA_RETENTION.md`; `OPERATIONS_RUNBOOK.md` §11.15.
+- **Risk**: High (the posting path). **Cx**: L.
+
+**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `PLANNED`
+- **Objective**: decide, from the soak's growth rates extrapolated to the production target, whether any high-volume table needs
+  partitioning. Decide whether report generation needs a replica, and hold `PHASE_GATES.md` §5 Phase 16 criterion 6 by a guard
+  either way.
+- **Affected components**: `ledger` (journal lines), `platform` (outbox, inbox, audit, idempotency), the reporting pool (`app`), the
+  anticipated partitioning ADR.
+- **Dependencies**: `-008`.
+- **Scope**:
+  - growth per table per day;
+  - the queries a partition key would serve;
+  - the decision recorded as an ADR whether or not partitioning is built;
+  - a guard: one primary data source serves every money-moving door, or, if a replica is routed, it serves the reporting pool alone,
+    no money-moving door reaches that pool, and a report states its replay position.
+
+  **Exclusions**: partitioning built without the ADR; a replica for any decision read.
+- **Workload assumptions**: W1–W8 projected over three years.
+- **Infrastructure and code changes**: the guard; a replica route only if decided (a cut candidate).
+- **Financial correctness implications**: a replica never answers a decision (ADR-0129). Partitioning must keep every proof's scan
+  and every unique constraint whole.
+- **Multi-instance concerns**: none new.
+- **Failure scenarios**: replica lag (a report states it); replica down (reporting refuses, money unaffected).
+- **Security considerations**: the replica, if any, is reached by `finapp_reporting` alone.
+- **Test and experiment methodology**: the guard with a planted door reaching the reporting pool, red; growth measured in the soak.
+- **Probe**: a money-moving door wired to the reporting data source; the guard goes red.
+- **Measurable acceptance criteria**: an ADR for each decision; criterion 6's guard green and red on its probe.
+- **Definition of done**: `DOD-ARCH`, `DOD-FIN`.
+- **Operational documentation**: `DATA_ARCHITECTURE.md`'s growth section.
+- **Risk**: Low. **Cx**: M.
+
+**P16-TSK-013 — The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `PLANNED`
+- **Objective**: `PHASE_16_PLAN.md` §7 at the engineering workload on a test-only three-broker KRaft cluster on `kind`, with
+  replication 3 and `min.insync.replicas` 2.
+- **Affected components**: `deploy/overlays/kind/kafka.yaml`, `infra/kafka/topics.yaml` (read, unchanged for production), `platform`'s
+  relay and consumers (measured, unchanged unless a defect).
+- **Dependencies**: `-007`.
+- **Scope**:
+  - partition skew per key;
+  - lag at peak and drain after a burst;
+  - the relay's ceiling;
+  - scale 3 → 7 → 3 during load (ten at `-014`);
+  - experiment E08 (one broker lost) and E09 (all brokers lost for 10 minutes);
+  - E22 and E23 (duplication and delay);
+  - a day's replay through the audited door inside the dedupe window.
+
+  **Exclusions**: a managed broker's failover (designed-only); a partition-count change in production.
+- **Workload assumptions**: W7's events per movement at the engineering workload.
+- **Infrastructure and code changes**: the `kind` overlay's broker StatefulSet at three; harness steps.
+- **Financial correctness implications**: one effect per record across rebalances and broker loss; nothing lost in an outage
+  (`INV-EVT-*`).
+- **Multi-instance concerns**: group membership at three and seven; idle members past 12 partitions noted for ten.
+- **Failure scenarios**: E08, E09, E22, E23; a poison record burst parks without stopping the group.
+- **Security considerations**: `SASL_SSL` with SCRAM on all three brokers, as the rehearsal does today on one.
+- **Test and experiment methodology**: the experiments with the census; `KafkaInboxDeliveryKafkaTest`'s cases owed (C2) cited as
+  the per-component proof.
+- **Probe**: set `min.insync.replicas` 1 on `kind`, kill a broker during writes, and show the risk recorded (an acknowledged write on
+  one replica); the production value restored.
+- **Measurable acceptance criteria**: as `PHASE_GATES.md` §5 Phase 16's Kafka block; every experiment's register row filled.
+- **Definition of done**: `DOD-EVENT`, `DOD-TEST`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.6 rehearsed (closing that part of PI-024 under C11).
+- **Risk**: Medium (machine load). **Cx**: L.
+
+**P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `PLANNED`
+- **Objective**: the ten-instance answer counted. Ten application replicas carry the engineering workload on `kind`, scale between
+  three and ten under a real metric, and roll during load, with one effect per key and the census green throughout. This closes the
+  deviation B that the Phase 15 completion gate left with this task, and `P15-REM-007`'s observed scaling.
+- **Affected components**: every unit on `kind`; the HPA; the budget (from `-009`); the harness.
+- **Dependencies**: `-009`, `-013`.
+- **Scope**:
+  - C11's pre-flight first, if the owner chooses it (the database and Kafka tiers of `platform`, `ledger`, `transfers` and
+    `payments` and the Phase 15 arbiters' ten-way cases, run once);
+  - then the sustained profile at ten;
+  - an HPA scale-up from three to ten and a scale-down to three under load, each decided by the metric, each with the census after;
+  - a rolling deploy N − 1 → N at ten (E26) and a rollback;
+  - the peak `pg_stat_activity` within the budget, with an operator connection admitted.
+
+  **Exclusions**: production `maxReplicas` changed (that is `-009`'s decision).
+- **Workload assumptions**: the engineering workload; the target's peak if carried.
+- **Infrastructure and code changes**: none beyond `-009`'s.
+- **Financial correctness implications**: the invariants during load; one effect per key; no orphaned lease; the outbox drained; GL
+  = ledger.
+- **Multi-instance concerns**: the subject. Every schedule and consumer runs ten competitors, and every arbiter is exercised at ten
+  through HTTP.
+- **Failure scenarios**: scale-down terminating pods mid-claim; a rebalance per scale step; the budget's peak during the roll.
+- **Security considerations**: the abuse limits exact at ten (counted here, judged in `-028`).
+- **Test and experiment methodology**: the recorded run; the register; the census at every sample.
+- **Probe**: the HPA's scale-down policy removed, so several pods terminate at once; the peak passes the budget, and the measurement
+  shows it.
+- **Measurable acceptance criteria**: a recorded run at ten with zero census failures at every sample; a scale-up and a scale-down
+  observed; zero failed requests through the roll beyond those in flight on a killed pod; the ten-instance answer recorded `PASS` on
+  counts, or `FAIL` with its remediation task.
+- **Definition of done**: `DOD-TEST`, `DOD-FIN`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.28's record at ten; `P15-REM-007` closed.
+- **Risk**: High (the machine may not hold ten; the record says so). **Cx**: L.
+
+**P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `PLANNED`
+- **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection
+  limit (item 32 (b)) from measurement. Decide the `api`/`worker` role split that Phase 15's C5 left to this measurement.
+- **Affected components**: `deploy/base/`, the edge's middleware, `application.yaml`'s abuse limits, `CAPACITY_MODEL.md`.
+- **Dependencies**: `-014`.
+- **Scope**:
+  - the HPA metric and target per the measured per-replica cost;
+  - scale-down stabilisation of at least one grace period;
+  - the abuse limits per source re-derived from W1–W3 with the carrier-NAT finding of item 33 (b) answered;
+  - the edge's per-source connection limit and the WAF's sizing, designed-only for the product;
+  - the role split decided by whether schedules and consumers harm request latency at load, recorded as an ADR if split.
+
+  **Exclusions**: a split built without the ADR.
+- **Workload assumptions**: the target's peak and burst.
+- **Infrastructure and code changes**: manifest and property values; a second Deployment only if the ADR decides it, with the rule
+  that no role ever runs at zero.
+- **Financial correctness implications**: a property classed `FINANCIAL` changes only through the two-person path; the abuse limits
+  are `OPERATIONAL`.
+- **Multi-instance concerns**: a role split must keep every schedule's competitors ≥ 2 and leaderless.
+- **Failure scenarios**: an HPA oscillating; a limit refusing legitimate traffic behind NAT.
+- **Security considerations**: limits stay cluster-wide (`WindowCounter`).
+- **Test and experiment methodology**: a peak and burst run with the new values; the configuration register's guard.
+- **Probe**: an abuse limit set below one person's need; the burst run's refusals of legitimate traffic are counted and shown.
+- **Measurable acceptance criteria**: each value with its derivation in the capacity model; the burst run within its SLOs; the role
+  split decided with its evidence.
+- **Definition of done**: `DOD-BUILD`, `DOD-SEC`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.30 and §11.14.
+- **Risk**: Medium. **Cx**: M.
+
+**P16-TSK-016 — Load shedding before the financial effect, and bulkheads** — `PLANNED`
+- **Objective**: when the platform cannot finish a money-moving command in time, refuse it with `503` and `Retry-After` before its
+  idempotency claim and before any financial effect, never after (`DELIVERY_PLAN.md` §Phase 16 §7). Give each class of work that can
+  starve another its own bound.
+- **Affected components**: `app` (a shedding filter or interceptor ahead of the idempotent executor; per-class bulkheads), `platform`
+  (the executor's ordering, read only), `API_CONVENTIONS.md`, `ERROR_CONTRACT.md`.
+- **Dependencies**: `-007`.
+- **Scope**:
+  - admission by the pool's pending queue and the request's remaining deadline;
+  - per-class bounds for operator reports, provider inquiries and money-moving commands;
+  - the shed answer in the contract;
+  - a shed command leaves no row, so its retry is a first attempt.
+
+  **Exclusions**: shedding after a claim; queueing a money command in memory.
+- **Workload assumptions**: the burst and spike profiles.
+- **Infrastructure and code changes**: application code; contract additions; meters for shed requests per class.
+- **Financial correctness implications**: the point of the task. Shed is only ever before the claim, so a shed command never has a
+  half effect. `INV-IDEM-*` holds across a shed and a retry.
+- **Multi-instance concerns**: per-instance admission (protecting that instance's threads); nothing financial decided by it. Its
+  `DISTRIBUTED_EXECUTION.md` §3 row.
+- **Failure scenarios**: shedding during a dependency slowdown; a retry storm after shedding (`Retry-After` with jitter).
+- **Security considerations**: shedding never bypasses authentication or authorisation; a shed answer leaks nothing.
+- **Test and experiment methodology**: hermetic tests that a shed happens before the claim; the spike profile with same-key retries,
+  one effect per key.
+- **Probe**: move the shed after the claim; a test shows a claim row left for a shed request.
+- **Measurable acceptance criteria**: zero claims, rows or postings for shed requests across the spike profile; the shed rate and
+  its recovery measured; the contract updated.
+- **Definition of done**: `DOD-API`, `DOD-FIN`.
+- **Operational documentation**: a runbook section on a shedding platform.
+- **Risk**: High. **Cx**: L.
+
+**P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `PLANNED`
+- **Objective**: as decided 2026-11-12. A sweep's failed tick is metered and paged (item 42 (i) (i)), and each listing skips and
+  counts a row it cannot rehydrate ((ii); the corrupt card attempt debt row). A row failing every tick gains a failure count and a
+  backoff (the poisoned-row debt row). A rematch residual faulting every tick gains a durable exclusion (the rematch debt row).
+- **Affected components**: `payments` (the card, withdrawal, dispute-answer, return and pay-in initiation sweeps), `merchant` (the
+  payout sweep), `reconciliation` (rematch), their rules and runbook §11.39.
+- **Dependencies**: `-001`.
+- **Scope**: as above, for each sweep runbook §11.39 (a) names. **Exclusions**: a raw writer's corruption (T15, PI-016) is detected,
+  not prevented.
+- **Workload assumptions**: none; the backoff bounded so a recovered row is retried within its SLO.
+- **Infrastructure and code changes**: listings changed; a failure-count column on the contended sweep tables (a schema change on
+  hot tables, measured against `-008`); counters; rules with promtool cases.
+- **Financial correctness implications**: availability only. A skipped row is counted and paged, never misjudged; an excluded
+  residual stays visible as a break.
+- **Multi-instance concerns**: the failure count is a row, updated under the claim; ten instances count one failure per tick, not
+  ten.
+- **Failure scenarios**: a corrupt id at the head; a row failing every tick; a residual faulting every tick (E-row in the register).
+- **Security considerations**: the page names no identifier (ADR-0072).
+- **Test and experiment methodology**: hermetic tests; database cases owed (C2); on `kind`, the poisoned-row experiment (PI-024's
+  §11.39 step under C11).
+- **Probe**: plant a non-UUIDv7 id; the sweep continues and the page fires; remove the skip, and the sweep stalls and the test goes
+  red.
+- **Measurable acceptance criteria**: each sweep continues past a planted bad row; the page fires within its window; the three debt
+  rows and item 42 (i) re-ruled.
+- **Definition of done**: `DOD-KERNEL`, `DOD-OBS`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.39 rehearsed.
+- **Risk**: Medium. **Cx**: L.
+
+**P16-TSK-018 — Timeouts and retries classified; provider outages and slow providers (C12)** — `PLANNED`
+- **Objective**: one inventory of every outbound call's connect, request and overall bound and of every retry, each retry classified
+  safe; the provider-outage experiments E17–E21 run; automatic rail availability decided from measured failure rates.
+- **Affected components**: every provider adapter (`payments`, `merchant`, `fx`, `kyc`, `credit`, `paymentmethods`, `settlement`),
+  the simulator, `DECISIONS.md` §Deferred's row.
+- **Dependencies**: `-007`, `-019`.
+- **Scope**:
+  - the inventory;
+  - a request timeout where only a connect timeout exists;
+  - jitter where several instances retry one dependency;
+  - E17–E21 under load;
+  - failure rates per rail measured;
+  - the automation's ADR if the measurement and the owner support it (C12).
+
+  **Exclusions**: a second real provider; any retry of an ambiguous dispatch.
+- **Workload assumptions**: the engineering workload with the simulator degraded.
+- **Infrastructure and code changes**: adapter configuration; the simulator's degradation controls.
+- **Financial correctness implications**: an ambiguous answer becomes `UNKNOWN` and is inquired, never resent (ADR-0046); no posting
+  without a provider's answer; no conversion on a stale rate; no approval on missing bureau data.
+- **Multi-instance concerns**: inquiries bulkheaded per instance; sweeps resolve once across instances.
+- **Failure scenarios**: E17–E21.
+- **Security considerations**: a degraded provider never makes a callback door accept an unverified delivery.
+- **Test and experiment methodology**: the inventory held by a guard (every adapter's `HttpClient` has a request timeout); the
+  experiments with the census.
+- **Probe**: remove one adapter's request timeout; the guard goes red.
+- **Measurable acceptance criteria**: the inventory complete; every retry classified; E17–E21 recorded with zero postings without an
+  answer; C12's decision written.
+- **Definition of done**: `DOD-SEC`, `DOD-FIN`, `DOD-TEST`.
+- **Operational documentation**: the provider sections of the runbook.
+- **Risk**: Medium. **Cx**: L.
+
+**P16-TSK-019 — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `PLANNED`
+- **Objective**: build the `experiments` scope:
+  - a multi-node `kind` cluster (one control plane and three workers, each labelled a zone);
+  - Toxiproxy pinned by digest on the data-tier and provider hops;
+  - the test-only synchronous standby pair (C7);
+  - the step shape (steady state, fault, observe, stop, recover, census);
+  - the harness's refusals.
+- **Affected components**: the `kind` harness; `deploy/overlays/kind/`; `infra/scanner-pins.sh`.
+- **Dependencies**: `-006`.
+- **Scope**: the toolkit and one trivial experiment (E01) to prove it. **Exclusions**: the experiment catalogue (`-020`…`-023`,
+  `-027`).
+- **Workload assumptions**: the demonstration workload.
+- **Infrastructure and code changes**: harness and test-only overlay only; nothing in a deployed overlay.
+- **Financial correctness implications**: every step ends in the census.
+- **Multi-instance concerns**: three replicas across three nodes; the zone spread checked.
+- **Failure scenarios**: the fault left on after a harness crash; the exit trap removes it.
+- **Security considerations**: the harness refuses a foreign context, a credential it did not generate, and a non-simulator endpoint;
+  each refusal is proven by a plant.
+- **Test and experiment methodology**: the contract test; E01 recorded.
+- **Probe**: point the harness at a context without its marker; it refuses before any fault.
+- **Measurable acceptance criteria**: the toolkit runs E01 end to end with its record; each refusal proven.
+- **Definition of done**: `DOD-BUILD`, `DOD-TEST`.
+- **Operational documentation**: a runbook section on running an experiment.
+- **Risk**: Medium. **Cx**: L.
+
+**P16-TSK-020 — Instance, pod and node failures at load** — `PLANNED`
+- **Objective**: E01–E04 and E25 under the sustained profile at ten replicas.
+- **Affected components**: every in-cluster unit.
+- **Dependencies**: `-014`, `-019`.
+- **Scope**: the experiments; the edge controller lost under traffic (item 43 (f)'s last part). **Exclusions**: a zone's loss on a
+  real cluster (designed-only).
+- **Workload assumptions**: the engineering workload.
+- **Infrastructure and code changes**: none unless a defect is found (a task of its own).
+- **Financial correctness implications**: the seven checks per experiment.
+- **Multi-instance concerns**: the subject.
+- **Failure scenarios**: as E01–E04, E25.
+- **Security considerations**: a negative probe per experiment (an unauthenticated request stays refused).
+- **Test and experiment methodology**: the experiments with records.
+- **Probe**: the PDB removed; E02 shows the fleet's ready count reaching zero, and the experiment stops on its condition.
+- **Measurable acceptance criteria**: each experiment's success criteria met and recorded, or a remediation task named.
+- **Definition of done**: `DOD-TEST`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.8 rehearsed (PI-024's part, under C11).
+- **Risk**: Medium. **Cx**: M.
+
+**P16-TSK-021 — Network, DNS, connection and disk faults** — `PLANNED`
+- **Objective**: E07, E11–E16, E24 under load.
+- **Affected components**: every replica; PostgreSQL; Kafka; the simulator; CoreDNS on `kind`.
+- **Dependencies**: `-019`.
+- **Scope**: the experiments. **Exclusions**: real network equipment.
+- **Workload assumptions**: the demonstration and engineering workloads.
+- **Infrastructure and code changes**: none unless a defect is found.
+- **Financial correctness implications**: zero partial or duplicate effects under latency, loss, partition and resets.
+- **Multi-instance concerns**: a partition of one replica (E14) while the others serve.
+- **Failure scenarios**: as listed; the black-holed connection (item 42 (h)) measured for `-022`.
+- **Security considerations**: TLS holds through the proxy (Toxiproxy passes bytes; `verify-full` unchanged).
+- **Test and experiment methodology**: the experiments with records.
+- **Probe**: Toxiproxy's reset on commit; the census shows the commit either whole or absent, never half.
+- **Measurable acceptance criteria**: each experiment's criteria met and recorded.
+- **Definition of done**: `DOD-TEST`.
+- **Operational documentation**: runbook notes on each fault's signature.
+- **Risk**: Medium. **Cx**: M.
+
+**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `PLANNED`
+- **Objective**: as decided:
+  - E05, a database primary failover under load on the test-only synchronous standby pair;
+  - its interruption measured;
+  - runbook §11.40 rehearsed;
+  - the data source's socket timeout decided from the measured longest legitimate statement and the failover's black-holed
+    connection.
+- **Affected components**: PostgreSQL (`kind` pair), every replica, `application.yaml` (`socketTimeout`), runbook §11.40.
+- **Dependencies**: `-007`, `-019`.
+- **Scope**:
+  - the failover at the sustained profile;
+  - the unclean restart E06 (PI-024's §11.40 step, under C11);
+  - the black-holed connection (E14) with and without the decided timeout;
+  - the decision recorded.
+
+  **Exclusions**: a managed failover (designed-only).
+- **Workload assumptions**: the engineering workload.
+- **Infrastructure and code changes**: the `kind` pair; a property value.
+- **Financial correctness implications**:
+  - zero acknowledged commits lost: the row counts and a journal checksum, before and after;
+  - commands retried by key take one effect;
+  - no money moves while every replica is unready.
+- **Multi-instance concerns**: every replica unready together and ready again, none restarted; leases lapse and are claimed.
+- **Failure scenarios**: a promotion with the standby behind (refused); a replica still holding a black-holed connection.
+- **Security considerations**: `verify-full` to the new primary; the same roles and grants.
+- **Test and experiment methodology**: the experiment records; the property's test.
+- **Probe**: an asynchronous standby promoted after a planted lag; the checksum shows the lost commits (the reason the standby is
+  synchronous).
+- **Measurable acceptance criteria**: E05 and E06 recorded with interruption times; the socket timeout decided with its evidence;
+  §11.40's record filled; the readiness cells of §3.3 re-ruled.
+- **Definition of done**: `DOD-TEST`, `DOD-FIN`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.40.
+- **Risk**: Medium. **Cx**: L.
+
+**P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
+- **Objective**: as decided:
+  - the data tier's availability shown on `kind` across the database pair, three brokers and the edge;
+  - every single point of failure of `PHASE_16_PLAN.md` §10.1 registered with its answer;
+  - the financial-operation availability matrix written per operation and per failure, and checked by the experiments.
+- **Affected components**: documents (`SYSTEM_ARCHITECTURE.md` or a new availability section), the experiments' expectations.
+- **Dependencies**: `-005`, `-013`, `-022`.
+- **Scope**:
+  - the register;
+  - the matrix;
+  - an answer to whether any flow should refuse automatically on a correctness signal (§10.3's open question, a proposal to the
+    owner);
+  - the availability SLOs checked at the sustained profile.
+
+  **Exclusions**: real HA for the telemetry back ends (a real environment).
+- **Workload assumptions**: the sustained profile.
+- **Infrastructure and code changes**: none unless the matrix finds a flow answering wrongly (a task of its own).
+- **Financial correctness implications**: a flow that must be refused is refused openly; one that stays up stays correct.
+- **Multi-instance concerns**: none beyond the experiments'.
+- **Failure scenarios**: each row of the matrix.
+- **Security considerations**: a degraded dependency never opens a door.
+- **Test and experiment methodology**: the matrix's rows checked by named experiments.
+- **Probe**: a matrix row claiming an operation stays available during E09 that in fact refuses; the experiment's result
+  contradicts it, and the register's guard flags the mismatch.
+- **Measurable acceptance criteria**: the register and matrix complete; every row checked by an experiment or marked designed-only.
+- **Definition of done**: `DOD-ARCH`, `DOD-TEST`.
+- **Operational documentation**: the matrix referenced from the runbook's incident section (§11.12).
+- **Risk**: Low. **Cx**: M.
+
+**P16-TSK-024 — Restore and point-in-time recovery with the post-recovery verification (`THREAT_MODEL.md` §6 item 44 (a); ADR-0128)** — `PLANNED`
+- **Objective**: as decided:
+  - the restore's lending and BNPL proofs judged over a source that holds a loan and a BNPL obligation;
+  - a point-in-time restore from archived WAL to an instant before a planted bad write, verified;
+  - the restore's rate per GiB measured;
+  - the Kafka recovery step (§11.35 step 6) run;
+  - the post-recovery gate exercised: verification, the reconciliation window, a recorded release.
+- **Affected components**: `infra/scripts/restore-rehearsal.sh`, `RestoreRehearsalSeed` (a loan and a BNPL obligation added),
+  `RestoreVerification`, the test-only server (WAL archiving to a local store), runbook §11.35.
+- **Dependencies**: `-007`.
+- **Scope**:
+  - the logical restore over the widened seed and over a `kind` database after a load run;
+  - PITR;
+  - a restore with a missing key version refusing the evidence;
+  - reconciliation re-run over the window after the restore point, with money held;
+  - two data sizes for the rate.
+
+  **Exclusions**: a managed PITR (designed-only).
+- **Workload assumptions**: the database sizes after the demonstration and the soak.
+- **Infrastructure and code changes**: harness and test sources; the test-only server's archiving settings.
+- **Financial correctness implications**: criterion 4 of the gate. No money moves until the verification and the reconciliation
+  pass; every product proof `HOLDS` over at least one subject.
+- **Multi-instance concerns**: ten replicas pointed at the restored database are refused exactly as one is (the roles locked).
+- **Failure scenarios**: a corrupted backup (refused by its checksum); a planted removed journal line (the verification fails); a WAL
+  gap (PITR refuses to pass it).
+- **Security considerations**: the dump and the WAL archive encrypted; no plaintext on disk (asserted).
+- **Test and experiment methodology**: `RestoreRehearsalScriptTest` widened; the recorded drills.
+- **Probe**: remove one journal line from the dump; the verification fails. Seed no loan; the guard on "a proof over at least one
+  subject" fails.
+- **Measurable acceptance criteria**: both drills green with their records and rates; the four lending and BNPL verdicts over real
+  subjects; the reconciliation window run; item 44 (a) closed.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.35.
+- **Risk**: Medium. **Cx**: L.
+
+**P16-TSK-025 — The disaster-recovery plan and exercise; RTO and RPO measured (C9; ADR-0128; T42)** — `PLANNED`
+- **Objective**: write the DR plan, and exercise it locally end to end: the `kind` cluster and its data destroyed, then the platform
+  rebuilt from the repository, a backup and regenerated secrets, ending in the post-recovery gate and timed per step.
+- **Affected components**: a DR section of the runbook (§11.41, new), the harness (a `dr` scope), `deploy/`, the backup procedure.
+- **Dependencies**: `-023`, `-024`.
+- **Scope**:
+  - the plan: ownership, backup frequency and retention, the restoration process, validation, secrets and key recovery,
+    configuration recovery, service redeployment, and registry unavailability for a starting replica (T42: images pre-pulled on
+    `kind`'s nodes; a mirror designed);
+  - the exercise;
+  - the RTO and RPO evidence per tier.
+
+  **Exclusions**: the cloud half (designed-only).
+- **Workload assumptions**: the database size after the soak.
+- **Infrastructure and code changes**: harness and documents.
+- **Financial correctness implications**: the gate before money moves; the reconciliation of the window.
+- **Multi-instance concerns**: the rebuilt fleet at three replicas, then scaled.
+- **Failure scenarios**: the registry unreachable during the rebuild; a key version missing; a configuration drift (the fingerprint
+  compared).
+- **Security considerations**: secrets regenerated, never restored from a plaintext copy; the release step recorded with its actor.
+- **Test and experiment methodology**: the recorded exercise; the contract test.
+- **Probe**: skip the verification step; the roles stay locked, and money cannot move (the database refuses).
+- **Measurable acceptance criteria**: the plan written; the exercise timed per step; tier 1–3 evidence recorded against ADR-0128;
+  T42's answer recorded.
+- **Definition of done**: `DOD-DOC`, `DOD-TEST`, `DOD-SEC`.
+- **Operational documentation**: runbook §11.41.
+- **Risk**: Medium. **Cx**: L.
+
+**P16-TSK-026 — The multi-region assessment and Terraform variants (C10; ADR-0129; `THREAT_MODEL.md` §6 item 21 (a))** — `PLANNED`
+- **Objective**: write `PHASE_16_PLAN.md` §12's assessment as the architecture's own section. Add a recovery-region Terraform root
+  and the backup copy's cross-region destination, both checked with mock providers and never applied.
+- **Affected components**: `SYSTEM_ARCHITECTURE.md`, `infra/terraform/environments/` (a recovery root), module variables.
+- **Dependencies**: `-023`, `-025`.
+- **Scope**:
+  - the per-store and per-workflow models;
+  - the fencing procedure before a regional promotion;
+  - the key and secret replication design;
+  - the variants with `terraform test`.
+
+  **Exclusions**: any apply; active-active.
+- **Workload assumptions**: none.
+- **Infrastructure and code changes**: Terraform only.
+- **Financial correctness implications**: one writer; promotion only after fencing.
+- **Multi-instance concerns**: none new.
+- **Failure scenarios**: a region lost; a split brain refused by procedure.
+- **Security considerations**: KMS keys and secrets in the recovery region before need; residency the same rule as the primary.
+- **Test and experiment methodology**: `terraform test` with mocks asserting encryption, no public access and the copy's
+  destination outside the region.
+- **Probe**: a copy destination in the same region; the test goes red.
+- **Measurable acceptance criteria**: the assessment written; the variants' checks green; no apply.
+- **Definition of done**: `DOD-ARCH`, `DOD-BUILD`.
+- **Operational documentation**: the regional promotion procedure in the runbook.
+- **Risk**: Low. **Cx**: M.
+
+**P16-TSK-027 — Financial correctness under failure: the fifteen scenarios** — `PLANNED`
+- **Objective**: each of `PHASE_16_PLAN.md` §13's fifteen scenarios executed end to end on `kind` under load, with the seven checks
+  counted and recorded. This is the phase's most important task.
+- **Affected components**: every money-moving module; the harness.
+- **Dependencies**: `-013`, `-016`, `-018`, `-020`, `-021`, `-022`.
+- **Scope**:
+  - the fifteen scenarios, each as an experiment or a composition of experiments;
+  - a planted unresolved discrepancy per applicable scenario, raised by reconciliation;
+  - the gaps found by the scenario map closed by a test where cheaper than an experiment (a concurrent ledger-hold release,
+    scenario 8).
+
+  **Exclusions**: a raw writer (PI-016, PI-018). PI-019's double credit is recorded as a known exception if met, never as a pass.
+- **Workload assumptions**: the demonstration workload, the engineering workload for scenarios 7, 8 and 14.
+- **Infrastructure and code changes**: none unless a defect is found (each a task of its own; the scenario stays red until it lands).
+- **Financial correctness implications**: the subject. No duplicate effect, no unexplained money, no history mutated, no evidence
+  lost, safe replay, correct idempotency, discrepancies detected. Exactly-once is not claimed.
+- **Multi-instance concerns**: every scenario at three replicas or more; 7, 8 and 14 at ten.
+- **Failure scenarios**: the fifteen.
+- **Security considerations**: a negative probe per scenario.
+- **Test and experiment methodology**: the recorded scenarios; no scenario passed by citing a test alone.
+- **Probe**: turn off the inbox dedupe on a throwaway branch; scenario 5 shows a second effect.
+- **Measurable acceptance criteria**: fifteen scenario rows filled with their seven checks, each `PASS` or a remediation task named.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`.
+- **Operational documentation**: the scenarios' findings in the runbook where a person acts.
+- **Risk**: High. **Cx**: XL.
+
+**P16-TSK-028 — Security under scale and failure** — `PLANNED`
+- **Objective**: `PHASE_16_PLAN.md` §18 executed. Failover, recovery and load bypass no security control.
+- **Affected components**: `identity` (sessions), `platform` (abuse limits, audit), the edge, the restore.
+- **Dependencies**: `-014`, `-022`.
+- **Scope**: as §18's table. **Exclusions**: a WAF or DDoS service (designed-only, `-015`'s sizing).
+- **Workload assumptions**: the spike profile for abuse.
+- **Infrastructure and code changes**: none unless a defect is found.
+- **Financial correctness implications**: four-eyes refusals hold during a failover.
+- **Multi-instance concerns**: exact limits at ten; sessions across replacement.
+- **Failure scenarios**: failover, replacement, restore, spike.
+- **Security considerations**: the subject.
+- **Test and experiment methodology**: probes inside the experiments; the abuse burst counted.
+- **Probe**: an unauthenticated request during E05; it stays refused.
+- **Measurable acceptance criteria**: every row of §18 with its evidence; zero fail-open observations.
+- **Definition of done**: `DOD-SEC`, `DOD-TEST`.
+- **Operational documentation**: the security notes in the affected runbook sections.
+- **Risk**: Medium. **Cx**: M.
+
+**P16-TSK-029 — SLOs and error budgets validated under load; break-age counts (`THREAT_MODEL.md` §6 item 42 (a))** — `PLANNED`
+- **Objective**: `PHASE_16_PLAN.md` §15:
+  - every SLO's burn rule fires on a real burn and stays silent at peak;
+  - latency SLIs proposed where §4.3 adopted a target;
+  - settlement ingestion and reconciliation completion SLIs proposed;
+  - business outcomes shown spending no budget;
+  - item 42 (a)'s break-age counts built.
+- **Affected components**: `infra/prometheus/rules/slo*.yml`, `settlement-reconciliation.yml`, `SLOS.md`, `SloLatencyBuckets`,
+  reconciliation's gauges.
+- **Dependencies**: `-003`, `-014`.
+- **Scope**: as above. **Exclusions**: real paging.
+- **Workload assumptions**: peak and E17's outage; 30% declines.
+- **Infrastructure and code changes**: rules, meters (two gauges for item 42 (a)), bucket boundaries for adopted latency SLIs.
+- **Financial correctness implications**: the correctness signals stay unbudgeted.
+- **Multi-instance concerns**: the aggregation lines (`# Aggregation:`) held by `AlertCatalogueTest`.
+- **Failure scenarios**: a burn; a decline wave; an aged break behind an older one.
+- **Security considerations**: meters carry no identifier or amount (ADR-0072).
+- **Test and experiment methodology**: promtool cases; the runs.
+- **Probe**: count declines as errors; the decline run burns the budget, and the test goes red.
+- **Measurable acceptance criteria**: each SLO validated or recalibrated with its reason; item 42 (a) built with its promtool cases.
+- **Definition of done**: `DOD-OBS`.
+- **Operational documentation**: `SLOS.md`; runbook §11.11 and §11.23.
+- **Risk**: Low. **Cx**: M.
+
+**P16-TSK-030 — The service-extraction evaluation (ADR-0001's revisit)** — `PLANNED`
+- **Objective**: decide from the phase's measurements whether any module should leave the monolith. This covers the risk module's M3
+  split triggers, the reconciliation intake rules held in `app`, and `DECISIONS.md` §Deferred "Service extraction". The decision is
+  recorded as an ADR, which may say "none".
+- **Affected components**: documents; `MODULE_ARCHITECTURE.md`; the ADRs.
+- **Dependencies**: `-008`, `-014`, `P15-REM-001` (ADR-0006's rules made to hold before any extraction is decided).
+- **Scope**: the evaluation and the ADR. **Exclusions**: building an extraction.
+- **Workload assumptions**: the measured costs per module.
+- **Infrastructure and code changes**: none.
+- **Financial correctness implications**: an extraction would split a transaction boundary. The evaluation states which atomicities
+  it would cost.
+- **Multi-instance concerns**: none new.
+- **Failure scenarios**: none.
+- **Security considerations**: per-service identity (deferred to here by `SECRET_MANAGEMENT.md` §7) arises only with an extraction.
+- **Test and experiment methodology**: the evaluation cites measurements.
+- **Probe**: none (a decision document); the ADR guard holds its registration.
+- **Measurable acceptance criteria**: an ADR with its evidence; each debt row re-ruled.
+- **Definition of done**: `DOD-ARCH`, `DOD-DOC`.
+- **Operational documentation**: none.
+- **Risk**: Low. **Cx**: M.
+
+**P16-TSK-031 — The distributed-system audit and the capacity and operational review** — `PLANNED`
+- **Objective**: `PHASE_16_PLAN.md` §16 at ten, cited answer by answer. The capacity model completed. `PRODUCTION_READINESS.md`'s
+  Phase 16 cells re-read with the evidence. The operational review of every new procedure.
+- **Affected components**: documents; `DISTRIBUTED_EXECUTION.md`.
+- **Dependencies**: `-002`, `-004`, `-010`, `-011`, `-012`, `-015`, `-017`, `-025`, `-026`, `-027`, `-028`, `-029`, `-030`.
+- **Scope**: the audit; the review. **Exclusions**: the exit verdict (`P16-DOC-001`).
+- **Workload assumptions**: all measured.
+- **Infrastructure and code changes**: none; a violation found becomes a remediation task.
+- **Financial correctness implications**: the multi-instance rule as the gate reads it.
+- **Multi-instance concerns**: the subject.
+- **Failure scenarios**: all, read from the register.
+- **Security considerations**: the audit covers resource isolation.
+- **Test and experiment methodology**: citations to records and tests.
+- **Probe**: a planted claim citing a run that does not exist; the register guard goes red.
+- **Measurable acceptance criteria**: every audit question answered with a citation; every violation owned; the readiness cells
+  re-ruled.
+- **Definition of done**: `DOD-ARCH`, `DOD-DOC`.
+- **Operational documentation**: the readiness review's Phase 16 addendum.
+- **Risk**: Low. **Cx**: M.
+
+**P16-TST-001 — The integrated soak: ten replicas, the engineering workload, faults on a schedule** — `PLANNED`
+- **Objective**: the phase's substance in one run, not postponed (C1): an 8-hour soak at ten replicas at the engineering workload,
+  with a schedule of faults drawn from the register injected during it (a pod kill each hour, a broker loss, a database failover,
+  a rolling deploy, a provider outage) and the invariants sampled throughout.
+- **Affected components**: every unit on `kind`.
+- **Dependencies**: `-015`, `-025`, `-027`.
+- **Scope**: the soak. **Exclusions**: an in-process JUnit storm (PI-004's kind).
+- **Workload assumptions**: the engineering workload; W1–W8 for the ratio.
+- **Infrastructure and code changes**: none.
+- **Financial correctness implications**: zero census failures at every sample over the whole run.
+- **Multi-instance concerns**: ten replicas throughout.
+- **Failure scenarios**: the schedule.
+- **Security considerations**: the negative probes on.
+- **Test and experiment methodology**: the recorded soak; growth, leaks and lag read at its end.
+- **Probe**: a planted unbalanced entry at hour 5; the sample at hour 5 fails the run.
+- **Measurable acceptance criteria**: the soak completes with zero census failures; heap after GC, table growth and lag within
+  their bounds; every fault recovered within its experiment's criteria.
+- **Definition of done**: `DOD-TEST`, `DOD-FIN`.
+- **Operational documentation**: the soak's record in the register.
+- **Risk**: High (machine endurance). **Cx**: L.
+
+**P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `PLANNED`
+- **Objective**: once, on the final tree, re-run the quick forms of the mandatory experiments, and run the named guard classes. Then
+  run the database and Kafka fleet tiers as the owner decides under C2 and C11.
+  - The quick forms: the demonstration load with invariants during load, E01, E05, E09, the restore with its verification, and
+    scenarios 1 and 14.
+- **Affected components**: every unit.
+- **Dependencies**: `-031`, `P16-TST-001`.
+- **Scope**: as above. **Exclusions**: the soak again.
+- **Workload assumptions**: the demonstration workload.
+- **Infrastructure and code changes**: none.
+- **Financial correctness implications**: the census on the final tree.
+- **Multi-instance concerns**: three and ten replicas.
+- **Failure scenarios**: the quick forms.
+- **Security considerations**: the probes.
+- **Test and experiment methodology**: records; counts read from artefacts and JUnit XML.
+- **Probe**: none of its own (each experiment's stands).
+- **Measurable acceptance criteria**: every quick form green on the final tree; the guards green.
+- **Definition of done**: `DOD-TEST`.
+- **Operational documentation**: the records.
+- **Risk**: Medium. **Cx**: M.
+
+**P16-DOC-001 — The Phase 16 exit review** — `PLANNED`
+- **Objective**: rule every criterion of `PHASE_GATES.md` §5 Phase 16 and the universal exit gate with evidence. Accept or correct
+  ADR-0126…0129. Record C1–C12 as decided. List every designed-only criterion by name. Answer the ten-instance question on counts.
+  Remind the owner of PI-004, PI-023 and PI-024.
+- **Affected components**: `reviews/PHASE_16_REVIEW.md` (new); the documents it corrects.
+- **Dependencies**: every Phase 16 item.
+- **Scope**: the review. **Exclusions**: the Phase 16 → completion transition (the owner's).
+- **Workload assumptions**: as measured.
+- **Infrastructure and code changes**: none.
+- **Financial correctness implications**: the financial-phase supplement read where it applies (F1, F3, F5, F6).
+- **Multi-instance concerns**: the ten-instance answer.
+- **Failure scenarios**: the register's results.
+- **Security considerations**: no compliance or readiness claim (a wording check).
+- **Test and experiment methodology**: the named guards, fresh.
+- **Probe**: none of its own.
+- **Measurable acceptance criteria**: every criterion ruled `PASS`, `PARTIAL` or `NOT MET`, each with evidence or a recorded
+  deviation.
+- **Definition of done**: `DOD-DOC`.
+- **Operational documentation**: the review.
+- **Risk**: Low. **Cx**: L.
+
+---
+
 # Cross-cutting work
 
 Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
@@ -29857,11 +30945,16 @@ threat modelling, security hardening, secret and key rotation, privileged access
 schema compatibility, dead-letter handling, SLOs and alerting, runbooks and rehearsal, incident response and retention are
 Phase 15's thirty-seven items above, in the section "Phase 15 — Production Hardening" — with containerisation, the
 Kubernetes deployment, infrastructure as code, CI/CD and the supply chain, configuration management and the readiness review
-added by the owner's brief and the transition's design (C1–C15).)*
+added by the owner's brief and the transition's design (C1–C15).)* *(The Phase 16 row went the same way at the Phase 15 → 16 transition, 2026-11-12: load characterisation, the
+capacity model, performance testing with invariants asserted during load, partitioning and archival, read-replica routing,
+backpressure and load shedding, chaos engineering, database failover, backup and restore, the DR plan with RPO and RTO,
+post-recovery verification and the extraction evaluation are Phase 16's thirty-four items above, in the section "Phase 16 — Scale,
+Resilience and Disaster Recovery" - with the owner's decided inputs (`THREAT_MODEL.md` §6 items 18, 42, 43 and 44, `P15-REM-004`)
+and the transition's design (C1–C12).)*
 
 | Phase | Epics |
 |-------|-------|
 | 13 Risk, Fraud, AML | Elaborated to the section "Phase 13 — Risk, Fraud and AML" above by the Phase 12 → 13 transition — initialised 2026-10-22, 28 items (`P13-TSK-001`…`-025`, `P13-TST-001`, `P13-TST-002`, `P13-DOC-001`) across M13.1–M13.9, `P13-TSK-001` marked `READY`; the epic wording (signal ingestion; versioned rules engine; synchronous risk decisioning; fail-safe policy; limits and velocity; device and behavioural signals; account-takeover detection; AML transaction monitoring; alerting; case management; manual override controls) superseded by the task decomposition |
 | 14 Accounting and Reporting | Elaborated to the section "Phase 14 — Accounting and Financial Reporting" above by the Phase 13 → 14 transition — initialised 2026-10-29, 24 items (`P14-TSK-001`…`-021`, `P14-TST-001` (`POSTPONED`, PI-004), `P14-TST-002`, `P14-DOC-001`) across M14.1–M14.10, `P14-TSK-001` marked `READY`; the epic wording (GL account model; versioned GL mapping; accounting periods; period close with approval; trial balance and continuous verification; GL drill-down; prior-period adjustment; financial statement production; regulatory reporting abstraction; report reproducibility) superseded by the task decomposition |
 | 15 Production Hardening | Elaborated to the section "Phase 15 — Production Hardening" above by the Phase 14 → 15 transition — initialised 2026-11-07, 37 items (`P15-TSK-001`…`-034`, `P15-TST-001` (`POSTPONED`, PI-004), `P15-TST-002`, `P15-DOC-001`) across M15.1–M15.11, `P15-TSK-001` marked `READY`; the epic wording (threat modelling; security hardening; secret and key rotation; privileged access review; audit completeness verification; rate limiting and quotas; schema registry and compatibility; dead-letter handling; SLO definition and alerting; runbooks and rehearsal; incident response; data retention and deletion) superseded by the task decomposition - a runtime schema registry decided against (C11) and data purges re-dated to a real jurisdiction (C12) |
-| 16 Scale and DR | Load characterisation; capacity model; performance testing with invariant assertion; table partitioning and archival; read-replica routing policy; backpressure and load shedding; chaos engineering; database failover; backup and restore rehearsal; DR plan and RPO/RTO; post-recovery financial verification; service extraction evaluation |
+| 16 Scale and DR | Elaborated to the section "Phase 16 — Scale, Resilience and Disaster Recovery" above by the Phase 15 → 16 transition — initialised 2026-11-12, 34 items (`P16-TSK-001`…`-031`, `P16-TST-001`, `P16-TST-002`, `P16-DOC-001`) across M16.1–M16.13, `P16-TSK-001` marked `READY`; the epic wording (load characterisation; capacity model; performance testing with invariant assertion; table partitioning and archival; read-replica routing policy; backpressure and load shedding; chaos engineering; database failover; backup and restore rehearsal; DR plan and RPO/RTO; post-recovery financial verification; service extraction evaluation) superseded by the task decomposition - partitioning, a replica route and an extraction each decided by measurement and an ADR, never assumed |
