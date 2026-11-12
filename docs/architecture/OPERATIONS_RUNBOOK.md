@@ -2087,7 +2087,7 @@ the rollout never started. Every later release carries the same migration, so pr
 needs a person who can reach the data, and nobody can today (`THREAT_MODEL.md` §6 item 31 (e)). Once someone can: the data is fixed
 by an audited operational procedure, written into the incident's record (§11.12), and the same revision is synced once more by the
 reviewed manual sync that §11.36 names as the one exception for this case. Until then it is a residual, `THREAT_MODEL.md` §6
-item 42.
+item 42 (j).
 
 **A run stopped mid-way** (its pod killed, its connection lost). Flyway applies a migration on one connection and writes its row on
 another, inside the transaction that holds its lock, which commits after the migration's own: a run stopped between the two leaves
