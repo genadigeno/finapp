@@ -180,7 +180,8 @@ has its record. A customer, and staff on the operator surface, are answered exac
 
 **`identity.FactorRequiredForRole`** (`P15-TSK-039`; `PRIVILEGED_ACCESS_REVIEW.md` §6): `POST /v1/identities/{id}/roles` for
 a role that can redirect a merchant's money - today `MERCHANT_ADMINISTRATOR` and `LEDGER_OPERATOR` - or, since `P15-TSK-032`,
-one that grants roles or suspends identities - `ADMINISTRATOR` - read from what each role grants, while the subject has no
+one that grants roles or suspends identities - `ADMINISTRATOR` - or approves a risk case's action - `RISK_ANALYST` - read
+from what each role grants, while the subject has no
 confirmed factor. Nothing is granted; the subject enrols and the administrator
 retries. Only the administrator learns the subject has no factor, and `ROLE_ASSIGN` already answers whether the subject
 exists. A holding that predates the rule is named by `GET /v1/operator/access-review/factorless-holdings`, never revoked by

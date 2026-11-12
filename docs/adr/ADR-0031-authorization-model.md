@@ -185,5 +185,7 @@ revocation of one identity first takes `FOR NO KEY UPDATE` on that identity's ro
 revocation and a grant of the same identity serialise and each reads what the other committed. The same task's item 42 (d) and
 (e), decided under the same word: an administrator's suspension keeps the last-granter rule too (risk's automated suspension
 does not: a compromised last administrator stays suspendable); the grant, the suspension and the reinstatement step up to
-`MULTI_FACTOR` as the revocation does; and `ADMINISTRATOR` needs an enrolled factor before it is granted. A permission's meaning,
+`MULTI_FACTOR` as the revocation does; and `ADMINISTRATOR` - and, under the same word, the risk desk's approver
+(`RISK_CASE_APPROVE`), since risk's exempt suspension can take every administrator - needs an enrolled factor before it is
+granted. A permission's meaning,
 and its resolution per request, are unchanged.

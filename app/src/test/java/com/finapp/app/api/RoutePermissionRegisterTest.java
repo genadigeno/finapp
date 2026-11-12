@@ -689,7 +689,8 @@ class RoutePermissionRegisterTest {
             "POST /v1/operator/cross-border/corridor-enable-requests/{rid}/approval",
             "POST /v1/operator/fx/trades/{id}/reversal",
             "POST /v1/operator/fx/trades/{id}/reversal/{rid}/approval",
-            // The list of money-role holders with no second factor: not on a password alone.
+            // The list of holders of a role that needs a factor - the money roles, ADMINISTRATOR and the risk approver
+            // (P15-TSK-032) - who have none: not on a password alone.
             "GET /v1/operator/access-review/factorless-holdings",
             // P15-TSK-032, the design's Q1 as decided under the owner's standing word: a role's revocation, which ends a
             // last role's sessions and can take administration from others, is not a stolen password's act.

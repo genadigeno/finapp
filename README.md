@@ -529,10 +529,17 @@ trail**, because no authenticated actor performed it — `assigned_by` names the
 is the one self-grant the platform contains and the reason `IdentityAdministration` refuses every
 later one. Every subsequent assignment names two parties. An administrator's revocation
 (`DELETE /v1/identities/{id}/roles/{role}`) and suspension (`POST /v1/identities/{id}/suspension`) refuse to
-take the last active identity holding `ADMINISTRATOR` (`identity.LastRoleGranter`), so an administrator's act
-never leaves the platform with no administrator. **Risk's automated suspension is not bound by that** - a
-compromised last administrator must stay suspendable - so it can; then this out-of-band step (a role
-inserted for an active identity, or the suspended one's status set back to `ACTIVE`) is the only way back.
+take the last active identity holding `ADMINISTRATOR` (`identity.LastRoleGranter`), so administrators acting
+alone, or two of them at once, never leave the platform with no administrator. **Risk's automated suspension is
+not bound by that** - a compromised last administrator must stay suspendable - and takes none of the rule's
+locks, so it can leave none: by suspending the last one, or by suspending one of the last two while an
+administrator suspends or revokes the other (each commits before seeing the other). The way back is the same
+either way. First, risk's own `REINSTATE_IDENTITY`, which lifts a suspension risk made inside the platform: a
+risk case opened and the action proposed, then approved by a second analyst on a stepped-up session. Failing
+that - or for a suspension an administrator made, which risk does not lift - this out-of-band step: a role
+inserted for an active identity, or the suspended one restored in full, `UPDATE identity.identity SET status =
+'ACTIVE', suspension_cause = NULL, status_changed_at = now() WHERE id = ...` (identity `V024` refuses an
+active row that keeps its cause). Its sessions stay ended; the person signs in again.
 
 An operator doing this is a privileged-access event in its own right, and Phase 15 owns the controls
 for that (`CURRENT_STATE.md` §Known Architectural Debt).

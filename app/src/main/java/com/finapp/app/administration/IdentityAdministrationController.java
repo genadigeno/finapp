@@ -218,7 +218,8 @@ public class IdentityAdministrationController {
             case FACTOR_REQUIRED ->
                     throw new ApiException(
                             com.finapp.identity.IdentityErrorCode.FACTOR_REQUIRED_FOR_ROLE,
-                            "A role needing a factor - one that can redirect a merchant's money, or administer identities - was"
+                            "A role needing a factor - one that can redirect a merchant's money, administer identities or approve"
+                                    + " a risk case's action - was"
                                     + " granted to an identity with no factor",
                             "this role needs its holder to enrol a second factor first.");
         }
