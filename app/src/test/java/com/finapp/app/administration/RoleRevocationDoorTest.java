@@ -58,7 +58,34 @@ class RoleRevocationDoorTest {
             asked.add(subject.value() + " " + role + " by " + actor.value() + ": " + reason);
             return outcome;
         }
+
+        @Override
+        public IdentityAdministration.Suspension suspend(IdentityId subject, IdentityId actor, String reason) {
+            return IdentityAdministration.Suspension.LAST_ROLE_GRANTER;
+        }
     };
+
+    @Test
+    @DisplayName("an administrator's suspension of the last identity that can grant roles: the same 409 identity.LastRoleGranter")
+    void theSuspensionOfTheLastGranterAnswers409() {
+        assertThatThrownBy(() -> door.suspendIdentity(IdentityId.next(IDS).value().toString(),
+                        new SuspensionRequest("compromised, OPS-9001"), requestWithSession()))
+                .isInstanceOfSatisfying(ApiException.class, refused -> {
+                    assertThat(refused.errorCode()).isEqualTo(IdentityErrorCode.LAST_ROLE_GRANTER);
+                    assertThat(refused.errorCode().status()).isEqualTo(409);
+                    assertThat(refused.clientDetail()).hasValue("grant the administrator role to another person first.");
+                });
+    }
+
+    @Test
+    @DisplayName("the grant, the suspension and the reinstatement record their refusals too (P15-TSK-032, item 42 (e))")
+    void theOtherAdministrativeDoorsRecordTheirRefusals() {
+        for (String name : java.util.List.of("assignRole", "suspendIdentity", "reinstateIdentity", "revokeRole")) {
+            Method door = java.util.Arrays.stream(IdentityAdministrationController.class.getMethods())
+                    .filter(method -> method.getName().equals(name)).findFirst().orElseThrow();
+            assertThat(door.getAnnotation(RecordsRefusals.class)).as(name).isNotNull();
+        }
+    }
 
     private final IdentityAdministrationController door = new IdentityAdministrationController(service);
 

@@ -149,6 +149,9 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         String session = givenASessionFor(admin);
         IdentityId subject = givenAnIdentity();
+        // ADMINISTRATOR needs its holder to have enrolled a factor (P15-TSK-032, item 42 (e)).
+        assertThat(post(rolesOf(subject), session, adminRole()).statusCode()).as("no factor yet").isEqualTo(409);
+        givenAConfirmedFactorFor(subject);
 
         assertThat(post(rolesOf(subject), session, adminRole()).statusCode()).isEqualTo(204);
         assertThat(auditOf("identity.RoleAssigned", subject, admin)).contains("OPS-4417");
@@ -419,7 +422,7 @@ class IdentityAdministrationDatabaseTest {
     void aFirstRoleEndsTheGranteesSessions() throws Exception {
         IdentityId admin = givenAnAdministrator();
         IdentityId subject = givenAnIdentity();
-        String asACustomer = givenASessionFor(subject);
+        String asACustomer = givenAPasswordSessionFor(subject);
         String steppedUp = givenASessionAt(subject, AssuranceLevel.MULTI_FACTOR);
         assertThat(get("/sessions", asACustomer).statusCode()).as("precondition: the customer's session serves").isEqualTo(200);
         assertThat(get("/sessions", steppedUp).statusCode()).as("precondition: so does the stepped-up one").isEqualTo(200);
@@ -515,9 +518,16 @@ class IdentityAdministrationDatabaseTest {
         IdentityId subject = givenAnIdentity();
         assertThat(post(rolesOf(subject), givenASessionFor(admin), reviewerRole()).statusCode()).isEqualTo(204);
 
-        HttpResponse<String> onAPassword = delete(roleOf(subject, "KYC_REVIEWER"), givenASessionFor(admin), REVOCATION_REASON);
-        assertThat(onAPassword.statusCode()).as("not a stolen password's act").isEqualTo(403);
-        assertThat(onAPassword.body()).contains("identity.AssuranceRequired");
+        String onAPassword = givenAPasswordSessionFor(admin);
+        HttpResponse<String> revocationOnAPassword = delete(roleOf(subject, "KYC_REVIEWER"), onAPassword, REVOCATION_REASON);
+        assertThat(revocationOnAPassword.statusCode()).as("not a stolen password's act").isEqualTo(403);
+        assertThat(revocationOnAPassword.body()).contains("identity.AssuranceRequired");
+        // Item 42 (e), decided: nor a grant, a suspension or a reinstatement.
+        assertThat(post(rolesOf(subject), onAPassword, "{\"role\":\"ACCOUNTANT\",\"reason\":\"OPS-6203 finance desk\"}").body())
+                .contains("identity.AssuranceRequired");
+        assertThat(post(suspensionOf(subject), onAPassword, REASON).body()).contains("identity.AssuranceRequired");
+        assertThat(delete(suspensionOf(subject), onAPassword, REINSTATEMENT_REASON).body()).contains("identity.AssuranceRequired");
+        assertThat(statusOf(subject)).isEqualTo("ACTIVE");
         assertThat(delete(roleOf(admin, "ADMINISTRATOR"), steppedUp, REVOCATION_REASON).statusCode())
                 .as("every administrative record names two parties").isEqualTo(422);
         assertThat(delete(roleOf(IdentityId.of(IDS.next()), "KYC_REVIEWER"), steppedUp, REVOCATION_REASON).statusCode())
@@ -541,7 +551,8 @@ class IdentityAdministrationDatabaseTest {
      * Two revocations of one identity's last two roles at once, through the domain on two connections: the identity's lock makes
      * the second wait and read the first's revocation, so the sessions end exactly once - by the second, the one that took the
      * last role - and the records say so. Without the lock each would read the other's role still live and neither would end
-     * them.
+     * them. Deterministic, as {@link #aGrantAndARevocationOfOneIdentitySerialise} is: the first is held open after its
+     * revocation, the second is seen waiting behind it, and only then does the first commit - so the two always overlap.
      */
     @Test
     @DisplayName("P15-TSK-032: two revocations of an identity's last two roles at once - both land, and the sessions end once, by the"
@@ -553,16 +564,26 @@ class IdentityAdministrationDatabaseTest {
         grantBypassingTheRule(subject, admin, RoleName.ACCOUNTANT);
         String asStaff = givenASessionFor(subject);
 
-        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
-        java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
-        try {
-            java.util.List<java.util.concurrent.Callable<IdentityAdministration.RoleRevocation>> racers = java.util.List.of(
-                    () -> revokeAsTheDoorDoes(start, subject, RoleName.KYC_REVIEWER, admin),
-                    () -> revokeAsTheDoorDoes(start, subject, RoleName.ACCOUNTANT, admin));
-            for (java.util.concurrent.Future<IdentityAdministration.RoleRevocation> outcome : pool.invokeAll(racers)) {
-                assertThat(outcome.get()).isEqualTo(IdentityAdministration.RoleRevocation.REVOKED);
-            }
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        CorrelationContext.Scope correlation =
+                CorrelationContext.enter(Correlation.startingWith(CorrelationId.of(UUID.randomUUID().toString())));
+        SecurityContext.Scope actor = SecurityContext.enter(
+                new com.finapp.platform.security.Actor(admin.value().toString(), com.finapp.platform.security.ActorType.EMPLOYEE));
+        try (Connection first = DatabaseRoles.application()) {
+            first.setAutoCommit(false);
+            assertThat(administration.revokeRole(first, subject, RoleName.KYC_REVIEWER, admin, "the incident closed, OPS-8812"))
+                    .isEqualTo(IdentityAdministration.RoleRevocation.REVOKED);
+
+            java.util.concurrent.Future<IdentityAdministration.RoleRevocation> second =
+                    pool.submit(() -> revokeAsTheDoorDoes(null, subject, RoleName.ACCOUNTANT, admin));
+            awaitBlockedBehind(first, second);
+            first.commit();
+
+            assertThat(second.get(30, java.util.concurrent.TimeUnit.SECONDS))
+                    .isEqualTo(IdentityAdministration.RoleRevocation.REVOKED);
         } finally {
+            actor.close();
+            correlation.close();
             pool.shutdownNow();
         }
 
@@ -888,6 +909,7 @@ class IdentityAdministrationDatabaseTest {
     void aRepeatedGrantIsSuccess() throws Exception {
         String session = givenASessionFor(givenAnAdministrator());
         IdentityId subject = givenAnIdentity();
+        givenAConfirmedFactorFor(subject); // ADMINISTRATOR needs one (P15-TSK-032)
 
         assertThat(post(rolesOf(subject), session, adminRole()).statusCode()).isEqualTo(204);
         assertThat(post(rolesOf(subject), session, adminRole()).statusCode())
@@ -937,7 +959,7 @@ class IdentityAdministrationDatabaseTest {
         grantBypassingTheRule(notNamed, admin, RoleName.KYC_REVIEWER);
         String session = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
 
-        assertThat(get("/operator/access-review/factorless-holdings", givenASessionFor(admin)).statusCode())
+        assertThat(get("/operator/access-review/factorless-holdings", givenAPasswordSessionFor(admin)).statusCode())
                 .as("a list of money-role holders with no second factor is not served on a password alone")
                 .isEqualTo(403);
         String before = get("/operator/access-review/factorless-holdings", session).body();
@@ -1213,7 +1235,16 @@ class IdentityAdministrationDatabaseTest {
         return admin;
     }
 
+    /**
+     * A {@code MULTI_FACTOR} session (`P15-TSK-032`): every administrative door here steps up since item 42 (e), so a session
+     * that should reach a door's permission check - or be refused by it - has stepped up. A customer's plain session, and one
+     * a step-up refuses, is {@link #givenAPasswordSessionFor}'s.
+     */
     private String givenASessionFor(IdentityId identity) throws SQLException {
+        return givenASessionAt(identity, AssuranceLevel.MULTI_FACTOR);
+    }
+
+    private String givenAPasswordSessionFor(IdentityId identity) throws SQLException {
         return givenASessionAt(identity, AssuranceLevel.PASSWORD);
     }
 

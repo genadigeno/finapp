@@ -104,64 +104,101 @@ class RoleGrantDoorTest {
 
     @Test
     @DisplayName("the only production path to a role is the one that checks the factor and ends a first role's sessions: no other"
-            + " caller of Authorization.assign, and that one through the overload that carries the consequence (P15-TSK-043)")
+            + " caller of Authorization.assign, by call or by method reference, and that one through the overload that carries the"
+            + " consequence (P15-TSK-043)")
     void theOnlyGrantIsTheOneThatChecks() {
-        var calls = new com.tngtech.archunit.core.importer.ClassFileImporter()
-                .withImportOption(com.tngtech.archunit.core.importer.ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-                .importPackages("com.finapp")
-                .stream()
-                .flatMap(javaClass -> javaClass.getMethodCallsFromSelf().stream())
-                .filter(call -> call.getName().equals("assign")
-                        && call.getTargetOwner().isEquivalentTo(com.finapp.identity.Authorization.class))
-                .toList();
-
-        assertThat(calls.stream().map(call -> call.getOriginOwner().getSimpleName()).collect(java.util.stream.Collectors.toSet()))
-                .as("a new caller of Authorization.assign is a grant that skips the factor check")
-                .containsExactly("IdentityAdministration");
-        // The five-argument assign stays for the database fixtures, ninety-nine calls in fifty classes, and ends no session: a
-        // production grant through it would make a first role that leaves the customer's sessions serving (P15-TSK-043's review).
-        assertThat(calls).as("not vacuous").isNotEmpty().allSatisfy(call -> assertThat(call.getTarget().getRawParameterTypes())
-                .as("%s calls the overload that runs the grant's consequence", call.getOrigin().getFullName())
-                .hasSize(6)
-                .last().satisfies(consequence -> assertThat(consequence.isEquivalentTo(java.util.function.Function.class)).isTrue()));
+        theOnlyGrantIsTheDoors(production());
     }
 
     @Test
     @DisplayName("the only production path that takes a role away is the revocation door's: no other caller of Authorization.revoke,"
-            + " and that one through the overload that carries the last role's session end (P15-TSK-032)")
+            + " by call or by method reference, and that one through the overload that carries the last role's session end;"
+            + " the store's revoke reached from Authorization alone (P15-TSK-032)")
     void theOnlyRevocationIsTheDoors() {
-        var calls = new com.tngtech.archunit.core.importer.ClassFileImporter()
-                .withImportOption(com.tngtech.archunit.core.importer.ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-                .importPackages("com.finapp")
-                .stream()
-                .flatMap(javaClass -> javaClass.getMethodCallsFromSelf().stream())
-                .filter(call -> call.getName().equals("revoke")
-                        && call.getTargetOwner().isEquivalentTo(com.finapp.identity.Authorization.class))
-                .toList();
+        theOnlyRevocationIsTheDoors(production());
+    }
 
-        assertThat(calls.stream().map(call -> call.getOrigin().getFullName()).collect(java.util.stream.Collectors.toSet()))
+    @Test
+    @DisplayName("the rules can fail: a method reference to either five-argument overload, which is no method call in the bytecode,"
+            + " is caught (P15-TSK-032's review)")
+    void aMethodReferenceIsCaught() {
+        com.tngtech.archunit.core.domain.JavaClasses planted =
+                new com.tngtech.archunit.core.importer.ClassFileImporter().importClasses(PlantedReferences.class);
+        assertThat(accessesTo(planted, com.finapp.identity.Authorization.class, "revoke")).as("the reference is seen").hasSize(1);
+        assertThat(accessesTo(planted, com.finapp.identity.Authorization.class, "assign")).as("the reference is seen").hasSize(1);
+        assertThatThrownBy(() -> theOnlyRevocationIsTheDoors(planted)).isInstanceOf(AssertionError.class);
+        assertThatThrownBy(() -> theOnlyGrantIsTheDoors(planted)).isInstanceOf(AssertionError.class);
+    }
+
+    private static void theOnlyGrantIsTheDoors(com.tngtech.archunit.core.domain.JavaClasses classes) {
+        var accesses = accessesTo(classes, com.finapp.identity.Authorization.class, "assign");
+        assertThat(accesses.stream().map(access -> access.getOriginOwner().getSimpleName()).collect(java.util.stream.Collectors.toSet()))
+                .as("a new caller of Authorization.assign is a grant that skips the factor check")
+                .containsExactly("IdentityAdministration");
+        // The five-argument assign stays for the database fixtures, ninety-nine calls in fifty classes, and ends no session: a
+        // production grant through it would make a first role that leaves the customer's sessions serving (P15-TSK-043's review).
+        assertThat(accesses).as("not vacuous").isNotEmpty().allSatisfy(access -> assertThat(access.getTarget().getRawParameterTypes())
+                .as("%s reaches the overload that runs the grant's consequence", access.getOrigin().getFullName())
+                .hasSize(6)
+                .last().satisfies(consequence -> assertThat(consequence.isEquivalentTo(java.util.function.Function.class)).isTrue()));
+    }
+
+    private static void theOnlyRevocationIsTheDoors(com.tngtech.archunit.core.domain.JavaClasses classes) {
+        var accesses = accessesTo(classes, com.finapp.identity.Authorization.class, "revoke");
+        assertThat(accesses.stream().map(access -> access.getOrigin().getFullName()).collect(java.util.stream.Collectors.toSet()))
                 .as("a new caller of Authorization.revoke takes a role away past the last-granter rule and the last role's session end")
                 .singleElement().satisfies(origin -> assertThat(origin).startsWith(
                         com.finapp.identity.IdentityAdministration.class.getName() + ".revokeRole("));
         // The five-argument revoke stays for the database fixtures and ends no session: a production revocation through it would
         // leave a former member of staff's operator sessions serving.
-        assertThat(calls).as("not vacuous").isNotEmpty().allSatisfy(call -> assertThat(call.getTarget().getRawParameterTypes())
-                .as("%s calls the overload that runs the revocation's consequence", call.getOrigin().getFullName())
+        assertThat(accesses).as("not vacuous").isNotEmpty().allSatisfy(access -> assertThat(access.getTarget().getRawParameterTypes())
+                .as("%s reaches the overload that runs the revocation's consequence", access.getOrigin().getFullName())
                 .hasSize(6)
                 .last().satisfies(consequence -> assertThat(consequence.isEquivalentTo(java.util.function.Function.class)).isTrue()));
         // And the store's revoke has one caller, Authorization's one body: no path marks a row around both.
-        assertThat(new com.tngtech.archunit.core.importer.ClassFileImporter()
-                        .withImportOption(com.tngtech.archunit.core.importer.ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-                        .importPackages("com.finapp")
-                        .stream()
-                        .flatMap(javaClass -> javaClass.getMethodCallsFromSelf().stream())
-                        .filter(call -> call.getName().equals("revoke")
-                                && call.getTargetOwner().isAssignableTo(com.finapp.identity.RoleAssignmentStore.class)
-                                // The compiler's bridge from the generic interface to the store's own method is no caller.
-                                && !call.getOrigin().getModifiers().contains(com.tngtech.archunit.core.domain.JavaModifier.BRIDGE))
-                        .map(call -> call.getOriginOwner().getSimpleName())
+        assertThat(accessesTo(classes, com.finapp.identity.RoleAssignmentStore.class, "revoke").stream()
+                        .map(access -> access.getOriginOwner().getSimpleName())
                         .collect(java.util.stream.Collectors.toSet()))
                 .containsExactly("Authorization");
+    }
+
+    private static com.tngtech.archunit.core.domain.JavaClasses production() {
+        return new com.tngtech.archunit.core.importer.ClassFileImporter()
+                .withImportOption(com.tngtech.archunit.core.importer.ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPackages("com.finapp");
+    }
+
+    /**
+     * Every access to a method named {@code name} of {@code owner} or a subtype: a call, or a method reference, which is an
+     * {@code invokedynamic} and no call in the bytecode ({@code NoAmbientTimeRulesTest}'s finding). The compiler's bridge from a
+     * generic interface to its implementation is no caller.
+     */
+    private static java.util.List<com.tngtech.archunit.core.domain.JavaCodeUnitAccess<?>> accessesTo(
+            com.tngtech.archunit.core.domain.JavaClasses classes, Class<?> owner, String name) {
+        return classes.stream()
+                .flatMap(javaClass -> javaClass.getCodeUnitAccessesFromSelf().stream())
+                .filter(access -> access instanceof com.tngtech.archunit.core.domain.JavaMethodCall
+                        || access instanceof com.tngtech.archunit.core.domain.JavaMethodReference)
+                .filter(access -> access.getName().equals(name) && access.getTargetOwner().isAssignableTo(owner))
+                .filter(access -> !access.getOrigin().getModifiers().contains(com.tngtech.archunit.core.domain.JavaModifier.BRIDGE))
+                .<com.tngtech.archunit.core.domain.JavaCodeUnitAccess<?>>map(access -> access)
+                .toList();
+    }
+
+    /** Two references to the five-argument overloads, which a rule reading only method calls would pass. */
+    static final class PlantedReferences {
+
+        interface FiveArguments {
+            boolean apply(java.sql.Connection unitOfWork, IdentityId identity, RoleName role, IdentityId by, String reason);
+        }
+
+        static FiveArguments revokes(com.finapp.identity.Authorization authorization) {
+            return authorization::revoke;
+        }
+
+        static FiveArguments assigns(com.finapp.identity.Authorization authorization) {
+            return authorization::assign;
+        }
     }
 
     private static MockHttpServletRequest requestWithSession() {

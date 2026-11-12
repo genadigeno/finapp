@@ -500,6 +500,9 @@ extra["ownContainerSuites"] =
         "com.finapp.app.credit.Phase10ReportsDatabaseTest",
         "com.finapp.app.credit.Phase10SpansDatabaseTest",
         "com.finapp.app.credit.UnderwritingCaseDatabaseTest",
+        // P15-TSK-032: "the last identity that can grant roles" is a count over the whole database; a shared container's
+        // fixture administrators would make every race here one of many holders.
+        "com.finapp.app.domain.LastAdministratorDatabaseTest",
         // P15-TSK-008: two outbox relays over one database, the counted drain case; the relay reads the whole outbox, so on
         // a shared container it would publish - and so mark published - every other suite's pending rows.
         "com.finapp.app.eventing.ScheduleDrainDatabaseTest",

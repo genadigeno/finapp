@@ -53,8 +53,12 @@ class RuledDoorsStepUpTest {
                 door(FxTradeReversalController.class, "proposeFxTradeReversal", RoleName.LEDGER_OPERATOR),
                 door(FxTradeReversalController.class, "approveFxTradeReversal", RoleName.LEDGER_OPERATOR),
                 door(AccessReviewController.class, "listFactorlessHoldings", RoleName.ADMINISTRATOR),
-                // P15-TSK-032: a role's revocation (the design's Q1, decided). The grant's door declares no step-up.
-                door(com.finapp.app.administration.IdentityAdministrationController.class, "revokeRole", RoleName.ADMINISTRATOR));
+                // P15-TSK-032: a role's revocation (the design's Q1, decided), and - item 42 (e), decided - the grant, the
+                // suspension and the reinstatement: no administrative act on a password alone.
+                door(com.finapp.app.administration.IdentityAdministrationController.class, "revokeRole", RoleName.ADMINISTRATOR),
+                door(com.finapp.app.administration.IdentityAdministrationController.class, "assignRole", RoleName.ADMINISTRATOR),
+                door(com.finapp.app.administration.IdentityAdministrationController.class, "suspendIdentity", RoleName.ADMINISTRATOR),
+                door(com.finapp.app.administration.IdentityAdministrationController.class, "reinstateIdentity", RoleName.ADMINISTRATOR));
     }
 
     @Test
