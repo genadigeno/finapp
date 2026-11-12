@@ -2113,6 +2113,34 @@ way.
 **Whichever it is**, the application release has not started. After a fix, run the Job again; it applies what is pending and nothing
 else.
 
+**The rehearsal.** `infra/scripts/migration-failure-rehearsal.sh [image]` (default `finapp-migrator:<revision>`, built by
+`infra/scripts/migrator-image-build.sh`): one throwaway PostgreSQL on a random port, the image run as the Job runs it, the plants
+copied into a stopped container (never the repository's), the developer's half through `./gradlew` with the plants as a second
+Flyway location. Docker and a JDK; every credential generated per run, none printed. Exit `0` every assertion held, `1` one failed,
+`2` a step could not run. CI's `migrator-image` job runs it on the image it built. `MigrationFailureRehearsalTest` holds what it
+asserts.
+
+**The last record.** 2026-11-12, 10:43:24-10:48:43Z, one run on one development machine (Docker 28.0.1, `postgres:18.6`), the
+harness at sha256 `f29c17e9…5bb9a9af` on branch `P15-TSK-032-S3` (`b7f5fff3`), the image `finapp-migrator` built by
+`migrator-image-build.sh` from `40dfc1ca` (id `sha256:8c454c9c…`; no migration and no migrator source changed since): fifteen steps,
+every assertion held, exit `0`, in 5 minutes 19 seconds.
+
+| Step | Seen |
+|---|---|
+| release N − 1 | 343 migrations applied (the repository's and the plant table) |
+| release N, a `CHECK` the rows violate | exit `10` on the first attempt, `failure=DEFINITE`; the expand step before it applied and kept; no row for the `CHECK` and no failed row; the later schema's migration not reached; no row value in the log; the guard's read, as `finapp_app`, at the expand step, short of the `CHECK`, and the history table closed to that role |
+| the Job again | exit `10` the same way, nothing applied, the history unchanged |
+| an environment that applied it | the fix below it refused: `Detected resolved migration not applied to database: 9003`, exit `10` |
+| the fix | exit `0`, applied 3 in order (the fix, the `CHECK`, the later schema's), the constraint validated; the next run applied 0 |
+| outside a transaction, on the image | over duplicates: exit `10`, `DEFINITE`, no row at all, the index `INVALID`; again: exit `10`, `already exists`; on clean rows: exit `10` on `canceling statement due to lock timeout`, the data fix applied, no row for the index, `INVALID` again; the leftover dropped and the migration corrected into a transaction: exit `0`, the index valid |
+| outside a transaction, on Gradle | over duplicates: no row, `INVALID`; `flywayMigrate` `already exists`, `flywayValidate` `Detected resolved migration not applied to database: 9130`, `flywayRepair` exit `0` with the history unchanged; on clean rows the index waited more than 20 s on a session of its own client idle in a transaction holding Flyway's advisory lock, and was cancelled by hand: no row, `INVALID`; dropped and corrected: applied, valid, `flywayValidate` clean |
+
+**What it does not mean.** Containers on one machine; no cluster and no deployed environment. A replica's own refusal of the older
+schema is not in this run: here it is the guard's database read, and the replica's side is §11.28's `hold` step on `kind` and
+`SchemaVersionReadinessTest`. The person who drops a leftover is the harness, as the schema's owner; in a deployed environment no
+person can today (`THREAT_MODEL.md` §6 item 31 (e)). Flyway's per-session lock, the only configuration in which `flywayRepair` would
+have a failed row to remove, has not run here.
+
 ### 11.6 Broker outage, consumer lag, a poison record, dead letters and replay
 
 *Written by `P15-TSK-026` and `P15-TSK-028` (2026-11-08) from the code they built; **not yet rehearsed** - no deployed broker
