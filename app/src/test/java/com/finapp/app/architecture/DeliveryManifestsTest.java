@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -42,6 +43,9 @@ class DeliveryManifestsTest {
 
     private static Path root;
 
+    @TempDir
+    Path scratch;
+
     @BeforeAll
     static void findTheRepository() {
         root = EvidenceCitations.repositoryRoot();
@@ -61,7 +65,8 @@ class DeliveryManifestsTest {
                 String name = environment + "/" + entry.getKey();
                 Map<String, Object> application = entry.getValue();
                 Map<String, Object> spec = map(application, "spec");
-                assertThat(spec.get("project")).as(name).isEqualTo("finapp");
+                assertThat(spec.get("project")).as("%s: the cluster's objects in one project, the release and the edge in another", name)
+                        .isEqualTo(entry.getKey().equals("finapp-admission") || entry.getKey().equals("finapp-namespaces") ? "finapp-cluster" : "finapp");
                 Map<String, Object> source = map(spec, "source");
                 assertThat(source).as(name).containsEntry("repoURL", REPOSITORY).containsEntry("targetRevision", "master")
                         .containsEntry("path", paths.get(entry.getKey())).containsOnlyKeys("repoURL", "targetRevision", "path");
@@ -215,7 +220,7 @@ class DeliveryManifestsTest {
     // ------------------------------------------------------------------------------------------- what bounds them
 
     @Test
-    @DisplayName("the project bounds every Application: one repository, two namespaces, only Namespaces and admission policies outside them, never a Secret")
+    @DisplayName("two projects bound the Applications: the release and the edge to their kinds in two namespaces and nothing outside one, the cluster's objects to Namespaces and admission policies alone, never a Secret")
     void theProjectBoundsWhatTheApplicationsMayApply() {
         Map<String, Object> project = documents("deploy/delivery/base/project.yaml").get(0);
         assertThat(map(project, "metadata")).containsEntry("name", "finapp").containsEntry("namespace", "argocd");
@@ -223,9 +228,18 @@ class DeliveryManifestsTest {
         assertThat(spec.get("sourceRepos")).isEqualTo(List.of(REPOSITORY));
         assertThat(spec.get("destinations")).isEqualTo(List.of(Map.of("server", IN_CLUSTER, "namespace", "finapp"),
                 Map.of("server", IN_CLUSTER, "namespace", "finapp-edge")));
-        assertThat(spec.get("clusterResourceWhitelist")).isEqualTo(List.of(Map.of("group", "", "kind", "Namespace"),
-                Map.of("group", "policy.sigstore.dev", "kind", "ClusterImagePolicy")));
+        assertThat(spec.get("clusterResourceWhitelist")).as("the release and the edge create nothing outside a namespace").isEqualTo(List.of());
         assertThat(spec).doesNotContainKeys("namespaceResourceBlacklist", "sourceNamespaces", "roles", "signatureKeys");
+
+        Map<String, Object> cluster = documents("deploy/delivery/base/project-cluster.yaml").get(0);
+        assertThat(map(cluster, "metadata")).containsEntry("name", "finapp-cluster").containsEntry("namespace", "argocd");
+        Map<String, Object> clusterSpec = map(cluster, "spec");
+        assertThat(clusterSpec.get("sourceRepos")).isEqualTo(List.of(REPOSITORY));
+        assertThat(clusterSpec.get("destinations")).isEqualTo(List.of(Map.of("server", IN_CLUSTER, "namespace", "finapp")));
+        assertThat(clusterSpec.get("clusterResourceWhitelist")).isEqualTo(List.of(Map.of("group", "", "kind", "Namespace"),
+                Map.of("group", "policy.sigstore.dev", "kind", "ClusterImagePolicy")));
+        assertThat(clusterSpec.get("namespaceResourceBlacklist")).as("nothing inside a namespace").isEqualTo(List.of(Map.of("group", "*", "kind", "*")));
+        assertThat(clusterSpec).doesNotContainKeys("namespaceResourceWhitelist", "sourceNamespaces", "roles", "signatureKeys");
         Set<String> allowed = new TreeSet<>();
         for (Object entry : (List<?>) spec.get("namespaceResourceWhitelist")) {
             Map<?, ?> kind = (Map<?, ?>) entry;
@@ -267,7 +281,7 @@ class DeliveryManifestsTest {
     }
 
     @Test
-    @DisplayName("the controller's configuration judges an Application and an ExternalSecret healthy only on the positive fact, and tracks by annotation")
+    @DisplayName("the controller's configuration judges an Application and an admission policy healthy only on the positive fact, leaves the ExternalSecret to Argo CD's own check, and tracks by annotation")
     void theControllerJudgesWhatTheWavesWaitFor() {
         Map<String, Object> data = map(documents("deploy/delivery/controller/argocd-cm.yaml").get(0), "data");
         assertThat(data).containsEntry("application.resourceTrackingMethod", "annotation");
@@ -275,16 +289,111 @@ class DeliveryManifestsTest {
         assertThat(application).startsWith("hs = {}\nhs.status = \"Progressing\"")
                 .contains("elseif obj.status.sync.status == \"Synced\" and obj.status.health.status == \"Healthy\" then\n    hs.status = \"Healthy\"");
         assertThat(application.split("hs.status = \"Healthy\"", -1)).as("one way to Healthy").hasSize(2);
-        String externalSecret = String.valueOf(data.get("resource.customizations.health.external-secrets.io_ExternalSecret"));
-        assertThat(externalSecret).startsWith("hs = {}\nhs.status = \"Progressing\"")
+        String policy = String.valueOf(data.get("resource.customizations.health.policy.sigstore.dev_ClusterImagePolicy"));
+        assertThat(policy).startsWith("hs = {}\nhs.status = \"Progressing\"")
+                .contains("obj.status.observedGeneration == obj.metadata.generation then")
                 .contains("if condition.type == \"Ready\" then\n      if condition.status == \"True\" then\n        hs.status = \"Healthy\"");
-        assertThat(externalSecret.split("hs.status = \"Healthy\"", -1)).as("one way to Healthy").hasSize(2);
+        assertThat(policy.split("hs.status = \"Healthy\"", -1)).as("one way to Healthy").hasSize(2);
+        assertThat(data).as("Argo CD's own ExternalSecret check is the one the release's wave reads; a second would be a second to keep right")
+                .doesNotContainKey("resource.customizations.health.external-secrets.io_ExternalSecret");
+    }
+
+    @Test
+    @DisplayName("each root renders exactly the two projects and its environment's four Applications, each in its project, through no transformer; a planted extra is refused")
+    void theRootRendersExactlyTheProjectsAndTheApplications() throws IOException {
+        for (String environment : ENVIRONMENTS) {
+            assertThat(judgeRoot(root.resolve("deploy/delivery"), environment)).as(environment).isEmpty();
+        }
+        // The plants: an Application in `default`, a third project, and a transformer in the root's kustomization, each in a copy.
+        String extra = "---\napiVersion: argoproj.io/v1alpha1\nkind: Application\nmetadata:\n  name: anything\n  namespace: argocd\nspec:\n"
+                + "  project: default\n  source:\n    repoURL: https://example.invalid/any.git\n    path: .\n  destination:\n"
+                + "    server: https://kubernetes.default.svc\n    namespace: kube-system\n";
+        Path copy = plantedDelivery("application", "production/applications.yaml", extra);
+        assertThat(judgeRoot(copy, "production")).anySatisfy(offence -> assertThat(offence).contains("Application/anything"));
+        copy = plantedDelivery("project", "base/project.yaml", "---\napiVersion: argoproj.io/v1alpha1\nkind: AppProject\nmetadata:\n"
+                + "  name: wide\n  namespace: argocd\nspec:\n  sourceRepos: ['*']\n");
+        assertThat(judgeRoot(copy, "staging")).anySatisfy(offence -> assertThat(offence).contains("AppProject/wide"));
+        copy = plantedDelivery("transformer", "production/kustomization.yaml", "patches:\n  - path: anything.yaml\n");
+        assertThat(judgeRoot(copy, "production")).anySatisfy(offence -> assertThat(offence).contains("patches"));
+    }
+
+    /** What an environment's root renders, judged: exactly the two projects and the four Applications, and no kustomization but resources. */
+    private static List<String> judgeRoot(Path delivery, String environment) throws IOException {
+        List<String> offences = new ArrayList<>();
+        Set<String> rendered = new TreeSet<>();
+        List<Path> roots = List.of(delivery.resolve(environment), delivery.resolve("base"));
+        for (Path directory : roots) {
+            Map<String, Object> kustomization = documentsAt(directory.resolve("kustomization.yaml")).get(0);
+            for (String key : kustomization.keySet()) {
+                if (!List.of("apiVersion", "kind", "resources").contains(key)) {
+                    offences.add(directory.getFileName() + "/kustomization.yaml holds " + key + ": the root renders its files as written, nothing more");
+                }
+            }
+            for (Object resource : (List<?>) kustomization.get("resources")) {
+                Path target = directory.resolve(String.valueOf(resource)).normalize();
+                if (Files.isDirectory(target)) {
+                    if (!target.equals(delivery.resolve("base").normalize())) {
+                        offences.add(directory.getFileName() + " includes " + resource + ", a root other than the delivery's own base");
+                    }
+                    continue;
+                }
+                for (Map<String, Object> document : documentsAt(target)) {
+                    Map<String, Object> metadata = map(document, "metadata");
+                    String named = document.get("kind") + "/" + metadata.get("name");
+                    if ("Application".equals(document.get("kind"))) {
+                        named += "@" + map(document, "spec").get("project");
+                    }
+                    rendered.add(named);
+                }
+            }
+        }
+        Set<String> expected = new TreeSet<>(List.of("AppProject/finapp", "AppProject/finapp-cluster", "Application/finapp-admission@finapp-cluster",
+                "Application/finapp-namespaces@finapp-cluster", "Application/finapp@finapp", "Application/finapp-edge@finapp"));
+        for (String named : rendered) {
+            if (!expected.contains(named)) {
+                offences.add(environment + "'s root renders " + named + ", which is not one of the two projects or the four Applications");
+            }
+        }
+        for (String named : expected) {
+            if (!rendered.contains(named)) {
+                offences.add(environment + "'s root does not render " + named);
+            }
+        }
+        return offences;
+    }
+
+    /** A copy of deploy/delivery with text appended to one of its files. */
+    private Path plantedDelivery(String name, String file, String appended) throws IOException {
+        Path copy = Files.createTempDirectory(scratch, "delivery-" + name);
+        try (Stream<Path> files = Files.walk(root.resolve("deploy/delivery"))) {
+            for (Path source : files.toList()) {
+                Path target = copy.resolve(root.resolve("deploy/delivery").relativize(source).toString());
+                if (Files.isDirectory(source)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.copy(source, target);
+                }
+            }
+        }
+        Path planted = copy.resolve(file);
+        Files.writeString(planted, Files.readString(planted) + appended);
+        return copy;
+    }
+
+    private static List<Map<String, Object>> documentsAt(Path file) throws IOException {
+        List<Map<String, Object>> documents = new ArrayList<>();
+        for (Object document : yaml().loadAll(Files.readString(file))) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> read = (Map<String, Object>) document;
+            documents.add(read);
+        }
+        return documents;
     }
 
     // ------------------------------------------------------------------------------------------- what is committed
 
     @Test
-    @DisplayName("each release record names the overlay's own two digests, and both are still the placeholders: nothing has been promoted")
+    @DisplayName("each release record names the overlay's own two digests: the placeholders before the first promotion, and after it the record promote.sh writes")
     void theReleaseRecordIsTheOverlays() {
         for (String environment : ENVIRONMENTS) {
             Map<String, Object> record = documents("deploy/overlays/" + environment + "/release.yaml").get(0);
@@ -294,8 +403,17 @@ class DeliveryManifestsTest {
             }
             assertThat(record.get("app")).as(environment).isEqualTo(digests.get("finapp-app"));
             assertThat(record.get("migrator")).as(environment).isEqualTo(digests.get("finapp-migrator"));
-            assertThat(record).as(environment).containsEntry("release", "none").containsEntry("revision", "none").containsOnlyKeys("release",
-                    "revision", "app", "migrator");
+            if ("none".equals(record.get("release"))) {
+                assertThat(record).as("%s before its first promotion", environment).containsEntry("revision", "none")
+                        .containsOnlyKeys("release", "revision", "app", "migrator");
+                assertThat(digests.values()).as(environment).containsOnly("sha256:" + "0".repeat(64));
+            } else {
+                assertThat(record).as("%s as promote.sh writes it", environment).containsOnlyKeys("release", "revision", "app", "migrator",
+                        "migrator-revision");
+                assertThat(String.valueOf(record.get("release"))).matches("[0-9]+\\.[0-9]+\\.[0-9]+(-SNAPSHOT)?");
+                assertThat(String.valueOf(record.get("revision"))).matches("[0-9a-f]{40}");
+                assertThat(String.valueOf(record.get("migrator-revision"))).matches("[0-9a-f]{40}");
+            }
         }
     }
 

@@ -22,19 +22,23 @@ import java.util.stream.Stream;
 /**
  * The promotion's judgements over the repository (P15-TSK-017, ADR-0122 decision 4; OPERATIONS_RUNBOOK.md section 11.36). A
  * release is a pair of digests, the application's and the migrator's, built from one commit; an environment runs the pair its
- * overlay names. Under pull-based GitOps the merge of a change to that overlay is the deploy, so everything that must hold
- * before a release runs is judged here, before the change is written, and judged again by CI on the pull request.
+ * overlay names. Under pull-based GitOps the merge of a change to that overlay is the deploy, so everything the repository can
+ * hold is judged here, before the change is written, and again by CI on the pull request against what was merged before it.
+ * What the repository cannot hold (that the digests were built from the revision named) promote.sh reads from the registry, and the
+ * approver reads again.
  *
  * <p>{@code infra/scripts/promote.sh} verifies each digest's signature and both attestations against the environment's
  * authority first; this file never reaches a registry. {@code PromotionTest} holds every refusal below beside the same command
  * accepting the good case.
  *
  * <pre>
- *   check  ROOT ENVIRONMENT APP MIGRATOR REVISION     refuse, or say the pair may be written
- *   write  ROOT ENVIRONMENT APP MIGRATOR REVISION     check, then write the overlay's two digests and its release record
- *   smoke  ROOT ENVIRONMENT SNAPSHOT PROMETHEUS RECORD-DIRECTORY|-
+ *   check     ROOT ENVIRONMENT APP MIGRATOR REVISION  refuse, or say the pair may be written (staging's evidence read as committed)
+ *   write     ROOT ENVIRONMENT APP MIGRATOR REVISION  check, then write the overlay's two digests and its release record
+ *   recheck   ROOT BASE-REF                           CI: each overlay against its record, staging's evidence read at the merge base
+ *   smoke     ROOT ENVIRONMENT SNAPSHOT PROMETHEUS RECORD-DIRECTORY|-
  *                                                     judge what the cluster runs against what the overlay names
- *   held   ROOT ENVIRONMENT STEM VERSION              the environment's newest record shows every replica holding VERSION
+ *   held      TREE ENVIRONMENT STEM VERSION           the environment's newest record in TREE shows every replica holding VERSION
+ *   statement TYPE DIGEST REVISION|-                  one verified in-toto statement, on standard input, read as its structure
  * </pre>
  *
  * <p>Exit status: 0 accepted; 1 refused, the reason printed; 2 the judgement could not be made (an unreadable history, a
@@ -54,9 +58,13 @@ public final class Promotion {
     /** Anything that reads like a marker, the lint's own test of one: a line it cannot read is refused, never passed over. */
     static final Pattern MARKER_LIKE = Pattern.compile("^--\\s*finapp-contract\\b.*$", Pattern.CASE_INSENSITIVE);
 
-    /** Where the Gradle version lives: a release is named by it, less -SNAPSHOT (DATA_MIGRATIONS.md section 4.1). */
+    /**
+     * Where the Gradle version lives: a release is named by it, {@code -SNAPSHOT} kept (DATA_MIGRATIONS.md section 4.1, its 2026-11-12
+     * note). A marker names a release without the suffix, and a snapshot comes before the release it leads to.
+     */
     static final String CONVENTIONS = "build-logic/src/main/kotlin/finapp.java-conventions.gradle.kts";
-    static final Pattern GRADLE_VERSION = Pattern.compile("(?m)^version = \"([0-9]+\\.[0-9]+\\.[0-9]+)(?:-SNAPSHOT)?\"\\s*$");
+    static final Pattern GRADLE_VERSION = Pattern.compile("(?m)^version = \"([0-9]+\\.[0-9]+\\.[0-9]+(?:-SNAPSHOT)?)\"\\s*$");
+    static final Pattern RELEASE = Pattern.compile("([0-9]+)\\.([0-9]+)\\.([0-9]+)(-SNAPSHOT)?");
     static final Pattern MIGRATION = Pattern.compile("([a-z][a-z0-9]*)/src/main/resources/db/migration/[a-z0-9_]+/V([0-9]+(?:[._][0-9]+)*)__[^/]+\\.sql");
 
     static final String TRIAL_BALANCE_QUERY = "max by (currency) (finapp_ledger_trial_balance)";
@@ -81,27 +89,28 @@ public final class Promotion {
     public static void main(String[] args) {
         try {
             if (args.length == 0) {
-                throw new CannotJudge("usage: check|write|smoke|held ...");
+                throw new CannotJudge("usage: check|write|recheck|smoke|held|statement ...");
             }
             switch (args[0]) {
                 case "check" -> {
                     arity(args, 6);
-                    Judgement judged = check(Path.of(args[1]), args[2], args[3], args[4], args[5]);
+                    Judgement judged = check(Path.of(args[1]), args[2], args[3], args[4], args[5], "HEAD");
                     judged.said().forEach(line -> System.out.println("ok   " + line));
                     System.out.println("MIGRATOR-REVISION: " + judged.migratorRevision());
                     System.out.println("ACCEPTED: " + args[2] + " may run " + args[3] + " and " + args[4]);
                 }
                 case "write" -> {
                     arity(args, 6);
-                    Judgement judged = check(Path.of(args[1]), args[2], args[3], args[4], args[5]);
+                    Judgement judged = check(Path.of(args[1]), args[2], args[3], args[4], args[5], "HEAD");
                     judged.said().forEach(line -> System.out.println("ok   " + line));
                     write(Path.of(args[1]), args[2], args[3], args[4], args[5], judged.migratorRevision());
                     System.out.println("WRITTEN: deploy/overlays/" + args[2] + " now names " + args[3] + " and " + args[4]);
                 }
                 case "recheck" -> {
-                    arity(args, 2);
-                    recheck(Path.of(args[1])).forEach(line -> System.out.println("ok   " + line));
-                    System.out.println("ACCEPTED: every environment's overlay names what its release record does, and the record passes");
+                    arity(args, 3);
+                    recheck(Path.of(args[1]), args[2]).forEach(line -> System.out.println("ok   " + line));
+                    System.out.println("ACCEPTED: every environment's overlay names what its release record does, and the record passes"
+                            + " against what was merged before this change");
                 }
                 case "smoke" -> {
                     arity(args, 6);
@@ -110,6 +119,10 @@ public final class Promotion {
                 case "held" -> {
                     arity(args, 5);
                     System.out.println("ok   " + held(Path.of(args[1]), args[2], args[3], args[4]));
+                }
+                case "statement" -> {
+                    arity(args, 4);
+                    System.out.println("ok   " + statement(args[1], args[2], args[3], new String(System.in.readAllBytes(), StandardCharsets.UTF_8)));
                 }
                 default -> throw new CannotJudge("unknown command " + args[0]);
             }
@@ -136,7 +149,12 @@ public final class Promotion {
     /** What the check said, and the commit the migrator digest must have been built from: the release's own, or on a rollback the newest's. */
     record Judgement(List<String> said, String migratorRevision) {}
 
-    static Judgement check(Path root, String environment, String app, String migrator, String revision)
+    /**
+     * Every refusal the repository can make. {@code evidenceRef} is where staging's history and evidence are read for a production
+     * pair: a commit already merged, so that the change under judgement cannot bring its own evidence (CI passes the merge base with
+     * the branch it merges into; promote.sh passes {@code HEAD}, what is committed).
+     */
+    static Judgement check(Path root, String environment, String app, String migrator, String revision, String evidenceRef)
             throws Refused, CannotJudge, IOException {
         List<String> said = new ArrayList<>();
         if (!ENVIRONMENTS.contains(environment)) {
@@ -151,16 +169,18 @@ public final class Promotion {
         if (git(root, true, "cat-file", "-e", revision + "^{commit}") == null) {
             throw new Refused("the revision " + revision + " is not a commit of this repository");
         }
-        if (!ancestor(root, revision, "HEAD")) {
-            throw new Refused("the revision " + revision + " is not on this branch's history: a release is built from the branch it is promoted on");
+        Line line = Line.of(root);
+        if (!line.holds(revision)) {
+            throw new Refused("the revision " + revision + " is not on this branch's first-parent history: a release is built from a"
+                    + " commit of the branch itself, never from one a side branch carried in");
         }
         String release = releaseOf(root, revision);
         said.add("the revision is a commit of this branch, release " + release);
 
-        String[] schema = contractMarkers(root, environment, revision, release, migrator);
+        String[] schema = contractMarkers(root, environment, revision, release, migrator, line);
         said.add(schema[0]);
         if (environment.equals("production")) {
-            said.add(stagingEvidence(root, app, migrator, revision));
+            said.add(stagingEvidence(root, app, migrator, revision, evidenceRef));
         }
         return new Judgement(said, schema[1]);
     }
@@ -176,7 +196,11 @@ public final class Promotion {
         }
     }
 
-    /** The release a revision was built as: its Gradle version, less -SNAPSHOT. */
+    /**
+     * The release a revision was built as: its Gradle version, {@code -SNAPSHOT} kept. Every commit before a release is cut carries the
+     * snapshot of the version it leads to, so dropping the suffix would make a commit from before the code stopped reading a column
+     * the same release as the one that stopped, and a rollback to it would pass a marker naming that release.
+     */
     static String releaseOf(Path root, String revision) throws CannotJudge {
         String conventions = git(root, false, "show", revision + ":" + CONVENTIONS);
         Matcher version = GRADLE_VERSION.matcher(conventions);
@@ -186,29 +210,48 @@ public final class Promotion {
         return version.group(1);
     }
 
+    /** Releases compared as versions, a snapshot before the release it leads to: 1.3.0-SNAPSHOT before 1.3.0, after 1.2.0. */
+    static int compareReleases(String left, String right) {
+        Matcher a = RELEASE.matcher(left);
+        Matcher b = RELEASE.matcher(right);
+        if (!a.matches() || !b.matches()) {
+            throw new IllegalArgumentException("not a release name: " + left + " or " + right);
+        }
+        for (int group = 1; group <= 3; group++) {
+            int compared = Long.compare(Long.parseLong(a.group(group)), Long.parseLong(b.group(group)));
+            if (compared != 0) {
+                return compared;
+            }
+        }
+        return Boolean.compare(a.group(4) == null, b.group(4) == null);
+    }
+
     // -------------------------------------------------------------------------------------- staging evidence
 
-    static String stagingEvidence(Path root, String app, String migrator, String revision) throws Refused, CannotJudge, IOException {
+    static String stagingEvidence(Path root, String app, String migrator, String revision, String evidenceRef)
+            throws Refused, CannotJudge, IOException {
         boolean ran = false;
-        for (Map<String, String> record : releaseHistory(root, "staging")) {
+        for (Map<String, String> record : releaseHistory(root, "staging", evidenceRef, false)) {
             if (app.equals(record.get("app")) && migrator.equals(record.get("migrator")) && revision.equals(record.get("revision"))) {
                 ran = true;
             }
         }
         if (!ran) {
-            throw new Refused("staging never ran this pair: no release record of deploy/overlays/staging names " + app + ", " + migrator
-                    + " and " + revision + ". Promote it to staging first");
+            throw new Refused("staging never ran this pair: no release record of deploy/overlays/staging merged before this change ("
+                    + evidenceRef + ") names " + app + ", " + migrator + " and " + revision + ". Promote it to staging first, in a change"
+                    + " of its own");
         }
-        for (Map.Entry<String, Map<String, String>> entry : records(root, "staging").entrySet()) {
+        for (Map.Entry<String, Map<String, String>> entry : recordsAt(root, evidenceRef, "staging").entrySet()) {
             Map<String, String> record = entry.getValue();
             if (app.equals(record.get("app")) && migrator.equals(record.get("migrator")) && revision.equals(record.get("revision"))
                     && "staging".equals(record.get("environment")) && allPass(record)) {
-                return "staging ran this pair and its smoke passed: deploy/evidence/staging/" + entry.getKey();
+                return "staging ran this pair and its smoke passed, recorded before this change: deploy/evidence/staging/" + entry.getKey();
             }
         }
-        throw new Refused("no staging evidence for this pair: no record under deploy/evidence/staging names " + app + ", " + migrator
-                + " and " + revision + " with health, build-identity and trial-balance PASS. Run infra/scripts/post-deploy-smoke.sh"
-                + " staging --record after staging synced it, and commit what it writes");
+        throw new Refused("no staging evidence for this pair merged before this change (" + evidenceRef + "): no record under"
+                + " deploy/evidence/staging names " + app + ", " + migrator + " and " + revision + " with health, build-identity and"
+                + " trial-balance PASS. Run infra/scripts/post-deploy-smoke.sh staging --record after staging synced it, and merge what it"
+                + " writes before the production promotion");
     }
 
     static boolean allPass(Map<String, String> record) {
@@ -231,42 +274,27 @@ public final class Promotion {
      * ({@code MigratorMatchesTheBuildTest}): an older migrator on a newer schema is a path no release was ever run on, and under GitOps
      * the migrator runs again on every sync of a release. Returns what was said and the commit the migrator digest must come from.
      */
-    static String[] contractMarkers(Path root, String environment, String target, String release, String migrator)
+    static String[] contractMarkers(Path root, String environment, String target, String release, String migrator, Line line)
             throws Refused, CannotJudge, IOException {
-        Set<String> ran = new LinkedHashSet<>();
-        List<Map<String, String>> history = releaseHistory(root, environment);
+        List<Map<String, String>> history = releaseHistory(root, environment, "HEAD", true);
+        String newest = null;
         for (Map<String, String> record : history) {
             String revision = record.get("revision");
             if (revision != null && !revision.equals("none")) {
-                if (!REVISION.matcher(revision).matches() || git(root, true, "cat-file", "-e", revision + "^{commit}") == null) {
+                if (!REVISION.matcher(revision).matches() || !line.holds(revision)) {
                     throw new CannotJudge("deploy/overlays/" + environment + "/release.yaml once named '" + revision
-                            + "', which is not a commit here: the schema it holds cannot be read");
+                            + "', which is not a commit of this branch's first-parent history: the schema it holds cannot be read");
                 }
-                ran.add(revision);
-            }
-        }
-        if (ran.isEmpty()) {
-            return new String[] {environment + " has run no release: nothing it holds can exclude this one", target};
-        }
-        String newest = null;
-        for (String candidate : ran) {
-            boolean coversAll = true;
-            for (String other : ran) {
-                coversAll &= ancestor(root, other, candidate);
-            }
-            if (coversAll) {
-                newest = candidate;
+                if (newest == null || line.newer(revision, newest)) {
+                    newest = revision;
+                }
             }
         }
         if (newest == null) {
-            throw new CannotJudge(environment + "'s releases are not one line of history, so the schema it holds cannot be named");
+            return new String[] {environment + " has run no release: nothing it holds can exclude this one", target};
         }
-        if (ancestor(root, newest, target)) {
+        if (!line.newer(newest, target)) {
             return new String[] {"forward: " + target + " holds every migration " + environment + " has run (" + newest + ")", target};
-        }
-        if (!ancestor(root, target, newest)) {
-            throw new Refused(target + " is neither before nor after " + newest + ", the newest release " + environment
-                    + " has run: a release comes from one line of history");
         }
         Set<String> schemaMigrators = new LinkedHashSet<>();
         for (Map<String, String> record : history) {
@@ -296,9 +324,9 @@ public final class Promotion {
             }
             read++;
             List<String> markers = new ArrayList<>();
-            for (String line : git(root, false, "show", newest + ":" + path).split("\r?\n")) {
-                if (MARKER_LIKE.matcher(line).matches()) {
-                    markers.add(line);
+            for (String text : git(root, false, "show", newest + ":" + path).split("\r?\n")) {
+                if (MARKER_LIKE.matcher(text).matches()) {
+                    markers.add(text);
                 }
             }
             if (markers.isEmpty()) {
@@ -312,7 +340,7 @@ public final class Promotion {
                 throw new Refused(path + " carries a contract marker this script cannot read: " + markers.get(0));
             }
             String conforming = marker.group(1);
-            if (!conforming.equals("ANY") && compareVersions(conforming, release) > 0) {
+            if (!conforming.equals("ANY") && compareReleases(conforming, release) > 0) {
                 throw new Refused("a rollback to " + target + " (release " + release + ") crosses " + path + ", whose contract marker names"
                         + " " + conforming + " as the first release whose code conforms to it. " + environment
                         + "'s schema holds it, and release " + release + " cannot serve that schema: past a contract the way back is a"
@@ -333,7 +361,7 @@ public final class Promotion {
         return found;
     }
 
-    /** Versions compared as versions: 35 after 4, and 1.10 after 1.9. */
+    /** Migration versions compared as versions: 35 after 4, and 1.10 after 1.9. */
     static int compareVersions(String left, String right) {
         String[] a = left.split("[._]");
         String[] b = right.split("[._]");
@@ -347,17 +375,47 @@ public final class Promotion {
         return 0;
     }
 
+    /**
+     * The branch's own line: {@code HEAD}'s first-parent history, read once. A commit a side branch carried in never ran anywhere, and
+     * a release is built from the line, so "newer" is a position on it, never a walk of every pair.
+     */
+    record Line(Map<String, Integer> position) {
+        static Line of(Path root) throws CannotJudge {
+            Map<String, Integer> position = new HashMap<>();
+            int index = 0;
+            for (String commit : git(root, false, "rev-list", "--first-parent", "HEAD").split("\r?\n")) {
+                if (!commit.isBlank()) {
+                    position.put(commit.strip(), index++);
+                }
+            }
+            return new Line(position);
+        }
+
+        boolean holds(String revision) {
+            return position.containsKey(revision);
+        }
+
+        /** {@code left} came after {@code right} on the line. */
+        boolean newer(String left, String right) {
+            return position.get(left) < position.get(right);
+        }
+    }
+
     // -------------------------------------------------------------------------------------- the release record
 
-    /** Every release record this environment's overlay has held, committed and in the working tree. */
-    static List<Map<String, String>> releaseHistory(Path root, String environment) throws CannotJudge, IOException {
+    /**
+     * Every release record an environment's overlay has held on the line up to {@code ref} ({@code --first-parent}: an intermediate
+     * state a side branch carried never ran), and with {@code workingTree} the file as it stands.
+     */
+    static List<Map<String, String>> releaseHistory(Path root, String environment, String ref, boolean workingTree)
+            throws CannotJudge, IOException {
         String file = "deploy/overlays/" + environment + "/release.yaml";
         List<Map<String, String>> history = new ArrayList<>();
         Path current = root.resolve(file);
-        if (Files.exists(current)) {
+        if (workingTree && Files.exists(current)) {
             history.add(fields(Files.readString(current, StandardCharsets.UTF_8)));
         }
-        String commits = git(root, false, "log", "--format=%H", "--", file);
+        String commits = git(root, false, "log", "--first-parent", "--format=%H", ref, "--", file);
         for (String commit : commits.split("\r?\n")) {
             if (!commit.isBlank()) {
                 String text = git(root, true, "show", commit.strip() + ":" + file);
@@ -406,13 +464,21 @@ public final class Promotion {
     }
 
     /**
-     * What CI judges on a pull request, with no registry and no credential: each GitOps overlay names exactly the pair its release
-     * record names, by digest alone, and that record passes the same check a promotion made, against the history before it. A hand
-     * edit of the digests, a tag, a rollback past a contract or a production pair with no staging evidence is refused here even when
-     * nobody ran promote.sh. The signatures are not: the cluster's admission refuses an unsigned digest whatever merged.
+     * What CI judges on a pull request, with no registry and no credential: each GitOps overlay's {@code images:} names exactly the
+     * pair its release record names, by digest alone, and that record passes the same check a promotion makes, its staging evidence
+     * read at the merge base with {@code baseRef}, so the change cannot bring its own. What it cannot see: that the digests are the
+     * ones built from the revision the record names (the signatures and the provenance are read from the registry, by promote.sh and
+     * by the approver re-running its verify), and an image named anywhere but {@code images:} (the manifest policy's
+     * {@code release-images} rule holds the rendered overlay to the record).
      */
-    static List<String> recheck(Path root) throws Refused, CannotJudge, IOException {
+    static List<String> recheck(Path root, String baseRef) throws Refused, CannotJudge, IOException {
+        String base = git(root, true, "merge-base", "HEAD", baseRef);
+        if (base == null || !REVISION.matcher(base.strip()).matches()) {
+            throw new CannotJudge("no merge base with " + baseRef + ": what was merged before this change cannot be read");
+        }
+        base = base.strip();
         List<String> said = new ArrayList<>();
+        said.add("staging's evidence is read as merged at " + base);
         for (String environment : List.of("staging", "production")) {
             String overlay = Files.readString(root.resolve("deploy/overlays/" + environment + "/kustomization.yaml"), StandardCharsets.UTF_8);
             Map<String, String> record = fields(Files.readString(root.resolve("deploy/overlays/" + environment + "/release.yaml"), StandardCharsets.UTF_8));
@@ -448,7 +514,7 @@ public final class Promotion {
                 said.add(environment + " has nothing promoted: the placeholders");
                 continue;
             }
-            Judgement judged = check(root, environment, record.get("app"), record.get("migrator"), record.getOrDefault("revision", ""));
+            Judgement judged = check(root, environment, record.get("app"), record.get("migrator"), record.getOrDefault("revision", ""), base);
             if (!judged.migratorRevision().equals(record.getOrDefault("migrator-revision", record.get("revision")))) {
                 throw new Refused("deploy/overlays/" + environment + "/release.yaml says its migrator was built from "
                         + record.get("migrator-revision") + ", where the promotion's rule wants " + judged.migratorRevision());
@@ -456,6 +522,186 @@ public final class Promotion {
             judged.said().forEach(line -> said.add(environment + ": " + line));
         }
         return said;
+    }
+
+    // -------------------------------------------------------------------------------------- an attestation's statement
+
+    /**
+     * One in-toto statement cosign verified, read as the structure it is rather than searched as text: every subject is the digest
+     * promoted, the predicate is the type asked for, and a provenance names the revision as its git source's commit, in that field and
+     * no other. promote.sh hands each verified payload here, decoded.
+     */
+    static String statement(String type, String digest, String revision, String json) throws Refused, CannotJudge {
+        Object parsed;
+        try {
+            parsed = new Json(json).document();
+        } catch (IllegalArgumentException unreadable) {
+            throw new CannotJudge("the statement is not JSON this reader can parse: " + unreadable.getMessage());
+        }
+        if (!(parsed instanceof Map<?, ?> statement)) {
+            throw new Refused("the statement is not an object");
+        }
+        String predicateType = switch (type) {
+            case "slsaprovenance1" -> "https://slsa.dev/provenance/v1";
+            case "cyclonedx" -> "https://cyclonedx.org/bom";
+            default -> throw new CannotJudge("no predicate type is known for " + type);
+        };
+        if (!predicateType.equals(statement.get("predicateType"))) {
+            throw new Refused("a " + type + " attestation's predicate is " + statement.get("predicateType") + ", not " + predicateType);
+        }
+        if (!(statement.get("subject") instanceof List<?> subjects) || subjects.isEmpty()) {
+            throw new Refused("a " + type + " attestation names no subject");
+        }
+        String hex = digest.substring("sha256:".length());
+        for (Object subject : subjects) {
+            Object named = subject instanceof Map<?, ?> entry && entry.get("digest") instanceof Map<?, ?> digests ? digests.get("sha256") : null;
+            if (!hex.equals(named)) {
+                throw new Refused("a " + type + " attestation names another subject (sha256 " + named + "), not " + digest);
+            }
+        }
+        if (type.equals("slsaprovenance1") && !revision.equals("-")) {
+            Object definition = statement.get("predicate") instanceof Map<?, ?> predicate ? predicate.get("buildDefinition") : null;
+            Object dependencies = definition instanceof Map<?, ?> build ? build.get("resolvedDependencies") : null;
+            List<Object> sources = new ArrayList<>();
+            if (dependencies instanceof List<?> list) {
+                for (Object dependency : list) {
+                    if (dependency instanceof Map<?, ?> entry && String.valueOf(entry.get("uri")).startsWith("git+")) {
+                        sources.add(entry.get("digest") instanceof Map<?, ?> digests ? digests.get("gitCommit") : null);
+                    }
+                }
+            }
+            if (sources.isEmpty() || !sources.stream().allMatch(revision::equals)) {
+                throw new Refused("the provenance's git source names " + sources + " as the commit it was built from, not " + revision
+                        + " (predicate.buildDefinition.resolvedDependencies[].digest.gitCommit)");
+            }
+        }
+        return "a " + type + " statement of " + digest + (type.equals("slsaprovenance1") && !revision.equals("-") ? ", built from " + revision : "");
+    }
+
+    /** JSON, enough of it to read a statement: objects, arrays, strings with their escapes, numbers, true, false and null. */
+    static final class Json {
+        private final String text;
+        private int at;
+
+        Json(String text) {
+            this.text = text;
+        }
+
+        Object document() {
+            Object value = value();
+            space();
+            if (at != text.length()) {
+                throw new IllegalArgumentException("text after the document at " + at);
+            }
+            return value;
+        }
+
+        private Object value() {
+            space();
+            if (at >= text.length()) {
+                throw new IllegalArgumentException("the document ends early");
+            }
+            char c = text.charAt(at);
+            if (c == '{') {
+                Map<String, Object> object = new LinkedHashMap<>();
+                at++;
+                space();
+                if (peek('}')) {
+                    return object;
+                }
+                do {
+                    space();
+                    String key = string();
+                    space();
+                    expect(':');
+                    if (object.put(key, value()) != null) {
+                        throw new IllegalArgumentException("a key twice: " + key);
+                    }
+                    space();
+                } while (peek(','));
+                expect('}');
+                return object;
+            }
+            if (c == '[') {
+                List<Object> array = new ArrayList<>();
+                at++;
+                space();
+                if (peek(']')) {
+                    return array;
+                }
+                do {
+                    array.add(value());
+                    space();
+                } while (peek(','));
+                expect(']');
+                return array;
+            }
+            if (c == '"') {
+                return string();
+            }
+            for (String literal : List.of("true", "false", "null")) {
+                if (text.startsWith(literal, at)) {
+                    at += literal.length();
+                    return literal.equals("null") ? null : Boolean.valueOf(literal);
+                }
+            }
+            Matcher number = Pattern.compile("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?").matcher(text).region(at, text.length());
+            if (number.lookingAt()) {
+                at = number.end();
+                return number.group();
+            }
+            throw new IllegalArgumentException("an unexpected character at " + at);
+        }
+
+        private String string() {
+            expect('"');
+            StringBuilder out = new StringBuilder();
+            while (at < text.length()) {
+                char c = text.charAt(at++);
+                if (c == '"') {
+                    return out.toString();
+                }
+                if (c != '\\') {
+                    out.append(c);
+                    continue;
+                }
+                char escaped = text.charAt(at++);
+                switch (escaped) {
+                    case '"', '\\', '/' -> out.append(escaped);
+                    case 'b' -> out.append('\b');
+                    case 'f' -> out.append('\f');
+                    case 'n' -> out.append('\n');
+                    case 'r' -> out.append('\r');
+                    case 't' -> out.append('\t');
+                    case 'u' -> {
+                        out.append((char) Integer.parseInt(text.substring(at, at + 4), 16));
+                        at += 4;
+                    }
+                    default -> throw new IllegalArgumentException("an unknown escape at " + at);
+                }
+            }
+            throw new IllegalArgumentException("a string never closed");
+        }
+
+        private void space() {
+            while (at < text.length() && Character.isWhitespace(text.charAt(at))) {
+                at++;
+            }
+        }
+
+        private boolean peek(char c) {
+            if (at < text.length() && text.charAt(at) == c) {
+                at++;
+                return true;
+            }
+            return false;
+        }
+
+        private void expect(char c) {
+            if (!peek(c)) {
+                throw new IllegalArgumentException("expected '" + c + "' at " + at);
+            }
+        }
     }
 
     // -------------------------------------------------------------------------------------- the smoke
@@ -690,8 +936,8 @@ public final class Promotion {
      * THREAT_MODEL.md section 6 item 32 (c), as the delivery holds it: a key ring's version is activated in a GitOps environment
      * only once that environment's newest smoke record shows every replica on one configuration that lists the version.
      */
-    static String held(Path root, String environment, String stem, String version) throws Refused, IOException {
-        Map<String, Map<String, String>> records = records(root, environment);
+    static String held(Path tree, String environment, String stem, String version) throws Refused, IOException {
+        Map<String, Map<String, String>> records = recordsIn(tree, environment);
         if (records.isEmpty()) {
             throw new Refused("no smoke record under deploy/evidence/" + environment + ": nothing shows the fleet holds " + stem
                     + " version " + version + ". List it, let the rollout finish, run infra/scripts/post-deploy-smoke.sh " + environment
@@ -722,36 +968,46 @@ public final class Promotion {
                 + listing + "', not version " + version + ": the change that listed it has not been seen rolled out");
     }
 
-    /** Every record of an environment, by file name, its held listings under {@code held:<stem>}. */
-    static Map<String, Map<String, String>> records(Path root, String environment) throws IOException {
+    /** Every record of an environment in a tree on disk, by file name, its held listings under {@code held:<stem>}. */
+    static Map<String, Map<String, String>> recordsIn(Path tree, String environment) throws IOException {
         Map<String, Map<String, String>> records = new TreeMap<>();
-        Path directory = root.resolve("deploy/evidence/" + environment);
+        Path directory = tree.resolve("deploy/evidence/" + environment);
         if (!Files.isDirectory(directory)) {
             return records;
         }
         try (Stream<Path> files = Files.list(directory)) {
             for (Path file : files.filter(path -> path.getFileName().toString().endsWith(".yaml")).sorted().toList()) {
-                String text = Files.readString(file, StandardCharsets.UTF_8);
-                Map<String, String> record = fields(text);
-                Matcher held = Pattern.compile("(?m)^  - \"(FINAPP_[A-Z0-9_]+) listed ([0-9,]+) active ([0-9]+|default)\"$").matcher(text);
-                while (held.find()) {
-                    record.put("held:" + held.group(1), held.group(2));
-                }
-                records.put(file.getFileName().toString(), record);
+                records.put(file.getFileName().toString(), record(Files.readString(file, StandardCharsets.UTF_8)));
             }
         }
         return records;
     }
 
-    // -------------------------------------------------------------------------------------- git
-
-    static boolean ancestor(Path root, String older, String newer) throws CannotJudge {
-        int status = status(root, "merge-base", "--is-ancestor", older, newer);
-        if (status == 0 || status == 1) {
-            return status == 0;
+    /** Every record of an environment as committed at {@code ref}: what a change cannot have written itself. */
+    static Map<String, Map<String, String>> recordsAt(Path root, String ref, String environment) throws CannotJudge {
+        Map<String, Map<String, String>> records = new TreeMap<>();
+        String listed = git(root, true, "ls-tree", "--name-only", ref + ":deploy/evidence/" + environment);
+        if (listed == null) {
+            return records;
         }
-        throw new CannotJudge("git could not tell whether " + older + " comes before " + newer);
+        for (String name : listed.split("\r?\n")) {
+            if (name.endsWith(".yaml")) {
+                records.put(name, record(git(root, false, "show", ref + ":deploy/evidence/" + environment + "/" + name)));
+            }
+        }
+        return records;
     }
+
+    static Map<String, String> record(String text) {
+        Map<String, String> record = fields(text);
+        Matcher held = Pattern.compile("(?m)^  - \"(FINAPP_[A-Z0-9_]+) listed ([0-9,]+) active ([0-9]+|default)\"$").matcher(text);
+        while (held.find()) {
+            record.put("held:" + held.group(1), held.group(2));
+        }
+        return record;
+    }
+
+    // -------------------------------------------------------------------------------------- git
 
     /** git's output; null when {@code tolerate} and git refused, which the caller reads as "no such thing". */
     static String git(Path root, boolean tolerate, String... args) throws CannotJudge {
@@ -773,26 +1029,6 @@ public final class Promotion {
                 throw new CannotJudge("git " + String.join(" ", args) + " failed with status " + process.exitValue());
             }
             return new String(out, StandardCharsets.UTF_8);
-        } catch (IOException failure) {
-            throw new CannotJudge("git could not be run: " + failure.getMessage());
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new CannotJudge("interrupted while git ran");
-        }
-    }
-
-    static int status(Path root, String... args) throws CannotJudge {
-        List<String> command = new ArrayList<>(List.of("git", "-C", root.toString()));
-        command.addAll(List.of(args));
-        try {
-            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            process.getOutputStream().close();
-            process.getInputStream().readAllBytes();
-            if (!process.waitFor(60, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                throw new CannotJudge("git " + String.join(" ", args) + " did not answer");
-            }
-            return process.exitValue();
         } catch (IOException failure) {
             throw new CannotJudge("git could not be run: " + failure.getMessage());
         } catch (InterruptedException interrupted) {

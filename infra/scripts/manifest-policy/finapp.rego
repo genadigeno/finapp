@@ -336,6 +336,38 @@ deny contains msg if {
 	msg := sprintf("[images-digest] %s container %s: %s is not pinned by digest", [label(doc), container.name, object.get(container, "image", "no image at all")])
 }
 
+# ------------------------------------------------------------------------------------- the release (P15-TSK-017)
+#
+# In an environment GitOps delivers, every container of every workload, init containers included, runs exactly the pair that
+# environment's release record names (deploy/overlays/<environment>/release.yaml, read into this run's data by manifest-check.sh):
+# wherever an image is named, in the overlay's images:, a patch, a component or a base literal, it is one of the two. CI's recheck
+# holds the overlay's images: to the record; this holds everything the overlay renders to it. A record this run could not read
+# refuses rather than passes.
+release_overlays := {"staging", "production"}
+
+release_recorded if {
+	is_string(data.release_app)
+	is_string(data.release_migrator)
+}
+
+release_images contains sprintf("finapp-app@%s", [data.release_app]) if release_recorded
+
+release_images contains sprintf("finapp-migrator@%s", [data.release_migrator]) if release_recorded
+
+deny contains msg if {
+	data.overlay in release_overlays
+	not release_recorded
+	msg := sprintf("[release-images] overlay %s has no release record in this run's data: what it may run cannot be read", [data.overlay])
+}
+
+deny contains msg if {
+	data.overlay in release_overlays
+	release_recorded
+	some [doc, _, container] in all_containers
+	not object.get(container, "image", "") in release_images
+	msg := sprintf("[release-images] %s container %s runs %v, which is not the pair deploy/overlays/%s/release.yaml names", [label(doc), container.name, object.get(container, "image", null), data.overlay])
+}
+
 # ------------------------------------------------------------------------------------- what must not exist
 
 deny contains msg if {

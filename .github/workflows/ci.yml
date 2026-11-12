@@ -398,10 +398,45 @@ jobs:
           BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
         run: ./infra/scripts/key-ring-activation-check.sh "$BASE_REF"
 
-      # P15-TSK-017: what a change writes into the staging and production overlays, judged again with the whole history and no
-      # registry - a tag, a hand-edited digest, a production pair without staging evidence, a rollback past a contract marker.
+  # ---------------------------------------------------------------------------
+  # The promotion's repository refusals (P15-TSK-017, ADR-0122 decision 4): what
+  # a change writes into the staging and production overlays, judged with the
+  # whole history and no registry - a tag, a hand-edited digest, a record that
+  # disagrees with its overlay, a rollback past a contract marker, a production
+  # pair whose staging evidence was not merged before this change. Its own job,
+  # so the branch rules can require it by name. No credential, no environment.
+  # ---------------------------------------------------------------------------
+  promotion:
+    name: Promotion recheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Read the pinned Java version from the version catalog
+        id: toolchain
+        run: |
+          version=$(grep -E '^javaToolchain[[:space:]]*=' gradle/libs.versions.toml | cut -d'"' -f2)
+          if [ -z "$version" ]; then
+            echo "::error::javaToolchain not found in gradle/libs.versions.toml"
+            exit 1
+          fi
+          echo "java-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK ${{ steps.toolchain.outputs.java-version }}
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ steps.toolchain.outputs.java-version }}
+
       - name: Refuse a promotion the repository says is unsafe
-        run: ./infra/scripts/promote.sh recheck
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: ./infra/scripts/promote.sh recheck "$BASE_REF"
 
   # ---------------------------------------------------------------------------
   # The alert rules and routing (P15-TSK-025, ADR-0124): promtool checks every

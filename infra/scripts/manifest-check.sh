@@ -377,11 +377,29 @@ YAML
     plant_on schema-type "$DEPLOYMENT" 's/^  revisionHistoryLimit: 10$/  revisionHistoryLimit: ten/'
     plant render-broken
     mutate render-broken "$PRODUCTION" 's|^  - \.\./\.\./base$|  - ../../base-that-is-not-there|'
+    # The release record (P15-TSK-017): every image the overlay renders is the recorded pair, wherever it is named. A finapp image under
+    # another name kustomize's images: does not rewrite, as an init container of the Deployment and by a patch of the Job; and a record
+    # that names another pair than the overlay's.
+    OTHER=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    plant_on release-elsewhere "$DEPLOYMENT" 's/^      containers:$/      initContainers:\n        - name: elsewhere\n          image: registry.invalid\/finapp-app@'"$OTHER"'\n          resources:\n            requests: {cpu: 10m, memory: 8Mi}\n            limits: {cpu: 10m, memory: 8Mi}\n      containers:/'
+    plant_on release-patched "$PRODUCTION" 's|^images:$|patches:\n  - target:\n      kind: Job\n      name: finapp-migrator\n    patch: \|-\n      - op: replace\n        path: /spec/template/spec/containers/0/image\n        value: registry.invalid/finapp-migrator@'"$OTHER"'\nimages:|'
+    plant_on release-record-differs overlays/production/release.yaml 's/^app: .*$/app: "'"$OTHER"'"/'
+    plant_on release-staging-record-differs overlays/staging/release.yaml 's/^migrator: .*$/migrator: "'"$OTHER"'"/' staging
+
     # The delivery's Applications against Argo CD's schema (P15-TSK-017): a sync policy misspelled is refused, not read as none.
     plant delivery-schema-typo ../delivery/production
     mutate delivery-schema-typo delivery/production/applications.yaml 's/^    automated:$/    automatic:/'
 
     plant_namespace_security
+}
+
+# release_data <deploy dir> <overlay>: the pair an environment GitOps delivers is recorded to run (deploy/overlays/<environment>/release.yaml,
+# P15-TSK-017), as the policies' data: release-images holds every image the overlay renders to it. An overlay with no record states none.
+release_data() {
+    case $2 in staging | production) ;; *) return 0 ;; esac
+    for key in app migrator; do
+        printf 'release_%s: "%s"\n' "$key" "$(sed -n "s/^$key: \"\{0,1\}\(sha256:[0-9a-f]*\)\"\{0,1\} *\$/\1/p" "$1/overlays/$2/release.yaml" 2>/dev/null)"
+    done
 }
 
 # The namespaces are a root of their own, because an overlay's `namespace:` renames every Namespace it renders (see
@@ -1070,6 +1088,7 @@ in_container() {
                 kustomize build "/repo/deploy/overlays/$overlay" > "/scratch/rendered/$overlay.yaml"
                 append_namespaces /repo/deploy "/scratch/rendered/$overlay.yaml"
                 printf 'overlay: %s\n' "$overlay" > "/scratch/rendered/$overlay.data.yaml"
+                release_data /repo/deploy "$overlay" >> "/scratch/rendered/$overlay.data.yaml"
             done
             # The delivery (P15-TSK-017): each environment's project and Applications, and, read as committed, the roots and the
             # controller's configuration, which no Kustomize root holds. Schema-checked like everything else that reaches a cluster.
@@ -1092,6 +1111,7 @@ in_container() {
                 [ -s "$directory/rendered.yaml" ] || [ -f "$directory/render.failed" ] \
                     || { echo "!!   plant $name rendered nothing" >&2; exit 1; }
                 [ -f "$directory/render.failed" ] || append_namespaces "$directory/deploy" "$directory/rendered.yaml"
+                release_data "$directory/deploy" "$overlay" >> "$directory/overlay.yaml"
                 if [ -f "$directory/after-render.sed" ]; then
                     cp "$directory/rendered.yaml" "$directory/rendered.before"
                     sed -i -f "$directory/after-render.sed" "$directory/rendered.yaml"
@@ -1373,6 +1393,10 @@ refused memory-overcommit resources-memory
 refused job-resources resources-present
 
 refused image-tag images-digest
+refused release-elsewhere release-images
+refused release-patched release-images
+refused release-record-differs release-images
+refused release-staging-record-differs release-images
 refused image-no-digest images-digest
 refused image-absent images-digest
 refused job-image-tag images-digest

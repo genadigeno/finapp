@@ -1,0 +1,29 @@
+# The Argo CD project of what is not in a namespace (P15-TSK-017; OPERATIONS_RUNBOOK.md section 11.36): the admission policies and the
+# platform's namespaces, and nothing else. A project of their own, so that the release and the edge, in project finapp, can create
+# neither a ClusterImagePolicy, which decides what every pod may run, nor a Namespace, whose labels decide Pod Security and admission;
+# and so that these two Applications can create nothing inside a namespace at all.
+#
+# Like project.yaml it is synced by the root, and so it bounds nothing a merged change under deploy/delivery/ cannot rewrite: that
+# directory is admin-equivalent on the cluster, and the code owner's review is the control on it.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: finapp-cluster
+  namespace: argocd
+spec:
+  description: The admission policies and the platform's namespaces, synced from this repository alone
+  sourceRepos:
+    - https://github.com/genadigeno/finapp.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: finapp
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: policy.sigstore.dev
+      kind: ClusterImagePolicy
+  namespaceResourceBlacklist:
+    - group: "*"
+      kind: "*"
+  orphanedResources:
+    warn: true

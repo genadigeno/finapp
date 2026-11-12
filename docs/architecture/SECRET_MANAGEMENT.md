@@ -339,7 +339,8 @@ each is an act somebody performs:
 The manifest policy refuses a pod template whose generation is ahead of its `ExternalSecret`'s: a rollout before the sync would
 restart the fleet onto the value it already had. It cannot tell that the two were in separate commits; the review of the change
 does that. The migrator is not rolled: its next Job reads the Secret as it then stands. *(Since 2026-11-12, `OPERATIONS_RUNBOOK.md` §11.36:)*
-within one sync the delivery applies the `ExternalSecret`s in a wave of their own, judged healthy only once `Ready`, before the migrator
+within one sync the delivery applies the `ExternalSecret`s in a wave of their own, judged healthy only once `Ready` (Argo CD's own check,
+which reads that condition and no generation), before the migrator
 and the Deployment (`deploy/components/delivery-order`). That does not make step 3 a machine's: a change of annotations alone leaves
 `Ready` true from the sync before, so the wait cannot prove the store was read again, and two commits merged inside one polling interval
 reach the cluster as one sync. The two commits and the reading between them stay the procedure, and the review of the second is what

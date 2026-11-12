@@ -10,8 +10,14 @@
 # and the admission policies' authority and signature repository. That copy is held with the environment's delivery configuration,
 # under the environment's own access control and two-person review, and nothing here can see it.
 #
-# Its own project lets it write Applications and projects in argocd and nothing else, so a change below can never reach the cluster's
-# own objects through it.
+# ITS PROJECT IS ADMIN-EQUIVALENT, AND SO IS EVERYTHING IT SYNCS. It writes AppProjects and Applications in argocd, and Argo CD's own
+# documentation is plain about that: a project with access to Argo CD's namespace, and the ability to create Applications in any
+# project, are admin-level. A merged change under deploy/delivery/ can widen a project, add one, or put an Application in `default`,
+# which as installed accepts any repository, any cluster and any kind. So the control on deploy/delivery/ is the code owner's review
+# (.github/CODEOWNERS) and DeliveryManifestsTest's hold on what the root renders (exactly the two projects and the four Applications),
+# not any project here. The pipeline role's install restricts `default` to nothing (no source repositories, no destinations, every
+# namespaced kind refused; OPERATIONS_RUNBOOK.md section 11.36), so an Application nobody placed in a project of this directory
+# reaches nothing.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:

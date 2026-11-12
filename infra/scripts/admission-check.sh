@@ -345,6 +345,10 @@ MIGRATOR_UNSIGNED=$(push "$(variant migrator unsigned "$MIGRATOR_LOCAL")" finapp
 APP_OTHER=$(push "$(variant app other-key "$APP_LOCAL")" finapp-app other-key)
 MIGRATOR_OTHER=$(push "$(variant migrator other-key "$MIGRATOR_LOCAL")" finapp-migrator other-key)
 APP_UNATTESTED=$(push "$(variant app unattested "$APP_LOCAL")" finapp-app unattested)
+# Two plants for the promotion's own reading of a statement (P15-TSK-017): one carrying another image's attestation, one whose
+# provenance names the revision outside its git source.
+APP_SUBJECT=$(push "$(variant app another-subject "$APP_LOCAL")" finapp-app another-subject)
+APP_OUTSIDE=$(push "$(variant app outside-commit "$APP_LOCAL")" finapp-app outside-commit)
 # The name an environment's registry gives the image (infra/terraform/modules/registry: finapp-<environment>-app), so that the policy's
 # environment glob is proven on a cluster: the same image signed under it, and the unsigned one beside it.
 APP_ENV=$(push "$APP_LOCAL" finapp-rehearsal-app signed)
@@ -431,6 +435,15 @@ provenance() {
 }
 provenance finapp-app runtime
 provenance finapp-migrator migrator
+# The outside-commit plant's provenance: its git source names another commit, and the revision is written beside it where no verifier
+# reads it, so a search of the statement's text would find it and a reading of its structure does not.
+OTHER_COMMIT=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+sed -e "s/\"gitCommit\": \"$REVISION\"/\"gitCommit\": \"$OTHER_COMMIT\"/" \
+    -e "s/\"externalParameters\": {/\"externalParameters\": {\"gitCommit\": \"$REVISION\", /" \
+    "$WORK/att/finapp-app.provenance.json" > "$WORK/att/finapp-app-outside.provenance.json"
+grep -q "\"gitCommit\": \"$OTHER_COMMIT\"" "$WORK/att/finapp-app-outside.provenance.json" \
+    && grep -q "{\"gitCommit\": \"$REVISION\"" "$WORK/att/finapp-app-outside.provenance.json" \
+    || cannot "the outside-commit plant's provenance was not written"
 
 # sign_and_attest <key> <reference> <name>: one signature, then the two attestations.
 sign_and_attest() {
@@ -452,6 +465,18 @@ sign_and_attest other "$APP_OTHER" finapp-app
 sign_and_attest other "$MIGRATOR_OTHER" finapp-migrator
 # shellcheck disable=SC2086
 cosign sign --key /keys/ci.key $SIGNING "$APP_UNATTESTED" >> "$ART/cosign.log" 2>&1 || cannot "could not sign $APP_UNATTESTED"
+cp "$WORK/att/finapp-app.cdx.json" "$WORK/att/finapp-app-outside.cdx.json"
+sign_and_attest ci "$APP_OUTSIDE" finapp-app-outside
+# The another-subject plant: signed by the trusted key, and given, under its own attestation tag in the signature repository, the
+# signed application's attestation, whose subject is the signed application's digest.
+# shellcheck disable=SC2086
+cosign sign --key /keys/ci.key $SIGNING "$APP_SUBJECT" >> "$ART/cosign.log" 2>&1 || cannot "could not sign $APP_SUBJECT"
+MANIFEST_TYPE=application/vnd.oci.image.manifest.v1+json
+moved=$(dock run --rm --network kind "$CURL_IMAGE" sh -c \
+    "curl -fsS -H 'Accept: $MANIFEST_TYPE' http://$REG/v2/finapp-signatures/manifests/sha256-${APP##*@sha256:}.att -o /tmp/m \
+        && curl -fsS -X PUT -H 'Content-Type: $MANIFEST_TYPE' --data-binary @/tmp/m -o /dev/null -w '%{http_code}' \
+            http://$REG/v2/finapp-signatures/manifests/sha256-${APP_SUBJECT##*@sha256:}.att" 2>> "$ART/cosign.log") || true
+[ "$moved" = 201 ] || cannot "the another-subject plant's attestation could not be placed ($moved)"
 
 # ---------------------------------------------------------------------------------------------------
 # cosign verify, before this run deploys anything: the two images accepted, the three plants refused by name.
@@ -531,7 +556,9 @@ promotion_refused unsigned "has no signature" "$APP_UNSIGNED"
 promotion_refused other-key "has no signature" "$APP_OTHER"
 promotion_refused unattested "has no slsaprovenance1 attestation" "$APP_UNATTESTED"
 promotion_refused tag "a tag is never promoted" "$REG/finapp-app:signed"
-promotion_refused another-commit "says it was built from" "$APP" ffffffffffffffffffffffffffffffffffffffff
+promotion_refused another-commit "the provenance's git source names [$REVISION] as the commit it was built from, not ffffffffffffffffffffffffffffffffffffffff" "$APP" ffffffffffffffffffffffffffffffffffffffff
+promotion_refused another-subject "no matching subject digest found" "$APP_SUBJECT"
+promotion_refused outside-commit "the provenance's git source names [$OTHER_COMMIT] as the commit it was built from, not $REVISION" "$APP_OUTSIDE"
 
 # ---------------------------------------------------------------------------------------------------
 # The controller, from its pinned chart and the committed values.

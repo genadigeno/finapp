@@ -42,6 +42,37 @@ run "every_push_is_scanned" {
   }
 }
 
+run "the_signatures_live_in_a_repository_of_their_own_only_cosigns_tags_mutable" {
+  command = plan
+
+  assert {
+    condition     = output.signature_repository_name == "finapp-staging-signatures"
+    error_message = "The signature repository is not named from the conventions' prefix."
+  }
+
+  assert {
+    condition     = aws_ecr_repository.signatures.image_tag_mutability == "IMMUTABLE_WITH_EXCLUSION"
+    error_message = "The signature repository's tags are not immutable but for cosign's: a second attestation needs its tag mutable, and nothing else does."
+  }
+
+  assert {
+    condition = (length(aws_ecr_repository.signatures.image_tag_mutability_exclusion_filter) == 1
+      && aws_ecr_repository.signatures.image_tag_mutability_exclusion_filter[0].filter == "sha256-*"
+    && aws_ecr_repository.signatures.image_tag_mutability_exclusion_filter[0].filter_type == "WILDCARD")
+    error_message = "The signature repository's mutable tags are not exactly cosign's sha256-<digest> form."
+  }
+
+  assert {
+    condition     = aws_ecr_repository.signatures.force_delete == false
+    error_message = "A plan could delete the signature repository, and with it every digest's admission."
+  }
+
+  assert {
+    condition     = !contains(values(output.repository_names), output.signature_repository_name)
+    error_message = "The signature repository is one of the image repositories, every one of which must stay fully immutable."
+  }
+}
+
 run "no_image_is_refused" {
   command = plan
 

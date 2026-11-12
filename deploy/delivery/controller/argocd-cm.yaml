@@ -2,19 +2,29 @@
 # by any Application, and never applied over the controller's argocd-cm: the pipeline role merges these keys into it when it installs
 # the controller (THREAT_MODEL.md section 6 item 31), and a change here is a change to that install.
 #
-# Without the two health checks below the waves order nothing. Argo CD waits for a wave to be healthy before the next, but it judges
-# an Application healthy as soon as it exists (that assessment was removed from its defaults in 1.8), and it ships no check for an
-# ExternalSecret, which would then count as healthy once applied, before the operator wrote its Secret. Each check below answers
-# Healthy only on the positive fact, and Progressing otherwise, so an object nobody has reconciled yet holds its wave rather than
-# passing it.
+# THE WAVES WAIT ON HEALTH, and health is these checks:
+#   - an Application: Argo CD judges one healthy as soon as it exists, its assessment removed from the defaults in 1.8, so without the
+#     check below the root's waves order nothing. Healthy only when it is synced to its source and its resources are healthy.
+#   - an ExternalSecret: Argo CD ships a check of its own (resource_customizations/external-secrets.io/ExternalSecret/health.lua, read on
+#     its main branch 2026-11-12): Ready True healthy, Ready False degraded, anything else progressing. That is what the release's wave
+#     -2 needs, so this file adds none. Neither it nor anything here proves freshness: it reads no generation, so after a change of the
+#     ExternalSecret's annotations alone a Ready left from the sync before passes the wave before the operator has read the store again.
+#     Observing status.syncedResourceVersion against the change is P15-TSK-032's, on a controller.
+#   - a ClusterImagePolicy: Argo CD ships no check, so the admission wave would be "applied", not "policies Ready". The check below reads
+#     the shape of the pinned policy controller's v1beta1 type (v0.15.1: a knative duckv1.Status, observedGeneration and conditions, with
+#     a Ready condition over KeysInlined, PoliciesInlined and ConfigMapUpdated): healthy only when the controller has observed this
+#     generation and says Ready. Read from its source, not seen: in v0.15.1 its reconciler is written against v1alpha1 objects, and that a
+#     v1beta1 policy carries that status through the conversion is P15-TSK-032's to observe. If it does not, the wave never turns
+#     healthy and the root stops there: closed, not open.
+# Each check answers Healthy only on the positive fact and Progressing otherwise, so an object nobody has reconciled yet holds its wave.
 #
 # Tracking by annotation, the controller's default named so that no install changes it: the annotation's value is the Application's
 # name and the object's, so it never changes after an object is adopted, and a change to an ExternalSecret's metadata makes the
 # operator read the store again (SECRET_MANAGEMENT.md section 3.5). Renaming an Application rewrites it on every object, every
 # ExternalSecret included: do not.
 #
-# Written from Argo CD's documentation (read 2026-11-12) and never run here: no controller has been installed on a cluster in this
-# repository. The first rehearsal of a promotion through a controller is OPERATIONS_RUNBOOK.md section 11.36's to record.
+# Written from Argo CD's documentation and source and the policy controller's source (read 2026-11-12), and never run here: no controller
+# has been installed on a cluster in this repository.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -37,20 +47,21 @@ data:
       end
     end
     return hs
-  # An ExternalSecret is healthy when the operator reports it Ready, which it does only once its Secret is written whole.
-  resource.customizations.health.external-secrets.io_ExternalSecret: |
+  # A ClusterImagePolicy is healthy when the policy controller has observed this generation and reports it Ready.
+  resource.customizations.health.policy.sigstore.dev_ClusterImagePolicy: |
     hs = {}
     hs.status = "Progressing"
-    hs.message = "waiting for the ExternalSecret to be Ready"
-    if obj.status ~= nil and obj.status.conditions ~= nil then
+    hs.message = "waiting for the policy controller to observe and accept this policy"
+    if obj.status ~= nil and obj.status.conditions ~= nil and obj.status.observedGeneration ~= nil
+        and obj.metadata.generation ~= nil and obj.status.observedGeneration == obj.metadata.generation then
       for _, condition in ipairs(obj.status.conditions) do
         if condition.type == "Ready" then
           if condition.status == "True" then
             hs.status = "Healthy"
-            hs.message = condition.message or ""
+            hs.message = ""
           elseif condition.status == "False" then
             hs.status = "Degraded"
-            hs.message = condition.message or "the ExternalSecret is not Ready"
+            hs.message = condition.message or "the policy is not Ready"
           end
         end
       end

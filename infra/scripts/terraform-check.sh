@@ -250,7 +250,7 @@ HCL
     planted brokers-unauthenticated modules/kafka/main.tf
 
     plant scram-unprefixed
-    sed -i 's/name        = "AmazonMSK_\${each\.value}"/name        = each.value/' \
+    sed -i 's/name\( *\)= "AmazonMSK_\${each\.value}"/name\1= each.value/' \
         /scratch/plants/scram-unprefixed/infra/terraform/modules/kafka/main.tf
     planted scram-unprefixed modules/kafka/main.tf
 
@@ -275,7 +275,7 @@ HCL
     planted reader-wildcard modules/security/main.tf
 
     plant reader-reads-the-other
-    sed -i 's/workload => toset(\[for item in local\.delivered_entries : item\.name if item\.workload == workload\])/workload => toset([for item in local.delivered_entries : item.name])/' \
+    sed -i '/^  reads = {$/,/^  }$/{/^      if item\.workload == workload$/d}' \
         /scratch/plants/reader-reads-the-other/infra/terraform/modules/security/main.tf
     planted reader-reads-the-other modules/security/main.tf
 

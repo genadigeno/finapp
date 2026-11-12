@@ -18,10 +18,12 @@
 #       value's, which is exactly what makes every row under the old value unreadable. A version's value and its check value never
 #       change once listed; new material goes to a new version.
 #
-#   (5) an activation in an overlay GitOps delivers (staging, production) before that environment was seen holding the version
-#       (P15-TSK-017; THREAT_MODEL.md section 6 item 32 (c)): the environment's newest record under deploy/evidence/<environment>,
-#       written by infra/scripts/post-deploy-smoke.sh from what every replica runs (the rollout complete, none terminating, every pod
-#       on one configuration), must list the version. Comparing two commits proves the change was two commits, not that the first
+#   (5) an activation rendered into an environment GitOps delivers (an overlay's own literal for that environment; a literal in
+#       deploy/base or deploy/components for both) before that environment was seen holding the version (P15-TSK-017; THREAT_MODEL.md
+#       section 6 item 32 (c)): the environment's newest record under deploy/evidence/<environment> AS MERGED AT THE BASE, written by
+#       infra/scripts/post-deploy-smoke.sh from what every replica runs (the rollout complete, none terminating, every pod on one
+#       configuration), must list the version. A record the change itself adds does not count: it would be the change vouching for
+#       itself. Comparing two commits proves the change was two commits, not that the first
 #       had rolled out, and Argo CD alone cannot hold the order: it syncs the branch's newest commit, so two commits merged inside one
 #       polling interval reach a cluster as one sync. So the order is held here, at the merge, which is the deploy.
 #
@@ -118,26 +120,29 @@ compare() {
                 status=1
             fi
 
-            # (5) An activation in an environment GitOps delivers, before that environment's newest smoke record lists the version.
+            # (5) An activation in an environment GitOps delivers, before that environment's newest smoke record, as merged at the base,
+            #     lists the version. The base and the components are rendered into both environments, so a literal there waits for both.
+            environments=""
             case $file in
-                deploy/overlays/staging/* | deploy/overlays/production/*)
-                    if [ -n "$head_active" ] && [ "$head_active" != "${base_active:-1}" ]; then
-                        environment=${file#deploy/overlays/}
-                        environment=${environment%%/*}
-                        said=$(java --source 21 "$(jpath "$PROMOTION")" held "$(jpath "$head")" "$environment" "$stem" "$head_active" 2>&1) && read_status=0 || read_status=$?
-                        if [ "$read_status" -eq 1 ]; then
-                            echo "$file: ${stem}_RING_ACTIVEVERSION moves to $head_active before $environment was seen holding it" >&2
-                            echo "  $said" >&2
-                            status=1
-                        elif [ "$read_status" -ne 0 ]; then
-                            # A record that could not be read, or no JDK, proves nothing: refused, and said so.
-                            echo "$file: ${stem}_RING_ACTIVEVERSION moves to $head_active, and $environment's records could not be judged ($read_status)" >&2
-                            echo "  $said" >&2
-                            status=1
-                        fi
-                    fi
-                    ;;
+                deploy/overlays/staging/*) environments=staging ;;
+                deploy/overlays/production/*) environments=production ;;
+                deploy/base/* | deploy/components/*) environments="staging production" ;;
             esac
+            if [ -n "$environments" ] && [ -n "$head_active" ] && [ "$head_active" != "${base_active:-1}" ]; then
+                for environment in $environments; do
+                    said=$(java --source 21 "$(jpath "$PROMOTION")" held "$(jpath "$base")" "$environment" "$stem" "$head_active" 2>&1) && read_status=0 || read_status=$?
+                    if [ "$read_status" -eq 1 ]; then
+                        echo "$file: ${stem}_RING_ACTIVEVERSION moves to $head_active before $environment was seen holding it" >&2
+                        echo "  $said" >&2
+                        status=1
+                    elif [ "$read_status" -ne 0 ]; then
+                        # A record that could not be read, or no JDK, proves nothing: refused, and said so.
+                        echo "$file: ${stem}_RING_ACTIVEVERSION moves to $head_active, and $environment's records could not be judged ($read_status)" >&2
+                        echo "  $said" >&2
+                        status=1
+                    fi
+                done
+            fi
 
             # (2) A version the base listed has left, neither held nor retired.
             for version in $(printf '%s,%s' "$base_versions" "$base_retired" | tr ',' ' '); do
@@ -173,27 +178,34 @@ self_test() {
     trap 'rm -rf "$tmp"' EXIT
     failures=0
 
-    plant() { # plant <name> <expected status> <file> <base literals, | separated> <head literals, | separated> [<environment> <listing>]
+    plant() { # plant <name> <expected status> <file> <base literals, | separated> <head literals, | separated> [<environment> <listing>]...
         rm -rf "$tmp/b" "$tmp/h"
         mkdir -p "$tmp/b/$(dirname "$3")" "$tmp/h/$(dirname "$3")"
         printf '%s\n' "$4" | tr '|' '\n' | sed 's/^/      - /' > "$tmp/b/$3"
         printf '%s\n' "$5" | tr '|' '\n' | sed 's/^/      - /' > "$tmp/h/$3"
-        # The smoke's record of an environment, in the form infra/scripts/Promotion.java writes, listing FINAPP_DOC as given.
-        if [ -n "${6:-}" ]; then
-            mkdir -p "$tmp/h/deploy/evidence/$6"
+        # The smoke's records, in the form infra/scripts/Promotion.java writes, listing FINAPP_DOC as given: "<environment> <listing>"
+        # pairs, written into the base (merged before the change) unless the pair's environment is prefixed head: (the change's own).
+        name=$1 expected=$2
+        shift 5
+        while [ $# -ge 2 ]; do
+            side=b
+            environment=$1
+            case $environment in head:*) side=h; environment=${environment#head:} ;; esac
+            mkdir -p "$tmp/$side/deploy/evidence/$environment"
             printf 'environment: %s\nchecked: "2026-11-12T10:00:00Z"\nhealth: PASS\nbuild-identity: PASS\ntrial-balance: PASS\nheld:\n  - "FINAPP_DOC listed %s active 1"\n' \
-                "$6" "$7" > "$tmp/h/deploy/evidence/$6/20261112T100000Z-000000000000.yaml"
-        fi
+                "$environment" "$2" > "$tmp/$side/deploy/evidence/$environment/20261112T100000Z-000000000000.yaml"
+            shift 2
+        done
         set +e
         compare "$tmp/b" "$tmp/h" > "$tmp/out" 2>&1
         got=$?
         set -e
-        if [ "$got" -ne "$2" ]; then
-            echo "!!   plant $1: expected status $2, got $got" >&2
+        if [ "$got" -ne "$expected" ]; then
+            echo "!!   plant $name: expected status $expected, got $got" >&2
             sed 's/^/     /' "$tmp/out" >&2
             failures=$((failures + 1))
         else
-            echo "ok   plant $1: status $got"
+            echo "ok   plant $name: status $got"
         fi
     }
 
@@ -235,6 +247,16 @@ self_test() {
     plant staging-activation-after-the-listing-was-seen 0 deploy/overlays/staging/kustomization.yaml "$k12" "$a2" staging 1,2
     plant kind-activation-needs-no-record 0 deploy/overlays/kind/kustomization.yaml "$k12" "$a2"
     plant pointer-moved-back-after-the-listing-was-seen 0 "$f" "$a2" "$k12|FINAPP_DOC_RING_ACTIVEVERSION=1" production 1,2
+    # A record the change itself adds is no record (the review of P15-TSK-017): it would be the change vouching for itself.
+    plant activation-with-its-own-record 1 "$f" "$k12" "$a2" head:production 1,2
+    # A literal in the base or a component is rendered into both GitOps environments, so it waits for both.
+    b=deploy/base/kustomization.yaml
+    c=deploy/components/secret-delivery/kustomization.yaml
+    plant base-activation-with-no-record 1 "$b" "$k12" "$a2"
+    plant base-activation-with-one-environment-seen 1 "$b" "$k12" "$a2" staging 1,2
+    plant base-activation-with-both-seen 0 "$b" "$k12" "$a2" staging 1,2 production 1,2
+    plant component-activation-with-no-record 1 "$c" "$k12" "$a2"
+    plant component-activation-with-both-seen 0 "$c" "$k12" "$a2" staging 1,2 production 1,2
 
     if [ "$failures" -ne 0 ]; then
         echo "!!   $failures plant(s) not refused for their reason" >&2

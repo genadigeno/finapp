@@ -43,6 +43,11 @@ output "repository_urls" {
   value       = module.registry.repository_urls
 }
 
+output "signature_repository_url" {
+  description = "Where staging's signatures and attestations are copied to with their digests: PROMOTE_SIGNATURES, and the admission policy's source.oci."
+  value       = module.registry.signature_repository_url
+}
+
 output "database_endpoint" {
   description = "Staging's database address, for the store's URL entries at first fill and the bootstrap step: never for a file in this repository."
   value       = module.postgres.endpoint

@@ -27,28 +27,50 @@ class CodeOwnersTest {
 
     private static final String FILE = ".github/CODEOWNERS";
 
-    /** The paths the entry and its routed notes name, and what else renders into production or decides what does. */
-    private static final List<String> PRODUCTION_PATHS = List.of(
-            "deploy/overlays/production/kustomization.yaml",
-            "deploy/overlays/production/release.yaml",
-            "deploy/edge/overlays/production/kustomization.yaml",
-            "deploy/components/secret-delivery/externalsecret-app.yaml",
-            "deploy/components/delivery-order/kustomization.yaml",
-            "deploy/delivery/production/applications.yaml",
-            "deploy/delivery/roots/production.yaml",
-            "deploy/base/deployment.yaml",
-            "deploy/admission/clusterimagepolicies.yaml",
-            "deploy/namespaces/namespaces.yaml",
-            "deploy/evidence/staging/a-record.yaml",
-            "infra/terraform/environments/production/main.tf",
-            "infra/terraform/modules/registry/main.tf",
-            "infra/scripts/promote.sh",
-            "infra/scripts/Promotion.java",
-            "infra/scripts/key-ring-activation-check.sh",
-            "docs/architecture/CONFIGURATION_REGISTER.md",
-            "docs/migrations/released-schema-floor.yaml",
-            ".github/CODEOWNERS",
-            ".github/workflows/ci.yml");
+    /** What is owned, as data apart from the reading of it. */
+    private static final class Owned {
+
+        /** The paths the entry and its routed notes name, and what else renders into production or decides what does. */
+        static final List<String> PATHS = List.of(
+                "deploy/overlays/production/kustomization.yaml",
+                "deploy/overlays/production/release.yaml",
+                "deploy/edge/overlays/production/kustomization.yaml",
+                "deploy/components/secret-delivery/externalsecret-app.yaml",
+                "deploy/components/delivery-order/kustomization.yaml",
+                "deploy/delivery/production/applications.yaml",
+                "deploy/delivery/roots/production.yaml",
+                "deploy/base/deployment.yaml",
+                "deploy/admission/clusterimagepolicies.yaml",
+                "deploy/namespaces/namespaces.yaml",
+                "deploy/evidence/staging/a-record.yaml",
+                "infra/terraform/environments/production/main.tf",
+                "infra/terraform/modules/registry/main.tf",
+                "infra/scripts/promote.sh",
+                "infra/scripts/Promotion.java",
+                "infra/scripts/key-ring-activation-check.sh",
+                "docs/architecture/CONFIGURATION_REGISTER.md",
+                "docs/migrations/released-schema-floor.yaml",
+                ".github/CODEOWNERS",
+                ".github/workflows/ci.yml",
+                // What the owned checks read (the review of P15-TSK-017): the release name, the markers, the guards and the lint, the catalog.
+                "build-logic/src/main/kotlin/finapp.java-conventions.gradle.kts",
+                "ledger/src/main/resources/db/migration/ledger/V001__a-migration.sql",
+                "platform/src/main/resources/db/migration/platform/V099__another.sql",
+                "app/src/test/java/com/finapp/app/architecture/MigrationLint.java",
+                "app/src/test/java/com/finapp/app/architecture/MigrationsAreExpandOnlyTest.java",
+                "app/src/test/java/com/finapp/app/architecture/ThreatModelIsCompleteTest.java",
+                "app/src/test/java/com/finapp/app/architecture/CodeOwnersTest.java",
+                "gradle/libs.versions.toml",
+                "gradle/verification-metadata.xml");
+
+        /** The trees every file of which reaches production, or decides what does, at its merge. */
+        static final List<String> TREES = List.of("deploy", "infra", "build-logic", "gradle", "app/src/test/java/com/finapp/app/architecture");
+
+        /** Where a module keeps its migrations, below the module's directory. */
+        static final Path MIGRATIONS = Path.of("src", "main", "resources", "db", "migration");
+
+        private Owned() {}
+    }
 
     private static Path root;
     private static List<Rule> rules;
@@ -62,22 +84,29 @@ class CodeOwnersTest {
     }
 
     @Test
-    @DisplayName("each path the entry names, and every file under deploy/, infra/terraform/ and infra/scripts/, has an owner")
+    @DisplayName("each path the entry names, and what the owned checks read, has an owner")
     void everyProductionPathIsOwned() {
         assertThat(rules).as("the file was read").isNotEmpty();
-        for (String path : PRODUCTION_PATHS) {
+        for (String path : Owned.PATHS) {
             assertThat(owners(rules, path)).as("%s: a change here reaches production at its merge, so it needs a second person", path).isNotEmpty();
         }
-        List<String> unowned = new ArrayList<>();
-        for (String directory : List.of("deploy", "infra/terraform", "infra/scripts")) {
-            try (Stream<Path> files = Files.walk(root.resolve(directory))) {
-                files.filter(Files::isRegularFile).map(file -> root.relativize(file).toString().replace('\\', '/'))
-                        .filter(path -> owners(rules, path).isEmpty()).forEach(unowned::add);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
+    }
+
+    @Test
+    @DisplayName("every file of the trees that reach production, and every module's migrations, has an owner")
+    void everyFileOfTheOwnedTreesIsOwned() {
+        List<String> files = new ArrayList<>();
+        for (String tree : Owned.TREES) {
+            files.addAll(filesUnder(root.resolve(tree)));
         }
-        assertThat(unowned).isEmpty();
+        // Every module's migrations, read from the tree: a module added later is held without a line here.
+        List<String> migrations = new ArrayList<>();
+        for (Path module : children(root)) {
+            migrations.addAll(filesUnder(module.resolve(Owned.MIGRATIONS)));
+        }
+        assertThat(migrations).as("the migrations were read").hasSizeGreaterThan(300);
+        files.addAll(migrations);
+        assertThat(files.stream().filter(path -> owners(rules, path).isEmpty()).toList()).isEmpty();
     }
 
     @Test
@@ -152,6 +181,28 @@ class CodeOwnersTest {
         }
         regex.append(directory ? "/.*$" : "(?:/.*)?$");
         return Pattern.compile(regex.toString());
+    }
+
+    // ------------------------------------------------------------------------------------------- the tree
+
+    /** Every regular file below a directory, as a repository path; none when the directory does not exist. */
+    private static List<String> filesUnder(Path directory) {
+        if (!Files.isDirectory(directory)) {
+            return List.of();
+        }
+        try (Stream<Path> walked = Files.walk(directory)) {
+            return walked.filter(Files::isRegularFile).map(file -> root.relativize(file).toString().replace('\\', '/')).toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static List<Path> children(Path directory) {
+        try (Stream<Path> listed = Files.list(directory)) {
+            return listed.filter(Files::isDirectory).toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private static List<String> owners(List<Rule> rules, String path) {

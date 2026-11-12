@@ -421,8 +421,7 @@ class CommittedConfigurationHoldsNoSecretTest {
                                 && !isKubernetesTokenSwitch(key, literal)
                                 && !isKubernetesSecretReference(key, literal)
                                 && !isExternalSecretEntryName(key, literal)
-                                && !isOperatorChartSwitch(key, literal)
-                                && !isControllerHealthCheck(key, literal)) {
+                                && !isOperatorChartSwitch(key, literal)) {
                             offences.add(
                                     "key '"
                                             + key
@@ -443,25 +442,6 @@ class CommittedConfigurationHoldsNoSecretTest {
         assertThat(offencesIn("secretName: finapp-edge-local-ca", false)).isEmpty();
         assertThat(offencesIn("secretName: Hunter2!Password", false)).isNotEmpty();
         assertThat(offencesIn("secretName: hunter2password", false)).isNotEmpty();
-    }
-
-    @Test
-    @DisplayName("the GitOps controller's health check for an ExternalSecret is a block of Lua under a key naming the kind; any value but the block is still reported")
-    void aHealthCheckKeyIsNotACredential() {
-        String key = "resource.customizations.health.external-secrets.io_ExternalSecret";
-        assertThat(offencesIn(key + ": |\n    hs = {}\n    return hs", false)).isEmpty();
-        assertThat(offencesIn(key + ": hunter2", false)).isNotEmpty();
-        assertThat(offencesIn(key + ": |hunter2", false)).as("only the block indicator alone").isNotEmpty();
-        assertThat(offencesIn("resource.customizations.health.example.io_Secret: |", false)).as("only that kind's key").isNotEmpty();
-    }
-
-    /**
-     * Argo CD reads a kind's health check from a key that names the kind (`P15-TSK-017`, {@code deploy/delivery/controller}), and
-     * External Secrets' kind is called {@code ExternalSecret}: its value is a YAML block of Lua, whose own lines are read like any
-     * other. Exactly this key with exactly the bare block indicator, so a credential written there is still reported.
-     */
-    private static boolean isControllerHealthCheck(String key, String literal) {
-        return key.equals("resource.customizations.health.external-secrets.io_ExternalSecret") && literal.equals("|");
     }
 
     /**

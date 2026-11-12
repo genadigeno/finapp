@@ -88,7 +88,7 @@ class PromotionTest {
         git("checkout", "-q", "master");
         Run off = tool("check", "staging", A1, M1, elsewhere);
         assertThat(off.status()).as(off.out()).isEqualTo(1);
-        assertThat(off.out()).contains("is not on this branch's history");
+        assertThat(off.out()).contains("is not on this branch's first-parent history");
     }
 
     @Test
@@ -142,11 +142,11 @@ class PromotionTest {
     }
 
     @Test
-    @DisplayName("a marker of ANY never refuses a rollback, nor does one naming the release rolled back to; a migration with no marker refuses nothing")
+    @DisplayName("a marker of ANY never refuses a rollback, nor does one naming a release older than the target; a migration with no marker refuses nothing")
     void aMarkerOfAnyNeverRefuses() throws Exception {
         for (String marker : new String[] {
                 "-- finapp-contract: first-conforming-release=ANY; waives=CHECK; reason=a widened check refuses nothing",
-                "-- finapp-contract: first-conforming-release=1.2.0; waives=DROP; reason=1.2.0 already stopped reading it",
+                "-- finapp-contract: first-conforming-release=1.1.0; waives=DROP; reason=1.1.0 already stopped reading it",
                 "-- an ordinary comment, and no marker"}) {
             Path fresh = Files.createTempDirectory(repository, "any");
             Path saved = repository;
@@ -197,7 +197,7 @@ class PromotionTest {
         String after = read("deploy/overlays/staging/kustomization.yaml");
         assertThat(after).contains("  - name: finapp-app\n    digest: " + A1).contains("  - name: finapp-migrator\n    digest: " + M1);
         assertThat(after.replace(A1, "sha256:" + "0".repeat(64)).replace(M1, "sha256:" + "0".repeat(64))).isEqualTo(before);
-        assertThat(read("deploy/overlays/staging/release.yaml")).contains("release: \"1.2.0\"").contains("revision: \"" + revision + "\"")
+        assertThat(read("deploy/overlays/staging/release.yaml")).contains("release: \"1.2.0-SNAPSHOT\"").contains("revision: \"" + revision + "\"")
                 .contains("app: \"" + A1 + "\"").contains("migrator: \"" + M1 + "\"").contains("migrator-revision: \"" + revision + "\"")
                 .startsWith("# The release this environment runs");
     }
@@ -229,26 +229,26 @@ class PromotionTest {
     @DisplayName("CI judges again what a change writes: a hand-edited digest, a tag, a record that disagrees and a rollback past a contract are refused; the placeholders and a promoted pair pass")
     void ciJudgesWhatAChangeWrites() throws Exception {
         String old = start("1.2.0");
-        Run placeholders = tool("recheck");
+        Run placeholders = tool("recheck", "HEAD");
         assertThat(placeholders.status()).as(placeholders.out()).isZero();
         assertThat(placeholders.out()).contains("staging has nothing promoted").contains("production has nothing promoted");
 
         promoteAndCommit("staging", A1, M1, old);
-        Run promoted = tool("recheck");
+        Run promoted = tool("recheck", "HEAD");
         assertThat(promoted.status()).as(promoted.out()).isZero();
 
         String overlay = read("deploy/overlays/staging/kustomization.yaml");
         write("deploy/overlays/staging/kustomization.yaml", overlay.replace(A1, A2));
-        assertThat(tool("recheck").out()).as("a digest edited by hand").contains("REFUSED").contains("its release record");
+        assertThat(tool("recheck", "HEAD").out()).as("a digest edited by hand").contains("REFUSED").contains("its release record");
         write("deploy/overlays/staging/kustomization.yaml", overlay.replace("    digest: " + A1, "    newTag: \"1.2.0\""));
-        assertThat(tool("recheck").out()).as("a tag").contains("REFUSED").contains("never written by a promotion");
+        assertThat(tool("recheck", "HEAD").out()).as("a tag").contains("REFUSED").contains("never written by a promotion");
         write("deploy/overlays/staging/kustomization.yaml", overlay);
 
         String contracted = release("1.3.0", "-- finapp-contract: first-conforming-release=1.3.0; waives=DROP; reason=the last reader went in 1.3.0");
         promoteAndCommit("staging", A2, M2, contracted);
         // A revert of the promotion, as a hand-made pull request would write it: back past the contract.
         git("revert", "--no-edit", "--no-commit", "HEAD");
-        Run reverted = tool("recheck");
+        Run reverted = tool("recheck", "HEAD");
         assertThat(reverted.status()).as(reverted.out()).isEqualTo(1);
         assertThat(reverted.out()).containsAnyOf("crosses ledger/src/main/resources/db/migration/ledger/V002__contract.sql", "the migrator stays");
     }
@@ -329,6 +329,98 @@ class PromotionTest {
         assertThat(tool("held", "staging", "FINAPP_DOC", "2").status()).as("another ring").isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("a snapshot is not the release it leads to: a rollback to a 1.3.0-SNAPSHOT commit across a marker naming 1.3.0 is refused")
+    void aSnapshotIsBeforeItsRelease() throws Exception {
+        String snapshot = start("1.3.0");
+        promoteAndCommit("staging", A1, M1, snapshot);
+        String cut = releaseExactly("1.3.0", "-- finapp-contract: first-conforming-release=1.3.0; waives=DROP; reason=1.3.0 stopped reading legacy");
+        promoteAndCommit("staging", A2, M2, cut);
+        Run back = tool("check", "staging", A1, M2, snapshot);
+        assertThat(back.status()).as(back.out()).isEqualTo(1);
+        assertThat(back.out()).contains("(release 1.3.0-SNAPSHOT) crosses").contains("names 1.3.0");
+    }
+
+    @Test
+    @DisplayName("history is the branch's own line: a side branch's intermediate record never ran, and a commit it carried is not a release")
+    void aSideBranchsIntermediateNeverRan() throws Exception {
+        String old = start("1.2.0");
+        promoteAndCommit("staging", A1, M1, old);
+        git("checkout", "-q", "-b", "side");
+        String side = release("1.3.0", "-- finapp-contract: first-conforming-release=1.3.0; waives=DROP; reason=only on the side branch");
+        promoteAndCommit("staging", A2, M2, side);
+        git("revert", "--no-edit", "HEAD");
+        git("checkout", "-q", "master");
+        git("-c", "user.name=promotion-test", "-c", "user.email=promotion-test@example.invalid", "-c", "commit.gpgsign=false", "merge", "-q",
+                "--no-ff", "-m", "the side branch merged", "side");
+        Run current = tool("check", "staging", A1, M1, old);
+        assertThat(current.status()).as("the side branch's record of %s never ran on the line: %s", side, current.out()).isZero();
+        Run fromTheSide = tool("check", "staging", A2, M2, side);
+        assertThat(fromTheSide.status()).as(fromTheSide.out()).isEqualTo(1);
+        assertThat(fromTheSide.out()).contains("is not on this branch's first-parent history");
+    }
+
+    @Test
+    @DisplayName("CI reads staging's evidence as merged before the change: one change bringing its own staging promotion and record is refused, the same pair after them merged is accepted")
+    void aChangeCannotBringItsOwnEvidence() throws Exception {
+        String revision = start("1.2.0");
+        String before = git("rev-parse", "HEAD").strip();
+        // One change: staging promoted, its smoke record, and production, together.
+        assertThat(tool("write", "staging", A1, M1, revision).status()).isZero();
+        assertThat(smoke("staging", healthySnapshot(A1, M1, "1", "1"), zeroBalance(), "deploy/evidence/staging").status()).isZero();
+        commitAll("staging promoted and recorded");
+        assertThat(tool("write", "production", A1, M1, revision).status()).as("promote.sh reads what is committed").isZero();
+        commitAll("production promoted in the same change");
+        Run together = tool("recheck", before);
+        assertThat(together.status()).as(together.out()).isEqualTo(1);
+        assertThat(together.out()).contains("merged before this change");
+
+        // The same pair once staging's promotion and record were merged on their own: accepted.
+        String merged = git("rev-parse", "HEAD~1").strip();
+        Run after = tool("recheck", merged);
+        assertThat(after.status()).as(after.out()).isZero();
+        assertThat(after.out()).contains("recorded before this change");
+    }
+
+    @Test
+    @DisplayName("a verified statement is read as its structure: another or an extra subject, another predicate, and a commit outside the provenance's source are refused; the good statements are accepted")
+    void anAttestationIsReadAsItsStructure() throws Exception {
+        String hex = A1.substring("sha256:".length());
+        String revision = "c".repeat(40);
+        String good = provenance(hex, "{\"uri\": \"git+https://example.invalid/finapp@" + revision + "\", \"digest\": {\"gitCommit\": \"" + revision + "\"}}", "{}");
+        Run accepted = raw(good, "statement", "slsaprovenance1", A1, revision);
+        assertThat(accepted.status()).as(accepted.out()).isZero();
+        Run sbom = raw("{\"_type\": \"https://in-toto.io/Statement/v0.1\", \"predicateType\": \"https://cyclonedx.org/bom\", \"subject\": [{\"name\": \"x\", "
+                + "\"digest\": {\"sha256\": \"" + hex + "\"}}], \"predicate\": {}}", "statement", "cyclonedx", A1, "-");
+        assertThat(sbom.status()).as(sbom.out()).isZero();
+
+        Run another = raw(good.replace(hex, "b2".repeat(32)), "statement", "slsaprovenance1", A1, revision);
+        assertThat(another.status()).as(another.out()).isEqualTo(1);
+        assertThat(another.out()).contains("names another subject");
+        Run extra = raw(good.replace("\"subject\": [", "\"subject\": [{\"name\": \"y\", \"digest\": {\"sha256\": \"" + "d4".repeat(32) + "\"}}, "),
+                "statement", "slsaprovenance1", A1, revision);
+        assertThat(extra.status()).as("every subject must be the digest: %s", extra.out()).isEqualTo(1);
+        Run predicate = raw(good.replace("https://slsa.dev/provenance/v1", "https://slsa.dev/provenance/v0.2"), "statement", "slsaprovenance1", A1, revision);
+        assertThat(predicate.out()).contains("REFUSED").contains("predicate is");
+
+        // The commit written where no verifier reads it, and another commit in the git source: a search of the text would accept it.
+        String outside = provenance(hex, "{\"uri\": \"git+https://example.invalid/finapp@" + "e".repeat(40) + "\", \"digest\": {\"gitCommit\": \"" + "e".repeat(40) + "\"}}",
+                "{\"gitCommit\": \"" + revision + "\"}");
+        Run misplaced = raw(outside, "statement", "slsaprovenance1", A1, revision);
+        assertThat(misplaced.status()).as(misplaced.out()).isEqualTo(1);
+        assertThat(misplaced.out()).contains("the provenance's git source names [" + "e".repeat(40) + "]");
+        Run unreadable = raw("{\"subject\": ", "statement", "slsaprovenance1", A1, revision);
+        assertThat(unreadable.status()).as("JSON it cannot parse is never a pass: %s", unreadable.out()).isEqualTo(2);
+    }
+
+    private static String provenance(String hex, String source, String externalParameters) {
+        return "{\"_type\": \"https://in-toto.io/Statement/v0.1\", \"predicateType\": \"https://slsa.dev/provenance/v1\", \"subject\": [{\"name\": "
+                + "\"registry.invalid/finapp-app\", \"digest\": {\"sha256\": \"" + hex + "\"}}], \"predicate\": {\"buildDefinition\": {\"buildType\": "
+                + "\"urn:finapp:build:image:v1\", \"externalParameters\": " + externalParameters + ", \"resolvedDependencies\": [" + source
+                + ", {\"uri\": \"pkg:docker/eclipse-temurin@21\", \"digest\": {\"sha256\": \"" + "f".repeat(64) + "\"}}]}, \"runDetails\": "
+                + "{\"builder\": {\"id\": \"urn:finapp:builder:test\"}}}}";
+    }
+
     // ------------------------------------------------------------------------------------------- what the files hold
 
     @Test
@@ -376,15 +468,18 @@ class PromotionTest {
                 .contains("promotion_refused other-key \"has no signature\" \"$APP_OTHER\"")
                 .contains("promotion_refused unattested \"has no slsaprovenance1 attestation\" \"$APP_UNATTESTED\"")
                 .contains("promotion_refused tag \"a tag is never promoted\"")
-                .contains("promotion_refused another-commit \"says it was built from\"");
+                .contains("promotion_refused another-commit \"the provenance's git source names [$REVISION]")
+                .contains("promotion_refused another-subject \"no matching subject digest found\" \"$APP_SUBJECT\"")
+                .contains("promotion_refused outside-commit \"the provenance's git source names [$OTHER_COMMIT]");
         String promote = EvidenceCitations.read(root.resolve("infra/scripts/promote.sh"));
-        assertThat(promote).contains("refused \"$reference has no signature the environment's authority accepts\"")
-                .contains("refused \"$reference has no $type attestation the environment's authority accepts\"")
+        assertThat(promote).contains("judged \"$reference has no signature the environment's authority accepts\"")
+                .contains("judged \"$reference has no $type attestation the environment's authority accepts\"")
                 .contains("for type in slsaprovenance1 cyclonedx; do")
+                .contains("statement \"$type\" \"$digest\" \"$expected\"")
                 .contains("java --source 21 \"$(dpath \"$TOOL\")\" check \"$(dpath \"$ROOT\")\"");
         String workflow = EvidenceCitations.read(root.resolve(".github/workflows/ci.yml"));
         assertThat(workflow).contains("run: ./infra/scripts/admission-check.sh").contains("infra/scripts/(admission-check|promote|Promotion)")
-                .contains("run: ./infra/scripts/promote.sh recheck");
+                .contains("run: ./infra/scripts/promote.sh recheck \"$BASE_REF\"");
     }
 
     // ------------------------------------------------------------------------------------------- the fixture
@@ -401,10 +496,15 @@ class PromotionTest {
         return commit("release " + version, "build-logic/src/main/kotlin/finapp.java-conventions.gradle.kts", "version = \"" + version + "-SNAPSHOT\"\n");
     }
 
-    /** A later release: the Gradle version moved and one migration added carrying the header given. */
+    /** A later release: the Gradle version moved (a snapshot of it) and one migration added carrying the header given. */
     private String release(String version, String header) throws Exception {
+        return releaseExactly(version + "-SNAPSHOT", header);
+    }
+
+    /** A later commit at exactly the Gradle version given, a cut release or a snapshot, with one migration carrying the header given. */
+    private String releaseExactly(String gradleVersion, String header) throws Exception {
         write("ledger/src/main/resources/db/migration/ledger/V002__contract.sql", header + "\nALTER TABLE ledger.entry DROP COLUMN legacy;\n");
-        return commit("release " + version, "build-logic/src/main/kotlin/finapp.java-conventions.gradle.kts", "version = \"" + version + "-SNAPSHOT\"\n");
+        return commit("release " + gradleVersion, "build-logic/src/main/kotlin/finapp.java-conventions.gradle.kts", "version = \"" + gradleVersion + "\"\n");
     }
 
     private void promoteAndCommit(String environment, String app, String migrator, String revision) throws Exception {
@@ -448,6 +548,19 @@ class PromotionTest {
         Files.writeString(snapshotFile, snapshot, StandardCharsets.UTF_8);
         Files.writeString(answer, prometheus, StandardCharsets.UTF_8);
         return tool("smoke", environment, snapshotFile.toString(), answer.toString(), records.equals("-") ? "-" : repository.resolve(records).toString());
+    }
+
+    /** The tool with its arguments as given, and standing input: the commands that take no repository. */
+    private Run raw(String stdin, String... args) throws Exception {
+        List<String> line = new ArrayList<>(List.of(ProcessHandle.current().info().command().orElse("java"), "-cp", classes.toString(), "Promotion"));
+        line.addAll(List.of(args));
+        Process process = new ProcessBuilder(line).redirectErrorStream(true).start();
+        try (java.io.OutputStream in = process.getOutputStream()) {
+            in.write(stdin.getBytes(StandardCharsets.UTF_8));
+        }
+        String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(process.waitFor(120, TimeUnit.SECONDS)).as("the tool finished").isTrue();
+        return new Run(process.exitValue(), out);
     }
 
     private Run tool(String command, String... args) throws Exception {

@@ -152,14 +152,14 @@ class CiWorkflowIsLockedDownTest {
         for (int i = 0; i < lines.size(); i++) {
             String line = withoutComment(lines.get(i));
             if (line.matches("^\\s+environment:.*") || line.matches(".*\\bargocd\\s.*")
-                    || (line.contains("promote.sh") && !line.trim().equals("run: ./infra/scripts/promote.sh recheck"))) {
+                    || (line.contains("promote.sh") && !line.trim().equals("run: ./infra/scripts/promote.sh recheck \"$BASE_REF\""))) {
                 reaching.add("line " + (i + 1) + ": " + line.trim());
             }
         }
         assertThat(reaching).as("delivery is pulled by each cluster's own controller: a job that names an environment, drives a controller"
                 + " or writes a promotion is a path from CI to production").isEmpty();
         assertThat(lines).as("the recheck runs, so the absence above is not an empty workflow")
-                .anySatisfy(line -> assertThat(line.trim()).isEqualTo("run: ./infra/scripts/promote.sh recheck"));
+                .anySatisfy(line -> assertThat(line.trim()).isEqualTo("run: ./infra/scripts/promote.sh recheck \"$BASE_REF\""));
     }
 
     @Test

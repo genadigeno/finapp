@@ -1884,7 +1884,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.33 Rotations rehearsed on `kind`: running them, reading them, the last record *(written 2026-11-11, below)* | `P15-TSK-020` | `P15-TSK-020` |
 | 11.34 Telemetry: the collector and its second net, retention by class, finding one payment, the collector down *(written 2026-11-11, below)* | `P15-TSK-023` | `P15-TSK-023` (on `kind`), `-032` |
 | 11.35 Restore, held until the platform's own checks pass on it; the restore rehearsal and its last record *(written 2026-11-11, below)* | `P15-TSK-030` | `P15-TSK-030` (the logical restore, on containers); the managed restore is `THREAT_MODEL.md` §6 item 38 |
-| 11.36 Promote and roll back by digest; the delivery's order; the production approval boundary and the rules only the owner can apply *(written 2026-11-12, below)* | `P15-TSK-017` | `P15-TSK-017` (the refusals on repositories built per test, the signature refusals on CI's own registry); `-032` (through the controller, on `kind`) |
+| 11.36 Promote and roll back by digest; the delivery's order; a failed migrator hook; the production approval boundary and the rules only the owner can apply *(written 2026-11-12, below; revised the same day by its review)* | `P15-TSK-017` | `P15-TSK-017` (the refusals on repositories built per test, the signature and statement refusals on a registry of the admission check's own); `-032` (through the controller, on `kind`) |
 | 11.37 Staff refused where staff are refused: the page on a proven password, the ticket on an unmarked refusal, a first role's sign-in again; a reporting pool that refuses its role *(written 2026-11-12, below)* | `P15-TSK-043` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
@@ -2556,7 +2556,7 @@ Eight field-encryption keys, each a **ring**: an active version that writes, ret
 
 **Adding a third further version.** Past `V3` a version has no configured place, and listing `4` refuses to start. Adding one is a reviewed change: a constant and a slot in the key class, a row in `SECRET_MANAGEMENT.md` section 3.2 and an `ExternalSecret` entry, then the store's entry with a generated value (`SecretInventoryIsCompleteTest` holds the three together).
 
-**What is not proved here.** That a rollout finished before the pointer moved was a person's reading of `rollout status` until 2026-11-12. In staging and production it is now the activation check's: it refuses the activation until that environment's newest smoke record shows every replica on one configuration listing the version (§11.36). On `kind`, which the rehearsal applies by script, it is still the reading. Rotation has run on one `kind` cluster against a store the rehearsal generated (section 11.33), never against a cloud store.
+**What is not proved here.** That a rollout finished before the pointer moved was a person's reading of `rollout status` until 2026-11-12. In staging and production it is now the activation check's: it refuses the activation until that environment's newest smoke record, as merged before the change, shows every replica on one configuration listing the version, and both environments' for a literal in `deploy/base` or a component (§11.36). On `kind`, which the rehearsal applies by script, it is still the reading. Rotation has run on one `kind` cluster against a store the rehearsal generated (section 11.33), never against a cloud store.
 
 ### 11.31 Changing configuration - `ConfigFingerprintDisagrees`, `ConfigFingerprintAbsent` (`P15-TSK-031`)
 
@@ -3212,77 +3212,113 @@ The product proofs have no plant of their own here: each is the platform's check
 ### 11.36 Promote and roll back by digest; the production approval boundary (`P15-TSK-017`)
 
 *(Written by `P15-TSK-017`, 2026-11-12, from `infra/scripts/promote.sh`, `infra/scripts/Promotion.java`, `infra/scripts/post-deploy-smoke.sh`,
-`deploy/delivery/`, `deploy/components/delivery-order/` and `.github/CODEOWNERS`. **No environment exists**, so none of this has run against
-a real registry or cluster. What has run: every repository refusal of the promotion, the smoke's judgements and the activation hold, on
-repositories built per test (`PromotionTest`, `key-ring-activation-check.sh --self-test`); the signature refusals of `promote.sh verify` on
-CI's own registry (`infra/scripts/admission-check.sh`); the delivery's files against Argo CD's schemas (`infra/scripts/manifest-check.sh`).
-**Argo CD has not run in this repository.** What it does with the files below is read from its documentation (2026-11-12) and declared,
-not observed; `P15-TSK-032` rehearses a promotion and a rollback through it on `kind`.)*
+`deploy/delivery/`, `deploy/components/delivery-order/`, the registry module's signature repository and `.github/CODEOWNERS`; revised the same day
+by its review's fix round. **No environment exists**, so none of this has run against a real registry or cluster. What has run: every
+repository refusal of the promotion, the smoke's judgements and the activation hold, on repositories built per test (`PromotionTest`,
+`key-ring-activation-check.sh --self-test`); the signature and statement refusals of `promote.sh verify` on a registry of the check's own
+(`infra/scripts/admission-check.sh`); the delivery's files against Argo CD's schemas and the rendered overlays against their release records
+(`infra/scripts/manifest-check.sh`); the signature repository against a mock provider (`terraform test`). **Argo CD has not run in this
+repository.** What it does with the files below is read from its documentation and source (2026-11-12) and declared, not observed;
+`P15-TSK-032` rehearses a promotion and a rollback through it on `kind`.)*
 
 **What a release is.** A pair of digests, the application's and the migrator's, built once from one commit and never rebuilt for an
 environment. An environment runs the pair its overlay names (`deploy/overlays/<environment>/kustomization.yaml`), and the overlay's
-`release.yaml` beside it says which release and which commit that pair is: `promote.sh` writes the two files in one step.
+`release.yaml` beside it says which release (the Gradle version, `-SNAPSHOT` kept) and which commit that pair is: `promote.sh` writes the
+two files in one step, and the manifest policy's `release-images` rule refuses an overlay that renders any other image, wherever it is named.
 
 **How a change reaches an environment.** Pulled, never pushed. Each cluster runs Argo CD, installed by the pipeline role with the keys of
-`deploy/delivery/controller/argocd-cm.yaml` (§6 item 31 of the threat register), and one root Application, `deploy/delivery/roots/<environment>.yaml`,
-created once by that role after the controllers and the admission webhook's rules are in place (§11.32's order). Everything else follows from
-master: the root syncs `deploy/delivery/<environment>`, the project and four Applications, in waves.
+`deploy/delivery/controller/argocd-cm.yaml` (§6 item 31 of the threat register) and with **the `default` project restricted to nothing**
+(`sourceRepos: []`, `sourceNamespaces: []`, `destinations: []`, every namespaced kind blacklisted, as Argo CD's own documentation shows), so
+an Application nobody placed in one of this repository's projects reaches nothing. One root Application,
+`deploy/delivery/roots/<environment>.yaml`, is created once by that role after the controllers and the admission webhook's rules are in place
+(§11.32's order). Everything else follows from master: the root syncs `deploy/delivery/<environment>`, two projects and four Applications, in
+waves.
 
-| Wave | Application | What it applies |
-|---|---|---|
-| 0 | `finapp-admission` | `deploy/admission`: the image policies, before any namespace they watch holds a pod |
-| 1 | `finapp-namespaces` | `deploy/namespaces`: the three namespaces with their Pod Security and admission labels. Never pruned |
-| 2 | `finapp` | `deploy/overlays/<environment>`: the release, in the order below |
-| 3 | `finapp-edge` | `deploy/edge/overlays/<environment>`: traffic admitted once the release it routes to is healthy |
+| Wave | Application | Project | What it applies |
+|---|---|---|---|
+| 0 | `finapp-admission` | `finapp-cluster` | `deploy/admission`: the image policies, before any namespace they watch holds a pod |
+| 1 | `finapp-namespaces` | `finapp-cluster` | `deploy/namespaces`: the three namespaces with their Pod Security and admission labels. Never pruned |
+| 2 | `finapp` | `finapp` | `deploy/overlays/<environment>`: the release, in the order below |
+| 3 | `finapp-edge` | `finapp` | `deploy/edge/overlays/<environment>`: traffic admitted once the release it routes to is healthy |
+
+A wave waits for the one before because the controller's configuration judges an Application healthy only when synced and healthy, and an
+admission policy only when the policy controller has observed it and says `Ready` (its check reads the pinned controller's v1beta1 status
+shape; that a v1beta1 policy carries it is `-032`'s to see). **These waves order the root's own sync** (the first install, or a change to
+the root's files). Once the four exist, each syncs its own path, and a change merged to two of them reaches both in no defined order.
+**So a change touches one Application's paths, and two are two pull requests, merged in wave order**: `deploy/admission` before
+`deploy/namespaces` before the release (`deploy/base`, `deploy/components`, an overlay) before the edge (`deploy/edge`). This is a rule of
+review, not a check: a refusal would also refuse every development change that spans two roots before any environment exists.
 
 Inside `finapp`, the release's own order is `deploy/components/delivery-order`'s, the order the `kind` rehearsal ran by script (§11.28):
 wave −3 the accounts, roles, network policies, quota, the stores and the Services; wave −2 the two `ExternalSecret`s, healthy only once
-`Ready`; wave −1 **the migrator Job, a `Sync` hook awaited**; wave 0 the configuration, the Deployment and its autoscaler. A wave starts only
-when the one before is synced and healthy, and a hook that fails fails the sync: a failed migration leaves the old replicas serving and the
-new Deployment never applied. **It is not a `PreSync` hook**, though the plan said one: Argo CD applies a `PreSync` hook before everything in
-the Sync phase, on the first sync too, so the migrator would start before its ServiceAccount, its Secret and the network policies that hold
-it exist. No window is accepted.
+`Ready` (Argo CD's own check: it reads no generation, so after a change of annotations alone a `Ready` left from the sync before passes;
+step 3 of `SECRET_MANAGEMENT.md` §5.2 stays a person's reading); wave −1 **the migrator Job, a `Sync` hook awaited**; wave 0 the
+configuration, the Deployment and its autoscaler. A hook that fails fails the sync: a failed migration leaves the old replicas serving and
+the new Deployment never applied. **It is not a `PreSync` hook**, though the plan said one: Argo CD applies a `PreSync` hook before everything
+in the Sync phase, on the first sync too, so the migrator would start before its ServiceAccount, its Secret and the network policies that
+hold it exist. No window is accepted.
 
-**Rules every Application keeps.** Automated sync with self-heal: a hand change is put back. Prune last, and never for the namespaces. **No
-`CreateNamespace`**: it would create `finapp` with neither its Pod Security nor its admission labels (`DeliveryManifestsTest` refuses it). **No
-retry**: a failed migration is fixed forward, and Argo CD does not re-attempt a commit whose sync failed, so the next attempt is the next
-commit. No finalizer: deleting an Application leaves what it applied running. **Never Argo CD's own rollback**: it would leave the repository
-saying one release and the cluster running another; a rollback is a revert pull request, below.
+**Rules every Application keeps.** Automated sync with self-heal: a hand change is put back, while the Application's last sync succeeded
+(below). Prune last, and never for the namespaces. **No `CreateNamespace`**: it would create `finapp` with neither its Pod Security nor its
+admission labels (`DeliveryManifestsTest` refuses it). **No retry**: a failed migration is fixed forward. No finalizer: deleting an
+Application leaves what it applied running. **Never Argo CD's own rollback**: it would leave the repository saying one release and the
+cluster running another; a rollback is a promotion, below.
 
-**The project bounds all of it** (`deploy/delivery/base/project.yaml`): this repository alone, the namespaces `finapp` and `finapp-edge`,
-outside a namespace only Namespaces and the admission policies, inside one only the kinds the release and the edge render, never a `Secret`. The root has a project of its own that writes
-Applications and projects in `argocd` and nothing else.
+**After a failed migrator hook.** The sync is failed and stays failed: Argo CD does not re-attempt a commit whose sync failed, and a later
+commit that leaves this Application's rendered manifests unchanged counts as that same attempt. **Self-heal is suspended in that state**: a
+hand change is not put back until a sync succeeds. Read the cause before anything: `kubectl -n finapp logs job/finapp-migrator` and its exit
+code (§11.1b) with the read-only role. Exit `10`, a migration or a validation failed: never sync the same revision again; fix forward, in a
+new promotion. Exit `12`, the configuration, identity or credential refused: fix that (a store entry, a grant through the bootstrap step), and
+then a person holding Argo CD's `sync` on that Application (granted through Argo CD's own RBAC to the break-glass group, §11.25, and audited
+by Argo CD's own event log) syncs the same revision once, by hand. A transient failure (the database unreachable within the Job's deadline):
+the same manual sync, once the cause is gone. Write each manual sync into the incident's record (§11.12).
+
+**The projects bound the Applications, and nothing bounds `deploy/delivery/`.** `finapp` (the release and the edge): this repository alone,
+the namespaces `finapp` and `finapp-edge`, nothing outside a namespace, and inside one only the kinds the release and the edge render,
+never a `Secret`. `finapp-cluster` (the admission policies and the namespaces): only Namespaces and `ClusterImagePolicy`, nothing inside a
+namespace. So neither the release nor the edge can create a policy or a namespace. **But the root writes AppProjects and Applications in
+`argocd`, and Argo CD's own documentation says what that is: admin-level.** A merged change under `deploy/delivery/` can widen a project,
+add one, or place an Application anywhere; everything in that directory is admin-equivalent on the cluster. The controls on it are the code
+owner's review (`.github/CODEOWNERS`), `DeliveryManifestsTest`'s hold on what each root renders (exactly the two projects and the four
+Applications, through no transformer), and the restricted `default` project.
 
 **What each environment adds, outside this repository.** Its root carries, as kustomize patches of the Applications it renders, what is
 never committed here (`SECRET_MANAGEMENT.md` §3.5): the reader ServiceAccounts' role ARNs and the stores' region from its root module's
 outputs, the images' registry (an `images` new name, `finapp-<environment>-app` and `-migrator`, never a digest: the digest is the
 overlay's; another repository name is refused at admission), the data tier's and providers' addresses in place of the overlays'
 documentation ranges (never `0.0.0.0/0`, a link-local range or the cluster's own, which the manifest policy refuses), and the admission
-policies' authority and signature repository. That copy is held with the environment's delivery configuration, under its own access
-control and two-person review.
+policies' authority and signature repository (the root module's `signature_repository_url` output). That copy is held with the environment's
+delivery configuration, under its own access control and two-person review.
 
 **What the delivery does not carry.** The controllers: Argo CD itself, the policy controller (§11.32's order) and the External Secrets
 Operator (`deploy/operators/external-secrets/values.yaml`, into its own namespace `external-secrets`) are the pipeline role's to install,
-as the first controllers of a cluster are (§6 item 31 of the threat register). The one-time role bootstrap (§11.1b) is not part of a
-release and not a hook: when a release adds a role, the pipeline role runs it before the promotion. The edge's TLS Secrets and the load
-balancer controller its Services' annotations assume are the environment's; a certificate comes from outside the namespace or by a DNS-01
-solver, because a solver pod in `finapp-edge` would be refused at admission. The telemetry pipeline (`deploy/observability`) has a `kind`
-overlay alone, so no environment's root syncs it until a back end is chosen (§6 item 37 (a)): a promoted release exports to nothing
-meanwhile and blocks on nothing. **A signing key or identity rotated** overlaps the two authorities and signs again every digest running
-or kept for rollback before the old authority goes, and a revocation is an authority change, never a deletion alone (§6 item 35).
+as the first controllers of a cluster are (§6 item 31 of the threat register). **The one-time role bootstrap** (§11.1b) is not part of a
+release and not a hook: when a release adds a role, the pipeline role runs it before the promotion, as a Job in `finapp` with the signed
+migrator image alone. The `kind` rehearsal's bootstrap Job also carries a `wait-for-postgres` init container from the curl image, because its
+PostgreSQL starts in the same run; that image is not admitted in `finapp` (no policy names it), and a real environment's database is
+already up, so the real Job carries no init container; that it is admitted and runs is `-032`'s to show on `kind`. The edge's TLS Secrets and
+the load balancer controller its Services' annotations assume are the environment's; a certificate comes from outside the namespace or by a
+DNS-01 solver, because a solver pod in `finapp-edge` would be refused at admission. The telemetry pipeline (`deploy/observability`) has a
+`kind` overlay alone, so no environment's root syncs it until a back end is chosen (§6 item 37 (a)): a promoted release exports to nothing
+meanwhile and blocks on nothing. **A signing key or identity rotated** overlaps the two authorities and signs again every digest running or
+kept for rollback before the old authority goes, and a revocation is an authority change, never a deletion alone (§6 item 35).
 
 **Promote to staging.**
-1. The pipeline role copies both digests and their signatures and attestations (the `.sig` and `.att` tags) into staging's registry and
-   signature repository, under an immutable tag. A digest copied without them is refused, by the promotion and at admission.
+1. The pipeline role copies both digests and their signatures and attestations (the `sha256-<digest>.sig` and `.att` tags) into staging's
+   registry and signature repository (`finapp-staging-signatures`, whose tags are immutable but for exactly those), under an immutable tag.
+   A digest copied without them is refused, by the promotion and at admission.
 2. `PROMOTE_REGISTRY=<staging's registry> PROMOTE_SIGNATURES=<its signature repository> PROMOTE_KEY=<the authority's public key>`
-   (or `PROMOTE_IDENTITY` and `PROMOTE_ISSUER`, exactly what the environment's policy names) `infra/scripts/promote.sh staging <app-digest>
-   <migrator-digest> <revision>`. It refuses, by name: a tag, a name beside the digest or the placeholder; a revision that is not a commit
-   of this branch; a digest without its signature, or without either attestation, each attestation's subject the digest and the provenance
-   naming the revision; a rollback past a contract marker (below). Exit `0` written, `1` refused, `2` could not judge (no registry, a history
-   it cannot read), never a pass.
-3. Commit `kustomization.yaml` and `release.yaml` together, in a pull request of their own. CI judges them again with the whole history and
-   no registry (`promote.sh recheck`): a hand-edited digest, a tag, a record that disagrees with its overlay, a production pair without
-   staging evidence or a rollback past a contract is refused even if nobody ran the script.
+   (or `PROMOTE_IDENTITY` and `PROMOTE_ISSUER`, exactly what the environment's policy names), and `PROMOTE_DOCKER_CONFIG=<a directory
+   holding the registry's read credential>`, mounted read-only into cosign's container: `infra/scripts/promote.sh staging <app-digest>
+   <migrator-digest> <revision>`. It refuses, by name: a tag, a name beside the digest or the placeholder; a revision off this branch's
+   first-parent history; a digest without its signature, or without either attestation; a verified statement whose subject is another
+   digest, or whose provenance does not name the revision as its git source's commit (read as the statement's structure, never searched as
+   text); a rollback past a contract marker (below). Exit `0` written, `1` refused, `2` could not judge: a refused credential, the network, a
+   server error, any answer that is not a missing signature, or a history it cannot read. A `2` is never a pass and never a missing signature.
+3. Commit `kustomization.yaml` and `release.yaml` together, in a pull request of their own. CI's **Promotion recheck** judges them again
+   with the whole history and no registry: a hand-edited digest, a tag, a record that disagrees with its overlay, a rollback past a contract,
+   or a production pair whose staging evidence was not merged before this change is refused even if nobody ran the script. **What it cannot
+   judge** is which commit a digest was built from: a record naming a newer revision beside an older release's signed digest passes it.
 4. On merge, Argo CD syncs in the order above. When the root shows every Application synced and healthy, run the smoke.
 5. `SMOKE_PROMETHEUS=<staging's Prometheus> infra/scripts/post-deploy-smoke.sh staging --record`, with a context whose identity reads the
    cluster. Read-only: `kubectl get` and one query. **Health**: the rollout complete, every replica ready on one ReplicaSet and one
@@ -3290,50 +3326,71 @@ or kept for rollback before the old authority goes, and a revocation is an autho
    **Build identity**: every replica's image and the image the kubelet resolved are the overlay's application digest, and the migrator's its
    migrator digest. A digest is compared with a digest: `/actuator/info`'s `build.version` is a Gradle version and never the commit, and is
    not read. **Trial balance**: every currency's verdict zero, at least one answering. Only a passing run writes its record, under
-   `deploy/evidence/staging/`; commit it as written.
+   `deploy/evidence/staging/`; merge it as written, in a pull request of its own, before any production promotion that names it.
 
 **Promote to production.** The same steps with `production`, and one refusal more: the script and CI refuse a pair staging never ran
-under the same revision, or ran without a passing smoke record of that exact pair. The pull request names the staging record. **A second
-person approves it** (`.github/CODEOWNERS`, under the branch rules below). Production's smoke runs under a person's read-only role
-(`deploy/base/rbac-humans.yaml` reads pods, ReplicaSets, Deployments, Jobs and ConfigMaps, never a Secret), **never from CI**, which holds
-no production credential and no environment.
+under the same revision, or ran without a passing smoke record of that exact pair, **as merged before the production change** (CI reads
+staging's history and records at the merge base). The pull request names the staging record. **A second person approves it**
+(`.github/CODEOWNERS`, under the branch rules below), and **before approving, the approver runs `promote.sh verify` on both digests with the
+revision the record names**, against production's registry: the one thing no check in the repository can see is whether the digests were
+built from that revision. Production's smoke runs under a person's read-only role (`deploy/base/rbac-humans.yaml` reads pods, ReplicaSets,
+Deployments, Jobs and ConfigMaps, never a Secret), **never from CI**, which holds no production credential and no environment.
+
+**The first real promotion's pull request** changes one guard on purpose: `KubernetesManifestsTest#nothingRealIsCommitted` holds every
+overlay's two digests at the sixty-four-zero placeholder, and its placeholder half is rewritten to hold staging's and production's digests to
+their release records instead; its "digest only, no registry, no secret, no endpoint" half never changes. `DeliveryManifestsTest` and the
+manifest policy already read a promoted record.
 
 **Roll back.** A rollback is a promotion of the older application. Run `promote.sh <environment> <older-app-digest> <current-migrator-digest>
 <older-revision>`: the migrator stays the one the schema already ran (a schema is never rolled back; that migrator's run on its own schema is
 a no-op, and an older migrator on a newer schema is a path no release was run on), and the script refuses another, and verifies the migrator
 against the commit it was built from. **It refuses a rollback past a contract marker**: when a migration above the older release's own
-newest, in the schema the environment holds (the newest release it ever ran), carries a marker naming a newer release than the target
-(`DATA_MIGRATIONS.md` §4.1). `ANY` never refuses. Past such a marker the way back is a forward fix. A production rollback needs staging's
-evidence of the same pair: roll staging back first, smoke it, then production. A `git revert` of a promotion is held to the same rules by
-CI's recheck. Never `kubectl rollout undo`, which no check sees and self-heal undoes (and which §11.29 forbids for a ring change).
+newest, in the schema the environment holds (the newest release it ever ran on the branch's first-parent line), carries a marker naming a
+newer release than the target (`DATA_MIGRATIONS.md` §4.1). A snapshot comes before the release it leads to, so a rollback to a
+`1.3.0-SNAPSHOT` commit across a marker naming `1.3.0` is refused. `ANY` never refuses. Past such a marker the way back is a forward fix. A
+production rollback needs staging's evidence of the same pair: roll staging back first, smoke it, merge the record, then production. A `git
+revert` of a promotion is held to the same rules by CI's recheck. Never `kubectl rollout undo`, which no check sees and self-heal undoes
+(and which §11.29 forbids for a ring change).
 
-**A key ring's activation waits for the rollout** (threat register §6 item 32 (c)). In staging and production, `key-ring-activation-check.sh`
-refuses a change that moves `FINAPP_<KEY>_RING_ACTIVEVERSION` until that environment's newest smoke record shows every replica on one
-configuration listing the version. Argo CD alone cannot hold the order: it syncs the newest commit of master, polling every few minutes, so
-two commits merged inside one interval reach a cluster as one sync. So: list the version (§11.29 step 1), merge, let the rollout finish, run
-the smoke with `--record`, commit the record, and only then the activation.
+**A key ring's activation waits for the rollout** (threat register §6 item 32 (c)). `key-ring-activation-check.sh` refuses a change that
+moves `FINAPP_<KEY>_RING_ACTIVEVERSION`, in an overlay for that environment or in `deploy/base` or `deploy/components` for both, until
+that environment's newest smoke record **as merged before the change** shows every replica on one configuration listing the version. Argo
+CD alone cannot hold the order: it syncs the newest commit of master, polling every few minutes, so two commits merged inside one interval
+reach a cluster as one sync. So: list the version (§11.29 step 1), merge, let the rollout finish, run the smoke with `--record`, merge the
+record, and only then the activation.
 
 **The approval boundary: the rules only the owner can apply** (threat register §6 item 4; GitHub settings, never set from this
 repository). On `master`: require a pull request before merging, one approval, **review from code owners**, stale approvals dismissed on a new
-push, **approval of the most recent push by someone other than its author**, conversations resolved; require the status checks to pass
+push, **approval of the most recent push by someone other than its author**, conversations resolved; require the status checks below to pass
 **with the branch up to date before merging** (each check then judges the history it merges into: two promotions racing are judged one
 after the other, and the contract-marker rule never reads a stale history); no force push, no deletion; **no bypass, administrators
-included**. A `production` environment, if a workflow ever names one, has required reviewers with self-review prevented and no secret; none
-does today (`CiWorkflowIsLockedDownTest`). `.github/CODEOWNERS` owns `deploy/`, `infra/`, the configuration register, `docs/migrations/` and
-`.github/`, because under pull-based GitOps each of them reaches production at its merge. While it names one person, an owned change cannot
-merge without a bypass: name a second person before production exists.
+included**. **The required checks, as GitHub lists them** (each job's name in `.github/workflows/ci.yml`): `Build and tests`, `Database
+migrations`, `Secret scan`, `Dependency scan`, `Infrastructure as code`, `Kubernetes manifests`, `Key-ring activation order`, `Promotion
+recheck`, `Alert rules and routing`, `Static analysis`, `Application image`, `Migrator image`, `Kubernetes rehearsal (kind, release)`,
+`Kubernetes rehearsal (kind, rotations)`, `Restore rehearsal`, `Signing, provenance and admission (kind)`; not `Image pin freshness`, which
+runs on a schedule. A `production` environment, if a workflow ever names one, has required reviewers with self-review prevented and no
+secret; none does today (`CiWorkflowIsLockedDownTest`). `.github/CODEOWNERS` owns `deploy/`, `infra/`, the configuration register,
+`docs/migrations/`, `.github/`, and what the owned checks read (`build-logic/`, `gradle/`, every module's migrations, the architecture
+guards and the expand-only lint), because under pull-based GitOps each of them reaches production, or decides what does, at its merge. While
+it names one person, an owned change cannot merge without a bypass: name a second person before production exists.
 
 **When something refuses.** `REFUSED: ... is not a digest`: promote the `sha256:` digest. `has no signature` or `has no ... attestation`:
-the copy in step 1 is missing the `.sig` or `.att` tags, or the authority given is not the environment's. `says it was built from`:
-the revision named is not the one the image was built from; read it from the provenance. `staging never ran this pair` or `no staging
-evidence`: promote to staging and record its smoke first. `crosses ... whose contract marker names`: do not roll back; fix forward.
-`the migrator stays`: pass the migrator the schema ran. The smoke: `is terminating`, run it again; `not ready` or `ReplicaSets`, the rollout
-has not finished; `asks for`/`runs ... not`, the cluster runs something the overlay does not name: stop and find out why before anything else.
+the copy in step 1 is missing the `.sig` or `.att` tags, or the authority given is not the environment's. `names another subject` or `no
+matching subject digest found`: an attestation of another image sits under this digest's tag: find out who wrote the signature repository.
+`the provenance's git source names ...`: the revision named is not the one the image was built from; read it from the provenance.
+`CANNOT JUDGE: cosign could not read`: the credential, the network or the registry, never the signature: fix that and run again. `staging
+never ran this pair` or `no staging evidence ... merged before this change`: promote to staging and merge its smoke record first. `crosses
+... whose contract marker names`: do not roll back; fix forward. `the migrator stays`: pass the migrator the schema ran. `release-images` in
+the manifest check: an image is named outside the overlay's `images:`, or the record and the overlay disagree. The smoke: `is terminating`,
+run it again; `not ready` or `ReplicaSets`, the rollout has not finished; `asks for`/`runs ... not`, the cluster runs something the overlay
+does not name: stop and find out why before anything else.
 
 **What this does not cover.** The cross-account copy of a digest and its signatures, and the immutable tag it lands under, are the pipeline
-role's, and need an account. The registry's untagged-expiry rule waits for that copy, and the signature repository waits for the owner's
-decision on the scanner's finding (threat register §6 item 40). Staging's own money-moving smoke against its simulated providers, with the
-census, is the `kind` rehearsal's today. Argo CD's behaviour is read, not seen: `P15-TSK-032`'s rehearsal records it.
+role's, and need an account; so does the signature repository's push policy (the signing role alone, §6 item 35 (d)): whoever can push there
+can delete or replace a signature, which forges nothing but refuses every pod of that digest, running or kept for rollback. The registry's
+untagged-expiry rule waits for that copy. Staging's own money-moving smoke against its simulated providers, with the census, is the `kind`
+rehearsal's today. Argo CD's behaviour, the health checks and the restricted `default` project are read, not seen: `P15-TSK-032`'s rehearsal
+records them.
 
 ### 11.37 Staff refused where staff are refused - `OperatorPasswordProvenOnPublic`, `StaffRefusedUnmarked`; a first role's sign-in again; a reporting pool that refuses its role (`P15-TSK-043`)
 

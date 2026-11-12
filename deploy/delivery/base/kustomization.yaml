@@ -1,6 +1,9 @@
-# What every environment's delivery holds alike (P15-TSK-017): the project its Applications belong to.
+# What every environment's delivery holds alike (P15-TSK-017): the two projects its Applications belong to. DeliveryManifestsTest holds
+# what the root renders to exactly these and the environment's four Applications: a third project, or an Application in another,
+# would be a door the review of this directory alone keeps shut.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
   - project.yaml
+  - project-cluster.yaml

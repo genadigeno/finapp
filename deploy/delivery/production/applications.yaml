@@ -8,7 +8,13 @@
 #   3  finapp-edge         deploy/edge/overlays/production: traffic is admitted once the release it routes to is healthy
 #
 # A wave waits for the one before only because the controller's configuration judges an Application healthy when it is synced and
-# healthy (deploy/delivery/controller/argocd-cm.yaml): Argo CD removed that judgement from its defaults in 1.8.
+# healthy (deploy/delivery/controller/argocd-cm.yaml): Argo CD removed that judgement from its defaults in 1.8. These waves order the
+# root's own sync, when the Applications are created or the root changes; once each exists, a change merged to two of them at once
+# reaches both in no defined order. So a change touches one Application's paths, and two are two changes, merged in wave order
+# (OPERATIONS_RUNBOOK.md section 11.36).
+#
+# The admission policies and the namespaces belong to project finapp-cluster, the release and the edge to project finapp, so neither
+# of these two can create what the other two own. All of deploy/delivery/ is admin-equivalent on the cluster (project.yaml says why).
 #
 # HOW A CHANGE REACHES PRODUCTION. A merge to master that a second person approved (.github/CODEOWNERS on every path below); the
 # controller pulls it. No CI credential reaches this cluster: CI holds a read-only token and no environment (THREAT_MODEL.md T30).
@@ -27,7 +33,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
-  project: finapp
+  project: finapp-cluster
   source:
     repoURL: https://github.com/genadigeno/finapp.git
     targetRevision: master
@@ -51,7 +57,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
-  project: finapp
+  project: finapp-cluster
   source:
     repoURL: https://github.com/genadigeno/finapp.git
     targetRevision: master

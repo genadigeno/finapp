@@ -86,6 +86,23 @@ compatibility check between releases.
    - **Two persons** is `.github/CODEOWNERS` over every path that reaches production at its merge (all of `deploy/` and `infra/`, the
      configuration register, the released-schema floor, `.github/`), and the branch rules the owner applies (`OPERATIONS_RUNBOOK.md`
      §11.36). The signature repository is not built: `THREAT_MODEL.md` §6 item 40.
+
+   *Note (2026-11-12, `P15-TSK-017`'s review fix round), as built:*
+   - **The signature repository is built** in the registry module, `finapp-<environment>-signatures`, apart from the image
+     repositories: `IMMUTABLE_WITH_EXCLUSION`, only cosign's `sha256-*` tags mutable, nothing expiring, the scanner's `AWS-0031`
+     accepted on that one resource until 2027-06-30 as `THREAT_MODEL.md` §6 item 40 recommends. Who may push there stays item 35 (d).
+   - **What CI's recheck holds is narrower than the note above says.** It reads staging's evidence and the history at the merge
+     base, so a change cannot bring its own, and it reads releases along the first-parent line, a snapshot before its release. It
+     cannot see which commit a digest was built from beside a record naming a newer revision: the production approver re-runs
+     `promote.sh verify` before approving. The attestations are read as in-toto statements (subject digests, predicate type, the
+     provenance's git source commit), never searched as text; anything cosign answers that is not a missing signature is exit 2.
+   - **An overlay runs only its record's pair**: the manifest policy's `release-images` rule refuses any other image the rendered
+     staging or production overlay names, a patch or an init container included.
+   - **`deploy/delivery/` is admin-equivalent** (its root writes AppProjects and Applications in `argocd`). The release and the edge
+     are in one project, the admission policies and the namespaces in a second that writes nothing in a namespace; each root renders
+     exactly those, and the `default` project is restricted to nothing at the pipeline role's install. The waves order the root's own
+     sync; afterwards one change per Application, merged in wave order, is a rule of review. An admission policy is healthy only once
+     the policy controller has observed it and says `Ready`; the `ExternalSecret`s are left to Argo CD's own check.
 5. **Migration compatibility is enforced.** An **expand-only lint** checks every migration added since the last release.
    - It refuses destructive DDL: `DROP`, `RENAME` and a type change.
    - It also refuses **tightening DDL**, because each can refuse a write that release N − 1 still makes:
