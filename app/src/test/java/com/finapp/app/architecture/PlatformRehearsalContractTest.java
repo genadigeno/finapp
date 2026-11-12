@@ -202,6 +202,8 @@ class PlatformRehearsalContractTest {
     @Test
     @DisplayName("the telemetry stack's own alerts fire on the cluster: a back end gone and every collector gone, requests unaffected")
     void theTelemetryAlertsFireOnKind() {
+        assertThat(function("signals_telemetry")).as("the negative control first: a rollout of the collectors under traffic raises nothing")
+                .contains("rollout restart deployment/finapp-collector").contains("a rollout of the collectors raised TelemetryExportFailing");
         assertThat(function("signals_telemetry")).contains("scale deployment/finapp-tempo --replicas=0")
                 .contains("fires TelemetryBackendDown placeholder-ticket").contains("fires TelemetryExportFailing placeholder-ticket")
                 .contains("',exporter=\"otlp_grpc/tempo\"'")
