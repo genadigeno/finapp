@@ -56,9 +56,9 @@ ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 # then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
 SCOPE=${REHEARSAL_SCOPE:-release}
 case $SCOPE in release | rotations) ;; delivery) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations or delivery, not $SCOPE" >&2; exit 2 ;; esac
-# Release N alone: the scopes that rehearse something other than the walk from N - 1 build and load no N - 1.
-N_ALONE=""
-case $SCOPE in rotations | delivery) N_ALONE=1 ;; esac
+# Every scope but `release` deploys release N alone: the steps below that name N - 1 deploy N.
+N_ONLY=""
+case $SCOPE in rotations | delivery) N_ONLY=1 ;; esac
 
 KIND_NODE_IMAGE="$KIND_NODE_REPOSITORY:$KIND_NODE_VERSION@$KIND_NODE_DIGEST"
 KUSTOMIZE_IMAGE="$KUSTOMIZE_REPOSITORY:$KUSTOMIZE_VERSION@$KUSTOMIZE_DIGEST"
@@ -391,7 +391,7 @@ wait_job() {
 step build-images
 if [ -z "${REHEARSAL_SKIP_BUILD:-}" ]; then
     build_tree "$ROOT" n
-    [ -n "${REHEARSAL_REUSE_NMINUS1:-}" ] || [ -n "$N_ALONE" ] || build_nminus1
+    [ -n "${REHEARSAL_REUSE_NMINUS1:-}" ] || [ -n "$N_ONLY" ] || build_nminus1
 elif [ -n "${REHEARSAL_NMINUS1_REF:-}" ]; then
     # A reused build still has to say which tree N - 1 was: the hold step reads it, and without it reports itself not exercised.
     printf '%s\n' "$REHEARSAL_NMINUS1_REF" > "$ART/nminus1.ref"
@@ -446,7 +446,7 @@ step images-loaded
 if [ -n "$REUSING" ]; then
     IMAGE_APP_N=$(ref_of_built finapp-app:rehearsal-n)
     IMAGE_MIGRATOR_N=$(ref_of_built finapp-migrator:rehearsal-n)
-    if [ -n "$N_ALONE" ]; then
+    if [ -n "$N_ONLY" ]; then
         IMAGE_APP_NM1=$IMAGE_APP_N
         IMAGE_MIGRATOR_NM1=$IMAGE_MIGRATOR_N
     else
@@ -465,7 +465,7 @@ load_tagged "$TRAEFIK_REPOSITORY" "$TRAEFIK_VERSION" "$TRAEFIK_DIGEST"
 load_tagged "$CURL_REPOSITORY" "$CURL_VERSION" "$CURL_DIGEST"
 IMAGE_APP_N=$(load_built finapp-app:rehearsal-n)
 IMAGE_MIGRATOR_N=$(load_built finapp-migrator:rehearsal-n)
-if [ -n "$N_ALONE" ]; then
+if [ -n "$N_ONLY" ]; then
     # Rotations are rehearsed on release N alone: the first deployment is N's, so every step below that names N - 1 deploys N.
     IMAGE_APP_NM1=$IMAGE_APP_N
     IMAGE_MIGRATOR_NM1=$IMAGE_MIGRATOR_N
