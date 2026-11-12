@@ -320,13 +320,13 @@ once; beneath every writer, `lending V024` refuses a schedule superseding an ins
 ### Why the Phase 14 → 15 transition added rows for components that do not exist yet
 
 *(`P15-TSK-008`, 2026-11-08: shutdown and drain is built and its row rewritten from the code; the other five remain
-planned. **The Phase 15 exit review, 2026-11-12:** all six are built and each has its row above, rewritten from the code -
+planned. `P15-TSK-004`, 2026-11-08: the migration Job's image and contract are built and its row rewritten; its manifest is
+`P15-TSK-009`'s. `P15-TSK-022`, 2026-11-09: the abuse counter is built and its row rewritten. **The Phase 15 exit review, 2026-11-12:** all six are built and each has its row above, rewritten from the code -
 the deployed fleet and the migration Job (`P15-TSK-004`, `-009`), shutdown and drain (`-008`), the abuse counter (`-022`), the
 key rings (`-019`) and the retention sweeps (`-029`); the key rings' and the sweeps' *planned* rows stood beside their built
 rows until the review struck them; and every row was read against the code, the telemetry SDK's flush added to the drain's
 row. No guard reads this register: `NoSingleInstanceAssumptionRulesTest` holds the code's side, `ShutdownOrderTest` the
-lifecycle count, and a both-ways guard is `P15-REM-004`'s. `P15-TSK-004`, 2026-11-08: the migration Job's image and contract are built and its row rewritten; its manifest is
-`P15-TSK-009`'s. `P15-TSK-022`, 2026-11-09: the abuse counter is built and its row rewritten.)* The six rows above marked *planned* - the deployed fleet, the migration Job, shutdown and drain, the abuse counter,
+lifecycle count, and a both-ways guard is `P15-REM-004`'s.)* The six rows above marked *planned* - the deployed fleet, the migration Job, shutdown and drain, the abuse counter,
 key-ring activation and the retention sweeps - were written by the Phase 14 → 15 transition (2026-11-07) before any
 Phase 15 code, for the precedents' reason: the design decided them (`PHASE_15_PLAN.md` §13; ADR-0120…0125, `Proposed`)
 and the register-decay class this document records is cheapest to prevent before a component exists. Each is the

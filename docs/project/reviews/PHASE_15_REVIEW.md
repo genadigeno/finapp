@@ -16,14 +16,14 @@ inside this repository and never in a real environment (`PHASE_15_PLAN.md` §1.1
 | The seven criteria | **1 `PASS`** (its measurable form; 32 of 38 CRITICAL and HIGH threats carry residual gaps, each held by a named owner); **3 `PASS`**; **6 `PASS` in another form** (two clauses shown over empty data, one held by owner item 38 (c), one by new item 44 (a)); **2, 5, 7 `PARTIAL`** (three unaccepted scan baseline rows; an audit-record clause no guard holds; a trace without its provider and ledger legs); **4 `PARTIAL` by the owner's choice** (PI-024) |
 | The twelve per-area blocks | **7 `PASS`** (containerisation, Kubernetes deployment, infrastructure as code, secrets and keys, observability, operational readiness, and documentation and runbooks after this review's corrections, its criterion 4 half aside; several in another form) - **5 `PARTIAL`** (CI/CD and configuration: the second person, owner item 4; security hardening, database and messaging operations, multi-instance deployment: PI-023, PI-004, PI-024) - see *The per-area blocks* |
 | The database pass (the gate's exit item) | **`NOT MET` by the owner's choice** (PI-023): no `database`, own-container or `kafka` tier has run fresh since Phase 15 began |
-| Universal criteria (12) | **8 `PASS`; criteria 4 and 11 `PARTIAL`; criterion 7 `NOT MET` by the owner's choice (PI-023); criterion 1 `PASS` with the two `TST` items postponed** |
+| Universal criteria (12) | **9 `PASS`** (criterion 1 with the two `TST` items postponed); **criteria 4 and 11 `PARTIAL`; criterion 7 `NOT MET` by the owner's choice (PI-023)** |
 | *"Correct with 10 concurrent instances?"* | **`UNKNOWN` at ten, by the owner's choice; no counted run failed.** `PASS` on every counted rehearsal - three replicas on `kind` through a rolling update, a pod kill, a rollback and the census after each step (2026-11-09); the rotations at three replicas (2026-11-11); the migrator at ten runs at once (2026-11-08). Open: the ten-way database cases of the phase's new arbiters (PI-023), the storm's counts (PI-004), the final-tree release run (PI-024) |
 | ADR-0120…0125 | **`Accepted`**, each read decision by decision against the tree and corrected in place first (eleven corrections) |
 | ADR-0006's coupling review | **The dependency graph is the declared one**; four rules weaker than the ADR says - `P15-REM-001` |
-| C1–C15 | 11 ratified as written; C9 and C13 honoured in another form; C14 changed by the owner (PI-023, 2026-11-12); C3 and C6 with recorded detail |
+| C1–C15 | 12 as ratified (C3 and C6 with recorded detail); C9 and C13 honoured in another form; C14 changed by the owner (PI-023, 2026-11-12) |
 | Compliance wording | **None claims compliance, certification or attestation under a standard** (A6 read every match: 778 lines) |
 | The flip, rehearsed | **1 red of 68 on master's bytes** (`MutationDemonstrationTest`: no section 4 rows for `P15-TST-001`, `-002`); **0 of 68 after this review's rows** - see *The flip* |
-| **Verdict** | **Phase 15 `COMPLETE` with recorded deviations, pending the Phase 15 → 16 transition gate and the owner's acceptance of the deviations below**: criteria 2, 5 and 7 `PARTIAL` with remediation entries (`P15-REM-002`, `-003`) and one owner decision (item 12's three rows); criterion 4, the database pass, universal criterion 7 and the ten-instance answer resting on the owner's postponements (PI-004, PI-023, PI-024); the second person (owner item 4). The status line is the owner's to flip at the transition |
+| **Verdict** | **Phase 15 `COMPLETE` with recorded deviations, pending the Phase 15 → 16 transition gate and the owner's acceptance of the deviations below**: criteria 2, 5 and 7 `PARTIAL` with remediation entries (`P15-REM-002`, `-003`) and one owner decision (item 12's three rows); criterion 4, the database pass, universal criterion 7 and the ten-instance answer resting on the owner's postponements (PI-004, PI-023, PI-024); the second person (owner item 4); and one guard red on master's bytes, `TestTaxonomyTest` (`P15-REM-005`, before the transition gate's guard run). The status line is the owner's to flip at the transition |
 
 Conducted in the `P14-DOC-001` order, without its first step: **no database pass** (PI-023) and no cluster or container run, by
 the owner's rules ("avoid long running tests", "we dont need too many checks"). **The assessment was six independent read-only
@@ -73,10 +73,16 @@ its changes to financial code (`-033`'s two fixes, `-038`'s five stores on the d
     Each dated. `POSTPONED_ISSUES.md` PI-023 names one test known to be red before the pass runs (`MerchantApiKeyDatabaseTest`
     still asserts `CUSTOMER` for an operator's act, typed `EMPLOYEE` since `P15-TSK-021`).
 
-**Recorded, not changed** - four remediation entries, `PLANNED` (`BACKLOG.md` §Phase 15 remediation): **`P15-REM-001`**
+**Found red by this review's run, on master's bytes too** - **`TestTaxonomyTest`** fails on `ReportingPoolMetricsTest` ("needs
+DATABASE but is in UNIT"): `P15-TSK-032`'s hermetic test of the reporting pool's meters registers its stub driver through
+`java.sql.DriverManager`, which the taxonomy reads as acquiring a database. This review changed no Java and the guard reads
+bytecode, so the red is `11ee8da3`'s; every merge since ran named guards without the taxonomy. A test change is not this
+review's to build: **`P15-REM-005`**, before the transition gate's guard run.
+
+**Recorded, not changed** - five remediation entries, `PLANNED` (`BACKLOG.md` §Phase 15 remediation): **`P15-REM-001`**
 ADR-0006's rules made to hold what they say; **`P15-REM-002`** an audit record tested for every auditable route (criterion 5);
 **`P15-REM-003`** the trace's provider and ledger legs and its causation (criterion 7); **`P15-REM-004`** seven guards and
-comments that hold less than their names. And **`THREAT_MODEL.md` §6 item 44**, two decisions for the owner: (a) the restore's
+comments that hold less than their names; **`P15-REM-005`** the taxonomy's red above. And **`THREAT_MODEL.md` §6 item 44**, two decisions for the owner: (a) the restore's
 lending and BNPL proofs judged no subject; (b) the rendered manifests scanned by policies alone.
 
 ---
@@ -99,10 +105,10 @@ lending and BNPL proofs judged no subject; (b) the rendered manifests scanned by
 |---|---|---|
 | **PI-023**, the database pass | T3 (C), T12 (C), T13 (H), T17 (C), T33 (C), T34 (C), T38 (H), T44 (H) | the database-tier proofs of built controls: written, never run in Phase 15 |
 | **PI-024**, the platform rehearsals | T11 (H), T12 (C), T29 (C), T46 (C) | the cluster runs of built procedures |
-| PI-013, PI-014, PI-016, PI-020, PI-021, PI-022 | T13 (H), T15 (C), T18 (C), T46 (C) | owner-postponed defects, each "before production use" |
+| PI-013, PI-014, PI-016, PI-020, PI-021, PI-022 | T13 (H), T15 (C), T18 (C), T46 (C) | owner-postponed defects: PI-013's and PI-014's fixes landed with their regression cases unrun, the rest "before production use" |
 | `P14-REM-001`, `-002`, `-004`, `-006`, `-007` | T15 (C), T18 (C) | Phase 14's remediation, `PLANNED` |
 | `X-TSK-002`, `-003`, `-010` | T19 (C), T16 (C), T35 (H) | cross-cutting, `PLANNED` |
-| Owner items 4, 7, 12, 18, 21-23, 28, 31, 33-39, 42 (each decided) | T1, T3-T7, T9-T11, T20, T22, T27-T30, T32, T34, T36, T38, T43, T45 | real-environment items (an account, a registry identity, branch rules, a managed restore) and accepted baselines |
+| Owner items 4, 7, 12, 18, 21-23, 28, 31, 33-39, 42 (each decided) | T1, T3-T7, T9-T11, T20, T22, T27-T30, T32, T34, T36, T38, T43, T45, T46 | real-environment items (an account, a registry identity, branch rules, a managed restore) and accepted baselines |
 
 ### 2. Dependency, container and secret scanning green in CI — `PARTIAL`
 
@@ -242,7 +248,7 @@ notes amend it.
 `ledger` 11, `creditmath` 3; `app` depends on `platform` and all 21 business modules; the twelve business-to-business edges are
 ten to `ledger` and `lending` and `bnpl` to `creditmath`, each declared (`MODULE_ARCHITECTURE.md`, `BOUNDED_CONTEXTS.md`) and
 pinned by its isolation test; no cycle; the direction holds, with one declared skip (`creditmath → sharedkernel`). **No foreign
-key crosses a schema**: the nine cross-schema `REFERENCES` in migrations are all in comments. No business module's SQL names
+key crosses a schema**: every cross-schema `REFERENCES` in a migration is inside a comment. No business module's SQL names
 another module's schema. **What the ADR says that the build does not hold** (recorded in its Follow-up; `P15-REM-001`): the
 internals rule and the entity rule pass over nothing (no `.internal` package, no entity); `INV-LED-04`'s static half is the
 dependency direction alone; `app` reads thirteen module schemas `SELECT`-only through declared adapters, an exception the ADR's
@@ -280,8 +286,8 @@ exists (its guard is database-tier; left for its next change, recorded); three p
 ## The compliance-wording check
 
 `docs/`, `README*`, `deploy/` and `infra/` grepped for compliant, compliance, certified, certification, attest, attestation, PCI,
-SOC 2, ISO 27001, ISO/IEC, HIPAA, GDPR, PSD2, production-ready and ready for production - 778 matching lines, each classified.
-**None claims compliance with, certification under or attestation to a standard, or calls anything ready for production.** The
+SOC 2, ISO 27001, ISO/IEC, HIPAA, GDPR, PSD2 and the two phrasings of a readiness claim - 778 matching lines, each classified.
+**None claims compliance with, certification under or attestation to a standard, or declares anything ready to run in production.** The
 hits are disclaimers (`PHASE_15_PLAN.md` §1.1, `THREAT_MODEL.md` §8, `PRODUCTION_READINESS.md`), supply-chain attestations
 (signed provenance and SBOM statements), the domain's own four-eyes attestations (settlement files, regulatory returns), "PCI
 scope" as a design aim, the Object Lock mode named `COMPLIANCE`, and the bar's definition. This review writes none.
@@ -334,7 +340,7 @@ test reads Phase 15's status; the filter also ran eight ArchUnit rule classes, g
 | **D** | **The second person** on production and on a `FINANCIAL` change (CI/CD, configuration): owner item 4, decided 2026-11-08 | Stands as decided: the owner applies the branch rules and names a second person when the repository gains a production environment |
 | **E** | **Item 12's three Semgrep baseline rows** (the role bootstrap, 2026-11-12) | Accept until 2027-06-30, as their siblings (criterion 2) |
 | **F** | **Item 44** (a) the restore's lending and BNPL proofs over a source that has them; (b) `trivy config` over the rendered manifests | (a) the Phase 15 → 16 transition writes it into Phase 16's post-recovery verification drill; (b) in Phase 16's first wave |
-| **G** | **`P15-REM-001`…`-004`**, `PLANNED` with their horizons | Schedule as each entry's horizon says; none blocks the transition |
+| **G** | **`P15-REM-001`…`-005`**, `PLANNED` with their horizons | Schedule as each entry's horizon says; **`-005` before the transition gate's guard run** (the taxonomy is red until it lands), the rest block nothing |
 
 ## Debt register (Phase 15's, after this review)
 
@@ -343,8 +349,8 @@ test reads Phase 15's status; the filter also ran eight ArchUnit rule classes, g
 | The storm (`P15-TST-001`) | PI-004, after the phases |
 | The database pass and every Phase 15 database case; PI-012, PI-014, PI-015 | PI-023, after the phases |
 | The platform rehearsals not run whole | PI-024, after the phases |
-| Owner-postponed defects "before production use" | PI-016…PI-022 |
-| ADR-0006's rules; the audit record per route; the trace's legs; guards named for more than they hold | `P15-REM-001`…`-004` |
+| Owner-postponed defects, each with its horizon ("before production use", PI-017 before the first real customer launch) | PI-016…PI-022 |
+| ADR-0006's rules; the audit record per route; the trace's legs; guards named for more than they hold; the taxonomy's red | `P15-REM-001`…`-005` |
 | The restore's lending and BNPL proofs; the manifests' graded scan | `THREAT_MODEL.md` §6 item 44 |
 | Every readiness `GAP` (83) | its named owner in `PRODUCTION_READINESS.md` |
 | Phase 14's remediation | `P14-REM-001`…`-008`, `-010`, `-011`, `PLANNED` |
@@ -353,9 +359,23 @@ test reads Phase 15's status; the filter also ran eight ArchUnit rule classes, g
 
 ## Tests, every count from a fresh run
 
-See *The flip* for the rehearsal's first run. The rest, run by name after this review's last change (the owner's rule: no
-whole-module task, no `:app:architectureTest`, no package filter, no database, Kafka, cluster or container): *(filled at the
-run)*.
+The flip's two runs are *The flip*'s. Then the guards, by name (the owner's rule: no whole-module task, no `:app:architectureTest`,
+no package filter, no database, Kafka, cluster or container), each XML's UTC timestamp read against the run's start:
+
+- **The named guards after the review's changes** (2026-11-12, started 17:14:50 UTC, every XML written 17:15:24-17:20:31): the
+  eight the entry names (`ThreatModelIsCompleteTest` 14, `MutationDemonstrationTest` 9, `PlannedMetersExistTest` 13,
+  `ProductionReadinessIsEvidencedTest` 8, `DomainGlossaryTest` 9, `AdrRegistersAreReconciledTest` 4,
+  `ArchitectureRulesAreDocumentedTest` 2, `TestTaxonomyTest` 17), every guard reading a file this review changed
+  (`SecurityScansAreWiredTest` 9, `RunbookRehearsalCountTest` 7, `CodeOwnersTest` 4, `ConfigurationRegisterIsCompleteTest` 39,
+  `DatabaseRoleSettingsAreSafeTest` 5, `ConfigurationFingerprintTest` 10) and the registers' guards (`AuditCompletenessTest` 4,
+  `AuditableActionRegistryTest` 7, `ErrorCodeRegistryTest` 6, `SecretInventoryIsCompleteTest` 38), with the eight rule classes
+  the filter pulls in (24): **229 tests, 1 failed** - `TestTaxonomyTest#everyTestClassDeclaresATierAtLeastAsHeavyAsItNeeds` on
+  `ReportingPoolMetricsTest`, master's red (above, `P15-REM-005`); every other class green.
+- **After recording `P15-REM-005`** (the backlog, this review and `CURRENT_STATE.md` changed again): the guards reading those files
+  once more - *(below)*.
+
+**Not run, owed**: every `database`, own-container and `kafka` test (PI-023), `RiskStormTest` and the slow classes, the
+`kind` and container scripts (PI-024), and the CI jobs, which no one here observes.
 
 **The entry's "the `com.finapp.app.architecture` package"** is replaced by the named guards above, by the owner's rule of
 2026-11-08; a deviation from the entry, recorded.
@@ -369,7 +389,7 @@ scanning, static analysis, signing, admission and promotion by digest through de
 inventory, key rings and rotation rehearsed; the telemetry pipeline and the trace; every gauge off the scrape thread; SLOs,
 correctness alerts and routing; Kafka over `SASL_SSL` with topics as code; event and handler catalogues; dead letters, replay and
 retention sweeps; backup and restore with the financial verification; the configuration register; platform runbooks; the
-postponed production defects fixed (PI-013, PI-014 (1)); the source-join census; callbacks as hints; the clock class narrowed;
+postponed production defects' fixes (PI-013, PI-014 (1), their database cases owed with PI-023); the source-join census; callbacks as hints; the clock class narrowed;
 operators typed, refused on the public surface and their access hardened; the threat model (47 threats) and the readiness review
 (170 cells) - in this repository, never in a real environment.
 
