@@ -120,6 +120,12 @@ class DeliveryManifestsTest {
             assertThat(waves.get("finapp-admission")).isLessThan(waves.get("finapp-namespaces"));
             assertThat(waves.get("finapp-namespaces")).isLessThan(waves.get("finapp"));
             assertThat(waves.get("finapp")).isLessThan(waves.get("finapp-edge"));
+            // The projects before every Application: in one wave the root created an Application before its project, whose first sync
+            // then failed for want of it and, with no retry, stayed failed (P15-TSK-032's kind run).
+            for (String project : List.of("deploy/delivery/base/project.yaml", "deploy/delivery/base/project-cluster.yaml")) {
+                int wave = Integer.parseInt(String.valueOf(map(map(documents(project).get(0), "metadata"), "annotations").get("argocd.argoproj.io/sync-wave")));
+                assertThat(waves.values()).as("%s comes before every Application", project).allSatisfy(applicationWave -> assertThat(wave).isLessThan(applicationWave));
+            }
 
             List<Map<String, Object>> roots = documents("deploy/delivery/roots/" + environment + ".yaml");
             Map<String, Object> rootApplication = roots.stream().filter(document -> "Application".equals(document.get("kind"))).findFirst().orElseThrow();

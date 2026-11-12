@@ -3256,7 +3256,8 @@ project is refused while its kind is being defined and the controller, finding n
 (seen on `kind`); every field is stated, so applying the file over an open default closes each field. One root Application,
 `deploy/delivery/roots/<environment>.yaml`, is created once by that role after the controllers and the admission webhook's rules are in place
 (§11.32's order). Everything else follows from master: the root syncs `deploy/delivery/<environment>`, two projects and four Applications, in
-waves.
+waves, **the two projects first, in wave −1**: in one wave the root created an Application a second before its project, that Application's
+first sync failed for want of the project, and with no retry it stayed failed until a sync by hand (seen on `kind`).
 
 | Wave | Application | Project | What it applies |
 |---|---|---|---|
