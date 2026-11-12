@@ -1174,7 +1174,7 @@ pass "a failed migrator hook (exit 10, once) failed the sync: the Deployment's g
 kube -n finapp patch deployment finapp-app --type=merge -p '{"spec":{"revisionHistoryLimit":4}}' >> "$ART/apply.log" 2>&1 || cannot "the hand change could not be made"
 sleep 300
 [ "$(kube -n finapp get deployment finapp-app -o jsonpath='{.spec.revisionHistoryLimit}')" = 4 ] || fail "self-heal acted while the last sync was failed"
-[ "$(argo application finapp '{.status.operationState.startedAt}')" = "$failed_started" ] && [ "$(argo application finapp '{.status.operationState.phase}')" = Failed ] \
+[ "$(argo application finapp '{.status.operationState.startedAt}')" = "$failed_started" ] && [ "$(argo application finapp '{.status.operationState.phase}')" = "$failed_phase" ] \
     || fail "Argo CD started another sync of the failed revision"
 [ "$(kube -n finapp get pods -l job-name=finapp-migrator -o name | grep -c .)" = 1 ] || fail "the failed migrator ran again"
 pass "for five minutes after the failure: no sync started again, the hook not run again, and a hand change left in place (self-heal suspended)"
