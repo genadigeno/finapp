@@ -8,9 +8,9 @@
   "topUpMinor": 500,
   "checkoutMinor": 200,
   "operations": [
-    {"name": "transfer", "generator": "k6", "exec": "transfer", "rate": 53, "per": "40s", "perSecond": 1.325, "preAllocatedVUs": 4, "maxVUs": 20, "money": true, "errorTarget": 0.001, "from": "26.5% of 5 money movements a second"},
-    {"name": "checkout", "generator": "k6", "exec": "checkout", "rate": 531, "per": "200s", "perSecond": 2.655, "preAllocatedVUs": 8, "maxVUs": 40, "money": true, "errorTarget": 0.001, "from": "53.1% of 5: card or checkout payments"},
-    {"name": "topup", "generator": "k6", "exec": "topup", "rate": 53, "per": "100s", "perSecond": 0.53, "preAllocatedVUs": 4, "maxVUs": 20, "money": true, "errorTarget": 0.001, "from": "10.6% of 5: top-ups and withdrawals, the withdrawals folded into card top-ups (reading R2: both write six events and one journal entry)"},
+    {"name": "transfer", "generator": "k6", "exec": "transfer", "rate": 53, "per": "40s", "perSecond": 1.325, "preAllocatedVUs": 8, "maxVUs": 80, "money": true, "errorTarget": 0.001, "from": "26.5% of 5 money movements a second"},
+    {"name": "checkout", "generator": "k6", "exec": "checkout", "rate": 531, "per": "200s", "perSecond": 2.655, "preAllocatedVUs": 16, "maxVUs": 160, "money": true, "errorTarget": 0.001, "from": "53.1% of 5: card or checkout payments"},
+    {"name": "topup", "generator": "k6", "exec": "topup", "rate": 53, "per": "100s", "perSecond": 0.53, "preAllocatedVUs": 8, "maxVUs": 40, "money": true, "errorTarget": 0.001, "from": "10.6% of 5: top-ups and withdrawals, the withdrawals folded into card top-ups (reading R2: both write six events and one journal entry)"},
     {"name": "read", "generator": "k6", "exec": "read", "rate": 50, "per": "1s", "perSecond": 50, "preAllocatedVUs": 20, "maxVUs": 500, "money": false, "errorTarget": 0.001, "from": "ten times the money movements: account balance reads"},
     {"name": "signin", "generator": "k6", "exec": "signin", "rate": 191, "per": "60s", "perSecond": 3.183, "preAllocatedVUs": 5, "maxVUs": 40, "money": false, "errorTarget": 0.001, "from": "6.67 a second at the target's peak, times 5 / 10.47"},
     {"name": "merchant", "generator": "k6", "exec": "merchant", "rate": 318, "per": "60s", "perSecond": 5.3, "preAllocatedVUs": 5, "maxVUs": 60, "money": false, "errorTarget": 0.001, "from": "11.1 a second at the target's peak, times 5 / 10.47"},

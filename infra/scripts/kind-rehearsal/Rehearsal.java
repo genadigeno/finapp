@@ -141,7 +141,7 @@ public final class Rehearsal {
             // The load harness (P16-TSK-006): the load's customers, their sessions, and the provider's signed callbacks. The load itself is k6's.
             case "load-customers" -> rehearsal.loadCustomers(Integer.parseInt(args[2]));
             case "load-fixture" -> rehearsal.loadFixture(args[2]);
-            case "load-callbacks" -> rehearsal.loadCallbacks(args[2]);
+            case "load-callbacks" -> rehearsal.loadCallbacks(args[2], Integer.parseInt(args[3]), Integer.parseInt(args[4]));
             default -> throw new IllegalArgumentException("unknown step " + args[1]);
         }
     }
@@ -1026,11 +1026,14 @@ public final class Rehearsal {
      * capture's, spread evenly over the next feed period and sent at their times whatever the earlier ones answered (an open model). One
      * delivery in twenty is sent again five seconds later under the same event id, as a provider redelivers. Every answer is counted;
      * nothing here judges, the shell does.
+     *
+     * <p>A provider sends from a few addresses: the shell runs {@code shares} senders, each its own container, and this one takes the
+     * feed's lines whose position is {@code share} modulo {@code shares}.
      */
-    private void loadCallbacks(String label) throws Exception {
+    private void loadCallbacks(String label, int share, int shares) throws Exception {
         Path feed = work.resolve("callbacks-feed-" + label + ".txt");
         Path stop = work.resolve("stop-callbacks-" + label);
-        Path results = work.resolve("callbacks-" + label + ".tsv");
+        Path results = work.resolve("callbacks-" + label + "-" + share + ".tsv");
         Files.writeString(results, "at\tevent\tdelivery\tstatus\tms\n");
         byte[] key = java.util.Base64.getDecoder().decode(Files.readString(work.resolve("provider-key")).strip());
         long period = 10_000;
@@ -1039,13 +1042,20 @@ public final class Rehearsal {
         Object lock = new Object();
         java.util.concurrent.ScheduledExecutorService clock = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
         int consumed = 0;
+        long mine = 0;
         boolean stopping = false;
         while (!stopping) {
             // The stop is read before the feed, so the feed read after it is the last one: nothing appended before the stop is left behind.
             stopping = Files.exists(stop);
             List<String> lines = Files.exists(feed) ? Files.readAllLines(feed) : List.of();
-            List<String> fresh = lines.subList(Math.min(consumed, lines.size()), lines.size());
-            consumed = lines.size();
+            List<String> fresh = new ArrayList<>();
+            for (int position = consumed; position < lines.size(); position++) {
+                if (position % shares == share) {
+                    fresh.add(lines.get(position));
+                }
+            }
+            consumed = Math.max(consumed, lines.size());
+            mine += fresh.size();
             long gap = fresh.isEmpty() ? 0 : period / (fresh.size() * 2L);
             long slot = 0;
             for (String line : fresh) {
@@ -1080,9 +1090,9 @@ public final class Rehearsal {
             pause(250);
         }
         clock.shutdownNow();
-        String line = "callbacks " + label + " fed=" + consumed + " unanswered=" + inFlight.get() + " " + counts;
+        String line = "callbacks " + label + "-" + share + " fed=" + mine + " unanswered=" + inFlight.get() + " " + counts;
         System.out.println(line);
-        Files.writeString(work.resolve("callbacks-" + label + ".summary"), line + "\n");
+        Files.writeString(work.resolve("callbacks-" + label + "-" + share + ".summary"), line + "\n");
     }
 
     private void sendCallback(byte[] key, String event, String delivery, String body, Path results, Map<String, AtomicLong> counts,

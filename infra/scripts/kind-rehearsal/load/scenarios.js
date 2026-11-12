@@ -144,13 +144,17 @@ function resolve(op, req, accept, first, primary) {
     }
 }
 
-// The command once, or twice under one key when this iteration is one of the retried ones; every resolved answer is returned.
-function command(op, it, req, accept, primary) {
+// The command once, or twice under one key when this iteration is one of the retried ones; every resolved answer is returned. The
+// keyed command of the iteration (keyed true) is what the retried and the agreed counts are of: one key each. A confirmation sent twice
+// rides on the same iteration, under its intent's or its session's machine, and is not a second key.
+function command(op, it, req, accept, primary, keyed) {
     const m = metrics[op];
     if (it % RETRY_EVERY !== RETRY_EVERY - 1) {
         return [resolve(op, req, accept, null, primary)];
     }
-    m.retried.add(1);
+    if (keyed) {
+        m.retried.add(1);
+    }
     if (Math.floor(it / RETRY_EVERY) % 2 === 0) {
         const [a, b] = sendBoth(op, req, primary);
         return [resolve(op, req, accept, a, primary), resolve(op, req, accept, b, primary)];
@@ -207,7 +211,7 @@ export function transfer() {
         reference: `wl-load-${RUN}-${it}`,
     };
     const req = request(op, 'POST', '/v1/transfers', body, from.token, `load-${RUN}-transfer-${it}`, 'transfer');
-    const answers = command(op, it, req, (r) => (r.status === 200 || r.status === 201) && json(r, 'status') === 'COMPLETED', true);
+    const answers = command(op, it, req, (r) => (r.status === 200 || r.status === 201) && json(r, 'status') === 'COMPLETED', true, true);
     agreed(op, answers, 'id');
     conclude(op, failedOutcome(answers), started);
 }
@@ -233,7 +237,7 @@ export function topup() {
     const who = customer(it, 7);
     const create = request(op, 'POST', '/v1/payments',
         { amount: profile.topUpAmount, currency: 'EUR', paymentMethodId: who.card }, who.token, `load-${RUN}-topup-${it}`, 'payment-create');
-    const created = command(op, it, create, (r) => (r.status === 200 || r.status === 201) && json(r, 'id'), false);
+    const created = command(op, it, create, (r) => (r.status === 200 || r.status === 201) && json(r, 'id'), false, true);
     const failed = failedOutcome(created);
     if (failed) {
         conclude(op, failed, started);
@@ -247,7 +251,7 @@ export function topup() {
     // The confirmation moves the money: it is the operation's latency, and the retried iterations send it twice too. A 409 here is the
     // intent already past confirmation, which the read below settles.
     const confirm = request(op, 'POST', `/v1/payments/${id}/confirmation`, null, who.token, null, 'payment-confirm');
-    const confirmed = command(op, it, confirm, (r) => r.status === 200 || r.status === 409, true);
+    const confirmed = command(op, it, confirm, (r) => r.status === 200 || r.status === 409, true, false);
     const unconfirmed = failedOutcome(confirmed);
     if (unconfirmed) {
         conclude(op, unconfirmed, started);
@@ -282,7 +286,7 @@ export function checkout() {
     const create = request(op, 'POST', '/v1/checkout/sessions',
         { amountMinor: profile.checkoutMinor, currency: 'EUR', lineSummary: 'The load harness order' }, fixture.merchantKey,
         `load-${RUN}-checkout-${it}`, 'checkout-create');
-    const created = command(op, it, create, (r) => (r.status === 200 || r.status === 201) && json(r, 'checkoutId'), false);
+    const created = command(op, it, create, (r) => (r.status === 200 || r.status === 201) && json(r, 'checkoutId'), false, true);
     const failed = failedOutcome(created);
     if (failed) {
         conclude(op, failed, started);
@@ -297,7 +301,7 @@ export function checkout() {
     }
     const confirm = request(op, 'POST', '/v1/checkout/sessions/confirmation', { sessionToken: token, paymentMethodId: who.card },
         who.token, null, 'checkout-confirm');
-    const confirmed = command(op, it, confirm, (r) => r.status === 200 || r.status === 409, true);
+    const confirmed = command(op, it, confirm, (r) => r.status === 200 || r.status === 409, true, false);
     const unconfirmed = failedOutcome(confirmed);
     if (unconfirmed) {
         conclude(op, unconfirmed, started);

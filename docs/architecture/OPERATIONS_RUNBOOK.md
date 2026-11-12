@@ -4623,8 +4623,11 @@ takes `closed-model`, `sampler-disabled` or `unbalanced-entry`. The usual `REHEA
   at once and fails the run.**
 - `load-judge`: the samples covering the load (none missing at either end, no gap over 45 s, every one `PASS`); the generator holding
   its model (no dropped iteration, every arrival rate within 2%, each instance's CPU under 90% of its core); every money movement resolved by
-  its key and every retried key answered alike; each operation's error ratio within its objective; the callbacks two per capture, all
-  `204`; every ready replica serving each money-moving route; the settlement file taken whole and reconciled.
+  its key and every retried key answered alike; each operation's errors no more than its objective explains (`load_errors_chance`: the
+  chance that an operation meeting 99.9% errs this often in this many attempts, failing below 1%, so one 5xx in 800 transfers is
+  recorded and forty are a red run); the callbacks two per capture and their refusals judged the same way at 99.95%; every ready
+  replica serving each money-moving route; the settlement file taken whole and reconciled. Latency is recorded against each target and
+  never fails the run (`PHASE_16_PLAN.md` §5.3: a run fails on correctness, whatever the latency did).
 - `load-census`: the full census with the generator's counts (one effect per key, the provider's keys, the wallets, the outbox drained,
   no event lost, GL = ledger), a last sample, and the saturation signals exported.
 

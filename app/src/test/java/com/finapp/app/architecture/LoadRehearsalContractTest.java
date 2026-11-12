@@ -204,7 +204,9 @@ class LoadRehearsalContractTest {
                 .contains("fail \"the samples do not cover the load");
         assertThat(judge).as("the generator, never trusted to have kept up")
                 .contains("[ \"$dropped\" = 0 ] || fail \"the generator dropped $dropped iterations")
-                .contains("$3 < want * 0.98 || $3 > want * 1.02 + 1").contains("(c < 90)");
+                .contains("$3 < want * 0.98 || $3 > want * 1.02 + 1").contains("(c < 90)")
+                .as("errors judged against each operation's objective, never left unread")
+                .contains("chance=$(load_errors_chance \"$failed\" \"$attempts\" \"$target\")").contains("(c >= 0.01)");
         assertThat(generatorCommand()).as("each instance's CPU is bounded, so its saturation can be read").contains("--cpus 1");
         assertThat(generatorCommand()).as("the generator arrives from several addresses, each running its exact share of every rate")
                 .contains("--execution-segment \"$i/$LOAD_GENERATORS:$((i + 1))/$LOAD_GENERATORS\"")
