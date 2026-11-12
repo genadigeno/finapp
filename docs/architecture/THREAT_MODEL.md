@@ -1016,7 +1016,7 @@ were added on 2026-11-09 and await the owner." until then.)* **Items 35, 36, 38 
 read "... and they await the owner." until then.)* **Item 40 was added on 2026-11-12 by the delivery's task and decided the same
 day under the owner's standing word for waves G and H ("start H after G, accept all recommendations"), as recommended.**
 **Item 42 was added on 2026-11-12 by the runbooks' rehearsal and decided the same day under the same standing word, each part as
-recommended; its parts (d) and (e) were built the same day.**
+recommended; its parts (d), (e), (j) (i) and (k) were built the same day.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
