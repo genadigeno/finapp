@@ -1310,13 +1310,18 @@ by a second gauge in `P14-TSK-020`. A FINAL translated run with a missing rate s
 with lineage, corrected by resubmission; a simulated reference adapter; the reference safeguarding return subtracting
 `lending_funded` (C4, C13) *(corrected by the owner, 2026-11-05: subtracting the principal outstanding and written off, `committed` a line; "What the safeguarding return subtracts" above)*. → [ADR-0118](../adr/ADR-0118-regulatory-reporting-behind-jurisdiction-adapters.md)
 
-### Production hardening (Phase 15, `Proposed` at the Phase 14 → 15 transition)
+### Production hardening (Phase 15, `Proposed` at the Phase 14 → 15 transition; `Accepted` at the Phase 15 review, `P15-DOC-001`, each read against the code with its corrected passages marked in place)
 Planned by the Phase 14 → 15 transition (2026-11-07) in `PHASE_15_PLAN.md`, with the owner's decisions C1–C15 ratified at
-their recommended defaults (the owner, 2026-11-07, "accept recommendations"; *read "recorded as recommended defaults awaiting ratification" until then*); nothing of it is built. The phase's tasks are `P15-TSK-001`…`-034`,
-`P15-TST-001` (planned and `POSTPONED`, PI-004), `P15-TST-002` (the database pass, PI-012…PI-015) and `P15-DOC-001`. No
-new invariant: the phase protects the catalogue's existing ones through deployment, rotation, restart and restore. The
-phase's ADRs are ADR-0120…ADR-0125; **the next free number is ADR-0126.** Phase 15 moves no money, adds no business
-capability and claims no compliance with any standard.
+their recommended defaults (the owner, 2026-11-07, "accept recommendations"; *read "recorded as recommended defaults awaiting ratification" until then*), C14's
+database pass since postponed by the owner (2026-11-12, `POSTPONED_ISSUES.md` PI-023). Built by `P15-TSK-001`…`-043`, and read
+against the code and accepted by the Phase 15 review (`P15-DOC-001`, 2026-11-12), which corrected every drifted passage in
+place with a dated note before accepting any - 46 items in all, `P15-TST-001` (the storm, PI-004) and `P15-TST-002` (the
+database pass, PI-023) `POSTPONED` among them. No new invariant: the phase protects the catalogue's existing ones through
+deployment, rotation, restart and restore. The phase's ADRs are ADR-0120…ADR-0125, all `Accepted`; **the next free number is
+ADR-0126.** Phase 15 moves no money, adds no business
+capability and claims no compliance with any standard. *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: this read "; nothing of it is built. The phase's tasks
+are `P15-TSK-001`…`-034`, `P15-TST-001` (planned and `POSTPONED`, PI-004), `P15-TST-002` (the database pass, PI-012…PI-015)
+and `P15-DOC-001`".)*
 
 **One image, one Deployment of N replicas, a migration Job, managed state, a segmented edge.** The modular monolith
 deploys as the units it has: `finapp-app` (every replica serving HTTP and running every schedule and consumer, N ≥ 3,

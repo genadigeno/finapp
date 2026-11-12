@@ -1,6 +1,6 @@
 # ADR-0121 — Infrastructure as code: Terraform modules per concern, environments as root modules, verified without an apply
 
-Status: Proposed
+Status: Accepted (2026-11-12, `P15-DOC-001` — read against the code and corrected first)
 Date: 2026-11-07
 Phase: 15
 Context: Platform (infrastructure) · Security
@@ -18,13 +18,18 @@ HCL.
 1. **Terraform, with one module per concern under `infra/terraform/modules/`.** The modules are `network`,
    `kubernetes`, `postgres`, `kafka`, `object-storage`, `security`, `registry` and `observability`. Root modules per
    environment under `infra/terraform/environments/{staging,production}` compose them. The reference provider is AWS
-   (C1). The Kubernetes layer stays provider-neutral (ADR-0120).
+   (C1). The Kubernetes layer stays provider-neutral (ADR-0120). *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: provider-neutral holds of `deploy/base`
+   and `deploy/components`; the staging and production overlays name the reference provider: workload-identity role
+   ARNs, the secret store's `SecretsManager` provider and the load balancer's annotations.)*
 2. **Pinned and locked.** The Terraform version and every provider are pinned, and `.terraform.lock.hcl` is committed,
    which mirrors ADR-0025 for Gradle. Every tool used to check them (`tflint`, the Trivy already pinned) is pinned by
    digest.
 3. **State.** State is remote per environment, with locking, versioning and encryption. It is never initialised by CI.
    **No secret value ever enters Terraform state.** The secrets manager generates credentials, and Terraform creates
-   only the entries and the policies.
+   only the entries and the policies. *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: as built, Terraform creates the entries without values, and their
+   policies; the managed database generates its own master credential (`manage_master_user_password`), and every other
+   first value is written into the store by a person (`OPERATIONS_RUNBOOK.md` section 11.7). No generator and no version
+   resource exists, and `TerraformIsPinnedAndCheckedTest` refuses both.)*
 4. **Guarded resources.** `prevent_destroy` and deletion protection are set on the database, its backups and every KMS
    key. Production and non-production live in separate accounts.
 5. **Verified without an account.** Every change runs `terraform fmt -check`, `terraform validate`, `tflint` and

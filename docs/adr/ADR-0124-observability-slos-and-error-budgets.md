@@ -1,6 +1,6 @@
 # ADR-0124 — Observability, SLOs and error budgets: one telemetry egress, SLOs per critical flow with burn-rate alerts, correctness invariants never budgeted
 
-Status: Proposed
+Status: Accepted (2026-11-12, `P15-DOC-001` — read against the code and corrected first)
 Date: 2026-11-07
 Phase: 15
 Context: Platform (observability) · every module (signals and runbooks) · Security (sensitive data in telemetry)
@@ -24,7 +24,9 @@ exporter is configured. Several gaps remain:
 
 1. **One egress.** The OpenTelemetry Collector receives OTLP traces and container logs. It scrubs any attribute outside
    an allow-list, applies the tail-sampling policy and exports to the backends: Tempo and Loki in the reference
-   (compose and `kind`). Prometheus scrapes the management port. Alertmanager routes. Grafana is provisioned read-only.
+   (compose and `kind`). Prometheus scrapes the management port. Alertmanager routes. Grafana is provisioned read-only. *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: Grafana runs in compose alone, its dashboards
+   provisioned read-only and its anonymous access on loopback; no Grafana is deployed on `kind` or under `deploy/`, and a
+   real environment's is unchosen.)*
 2. **Sampling.** The application samples 100% of traces at the head. The collector keeps every error, every slow trace
    and every money-moving route, and samples the rest. Calibration belongs to Phase 16. The platform's traceability of
    a payment rests on the correlation id in the journal and the audit trail, not on a sampled trace.

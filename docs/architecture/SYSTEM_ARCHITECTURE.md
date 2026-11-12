@@ -170,7 +170,14 @@ catalog remains the one place a version is defined.
 `compose.yaml` rather than a CI-specific service definition, so CI and a developer's machine
 run the identical pinned image.
 
-## Deployment (planned, Phase 15)
+## Deployment (Phase 15)
+
+*(The Phase 15 exit review, 2026-11-12: built as this section describes, in this repository and never in a real
+environment - the two images, the manifests and the segmented edge, the Terraform verified with mock providers and never
+applied, signing and admission proven on `kind` with a key generated for the run, promotion by digest through declared Argo
+CD Applications, and the jobs above; ADR-0120…0125 are `Accepted`. The two-person rule is a `CODEOWNERS` file naming one
+person until the owner applies the branch rules (`THREAT_MODEL.md` §6 item 4). `PRODUCTION_READINESS.md` rules each unit and
+module and calls none ready. The heading read "Deployment (planned, Phase 15)", and the notes below are kept as written.)*
 
 *Planned by the Phase 14 → 15 transition (2026-11-07; ADR-0120…0125, `Proposed`; `PHASE_15_PLAN.md`); nothing of it is
 built* *(until 2026-11-08: the `finapp-app` image is built and asserted by CI's `image` job, `P15-TSK-003`, and pushed

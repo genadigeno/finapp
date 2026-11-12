@@ -13,7 +13,8 @@ Debt, and the repository as it stands at master `7840c716`. The owner's brief fo
 "Production Architecture and Hardening"; the roadmap's title is kept, and the brief's twelve areas (its 8.1–8.12) are this
 plan's scope. Owner decisions C1–C15 (§2.2) are **ratified at their recommended defaults** (the owner, 2026-11-07, "accept recommendations"; *read "recorded as recommended defaults awaiting the owner's ratification" until then*);
 the first task depends on none of them. Phase 14's formal completion gate (`P14-GATE`) runs in parallel; this plan edits
-no Phase 14 section.
+no Phase 14 section. *(The Phase 15 exit review, 2026-11-12: built by `P15-TSK-001`…`-043`, the storm and the database pass
+`POSTPONED` by the owner (PI-004, PI-023); the plan read against the tree, its errata in §26.)*
 
 ---
 
@@ -860,3 +861,57 @@ another break's resolution; and a transfer pre-empting an in-flight instant exec
 lifecycle change. **Two readings beyond the table's letter**: an instance-clock judgement that decides no financial
 instant (the screening retry's pacing, the callback doors' freshness window) is not counted in the correctness class;
 and `X-TSK-008`'s remainder is the clock class but not one of §25's five stores, so it went to the owner.
+
+
+---
+
+## 26. Errata (`P15-DOC-001`, the Phase 15 exit review, 2026-11-12)
+
+The plan read against the tree at the phase's exit (master `11ee8da3`). The plan's preamble says the task's record is right
+where the plan and the built tree disagree; each line below is such a disagreement, the plan's own text above kept as it was
+decided. Where an inline dated note already says the same, it is not repeated here.
+
+- **Preamble, §21** - "Decided in ADR-0120…ADR-0125 (`Proposed`)": all six are `Accepted` by this review (2026-11-12), each
+  read against the code with its corrected passages marked in place; no ADR was written after ADR-0125, so the next free
+  number is still ADR-0126.
+- **§2.2 C13, §9.2 T3** - "operator sessions typed `OPERATOR`": built as `EMPLOYEE`, the existing constant (`ActorType` has no
+  `OPERATOR`, and the schemas' checks already admitted `EMPLOYEE`), decided per request from the identity's live roles, not at
+  the session's establishment; an idempotency scope keeps `CUSTOMER` (`Actor.keyedType`), so a retry across a release finds its
+  record. The reporting role, C13's cut candidate, was built, not cut (§17's cut order and §25's "cut candidate" likewise: nothing
+  in the phase was cut).
+- **§2.2 C14, §2.1, §16, §17, §20, §25** - the database pass (`P15-TST-002`) and with it PI-012…PI-015 are `POSTPONED` by the
+  owner (2026-11-12, `POSTPONED_ISSUES.md` PI-023), §17's "never cut … the database pass" notwithstanding. Per-task testing
+  narrowed further than §16 says from 2026-11-08, by the owner's rule: named test classes only, no whole-module task, no
+  `:app:architectureTest`.
+- **§3, its erratum's last sentence** - "the other three stay with `-008`, `-021` and `-031`": all three are corrected -
+  `TransportSecurityGuard`'s note names the Kafka hop's own guard, `RequiresAssurance`'s counts its handlers (36 since the
+  wider audit class's task), and `SYSTEM_ARCHITECTURE.md` §Baseline Stack says no Spring Security, no Redis client and no
+  application object storage.
+- **§4** - "only `app` produces a runnable": `settings.gradle.kts` also includes `migrator`, the migrator image's runnable,
+  outside `app`'s classpath. "The 33 leaderless schedules": 37 schedule beans (35 classes, the retention sweep three beans),
+  which with the inbox consumers, the gauge refresher's lifecycle and the telemetry SDK's bounded flush make the forty lifecycle
+  components `ShutdownOrderTest` counts.
+- **§6** - one Service: a second, headless one, `finapp-app-scrape`, serves Prometheus's discovery on the API port; the
+  management port is on no Service.
+- **§8, ADR-0122 decision 2** - Trivy over the rendered manifests was not built: the overlays are held by `kubeconform -strict`
+  and the platform's own policies, each refusing a plant (`THREAT_MODEL.md` §6 item 44 (b)).
+- **§9.4** - "a weekly scheduled re-scan of the last released image": no registry exists, so each scheduled run rebuilds the last
+  commit's image, the same bytes, and scans it.
+- **§10, database credentials** - "managed rotation": no rotation schedule exists, and the infrastructure check refuses one;
+  rotation is an act the fleet follows, alternating users (`SECRET_MANAGEMENT.md` §5).
+- **§11, §16, §17 (M15.11), §23** - "platform runbooks rehearsed", "the platform section §11 whole", "never cut … the runbooks'
+  rehearsal": the platform rehearsals' remaining cluster runs are `POSTPONED` by the owner (2026-11-12, PI-024), and the domain
+  sections §4–§10 have no rehearsed sample (`OPERATIONS_RUNBOOK.md` §11.38 counts per section). Criterion 4 is `PARTIAL`.
+- **§11.1** - the trial balance "today alerted by no rule": `LedgerTrialBalanceNonZero` pages on its first non-zero sample
+  (`infra/prometheus/rules/correctness.yml`).
+- **§12** - two retention sweeps: three, the window counter's ended windows beside the outbox's and the inbox's.
+- **§13** - "The ten-instance answer for the operational architecture: `PASS` by design": the exit review answers **`UNKNOWN`
+  at ten, by the owner's choice** - `PASS` on every counted rehearsal (three replicas on `kind`; the migrator at ten runs at
+  once), the ten-way database cases of the phase's new arbiters unrun (PI-023), the storm postponed (PI-004), the final-tree
+  release run postponed (PI-024). Row "Two migrations at once": the runs interleave, each migration applied once under its
+  history's lock, not "the second finds nothing to do". Row "Distributed state": proven by `NoSingleInstanceAssumptionRulesTest`
+  and the three-replica runs, not by the register, which is a document.
+- **§15** - "the ruling and evidence columns left for `-034`": every cell is ruled - 170 cells, 64 `MET as rehearsed`, 4
+  `PASS`, 83 `GAP`, 19 `N/A`, none called ready.
+- **§18** - thirty-seven items: forty-six, nine added during the phase (`P15-TSK-035`…`-043`), the backlog's Phase 15 preamble
+  dating each.

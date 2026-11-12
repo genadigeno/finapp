@@ -2390,6 +2390,24 @@ are `PHASE_15_PLAN.md`'s, a bare `-nnn` meaning `P15-TSK-nnn`):
   `POSTPONED_ISSUES.md` PI-023, past the project's phases with the storm: the exit records this item as not met, a deviation the
   owner chose.)*
 
+*Status (the exit review, `P15-DOC-001`, 2026-11-12, [`reviews/PHASE_15_REVIEW.md`](reviews/PHASE_15_REVIEW.md)):
+**Phase 15 `COMPLETE` with recorded deviations, pending the Phase 15 → 16 transition gate and the owner's acceptance of the
+deviations - with `P15-TST-001` (the storm, PI-004) and `P15-TST-002` (the database pass, PI-023) `POSTPONED`.** The seven:
+**1 `PASS`** in its measurable form (every CRITICAL and HIGH threat has built evidence; 32 of 38 carry residual rows, each held
+by a named owner); **3 `PASS`**; **6 `PASS` in another form** (GL = ledger over a locked period and four product proofs shown
+over empty data: owner item 38 (c), item 44 (a)); **2 `PARTIAL`** (three static-analysis baseline rows no decision accepted, item
+12; the manifests held by policies, not a graded scanner, item 44 (b)); **5 `PARTIAL`** (no guard holds a tested record per
+auditable route, `P15-REM-002`); **7 `PARTIAL`** (the trace asserts no provider span, no ledger span and no causation,
+`P15-REM-003`); **4 `PARTIAL` by the owner's choice** (PI-024: 22 of 46 sections rehearsed, §4-§10 unsampled). Per area:
+containerisation, Kubernetes deployment, infrastructure as code, secrets and keys, observability, operational readiness and
+documentation hold (several in another form, recorded in the review); **CI/CD and configuration `PARTIAL`** (the second person,
+owner item 4); **security hardening, database and messaging operations and multi-instance deployment `PARTIAL`** (PI-023, PI-004,
+PI-024); **the database pass `NOT MET` by the owner's choice** (PI-023). ADR-0120…0125 accepted after correction; C1–C15 recorded
+(C14 changed by the owner, 2026-11-12). **Universal criterion 7 `NOT MET` by the owner's choice** (no database or Kafka tier ran in
+Phase 15), criteria 4 and 11 `PARTIAL`. The ten-instance question: **`UNKNOWN` at ten, by the owner's choice** - `PASS` on every
+counted rehearsal (three replicas on `kind`, the migrator at ten), the ten-way database cases (PI-023), the storm (PI-004) and the
+final-tree run (PI-024) open; no counted run failed.*
+
 ### Phase 16 — Scale, Resilience and Disaster Recovery
 - Load test at target volume with financial invariants asserted **during** load, not only
   after.

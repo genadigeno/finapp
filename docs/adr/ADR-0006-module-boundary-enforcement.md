@@ -104,3 +104,23 @@ rather than trusted.
 - Phase 0: implement rules; prove each by deliberate violation.
 - Each phase entry gate: add rules for the new module's boundaries.
 - Phase 15: review actual coupling observed in implementation against the declared design.
+
+*(Done by the Phase 15 exit review, `P15-DOC-001`, 2026-11-12, [`reviews/PHASE_15_REVIEW.md`](../project/reviews/PHASE_15_REVIEW.md)
+§ADR-0006's coupling review.)* **The code's dependency graph is the declared one.** Every module's `build.gradle.kts` edges were
+read: no cycle; the direction `app → business modules → platform → sharedkernel` holds, the one skip-level edge
+(`creditmath → sharedkernel`) declared; the twelve business-to-business edges are ten modules to `ledger` and `lending` and
+`bnpl` to `creditmath`, each declared in `MODULE_ARCHITECTURE.md` and pinned by its module's isolation test. **No foreign key
+crosses a schema** (every cross-schema `REFERENCES` in a migration is inside a comment), and no business module's SQL names
+another module's schema. Four things the decision says are not what the build holds:
+1. **Two of the rules guard nothing.** The internals rule reads `.internal` packages, and no module has one: every module is
+   a flat package of public types, so "internals are not accessible across modules" rests on review. The entity rule reads
+   JPA entities, and there are none (ADR-0033). Both pass over empty data.
+2. **`INV-LED-04`'s static half is the dependency direction alone.** Nothing stops a module that depends on `ledger` calling
+   the journal store's `append` outside the ledger's command API; the tree holds no such call today.
+3. **`app` reads thirteen module schemas directly**, `SELECT` only, through port adapters each declared where it was built
+   (ADR-0107, ADR-0113, `MODULE_ARCHITECTURE.md`); the data boundary above states no such exception, and nothing pins which
+   adapter reads which schema.
+4. **The no-cross-schema-foreign-key rule has no global guard**, only per-migration checks.
+
+Each is `BACKLOG.md` `P15-REM-001`, `PLANNED`, before any service extraction is decided (ADR-0001's revisit point, Phase 16).
+This ADR's decision is unchanged.

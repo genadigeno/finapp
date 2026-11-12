@@ -1,6 +1,6 @@
 # ADR-0120 — The production deployment model: one image, one Deployment of N replicas, a migration Job, managed state, a segmented edge
 
-Status: Proposed
+Status: Accepted (2026-11-12, `P15-DOC-001` — read against the code and corrected first)
 Date: 2026-11-07
 Phase: 15
 Context: Platform (deployment) · every module (operated, not changed) · Security (edge and network)
@@ -61,7 +61,7 @@ some to answer the brief would break ADR-0001.
    manifest. Decision 3: the actuator answers on 8081 only, bound to loopback unless `FINAPP_MANAGEMENT_ADDRESS` names
    the pod's address. Decision 4, as Spring's own phases run it on a real context (`ShutdownOrderTest`): readiness turns
    `REFUSING_TRAFFIC` before any phase stops; the API port drains (`server.shutdown: graceful`, within
-   `spring.lifecycle.timeout-per-shutdown-phase`, 30 s); no new schedule tick starts and the 32 (35 since `P15-TSK-029`, 2026-11-08) drain in parallel,
+   `spring.lifecycle.timeout-per-shutdown-phase`, 30 s); no new schedule tick starts and the 32 (35 since `P15-TSK-029`, 2026-11-08; 37 since `P15-TSK-022`'s window-counter sweep, *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: this read "35" alone)*) drain in parallel,
    each within 10 s and an interrupt's 2 s (*read "the 32 schedules stop claiming at once" until `P15-TSK-009`*); the consumers take no new batch, acknowledge the one they hold and leave
    their groups, within 10 s and 2 s; the management server closes, then the web server; the gauge refresher
    lets its read end, within 3 s (the accounting gauge reader until `P15-TSK-024` moved every gauge onto `platform`'s
@@ -71,7 +71,10 @@ some to answer the brief would break ADR-0001.
    changes no decision; the ADR stays `Proposed` until the phase's exit review.)*
 5. **State lives outside the cluster.** PostgreSQL and Kafka are managed services. In-cluster copies exist only in the
    test-only `kind` overlay, and a policy refuses them in any other overlay. Redis is not deployed. The application uses
-   no object storage.
+   no object storage. *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: no Redis is deployed for the platform; the one Redis in a cluster is Argo CD's own cache in
+   `argocd`, pinned in `infra/scanner-pins.sh` (`ARGOCD_REDIS_*`), and it holds nothing of the platform's. The shutdown
+   note above also gained the telemetry SDK's bounded flush, `TelemetryFlush`, 2 s: the fortieth lifecycle component
+   `ShutdownOrderTest` counts.)*
 6. **The edge is segmented.** An ingress controller terminates TLS, so the application is never a TLS endpoint. A public
    ingress serves an allow-list of customer, merchant and provider-callback routes. An internal operator ingress serves
    every route that an operator permission guards. NetworkPolicy is default-deny. There is no API gateway product, no

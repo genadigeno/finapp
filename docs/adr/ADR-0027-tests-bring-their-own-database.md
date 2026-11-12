@@ -44,7 +44,8 @@ same pinned PostgreSQL compose runs and `verifyInfrastructureVersions` already g
 image literal would be a third definition.
 
 **PostgreSQL only.** The task named Kafka and Redis too, and there is no Kafka or Redis client on
-the classpath — a container nothing connects to is a container that tests nothing. Same argument
+the classpath *(true when written; a Kafka client exists since Phase 2 (`P2-TSK-001`) and its tier is `kafkaTest`, `TESTING.md`; no Redis
+client exists. Noted by the Phase 15 exit review, 2026-11-12)* — a container nothing connects to is a container that tests nothing. Same argument
 ADR-0023 used for not guarding transports that do not exist, and ADR-0022 for not writing an enum
 nothing consumes. They join the harness with their first client.
 

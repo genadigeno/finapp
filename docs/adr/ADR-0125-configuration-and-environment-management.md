@@ -1,6 +1,6 @@
 # ADR-0125 — Configuration and environment management: environments differ by values, never by code path; every property registered and classed
 
-Status: Proposed
+Status: Accepted (2026-11-12, `P15-DOC-001` — read against the code and corrected first)
 Date: 2026-11-07
 Phase: 15
 Context: Platform (configuration) · every module (its `finapp.*` properties) · Security
@@ -42,7 +42,9 @@ property, its class or its source in each environment. Nothing would notice if t
    never pages. *(Widened by the transition's review, 2026-11-07, its M-10.)*
 5. **Startup refuses an unsafe configuration.** The existing guards (transport, credentials, the connection budget,
    providers) stay. The schema-version guard is added (ADR-0122). A missing required value fails startup, never
-   readiness after traffic has begun.
+   readiness after traffic has begun. *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: the schema-version guard is a readiness verdict, not a startup
+   refusal: a replica on an older schema starts and stays out of service, and its schedules, relay and consumers wait on
+   it, ADR-0122 decision 5.)*
 
 ## Alternatives Considered
 
@@ -80,6 +82,6 @@ may not carry that class or name one of its properties. `finapp.config.fingerpri
 the build embeds the register so the running code reads the one list. The alert's `for` is the longest rollout an overlay allows taken at its
 `progressDeadlineSeconds`, not at the fast path of `startupProbe` and `minReadySeconds`, plus the last pod's grace and the rule's presence window: 80 minutes
 today. No property was moved into versioned data: each `FINANCIAL` row answers the mixed-fleet question for itself. No Spring profile exists, and a
-guard holds that. Decision 5's guards stand as they were. **Decision 4's second person is not built**: `P15-TSK-017` delivers it, and it has to cover the register as well
+guard holds that. Decision 5's guards stand as they were. **Decision 4's second person is not built**: `P15-TSK-017` delivers it *(corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: `.github/CODEOWNERS` covers the overlays and the register, and it names one person; the second person is enforced only once the owner applies the branch rules and names one, `THREAT_MODEL.md` §6 item 4)*, and it has to cover the register as well
 as the production overlay, because a `FINANCIAL` default changes through the code and the register's default cell, and a URL row cannot be an overlay literal at all (register
 section 1.1).
