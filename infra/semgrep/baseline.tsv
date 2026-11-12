@@ -7,7 +7,8 @@
 # statement is looked at again, and a row that matches nothing, or is past its date, fails the job. Every row is a
 # read site or a statement read by a person on 2026-11-08, whose reason says what makes it safe or what it is carried
 # for, and the set is counted in THREAT_MODEL.md section 6 item 12. SecurityScansAreWiredTest holds every row to having
-# a real rule, a real file, a reason and an unexpired date, and the whole to a fraction of the tree's statements.
+# a real rule, a real file, a reason and an unexpired date, the whole to a fraction of the tree's statements, and (since
+# 2026-11-12) the rows, counted by their date, to item 12's tally: a row added here is accepted there first.
 b8662395251850c8	finapp-sql-text-not-constant	accounting/src/main/java/com/finapp/accounting/reporting/ReadOnlySnapshot.java	screened((String) args[0])	2027-06-30	A proxy of the report snapshot's connection: it forwards the text its caller gives, after screened() refuses anything but a single SELECT or WITH; it builds none
 b8662395251850c8	finapp-sql-text-not-constant	accounting/src/main/java/com/finapp/accounting/reporting/ReadOnlySnapshot.java	screened((String) args[0])	2027-06-30	A proxy of the report snapshot's connection: it forwards the text its caller gives, after screened() refuses anything but a single SELECT or WITH; it builds none
 8fb1fb384d0b520c	finapp-sql-text-not-constant	app/src/main/java/com/finapp/app/accounting/LendingFundedAsOfCutoffReads.java	HELD_PER_ACCOUNT_LINES + (cut.isPresent() ? AT_THE_CUT : "")	2027-06-30	Two static final parts with a third chosen by whether an Optional is present: the condition selects a constant, and no value enters the text

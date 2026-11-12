@@ -2857,8 +2857,9 @@ set `TRIVY_IMAGE` to it for the run. The scanner binary stays the pinned one; CI
 no network at all and has no such step.
 
 **Change a scanner pin.** Bump `VERSION` in `infra/scanner-pins.sh` and re-resolve `DIGEST` with `docker buildx imagetools
-inspect <repository>:<version>`. A Trivy bump also moves the checks `trivy config` runs over the Terraform, so re-run
-`./infra/scripts/terraform-check.sh` with it. Run both scan scripts: a plant that stopped being refused by name is
+inspect <repository>:<version>`. A Trivy bump also moves the checks `trivy config` runs over the Terraform and, since
+2026-11-12, over the rendered manifests, so re-run `./infra/scripts/terraform-check.sh` and `./infra/scripts/manifest-check.sh`
+with it (§11.14). Run both scan scripts: a plant that stopped being refused by name is
 what a new scanner version breaking a check looks like.
 
 **What this does not cover.** Signing and admission (`-007`, the refused image, above). A secret inside a jar: Trivy reads the image's loose files, which include the boot jar's exploded classes and `application.yaml`, and does not unpack the libraries' jars. A vulnerability nobody has
@@ -3634,8 +3635,9 @@ backend (the `object-storage` README) and the brokers come up in three stages (t
 
 ### 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads
 
-**When.** Before pushing any change under `deploy/` or `infra/scripts/manifest-policy/`, and when
-`check-pinned-images.sh` reports a newer Kustomize, kubeconform or conftest. **Why.** No cluster runs these files yet
+**When.** Before pushing any change under `deploy/`, `infra/scripts/manifest-policy/` or
+`infra/trivy/accepted-misconfigurations.rego`, and when `check-pinned-images.sh` reports a newer Kustomize, kubeconform, conftest
+or Trivy. **Why.** No cluster runs these files yet
 (`P15-TSK-012` is the first), so this check is the only thing that holds them. CI's `manifests` job runs the same script.
 
 **The layout.** `deploy/base` is the application's desired state and is never rendered alone: only an overlay names an
@@ -3663,10 +3665,23 @@ zeros until a promotion replaces it, which no registry serves, so an unpromoted 
 
 It renders every overlay, validates each with `kubeconform -strict` against the schemas in `infra/scanner-pins.sh`, runs
 every policy of `infra/scripts/manifest-policy/finapp.rego` over each, and then copies `deploy/`, plants one defect per
-copy and requires the same check to refuse each by name. **Verify**: the last line reads `ok   every check green, every
-plant refused for its reason`, and the exit status is 0. A line starting `!!` reads as in §11.13. On a machine whose TLS
-is intercepted, kubeconform cannot read the schemas: build a local image `FROM` the pinned digest with that machine's root
-certificate added, and set `KUBECONFORM_IMAGE` to it for the run. CI never sets it.
+copy and requires the same check to refuse each by name. *(Since 2026-11-12, `THREAT_MODEL.md` §6 item 44 (b).)* Then
+the second net: it renders every kustomize root under `deploy/`, found by search (bases, every overlay, the delivery's roots),
+and runs `trivy config` at HIGH and CRITICAL over them, in a container with no network, on the checks embedded in the pinned image. It prints
+`read <stream> kubernetes` for each stream and every HIGH or CRITICAL finding as read, carried ones included; a stream not read
+as Kubernetes fails the run, and so does any finding `infra/trivy/accepted-misconfigurations.rego` does not carry. Last, Trivy
+must refuse three plants by the check's id: `KSV-0017` (a privileged edge controller), `KSV-0121` (a telemetry back end
+mounting the node's root) and `KSV-0109` (one more key beside a carried one). **Verify**: the last line reads
+`ok   every check green, every plant refused for its reason`, and the exit status is 0. A line starting `!!` reads as in
+§11.13. On a machine whose TLS is intercepted, kubeconform cannot read the schemas: build a local image `FROM` the pinned
+digest with that machine's root certificate added, and set `KUBECONFORM_IMAGE` to it for the run (`TRIVY_IMAGE` the same
+way, though the scan itself reads no network). CI never sets either.
+
+**A new Trivy finding.** Fix the manifest if the finding is real. If it is a false reading, never change the manifest only to
+hide a value from the scanner: add one entry to `infra/trivy/accepted-misconfigurations.rego` naming that one finding (its
+check, its object, its whole message as an anchored pattern, a reason and an `until` date), list it with the same date in
+`THREAT_MODEL.md` §6 item 48, and take it to the owner, who alone accepts it. `KubernetesManifestsTest` holds the two equal.
+When a carried finding stops occurring (compare the printed findings with the file), remove its entry and its line.
 
 **Change a number the budget reads.** The policy refuses each of these if it is done alone.
 
@@ -3693,7 +3708,14 @@ eight minutes for three replicas, longer at the maximum. That is the price of ne
 **Change the fleet and the quota follows.** Each overlay's `ResourceQuota` must equal `maxReplicas + 2 × maxSurge + 1`
 application pods, the migrator and anything test-only, in pods, CPU and memory: a pod inside its grace is still charged. The
 policy reads each number from the rendered stream and refuses a quota above or below it (`deploy/base/resourcequota.yaml` shows
-the sum), and the `LimitRange`'s `max` must equal the largest pod rendered. A controller that needs RBAC goes on
+the sum), and the `LimitRange`'s `max` must equal the largest pod rendered. **The edge's and the telemetry pipeline's namespaces** have one quota each
+*(since 2026-11-12, `THREAT_MODEL.md` §6 item 43 (c))*, `deploy/edge/base/resourcequota.yaml` and
+`deploy/observability/base/resourcequota.yaml` (kind's raised for its back ends in its overlay), held by `edge-check.sh` and
+`telemetry-check.sh`. Their workloads share neither premise of the application's formula, so each Deployment counts its rollout
+(`Recreate`: its replicas; `RollingUpdate`: twice its replicas, or `R + 2 × maxSurge + maxUnavailable` once `minReadySeconds`
+reaches the grace) and the evictions its PodDisruptionBudget allows (all its replicas where none selects it); each file shows
+the sum. Change a replica count, a strategy, a budget or a container's resources there and the quota follows: the policy says
+by how much. A controller that needs RBAC goes on
 `controller_accounts` in `finapp.rego`, one line: a binding to any other ServiceAccount is refused. A new egress or a new client of the application is refused until a flow is added to `finapp.rego` beside its
 NetworkPolicy: the allowed flows are the decision, written once there and once in the policy.
 
@@ -3786,6 +3808,13 @@ client's own address must survive to the controller, which the staging and produ
 **A renewed certificate.** The Secret and the routes are one projected volume, and the file provider watches its directory. The kubelet's swap of the volume reloads the certificate without a restart; `edge-check.sh`
 proves that swap on the pinned image. A real kubelet's swap of a Secret cert-manager renewed early has run on `kind` under the workload, and the restoring of the previous certificate (section 11.33): served each time with no controller restarted. **A certificate's rollback under cert-manager is a new issuance**: the previous certificate, restored into the Secret with cert-manager's controller stopped, was replaced by a freshly issued one within 90 s of the controller starting again (section 11.33). To go back from a bad certificate, fix what it was issued from (the `Certificate` or its issuer) and let cert-manager issue again; a restored copy lasts only while the controller is stopped. No `Certificate`, issuer, hostname or TLS Secret is committed for staging or production: until a real environment provides the Secret,
 the controller pods do not start.
+
+**A certificate suspected compromised** (`SECRET_MANAGEMENT.md` §5.1, `tls-certificate`; added 2026-11-12, never run: no real issuer
+exists, and the `kind` overlay's local CA publishes no revocation a client reads). A renewal keeps the key's exposure, so: revoke the
+certificate with its issuer, outside cert-manager, which renews and never revokes; then delete the TLS Secret, so that cert-manager
+issues again under a newly generated key, and read `kubectl describe certificate` until it is `Ready` again. The edge picks the new
+Secret up as above, with no controller restarted. If the issuer itself is suspect, replace it first, then issue: a certificate from a
+suspect issuer is no fix.
 
 **Failure and rollback.** An edge outage is refused traffic and nothing more: the application stays ready, and its schedules and consumers do not notice. Revert by the previous manifest digest; every route and limit is in the ConfigMap's hash, so a revert restores them together.
 

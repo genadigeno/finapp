@@ -86,7 +86,7 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | PostgreSQL JDBC | 42.7.13 | Matches the Spring Boot BOM |
 | CycloneDX Gradle plugin | 3.4.1 | Produces the SBOM the dependency scan consumes |
 | gitleaks | v8.30.1 | Secret scanning; pinned by image digest in `infra/scripts/secret-scan.sh`, which CI calls |
-| Trivy | 0.76.2 | Dependency vulnerability scanning, since `P15-TSK-013` the configuration scan of the Terraform (`trivy config`, its embedded checks), and since `P15-TSK-006` the image scan and the per-image SBOM; pinned by image digest in `infra/scanner-pins.sh` |
+| Trivy | 0.76.2 | Dependency vulnerability scanning, since `P15-TSK-013` the configuration scan of the Terraform (`trivy config`, its embedded checks), since `P15-TSK-006` the image scan and the per-image SBOM, and since `P16-TSK-004` the configuration scan of every rendered kustomize root under `deploy/` (`manifest-check.sh`, a second net beside the policies); pinned by image digest in `infra/scanner-pins.sh` |
 | Semgrep OSS | 1.184.0 | Static analysis of the production source, with rules vendored under `infra/semgrep/rules` and no network; pinned by image digest in `infra/scanner-pins.sh` (`P15-TSK-006`) |
 | Terraform | 1.17.1 | Infrastructure code (ADR-0121), never applied in Phase 15; the image pinned by digest in `infra/scanner-pins.sh`, and every root's `required_version` equal to it |
 | tflint | v0.65.0 | Lints the Terraform with its bundled ruleset only; pinned by image digest in `infra/scanner-pins.sh` |

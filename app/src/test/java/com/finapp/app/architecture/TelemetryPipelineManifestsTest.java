@@ -5,9 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finapp.platform.telemetry.Spans;
 import com.finapp.platform.telemetry.TraceAttributes;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -558,6 +560,11 @@ class TelemetryPipelineManifestsTest {
             refusedPlants.add(refused.group(1));
             refusedIds.add(refused.group(2));
         }
+        // `obs_accepted` is a plant the policies must let through (the quota re-counted with a back end, P16-TSK-004): made, and answered for.
+        Matcher accepted = Pattern.compile("(?m)^obs_accepted (\\S+)$").matcher(script);
+        while (accepted.find()) {
+            refusedPlants.add(accepted.group(1));
+        }
         Set<String> planted = new TreeSet<>();
         Matcher made = Pattern.compile("(?m)^\\s+obs_plant(?:_on)? (obs-[a-z-]+)\\b").matcher(script);
         while (made.find()) {
@@ -569,6 +576,48 @@ class TelemetryPipelineManifestsTest {
                 .containsExactlyInAnyOrder("security-token", "images-digest", "security-non-root", "probes-present", "rbac-human-namespace",
                         "rbac-human-secrets", "rbac-human-subresource");
         assertThat(refusedPlants).as("every plant is refused and every refusal has its plant").isEqualTo(planted);
+    }
+
+    @Test
+    @DisplayName("finapp-observability's one quota is its worst moment, exactly: the base's the collector's alone, kind's patched to its four back ends, in pods, CPU and memory")
+    void theNamespaceQuotaIsItsWorstMoment() {
+        List<Map<String, Object>> base = new ArrayList<>(yamlAll(read(BASE + "collector-workload.yaml")));
+        // The cluster watcher (P16-TSK-003), the base's second workload.
+        base.addAll(yamlAll(read(BASE + "cluster-watch-workload.yaml")));
+        List<Map<String, Object>> quotas = yamlAll(read(BASE + "resourcequota.yaml"));
+        assertThat(quotas).as("exactly one quota, or the tightest decides").hasSize(1);
+        assertThat(read(BASE + "kustomization.yaml")).containsPattern("(?m)^  - resourcequota\\.yaml$");
+        Map<String, BigDecimal> stated = WorstMoment.stated(quotas.get(0));
+        Map<String, BigDecimal> needed = WorstMoment.of(base);
+        assertThat(needed.get("pods")).as("the collector, 2 x 2 + 1, and the watcher, 2 x 1 + 1").isEqualByComparingTo("8");
+        needed.forEach((key, value) -> assertThat(stated.get(key)).as("the base's %s is the collector's worst moment", key).isEqualByComparingTo(value));
+
+        // kind's overlay: the base, Alertmanager's ConfigMap alone, and the back ends; the quota replaced key by key, nothing else patched.
+        Map<String, Object> kind = yaml(read(KIND + "kustomization.yaml"));
+        assertThat(stringList(kind.get("resources"))).containsExactly("../../base", "../../alertmanager", "backends.yaml", "networkpolicy-backends.yaml");
+        assertThat(read("deploy/observability/alertmanager/kustomization.yaml")).doesNotContain("resources:");
+        List<Map<String, Object>> onKind = new ArrayList<>(base);
+        onKind.addAll(yamlAll(read(KIND + "backends.yaml")));
+        Map<String, BigDecimal> patched = new LinkedHashMap<>(stated);
+        List<?> patches = (List<?>) kind.get("patches");
+        assertThat(patches).as("the quota is the one thing kind patches").hasSize(1);
+        Map<String, Object> patch = cast(patches.get(0));
+        assertThat(map(patch, "target")).containsEntry("kind", "ResourceQuota").containsEntry("name", "finapp-observability");
+        for (Map<String, Object> operation : operations(patch)) {
+            assertThat(operation.get("op")).isEqualTo("replace");
+            String key = String.valueOf(operation.get("path")).replace("/spec/hard/", "");
+            assertThat(patched).as("a key the quota states").containsKey(key);
+            patched.put(key, WorstMoment.quantity(operation.get("value")));
+        }
+        Map<String, BigDecimal> neededOnKind = WorstMoment.of(onKind);
+        assertThat(neededOnKind.get("pods")).as("the collector's 5, the watcher's 3, and each back end's pod and one replacing it").isEqualByComparingTo("16");
+        neededOnKind.forEach((key, value) -> assertThat(patched.get(key)).as("kind's %s is its worst moment", key).isEqualByComparingTo(value));
+    }
+
+    private static List<Map<String, Object>> operations(Map<String, Object> patch) {
+        List<Map<String, Object>> operations = cast(new Yaml(new SafeConstructor(new LoaderOptions())).load(String.valueOf(patch.get("patch"))));
+        assertThat(operations).as("the patch's operations were read").hasSize(5);
+        return operations;
     }
 
     @Test

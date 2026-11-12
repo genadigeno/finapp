@@ -37,6 +37,15 @@ compatibility check between releases.
    *(Corrected by `P15-DOC-001`, the Phase 15 exit review, 2026-11-12: Trivy does not scan the rendered manifests. They are held by `kubeconform -strict` and the platform's
    own policies (`infra/scripts/manifest-policy/`), each refusing a plant; `trivy config` runs over the Terraform alone.
    Whether to add it over the overlays as a second net is `THREAT_MODEL.md` §6 item 44 (b).)*
+
+   *Note (2026-11-12, `P16-TSK-004`, item 44 (b) decided by the owner the same day):* Trivy now grades the rendered manifests, as
+   this decision first said, as a second net beside the policies rather than in their place. `infra/scripts/manifest-check.sh`,
+   in CI's `manifests` job, runs `trivy config` at HIGH and CRITICAL over every kustomize root under `deploy/`, found by search, and
+   over the delivery's committed roots; a stream Trivy does not read as Kubernetes fails the run, and so does any finding that
+   `infra/trivy/accepted-misconfigurations.rego` does not carry. That file carries one finding per entry, by its check and its
+   whole message, with a reason and an expiry, each listed in `THREAT_MODEL.md` §6 item 48 for the owner. Trivy refuses its own
+   plants in the same run. The policies remain what holds the platform's decisions; Trivy reports what its catalogue knows, at
+   its own severities (a hostPath of an ordinary directory is MEDIUM to it, so the policies' `[security-host]` is what refuses one).
 3. **Signing and admission.** Images are signed with Cosign. The SLSA provenance and the SBOM are attached as
    attestations. The cluster's admission controller refuses an image that is unsigned or comes from an unexpected
    identity. Keyless signing from CI's OIDC identity is the reference. Until a registry and an identity exist, CI proves

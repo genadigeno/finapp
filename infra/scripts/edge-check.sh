@@ -77,6 +77,7 @@ PUBLIC_EDGE=edge/base/public-edge.yaml
 PRODUCTION_EDGE=edge/overlays/production/kustomization.yaml
 PRODUCTION_APP=overlays/production/kustomization.yaml
 KUST=edge/base/kustomization.yaml
+QUOTA=edge/base/resourcequota.yaml
 
 plant_all() {
     # The general hardening, reused from finapp.rego, on a controller.
@@ -193,6 +194,29 @@ spec:
   selfSigned: {}
 YAML
     edge_mutate edge-local-ca "$PRODUCTION_EDGE" 's|^  - \.\./\.\./base$|  - ../../base\n  - ca.yaml|'
+
+    # The namespace's quota (P16-TSK-004; THREAT_MODEL.md section 6 item 43 (c)). Its removal is the entry's probe; each rule then refuses a
+    # quota that is not the namespace's worst moment. A third public replica is the planted rollout the quota no longer admits. Two plants that
+    # change a controller's shape AND the quota by the same arithmetic must pass, one for each branch of a rollout's count (finapp.rego's
+    # worst_moment), so the count is shown right and not only different.
+    edge_plant_on edge-quota-absent "$KUST" '/^  - resourcequota.yaml$/d'
+    edge_plant_on edge-quota-scoped "$QUOTA" 's/^  hard:$/  scopes: [NotBestEffort]\n  hard:/'
+    # A second quota, otherwise the first's equal, so the one thing wrong with it is that there are two.
+    edge_plant edge-quota-second
+    sed -e 's/^  name: finapp-edge$/  name: finapp-edge-second/' "/repo/deploy/$QUOTA" | { printf -- '---\n'; cat; } >> "$PLANTS/edge-quota-second/deploy/$QUOTA"
+    edge_plant_on edge-quota-pods-short "$QUOTA" 's/^    pods: "10"$/    pods: "9"/'
+    edge_plant_on edge-quota-memory-widened "$QUOTA" 's/^    limits.memory: 5120Mi$/    limits.memory: 6144Mi/'
+    edge_plant_on edge-third-replica "$CONTROLLERS" '1,/^  replicas: 2$/s/^  replicas: 2$/  replicas: 3/'
+    edge_plant_on edge-surge-percent "$CONTROLLERS" '1,/maxSurge: 1$/s/maxSurge: 1$/maxSurge: 25%/'
+    # Accepted: the third replica waiting out the grace, so one pod at most terminates at a time: min(2 x 3, 3 + 2 x 1 + 0) + 1 = 6, beside
+    # the operator's 5: 11 pods, each 100m and 1 CPU, 512Mi.
+    edge_plant edge-quota-follows-a-settled-rollout
+    edge_mutate edge-quota-follows-a-settled-rollout "$CONTROLLERS" '1,/^  replicas: 2$/s/^  replicas: 2$/  replicas: 3\n  minReadySeconds: 45/'
+    edge_mutate edge-quota-follows-a-settled-rollout "$QUOTA" 's/"10"$/"11"/; s/^    requests.cpu: "1"$/    requests.cpu: 1100m/; s/ 5120Mi$/ 5632Mi/'
+    # Accepted: the third replica with no minReadySeconds, so every old pod may be terminating beside the new: 2 x 3 + 1 = 7, beside 5: 12.
+    edge_plant edge-quota-follows-a-stacked-rollout
+    edge_mutate edge-quota-follows-a-stacked-rollout "$CONTROLLERS" '1,/^  replicas: 2$/s/^  replicas: 2$/  replicas: 3/'
+    edge_mutate edge-quota-follows-a-stacked-rollout "$QUOTA" 's/"10"$/"12"/; s/^    requests.cpu: "1"$/    requests.cpu: 1200m/; s/ 5120Mi$/ 6144Mi/'
 }
 
 in_container() {
@@ -308,6 +332,17 @@ edge_refused() {
     fi
 }
 
+edge_accepted() {
+    # edge_accepted <plant>: a plant the policies must let through, so a rule cannot pass its plants by refusing everything.
+    if output=$(conftest_on "/scratch/edge-plants/$1/rendered.yaml" "/scratch/edge-plants/$1/overlay.yaml" 2>&1); then
+        echo "ok   plant $1 accepted"
+    else
+        printf '%s\n' "$output"
+        echo "!!   plant $1 was refused, and must not be"
+        status=1
+    fi
+}
+
 check "every overlay renders, the application's and the edge's" in_kustomize render
 check "the plants are planted and rendered" in_kustomize plants
 
@@ -365,6 +400,15 @@ edge_refused edge-operator-internet edge-network
 edge_refused edge-proxies-absent edge-proxies
 edge_refused edge-proxies-wide edge-proxies
 edge_refused edge-local-ca edge-local-ca
+edge_refused edge-quota-absent edge-quota
+edge_refused edge-quota-scoped edge-quota
+edge_refused edge-quota-second edge-quota
+edge_refused edge-quota-pods-short edge-quota-pods
+edge_refused edge-quota-memory-widened edge-quota-compute
+edge_refused edge-third-replica edge-quota-pods
+edge_refused edge-surge-percent edge-quota-sizing
+edge_accepted edge-quota-follows-a-settled-rollout
+edge_accepted edge-quota-follows-a-stacked-rollout
 
 # ---------------------------------------------------------------------------------------------------
 # The routing: the committed files, in the pinned proxy.

@@ -78,7 +78,23 @@ class SecretInventoryIsCompleteTest {
             List.of("Variable", "Property", "Class", "Owner", "Rotation", "Consumer", "Delivered through");
     private static final List<String> BESIDE_HEADER = List.of("Variable", "Property", "Why it is here", "Delivered through");
     private static final List<String> NOT_A_SECRET_HEADER = List.of("Property", "Why it is not a secret");
-    private static final List<String> ROTATION_HEADER = List.of("Class", "Rotation", "How", "Today");
+    private static final List<String> ROTATION_HEADER = List.of("Class", "Rotation", "How", "Revocation", "Today");
+
+    /**
+     * The classes of {@code PHASE_15_PLAN.md} section 10 that are not secrets the application reads, so no inventory row uses them
+     * (`P15-REM-004` (e), 2026-11-12), each held to the committed file its row names and what that file must declare.
+     */
+    static final Map<String, List<String>> OUTSIDE_THE_INVENTORY = Map.of(
+            "tls-certificate", List.of("deploy/edge/overlays/kind/certificates.yaml", "kind: Certificate"),
+            "image-signing", List.of("deploy/admission/clusterimagepolicies.yaml", "kind: ClusterImagePolicy"));
+
+    private static final String RUNBOOK = "docs/architecture/OPERATIONS_RUNBOOK.md";
+
+    /** A runbook section a cell cites: the "§" form this table writes, after the runbook's name. */
+    private static final Pattern RUNBOOK_SECTION = Pattern.compile("§\\s?(\\d+(?:\\.\\d+)+)");
+
+    /** What a section must speak of for a revocation to be there: revoking, retiring, or a compromise. */
+    private static final Pattern REVOCATION_WORDS = Pattern.compile("(?i)revok|revoca|retire|compromis");
 
     /** The second net: anything read whose name says it might be a secret, whether or not any guard confines it. */
     private static final Pattern SECRET_SHAPED_NAME = Pattern.compile(
@@ -326,7 +342,8 @@ class SecretInventoryIsCompleteTest {
     }
 
     @Test
-    @DisplayName("each class has one rotation, stated in section 5, and every row carries its class's")
+    @DisplayName("each class has one rotation, stated in section 5, and every row carries its class's; a class no row uses is one of the two"
+            + " outside the inventory, the TLS certificate and the image-signing identity, each held to the file it names")
     void theRotationIsTheClasss() {
         Map<String, String> rotations = new TreeMap<>();
         table("### 5.1 ", ROTATION_HEADER).forEach(cells -> rotations.put(cells.get(0), cells.get(1)));
@@ -337,7 +354,87 @@ class SecretInventoryIsCompleteTest {
             assertThat(rotations).as("%s's class is in section 5.1", row.variable()).containsKey(row.secretClass());
             assertThat(row.rotation()).as("%s rotates as its class does", row.variable()).isEqualTo(rotations.get(row.secretClass()));
         }
-        assertThat(rotations.keySet()).as("a rotation no row uses describes nothing").isEqualTo(used);
+        assertThat(used).as("a class outside the inventory is one no row uses").doesNotContainAnyElementsOf(OUTSIDE_THE_INVENTORY.keySet());
+        Set<String> described = new TreeSet<>(used);
+        described.addAll(OUTSIDE_THE_INVENTORY.keySet());
+        assertThat(rotations.keySet()).as("a rotation no row uses describes nothing, the two classes outside the inventory apart").isEqualTo(described);
+        OUTSIDE_THE_INVENTORY.forEach((name, evidence) -> assertThat(read(evidence.get(0)))
+                .as("%s's row names %s, which declares a %s", name, evidence.get(0), evidence.get(1))
+                .containsPattern("(?m)^" + Pattern.quote(evidence.get(1)) + "\\s*$"));
+    }
+
+    /**
+     * Rotation was held per class, revocation was written per class in {@code PHASE_15_PLAN.md} section 10 and held by nothing
+     * (`P15-REM-004` (e), 2026-11-12). Every class's Revocation cell now states one and cites the runbook section that holds its
+     * steps: the section must exist, and at least one cited must speak of revoking, retiring or a compromise. That a section's
+     * steps are right is its rehearsal's and its review's; this holds that each class has one, where a person can find it.
+     */
+    @Test
+    @DisplayName("every class of section 5.1 states a revocation and cites the runbook section holding its steps: a section that exists and speaks of one")
+    void everyClassStatesARevocationTheRunbookHolds() {
+        List<List<String>> classes = table("### 5.1 ", ROTATION_HEADER);
+        assertThat(classes).as("not vacuous: the classes of section 5.1").hasSizeGreaterThanOrEqualTo(11);
+        String runbook = read(RUNBOOK);
+        List<String> problems = new ArrayList<>();
+        classes.forEach(cells -> problems.addAll(revocationViolations(cells.get(0), cells.get(3), runbook)));
+        assertThat(problems).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the revocation rule refuses a cell with none, one citing no section, one citing a section that does not exist, and one whose"
+            + " sections never speak of a revocation")
+    void theRevocationRuleRefusesItsPlants() {
+        String runbook = "## 11. Runbooks\n\n### 11.1 Rotate\n\nRoll the fleet.\n\n### 11.2 Compromise\n\nRevoke the old value.\n\n## 12. End\n";
+        assertThat(revocationViolations("x", "Revoke it at once (OPERATIONS_RUNBOOK.md §11.2)", runbook)).as("a revocation that holds").isEmpty();
+        assertThat(revocationViolations("x", "Revoke it (OPERATIONS_RUNBOOK.md §11.1, §11.2)", runbook))
+                .as("one cited section that speaks of it is enough").isEmpty();
+        assertThat(revocationViolations("x", "—", runbook)).as("no revocation stated").isNotEmpty();
+        assertThat(revocationViolations("x", "Revoke it at the provider, then roll the fleet", runbook)).as("no section cited").isNotEmpty();
+        assertThat(revocationViolations("x", "Revoke it (OPERATIONS_RUNBOOK.md §11.9)", runbook)).as("a section that does not exist").isNotEmpty();
+        assertThat(revocationViolations("x", "Revoke it (OPERATIONS_RUNBOOK.md §11.1)", runbook))
+                .as("a section that never speaks of a revocation").isNotEmpty();
+    }
+
+    static List<String> revocationViolations(String name, String cell, String runbook) {
+        List<String> problems = new ArrayList<>();
+        String stated = cell.strip();
+        if (stated.length() < 40 || stated.matches("(?i)^(—|-|n/?a\\b).*")) {
+            problems.add(name + " states no revocation: " + stated);
+            return problems;
+        }
+        int named = stated.indexOf("OPERATIONS_RUNBOOK.md");
+        List<String> cited = new ArrayList<>();
+        Matcher section = RUNBOOK_SECTION.matcher(named < 0 ? "" : stated.substring(named));
+        while (section.find()) {
+            cited.add(section.group(1));
+        }
+        if (cited.isEmpty()) {
+            problems.add(name + "'s revocation cites no section of " + RUNBOOK + ": " + stated);
+            return problems;
+        }
+        boolean speaks = false;
+        for (String number : cited) {
+            String body = runbookSection(runbook, number);
+            if (body.isEmpty()) {
+                problems.add(name + "'s revocation cites " + RUNBOOK + " section " + number + ", which does not exist");
+            }
+            speaks |= REVOCATION_WORDS.matcher(body).find();
+        }
+        if (!speaks) {
+            problems.add(name + "'s revocation cites " + cited + ", and none of them speaks of revoking, retiring or a compromise");
+        }
+        return problems;
+    }
+
+    /** One runbook section, from its heading to the next heading of its level or above; empty when there is none. */
+    private static String runbookSection(String runbook, String number) {
+        Matcher heading = Pattern.compile("(?m)^(#{2,4}) " + Pattern.quote(number) + "[. ]").matcher(runbook);
+        if (!heading.find()) {
+            return "";
+        }
+        int level = heading.group(1).length();
+        Matcher next = Pattern.compile("(?m)^#{1," + level + "} ").matcher(runbook);
+        return next.find(heading.end()) ? runbook.substring(heading.start(), next.start()) : runbook.substring(heading.start());
     }
 
     @Test

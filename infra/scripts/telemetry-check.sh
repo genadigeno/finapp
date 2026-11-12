@@ -72,6 +72,9 @@ CONFIG=observability/base/collector.yaml
 APP=base/deployment.yaml
 BACKENDS=observability/overlays/kind/networkpolicy-backends.yaml
 PEOPLE=observability/base/rbac-humans.yaml
+BASE_KUST=observability/base/kustomization.yaml
+KIND_KUST=observability/overlays/kind/kustomization.yaml
+STORES=observability/overlays/kind/backends.yaml
 
 plant_all() {
     # The general hardening, reused from finapp.rego, on the collector.
@@ -214,6 +217,16 @@ YAML
     obs_plant_on obs-watch-egress-to-app "$POLICY" '/^  name: finapp-cluster-watch$/,$s/^  egress:$/  egress:\n    - to:\n        - namespaceSelector:\n            matchLabels:\n              kubernetes.io\/metadata.name: finapp\n          podSelector:\n            matchLabels:\n              app.kubernetes.io\/name: finapp-app\n      ports:\n        - protocol: TCP\n          port: 8080/'
     obs_plant_on obs-watch-reachable "$POLICY" '/^  name: finapp-cluster-watch$/,$s/^              finapp\/role: metrics-scraper$/              finapp\/role: telemetry-collector/'
     obs_plant_on obs-token-for-another-account observability/base/cluster-watch-workload.yaml 's/serviceAccountName: finapp-cluster-watch/serviceAccountName: finapp-collector/'
+    # The namespace's quota (P16-TSK-004; THREAT_MODEL.md section 6 item 43 (c)): removed, short, a back end rolled with a surge the quota does
+    # not admit, and a rollout the count cannot size, each refused. Accepted: a second Tempo replica and the quota raised by the same
+    # arithmetic (Recreate with no PodDisruptionBudget: 2 replicas, 2 more replacing them after a drain), so the count is shown right.
+    obs_plant_on obs-quota-absent "$BASE_KUST" '/^  - resourcequota.yaml$/d'
+    obs_plant_on obs-quota-cpu-short "$KIND_KUST" 's/^        value: 1500m$/        value: 1400m/'
+    obs_plant_on obs-store-surges "$STORES" '1,/^    type: Recreate$/s/^    type: Recreate$/    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 1\n      maxUnavailable: 0/'
+    obs_plant_on obs-collector-surge-percent "$WORKLOAD" '1,/maxSurge: 1$/s/maxSurge: 1$/maxSurge: 50%/'
+    obs_plant obs-quota-follows-a-second-store
+    obs_mutate obs-quota-follows-a-second-store "$STORES" '1,/^  replicas: 1$/s/^  replicas: 1$/  replicas: 2/'
+    obs_mutate obs-quota-follows-a-second-store "$KIND_KUST" 's/^        value: "16"$/        value: "18"/; s/^        value: 1500m$/        value: 1700m/; s/^        value: 6144Mi$/        value: 6912Mi/; s/^        value: "15"$/        value: "17"/'
 }
 
 in_container() {
@@ -353,6 +366,17 @@ obs_refused() {
     fi
 }
 
+obs_accepted() {
+    # obs_accepted <plant>: a plant the policies must let through, so a rule cannot pass its plants by refusing everything.
+    if output=$(conftest_on "/scratch/obs-plants/$1/rendered.yaml" "/scratch/obs-plants/$1/overlay.yaml" 2>&1); then
+        echo "ok   plant $1 accepted"
+    else
+        printf '%s\n' "$output"
+        echo "!!   plant $1 was refused, and must not be"
+        status=1
+    fi
+}
+
 check "the application's, the namespaces' and the pipeline's kind overlays render as one stream" in_kustomize render
 check "the plants are planted and rendered" in_kustomize plants
 check "kubeconform kind" kubeconform_on /scratch/rendered/kind.yaml
@@ -397,6 +421,11 @@ obs_refused obs-platform-scrub-removed obs-scrub
 obs_refused obs-watch-egress-to-app obs-cluster-watch-egress
 obs_refused obs-watch-reachable obs-store-ingress
 obs_refused obs-token-for-another-account security-token
+obs_refused obs-quota-absent obs-quota
+obs_refused obs-quota-cpu-short obs-quota-compute
+obs_refused obs-store-surges obs-quota-pods
+obs_refused obs-collector-surge-percent obs-quota-sizing
+obs_accepted obs-quota-follows-a-second-store
 
 # ---------------------------------------------------------------------------------------------------
 # The second net, through the real collector.

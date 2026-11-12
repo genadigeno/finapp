@@ -331,7 +331,10 @@ jobs:
   # The Kubernetes manifests (P15-TSK-009, ADR-0120): every overlay under deploy/
   # renders, passes kubeconform -strict against pinned schemas and every policy, and
   # each policy refuses a planted violation in the same run - so a policy that cannot
-  # fail fails the job.
+  # fail fails the job. Since P16-TSK-004 (ADR-0122 decision 2) a second net: trivy
+  # config at HIGH and CRITICAL over every kustomize root, found by search, a finding
+  # carried only by infra/trivy/accepted-misconfigurations.rego, and Trivy refusing
+  # its own plants in the same run.
   #
   # No credential and no cluster: it renders and reads, so it needs no permission
   # beyond the workflow's contents: read and no secret (THREAT_MODEL.md T30).
@@ -344,7 +347,7 @@ jobs:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Render and validate every overlay, and prove every policy refuses its plant
+      - name: Render and validate every overlay, prove every policy refuses its plant, and grade every root with trivy config
         # The same script a developer runs; the tool pins live in infra/scanner-pins.sh.
         run: ./infra/scripts/manifest-check.sh
 

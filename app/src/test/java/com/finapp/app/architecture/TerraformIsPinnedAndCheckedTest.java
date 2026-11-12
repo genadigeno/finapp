@@ -330,8 +330,22 @@ class TerraformIsPinnedAndCheckedTest {
                 }
             }
         }
-        assertThat(tests).as("the test files were read: one per root and module").isGreaterThanOrEqualTo(3);
+        // Until 2026-11-12 this read "isGreaterThanOrEqualTo(3)" under the same words, for eleven directories (P15-REM-004 (c)):
+        // the floor is now what the words say, and everyRootAndModuleHasATestThatRuns holds each directory by name.
+        assertThat(tests).as("the test files were read: one per root and module").isGreaterThanOrEqualTo(directories().size());
         assertThat(violations).as("a test that could reach a cloud").isEmpty();
+    }
+
+    /**
+     * {@code terraform test} in a directory with no test file, or over a file with no {@code run} block, reports success having
+     * run nothing (`P15-REM-004` (c)): the check script runs it in every directory, so the tests that exist hold only where a file
+     * with a run exists. Terraform reads a directory's own {@code *.tftest.hcl} and its {@code tests/}; either counts.
+     */
+    @Test
+    @DisplayName("every root and every module has a terraform test file of its own, and every test file runs at least once: no directory passes on no run")
+    void everyRootAndModuleHasATestThatRuns() {
+        assertThat(directories()).as("the roots and the modules were found").hasSizeGreaterThanOrEqualTo(11);
+        assertThat(testFileViolations(directories(), files)).isEmpty();
     }
 
     @Test
@@ -541,6 +555,21 @@ class TerraformIsPinnedAndCheckedTest {
                   command = plan
                 }
                 """)).as("a test configuring the real provider, unmocked").hasSize(2);
+
+        String runs = """
+                mock_provider "aws" {}
+                run "the_plan_holds" {
+                  command = plan
+                }
+                """;
+        assertThat(testFileViolations(Set.of("m/a", "m/b"), Map.of("m/a/tests/a.tftest.hcl", runs, "m/b/b.tftest.hcl", runs)))
+                .as("a test file in each directory, under tests/ or beside the module, each with a run").isEmpty();
+        assertThat(testFileViolations(Set.of("m/a", "m/b"), Map.of("m/a/tests/a.tftest.hcl", runs, "m/a/main.tf", "")))
+                .as("a directory with no test file, which terraform test passes on no run").hasSize(1);
+        assertThat(testFileViolations(Set.of("m/a"), Map.of("m/a/tests/a.tftest.hcl", "mock_provider \"aws\" {}\n")))
+                .as("a test file with no run, which terraform test passes as well").hasSize(1);
+        assertThat(testFileViolations(Set.of("m/a"), Map.of("m/a/sub/tests/a.tftest.hcl", runs)))
+                .as("another directory's test file does not count for this one").hasSize(1);
 
         assertThat(conventionViolations("plant", "production", Map.of("main.tf", """
                 module "conventions" {
@@ -992,6 +1021,29 @@ class TerraformIsPinnedAndCheckedTest {
         }
         if (!initialises && lines.size() > 10) {
             violations.add("no init was read, so the backend rule read nothing");
+        }
+        return violations;
+    }
+
+    /** Each directory holding a .tf file has a test file in itself or its tests/, and each test file declares a run. */
+    static List<String> testFileViolations(Set<String> directories, Map<String, String> tree) {
+        List<String> violations = new ArrayList<>();
+        for (String directory : directories) {
+            int found = 0;
+            for (Map.Entry<String, String> file : tree.entrySet()) {
+                String path = file.getKey();
+                String parent = path.substring(0, path.lastIndexOf('/'));
+                if (!path.endsWith(".tftest.hcl") || !(parent.equals(directory) || parent.equals(directory + "/tests"))) {
+                    continue;
+                }
+                found++;
+                if (blocks(file.getValue()).stream().noneMatch(block -> block.type().equals("run"))) {
+                    violations.add(path + ": declares no run, so terraform test passes it having run nothing");
+                }
+            }
+            if (found == 0) {
+                violations.add(directory + ": has no test file, so terraform test passes there having run nothing");
+            }
         }
         return violations;
     }

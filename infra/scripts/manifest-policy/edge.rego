@@ -496,3 +496,25 @@ operator_network_is_internal if {
 deny contains "[edge-network] the operator controller's TLS listener is not limited to the internal ranges" if {
 	not operator_network_is_internal
 }
+
+# ------------------------------------------------------------------------------------------- the quota (P16-TSK-004)
+
+# THREAT_MODEL.md section 6 item 43 (c), decided 2026-11-12: one quota in finapp-edge, equal to the namespace's worst moment in pods, CPU and
+# memory, counted by finapp.rego's worst_moment (its comment says how, and why finapp's own formula does not hold here).
+edge_namespace := "finapp-edge"
+
+deny contains sprintf("[edge-quota] %s", [msg]) if {
+	some msg in main.quota_presence_findings(edge_namespace)
+}
+
+deny contains sprintf("[edge-quota-sizing] %s", [msg]) if {
+	some msg in main.quota_sizing_findings(edge_namespace)
+}
+
+deny contains sprintf("[edge-quota-pods] %s", [msg]) if {
+	some msg in main.quota_pods_findings(edge_namespace)
+}
+
+deny contains sprintf("[edge-quota-compute] %s", [msg]) if {
+	some msg in main.quota_compute_findings(edge_namespace)
+}

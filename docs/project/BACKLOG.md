@@ -28889,7 +28889,7 @@ in a real environment**, its run with PI-024's
 - Testing: the harness's contract test holding each new leg; a run on `kind` with the leg removed seen red. DoD: `DOD-OBS`,
   `DOD-TEST`. Risk: Low. Cx: S.
 
-**P15-REM-004 — Guards that hold less than they are named for** — `PLANNED` — **Phase 16's first wave**
+**P15-REM-004 — Guards that hold less than they are named for** — `COMPLETE` (2026-11-12, built by `P16-TSK-002` on its branch from master `6981c167`) *(read "`PLANNED` — **Phase 16's first wave**" until then)*
 - Objective: each found by the exit review; nothing is unheld today, but each guard would pass a defect its name says it
   catches. (a) `DISTRIBUTED_EXECUTION.md` §3 has no guard: hold it both ways against the lifecycle beans (`ShutdownOrderTest`
   counts forty) and the code's arbitration classes; (b) `SecurityScansAreWiredTest` does not hold the Semgrep baseline's rows
@@ -28905,6 +28905,7 @@ in a real environment**, its run with PI-024's
   (the code keys `CUSTOMER`, `Actor.keyedType`), and `application.yaml`'s sampling comment deferring to Phase 15 (C10 decided it).
 - Bounded context: `app` (the guards), documents; production sources for (g) only, comments. Dependencies: none.
 - Testing: each tightened guard with a planted defect seen red. DoD: `DOD-TEST`, `DOD-DOC`. Risk: Low. Cx: M.
+- *As built (2026-11-12):* (a)–(g) each closed by `P16-TSK-002`, whose entry's as-built note says how; every tightened guard green and its plant seen red (`MUTATION_TESTING.md` §2). The guards found and put right ten schedules and a lock §3 did not name, three stale names in it, and four alerts never shown silent on a healthy series.
 
 **P15-REM-005 — `TestTaxonomyTest` red since `P15-TSK-032`'s reporting-pool meters: a hermetic test in the database tier's signature** — `COMPLETE` (2026-11-12, built by the Phase 15 completion gate on branch `P15-GATE` from master `3d5089d9`, [`reviews/PHASE_15_TO_16_TRANSITION.md`](reviews/PHASE_15_TO_16_TRANSITION.md) G-1) *(read "`PLANNED` — **before the Phase 15 → 16 transition gate's guard run**" until then)*
 - Objective: `TestTaxonomyTest#everyTestClassDeclaresATierAtLeastAsHeavyAsItNeeds` fails on `11ee8da3` and on the exit review's tree, naming `ReportingPoolMetricsTest` ("needs DATABASE but is in UNIT"): the test registers its stub JDBC driver through `java.sql.DriverManager`, which `TestTier`'s database signature reads as acquiring a database. The test needs none - it is hermetic over its stub - and it is the evidence of `THREAT_MODEL.md` §6 item 42 (l) and of its `MUTATION_TESTING.md` row. The red went unseen because every merge since ran named guards that did not include the taxonomy. Options: (i) reach the stub without `DriverManager` in the test's own bytecode (a seam on the reporting pool's construction taking the driver, or HikariCP's data-source path), keeping it hermetic; (ii) tag it `database`, which moves a hermetic proof into the tier nothing runs until PI-023; (iii) widen the taxonomy's signature, refused - a rule with an exemption for its first false positive is the rule `TestTier`'s own javadoc warns against. Recommended: (i).
@@ -29029,7 +29030,7 @@ on none:
   Phase 16's experiments.
 - **C12**: automatic rail availability is decided on measured failure rates.
 
-**P16-TSK-001 — The capacity model, the experiment register and its guard** — `READY` (marked by the Phase 15 → 16 transition, 2026-11-12)
+**P16-TSK-001 — The capacity model, the experiment register and its guard** — `COMPLETE` (2026-11-12; designed, built and gated on branch `P16-TSK-001` from master `6981c167`, wave A beside `-002`…`-005`; documents and one hermetic guard, no production code, migration, manifest or ADR; marks no task `READY` - the coordinator does; read "`READY` (marked by the Phase 15 → 16 transition, 2026-11-12)" until the design)
 - **Objective**: give every later task one place to measure into and one register to record into, held by a guard, before any
   measurement or experiment exists.
 - **Affected components**: documents (`docs/architecture/CAPACITY_MODEL.md` new, `docs/architecture/RESILIENCE_EXPERIMENTS.md` new,
@@ -29070,8 +29071,9 @@ on none:
 - **Definition of done**: `DOD-ARCH`, `DOD-DOC`, `DOD-TEST`.
 - **Operational documentation**: the two new documents; `OPERATIONS_RUNBOOK.md` unchanged.
 - **Risk**: Low. **Cx**: M.
+- **As built** (2026-11-12): as `CURRENT_STATE.md` §Just completed records. `docs/architecture/CAPACITY_MODEL.md` (the three workloads; W1–W8 with five readings R1–R5 where they leave a gap; the per-operation rates derived with their arithmetic, the in-flight column by Little's law; W7 **read from the event writers, ≈ 7.3 events per money movement**, ≈ 3.2 million events and ≈ 434,000 journal entries a day; what each consumer group reads; the measured columns and the first limit left for `-007`; the budget at ten read from the configuration, 104 > 88; the strategies). `docs/architecture/RESILIENCE_EXPERIMENTS.md` (the fields, the result grammar, the seven checks and the safety boundary; `E01`…`E26` with every field filled; the fifteen scenarios, every cited test resolved in its tier; one experiment per scenario, `F01`…`F15`, run by `-027`; the designed-only rows `D01`…`D05` of ADR-0127 decision 7; every result and remediation slot empty, `E10` `N/A` with its reason). `ResilienceExperimentsAreRegisteredTest`, 13 rules, each red on its own plant (`MUTATION_TESTING.md` §2). Six readiness gap columns re-pointed at `-022` and `-023`, and item 43 (g) closed by a dated note naming `-022`, `-023` and `-014`. **Design corrections**: W7 four → ≈ 7.3, the events and postings rows, the concurrent-clients column and the "30 movements a second" sentence, by errata in `PHASE_16_PLAN.md` §4.2 and §4.3; two tier labels of §13 (`BnplOutboxAtomicityDatabaseTest` own-container, `HealthEndpointTest` slice), by an erratum there; the scenario experiments and the designed-only rows added beside the plan's E-list, which stays exactly §9.2's.
 
-**P16-TSK-002 — Guards that hold what they are named for (`P15-REM-004`)** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
+**P16-TSK-002 — Guards that hold what they are named for (`P15-REM-004`)** — `COMPLETE` (2026-11-12; branch `P16-TSK-002` from master `6981c167`) *(read "`READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)" until then)*
 - **Objective**: `P15-REM-004`'s (a)–(g), Phase 16's first wave by that entry's horizon. Each guard named in it is made to hold
   what its name says.
 - **Affected components**: `app`'s guards: `SecurityScansAreWiredTest`, `TerraformIsPinnedAndCheckedTest`, `AlertCatalogueTest`,
@@ -29095,6 +29097,7 @@ on none:
 - **Definition of done**: `DOD-TEST`, `DOD-DOC`.
 - **Operational documentation**: `SECRET_MANAGEMENT.md` §5.1's new rows.
 - **Risk**: Low. **Cx**: M.
+- *As built (2026-11-12):* each part closed with its guard green and a plant seen red (`MUTATION_TESTING.md` §2). **(a)** `DistributedExecutionRegisterTest` (new, architecture tier, hermetic) reads §3 both ways: every concrete production `SmartLifecycle` (38 classes, the forty beans `ShutdownOrderTest` counts) named in a Component cell; every class whose code takes a PostgreSQL advisory lock (twenty) named in an Owner cell of §3's namespace table, every namespace taken in Java or a migration's SQL a row of it and every row's namespace taken; every class `NoSingleInstanceAssumptionRulesTest` exempts (its two sets made package-private) named in a row; every class a Component or Owner cell names real, notes written `*( … )*` apart, and every `…Schedule` named a lifecycle component; the drain row's count the code's 35. "The code's arbitration classes" read as the register reads itself: the advisory namespaces are the one cross-component key space it registers. Its first run found ten schedules no row named (`PaymentSweeperSchedule` with no row at all, now one), the role bootstrap's one-argument lock in no table (now a row), and three names the code no longer has (`OverrideActions`, `OverrideActionDriver`, `AccountingGaugeRefresher`, kept in notes). **(b)** `SecurityScansAreWiredTest#theBaselineIsSmallAndReasoned` holds `infra/semgrep/baseline.tsv`'s rows, counted by date, equal to the tally owner item 12 now states (61 rows until 2027-06-30). **(c)** `TerraformIsPinnedAndCheckedTest#everyRootAndModuleHasATestThatRuns`: a test file with a `run` in each of the eleven directories; the old floor of three now one per directory. **(d)** `AlertCatalogueTest#everyAlertFiresInOneCaseAndStaysSilentOnItsSeriesInAnother` (was `everyNewAlertHasAPromtoolCase`, five files): every alert of every rule file (218) has a promtool case that fires, in a file loading its rules, and one silent at or after its `for` in a group feeding a series it reads (recording rules followed). It found four alerts of the stated files whose only silent case was a not-yet one (`SourceCensusLagging`, `FlowGaugesUnreadable`, `ConnectionPoolStarved`, `PlatformGaugesUnreadable`), each given a healthy case; the 135 domain alerts gained cases (`accounting`, `lending` and `risk` test files new; `bnpl`, `credit`, `fx`, `settlement-reconciliation` widened), each firing expectation generated by the pinned promtool from the rule and reviewed; `alert-rules-check.sh` green, every plant refused. **(e)** §5.1 gained a Revocation column and the `tls-certificate` and `image-signing` rows; `SecretInventoryIsCompleteTest#everyClassStatesARevocationTheRunbookHolds` holds each class's revocation to a runbook section that exists and speaks of one, and `#theRotationIsTheClasss` admits exactly those two outside the inventory, each held to its file; `OPERATIONS_RUNBOOK.md` §11.26 gained the compromised-certificate steps the TLS row needed (never run). **(f)** renamed `ConfigurationRegisterIsCompleteTest#everyFinancialRowStatesAMixedFleetAnswer`, `THREAT_MODEL.md` T11 re-pointed. **(g)** the three comments corrected. `KubernetesManifestsTest` unchanged, so item 43 (h)'s rename waits. No production behaviour changed. Ten-instance answer `PASS` (nothing runs in an instance; the register the answer is read from cannot drift unseen).
 
 **P16-TSK-003 — The platform's own components watched: the edge, the migrator, the telemetry stack (`THREAT_MODEL.md` §6 item 43 (b))** — `COMPLETE` (2026-11-12; branch `P16-TSK-003` from master `6981c167`; gate `COMPLETE` 2026-11-12; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: as decided 2026-11-12, in Phase 16's first wave: a migration that fails at night wakes someone, and the edge's
@@ -29176,7 +29179,7 @@ on none:
   a step is run to its end before it is relied on): item 47 (c). **Not done**: the watcher's API egress in a real environment, and
   kindnetd unmeasured (item 47 (d)); the edge's lines joined to the replicas' by the answer's correlation id (item 47 (e)).
 
-**P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
+**P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `COMPLETE` (2026-11-12; marked `READY` by the coordinator at the owner's start of wave A, master `8d0120ee`; built in wave A beside `-001`, `-002`, `-003` and `-005`, branch `P16-TSK-004` from master `6981c167`; no migration, no production Java, no new ADR - a dated note on ADR-0122; one new owner item, `THREAT_MODEL.md` §6 item 48; marks no task `READY` - the coordinator does; read `READY` until its gate)
 - **Objective**: as decided 2026-11-12, in the first wave.
   - (c) The quota part: a `ResourceQuota` for `finapp-edge` and `finapp-observability`, each sized from its own worst moment as
     `finapp`'s is.
@@ -29202,6 +29205,36 @@ on none:
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's check list widened.
 - **Risk**: Low. **Cx**: S.
+- *Corrected by its design (2026-11-12):* **the probe's hostPath is the node's root.** At the scan's bar Trivy 0.76.2 reads a hostPath
+  of an ordinary directory as `KSV-0023`, MEDIUM, and does not report it; a hostPath of `/` is `KSV-0121`, HIGH. The policies'
+  `[security-host]` refuses every hostPath, the first net. **finapp's formula is not these namespaces' worst moment**: it rests on
+  `minReadySeconds` at least the grace and one budget of one, and the edge's controllers and the collector state no
+  `minReadySeconds` while kind's back ends are `Recreate` with no budget, so each Deployment is counted as `finapp.rego`'s
+  `worst_moment` says (the same numbers as the formula for today's shapes, 2 x 2 + 1 per controller, and the right ones when a
+  shape changes).
+- *As built (2026-11-12, its gate):* **(c)** `deploy/edge/base/resourcequota.yaml` (10 pods, 1 CPU requested, 10 limited, 5120Mi
+  both; every edge overlay) and `deploy/observability/base/resourcequota.yaml` (the collector's 5 pods, 500m, 5, 2560Mi; kind's
+  overlay raised to 13, 1200m, 12, 5376Mi for its four back ends). Each held equal to its namespace's worst moment, in both
+  directions, by `[edge-quota]`, `[edge-quota-pods]`, `[edge-quota-compute]`, `[edge-quota-sizing]` in `edge.rego` and their
+  `[obs-quota-*]` siblings in `observability.rego`, over `finapp.rego`'s shared count; a namespace with two quotas, a scoped one,
+  one missing a key or an unreadable quantity refused; a workload the count cannot size refused, never guessed. Plants in every
+  run of `edge-check.sh` (seven refused, two accepted that re-count the quota with a third controller, one per rollout branch) and
+  `telemetry-check.sh` (four refused, one accepted with a second Tempo); the entry's probe, the quota removed from `finapp-edge`, is
+  `edge-quota-absent`. On every build: `EdgeManifestsTest#theNamespaceQuotaIsItsWorstMoment` and
+  `TelemetryPipelineManifestsTest#theNamespaceQuotaIsItsWorstMoment`, the count stated a second time in `WorstMoment`. No API
+  server has applied either quota yet: the next kind rehearsal is the first. **(b)** `manifest-check.sh` renders every kustomize
+  root under `deploy/` (found by search, 16 roots, and the delivery's committed roots: 17 streams) and runs `trivy config` at HIGH
+  and CRITICAL, embedded checks only, nothing sent; each stream must come back read as Kubernetes; every finding as read is printed,
+  then the verdict, carried findings out by `infra/trivy/accepted-misconfigurations.rego` (one finding per entry, by check and whole
+  message, reason, expiry). Its first reading: **two HIGH, no CRITICAL**, both `KSV-0109` on the kind overlay, both false readings
+  (the test-only broker's start script naming its credential's variables; kind's tokenisation timeout), carried until 2027-06-30
+  and listed in `THREAT_MODEL.md` §6 item 48 for the owner, who has not accepted them yet. Trivy's own plants: `KSV-0017` (a
+  privileged edge controller), `KSV-0121` (a telemetry back end mounting `/`), `KSV-0109` (a second key beside the carried one).
+  `KubernetesManifestsTest#trivyGradesEveryRenderedRoot` and `#everyCarriedMisconfigurationIsInTheRegister` hold the wiring and the
+  register. T4 and T14 each gain an `EXISTS` row; items 43 (c)'s quota part and 44 (b) closed by dated notes; readiness: the edge's and the
+  telemetry's Resource limits `MET as rehearsed`. Not built: the observability overlay per environment (the exclusion), a
+  `LimitRange` in either namespace (not decided; the quota alone refuses a pod with no requests), a scan of the controllers'
+  third-party renders (not overlays; `controller-check.sh` holds them).
 
 **P16-TSK-005 — The edge, PostgreSQL and the broker rolled and rolled back on `kind` (`THREAT_MODEL.md` §6 item 43 (f))** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: as decided 2026-11-12, in the first wave. The three `kind` steps that need no account: each component changes
@@ -29231,7 +29264,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.26's roll procedure and §11.28's record.
 - **Risk**: Medium (machine load). **Cx**: M.
 
-**P16-TSK-006 — The load harness: k6 through the real edge, invariants sampled during load (ADR-0126, C5)** — `PLANNED`
+**P16-TSK-006 — The load harness: k6 through the real edge, invariants sampled during load (ADR-0126, C5)** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, "accept recommendations, start wave B"; its one dependency, `P16-TSK-001`, `COMPLETE`)
 - **Objective**: one reproducible way to drive every profile of `PHASE_16_PLAN.md` §5.1 through the deployed platform's real edge,
   with the financial invariants read while the load runs.
 - **Affected components**:
@@ -29605,7 +29638,7 @@ on none:
 - **Operational documentation**: a runbook section on a shedding platform.
 - **Risk**: High. **Cx**: L.
 
-**P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `PLANNED`
+**P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, "accept recommendations, start wave B"; its one dependency, `P16-TSK-001`, `COMPLETE`)
 - **Objective**: as decided 2026-11-12. A sweep's failed tick is metered and paged (item 42 (i) (i)), and each listing skips and
   counts a row it cannot rehydrate ((ii); the corrupt card attempt debt row). A row failing every tick gains a failure count and a
   backoff (the poisoned-row debt row). A rematch residual faulting every tick gains a durable exclusion (the rematch debt row).

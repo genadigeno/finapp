@@ -36,7 +36,8 @@ TRIVY_DIGEST=sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f20404997
 # The infrastructure-code tools (P15-TSK-013, ADR-0121): sourced by infra/scripts/terraform-check.sh.
 # TERRAFORM_VERSION is also every root's required_version (infra/terraform/environments/*/versions.tf),
 # which TerraformIsPinnedAndCheckedTest holds equal, so the binary that checks the code is the one the
-# code declares. Trivy above also runs `trivy config` over the Terraform.
+# code declares. Trivy above also runs `trivy config` over the Terraform, and (since P16-TSK-004) over every kustomize root under
+# deploy/ in infra/scripts/manifest-check.sh.
 TERRAFORM_REPOSITORY=hashicorp/terraform
 TERRAFORM_VERSION=1.17.1
 TERRAFORM_DIGEST=sha256:a5d5a5a892c98f60fcbfa81eac2a40fc19e7b3fa7719bccae10ff6111d22524a

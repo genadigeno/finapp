@@ -477,3 +477,24 @@ deny contains "[obs-scrub] the collector's configuration renders no pipeline at 
 	pipeline_rendered
 	count(main.section(main.section(collector_config, "service"), "pipelines")) == 0
 }
+
+# ------------------------------------------------------------------------------------------- the quota (P16-TSK-004)
+
+# THREAT_MODEL.md section 6 item 43 (c), decided 2026-11-12: one quota in finapp-observability, equal to the namespace's worst moment in pods,
+# CPU and memory, counted by finapp.rego's worst_moment (its comment says how, and why finapp's own formula does not hold here). Each set is
+# empty where the pipeline is not rendered: staging's and production's application overlays are checked alone.
+deny contains sprintf("[obs-quota] %s", [msg]) if {
+	some msg in main.quota_presence_findings(namespace)
+}
+
+deny contains sprintf("[obs-quota-sizing] %s", [msg]) if {
+	some msg in main.quota_sizing_findings(namespace)
+}
+
+deny contains sprintf("[obs-quota-pods] %s", [msg]) if {
+	some msg in main.quota_pods_findings(namespace)
+}
+
+deny contains sprintf("[obs-quota-compute] %s", [msg]) if {
+	some msg in main.quota_compute_findings(namespace)
+}

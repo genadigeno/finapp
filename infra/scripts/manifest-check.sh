@@ -15,13 +15,27 @@
 # no longer planted (its source changed under the mutation) fails this script. KubernetesManifestsTest requires the
 # plants to cover every rule id in finapp.rego.
 #
+# AND A SECOND NET THE PLATFORM DID NOT WRITE (P16-TSK-004; THREAT_MODEL.md section 6 item 44 (b), ADR-0122 decision 2). The
+# policies hold what the platform decided; `trivy config` reads what a maintained catalogue of Kubernetes misconfigurations
+# reports, at HIGH and CRITICAL, the bar of PHASE_GATES.md section 5 Phase 15 criterion 2. It reads every kustomize root under
+# deploy/, found by search rather than listed (a directory holding a kustomization.yaml that is not a Component, bases included,
+# since each renders alone), and the delivery's committed roots. Every stream must come back read as Kubernetes, or a stream
+# Trivy could not read would pass as a clean one. Every finding as read is printed, the carried ones included, and then the
+# verdict: a finding fails the run unless infra/trivy/accepted-misconfigurations.rego carries that one finding, by its check
+# and its whole message, with a reason and an expiry that THREAT_MODEL.md section 6 item 48 lists. Then three plants Trivy
+# itself must refuse, by the check's id, over every root of the planted tree: a privileged edge controller, a telemetry back
+# end mounting the node's root, and a carried finding widened by one more key. A hostPath of an ordinary directory is
+# KSV-0023, MEDIUM, below the bar: the policies' [security-host] is what refuses every hostPath.
+#
 # WHAT IT NEVER DOES. It talks to no cluster and holds no credential: no container is given a variable from the host,
 # the repository is mounted read-only, and a scratch volume of its own is removed at exit. Nothing here can change the
-# tree. The network is used for the three pinned images and for the schemas, each catalogue read at its own pinned commit.
+# tree. The network is used for the four pinned images and for the schemas, each catalogue read at its own pinned commit;
+# Trivy runs with no network at all, on the checks embedded in its binary (--network none, and --skip-check-update,
+# --disable-telemetry and --skip-version-check besides).
 #
 # SAME BYTES HERE AND IN CI. Every tool is an image pinned by digest in infra/scanner-pins.sh, and the schemas are read
-# at KUBERNETES_SCHEMAS_COMMIT. KUSTOMIZE_IMAGE, KUBECONFORM_IMAGE and CONFTEST_IMAGE override an image, for a machine
-# whose TLS is intercepted (OPERATIONS_RUNBOOK.md section 11.13); CI never sets them.
+# at KUBERNETES_SCHEMAS_COMMIT. KUSTOMIZE_IMAGE, KUBECONFORM_IMAGE, CONFTEST_IMAGE and TRIVY_IMAGE override an image, for a
+# machine whose TLS is intercepted (OPERATIONS_RUNBOOK.md section 11.13); CI never sets them.
 #
 # Usage:
 #   infra/scripts/manifest-check.sh
@@ -391,6 +405,27 @@ YAML
     mutate delivery-schema-typo delivery/production/applications.yaml 's/^    automated:$/    automatic:/'
 
     plant_namespace_security
+
+    # The graded scan (P16-TSK-004): Trivy, not the policies, must refuse each over every root of the planted tree, by its check's id.
+    # A privileged edge controller (KSV-0017). A telemetry back end mounting the node's root (KSV-0121, HIGH; an ordinary directory would
+    # be KSV-0023, MEDIUM, below the bar). And one more key Trivy reads as a secret's name in the ConfigMap whose one such key is carried,
+    # so the carried message no longer matches and KSV-0109 fails the run: a carry is one finding, never an object.
+    plant_on trivy-privileged edge/base/controllers.yaml '1,/privileged: false/s/privileged: false/privileged: true/'
+    plant_on trivy-host-root observability/overlays/kind/backends.yaml '1,/^      volumes:$/s/^      volumes:$/      volumes:\n        - name: planted\n          hostPath:\n            path: \//'
+    plant_on trivy-carry-widened "$KIND" 's/^      - FINAPP_PAYMENTMETHODS_TOKENISATION_TIMEOUT=PT15S$/&\n      - FINAPP_PLANTED_TOKENISATION_TIMEOUT=PT15S/'
+}
+
+# render_roots <deploy dir> <output dir>: every kustomize root under the directory, found by search, one stream each, named for its path.
+# A Component renders only inside another root, so it is skipped; a base renders alone, so it is a root.
+render_roots() {
+    mkdir -p "$2"
+    for file in $(find "$1" -name kustomization.yaml | sort); do
+        grep -q '^kind: Component$' "$file" && continue
+        root=${file%/kustomization.yaml}
+        kustomize build "$root" > "$2/$(printf '%s' "${root#"$1"/}" | tr / -).yaml"
+    done
+    # Never vacuous: the release's own overlay is among them, or the search read nothing.
+    [ -s "$2/overlays-production.yaml" ] || { echo "!!   no kustomize root was rendered under $1" >&2; exit 1; }
 }
 
 # release_data <deploy dir> <overlay>: the pair an environment GitOps delivers is recorded to run (deploy/overlays/<environment>/release.yaml,
@@ -1151,7 +1186,15 @@ in_container() {
                         exit 1
                     fi
                 fi
+                # The graded scan's plants are read as the tree is: every root of the planted copy.
+                case $name in trivy-*) render_roots "$directory/deploy" "$directory/roots" ;; esac
             done
+            ;;
+        trivy-roots)
+            # Every kustomize root, and what the delivery applies with no root (its roots and the controller's configuration), as rendered.
+            render_roots /repo/deploy /scratch/trivy
+            cp /scratch/rendered/delivery-committed.yaml /scratch/trivy/delivery-committed.yaml
+            ls /scratch/trivy > /scratch/trivy-roots.txt
             ;;
         kind-secrets)
             check_kind_secrets
@@ -1267,6 +1310,7 @@ fi
 KUSTOMIZE_IMAGE="${KUSTOMIZE_IMAGE:-${KUSTOMIZE_REPOSITORY}@${KUSTOMIZE_DIGEST}}"
 KUBECONFORM_IMAGE="${KUBECONFORM_IMAGE:-${KUBECONFORM_REPOSITORY}@${KUBECONFORM_DIGEST}}"
 CONFTEST_IMAGE="${CONFTEST_IMAGE:-${CONFTEST_REPOSITORY}@${CONFTEST_DIGEST}}"
+TRIVY_IMAGE="${TRIVY_IMAGE:-${TRIVY_REPOSITORY}@${TRIVY_DIGEST}}"
 
 SCHEMAS="https://raw.githubusercontent.com/yannh/kubernetes-json-schema/${KUBERNETES_SCHEMAS_COMMIT}/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json"
 # ExternalSecret and SecretStore are custom kinds, read from their own catalogue at one commit, and so are the delivery's Argo CD
@@ -1364,6 +1408,44 @@ schema_refused() {
     refuses "$1" "$2" kubeconform_on "/scratch/plants/$1/rendered.yaml"
 }
 
+# The graded scan. One line per stream Trivy read and the type it read it as, then one per HIGH or CRITICAL finding.
+TRIVY_TEMPLATE='{{- range . }}read {{ .Target }} {{ .Type }}
+{{ $target := .Target }}{{ range .Misconfigurations }}{{ if eq .Status "FAIL" }}{{ .Severity }} {{ .ID }} {{ $target }}: {{ .Message }}
+{{ end }}{{ end }}{{ end }}'
+
+# trivy_config <directory in this run's volume> <flag...>: the embedded checks only, HIGH and CRITICAL, and no network at all, so nothing
+# is fetched or sent whatever a later release's defaults become.
+trivy_config() {
+    target=$1
+    shift
+    MSYS_NO_PATHCONV=1 docker run --rm --network none -v "$VOLUME:/scratch:ro" -v "$DIR/trivy:/accepted:ro" "$TRIVY_IMAGE" \
+        config --skip-check-update --disable-telemetry --skip-version-check --quiet --severity HIGH,CRITICAL \
+        --format template --template "$TRIVY_TEMPLATE" "$@" "$target"
+}
+
+# Every finding as read, the carried ones included, so a carry is never invisible; and every stream read as Kubernetes.
+trivy_reads_every_root() {
+    output=$(trivy_config /scratch/trivy --exit-code 0) || { printf '%s\n' "$output"; return 1; }
+    printf '%s\n' "$output"
+    roots=$(MSYS_NO_PATHCONV=1 docker run --rm --entrypoint /bin/sh -v "$VOLUME:/scratch:ro" "$KUSTOMIZE_IMAGE" -c 'cat /scratch/trivy-roots.txt') || return 1
+    unread=0
+    for root in $roots; do
+        printf '%s\n' "$output" | grep -qxF -- "read $root kubernetes" || { echo "!!   Trivy did not read $root as Kubernetes"; unread=1; }
+    done
+    echo "     $(printf '%s\n' "$roots" | wc -l | tr -d ' ') streams read as Kubernetes"
+    return $unread
+}
+
+# The verdict: a finding fails unless infra/trivy/accepted-misconfigurations.rego carries that one finding, unexpired.
+trivy_clean() {
+    trivy_config "$1" --exit-code 1 --ignore-policy /accepted/accepted-misconfigurations.rego
+}
+
+# trivy_refused <plant> <check id>: every root of the planted tree, through the verdict, must fail and name the check.
+trivy_refused() {
+    refuses "$1" "$2" trivy_clean "/scratch/plants/$1/roots"
+}
+
 check "every overlay renders" in_kustomize render
 check "the plants are planted and rendered" in_kustomize plants
 check "the kind rehearsal's generated Secrets" in_kustomize kind-secrets
@@ -1375,6 +1457,9 @@ done
 for delivery in delivery-staging delivery-production delivery-committed; do
     check "kubeconform $delivery" kubeconform_on "/scratch/rendered/$delivery.yaml"
 done
+check "every kustomize root rendered for the graded scan" in_kustomize trivy-roots
+check "trivy config reads every root as Kubernetes, and every HIGH or CRITICAL finding as read, carried ones included" trivy_reads_every_root
+check "trivy config: no HIGH or CRITICAL finding that is not carried" trivy_clean /scratch/trivy
 
 refused stream-empty stream-empty
 refused stream-no-container stream-empty
@@ -1691,6 +1776,10 @@ schema_refused schema-typo "revisionHistoryLimits"
 schema_refused schema-type "revisionHistoryLimit"
 render_refused render-broken "base-that-is-not-there"
 schema_refused delivery-schema-typo "/spec/syncPolicy"
+
+trivy_refused trivy-privileged KSV-0017
+trivy_refused trivy-host-root KSV-0121
+trivy_refused trivy-carry-widened KSV-0109
 
 if [ "$status" -eq 0 ]; then
     echo "ok   every check green, every plant refused for its reason"

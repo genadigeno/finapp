@@ -47,8 +47,9 @@ import org.springframework.core.io.FileSystemResource;
  * Every accounting alert can fire, on its break and only then (`P14-TSK-020`; {@code PHASE_14_PLAN.md} section 16; {@code RiskAlertRulesTest}'s shape).
  *
  * <p><strong>What this proves, and what it does not.</strong> The scrape is real: a freshly started instance's real registry, the real metric classes, the real names, units and tags, nothing translated here. The evaluation is
- * {@link RuleEvaluator}, a small evaluator written in this repository, and {@link RuleTimeline} for a rule's {@code for}: neither is Prometheus, and no {@code promtool} has run on this file. So a rule that passes here has an expression that holds on its break and
- * nowhere else as this evaluator reads PromQL, over series that exist. Whether Prometheus reads it the same is unproven until a Prometheus reads it; the grammar is kept closed and small so the gap stays small.
+ * {@link RuleEvaluator}, a small evaluator written in this repository, and {@link RuleTimeline} for a rule's {@code for}: neither is Prometheus. So a rule that passes here has an expression that holds on its break and
+ * nowhere else as this evaluator reads PromQL, over series that exist. Prometheus's own reading is {@code infra/prometheus/tests/accounting.test.yml} (since 2026-11-12: every rule fires there and is silent on its
+ * healthy series, run by {@code promtool} in CI's {@code alerts} job and held by {@code AlertCatalogueTest}); until then this file's was the only evaluation, which is why the grammar is kept closed and small.
  *
  * <p><strong>And what the scrape is.</strong> This calls the registry's {@code scrape()}, after asking the gauge refresher to read every accounting gauge and waiting for it: every gauge reads on that thread, never on the scrape (`P15-TSK-024`), so with the database gone or the pool exhausted a production scrape completes too and these samples reach the rules. <em>(Until `P15-TSK-024` the other modules' classes read on the scrape thread, and such a scrape outlived Prometheus's timeout and stored nothing.)</em>
  *
