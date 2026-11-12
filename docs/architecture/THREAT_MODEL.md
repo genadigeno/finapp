@@ -2212,7 +2212,7 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
 
     **Decided 2026-11-13** by the owner ("accept recommendations"): every part as recommended. (a) **(i)**: the kind back ends' consoles are not
     shipped. (b) **(ii)**: a successful run's lines stay on the node, and each schema's migration history is the record. (c) **(i)**:
-    the steps are added to the harness and run on the full cluster by `P16-TSK-006`, the load harness, whose entry says so; §4's T46
+    the steps are added to the harness and run on the full cluster by the load harness's task, whose entry says so; §4's T46
     row stays a `GAP` until they run. (d) **(i)**: each environment's observability overlay carries the rule, with item 43 (c)'s
     remainder, before the first real environment; §4's T4 row stays a `GAP`. (e) **(i)**: the answer's `X-Correlation-Id` kept in the
     edge's access line once what the pinned proxy writes for each copy is measured, by `P16-TSK-020`, whose entry says so.

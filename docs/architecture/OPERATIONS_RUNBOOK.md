@@ -4594,7 +4594,8 @@ Overdue page's seventeen minutes pass under the load (`signals-*` in the artefac
 **What it drives (the `demonstration` profile).** `CAPACITY_MODEL.md` §1's demonstration workload: transfers 1.325 a second, card or
 checkout payments 2.655, card top-ups 0.53 (the withdrawals of R2 folded into top-ups), balance reads 50, sign-ins 3.18 and merchant
 API reads 5.3 (the target's peak scaled by 5 / 10.47), each through its own scenario; the provider's signed callbacks, two per captured
-card payment, from `Rehearsal.java load-callbacks`, each naming the operation the platform minted; and one PSP settlement file of the
+card payment, from `Rehearsal.java load-callbacks` run as four senders (four addresses, each a quarter of the feed), each naming the
+operation the platform minted; and one PSP settlement file of the
 run's captures at mid-run, uploaded and attested through the operator edge and reconciled during the load. One money-moving iteration
 in twenty sends each of its commands twice under one key, half before the first answer and half after it; one callback in twenty is
 delivered twice. **Not driven**: BNPL purchases and instalments, lending repayments and loan credit decisions (0.49 of the 5
@@ -4644,7 +4645,7 @@ takes `closed-model`, `sampler-disabled` or `unbalanced-entry`. The usual `REHEA
 | `pg-*.tsv`, `pg-statements-final.txt` | Every 10 s: sessions by state and wait, lock waits, commits, rollbacks, deadlocks, temporary files, WAL, checkpoints, the busiest tables; the top statements by time | The database's side of saturation |
 | `containers.tsv` | Every 10 s: the node's, each generator instance's and the callback sender's CPU and memory | The machine, and the generator's own saturation |
 | `prometheus/*.json` | CPU, heap, GC, threads, busy request threads, Hikari active and pending and acquisition, the outbox's oldest publishable age, consumer lag, requests per replica, over the run | The application's side of saturation |
-| `callbacks-load.*`, `spread.tsv`, `settlement.*` | Each callback's answer; replicas per route; the settlement file and its reconciliation counts | The provider's, the edge's and reconciliation's share |
+| `callbacks-load-<n>.*`, `callbacks-feed-load.txt`, `spread.tsv`, `settlement.*` | Each sender's answers and its summary, the feed; replicas per route; the settlement file and its reconciliation counts | The provider's, the edge's and reconciliation's share |
 | `../census-load.txt` | The full census after the load | One effect per key, counted |
 
 **When it is red.** A failed sample's line in `samples.tsv` names the page or the clause: treat it as the page itself (§11.20 for the
