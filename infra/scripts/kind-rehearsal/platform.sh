@@ -691,7 +691,9 @@ incidents_retention_and_abuse() {
     psql_query -c "GRANT EXECUTE ON FUNCTION platform.sweep_published_outbox_events(bigint, integer) TO finapp_app" >> "$ART/plants.log" 2>&1 \
         || fail "the sweep's grant could not be restored"
     pass "11.15: a sweep the role cannot run counted on every replica with its SQLState; the grant restored"
-    # Pause the sweeps, and lower the sign-in door's limit to a number a rehearsal reaches: one rolling update.
+    # Pause the sweeps, and lower the sign-in door's limit to a number a rehearsal reaches: one rolling update. The overlay's own limit is kept
+    # to be put back: removed, the key would fall to the application's default, which this rehearsal's one address passes.
+    SIGN_IN_LIMIT=$(kube -n finapp get configmap "$CONFIG_MAP" -o jsonpath='{.data.FINAPP_ABUSE_SIGN_IN_LIMIT}')
     kube -n finapp patch configmap "$CONFIG_MAP" --type=merge -p '{"data":{"FINAPP_RETENTION_SWEEP_ENABLED":"false","FINAPP_ABUSE_SIGN_IN_LIMIT":"20"}}' \
         >> "$ART/apply.log" 2>&1 || fail "the ConfigMap could not be changed"
     rollout pause-sweeps config=pause-sweeps "" no
@@ -704,7 +706,12 @@ incidents_retention_and_abuse() {
     psql_query -c "GRANT INSERT, UPDATE ON platform.window_counter TO finapp_app" >> "$ART/plants.log" 2>&1 || fail "the counter's grant could not be restored"
     pass "11.30: a store that cannot count answered 503 and admitted nothing; the grant restored"
     # Raise the limit and resume the sweeps: one rolling update, as the procedures say.
-    kube -n finapp patch configmap "$CONFIG_MAP" --type=json -p '[{"op":"remove","path":"/data/FINAPP_RETENTION_SWEEP_ENABLED"},{"op":"remove","path":"/data/FINAPP_ABUSE_SIGN_IN_LIMIT"}]' \
+    if [ -n "$SIGN_IN_LIMIT" ]; then
+        limit_back='{"op":"replace","path":"/data/FINAPP_ABUSE_SIGN_IN_LIMIT","value":"'"$SIGN_IN_LIMIT"'"}'
+    else
+        limit_back='{"op":"remove","path":"/data/FINAPP_ABUSE_SIGN_IN_LIMIT"}'
+    fi
+    kube -n finapp patch configmap "$CONFIG_MAP" --type=json -p '[{"op":"remove","path":"/data/FINAPP_RETENTION_SWEEP_ENABLED"},'"$limit_back"']' \
         >> "$ART/apply.log" 2>&1 || fail "the ConfigMap could not be changed back"
     rollout resume-sweeps config=resume-sweeps "" no
     client sign-in-flood raised 30 >> "$ART/platform-client.log" 2>&1 || true
@@ -885,24 +892,29 @@ patch deployments --subresource=scale: yes'
 incidents_books() {
     # Section 11.12's game day around sections 11.20 and 11.27: two raw writes to the books, by a writer no door can be, found by their pages.
     [ -n "${INCIDENT_FILE:-}" ] || incident_open SEV1 "the books disagree with themselves"
-    # An unsourced entry: a copy of a transfer's entry under a fresh id and reference, its balances moved with it, so the census holds and only
-    # the source join can see it.
+    # An unsourced entry: a copy of a transfer's entry under a fresh id, reference and command key, its balances moved with it, so the census
+    # holds and only the source join can see it. The key's last part is a transfer id no transfer has: kept, it would join the copied transfer,
+    # whose figures the copy matches, and nothing would be found; and the ledger's own read of a key expects one entry.
     # A transfer's posting: an entry whose every line is on a customer wallet, so its copy moves value between two rehearsal wallets alone.
     ENTRY=$(psql_query -c "SELECT e.id FROM ledger.journal_entry e WHERE e.entry_type = 'POSTING' AND NOT EXISTS (SELECT 1 FROM ledger.journal_line l
         JOIN ledger.ledger_account a ON a.id = l.ledger_account_id WHERE l.entry_id = e.id AND a.purpose <> 'CUSTOMER_WALLET') ORDER BY e.created_at DESC LIMIT 1" | tr -d '[:space:]')
     [ -n "$ENTRY" ] || cannot "no transfer entry to copy"
     PLANTED_ENTRY=$(psql_query -c "SELECT uuidv7()" | tr -d '[:space:]')
+    PLANTED_KEY=$(psql_query -c "SELECT uuidv7()" | tr -d '[:space:]')
     psql_query -f - >> "$ART/plants.log" 2>&1 <<SQL || cannot "the unsourced entry could not be planted"
 \set ON_ERROR_STOP on
 BEGIN;
 INSERT INTO ledger.journal_entry (id, posting_date, value_date, entry_type, reference, reason, actor_id, correlation_id, causation_id, idempotency_scope, created_at)
-SELECT '$PLANTED_ENTRY', posting_date, value_date, entry_type, 'rehearsal-plant-$INCIDENT', reason, actor_id, correlation_id, causation_id, idempotency_scope, now()
+SELECT '$PLANTED_ENTRY', posting_date, value_date, entry_type, 'rehearsal-plant-$INCIDENT', reason, actor_id, correlation_id, causation_id,
+       regexp_replace(idempotency_scope, '[^:]+$', '$PLANTED_KEY'), now()
   FROM ledger.journal_entry WHERE id = '$ENTRY';
-INSERT INTO ledger.journal_line (id, entry_id, ledger_account_id, direction, amount_minor, seq)
-SELECT uuidv7(), '$PLANTED_ENTRY', ledger_account_id, direction, amount_minor, seq FROM ledger.journal_line WHERE entry_id = '$ENTRY';
-UPDATE ledger.account_balance b SET posted_minor = b.posted_minor + CASE WHEN l.direction = a.normal_balance THEN l.amount_minor ELSE -l.amount_minor END
-  FROM ledger.journal_line l JOIN ledger.ledger_account a ON a.id = l.ledger_account_id
- WHERE l.entry_id = '$PLANTED_ENTRY' AND b.ledger_account_id = l.ledger_account_id;
+INSERT INTO ledger.journal_line (id, entry_id, ledger_account_id, direction, amount_minor, currency, scale, seq)
+SELECT uuidv7(), '$PLANTED_ENTRY', ledger_account_id, direction, amount_minor, currency, scale, seq FROM ledger.journal_line WHERE entry_id = '$ENTRY';
+UPDATE ledger.account_balance b SET posted_minor = b.posted_minor + d.delta, last_entry_seq = b.last_entry_seq + 1
+  FROM (SELECT l.ledger_account_id, sum(CASE WHEN l.direction = a.normal_balance THEN l.amount_minor ELSE -l.amount_minor END) AS delta
+          FROM ledger.journal_line l JOIN ledger.ledger_account a ON a.id = l.ledger_account_id
+         WHERE l.entry_id = '$PLANTED_ENTRY' GROUP BY l.ledger_account_id) d
+ WHERE b.ledger_account_id = d.ledger_account_id;
 COMMIT;
 SQL
     incident_note "a raw writer" insert "journal entry $PLANTED_ENTRY" "the plant" written
@@ -935,9 +947,11 @@ SQL
 \set ON_ERROR_STOP on
 BEGIN;
 SET LOCAL session_replication_role = replica;
-UPDATE ledger.account_balance b SET posted_minor = b.posted_minor - CASE WHEN l.direction = a.normal_balance THEN l.amount_minor ELSE -l.amount_minor END
-  FROM ledger.journal_line l JOIN ledger.ledger_account a ON a.id = l.ledger_account_id
- WHERE l.entry_id = '$PLANTED_ENTRY' AND b.ledger_account_id = l.ledger_account_id;
+UPDATE ledger.account_balance b SET posted_minor = b.posted_minor - d.delta, last_entry_seq = b.last_entry_seq - 1
+  FROM (SELECT l.ledger_account_id, sum(CASE WHEN l.direction = a.normal_balance THEN l.amount_minor ELSE -l.amount_minor END) AS delta
+          FROM ledger.journal_line l JOIN ledger.ledger_account a ON a.id = l.ledger_account_id
+         WHERE l.entry_id = '$PLANTED_ENTRY' GROUP BY l.ledger_account_id) d
+ WHERE b.ledger_account_id = d.ledger_account_id;
 DELETE FROM ledger.journal_line WHERE entry_id = '$PLANTED_ENTRY';
 DELETE FROM ledger.journal_entry WHERE id = '$PLANTED_ENTRY';
 COMMIT;
@@ -951,8 +965,9 @@ SQL
 incidents_poisoned_rows() {
     # Section 11.39 (P15-TSK-002's three rows): a non-v7 payment attempt in a candidate state. The card sweep fails every tick on every
     # instance with one WARN line; nothing is concluded meanwhile; the row's removal is the plant's teardown.
-    # A copy of a captured card attempt, under a v4 id, put back in flight at the capture's dispatch: every unique reference made new, so
-    # the only thing wrong with the row is the id no domain writer could mint.
+    # A copy of a captured card attempt, under a v4 id, put back in flight at the capture's dispatch: every unique reference made new and
+    # the capture's facts taken off (the table holds them exactly on a captured row), so the only thing wrong with the row is the id no
+    # domain writer could mint.
     SOURCE_ATTEMPT=$(psql_query -c "SELECT id FROM payments.payment_attempt WHERE status = 'CAPTURED' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')
     [ -n "$SOURCE_ATTEMPT" ] || cannot "no captured payment attempt to copy"
     POISON=$(psql_query -c "SELECT gen_random_uuid()" | tr -d '[:space:]')
@@ -962,6 +977,7 @@ INSERT INTO payments.payment_attempt SELECT (jsonb_populate_record(NULL::payment
     to_jsonb(a) || jsonb_build_object('id', '$POISON', 'status', 'CAPTURE_DISPATCHED',
         'auth_reference', 'poison-a-$POISON', 'capture_reference', 'poison-c-$POISON',
         'auth_provider_reference', 'poison-pa-$POISON', 'capture_provider_reference', NULL,
+        'captured_amount_minor', NULL, 'captured_currency', NULL, 'captured_scale', NULL,
         'void_reference', NULL, 'void_provider_reference', NULL, 'end_to_end_reference', NULL, 'scheme_reference', NULL,
         'failure_reason', NULL))).* FROM payments.payment_attempt a WHERE a.id = '$SOURCE_ATTEMPT';
 SQL
