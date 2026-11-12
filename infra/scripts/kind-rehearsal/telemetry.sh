@@ -576,7 +576,9 @@ platform_signals_plant() {
     [ -n "$current" ] || cannot "the rendered migrator Job names no migrator image to replace"
     sed "s#^\( *\)image: $current\$#\1image: $planted_image\n\1command: [\"/bin/sh\", \"-c\", \"echo finapp-migrator schema=platform applied=0 attempts=1; echo finapp-migrator schema=ledger attempts=1 failure=MIGRATION card $SIGNALS_MIGRATOR_PAN for $SIGNALS_AMOUNT EUR; echo finapp-migrator result=MIGRATION_FAILED schema=ledger; exit 10\"]#" \
         "$A/Job.finapp-migrator.yaml" > "$WORK/job-planted.yaml"
-    [ "$(grep -c 'command: \["/bin/sh"' "$WORK/job-planted.yaml")" = 1 ] || cannot "the planted Job's command could not be written"
+    # Counted by the planted line alone: under kube-router the Job also carries an init container whose command is a shell too.
+    [ "$(grep -c 'result=MIGRATION_FAILED' "$WORK/job-planted.yaml")" = 1 ] && [ "$(grep -c "image: $planted_image" "$WORK/job-planted.yaml")" = 1 ] \
+        || cannot "the planted Job's command could not be written"
     cp "$WORK/job-planted.yaml" "$ART/signals-job-planted.yaml"
     kube -n finapp delete job finapp-migrator --wait=true --timeout=180s >> "$ART/apply.log" 2>&1 || cannot "the release's migrator Job could not be removed"
     apply_files "$WORK/job-planted.yaml"
