@@ -2146,10 +2146,11 @@ Flyway location. Docker and a JDK; every credential generated per run, none prin
 `2` a step could not run. CI's `migrator-image` job is wired to run it on the image the job built; it has not run in CI yet.
 `MigrationFailureRehearsalTest` holds what it asserts.
 
-**The last record.** 2026-11-12, 10:43:24-10:48:43Z, one run on one development machine (Docker 28.0.1, `postgres:18.6`), the
-harness at sha256 `f29c17e9…5bb9a9af` on branch `P15-TSK-032-S3` (`b7f5fff3`), the image `finapp-migrator` built by
-`migrator-image-build.sh` from `40dfc1ca` (id `sha256:8c454c9c…`; no migration and no migrator source changed since): fifteen steps,
-every assertion held, exit `0`, in 5 minutes 19 seconds.
+**The last record.** 2026-11-12, 11:37:38-11:42:09Z, one run on one development machine (Docker 28.0.1, `postgres:18.6`), the
+harness at sha256 `e865eeec…a8a4ce64` on branch `P15-TSK-032-S3` (`677f1121`), the image `finapp-migrator` built by
+`migrator-image-build.sh` from `40dfc1ca` (id `sha256:8c454c9c…`; since then no migration changed and the migrator's sources only in
+`FailureClass`'s comments): fifteen steps, every assertion held, exit `0`, in 4 minutes 31 seconds. *(The first record, the same day
+at 10:43-10:48Z on the harness's earlier bytes `f29c17e9…5bb9a9af`, saw the same.)*
 
 | Step | Seen |
 |---|---|
