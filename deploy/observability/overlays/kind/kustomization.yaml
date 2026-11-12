@@ -1,5 +1,11 @@
 # The telemetry pipeline on kind, test-only (P15-TSK-023): the base's collector and default-deny, Tempo, Loki and Prometheus as the reference
 # backends, and the flows to them. No credential and no endpoint outside the cluster: every address below is a Service of this namespace.
+#
+# AND THE ALERTS (P15-TSK-032): Prometheus here loads every committed rule file and sends what fires to an Alertmanager running the committed
+# routing (deploy/observability/alertmanager), so a rehearsal reads an alert and its receiver on a real Prometheus, not only promtool's cases.
+# The rule files are in rules/, a byte-for-byte copy of infra/prometheus/rules: kustomize reads no file outside this directory, and the kind
+# rehearsal renders deploy/ alone. AlertCatalogueTest holds the copy equal to the source, file for file, and this list to the directory: a rule
+# changed in infra/prometheus/rules is copied here in the same change.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -7,6 +13,7 @@ namespace: finapp-observability
 
 resources:
   - ../../base
+  - ../../alertmanager
   - backends.yaml
   - networkpolicy-backends.yaml
 
@@ -24,6 +31,26 @@ configMapGenerator:
   - name: finapp-loki-config
     files:
       - loki.yaml
+  # A FIXED NAME, deliberately: a rehearsal changes the scrape's labels (the lending, BNPL and risk switches) by editing this ConfigMap and
+  # POSTing /-/reload, which keeps the TSDB and every alert's for. A hashed name would roll the pod instead and lose both.
   - name: finapp-prometheus-config
     files:
       - prometheus.yml
+    options:
+      disableNameSuffixHash: true
+  # Every rule file, mounted at /etc/prometheus-rules. Hashed: a changed rule rolls the scraper.
+  - name: finapp-prometheus-rules
+    files:
+      - rules/accounting.yml
+      - rules/bnpl.yml
+      - rules/correctness.yml
+      - rules/credit.yml
+      - rules/flows.yml
+      - rules/fx.yml
+      - rules/lending.yml
+      - rules/platform.yml
+      - rules/risk.yml
+      - rules/settlement-reconciliation.yml
+      - rules/slo-recording.yml
+      - rules/slo.yml
+      - rules/telemetry.yml
