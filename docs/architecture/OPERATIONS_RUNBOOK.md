@@ -3237,6 +3237,8 @@ latest; the run, as its record names it.
 | §11.37 | `identity`, `accounting` | 2 | 4 | 6 | kind | 2026-11-12 | `5078e612`, `ca4c323a` | `dev3 and dev5, the signals scope's development runs` | postponed by the owner (PI-024) |
 | §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.40 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
+| §11.41 | `platform` | 3 | 1 | 4 | kind | 2026-11-12 | `722365ad`, `HEADPLACEHOLDER` | `§11.41's runs 1 and 2` | — |
+| §11.42 | `platform` | 4 | 0 | 4 | containers, kind | 2026-11-12 | `HEADPLACEHOLDER` | `§11.42's record` | — |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3461,7 +3463,34 @@ A **successful** run's lines are not shipped: the status keeps nothing for an ex
 **What this does not cover.** The managed database's own state (item 43 (a)); a real environment's API server egress for the watcher,
 which an observability overlay per environment names (item 43 (c)); the delivery's own view of the hook (§11.36).
 
-**The record.** Pending the gate.
+**The record** (2026-11-12, `P16-TSK-003`; a `kind` cluster of one node with kube-router as the policy engine and **no application
+stack** - no lock needed, the full harness being another task's that wave; `kind` v0.33.0, node `v1.34.11`; the images loaded from this
+machine's own store, none pulled).
+
+- **Measured before the design.** The watcher under the namespace's default-deny with an egress rule for its resolver alone reached the
+  API server. Given list and watch on jobs, deployments, pods and events alone, `k8s_cluster` logged a refusal every few seconds for each
+  of services, replicationcontrollers, cronjobs, replicasets, resourcequotas, statefulsets, daemonsets and horizontalpodautoscalers;
+  given those too, none - the Role names exactly these. A Job failing exit 10 under the base's `podFailurePolicy` was published as
+  `k8s_job_failed_pods` 1, active 0, succeeded 0, wanted 1. **A Job whose pod a quota of zero pods refused** (deadline 45 s) failed by
+  `DeadlineExceeded` with failed 0, active 0, succeeded 0, which is why `MigratorJobOverdue` exists. A deleted Job's series stayed in the
+  exporter beside its successor's (its five-minute default, since set to one).
+- **Run 1** (19:22-19:44Z; the manifests at `722365ad`). The kind overlay of `deploy/observability` as committed, with one exception:
+  its Loki ran as a container of the pinned image beside the node (this machine's Docker cannot save that image for the node's store), so
+  the collector named it and one experiment-only policy let the collector reach it on 3100. The base's Role and binding, rendered from the
+  application's kind overlay. The migrator Job rendered from the same overlay, its image's entrypoint replaced by the prometheus image's
+  shell printing migrator-shaped lines - a card number and an amount among them - and exiting 10, and its `envFrom` removed (no Secret
+  there). Its pod was first refused (`FailedCreate`: no `finapp-migrator` account on that cluster), then waited on a missing mount; given
+  both, it exited 10 at 19:35. **`MigratorJobOverdue`** pending from 19:26:49 and **firing at 19:43:49**, seventeen minutes with no Job
+  succeeded; **`MigratorJobFailed`** pending 19:34:34 and **firing 19:36:34**; each at Alertmanager's `placeholder-page`. Loki held 27
+  records under `{service_name="finapp-migrator"}` - the Job's and its pod's events (`FailedCreate`, `SuccessfulCreate`, `Scheduled`,
+  `FailedMount`, `Pulled`, `Created`, `Started`, `PodFailurePolicy`) and the failed run's lines three times, `k8s_container_exit_code`
+  10, the card number and the amount `[scrubbed]` - and 22 under `finapp-collector` and 20 under `finapp-cluster-watch` (the watcher's
+  own warnings: its reduction indexed a pod's body that was already a message); the card number and the amount in no record of any
+  stream.
+- **Run 2** (19:46-19:49Z; the watcher's reduction revised to read an object's kind once). The same planted Job, created 19:46:11 and
+  failed by its `FailJob` rule at 19:46:16: **`MigratorJobFailed` pending 19:46:34, firing 19:48:34**. Nine records under the migrator's
+  stream (six events, the run's lines three times, scrubbed); the watcher's own log empty; no needle.
+- **Read, not run**: `ClusterWatchBlind`, which reads a deployed fleet's scrape, and that cluster scraped none.
 
 ### 11.42 The edge watched: `EdgeErrorRatioHigh`, `EdgeUnscraped`; the platform's own lines in Loki (`P16-TSK-003`)
 
@@ -3490,8 +3519,9 @@ about anybody:
   `DownstreamStatus`, `OriginStatus`, `Duration`, `OriginDuration`, sizes, protocol and TLS version - and its line is rebuilt from those
   (`GET 502 public-door@file 3430534`). Never the client's address or port, the host it named, the backend's address, a user name, a
   header (dropped at the proxy) or a query string (dropped at the proxy, and cut again here); an unrouted request's path is the caller's
-  own text and is dropped. The controller is `k8s_pod_name`. The console keeps its own copy too (`dualOutput`), for the collector's
-  absence;
+  own text and is dropped. The proxy's own log writes a client's address into its text (`http: TLS handshake error from ...`): every
+  address in an edge record reads `[address]`. The controller is `k8s_pod_name`. The console keeps its own copy too (`dualOutput`),
+  for the collector's absence;
 - `{service_name="finapp-collector"}` and `{service_name="finapp-cluster-watch"}`: the collectors' and the watcher's own lines, at
   `warn`, each sent to its own platform receiver;
 - `{service_name="finapp-migrator"}`: §11.41.
@@ -3503,7 +3533,27 @@ environment's back ends bring their own (`THREAT_MODEL.md` section 6 item 37 (a)
 **What this does not cover.** A real environment's load balancer or WAF in front of the edge (item 32 (b)); a controller lost or rolled
 under traffic (`P16-TSK-005`, `P16-TSK-020`); the edge's SLO of its own, which `-029` decides with the load model.
 
-**The record.** Pending the gate.
+**The record** (2026-11-12, `P16-TSK-003`; on containers of the pinned images, from this machine's own store).
+
+- **The edge watched** (19:49-19:59Z). The pinned proxy with the committed static file's `experimental`, `log` and `accessLog` blocks
+  as written, a plain listener named `websecure` and one route whose backend does not exist (so every `/v1` request answers 502); the
+  pinned Prometheus loading the committed `platform.yml` and scraping the proxy's management port as kind's `finapp-edge` job does
+  (`edge="public"`); the committed collector; Loki; Alertmanager with the committed routing. **`up{job="finapp-edge"}` 1.** About one
+  request every two seconds, 89 answering 502 and every tenth an unrouted 404 carrying a card number, each with a query and a header
+  that must not leave: **`EdgeErrorRatioHigh` pending 19:50:50, firing 19:52:50** at `placeholder-page`. Loki held 86 records under
+  `{service_name="finapp-edge"}`, each with its router, status, path and durations as fields and its line rebuilt
+  (`GET 502 public-door@file 1129771927`), the unrouted ones `GET 404 <nil> ...` with no path, `k8s_pod_name` the controller's; none
+  held the client's address, the query, the header, the unrouted path, the card number or the backend's name. The proxy's console kept
+  its own copy (`dualOutput`), with no query. **The proxy stopped at 19:53:35: `EdgeUnscraped` pending 19:53:50, firing 19:58:50**, at
+  `placeholder-page`.
+- **`infra/scripts/edge-check.sh`**, CI's, over the full static files with TLS and the generated routes: the pinned proxy's own lines
+  through the committed collector to a stand-in back end. **Its first run found the client's address** in the proxy's own log
+  (`http: TLS handshake error from <address>:<port>`, a record whose body is the proxy's message): the collector now cuts every address
+  from an edge record, and the next run read `TLS handshake error from [address]` and no needle, with the router, the routed path and the
+  status kept. With the collector replaced by a stand-in that takes every connection and answers nothing, 30 requests each answered, the
+  slowest in 171 ms, 54 ms and 32 ms over three runs.
+- **The platform's own lines.** `{service_name="finapp-collector"}` held the collectors' warnings on `kind` (§11.41's runs) and on these
+  containers, each with its `k8s_pod_name`; the watcher's on `kind`'s first run.
 
 ### 11.13 Infrastructure code: running the Terraform checks, and changing a pin
 

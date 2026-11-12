@@ -50,24 +50,28 @@ processors:
     limit_percentage: 80
     spike_limit_percentage: 20
 
-  # A watched object reduced to what an operator reads: the attributes first, then the body, since once the body is a message the object is
-  # gone. A pod: its terminated container's message, exit code and reason, its name and its Job. An event: its message, reason and type, and
-  # the object it is about. Everything else of the object - its spec, its environment's names, its node, its addresses - stays here.
+  # A watched object reduced to what an operator reads: its kind read once into an attribute, so no later condition indexes a body that has
+  # already become a message; the attributes first, then the body. A pod: its terminated container's message, exit code and reason, its name
+  # and its Job; a pod still running carries none, and its record is dropped below. An event: its message, reason and type, and the object it
+  # is about. Everything else of the object - its spec, its environment's names, its node, its addresses - stays here.
   transform/migrator:
     error_mode: ignore
     log_statements:
       - context: log
         statements:
-          - set(attributes["k8s.pod.name"], body["object"]["metadata"]["name"]) where body["object"]["kind"] == "Pod"
-          - set(attributes["k8s.job.name"], body["object"]["metadata"]["labels"]["job-name"]) where body["object"]["kind"] == "Pod"
-          - set(attributes["k8s.container.exit_code"], body["object"]["status"]["containerStatuses"][0]["state"]["terminated"]["exitCode"]) where body["object"]["kind"] == "Pod"
-          - set(attributes["k8s.container.reason"], body["object"]["status"]["containerStatuses"][0]["state"]["terminated"]["reason"]) where body["object"]["kind"] == "Pod"
-          - set(body, body["object"]["status"]["containerStatuses"][0]["state"]["terminated"]["message"]) where body["object"]["kind"] == "Pod"
-          - set(attributes["k8s.event.reason"], body["object"]["reason"]) where body["object"]["kind"] == "Event"
-          - set(attributes["k8s.event.type"], body["object"]["type"]) where body["object"]["kind"] == "Event"
-          - set(attributes["k8s.object.kind"], body["object"]["involvedObject"]["kind"]) where body["object"]["kind"] == "Event"
-          - set(attributes["k8s.object.name"], body["object"]["involvedObject"]["name"]) where body["object"]["kind"] == "Event"
-          - set(body, body["object"]["message"]) where body["object"]["kind"] == "Event"
+          - set(attributes["k8s.object.class"], body["object"]["kind"])
+          - set(attributes["k8s.pod.name"], body["object"]["metadata"]["name"]) where attributes["k8s.object.class"] == "Pod"
+          - set(attributes["k8s.job.name"], body["object"]["metadata"]["labels"]["job-name"]) where attributes["k8s.object.class"] == "Pod"
+          - set(cache["terminated"], body["object"]["status"]["containerStatuses"][0]["state"]["terminated"]) where attributes["k8s.object.class"] == "Pod" and body["object"]["status"]["containerStatuses"] != nil
+          - set(attributes["k8s.container.exit_code"], cache["terminated"]["exitCode"]) where cache["terminated"] != nil
+          - set(attributes["k8s.container.reason"], cache["terminated"]["reason"]) where cache["terminated"] != nil
+          - set(attributes["k8s.event.reason"], body["object"]["reason"]) where attributes["k8s.object.class"] == "Event"
+          - set(attributes["k8s.event.type"], body["object"]["type"]) where attributes["k8s.object.class"] == "Event"
+          - set(attributes["k8s.object.kind"], body["object"]["involvedObject"]["kind"]) where attributes["k8s.object.class"] == "Event"
+          - set(attributes["k8s.object.name"], body["object"]["involvedObject"]["name"]) where attributes["k8s.object.class"] == "Event"
+          - set(body, cache["terminated"]["message"]) where cache["terminated"] != nil
+          - set(body, "") where attributes["k8s.object.class"] == "Pod" and cache["terminated"] == nil
+          - set(body, body["object"]["message"]) where attributes["k8s.object.class"] == "Event"
           - keep_keys(attributes, ["k8s.pod.name", "k8s.job.name", "k8s.container.exit_code", "k8s.container.reason", "k8s.event.reason", "k8s.event.type", "k8s.object.kind", "k8s.object.name"])
 
   # What is not the migrator's, or carries nothing: an event about another object, a pod still running (no terminated message), an object

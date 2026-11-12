@@ -29135,6 +29135,46 @@ on none:
 - **Definition of done**: `DOD-OBS`, `DOD-BUILD`.
 - **Operational documentation**: two new runbook sections.
 - **Risk**: Low. **Cx**: M.
+- *As built (2026-11-12, the gate's record; branch `P16-TSK-003` from master `6981c167`; no migration, no application code, no new ADR -
+  a dated note on ADR-0124; `OPERATIONS_RUNBOOK.md` §11.41 and §11.42 are the procedures and the records; `THREAT_MODEL.md` §6 item 47 is
+  new; `DISTRIBUTED_EXECUTION.md`'s telemetry row noted):* **Measured first, not assumed**: Traefik 3.7.17 (the pinned digest) exports its
+  own log and its access log over OTLP (`experimental.otlpLogs`), each access record its whole JSON line as the body and every field an
+  attribute, the client's and the backend's addresses among them; its counter is `traefik_entrypoint_requests_total{code, entrypoint,
+  method, protocol}`. The migrator's image is distroless and `restricted` refuses a node agent, and the contrib collector has no receiver
+  that reads `pods/log`, so the migrator's lines reach the back end only through the API server; a Job's state likewise. On a `kind`
+  cluster of one node with no application stack (no lock), the pinned collector's `k8s_cluster` receiver, namespaced to `finapp`,
+  published `k8s_job_{failed,active,successful,desired_successful}_pods` per Job; a Job whose pod a quota refused failed by its deadline
+  with **no failed pod** (so a rule on failed pods alone is blind to it); under kube-router a pod reached its own node's API server with an
+  egress policy naming DNS alone. **The edge**: two headless scrape Services (`deploy/edge/base/scrape-services.yaml`, the TLS port alone
+  named, a new `[edge-scrape-service]` rule with two plants), kind's job `finapp-edge` labelling `edge` from the Service; both static files
+  ship their own log and their access log to `finapp-collector...:4319`, every header and every query string dropped at the proxy,
+  `dualOutput` keeping the console's copy; the controllers' egress to the collector on 4319. **The collector**: a second receiver,
+  `otlp/platform` on 4319, and `logs/platform` with `transform/scrub-platform` - the resource as the application's, the edge's access
+  fields by name (never the client's or the backend's address, the host, a user name, a header or a query, which is cut again), an
+  unrouted path dropped, the edge's JSON body rebuilt from the kept fields, every IPv4 and IPv6 address cut from an edge record (the
+  proxy's own log writes a client's address into its message: `edge-check.sh`'s first run found it), the migrator's attributes by name,
+  and the application's card-number and amount scrub on every body and value; its own lines to its own 4319. **The cluster watcher**
+  (`deploy/observability/base/cluster-watch.yaml`, `-workload.yaml`): one replica of the pinned collector, `k8s_cluster` on 8889 for the
+  scraper (`resource_constant_labels`, `metric_expiration` 1m) and `k8s_objects` reducing the migrator's pods (a failed run's last lines,
+  kept by `terminationMessagePolicy: FallbackToLogsOnError` on the base Job) and the namespace's events to a message and named attributes,
+  sent to the collector as `service.name=finapp-migrator`. Its Role (`deploy/base/rbac-cluster-watch.yaml`, the application's release:
+  list and watch on the eleven kinds its receiver lists and events) and its account, `finapp.rego`'s first listed controller, the one way a
+  token is admitted (`[security-token]` now reads the list; `[rbac-cluster-watch]` holds the Role exactly; four plants). **The rules**
+  (`platform.yml`'s `platform-components`, owner `platform`): `MigratorJobFailed` (page, 2m: outlasts the Job's longest backoff, the
+  collection and the scrape), `MigratorJobOverdue` (page, 17m: the Job's 900 s deadline, the collection, the scrape, the evaluation and a
+  minute), `ClusterWatchBlind` (ticket, 15m), `EdgeErrorRatioHigh` (page, 2m: the SLO fast pair at 14.4 × 0.001 over 5 m and 1 h, per
+  edge summed over its controllers), `EdgeUnscraped` (page, 5m: no controller of an edge answering, or none to scrape); 14 promtool cases
+  both ways (`infra/prometheus/tests/platform-components.test.yml`); `PlatformComponentAlertRulesTest` reads every `for`'s inputs from the
+  manifests and holds every series and label to the capture of the pinned images (`infra/prometheus/platform-components-series.txt`).
+  **The runs** (records in §11.41 and §11.42): on `kind`, a planted failing migrator Job raised `MigratorJobFailed` and `MigratorJobOverdue`
+  through the committed rules to the committed routing, its lines and events in Loki scrubbed, no needle; on containers, the edge target
+  up, `EdgeErrorRatioHigh` and `EdgeUnscraped` firing, 86 edge records in Loki with no client address, query, header, unrouted path or card
+  number. **Corrections to this entry**: (1) the migrator's lines are a failed run's last lines and the Job's events, a successful run's
+  stay on the node (item 47 (b)); (2) the telemetry stack's lines are the collectors' and the watcher's, kind's back ends' are not (item
+  47 (a)); (3) five rules, not two - each named rule is blind in a case measured here without its companion; (4) a component the entry did
+  not name, the cluster watcher, the only way to a Job's state; (5) the `kind` harness gains no step this wave (`-005` held the full cluster;
+  a step is run to its end before it is relied on): item 47 (c). **Not done**: the watcher's API egress in a real environment, and
+  kindnetd unmeasured (item 47 (d)); the edge's lines joined to the replicas' by the answer's correlation id (item 47 (e)).
 
 **P16-TSK-004 — Quotas outside `finapp` and a graded scan of every overlay (`THREAT_MODEL.md` §6 items 43 (c) and 44 (b))** — `READY` (2026-11-12; marked by the coordinator at the owner's start of wave A, master `8d0120ee`; no dependency)
 - **Objective**: as decided 2026-11-12, in the first wave.

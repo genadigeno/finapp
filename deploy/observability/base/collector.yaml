@@ -127,6 +127,12 @@ processors:
           - replace_pattern(body, "(^|[^0-9A-Za-z_]|\\\\[nrt])\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "$$1[scrubbed]")
           - replace_all_patterns(attributes, "value", "(^|[^0-9A-Za-z_]|\\\\[nrt])(?:\\d{13,19}|\\d{4}(?:[ .-]\\d{4}){3}|\\d{4}[ .-]\\d{6}[ .-]\\d{5}|\\d{4}[ .-]\\d{6}[ .-]\\d{4})\\b", "$$1[scrubbed]")
           - replace_all_patterns(attributes, "value", "(^|[^0-9A-Za-z_]|\\\\[nrt])\\d+(?:\\.\\d+)? [A-Z]{3}\\b", "$$1[scrubbed]")
+          # The edge's own log writes a client's address into its text (a refused handshake, a request it could not read): every IPv4 and
+          # IPv6 address in an edge record is cut, a backend's with them. The others' lines name only the cluster's own pods and Services.
+          - replace_pattern(body, "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b", "[address]") where resource.attributes["service.name"] == "finapp-edge"
+          - replace_pattern(body, "(?i)\\[?(?:[0-9a-f]{0,4}:){3,7}[0-9a-f]{0,4}\\]?", "[address]") where resource.attributes["service.name"] == "finapp-edge"
+          - replace_all_patterns(attributes, "value", "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b", "[address]") where resource.attributes["service.name"] == "finapp-edge"
+          - replace_all_patterns(attributes, "value", "(?i)\\[?(?:[0-9a-f]{0,4}:){3,7}[0-9a-f]{0,4}\\]?", "[address]") where resource.attributes["service.name"] == "finapp-edge"
 
   # Names the environment on what leaves, so two environments on one backend never read as one fleet.
   resource/environment:

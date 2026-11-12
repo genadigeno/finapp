@@ -607,6 +607,7 @@ fi
 # by name - the client's address, the host the client named, the backend's address, a user name, an unrouted path (the caller's own text), a
 # query string, the process's arguments, a node - and what it scrubs by shape, a card number and an amount in a migrator's line.
 CLIENT=198.51.100.77
+CLIENT6=2001:db8::77
 EDGE_HOST=needle-edge-host.invalid
 BACKEND=needle-backend.invalid
 EDGE_USER=needle-edge-user
@@ -656,7 +657,11 @@ platform_body() {
    {"key":"process.command_args","value":{"stringValue":"traefik --configFile=$ARGS"}}]},
   "scopeLogs":[{"scope":{"name":"traefik"},"logRecords":[
    $(access_record "/v1/merchant/payouts/$PAYMENT?ref=$QUERY_NEEDLE" "$ROUTER" 502),
-   $(access_record "/$UNROUTED/$PAN" "" 404)]}]},
+   $(access_record "/$UNROUTED/$PAN" "" 404),
+   {"timeUnixNano":"$now","severityNumber":17,"severityText":"error",
+    "body":{"stringValue":"http: TLS handshake error from $CLIENT:51152: EOF, and from [$CLIENT6]:51153"},
+    "attributes":[{"key":"error","value":{"stringValue":"read tcp $CLIENT:51152: connection reset by peer"}},
+     {"key":"entryPointName","value":{"stringValue":"websecure"}}]}]}]},
  {"resource":{"attributes":[
    {"key":"service.name","value":{"stringValue":"finapp-migrator"}},
    {"key":"k8s.node.name","value":{"stringValue":"$NODE"}}]},
@@ -671,7 +676,7 @@ JSON
 }
 
 platform_needles_in() {
-    for needle in "$CLIENT" "$EDGE_HOST" "$BACKEND" "$EDGE_USER" "$UNROUTED" "$QUERY_NEEDLE" "$ARGS" "$NODE" "$PAN" "6234.18"; do
+    for needle in "$CLIENT" "$CLIENT6" "$EDGE_HOST" "$BACKEND" "$EDGE_USER" "$UNROUTED" "$QUERY_NEEDLE" "$ARGS" "$NODE" "$PAN" "6234.18"; do
         if printf '%s' "$1" | grep -qF -- "$needle"; then
             printf '%s\n' "$needle"
         fi
@@ -717,7 +722,7 @@ if platform_sweep "$RUN-collector"; then
         status=1
     else
         missing=""
-        for control in "/v1/merchant/payouts/$PAYMENT" "$ROUTER" "GET 502 $ROUTER" "DownstreamStatus" "finapp-migrator result=MIGRATION_FAILED" "[scrubbed]" "k8s.job.name" "$EDGE_POD"; do
+        for control in "/v1/merchant/payouts/$PAYMENT" "$ROUTER" "GET 502 $ROUTER" "DownstreamStatus" "finapp-migrator result=MIGRATION_FAILED" "[scrubbed]" "k8s.job.name" "$EDGE_POD" "TLS handshake error from [address]"; do
             printf '%s' "$output" | grep -qF -- "$control" || missing="$missing $control"
         done
         if [ -n "$missing" ]; then

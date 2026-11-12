@@ -255,7 +255,11 @@ class TelemetryPipelineManifestsTest {
         }
         assertThat(theApplications).hasSize(2);
         assertThat(statements).containsAll(theApplications);
-        assertThat(statements.stream().filter(statement -> statement.startsWith("replace_all_patterns(attributes, \"value\",")).count()).isEqualTo(2);
+        assertThat(statements.stream().filter(statement -> statement.startsWith("replace_all_patterns(attributes, \"value\", \"(^|")).count())
+                .as("the card number and the amount in every value").isEqualTo(2);
+        // An edge record's text can carry a client's address (its own log's refused handshakes): every address cut, from bodies and values.
+        assertThat(statements.stream().filter(statement -> statement.contains("\"[address]\")")
+                && statement.endsWith("where resource.attributes[\"service.name\"] == \"finapp-edge\"")).count()).isEqualTo(4);
         // The order that makes it a net: the path cut and the body rebuilt before the allow-list, the scrub after it.
         assertThat(statements.indexOf("delete_key(attributes, \"RequestPath\") where attributes[\"RouterName\"] == nil"))
                 .isLessThan(statements.indexOf(theApplications.get(0)));
