@@ -887,7 +887,9 @@ incidents_books() {
     [ -n "${INCIDENT_FILE:-}" ] || incident_open SEV1 "the books disagree with themselves"
     # An unsourced entry: a copy of a transfer's entry under a fresh id and reference, its balances moved with it, so the census holds and only
     # the source join can see it.
-    ENTRY=$(psql_query -c "SELECT e.id FROM ledger.journal_entry e WHERE e.entry_type LIKE '%TRANSFER%' AND e.reverses_entry_id IS NULL ORDER BY e.created_at DESC LIMIT 1" | tr -d '[:space:]')
+    # A transfer's posting: an entry whose every line is on a customer wallet, so its copy moves value between two rehearsal wallets alone.
+    ENTRY=$(psql_query -c "SELECT e.id FROM ledger.journal_entry e WHERE e.entry_type = 'POSTING' AND NOT EXISTS (SELECT 1 FROM ledger.journal_line l
+        JOIN ledger.ledger_account a ON a.id = l.ledger_account_id WHERE l.entry_id = e.id AND a.purpose <> 'CUSTOMER_WALLET') ORDER BY e.created_at DESC LIMIT 1" | tr -d '[:space:]')
     [ -n "$ENTRY" ] || cannot "no transfer entry to copy"
     PLANTED_ENTRY=$(psql_query -c "SELECT uuidv7()" | tr -d '[:space:]')
     psql_query -f - >> "$ART/plants.log" 2>&1 <<SQL || cannot "the unsourced entry could not be planted"
