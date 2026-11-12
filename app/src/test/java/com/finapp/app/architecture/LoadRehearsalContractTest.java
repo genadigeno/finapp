@@ -103,9 +103,13 @@ class LoadRehearsalContractTest {
         return operations;
     }
 
+    /** One field of an operation's line: a quoted string whole, commas included, or a bare value up to its comma. */
     private static String field(String line, String name) {
-        Matcher value = Pattern.compile("\"" + name + "\": \"?([^\",}]*)\"?").matcher(line);
-        return value.find() ? value.group(1) : null;
+        Matcher value = Pattern.compile("\"" + name + "\": (?:\"([^\"]*)\"|([^,}]*))").matcher(line);
+        if (!value.find()) {
+            return null;
+        }
+        return value.group(1) != null ? value.group(1) : value.group(2).trim();
     }
 
     @Test
@@ -179,7 +183,7 @@ class LoadRehearsalContractTest {
             assertThat(name.find()).as("a marked clause names itself: %s", statement).isTrue();
             names.add(name.group(1));
             assertThat(statement).as("'%s' needs no count from the client and reads no server statistic", name.group(1))
-                    .doesNotContain(":expected").doesNotContain(":'").doesNotContain("pg_stat_");
+                    .doesNotContain(":expected").doesNotContainPattern(":'[a-z_]+'").doesNotContain("pg_stat_");
         }
         assertThat(names).as("the marked clauses").contains("trial balance zero per currency", "every entry balances",
                 "one journal entry per posting scope", "one transfer per rehearsal reference", "one capture posting per captured card attempt",

@@ -58,8 +58,11 @@ for (const operation of driven) {
     };
 }
 
-function headers(bearer, key) {
-    const out = { 'Content-Type': 'application/json' };
+function headers(bearer, key, body) {
+    const out = {};
+    if (body !== null) {
+        out['Content-Type'] = 'application/json';
+    }
     if (bearer) {
         out.Authorization = `Bearer ${bearer}`;
     }
@@ -71,7 +74,7 @@ function headers(bearer, key) {
 
 function request(op, method, path, body, bearer, key, name) {
     return [method, BASE + path, body === null ? null : JSON.stringify(body),
-        { headers: headers(bearer, key), tags: { op, name }, timeout: '30s' }];
+        { headers: headers(bearer, key, body), tags: { op, name }, timeout: '30s' }];
 }
 
 // The latency the client saw: waiting for a connection, connecting and the handshake included, not only the server's time.
