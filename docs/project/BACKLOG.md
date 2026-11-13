@@ -30045,7 +30045,7 @@ on none:
     `kustomize` render of the `kind` overlay and stubbed cluster answers (31 checks, 0 failed); the pinned k6 2.3.0's `inspect` of the
     `autoscale` profile; the harness's refusals of a count past the ceiling, a release probe at ten and an experiment written for three.
 
-**P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `PLANNED`
+**P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its one dependency, `P16-TSK-014`, `COMPLETE`)
 - **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection
   limit (item 32 (b)) from measurement. Decide the `api`/`worker` role split that Phase 15's C5 left to this measurement.
 - **Affected components**: `deploy/base/`, the edge's middleware, `application.yaml`'s abuse limits, `CAPACITY_MODEL.md`.
@@ -30329,7 +30329,7 @@ on none:
   run in containers and by the contract test, not on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks
   and tests"): E01 on the final bytes is owed under `POSTPONED_ISSUES.md` PI-025.
 
-**P16-TSK-020 — Instance, pod and node failures at load** — `PLANNED`
+**P16-TSK-020 — Instance, pod and node failures at load** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-019`, both `COMPLETE`)
 - **Objective**: E01–E04 and E25 under the sustained profile at ten replicas.
 - **Affected components**: every in-cluster unit.
 - **Dependencies**: `-014`, `-019`.
@@ -30713,7 +30713,7 @@ on none:
 - **Operational documentation**: the scenarios' findings in the runbook where a person acts.
 - **Risk**: High. **Cx**: XL.
 
-**P16-TSK-028 — Security under scale and failure** — `PLANNED`
+**P16-TSK-028 — Security under scale and failure** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-022`, both `COMPLETE`)
 - **Objective**: `PHASE_16_PLAN.md` §18 executed. Failover, recovery and load bypass no security control.
 - **Affected components**: `identity` (sessions), `platform` (abuse limits, audit), the edge, the restore.
 - **Dependencies**: `-014`, `-022`.
@@ -30731,7 +30731,7 @@ on none:
 - **Operational documentation**: the security notes in the affected runbook sections.
 - **Risk**: Medium. **Cx**: M.
 
-**P16-TSK-029 — SLOs and error budgets validated under load; break-age counts (`THREAT_MODEL.md` §6 item 42 (a))** — `PLANNED`
+**P16-TSK-029 — SLOs and error budgets validated under load; break-age counts (`THREAT_MODEL.md` §6 item 42 (a))** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-003` and `P16-TSK-014`, both `COMPLETE`)
 - **Objective**: `PHASE_16_PLAN.md` §15:
   - every SLO's burn rule fires on a real burn and stays silent at peak;
   - latency SLIs proposed where §4.3 adopted a target;
