@@ -29496,7 +29496,7 @@ on none:
   decide by measurement (an ADR first where it changes the ledger's reads, `PHASE_16_PLAN.md` §5.4); the hot merchant also serialises
   its `ledger.account_balance` upserts (mean 14 ms in that run).
 
-**P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
+**P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `IN_PROGRESS` (2026-11-13, designed on branch `P16-TSK-009` from master `1fbdf71c`, wave D) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)" until the design)*
 - **Objective**: make ten replicas possible without breaking the connection budget, decided by measurement, and give the HPA a
   metric to act on. Today `maxReplicas` 7 + 2 × `maxSurge` 1 + 1 = 10 = `FINAPP_DB_INSTANCES`. Ten replicas need 13 instances and
   104 connections, against 88 usable. The `kind` rehearsal installs no metrics source, so the HPA has never scaled (`P15-REM-007`,
