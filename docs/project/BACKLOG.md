@@ -30769,7 +30769,7 @@ on none:
 - **Operational documentation**: the security notes in the affected runbook sections.
 - **Risk**: Medium. **Cx**: M.
 
-**P16-TSK-029 — SLOs and error budgets validated under load; break-age counts (`THREAT_MODEL.md` §6 item 42 (a))** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-003` and `P16-TSK-014`, both `COMPLETE`)
+**P16-TSK-029 — SLOs and error budgets validated under load; break-age counts (`THREAT_MODEL.md` §6 item 42 (a))** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-029` from master `fb0e014b`, fast-forwarded to master `2e34dd66` before its first change, wave F; no migration; ADR-0148; **built and contract-tested, every cluster run owed under `POSTPONED_ISSUES.md` PI-025**; one new owner item, `THREAT_MODEL.md` §6 item 70; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-003` and `P16-TSK-014`, both `COMPLETE`)" until its gate)*
 - **Objective**: `PHASE_16_PLAN.md` §15:
   - every SLO's burn rule fires on a real burn and stays silent at peak;
   - latency SLIs proposed where §4.3 adopted a target;
@@ -30803,6 +30803,38 @@ on none:
   rules - requests, errors, error ratio and the burn rate beside the target - and at the sustained profile that reading is
   `RESILIENCE_EXPERIMENTS.md` E74, owed under PI-025 with `P16-TSK-007`'s E29. Judge each objective against it, or recalibrate it with
   its reason.
+- **As built (2026-11-13, gate `COMPLETE`; ADR-0148 `Proposed`; no migration; built and contract-tested, every cluster run owed under
+  `POSTPONED_ISSUES.md` PI-025 by the owner's word of 2026-11-13).** **Item 42 (a)**, decided (i): reconciliation's `AgedReadings` and
+  `JdbcAgedReadings` (one `GROUP BY` with a cutoff per severity over the open breaks' `(severity, raised_at)` index, one count over the
+  suspense items holding a remainder) and `AgedCountMetrics`, `finapp.reconciliation.break.aged{severity}` and
+  `finapp.reconciliation.suspense.aged`, counting what is past each age rule's own bound from the clock the age gauges use, so a count of
+  one is exactly that rule holding (`AgedCountMetricsTest` reads the thresholds from the rule file); beside each of the five age rules a
+  rise rule (`BreakNewlyAgedCritical`, `-High`, `-Medium`, `-Low`, `SuspenseItemNewlyAged`) - five where the option said two, because an
+  alert's severity and wait are its rule's - each firing when its count rises above its least of the last two hours while one stood,
+  with promtool cases for a rise, a resolution and a new aging, a fall, a standing count, the first to age and an unreadable fleet;
+  `ReconciliationGaugesUnreadable` reads both; `kind`'s copy; runbook §11.11 step 4 and §11.23. **The objectives**: every load run records
+  each objective of `SLOS.md` §2 read from the committed rules (`load/slo-objectives.tsv`, beside `load/slo-availability.tsv`), MET only at
+  a burn rate of at most 1 with neither pair fired, judged under `REHEARSAL_LOAD_OBJECTIVES=1`: **E84** (E74's sustained run, judged),
+  **E85** (a real burn: E51's slowed database until a fast pair pages, judged from Prometheus's own history - every pair that held for its
+  wait fired, the page routed, the sheds the fleet's `503`s, the fast pair clearing), **E86** (30% of card authorizations declined by the
+  simulator's new decline control; a declined checkout read through its payer's payment, since a session has no failure state; each
+  refusal a decline the provider gave, the payment objective's errors within what the client saw); E17 records the payment objective's
+  pairs, never judged. `ObjectivesRehearsalContractTest`; runbook §11.63. **Each criterion:** every SLO's burn rule firing on a real burn
+  and silent at peak - built, runs owed (E85, E84); E85 judges every objective its fault burns, the time-based pairs' real burn resting
+  on E09's freshness reading, and the callbacks and the operator surface, never shed, may burn in it or not; latency SLIs where §4.3
+  adopted a target - none of §4.3's targets is adopted, so no bucket was added and they are proposed (`SLOS.md` §7, owner item 70);
+  settlement ingestion and reconciliation completion proposed (§7); business outcomes spending no budget - the decline-wave promtool case
+  holds the rule (a refusal answering `4xx`, probe P2), E86 built, run owed; item 42 (a) built with its promtool cases - met; each SLO
+  validated or recalibrated with its reason - built, runs owed: none is either until E84 and E86 run, and `SLOS.md` §6 says why each is
+  kept meanwhile (E30 carried 0.39 of the target's peak at three replicas, so E84 at the peak on the reference machine is expected to
+  name that machine's limit, which recalibrates nothing). **Found**: a provider's outage spends no budget by design (the adapter reads a
+  `503` or silence as indeterminate and the payment rests `UNKNOWN` behind a success status), so §15's "a real burn during E17" cannot
+  happen - erratum in `PHASE_16_PLAN.md` §15; balance reads carry no objective. **The routed notes**: `P16-TSK-006`'s - the edge's `429`s
+  and its own `5xx` never reach the application's request timer, so no objective counts them (`EdgeErrorRatioHigh` does, `SLOS.md` §6),
+  and the sign-in, read and merchant `5xx` of the stalled development runs are the machine's limit, kept, not recalibrated;
+  `P16-TSK-023`'s - E84 judges E74's reading. **Not run**: `AlertRulesResolveTest` (database tier) over the two new series, owed with
+  PI-023's kind; `JdbcAgedReadings`' two statements were run once in a throwaway PostgreSQL 18.6 container against the two tables
+  reduced to the columns they read, the binds typed as the driver sends them, the index used.
 - **Risk**: Low. **Cx**: M.
 
 **P16-TSK-030 — The service-extraction evaluation (ADR-0001's revisit)** — `PLANNED`
