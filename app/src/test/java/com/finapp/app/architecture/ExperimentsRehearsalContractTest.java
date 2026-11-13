@@ -388,6 +388,13 @@ class ExperimentsRehearsalContractTest {
                 .contains("\"DownstreamStatus\"").contains("\"Duration\"").contains("\"StartUTC\"").contains("awk -F'\\t' '$2 >= 500'")
                 .contains("window_end=$((E01_KILLED_AT + E01_ROUTED + 5))").contains("[ \"$failed_outside\" = 0 ] || fail")
                 .contains("[ \"$served\" -ge 10 ] || fail").contains("[ \"$(workload_unresolved e01)\" = 0 ] || fail").contains("assert_flows_ran e01");
+        assertThat(recover).as("failed requests no more than those in flight on it: each of the workload's failed requests, counted once by its key,"
+                        + " one of the edge's failures in the window")
+                .contains("keys[$1 \"|\" $2] = 1").contains("[ \"$failed_requests\" -le \"$failed_inside\" ]");
+        String kill = function("experiments_kill_jvm");
+        assertThat(kill.indexOf("KILLED_EPOCH=$(date +%s)")).as("the kill's time taken at the signal, after every lookup")
+                .isGreaterThan(kill.indexOf("crictl inspect")).isLessThan(kill.indexOf("kill -9 \"$pid\""));
+        assertThat(fault).contains("E01_KILLED_AT=$KILLED_EPOCH");
         assertThat(function(harness, "census")).as("the census counts E01's payout").contains("+ ${EXPERIMENTS_PAYOUTS:-0} ))");
         assertThat(function("e01_payout")).as("the merchant's key on stdin, never a command line").contains("IFS= read -r bearer")
                 .contains("printf '%s\\n' \"$E01_MERCHANT\" | kube -n finapp-edge exec -i np-edge");

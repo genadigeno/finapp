@@ -622,6 +622,8 @@ experiments_kill_jvm() {
         || fail "the safety boundary refused to kill on $node: it is not a node of $CLUSTER"
     pid=$(dock exec "$node" crictl inspect --output go-template --template '{{.info.pid}}' "$container" 2>/dev/null)
     case $pid in '' | *[!0-9]*) cannot "the application process of $1 could not be found on $node" ;; esac
+    # The kill's time: taken as the signal is sent, after every lookup, so that what is measured from it starts at the signal.
+    KILLED_EPOCH=$(date +%s)
     dock exec "$node" kill -9 "$pid" || cannot "SIGKILL could not be sent to $1's process on $node"
     printf '%s\tkill -9\t%s on %s, pid %s\n' "$(date -u +%H:%M:%S)" "$1" "$node" "$pid" >> "$EXP_ART/faults.log"
     KILLED="$node $container $pid"
@@ -764,7 +766,7 @@ experiments_scope() {
         fi
     done
     [ "$PROBE" != guard-off ] || fail "PROBE guard-off: no plant was refused, and the run went on"
-    pass "the experiments ran behind $EXPERIMENTS_GUARDS passes of the safety boundary, one before every fault"
+    pass "the experiments ran behind $EXPERIMENTS_GUARDS passes of the whole safety boundary - at each steady state and before each fault put on - and its context read again before each kill"
 }
 
 experiment_run() {
@@ -928,8 +930,8 @@ E01_fault() {
     E01_ENDPOINTS=$!
     BACKGROUND="$BACKGROUND $E01_ENDPOINTS"
     sleep 1
-    E01_KILLED_AT=$(date +%s)
     experiments_kill_jvm "$E01_VICTIM"
+    E01_KILLED_AT=$KILLED_EPOCH
     experiments_record fault "kill -9 of $E01_VICTIM's JVM ($KILLED) at $(date -u -d "@$E01_KILLED_AT" +%H:%M:%SZ), its payout's claim IN_PROGRESS and held at the provider"
     log "E01: $E01_VICTIM's JVM killed with SIGKILL ($KILLED), its payout under a claim IN_PROGRESS"
 }
@@ -1040,9 +1042,16 @@ E01_recover() {
     failed_outside=$(awk -F'\t' -v k="$((E01_KILLED_AT - 1))" -v e="$window_end" '$1 < k || $1 > e' "$EXP_DIR/edge-failed.tsv" | grep -c . || true)
     served=$(awk -F'\t' '$2 < 500 && $3 != 0' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
     experiments_record "failed at the edge" "$failed_inside failed answers ending in the window the killed replica could still be picked in (a second before the kill to $((E01_ROUTED + 5)) s after it), $failed_outside outside it; $served served, of $answers answers since the minute before the kill"
-    experiments_record "in flight and failed" "the payout held on the killed replica ($(grep -h '^curl=' "$EXP_DIR/payout-first.txt")), and $failed_inside at the edge; the workload's attempts failed $(workload_failed e01), none unresolved"
+    # The workload's requests that failed, each counted once however often its key was tried again (a retry of a request whose claim the
+    # dead replica held is answered 409 until its lease lapses): a key the client minted is one request; a register, a sign-in or a checkout
+    # session's attempt is one each. Each must be one of the edge's failures in the window.
+    failed_requests=$(awk -F'\t' '$NF ~ /^ATTEMPT-FAILED/ { if ($2 ~ /^wl-/) keys[$1 "|" $2] = 1; else n++ } END { for (k in keys) n++; print n + 0 }' "$CLIENT/workload-e01.tsv")
+    retried_in_progress=$(awk -F'\t' '$NF ~ /^ATTEMPT-FAILED .* 409: .*IdempotencyInProgress/' "$CLIENT/workload-e01.tsv" | grep -c . || true)
+    experiments_record "in flight and failed" "the payout held on the killed replica ($(grep -h '^curl=' "$EXP_DIR/payout-first.txt")); $failed_requests of the workload's requests, $failed_inside failed at the edge in the window; $(workload_failed e01) failed attempts, $retried_in_progress of them a retry answered 409 while the dead replica's claim held; none unresolved"
     # The control: the lines read, answers served in them, so a failed one would have been seen.
     [ "$served" -ge 10 ] || fail "E01: the edge's lines held $served served answers since the minute before the kill, too few to show the lines were read: see experiments/E01/edge-answers.tsv"
     [ "$failed_outside" = 0 ] || fail "E01: the edge answered $failed_outside requests with a failure outside the window the killed replica could be picked in: another replica failed them"
-    pass "E01: the failed requests were those on the killed replica - its held payout and $failed_inside at the edge in its window, none outside it; $served answers served; $(workload_failed e01) workload attempts failed, none unresolved"
+    [ "$failed_requests" -le "$failed_inside" ] \
+        || fail "E01: $failed_requests of the workload's requests failed where the edge failed $failed_inside in the killed replica's window: a request failed that was not on it"
+    pass "E01: the failed requests were those on the killed replica - its held payout and $failed_requests of the workload's, each a failure at the edge in its window, none outside it; $served answers served; none unresolved"
 }
