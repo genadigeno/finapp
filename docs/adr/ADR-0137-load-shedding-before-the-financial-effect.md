@@ -90,7 +90,9 @@ thread behind seven connections; the checkout's token cannot be lost to a failed
 
 Negative: a balance read or a sign-in can be refused under load; the thresholds come from the pool's arithmetic, not from a
 measurement, until PI-025's runs (E50–E52) calibrate them; requests the door admits in one instant can each add a waiter, so the
-queue can pass its threshold by those.
+queue can pass its threshold by those. The deadline is measured on the instance's wall clock (production code reads no monotonic
+clock, `NoAmbientTimeRulesTest`), so a step of that clock forward sheds the commands in flight across it once and a step back admits
+them: a retryable refusal, or an admission the claim still arbitrates, never an effect.
 
 Operational impact: `OPERATIONS_RUNBOOK.md` §11.52 (a shedding platform); five configuration keys
 (`CONFIGURATION_REGISTER.md`); the meter on each replica.
