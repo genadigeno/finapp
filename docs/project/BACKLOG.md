@@ -29744,7 +29744,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.30 and §11.14.
 - **Risk**: Medium. **Cx**: M.
 
-**P16-TSK-016 — Load shedding before the financial effect, and bulkheads** — `IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-016` from master `1fbdf71c`; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)" until the design)
+**P16-TSK-016 — Load shedding before the financial effect, and bulkheads** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-016` from master `1fbdf71c`, wave D; no migration; ADR-0137; its runs owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)" until the gate)
 - **Objective**: when the platform cannot finish a money-moving command in time, refuse it with `503` and `Retry-After` before its
   idempotency claim and before any financial effect, never after (`DELIVERY_PLAN.md` §Phase 16 §7). Give each class of work that can
   starve another its own bound.
@@ -29785,6 +29785,41 @@ on none:
   sampler, which never passes blind, stopped the run (E30, sample 35, 0.49 of the target's peak). A per-class bound that keeps the
   correctness monitors reading under load, and a create that cannot answer `500` after its effect, are this task's (with `P16-TSK-009`
   for the pool's size).
+- **As built** (2026-11-13; designed, built and gated on branch `P16-TSK-016` from master `1fbdf71c`; no migration; ADR-0137,
+  `Proposed`; `OPERATIONS_RUNBOOK.md` §11.52): **The door.** `ShedAtTheDoor`, the first of the application's interceptors - ahead
+  of the idempotency check, the session's and the merchant key's authentication and the per-source count, each of which may borrow a
+  writer connection - refuses with `503 api.Overloaded` (a new platform code) and a jittered `Retry-After` (1 s plus 0 to 2) while the
+  instance's writer pool already has `finapp.shedding.pool-waiters` (7) threads waiting (every public request), or while its
+  `finapp.shedding.command-permits` (5, refused at start unless fewer than the pool's connections) are all held (commands: every method
+  but `GET`, `HEAD`, `OPTIONS`, `TRACE`); never queued. `ShedOnTheDeadline`, after both authentications and before the count, sheds a
+  command with less than one pool wait (read from the pool) left of `finapp.shedding.deadline` (10 s). Every shed is decided in
+  `preHandle`, so a shed request never entered its handler: no claim, no row, no posting, and its retry under the same key is a first
+  attempt. The pool's queue, size and wait are HikariCP's own (`HikariPoolQueue`, refused at start for any other pool). The operator
+  surface (the edges' marker) and the provider callbacks (`@NotShed`, each with its reason) are not shed. `finapp.shedding.requests
+  {type,outcome}` is the record; a shed is a `5xx` on its route, so the availability objectives' burn alerts cover sustained shedding
+  and no alert was added. **The classes** the plan names: money-moving commands (the permits, the deadline), operator reports (the
+  operational report door's two permits and report generation's own pool, unchanged), provider inquiries (`CallbackInquiryBulkhead`,
+  unchanged); reads are bounded by the pool's queue. **Routed (1)**: `CheckoutService.create` opens and reads back the session in one
+  transaction, so it can no longer answer `500` after its session committed. **Routed (2)**: the census and every schedule now wait
+  behind a request queue the door holds near its threshold rather than behind every request thread; whether that keeps the census
+  reading through the stress profile's break is E52's run. **Contract**: `ERROR_CONTRACT.md` §3 and §3a, `API_CONVENTIONS.md` §5a,
+  `docs/api/openapi.json`; `DISTRIBUTED_EXECUTION.md` §3 row; five rows of `CONFIGURATION_REGISTER.md`. **The harness**: the spike
+  profile (`load/spike.json`: three spikes of ten times the peak), `scenarios.js` honouring a shed answer's `Retry-After`, counting shed
+  answers per operation and sending one keyed command in twenty once (`SHED-ONCE`), `load.sh`'s `load-shed` step proving every shed-once
+  key left no claim and no transfer and recording the shed rate and each spike's recovery; E51 in `experiments.sh` (a latency toxic on
+  the database hop). **Tests**: `LoadSheddingTest`, `ShedBeforeTheClaimTest` (the real executor over an in-memory claim store behind
+  the real interceptors and error handler), `CheckoutCreateIsOneTransactionTest`, `SheddingIsWiredTest` (the served routes), and members
+  of `LoadRehearsalContractTest` and `ExperimentsRehearsalContractTest`; the entry's probe and seven more performed
+  (`MUTATION_TESTING.md` §2). **Owed under `POSTPONED_ISSUES.md` PI-025, not run** (the owner's word of 2026-11-13): **E50** (the spike
+  profile at three replicas: zero claims, rows or postings for shed requests, the shed rate and its recovery), **E51** (the slowed
+  database at three replicas) and **E52** (the stress profile at three replicas, the census reading past E30's stop and no checkout
+  abandoned). So the acceptance criteria "zero claims, rows or postings for shed requests across the spike profile" and "the shed rate
+  and its recovery measured" are **built, contract-tested, run owed (PI-025)**; "the contract updated" is met. The spike profile's six
+  scenarios were read by the pinned k6's `inspect` in a container (each a ramping-arrival-rate executor). **Corrected by the design**:
+  the door runs before authentication, not after it (the lookups are the first borrows, so a door behind them would sit behind the
+  queue it bounds; it only refuses); reads are shed by the pool's queue too (they starved the census in E30); no reserved connection for
+  the monitors (it would move the connection budget, `P16-TSK-009`'s; ADR-0137's follow-up if E52 fails); the burst profile, named
+  also by `-008`, `-013` and `-015`, is not built here (the shed census runs in every load profile).
 
 **P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-017` from master `c9c07831`, wave B beside `-006`; payments `V040`, merchant `V016`, reconciliation `V025`, no ADR; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, ...)" until the gate)
 - **Objective**: as decided 2026-11-12. A sweep's failed tick is metered and paged (item 42 (i) (i)), and each listing skips and
