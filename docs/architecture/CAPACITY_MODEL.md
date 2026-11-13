@@ -219,7 +219,33 @@ database time are what `PHASE_16_PLAN.md` §4.3 and §5.2 say is measured, never
 | Ledger journal entries | — | — | — | — | — | — | — | — | — | — | — | — |
 
 **The first limit of the stress profile** (`PHASE_16_PLAN.md` §5.4, read in the fixed order generator, edge, application CPU,
-threads, pool, database CPU, locks, I/O, broker): **—**, left for `P16-TSK-007`, with its evidence.
+threads, pool, database CPU, locks, I/O, broker): **the database's CPU**, at three replicas. E30's run (2026-11-13 09:14–09:32 UTC,
+commit `89b8fc60`, artefacts `build/rehearsal/experiments/E30/r3`: `load/k6/stages.tsv`, `load/stages-resources.tsv`,
+`load/pg-statements.tsv`, `load/fold-explain.txt`) carried its first three steps within every latency objective with no `5xx`, and broke
+at its fourth, 0.49 of the target's peak as written (0.53 in the host's seconds): each operation's p99 between 7.9 and 22.0 s, `5xx`
+on every one (611 of the checkouts' 2,990 attempts), the edge's in-flight bound answering `429`. Its 35th sample could not read a
+correctness gauge and stopped the load there, the stage's 277 s complete. Read in the order, steps 1 to 4:
+
+| Resource | Step 1 | Step 2 | Step 3 | Step 4 | Reading |
+|---|---|---|---|---|---|
+| The generator | 0 dropped | 0 dropped | 0 dropped | 0 dropped | Its busiest container at 31% of its one core; the callback senders at most 6% |
+| The edge | 0.13 cores | 0.15 | 0.19 | 0.26 | Never held by its limit; its `429`s at step 4 are requests piling up behind slow replicas (the per-source in-flight bound) |
+| The replicas' CPU | 0.52 cores of 6 | 0.50 | 0.52 | 0.60 | Three replicas at 2 cores each, held back in under 0.1% of their CPU periods |
+| Their threads | 325 live | 324 | 326 | 559 (656 at most) | Climbing only at step 4, requests waiting; busy request threads are not exported (`tomcat.threads.busy` is absent) |
+| The pools | 2.7 active (6 at most) | 3.3 (8) | 5.0 (9) | 16.3 (21: all) | At step 4 every connection held, up to 313 waiting, the wait at its 5 s bound: held by statements the database ran slowly |
+| **The database's CPU** | 0.23 cores of 1 | 0.35 | 0.60 | **1.10** | Held back by its limit in 1%, 5%, 34% and **100%** of its CPU periods; its statements' time 0.08, 0.20, 0.70 and 8.4 s a second |
+| Its locks | 0 waiting | 0 | 0 | 1.2 (4 at most) | No deadlock |
+| Its I/O | 0.4 waiting on I/O, 0.3 on WAL | 0.3, 0 | 0.4, 0.3 | 1.0, 8.0 | The WAL waits at step 4 come with a CPU throttled in every period: the WAL's own writes wait for the CPU |
+| The broker | 0.08 cores | 0.08 | 0.07 | 0.04 | Events published within 1 to 4 s of their write at steps 1–3, then 88 to 147 s once the database stalled |
+
+Where the database's CPU went (`pg-statements.tsv`, one statement by `queryid`): the merchant API's payable read, which folds the
+merchant payable account's whole history on every call (`MerchantPayable` through `JdbcPositionBreakdown`; 4,039 lines and 41.9 ms
+idle after the run, `fold-explain.txt`), took 39%, 69%, 86% and 81% of all statement time at steps 1–4, its mean 20, 74, 255 and
+2,658 ms. The rig has one merchant receiving every checkout, where W4 spreads them over 2,000, so the rig magnifies it; the read still
+grows with the account's history on any merchant, which is §5.3's whole-history read, routed to `P16-TSK-008`. The run also found two
+defects, routed to `P16-TSK-016`: twelve checkouts at step 4 whose creating answer was a `500` after their session committed
+(`CheckoutService.create` reads the session back in a second transaction, which the pool's 5 s bound refused), and the source-join
+census starved of the pool, which is what stopped the sampler.
 
 **The ratio of the production target to the engineering test workload**: **—**, left for `P16-TSK-007`.
 

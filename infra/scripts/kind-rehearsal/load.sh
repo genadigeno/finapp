@@ -14,7 +14,8 @@
 #     gap over 45 s, and a sample that fails or cannot read stops the load and fails the run - it never passes blind;
 #   - every money movement was resolved by its key, the same-key retries (one iteration in twenty, half before and half after the first
 #     answer) answered alike, every operation's errors were within its objective, and every ready replica served each money-moving route;
-#   - the provider's callbacks (two per captured card payment) and one settlement file at mid-run were delivered and taken;
+#   - the provider's callbacks (two per captured card payment) and one settlement file (at mid-run, or at the first capture after it) were
+#     delivered and taken;
 #   - after the load, the full census held with the generator's counts, and a last sample passed;
 #   - the platform's own signals (telemetry.sh's platform_signals_plant and platform_signals, THREAT_MODEL.md section 6 item 47 (c)): a
 #     migrator Job planted to fail before the load raised MigratorJobFailed and, its seventeen minutes passing under the load,
@@ -394,6 +395,12 @@ SQL
     log "PROBE unbalanced-entry: a journal entry of one debit line, one cent on a customer wallet, planted by the test-only superuser"
 }
 
+# Whether the load has captured a card payment yet.
+load_captured() {
+    [ "$(psql_query -c "SELECT count(*) > 0 FROM payments.payment_attempt WHERE status = 'CAPTURED' AND rail = 'card'
+        AND created_at >= to_timestamp($LOAD_FROM)" 2>/dev/null | tr -d '[:space:]')" = t ]
+}
+
 # One PSP settlement file of the load's captures so far, uploaded and attested through the operator edge by the two persons the door
 # needs, as telemetry_trace delivers one: gross the captured amount, the PSP's fee of rule set v1 (round_half_up(1.5%) + 0.25), net the rest.
 load_settlement() {
@@ -429,7 +436,7 @@ SQL
     client settle-file "$day" load-settlement.csv >> "$LOAD_ART/settlement.log" 2>&1 || fail "settlement: the file could not be delivered: see load/settlement.log"
     LOAD_SETTLEMENT_FILE=$(sed -n 's/^settlement file=\([^ ]*\) .*/\1/p' "$LOAD_ART/settlement.log" | tail -1)
     [ -n "$LOAD_SETTLEMENT_FILE" ] || fail "settlement: no file id came back: see load/settlement.log"
-    log "settlement: $LOAD_SETTLEMENT_LINES captures in one PSP file, uploaded and attested at mid-run ($LOAD_SETTLEMENT_LEFT_OUT left out, their references shaped like a card number)"
+    log "settlement: $LOAD_SETTLEMENT_LINES captures in one PSP file, uploaded and attested during the load ($LOAD_SETTLEMENT_LEFT_OUT left out, their references shaped like a card number)"
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -603,13 +610,15 @@ load_run() {
             load_plant_unbalanced
             planted=1
         fi
-        if [ -z "$settled" ] && [ "$elapsed" -ge $((secs / 2)) ]; then
+        # At mid-run, or at the load's first card capture after it: the isolation profile captures nothing before its fifth stage.
+        if [ -z "$settled" ] && [ "$elapsed" -ge $((secs / 2)) ] && load_captured; then
             load_settlement
             settled=1
         fi
         sleep 5
     done
     LOAD_ENDED=$(date +%s)
+    [ -n "$settled" ] || fail "settlement: the load captured no card payment to settle"
     load_clock end
     [ "$PROBE" != slow-statement ] || load_restore_slow_statement
     k6_status=$(load_generators status)
