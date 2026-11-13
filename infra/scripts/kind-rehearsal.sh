@@ -901,8 +901,6 @@ YAML
 fi
 # The experiments scope's own copy (P16-TSK-019): the base's zone rule, the standby's hba line, the quota grown by the standby.
 [ "$SCOPE" != experiments ] || experiments_render
-# The load scope's own copy (P16-TSK-015): only the probe abuse-below-need (E76) changes it, the sign-in limit in the run's ConfigMap.
-[ "$SCOPE" != load ] || load_render
 # Everything but what a release orders: the Deployment, its autoscaler and the Job.
 for file in "$A"/*.yaml; do
     case $(basename "$file") in

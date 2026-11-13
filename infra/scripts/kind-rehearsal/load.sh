@@ -127,8 +127,8 @@
 #                       target shows nothing); the count never asked above the floor through the load (a burst the standing fleet carries
 #                       never scales it: the scale-up window is twice the burst); and no sign-in answered 429 (no per-source limit, the
 #                       edge's or the application's, refused legitimate traffic). Its probe, abuse-below-need (E76), sets the run's own
-#                       copy's sign-in limit to the identity lockout's threshold, below one person's need (load_render, before anything is
-#                       applied): the door assertion must go red, the refusals counted.
+#                       Deployment's sign-in limit to the identity lockout's threshold, below one person's need, after the setup and before
+#                       the load (load_plant_abuse_below_need): the door assertion must go red, the refusals counted.
 #   "background": true  (background.json, E77) the engineering workload (E30's step 3) in three stages at one count; at the second's start
 #                       the run's own published events of every type a catalogued handler names are replayed through the audited operator
 #                       door in windows under its bound (load_background_tick, E49's form), so every consumer group and the relay work while
@@ -607,19 +607,21 @@ load_autoscale_judge() {
     [ "$PROBE" != scale-down-unbounded ] || fail "PROBE scale-down-unbounded: every sample stayed within the formula at its count, so the assertion cannot fail"
 }
 
-# load_render: the load scope's own change to the run's rendered copy, before anything is applied (P16-TSK-015). Only the probe
-# abuse-below-need (E76) changes anything: the sign-in limit per source set to the identity lockout's threshold, read from the code, below one
-# person's need of that many failures and a success, in the run's own ConfigMap alone; never in an overlay.
-load_render() {
-    [ "$PROBE" = abuse-below-need ] || return 0
+# PROBE abuse-below-need (P16-TSK-015, E76): the sign-in limit per source set to the identity lockout's threshold, read from the code, below
+# one person's need of that many failures and a success. Planted after the load's setup and before the load, never at the render: the setup's
+# one client signs in every customer of the run from one address, and a limit lowered there would fail the setup, not the door assertion. An
+# environment variable on the run's own Deployment, which takes precedence over its ConfigMap, rolled one pod at a time as every change rolls;
+# the autoscaled run then waits for its floor again as the load starts (load_autoscale_start). Never an overlay.
+load_plant_abuse_below_need() {
     threshold=$(sed -n 's/.*return new LockoutPolicy(\([0-9]*\), .*/\1/p' "$ROOT/identity/src/main/java/com/finapp/identity/LockoutPolicy.java" | head -1)
     case $threshold in '' | *[!0-9]*) cannot "PROBE abuse-below-need: the lockout's threshold could not be read from LockoutPolicy.java" ;; esac
-    config=$(ls "$A"/ConfigMap.finapp-app-config-*.yaml 2>/dev/null | head -1)
-    [ -n "$config" ] || cannot "PROBE abuse-below-need: the application's rendered ConfigMap could not be found"
-    sed -i "s/^  FINAPP_ABUSE_SIGN_IN_LIMIT: \"[0-9]*\"$/  FINAPP_ABUSE_SIGN_IN_LIMIT: \"$threshold\"/" "$config"
-    grep -q "^  FINAPP_ABUSE_SIGN_IN_LIMIT: \"$threshold\"$" "$config" \
-        || cannot "PROBE abuse-below-need: the sign-in limit could not be set in the run's copy"
-    log "PROBE abuse-below-need: the sign-in limit per source set to $threshold, the lockout's threshold, below one person's need of $((threshold + 1)), in the run's own ConfigMap"
+    kube -n finapp set env deployment/finapp-app "FINAPP_ABUSE_SIGN_IN_LIMIT=$threshold" >> "$LOAD_ART/plants.log" 2>&1 \
+        || cannot "PROBE abuse-below-need: the sign-in limit could not be set on the run's Deployment: see load/plants.log"
+    kube -n finapp rollout status deployment/finapp-app --timeout="${ROLLOUT_TIMEOUT}s" >> "$LOAD_ART/plants.log" 2>&1 \
+        || cannot "PROBE abuse-below-need: the fleet did not roll onto the lowered limit: see load/plants.log"
+    set_to=$(kube -n finapp get deployment finapp-app -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="FINAPP_ABUSE_SIGN_IN_LIMIT")].value}' 2>/dev/null || true)
+    [ "$set_to" = "$threshold" ] || cannot "PROBE abuse-below-need: the run's Deployment holds '$set_to', not the lockout's threshold of $threshold"
+    log "PROBE abuse-below-need: the sign-in limit per source set to $threshold, the lockout's threshold, below one person's need of $((threshold + 1)), on the run's own Deployment"
 }
 
 # load_burst_judge: after the census, the burst profile's autoscaler (E75) judged as a fleet that must not have moved, and its doors:
@@ -687,8 +689,11 @@ SQL
         LOAD_REPLAY_DONE=$(date +%s)
         return 0
     fi
+    # Each order waits for a fresh second factor (one a 30-s step), so the orders take minutes: a sample that failed meanwhile ends them,
+    # and the loop then stops the load.
     while IFS='|' read -r type from to events; do
         [ -n "$type" ] || continue
+        [ ! -s "$WORK/load-sample-failed" ] || break
         answer=$(client replay "$type" "$from" "$to" "E77: the run's own events replayed under load, the background roles at work" 2>> "$LOAD_ART/replay.log" \
             | grep '^replay ' | tail -1)
         got=$(printf '%s' "$answer" | sed -n 's/.* requeued=\([0-9]*\) .*/\1/p')
@@ -1440,6 +1445,8 @@ load_run() {
     [ "$LOAD_SOAK" != true ] || load_soak_start
     # The event pipeline's runs (P16-TSK-013, kind-rehearsal/pipeline.sh: E47, E48): a scale's first count, the offsets, the sampler.
     pipeline_start
+    # P16-TSK-015's probe (E76), after the setup and before the fleet is settled at its floor for the load.
+    [ "$PROBE" != abuse-below-need ] || load_plant_abuse_below_need
     # An autoscaled run (P16-TSK-014, E70): the probe's plant, and the autoscaler's own reading from the load's start.
     load_autoscale_start
     LOAD_FROM=$(db_epoch)

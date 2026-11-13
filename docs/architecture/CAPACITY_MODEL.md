@@ -607,7 +607,8 @@ Every one built and owed under `POSTPONED_ISSUES.md` PI-025 (`RESILIENCE_EXPERIM
   their target peak in every burst. *Derived*: the bursts take three pods to about 114% of their request (1.72 cores), above the target, and
   the count must not move; no door may refuse a request; the census green at every sample; latency and errors per stage recorded for
   `P16-TSK-029`'s judgement.
-- **E76**, the entry's probe: E75 with the sign-in limit set to the lockout's threshold, below one person's need, in the run's copy: the
+- **E76**, the entry's probe: E75 with the sign-in limit set to the lockout's threshold, below one person's need, on the run's own Deployment
+  after its setup: the
   refusals of legitimate sign-ins counted and shown, and the run red.
 - **E77**, the role split's reading (`REHEARSAL_LOAD_PROFILE=background`, three replicas): the engineering workload held 35 minutes, the
   run's day replayed through the audited operator door at the second stage's start, so every consumer and the relay work while the rate holds;

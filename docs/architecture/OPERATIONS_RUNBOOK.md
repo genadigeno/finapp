@@ -6256,9 +6256,11 @@ and each gap leaves them near 12%. After the census, `load_burst_judge` reads `l
 or within 90 s after it (else the run could not measure, exit 2), then the count asked and the autoscaler's desired count never above three
 (a pod added for a burst fails the run), then no sign-in answered 429 by any per-source limit (`load/k6/statuses.tsv`). Each burst's readings
 are in `load/bursts.tsv`; latency, errors by status and shed answers per stage are recorded for `P16-TSK-029`'s judgement, never a verdict here.
-The probe, `abuse-below-need`, sets the run's own sign-in limit to the lockout's threshold, read from `LockoutPolicy.java`, in the run's
-ConfigMap before anything is applied (`load_render`): the doors refuse legitimate sign-ins, and the run must go red at the door assertion with
-the refusals counted.
+The probe, `abuse-below-need`, sets the run's own sign-in limit to the lockout's threshold, read from `LockoutPolicy.java`, as an
+environment variable on the run's Deployment after the load's setup and before the load (`load_plant_abuse_below_need`, one rolling update):
+never at the render, since the setup's one client signs in every customer of the run from one address and a lowered limit there would fail
+the setup rather than the doors. The doors then refuse legitimate sign-ins, and the run must go red at the door assertion with the refusals
+counted.
 
 **The role split's reading** (E77):
 

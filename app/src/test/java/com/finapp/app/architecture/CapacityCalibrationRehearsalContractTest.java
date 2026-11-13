@@ -166,25 +166,27 @@ class CapacityCalibrationRehearsalContractTest {
     }
 
     @Test
-    @DisplayName("the probe sets the run's own sign-in limit to the lockout's threshold, below one person's need, before anything is applied,"
-            + " and never an overlay")
+    @DisplayName("the probe sets the run's own sign-in limit to the lockout's threshold, below one person's need, after the setup that signs in"
+            + " every customer from one address and before the load, and never an overlay")
     void theProbeLowersTheRunsOwnLimitBelowOnePerson() {
-        String render = function(load, "load_render");
-        assertThat(render).as("only under the probe")
-                .startsWith("\n    [ \"$PROBE\" = abuse-below-need ] || return 0\n")
+        String plant = function(load, "load_plant_abuse_below_need");
+        assertThat(plant).as("the code's threshold, set on the run's own Deployment, rolled, and read back")
                 .contains("\"$ROOT/identity/src/main/java/com/finapp/identity/LockoutPolicy.java\"")
-                .contains("sed -i \"s/^  FINAPP_ABUSE_SIGN_IN_LIMIT: \\\"[0-9]*\\\"$/  FINAPP_ABUSE_SIGN_IN_LIMIT: \\\"$threshold\\\"/\" \"$config\"")
-                .contains("grep -q \"^  FINAPP_ABUSE_SIGN_IN_LIMIT: \\\"$threshold\\\"$\" \"$config\"");
+                .contains("kube -n finapp set env deployment/finapp-app \"FINAPP_ABUSE_SIGN_IN_LIMIT=$threshold\"")
+                .contains("kube -n finapp rollout status deployment/finapp-app --timeout=\"${ROLLOUT_TIMEOUT}s\"")
+                .contains("env[?(@.name==\"FINAPP_ABUSE_SIGN_IN_LIMIT\")].value").contains("[ \"$set_to\" = \"$threshold\" ] || cannot");
         // What the sed reads is the code's own threshold, in the form it reads.
         Matcher policy = Pattern.compile("return new LockoutPolicy\\(([0-9]+), ").matcher(read("identity/src/main/java/com/finapp/identity/LockoutPolicy.java"));
         assertThat(policy.find()).isTrue();
         assertThat(Integer.parseInt(policy.group(1))).as("the threshold the probe reads is the lockout's").isEqualTo(LockoutPolicy.current().threshold());
-        assertThat(read("deploy/overlays/kind/kustomization.yaml")).as("the literal the plant rewrites exists in the run's copy")
-                .containsPattern("(?m)^      - FINAPP_ABUSE_SIGN_IN_LIMIT=[0-9]+$");
-        int hook = harness.indexOf("[ \"$SCOPE\" != load ] || load_render\n");
-        assertThat(hook).as("rendered into the run's copy beside the experiments scope's, before anything is applied").isPositive()
-                .isGreaterThan(harness.indexOf("[ \"$SCOPE\" != experiments ] || experiments_render\n"))
-                .isLessThan(harness.indexOf("# Everything but what a release orders: the Deployment, its autoscaler and the Job."));
+        String run = function(load, "load_run");
+        int planted = run.indexOf("[ \"$PROBE\" != abuse-below-need ] || load_plant_abuse_below_need\n");
+        assertThat(planted).as("after the setup (load_scope runs load_setup first), before the fleet is settled at its floor and the load is timed")
+                .isPositive().isLessThan(run.indexOf("    load_autoscale_start\n")).isLessThan(run.indexOf("LOAD_STARTED=$(date +%s)"));
+        String scope = function(load, "load_scope");
+        assertThat(scope.indexOf("load_setup")).isPositive().isLessThan(scope.indexOf("load_run"));
+        assertThat(harness).as("never at the render, where the setup's sign-ins from one address would meet it").doesNotContain("FINAPP_ABUSE");
+        assertThat(load.split("FINAPP_ABUSE_SIGN_IN_LIMIT=", -1)).as("set in one place, the probe's").hasSize(2);
     }
 
     @Test
