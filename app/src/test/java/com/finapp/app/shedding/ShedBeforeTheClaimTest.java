@@ -125,9 +125,10 @@ class ShedBeforeTheClaimTest {
         String body = answer.getContentAsString();
         assertThat(body).contains("\"code\":\"api.Overloaded\"").doesNotContain("\"detail\"");
         // The flow's identifier is the one member that varies; without it, nothing of the load or of why: no figure but the status.
-        assertThat(body.replaceAll("\"correlationId\":\"[^\"]*\"", "")).as("no figure of the load and nothing of why")
-                .doesNotContain("pool").doesNotContain("permit").doesNotContain("deadline").doesNotContainPattern("[0-46-9]")
-                .contains("\"status\":503");
+        assertThat(body).contains("\"status\":503");
+        assertThat(body.replaceAll("\"correlationId\":\"[^\"]*\"", "").replace("\"status\":503", ""))
+                .as("no figure of the load and nothing of why").doesNotContain("pool").doesNotContain("permit").doesNotContain("deadline")
+                .doesNotContainPattern("[0-9]");
     }
 
     @Test
