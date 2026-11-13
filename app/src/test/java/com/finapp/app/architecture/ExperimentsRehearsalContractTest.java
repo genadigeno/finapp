@@ -238,7 +238,7 @@ class ExperimentsRehearsalContractTest {
                 .contains("[ -s \"$LEDGER\" ] ||");
         String endpoints = function("experiments_endpoints_check");
         assertThat(endpoints).as("the application's sources the run's two; every URL the simulator's; the database, the broker and the collector the run's own")
-                .contains("\"configmap/finapp-app-config/- secret/finapp-app-secrets/- \"").contains("[ \"$value\" = \"$SIM_URL\" ] ||")
+                .contains("\"configmap/$rendered/- secret/finapp-app-secrets/- \"").contains("\"$A/Deployment.finapp-app.yaml\"").contains("[ \"$value\" = \"$SIM_URL\" ] ||")
                 .contains("[ \"$value\" = \"$DB_URL\" ] ||").contains("[ \"$value\" = \"$KAFKA_HOST:9092\" ] ||").contains("\"$EXPERIMENTS_COLLECTOR\"*")
                 .contains("other) EXP_REASON=\"endpoint: $key is read from a source this check does not read\"")
                 .contains("[ \"$end_providers\" -ge 3 ] ||");

@@ -61,6 +61,11 @@ EXPERIMENTS_PAYOUTS=0
 # Set once the scope's faults can exist; finish() then empties the registry and resets the proxy.
 EXPERIMENTS_ARMED=""
 EXPERIMENTS_GUARDS=0
+# What the boundary read on its last pass, for the record: none until it has read.
+cred_secrets=0
+cred_values=0
+end_read=0
+end_providers=0
 
 experiments_paths() {
     EXP_ART="$ART/experiments"
@@ -337,10 +342,13 @@ experiments_endpoints_check() {
     template='{{range .spec.template.spec.containers}}{{range .envFrom}}SOURCE {{if .configMapRef}}configmap {{.configMapRef.name}}{{else if .secretRef}}secret {{.secretRef.name}}{{else}}other -{{end}} {{if .prefix}}{{.prefix}}{{else}}-{{end}}{{"\n"}}{{end}}{{range .env}}ENV {{.name}} {{if .valueFrom}}{{if .valueFrom.fieldRef}}field{{else}}other{{end}}{{else}}{{.value}}{{end}}{{"\n"}}{{end}}{{end}}{{range .spec.template.spec.hostAliases}}ALIAS {{.ip}}{{range .hostnames}} {{.}}{{end}}{{"\n"}}{{end}}'
     deployment=$(kube -n finapp get deployment finapp-app -o go-template="$template" 2>/dev/null) \
         || { EXP_REASON="endpoint: the application's Deployment could not be read"; return 1; }
+    # The ConfigMap's name is the generator's, a hash of its content: the one the run rendered and applied, read from its own copy.
+    rendered=$(sed -n 's/^ *name: \(finapp-app-config-[a-z0-9]*\)$/\1/p' "$A/Deployment.finapp-app.yaml" | head -1)
+    [ -n "$rendered" ] || { EXP_REASON="endpoint: the run's rendered Deployment names no generated ConfigMap"; return 1; }
     sources=$(printf '%s\n' "$deployment" | awk '$1 == "SOURCE" {print $2 "/" $3 "/" $4}' | sort | tr '\n' ' ')
-    [ "$sources" = "configmap/finapp-app-config/- secret/finapp-app-secrets/- " ] \
+    [ "$sources" = "configmap/$rendered/- secret/finapp-app-secrets/- " ] \
         || { EXP_REASON="endpoint: the application reads its environment from '$sources', not the run's ConfigMap and Secret alone"; return 1; }
-    config=$(kube -n finapp get configmap finapp-app-config -o go-template='{{range $k, $v := .data}}{{$k}} {{$v}}{{"\n"}}{{end}}' 2>/dev/null) \
+    config=$(kube -n finapp get configmap "$rendered" -o go-template='{{range $k, $v := .data}}{{$k}} {{$v}}{{"\n"}}{{end}}' 2>/dev/null) \
         || { EXP_REASON="endpoint: the application's ConfigMap could not be read"; return 1; }
     # The Secret's endpoints, decoded inside the node: a key of an endpoint's name, or any value holding a scheme. No other value comes back.
     secret=$(dock exec -i "$NODE" sh -s <<'NODE'
@@ -563,7 +571,7 @@ experiments_faults_left() {
 # Called by finish() on every way out. Every registered fault undone, newest first; then the blanket reset; then what is left, read.
 experiments_clear_faults() {
     [ -n "$EXPERIMENTS_ARMED" ] || return 0
-    log "clearing every fault the experiments put on ($(grep -c . "$FAULTS" 2>/dev/null || echo 0) registered)"
+    log "clearing every fault the experiments put on ($(cat "$FAULTS" 2>/dev/null | grep -c . || true) registered)"
     cp "$FAULTS" "$FAULTS.cleared" 2>/dev/null || : > "$FAULTS.cleared"
     # A paused node before anything else: every exec below reaches a pod through its node's kubelet.
     for node in $(dock ps --filter "label=io.x-k8s.kind.cluster=$CLUSTER" --filter status=paused --format '{{.Names}}' 2>/dev/null); do
