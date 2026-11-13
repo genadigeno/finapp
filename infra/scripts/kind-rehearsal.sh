@@ -48,7 +48,9 @@
 # failure experiments of kind-rehearsal/experiments.sh (REHEARSAL_EXPERIMENTS, E01 by default), each steady state, fault, observation,
 # stop, recovery and census, behind the safety boundary's refusals and their plants. Its probes are guard-off, crash-with-faults and
 # term-with-faults, and E05's async-standby (P16-TSK-022: an asynchronous standby promoted after a planted lag, which the journal's
-# checksum must show). It refuses a cluster of its name it did not make and mark, before it changes anything in it.
+# checksum must show). It refuses a cluster of its name it did not make and mark, before it changes anything in it. P16-TSK-021 added the
+# network, DNS, connection and disk faults (E07, E11-E16, E24; OPERATIONS_RUNBOOK.md section 11.47): E24 must be named when the run makes
+# its data tier, which then puts the primary on a size-limited filesystem of its own, and E11 needs REHEARSAL_E11_STORE naming a store.
 #
 # A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
 # common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
@@ -959,7 +961,8 @@ census() {
     label=$1
     drained 240 || fail "the outbox did not drain before census $label: $(pending_events) rows pending"
     # The load scope's movements (P16-TSK-006), as its generator was told they succeeded, its funding included; zero in every other scope.
-    expected_transfers=$(( $(transfer_ok_count) + SMOKE_TRANSFERS + ${LOAD_TRANSFERS:-0} ))
+    # And E13's cut transfers (P16-TSK-021), each resolved by its key to one effect; zero in every other scope.
+    expected_transfers=$(( $(transfer_ok_count) + SMOKE_TRANSFERS + ${LOAD_TRANSFERS:-0} + ${EXPERIMENTS_TRANSFERS:-0} ))
     # The telemetry steps' one traced top-up, of its own planted amount (P15-TSK-023); zero until it runs.
     expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS + ${TELEMETRY_TOPUPS:-0} + ${LOAD_TOPUPS:-0} ))
     expected_checkouts=$(( $(flow_ok_count checkout) + SMOKE_CHECKOUTS + ${LOAD_CHECKOUTS:-0} ))

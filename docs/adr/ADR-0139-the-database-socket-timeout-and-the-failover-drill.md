@@ -51,7 +51,8 @@ beside it.
      bound out of its sight.
    - *Measured, owed*: the load scope now records each statement's longest execution (`pg-statements_longest.tsv`), which E29's owed
      sustained run reads; E57 measures a black-holed connection given up within the timeout and, as its control, still held without
-     it. **Revision rule**: if an owed run measures a statement that arms no bound running past half the timeout, or E57's leg with the
+     it, over the whole fleet; E14 (the network-faults task's) measures it for one replica cut by a DROP in its own namespace, on this
+     tree under the timeout. **Revision rule**: if an owed run measures a statement that arms no bound running past half the timeout, or E57's leg with the
      timeout does not free within it, this decision is revisited by a change to this record, never silently.
 2. **A cut statement is the platform's existing ambiguous case.** When the driver gives a connection up, the request or tick fails as
    any lost connection fails it: an open transaction is rolled back by the server when it next reads the closed socket, and a `COMMIT`
