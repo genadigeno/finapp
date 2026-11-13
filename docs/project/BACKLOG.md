@@ -29884,7 +29884,7 @@ on none:
   replica** (it reaches them through their Service): E01 tells a failed answer apart by when it ended; at ten replicas and under
   E02-E04 that window is per fault. Item 47 (e)'s correlation id, once kept, would join each failed answer to its replica.
 
-**P16-TSK-021 — Network, DNS, connection and disk faults** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-019`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-019`, `COMPLETE`)
+**P16-TSK-021 — Network, DNS, connection and disk faults** — `IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-021` from master `1f70ccad`; marked `READY` by the coordinator at `P16-TSK-019`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-019`, `COMPLETE`)
 - **Objective**: E07, E11–E16, E24 under load.
 - **Affected components**: every replica; PostgreSQL; Kafka; the simulator; CoreDNS on `kind`.
 - **Dependencies**: `-019`.
