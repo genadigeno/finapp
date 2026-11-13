@@ -1303,24 +1303,25 @@ experiments_pages_setup() {
     EXP_PAGE_COUNT=$pages
 }
 
-# The topology, read: three replicas on three nodes in three zones, the standby synchronous, every application session through the proxy
-# over TLS, every replica accepted by each of the proxy's three proxies, the consumer groups' members at the proxy's address.
+# The topology, read: the run's replicas (three; ten at a count, P16-TSK-014) ready over the three workers' nodes in three zones, the standby
+# synchronous, every application session through the proxy over TLS, every replica accepted by each of the proxy's three proxies, the
+# consumer groups' members at the proxy's address.
 experiments_topology_check() {
     fleet=$(experiments_fleet)
     ready=$(printf '%s\n' "$fleet" | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == ""' | grep -c . || true)
-    [ "$ready" = 3 ] || fail "topology: $ready application replicas ready, where the experiments run at three"
+    [ "$ready" = "$FLEET_REPLICAS" ] || fail "topology: $ready application replicas ready, where the experiments run at $FLEET_REPLICAS"
     nodes=$(printf '%s\n' "$fleet" | awk -F'|' 'NF >= 5 && $6 == "" {print $4}' | sort -u)
-    [ "$(printf '%s\n' "$nodes" | grep -c .)" = 3 ] || fail "topology: the three replicas share nodes ($(printf '%s' "$nodes" | tr '\n' ' '))"
+    [ "$(printf '%s\n' "$nodes" | grep -c .)" = 3 ] || fail "topology: the replicas are not on the three workers' nodes, they share nodes ($(printf '%s' "$nodes" | tr '\n' ' '))"
     zones=""
     for node in $nodes; do
         zones="$zones $(kube get node "$node" -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}')"
     done
-    [ "$(printf '%s\n' $zones | sort -u | grep -c .)" = 3 ] || fail "topology: the three replicas are not in three zones ($zones)"
+    [ "$(printf '%s\n' $zones | sort -u | grep -c .)" = 3 ] || fail "topology: the replicas are not in three zones ($zones)"
     workers=$(kube get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{range .items[*]}{.metadata.labels.topology\.kubernetes\.io/zone}{"\n"}{end}' | sort -u | grep -c . || true)
     [ "$workers" = 3 ] || fail "topology: the workers are in $workers zones, not three"
     rule=$(kube -n finapp get deployment finapp-app -o jsonpath='{range .spec.template.spec.topologySpreadConstraints[*]}{.topologyKey}={.whenUnsatisfiable} {end}')
     case $rule in *"topology.kubernetes.io/zone=DoNotSchedule"*) ;; *) fail "topology: the zone constraint is not DoNotSchedule ($rule)" ;; esac
-    pass "topology: three replicas ready on three nodes in three zones ($(printf '%s' "$zones" | sed 's/^ //')), the zone constraint DoNotSchedule"
+    pass "topology: $FLEET_REPLICAS replicas ready on three nodes in three zones ($(printf '%s' "$zones" | sed 's/^ //')), the zone constraint DoNotSchedule"
     experiments_standby_check
     brokers_check
     proxy_pod=$(kube -n finapp-experiments get pods -l app.kubernetes.io/name=finapp-toxiproxy -o jsonpath='{.items[0].status.podIP}')
@@ -1436,7 +1437,7 @@ experiments_steady() {
     experiments_topology_check
     firing=$(experiments_pages_firing)
     [ -z "$firing" ] || fail "$EXP_ID steady state: correctness pages firing before the fault: $firing"
-    experiments_record "steady state" "3 replicas on 3 nodes in 3 zones; the standby synchronous; every session through the proxy over TLS; $EXP_PAGE_COUNT pages silent"
+    experiments_record "steady state" "$FLEET_REPLICAS replicas on 3 nodes in 3 zones; the standby synchronous; every session through the proxy over TLS; $EXP_PAGE_COUNT pages silent"
 }
 
 # Stop: every fault the experiment put on is removed, and the cluster read to have none left.
@@ -4667,7 +4668,8 @@ E44_recover() {
 
 # ---------------------------------------------------------------------------------------------------
 # E45: a holder killed between the copy and the mark, its segment taken over and marked once; each row in one segment. At three replicas
-# here, where fleet_patch holds the fleet; at ten once this scope runs at ten, which kind's overlay admits (owed under PI-025).
+# by default; at ten with REHEARSAL_EXPERIMENTS_REPLICAS=10 (P16-TSK-014), the one experiment of this scope written for a count (owed under
+# PI-025).
 # ---------------------------------------------------------------------------------------------------
 
 E45_steady() {
@@ -4728,7 +4730,7 @@ E45_observe() {
 }
 
 E45_recover() {
-    ready_three 400 || fail "E45: the fleet did not return to three ready replicas"
+    ready_fleet 400 || fail "E45: the fleet did not return to its $FLEET_REPLICAS ready replicas"
     stop_workload e45
     [ "$(workload_unresolved e45)" = 0 ] || fail "E45: $(workload_unresolved e45) requests stayed unresolved: see workload-e45.tsv"
     assert_flows_ran e45

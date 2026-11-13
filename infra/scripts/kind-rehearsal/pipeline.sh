@@ -13,6 +13,9 @@
 # counts, the first before the load and each next one at an equal share of it, the autoscaler held at each count. Every group's members
 # follow the fleet, each rebalance counted from the members read; the census then counts one effect per record.
 #
+# E71 (P16-TSK-014; OPERATIONS_RUNBOOK.md section 11.58): E48's scale at the kind overlay's ceiling, REHEARSAL_LOAD_SCALE="3 10 3" with
+# REHEARSAL_LOAD_REPLICAS=10: ten members a group on twelve partitions, none idle, and the run's budget judged at each count it was asked for.
+#
 # A load run fails on correctness only (PHASE_16_PLAN.md section 5.3): the numbers here are recorded, never a verdict. What fails the
 # run is the pipeline unread (a gap over 90 s in its samples), a fleet that never reached a count it was scaled to, a group whose members
 # never followed it, and the load scope's own census - every outbox row published, every record a handler names in its inbox once.
@@ -30,8 +33,12 @@ pipeline_preflight() {
     [ -z "$PIPELINE_SCALE" ] || {
         most=0
         steps=0
+        # To the kind overlay's ceiling, ten on C3's larger server (P16-TSK-014; 3 to 7 until then): E71 is this scale at ten.
+        ceiling=$(sed -n '/^        path: \/spec\/maxReplicas$/{n;s/^        value: \([0-9]*\)$/\1/p;}' "$ROOT/deploy/overlays/kind/kustomization.yaml")
+        case $ceiling in '' | *[!0-9]*) cannot "the kind overlay's maxReplicas could not be read" ;; esac
         for count in $PIPELINE_SCALE; do
-            case $count in 3 | 4 | 5 | 6 | 7) ;; *) cannot "REHEARSAL_LOAD_SCALE's counts are 3 to 7, not '$count'" ;; esac
+            case $count in '' | *[!0-9]*) cannot "REHEARSAL_LOAD_SCALE's counts are whole numbers, not '$count'" ;; esac
+            [ "$count" -ge 3 ] && [ "$count" -le "$ceiling" ] || cannot "REHEARSAL_LOAD_SCALE's counts are 3 to $ceiling, the kind overlay's ceiling, not '$count'"
             [ "$count" -le "$most" ] || most=$count
             steps=$((steps + 1))
         done
@@ -177,7 +184,14 @@ pipeline_scale_judge() {
         followed=$(awk -F'\t' -v at="$at" -v c="$count" 'NR > 1 && $1 >= at && $3 == c {g[$2] = 1} END {n = 0; for (k in g) n++; print n}' "$LOAD_ART/members.tsv")
         groups=$(awk -F'\t' 'NR > 1 {g[$2] = 1} END {n = 0; for (k in g) n++; print n}' "$LOAD_ART/members.tsv")
         [ "$followed" = "$groups" ] && [ "$groups" -ge 1 ] || fail "after the scale to $count, $followed of $groups groups were read with $count members: see load/members.tsv"
-        printf 'scaled to %s\tready %s s after; every one of %s groups at %s members\n' "$count" "$reached" "$groups" "$count" >> "$LOAD_ART/pipeline-summary.txt"
+        # The budget judged at each count (P16-TSK-014): the run's own, sized for its largest count, read at the samples the Deployment was
+        # asked for this one. The harness's own scale takes several pods at once (seven to three is four terminating), so the formula at
+        # each count is the autoscaler's measure (E70's assert_within_count), not this one's.
+        peak=$(awk -F'\t' -v c="$count" 'NR > 1 && $8 == c && $5 + 0 > m {m = $5 + 0} END {print m + 0}' "$ART/samples-load.tsv")
+        [ "$peak" -gt 0 ] || fail "no connection sample read the fleet asked for $count: see samples-load.tsv"
+        [ "$peak" -le "$BUDGET" ] || fail "the fleet asked for $count held $peak connections, past the run's budget of $BUDGET: see samples-load.tsv"
+        printf 'scaled to %s\tready %s s after; every one of %s groups at %s members; peak %s connections asked for %s, within %s\n' "$count" "$reached" \
+            "$groups" "$count" "$peak" "$count" "$BUDGET" >> "$LOAD_ART/pipeline-summary.txt"
     done < "$LOAD_ART/pipeline-scale.tsv"
     rebalances=$(awk -F'\t' 'NR > 1 {if (($2 in last) && last[$2] != $3) n++; last[$2] = $3} END {print n + 0}' "$LOAD_ART/members.tsv")
     idle=$(awk -F'\t' 'NR > 1 && $4 > 0' "$LOAD_ART/members.tsv" | grep -c . || true)

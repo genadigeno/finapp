@@ -727,3 +727,17 @@ commit and the date; do not delete the entry.
     PostgreSQL image (2026-11-13, no `kind`, no application: a `finapp_reporting` role's two statements read by role, the role line
     present). The report runs through the operator edge, the journal's count, the run's row and the judge are unproven on a cluster.
     No mutation probe of this task needs a cluster.
+  - **`P16-TSK-014`** (ten instances at load, `OPERATIONS_RUNBOOK.md` §11.58, whose record is empty; the Phase 15 completion gate's
+    deviation B and `P15-REM-007`'s observed scaling, both open until these run): first **owner decision C11's pre-flight**, the
+    `databaseTest` and `kafkaTest` tiers of `platform` and the `app` database cases under `domain`, `transfers`, `payments` and the source
+    census, once, on the tree that will run at ten (§11.58's two commands; PI-023's kind); then **E26**, the release's whole walk at ten
+    replicas (`REHEARSAL_SCOPE=release REHEARSAL_RELEASE_REPLICAS=10`), its record also §11.28's; **E70**, the autoscaler deciding the
+    fleet from three to ten and back under load (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=autoscale REHEARSAL_LOAD_REPLICAS=10`), and
+    **E70's probe**, the same run with `REHEARSAL_PROBE=scale-down-unbounded`, which must fail at the formula at each count (its
+    `MUTATION_TESTING.md` §2 row with it); **E69**, the sustained profile at ten replicas (`REHEARSAL_LOAD_PROFILE=sustained
+    REHEARSAL_LOAD_REPLICAS=10`); and **E71**, the pipeline's scale 3 → 10 → 3 on three brokers (`REHEARSAL_LOAD_PROFILE=pipeline
+    REHEARSAL_KAFKA_BROKERS=3 REHEARSAL_LOAD_SCALE="3 10 3" REHEARSAL_LOAD_REPLICAS=10`). The experiments scope's count built here
+    (`REHEARSAL_EXPERIMENTS_REPLICAS=10`, E45 the one experiment it admits at ten) is what `P16-TSK-010`'s E45 at ten, in the bullet
+    above, runs with. Nothing ran on a cluster. What ran instead, on 2026-11-13: the new shell functions under `dash` against a real
+    `kustomize` render of the `kind` overlay and stubbed cluster answers, the pinned k6's `inspect` of the `autoscale` profile, and the
+    harness's refusals before any build (§11.58's record).

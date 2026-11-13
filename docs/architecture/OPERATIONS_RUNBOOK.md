@@ -3260,6 +3260,7 @@ latest; the run, as its record names it.
 | §11.55 | `platform`, `settlement`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.56 | `ledger`, `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | §11.57 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
+| §11.58 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -4947,7 +4948,9 @@ REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=sustained REHEARSAL_LOAD_REPLICAS=7 
 rendered `kind` overlay, never the committed one, to the connection budget's formula at that count (N + 2 × 1 + 1 instances of 7 + 1
 connections and 12 reserved, so 10 instances and 92 connections at seven; `FINAPP_DB_INSTANCES`, the server's figure the startup guard
 reads and the test-only server's `max_connections`), holds the HorizontalPodAutoscaler at N, sizes the quota to match and waits for N ready
-replicas before the load. Ten is `P16-TSK-014`'s, on owner decision C3's larger server. `REHEARSAL_LOAD_DURATION` shortens every stage in
+replicas before the load. Ten is `P16-TSK-014`'s, on owner decision C3's larger server. *(2026-11-13: the ceiling is ten since
+`P16-TSK-009`, §11.49, and the runs at ten are §11.58's; read "up to 7, today's ceiling" above as up to the `kind` overlay's ten.)*
+`REHEARSAL_LOAD_DURATION` shortens every stage in
 proportion, and the run is then not the profile's workload. `REHEARSAL_PROBE=slow-statement` is the entry's probe (below).
 *(2026-11-13, `P16-TSK-009`: the committed `kind` overlay now states the formula for ten, and `REHEARSAL_LOAD_REPLICAS` runs 3 to 10. The
 patch is the harness's `fleet_patch`, every scope's, which takes the run's own copy down to the formula at its count; at three and at seven
@@ -5522,7 +5525,8 @@ The `normal` profile holds 0.4167 of the target's peak for 30 minutes, at or jus
   Docker for its pinned images) and metrics-server's image pulled into each node by its digest. Then the render applied, its
   `v1beta1.metrics.k8s.io` API `Available` within three minutes, and the autoscaler reading its CPU utilisation with `ScalingActive`
   true within five. The run holds the autoscaler at its count (minimum and maximum), so it reads the metric and never acts on it:
-  scaling on the metric is `P16-TSK-014`'s. `load/hpa.txt` keeps its description.
+  scaling on the metric is `P16-TSK-014`'s *(2026-11-13: built as E70, §11.58, where the `autoscale` profile leaves the autoscaler at its
+  floor and the run's count)*. `load/hpa.txt` keeps its description.
 - `load-run`: the release's connection sampler through the load, every two seconds. Each sample records the ready, terminating and
   total pods, the fleet's `pg_stat_activity` and all client connections, and an operator connection (as `finapp_reporting`, over TLS)
   tried at each sample that reaches the peak so far (`samples-load.tsv`).
@@ -6104,6 +6108,107 @@ Never point either pool at a replica to relieve the primary. ADR-0142 decision 2
 
 **The record.** Empty: E65 has not run. It is owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13), and its first
 run writes its record here with its commit, its artefacts, the fit and each table's reading against ADR-0142.
+
+### 11.58 Ten instances at load: the release's walk at ten, the autoscaler deciding under load, the sustained profile and the pipeline's scale at ten (`P16-TSK-014`)
+
+**What it is.** The runs that count the ten-instance answer: `PHASE_16_PLAN.md` §1.1's "ten application replicas at load on `kind`,
+scaled up and down and rolled during load", §13's scenario 14, the Phase 15 completion gate's deviation B and `P15-REM-007`'s observed
+scaling. Each run holds its fleet in its own rendered copy of the `kind` overlay, at the connection budget's formula for its count (§11.49:
+13 instances and 116 connections at ten, a quota of 16 pods). Nothing here is production capacity (ADR-0126 decision 1), and production's
+`maxReplicas` stays seven (ADR-0134, `THREAT_MODEL.md` §6 item 56). One full cluster at a time, on a machine that can hold thirteen 1 GiB
+application pods at a rollout's worst moment beside the data tier (the reference machine's VM has 15.6 GiB): a pod the machine kills is an
+environment limit, recorded as `FAILED` with its numbers, never retried into a pass.
+
+**Before them, owner decision C11's pre-flight.** The database and Kafka tiers of what the drill exercises, once, on the tree that will run
+at ten. It is a Gradle tier run, PI-023's kind, owed with the runs:
+
+```
+./gradlew :platform:databaseTest :platform:kafkaTest
+./gradlew :app:databaseTest --tests 'com.finapp.app.domain.*' --tests 'com.finapp.app.transfers.*' --tests 'com.finapp.app.payments.*' --tests 'com.finapp.app.accounting.SourceCensusDatabaseTest'
+```
+
+`platform` holds the outbox, the inbox, the idempotency executor and three of the Phase 15 arbiters with their concurrent cases: the
+window counter (`WindowCounterDatabaseTest#exactlyTheLimitIsAdmittedAcrossThreeInstances`, three instances, the case that exists), the
+retention sweeps (`RetentionSweepDatabaseTest#tenSweepersDeleteDisjointBatches`) and the dead-letter doors
+(`DeadLetterDatabaseTest#tenRetriesOneWinner`, `#tenReplaysOneRequeue`). The ledger's, the transfers' and the payments' database cases
+live in `app` under `domain`, `transfers` and `payments`; the source census is accounting's (`SourceCensusDatabaseTest#tenWalkersJudgeEachEntryOnce`).
+A red here is a defect found before the drill, fixed in a task of its own; the drill does not start on a red pre-flight.
+
+**The release's walk at ten** (E26, `RESILIENCE_EXPERIMENTS.md`):
+
+```
+REHEARSAL_SCOPE=release REHEARSAL_RELEASE_REPLICAS=10 infra/scripts/kind-rehearsal.sh
+```
+
+§11.28's whole walk at the run's count: ten replicas of N − 1 ready on N − 1's schema, then on N's, the hold, the rollout to N under the
+workload with its handler window replayed, the forged-address step, the budget's ceiling, the kill of the replica holding a claim, the
+rollback with an eviction mid-way, the re-roll, and the census after each. What reads the count: every wait for the fleet (`ready_fleet`),
+the floor through a rollout (never fewer than ten ready, `assert_floor`), the eviction's moment (one terminating beside the count and its
+surge running), the reporting pools (ten reports, 80 connections settled), the budget (the peak within (10 + 3) × 8 = 104 with an operator
+admitted at it, and again with the fleet held at 104). A rollout of ten is ten steps, each bounded by the Deployment's own startup budget
+and `minReadySeconds` read from the run's copy (180 s and 117 s): its bound is 2,970 s unless `REHEARSAL_ROLLOUT_TIMEOUT` names another. The
+release's probes are written for three and are refused at any other count, as is every scope but the release, the load and the
+experiments.
+
+**The autoscaler deciding under load** (E70):
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=autoscale REHEARSAL_LOAD_REPLICAS=10 infra/scripts/kind-rehearsal.sh
+```
+
+The run's copy holds the budget for ten and leaves the autoscaler at the overlay's floor of three and the run's ten (`fleet_patch` with
+`FLEET_AUTOSCALE`); nothing of the harness writes the count. The `autoscale` profile (`load/autoscale.json`) runs the money mix at a quarter
+of the target's peak throughout (E30's first step, carried within every objective at three) and, for twenty minutes of its fifty-five, sign-
+ins at nine times the target's sign-in peak beside it, from eight generator addresses so that no source meets the edge's door tier. Why a
+surge of sign-ins: at the engineering workload the replicas' CPU is about a third of their 500m request (E30's steps 1 to 3, `CAPACITY_MODEL.md`
+§3.4), so the autoscaler's target of 70% would not act there (derived); a sign-in costs 68 ms of a replica's core (the credential hash, the isolation
+run), and sixty a second are about 4.1 cores, more than ten replicas at their target hold (3.5 cores). *Derived from measured costs, not
+measured at ten.* What the run asserts beyond §11.43's, §11.45's and §11.49's:
+- before the load: the autoscaler read back as 3 to 10, the fleet settled at three, every pod ready (`load_autoscale_floor`);
+- every 10 s, the autoscaler's own reading into `load/autoscale.tsv` (the count asked, ready, desired and current, its CPU reading, why
+  it is limited or able to scale); every two-second connection sample records the count the Deployment was asked for (`samples-load.tsv`'s
+  eighth column);
+- the fleet moving is read by set, not by count (`load_scraped`): every replica ready for 60 s (twice the kind Prometheus's scrape interval
+  and DNS refresh) must be scraped, and no pod may stand unready 210 s after its creation (the startup probe's budget and the readiness
+  window); a held fleet keeps the exact equality of scraped and ready;
+- after the census (`load_autoscale_judge`): the count read at ten with every replica ready, after a reading above the target; back at
+  three with every replica ready within the load, after a reading below it; a census sample `PASS` at ten and again at three; and every
+  sample's connections within the budget's formula at the count asked for then, (count + 3) × 8 (`assert_within_count`, `counts-load.tsv`):
+  the margin's one terminating pod outside a rollout is what the autoscaler's scale-down policy keeps to one;
+- spread: at least ten replicas served each money route during the load.
+
+Its probe, `REHEARSAL_PROBE=scale-down-unbounded`, removes the autoscaler's scale-down policy before the load: Kubernetes' default lets
+every surplus pod go at once after the 300 s window, ten pods then hold their pools at a count of three (80 connections against 48), and
+the run must fail at `assert_within_count`. Its `MUTATION_TESTING.md` §2 row is owed with the run.
+
+**The sustained profile at ten** (E69): `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=sustained REHEARSAL_LOAD_REPLICAS=10`, §11.45's
+profile held at ten. The database's CPU was the first limit at three (E30, at 0.49 of the target's peak), and ten replicas add no
+database CPU, so the run is expected to show where ten stop at the peak; a run a sample stops names its first limit in its record.
+
+**The pipeline's scale at ten** (E71): `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=pipeline REHEARSAL_KAFKA_BROKERS=3
+REHEARSAL_LOAD_SCALE="3 10 3" REHEARSAL_LOAD_REPLICAS=10`, §11.51's E48 at the overlay's ceiling: every group at ten members on twelve
+partitions, none idle, and each count's peak connections within the run's budget. Its scale is the harness's own, several pods at once
+(ten to three is seven terminating), so the formula at each count is E70's measure and not this one's.
+
+**The audit archive at ten** (E45, §11.50): `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E45 REHEARSAL_EXPERIMENTS_REPLICAS=10`. The
+experiments scope runs at a count other than three only the experiments written for one (E45 alone today), its topology read at the run's
+count over the three workers' zones.
+
+**Reading them.** A run's record names its count, its commit and its artefacts. The ten-instance answer is `PASS` on counts only when E26, E41,
+E70 and E69's carried stages are green with the census at every sample; `FAIL` names its remediation task.
+
+**Failure and rollback.** Each run is a throwaway cluster of its own name, deleted at exit; the ten-replica copy and the autoscaler's floor
+exist only in the run's directory. The release at ten and the autoscaled run change no committed file.
+
+**The record.** None. Not run, owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13, "we dont need long running
+checks and tests"): C11's pre-flight, E26, E69, E70 and its probe, E71, and E45 at ten (`P16-TSK-010`'s, run with this section's count).
+What ran instead, on 2026-11-13, without a cluster: the new functions extracted from the committed scripts and run under `dash` against a
+real `kustomize` render of the `kind` overlay and stubbed cluster answers (`fleet_patch` held at three and at ten and autoscaled at ten, an
+autoscaled run at the floor refused; the step's bound read from the render; the four-field stage's arrivals as the shell judges them;
+`assert_within_count` on good, probe-shaped and countless samples; `load_scraped` on settled, unscraped, unready and silent cases;
+`pipeline_preflight`'s counts to ten), the pinned k6's `inspect` of the `autoscale` profile (sign-ins at 60,003 iterations per 1,000 s in
+the surge, every other operation at its quarter), and the harness's refusals of a count past the ceiling, a release probe at ten and an
+experiment written for three. `TenInstancesRehearsalContractTest` holds what the runs would assert.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 
