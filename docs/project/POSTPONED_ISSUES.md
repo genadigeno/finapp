@@ -621,6 +621,15 @@ commit and the date; do not delete the entry.
     ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
     commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
     discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
+  - **`P16-TSK-018`** (the provider experiments, `OPERATIONS_RUNBOOK.md` section 11.53, whose record is empty; `RESILIENCE_EXPERIMENTS.md`
+    E17, E18 and E21; `docs/architecture/TIMEOUTS_AND_RETRIES.md` section 5): **E17**, the card rail unavailable and then silent past
+    the timeout, at three replicas (`REHEARSAL_EXPERIMENTS=E17`); **E18**, the FX provider and then the reference rates taken away, at
+    three replicas; **E21**, every provider slowed to two and then ten times its steady latency, at three replicas; and with them the
+    **failure rates per rail** each run records, which owner decision C12 waits on before automatic rail availability can be decided.
+    Nothing ran before the word; the simulator's degradation controls and the three experiments ran only through
+    `ProviderExperimentsContractTest`. E19 and E20 are not owed here: E19 cannot be driven until a production path runs a KYC case's
+    checks (`THREAT_MODEL.md` section 6 item 60), and E20 rests on the recorded fail-safe by the owner's decision of 2026-11-13 on
+    unresolved question 13.
   - `P16-TSK-008` (hot rows, locks, deadlocks and plans; `OPERATIONS_RUNBOOK.md` §11.48, whose record is empty; `CAPACITY_MODEL.md`
     §3.5, its measured cells `—`): **E38**, the concurrent-financial profile (`REHEARSAL_LOAD_PROFILE=concurrent`) at seven replicas and
     at three, with its control wait, its per-row waits, the server's lock log and every deadlock explained in the record; **E38's

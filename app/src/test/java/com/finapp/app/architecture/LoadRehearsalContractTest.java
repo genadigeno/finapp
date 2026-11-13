@@ -32,7 +32,8 @@ import org.junit.jupiter.api.Test;
  *   <li>the samples must cover the load, and the generator's dropped iterations, arrivals and CPU are judged;
  *   <li>one effect per key is tried (same-key retries) and counted (the census takes the generator's counts);
  *   <li>the generator reaches only the run's own cluster, through the edge, with only the run's fixture and the edge's CA;
- *   <li>the demonstration profile is the capacity model's, and every operation it leaves undriven says why and who drives it;
+ *   <li>the demonstration profile is the capacity model's, and every operation it leaves undriven says why and who drives it, or the
+ *       owner's dated decision that keeps it undriven;
  *   <li>each of the entry's probes is wired to do what it says;
  *   <li>the platform's own signals ({@code THREAT_MODEL.md} section 6 item 47 (c)) are rehearsed in the same run: a migrator Job planted
  *       to fail pages twice and is routed, its lines reach Loki scrubbed, and every platform stream is swept for every needle;
@@ -304,7 +305,7 @@ class LoadRehearsalContractTest {
     }
 
     @Test
-    @DisplayName("the demonstration profile is the capacity model's mix, and every operation it does not drive says why and names a live task")
+    @DisplayName("the demonstration profile is the capacity model's mix, and every operation it does not drive says why and names a live task or the owner's dated decision")
     void theDemonstrationProfileIsTheCapacityModels() {
         Map<String, String> operations = operations();
         assertThat(operations.keySet()).as("every operation of the section 4.3 mix the platform carries")
@@ -338,10 +339,18 @@ class LoadRehearsalContractTest {
             undriven.add(operation.getKey());
             String reason = field(operation.getValue(), "reason");
             assertThat(reason).as("%s says why it is not driven", operation.getKey()).isNotBlank();
+            // A live task that drives it, or the owner's dated decision that keeps it undriven (P16-TSK-018: the owner decided on
+            // 2026-11-13, on unresolved question 13, that no test-only bureau is built for kind in Phase 16).
             Matcher task = Pattern.compile("P\\d+-(?:TSK|TST)-\\d{3}").matcher(reason);
-            assertThat(task.find()).as("%s names the task that drives it", operation.getKey()).isTrue();
-            assertThat(statuses.get(task.group())).as("%s's task %s is live", operation.getKey(), task.group())
-                    .isIn(EvidenceCitations.LIVE_STATUSES);
+            if (task.find()) {
+                assertThat(statuses.get(task.group())).as("%s's task %s is live", operation.getKey(), task.group())
+                        .isIn(EvidenceCitations.LIVE_STATUSES);
+            } else {
+                Matcher decided = Pattern.compile("the owner decided on (\\d{4}-\\d{2}-\\d{2})").matcher(reason);
+                assertThat(decided.find()).as("%s names the task that drives it, or the owner's dated decision that keeps it undriven",
+                        operation.getKey()).isTrue();
+                assertThat(java.time.LocalDate.parse(decided.group(1))).as("%s: the owner's decision is dated", operation.getKey()).isNotNull();
+            }
             // Each rests on a credit approval, and on kind no bureau can be configured, so none can be given (INV-CRD-09, INV-CRD-10).
             assertThat(reason).as("%s: the reason is the bureau no kind deployment can configure", operation.getKey())
                     .containsPattern("no kind deployment can configure a bureau|the bureau and financial data, neither configurable on kind")

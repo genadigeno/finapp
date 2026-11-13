@@ -68,6 +68,20 @@ import javax.net.ssl.SSLContext;
  * /fx/executions/{reference}} answers the recorded outcome, or {@code unrecognised}. It sends no callback: a callback is a hint, and
  * the cover sweep's inquiry is the path. The mid rates are FxTestClient's.
  *
+ * <p>THE DEGRADATION CONTROLS (P16-TSK-018, OPERATIONS_RUNBOOK.md section 11.53, RESILIENCE_EXPERIMENTS.md E17, E18, E21): a provider
+ * that fails on demand, one rail at a time, each by a flag file the experiments scope puts on through its fault registry and removes at
+ * stop and on every way out. {@code /tmp/degrade-<rail>-unavailable} answers every request of that rail {@code 503} at once;
+ * {@code /tmp/degrade-<rail>-silent} holds every request of that rail unanswered while the file exists, at most two minutes - past the
+ * application's provider timeout, which has stopped listening by then - and then answers {@code 503} to nobody. Either way <strong>no
+ * effect is taken and no answer is recorded</strong>: a degraded dispatch never happened at this provider, so the inquiry the platform
+ * sends once the flag is gone finds it {@code unrecognised}, and a payment the platform concluded from it can only have concluded it
+ * failed. The rails: {@code card} (authorizations, captures, refunds, voids and their inquiry), {@code tokenisation}, {@code payout}
+ * (its creation and its inquiry), {@code fx} (fx-sim-a's quotes and executions) and {@code reference} (the reference rates). Every
+ * request, degraded or not, is a line of {@code /tmp/requests.tsv} (millis, method, path, our key or the inquired reference, and what
+ * became of it: {@code effect}, {@code replayed}, {@code inquiry}, {@code unavailable} or {@code silent}), written every two seconds
+ * beside the counts, so that "an ambiguous call is never resent" is read on the provider's side: a dispatch key sent twice with no
+ * inquiry of it between is a blind resend.
+ *
  * <p>No port serves plain HTTP. It holds no credential and verifies none: a bearer key is the adapter's confinement rule to meet, and a
  * simulator that checked it would prove only that the rehearsal's generator and the application agree.
  */
@@ -83,6 +97,17 @@ public final class Simulator {
     /** The card rail's inquiry prefix, SimulatedCardPspAdapter's OPERATIONS_PATH; our reference is the next segment (P16-TSK-005). */
     private static final String OPERATIONS = "/operations/";
     private static final List<String> CARD_OPERATIONS = List.of("/authorizations", "/captures", "/refunds", "/voids");
+
+    /** The degradation flags' prefix and each rail's paths (P16-TSK-018): a flag names a rail and a mode, never a path. */
+    private static final String DEGRADE = "/tmp/degrade-";
+    private static final Map<String, List<String>> RAILS = Map.of(
+            "card", List.of("/authorizations", "/captures", "/refunds", "/voids", "/operations/"),
+            "tokenisation", List.of("/tokenisations", "/payout-destinations/tokenisations"),
+            "payout", List.of("/payouts"),
+            "fx", List.of("/fx/quotes", "/fx/executions"),
+            "reference", List.of("/fx/reference/rates"));
+    /** Every request's line for /tmp/requests.tsv, drained by the counts' writer. */
+    private static final java.util.concurrent.ConcurrentLinkedQueue<String> REQUEST_LOG = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     private static final String FX_REFERENCE = "/fx/reference/rates";
     private static final String FX_QUOTES = "/fx/quotes";
@@ -144,6 +169,14 @@ public final class Simulator {
             lines.forEach((path, line) -> out.append(path).append(": ").append(line).append('\n'));
             try {
                 Files.writeString(file, out.toString());
+                StringBuilder logged = new StringBuilder();
+                for (String line = REQUEST_LOG.poll(); line != null; line = REQUEST_LOG.poll()) {
+                    logged.append(line).append('\n');
+                }
+                if (logged.length() > 0) {
+                    Files.writeString(Path.of("/tmp/requests.tsv"), logged.toString(), java.nio.file.StandardOpenOption.CREATE,
+                            java.nio.file.StandardOpenOption.APPEND);
+                }
                 Thread.sleep(2000);
             } catch (IOException | InterruptedException stop) {
                 return;
@@ -182,6 +215,10 @@ public final class Simulator {
     /** {@code GET /fx/reference/rates}: every canonical pair's mid, observed now. */
     private static void referenceRates(HttpExchange exchange) throws IOException {
         readBody(exchange, FX_REFERENCE);
+        if (degraded(exchange, FX_REFERENCE, "-")) {
+            return;
+        }
+        logged(exchange, FX_REFERENCE, "-", "inquiry");
         String observed = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString();
         StringBuilder lines = new StringBuilder();
         FX_MIDS.forEach((pair, mid) -> lines.append(pair).append(',').append(mid).append(',').append(observed).append('\n'));
@@ -192,6 +229,10 @@ public final class Simulator {
     private static void fxQuote(HttpExchange exchange) throws IOException {
         String request = readBody(exchange, FX_QUOTES);
         String key = exchange.getRequestHeaders().getFirst("Idempotency-Key");
+        if (degraded(exchange, FX_QUOTES, key)) {
+            return;
+        }
+        logged(exchange, FX_QUOTES, key, key != null && ANSWERED.containsKey(FX_QUOTES + "|" + key) ? "replayed" : "effect");
         String body = key == null ? quoted(request) : ANSWERED.computeIfAbsent(FX_QUOTES + "|" + key, ignored -> {
             KEYS.computeIfAbsent(FX_QUOTES, none -> new AtomicLong()).incrementAndGet();
             return quoted(request);
@@ -231,6 +272,13 @@ public final class Simulator {
      */
     private static void fxExecution(HttpExchange exchange) throws IOException {
         String request = readBody(exchange, FX_EXECUTIONS);
+        String asked = "GET".equals(exchange.getRequestMethod()) ? reference(exchange, FX_EXECUTIONS)
+                : exchange.getRequestHeaders().getFirst("Idempotency-Key");
+        if (degraded(exchange, FX_EXECUTIONS, asked)) {
+            return;
+        }
+        logged(exchange, FX_EXECUTIONS, asked, "GET".equals(exchange.getRequestMethod()) ? "inquiry"
+                : asked != null && ANSWERED.containsKey(FX_EXECUTIONS + "|" + asked) ? "replayed" : "effect");
         if ("GET".equals(exchange.getRequestMethod())) {
             String requested = exchange.getRequestURI().getPath();
             String reference = requested.length() > FX_EXECUTIONS.length() + 1 ? requested.substring(FX_EXECUTIONS.length() + 1) : "";
@@ -297,6 +345,12 @@ public final class Simulator {
     private static void answer(HttpExchange exchange, String path, Answer answer) throws IOException {
         exchange.getRequestBody().readAllBytes();
         REQUESTS.computeIfAbsent(path, ignored -> new AtomicLong()).incrementAndGet();
+        String asked = "GET".equals(exchange.getRequestMethod()) ? reference(exchange, path) : exchange.getRequestHeaders().getFirst("Idempotency-Key");
+        if (degraded(exchange, path, asked)) {
+            return;
+        }
+        logged(exchange, path, asked, "GET".equals(exchange.getRequestMethod()) ? "inquiry"
+                : asked != null && ANSWERED.containsKey(path + "|" + asked) ? "replayed" : "effect");
         if (PAYOUTS.equals(path) && "GET".equals(exchange.getRequestMethod())) {
             inquiry(exchange);
             return;
@@ -349,6 +403,10 @@ public final class Simulator {
         exchange.getRequestBody().readAllBytes();
         REQUESTS.computeIfAbsent(OPERATIONS, ignored -> new AtomicLong()).incrementAndGet();
         String reference = exchange.getRequestURI().getPath().substring(OPERATIONS.length());
+        if (degraded(exchange, OPERATIONS, reference)) {
+            return;
+        }
+        logged(exchange, OPERATIONS, reference, "inquiry");
         if (!"GET".equals(exchange.getRequestMethod()) || reference.isEmpty() || reference.contains("/")) {
             send(exchange, 404, "{\"status\":\"not_found\"}");
             return;
@@ -358,6 +416,59 @@ public final class Simulator {
             known = known != null ? known : ANSWERED.get(operation + "|" + reference);
         }
         send(exchange, 200, known != null ? known : "{\"status\":\"unrecognised\"}");
+    }
+
+    /** The reference an inquiry names: the path's segment after its prefix, or {@code -}. */
+    private static String reference(HttpExchange exchange, String prefix) {
+        String requested = exchange.getRequestURI().getPath();
+        int from = prefix.endsWith("/") ? prefix.length() : prefix.length() + 1;
+        return requested.length() > from ? requested.substring(from) : "-";
+    }
+
+    /** The rail a path belongs to, or null. */
+    private static String railOf(String path) {
+        for (Map.Entry<String, List<String>> rail : RAILS.entrySet()) {
+            if (rail.getValue().contains(path)) {
+                return rail.getKey();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The degradation controls (P16-TSK-018): while the path's rail is flagged, the request is answered {@code 503} at once
+     * ({@code unavailable}) or held unanswered while the flag exists and then answered {@code 503} ({@code silent}); either way nothing
+     * is recorded and no effect is taken. True when it answered.
+     */
+    private static boolean degraded(HttpExchange exchange, String path, String key) throws IOException {
+        String rail = railOf(path);
+        if (rail == null) {
+            return false;
+        }
+        Path unavailable = Path.of(DEGRADE + rail + "-unavailable");
+        Path silent = Path.of(DEGRADE + rail + "-silent");
+        if (Files.exists(unavailable)) {
+            logged(exchange, path, key, "unavailable");
+            send(exchange, 503, "{\"status\":\"unavailable\"}");
+            return true;
+        }
+        if (Files.exists(silent)) {
+            logged(exchange, path, key, "silent");
+            waitWhile(silent, 1200);
+            try {
+                send(exchange, 503, "{\"status\":\"unavailable\"}");
+            } catch (IOException gone) {
+                // The caller gave up long ago: what the silence is for.
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** One line of /tmp/requests.tsv: when, how, where, which key or reference, and what became of it. */
+    private static void logged(HttpExchange exchange, String path, String key, String outcome) {
+        REQUEST_LOG.add(System.currentTimeMillis() + "\t" + exchange.getRequestMethod() + "\t" + path + "\t" + (key == null ? "-" : key)
+                + "\t" + outcome);
     }
 
     private static void waitWhile(Path file, int tenthsOfASecond) {

@@ -283,7 +283,8 @@ must count, so the run goes on past the break and records the iterations it cann
 hours at peak by the peak profile's step from 30 minutes at the average, so one run holds all three. **(3)** On `kind` no credit
 approval can be given, automatic or by a person: no bureau can be configured there (unresolved question 13), and without the bureau's
 total balance the exposure is unassessed (`INV-CRD-09`, `INV-CRD-10`). So BNPL purchases and instalments, lending repayments and loan
-credit decisions (§4.3) are not driven by any profile; a simulated bureau on `kind` is an application change, routed to `P16-TSK-018`.
+credit decisions (§4.3) are not driven by any profile; a simulated bureau on `kind` is an application change, which the owner decided on
+2026-11-13 not to build in Phase 16 (unresolved question 13).
 **(4)** The reference machine's Linux VM keeps a monotonic clock that can run faster than its wall clock, by 8% in E30's run and by
 0.5% in the isolation run three hours later; the generator runs on the first, so its rates and latencies are that much higher than
 written in the host's seconds, and each run records the ratio.)*

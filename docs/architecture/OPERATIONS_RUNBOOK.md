@@ -3248,6 +3248,7 @@ latest; the run, as its record names it.
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | §11.45 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `89b8fc60`, `f021383f` | `§11.45's record: E30 at three replicas and the isolation run` | — |
 | §11.46 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `a6fee3a1` | `§11.46's record: E01's run and the probes` | — |
+| §11.53 | `payments`, `fx`, `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | §11.47 | `platform` | 0 | 8 | 8 | — | — | — | — | Phase 16 drill |
 | §11.48 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.49 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
@@ -4746,9 +4747,10 @@ until the party facts they need exist, `CURRENT_STATE.md`'s unresolved questions
 the bureau's total balance: unassessed, the policy's fallback decides (`INV-CRD-10`), a BNPL policy declining and a loan policy referring
 to a person, and a person's approval of the referral is refused while the exposure is unassessed (`credit.ExposureUnassessable`,
 `INV-CRD-09`, no exception). So no BNPL agreement and no loan can exist on `kind` for a purchase, an instalment or a repayment to act on, and
-a loan decision there is the fail-safe path, `RESILIENCE_EXPERIMENTS.md` E20's, not the target's. All three are routed to `P16-TSK-018`,
-whose E20 needs a simulated bureau on `kind`: an application change, and the owner's word on unresolved question 13 for a test-only
-deployment.
+a loan decision there is the fail-safe path, `RESILIENCE_EXPERIMENTS.md` E20's, not the target's. *(Until 2026-11-13 this said all three
+were routed to the provider experiments' task, whose E20 would need a simulated bureau on `kind`. The owner decided that day, on
+unresolved question 13, that no test-only bureau is built for `kind` in Phase 16: the three stay undriven there until the question is
+answered, and E20 rests on the recorded fail-safe.)*
 
 **Running it.** One full cluster at a time on the machine. From the repository root, with the rehearsal's own prerequisites (§11.28):
 
@@ -4917,8 +4919,8 @@ activations (credit's seeded scorecard and loan policies, lending's capital and 
 version reading no source, proposed by one person and activated by another, referred each of three EUR 2,000.00 loan applications at once;
 an underwriter granted through the administrator's door took each case and its approval was refused `422 credit.ExposureUnassessable`
 (a person may decline, never approve, while the bureau's total balance is absent: `INV-CRD-09`). Without a loan there is nothing to repay,
-and a BNPL policy cannot refer, so it declines. Driving them needs a simulated bureau on `kind`, an application change (routed to
-`P16-TSK-018`); the harness was not changed to work around either invariant.
+and a BNPL policy cannot refer, so it declines. Driving them needs a simulated bureau on `kind`, an application change the owner
+decided on 2026-11-13 not to build in Phase 16 (unresolved question 13); the harness was not changed to work around either invariant.
 
 **What it adds to §11.43's run.**
 - `load-run`: every 10 s, besides §11.43's samples, every pod's own cgroup inside the node (`pods.tsv`: CPU, the time its containers were
@@ -5163,6 +5165,68 @@ words that discoverer reads as credentials, and the boundary's cadence is worded
 on the same pinned image (a base backup at `verify-full` through the slot, streaming, `FIRST 1` synchronous, a commit held while the
 standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"), it is owed under
 `POSTPONED_ISSUES.md` PI-025 with E01's run on the final bytes.
+
+### 11.53 A provider unavailable, silent or slow; the provider experiments (`P16-TSK-018`)
+
+**What the platform does by itself.** Every call to a provider is bounded three times, by one setting per provider: the connection,
+the response's headers, and the body after them (`docs/architecture/TIMEOUTS_AND_RETRIES.md` section 2). A provider that
+answers `503`, says nothing past the bound, or stalls its body is an ambiguous answer, never a failure and never a success: the payment,
+payout, withdrawal or cover rests `UNKNOWN`, and its sweep asks the provider (an inquiry, which changes nothing) until it answers. Nothing
+is resent blind: a sweep re-sends only after the provider's own inquiry said it never saw the first attempt, and then under the first
+attempt's reference. Instances started together spread their sweeps' first ticks over an interval, so a recovering provider is not met
+by every replica at once. A customer's command answers `503` only when the provider could not be asked at all; an unknown answers what the
+platform knows. Rail availability is never switched by the platform itself: it is a person's recorded act (ADR-0060 decision 4).
+
+#### A provider unavailable or silent
+
+**What you see.** The rail's judgements turning `FAILED` or `UNKNOWN` (`finapp.payments.rail.outcome` by rail); its calls' latency at
+the setting's bound (`finapp.payments.provider.latency`); then, if it lasts, an unknown-age page: `PaymentUnknownAged`,
+`WithdrawalUnknownAged` or `MerchantPayoutUnknownAged` (section 11.22), each after 15 minutes. FX: quotes refused `fx.RateUnavailable`
+once the reference is older than its pair's maximum age (section 4 for the cover).
+
+1. **Read which rail.** The outcomes by rail say which provider; a refused connection, a `503` and a timeout all look the same from
+   here, and none of them is evidence that money did not move.
+2. **Resend nothing by hand.** An unknown is concluded by its sweep's inquiry once the provider answers, within twice the payment
+   sweep's dispatched age and five minutes (the default age is 10 minutes). A person re-driving a payment is the duplicate this
+   design exists to prevent.
+3. **If it lasts, stop new traffic to the rail, as a recorded act.** `POST /v1/operator/rails/{rail}/availability` with a reason
+   (ADR-0060 decision 4), so new payments route elsewhere or are refused before any effect; FX and corridors have their own doors
+   (sections 2 and 3b). Automation does not do this (owner decision C12, `TIMEOUTS_AND_RETRIES.md` section 5).
+4. **When it answers again**, watch the unknown-age gauges fall to nothing, then make the rail available again with a reason. A late
+   answer that contradicts a concluded failure is reconciliation's break, never a second effect.
+
+#### A provider slow
+
+**What you see.** Its latency rising with no failures yet; the hinted inquiries the webhook doors left to the sweep (the line "Too many
+hinted inquiries are running on this instance", no meter yet); the routes that call no provider, transfers and sign-in, within their
+objectives (`SLOS.md` section 2). A slow provider holds a request thread for at most its setting's bound; how many at once is the
+bulkheads' (`P16-TSK-016`). Nothing to do while the other routes hold; past the bound it is the case above.
+
+#### Running the provider experiments and reading their record
+
+`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS='E17 E18 E21'` on the reference machine, at three replicas, as section 11.46: each in
+the step shape, each fault through the registry and the boundary. The simulator's degradation flags (`Simulator.java`):
+`/tmp/degrade-<rail>-unavailable` answers the rail `503` at once, `/tmp/degrade-<rail>-silent` holds its requests past the bound;
+neither takes an effect or records an answer, and every request, degraded or not, is a line of the simulator's `/tmp/requests.tsv`.
+`REHEARSAL_PROVIDER_PHASE_SECONDS` sets each phase (240 s by default).
+
+- **E17**: the card rail unavailable, then silent, under the workload retrying under its keys. Judged: no card attempt authorized or
+  captured without the effect the provider took; every unknown since the start resolved once within the bound; no dispatch key sent
+  again without an answered inquiry of it between (a blind resend); the failure rate per rail before, during and after; the census.
+- **E18**: the FX provider unavailable (three conversions, each refused), then the reference unavailable past its maximum age (three
+  conversions refused, `refused_reference_stale` counted). Judged: no conversion booked on a stale rate, over conversions that exist.
+- **E21**: a latency toxic on the simulator's hop, one, then nine, times the card provider's steady latency more. Judged: the routes
+  that call no provider within their objectives; the bulkhead's refusals and the rates recorded.
+- **E19** and **E20** refuse to run: no production path runs a KYC case's checks and `kind` configures no KYC provider
+  (`THREAT_MODEL.md` section 6 item 60); no deployment configures a bureau, and the owner decided on 2026-11-13 that none is built for
+  `kind` in Phase 16 (unresolved question 13), so E20 rests on the recorded fail-safe.
+
+Each record is `experiments/<id>/record.tsv` beside `requests.tsv` and `rail-outcomes-*.tsv`; the verdict goes to
+`RESILIENCE_EXPERIMENTS.md` in its grammar.
+
+**The record.** None. Written 2026-11-13; by the owner's word of that day ("we dont need long running checks and tests") no provider
+experiment has run: E17, E18 and E21 at three replicas are owed under `POSTPONED_ISSUES.md` PI-025, and with them the failure rates per
+rail that owner decision C12 waits on.
 
 ### 11.47 Network, DNS, connection and disk faults: each fault's signature, and running them (`P16-TSK-021`, ADR-0127)
 

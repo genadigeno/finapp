@@ -29921,6 +29921,12 @@ on none:
   sampler, which never passes blind, stopped the run (E30, sample 35, 0.49 of the target's peak). A per-class bound that keeps the
   correctness monitors reading under load, and a create that cannot answer `500` after its effect, are this task's (with `P16-TSK-009`
   for the pool's size).
+- *Routed from `P16-TSK-018` (2026-11-13):* `CallbackInquiryBulkhead`'s refusals are counted by no meter: a refused hinted inquiry is
+  one `INFO` line ("Too many hinted inquiries are running on this instance; this one is left to the sweep") and the delivery is then
+  counted `finapp.payments.webhook{outcome=PROCESSED}`, so a slow provider filling the bulkhead is visible only in the replicas' lines.
+  E21 counts the lines meanwhile (`kind-rehearsal/experiments.sh` `provider_bulkhead_refusals`); a bulkhead per class of work, with its
+  refusals counted, is this task's. Every provider exchange now has a bound on its body (`OutboundExchange`,
+  `docs/architecture/TIMEOUTS_AND_RETRIES.md` section 2), so each call is bounded in time; how many wait at once is the bulkheads'.
 
 **P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-017` from master `c9c07831`, wave B beside `-006`; payments `V040`, merchant `V016`, reconciliation `V025`, no ADR; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, ...)" until the gate)
 - **Objective**: as decided 2026-11-12. A sweep's failed tick is metered and paged (item 42 (i) (i)), and each listing skips and
@@ -29961,7 +29967,7 @@ on none:
   owner (`THREAT_MODEL.md` §6 item 51). Hermetic tests for every sweep's skip, count, backoff and exclusion; the entry's probe
   and ten more Java and harness probes, and seven rule probes, performed (`MUTATION_TESTING.md` §2); database cases written and owed (PI-023). **E28** (runbook §11.39 (a); PI-024's poisoned-row step under C11) `PASSED` on `kind` at 3 replicas, commit `e9cdbb3a`, 2026-11-13 02:22-02:34Z, development mode (the `incidents` prefix, `platform-prepare`, `platform-poisoned-rows`): `PaymentSweepRowUnreadable` fired 95 s after the plant and reached `placeholder-page`, the record held 2 failures, the row stayed `CAPTURE_DISPATCHED`, no replica's tick failed whole, census green, the cluster deleted and the lock released. A first run at `82bab047` passed the same assertions and read `COULD NOT RUN`: the harness's development mode left `wanted`'s refusal of the scope's last unnamed step as the sourced file's status under `set -e`; `platform.sh` now ends its sequences in a zero status (`PlatformRehearsalContractTest#theSequenceEndsInAZeroStatus`, its probe performed).
 
-**P16-TSK-018 — Timeouts and retries classified; provider outages and slow providers (C12)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)
+**P16-TSK-018 — Timeouts and retries classified; provider outages and slow providers (C12)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-018` from master `1fbdf71c`, wave D; no migration; no ADR - C12's waits on a measurement, so the reserved ADR-0138 is unused; one new owner item, `THREAT_MODEL.md` section 6 item 60; its cluster runs owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until its gate)
 - **Objective**: one inventory of every outbound call's connect, request and overall bound and of every retry, each retry classified
   safe; the provider-outage experiments E17–E21 run; automatic rail availability decided from measured failure rates.
 - **Affected components**: every provider adapter (`payments`, `merchant`, `fx`, `kyc`, `credit`, `paymentmethods`, `settlement`),
@@ -30003,6 +30009,35 @@ on none:
   deployment. Once that exists the load profiles' three `"generator": "none"` operations can be driven: the setup is the platform scope's
   activations and a customer's decision request, application, offer and agreement through their doors. `LoadRehearsalContractTest` names
   this task as their driver while it is live.
+  *(Closed 2026-11-13 by the owner's decision on unresolved question 13, "accept recommendation": no test-only bureau is built for
+  `kind` in Phase 16, so BNPL, lending repayments and loan credit decisions stay undriven there until the question is answered, and
+  E20 rests on the recorded fail-safe. The load profiles' three reasons now name that decision, and `LoadRehearsalContractTest` accepts
+  the owner's dated decision beside a live task.)*
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-018` from master `1fbdf71c`):* **The inventory**
+  (`docs/architecture/TIMEOUTS_AND_RETRIES.md`): the 13 classes that build an HTTP client with their three bounds, the JDK client's own
+  retries, the other outbound calls, the 35 schedules and 10 other retries, each classified (a), (b) or (c) by `PHASE_16_PLAN.md`
+  section 8's rule, held both ways by `OutboundCallsAreBoundedTest` (7 members). **What the inventory found**: every request already
+  had its timeout, but the JDK 21 client's request timeout ends at the response's headers, so no exchange bounded its body, and the
+  reference rate source read its body from a stream with no bound at all. **The body's bound**: `platform`'s
+  `OutboundExchange.send` (the body bounded from the headers, failed as an `HttpTimeoutException` and its connection closed past the
+  bound; the JDK's handling before the headers untouched, so a refused connection, which the JDK retries once, is still a
+  `ConnectException`), used by every one of the 13 adapters' 18 exchanges; `limitedBytes` for the reference source;
+  `OutboundExchangeTest` (7) shows the JDK's own send still waiting on a stalled body where the bound cuts it. Its first form, a bound
+  from the call, cut the JDK's retry of a refused connection and turned it into a timeout, which `SimulatedInstantSchemeAdapterTest`
+  caught in the gate's run; the bound now starts at the headers. **Jitter**:
+  `TickPhase`, a first tick drawn from one interval to just under two, on the 15 schedules that reach a provider or the broker from
+  every instance; the relay's per-row backoff kept unjittered (its herd bounded by construction; E09 measures it), the Kafka clients
+  jittering their own. **The experiments**: the simulator's degradation controls (`/tmp/degrade-<rail>-unavailable|silent`, no effect
+  taken, every request logged), E17, E18 and E21 in the experiments scope with their stop conditions and measurements, E19 and E20
+  refused with their reasons, the FX provider and reference named in the scope; `ProviderExperimentsContractTest` (7);
+  `OPERATIONS_RUNBOOK.md` section 11.53. **Criteria**: the inventory complete - met (guarded); every retry classified - met (guarded);
+  E17-E21 recorded with zero postings without an answer - E17, E18 and E21 built, contract-tested, runs owed (PI-025); E19 cannot be
+  driven (item 60); E20 on the recorded fail-safe by the owner's decision; failure rates per rail - the measurement built into each
+  run, owed; C12's decision written (`DECISIONS.md` section Deliberately Deferred, `TIMEOUTS_AND_RETRIES.md` section 5): not built,
+  no rate measured, availability stays an operator's recorded act. **Found and put to the owner**: no production path runs a KYC
+  case's checks (`VerificationRunService.runChecks` has test callers only), `THREAT_MODEL.md` section 6 item 60. **Routed**:
+  `P16-TSK-016` - `CallbackInquiryBulkhead`'s refusals are counted by no meter (a log line only). **Owed under PI-025**: E17, E18 and
+  E21 at three replicas, with their failure rates per rail. **Tests**: one run of named classes after the last merge (2026-11-13 14:43Z on), 69 classes in eight modules - the changed classes' tests, every guard reading a changed file, the always-run four - 729 tests and the 22 ArchUnit rules of 7 suites the filter pulls in, 0 failed; an earlier run of the same set found the helper's first form (above); not run: `AlertRulesResolveTest` (database tier), `RiskAlertRulesTest` and `BnplAlertRulesTest` (slow), and the database and Kafka cases of the changed schedules' and adapters' callers, owed to PI-023's kind of pass **Probes**: twenty-two hermetic plants in four rounds, each caught by the member aimed at it, two of them on the helper's first form and planted again on its second (`MUTATION_TESTING.md` section 2); none on a cluster
 
 **P16-TSK-019 — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `COMPLETE` (2026-11-13; branch `P16-TSK-019` from master `0a09a273`; gate `COMPLETE` 2026-11-13; marked `READY` by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)
 - **Objective**: build the `experiments` scope:
