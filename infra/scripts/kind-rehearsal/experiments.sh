@@ -5108,7 +5108,7 @@ e73_resolved_twice() {
 # e73_attach <label>: the rehearsal's first customer attaches one card under E73's client token, its live methods counted before and
 # after (Rehearsal.java's attach-card), into attach-<label>.txt; sets E73_STATUS, E73_BEFORE and E73_AFTER. Never called inside $( ).
 e73_attach() {
-    client attach-card "$E73_TOKEN" > "$EXP_DIR/attach-$1.txt" 2>&1 || true
+    client attach-card "$E73_GRANT" > "$EXP_DIR/attach-$1.txt" 2>&1 || true
     E73_STATUS=$(sed -n 's/^status=//p' "$EXP_DIR/attach-$1.txt" | tail -1)
     E73_BEFORE=$(sed -n 's/^before=//p' "$EXP_DIR/attach-$1.txt" | tail -1)
     E73_AFTER=$(sed -n 's/^after=//p' "$EXP_DIR/attach-$1.txt" | tail -1)
@@ -5121,7 +5121,7 @@ E73_steady() {
     e73_resolve_seconds
     PROVIDER_START=$(db_epoch)
     PROVIDER_START_MILLIS=$((PROVIDER_START * 1000))
-    E73_TOKEN="ctok_$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+    E73_GRANT="ctok_$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
     # The client keeps asking under each key until its movement ends, past the outage and the payout sweep's conclusion.
     WORKLOAD_RETRY_SECONDS=$((2 * PROVIDER_PHASE_SECONDS + E73_RESOLVE_SECONDS))
     start_workload e73 retry
