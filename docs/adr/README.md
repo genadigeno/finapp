@@ -174,6 +174,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0133](ADR-0133-contention-measured-before-any-mechanism-and-the-whole-history-folds.md) | Contention measured before any mechanism, and the whole-history folds bounded by a commit-order checkpoint (the checkpoint proposed, its build the owner's to place) | Proposed | 16 | Ledger · Merchant · Platform (operated under load) |
 | [0134](ADR-0134-the-connection-budget-at-ten-replicas.md) | The connection budget at ten replicas: a larger server, no smaller pool, no transaction-mode pooler yet | Proposed | 16 | Platform · every module (operated at scale) |
 | [0140](ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md) | The post-recovery hold and point-in-time recovery: the role lock held through the window, the window acting as the application's role, a person's recorded release | Proposed | 16 | Platform · Settlement · Reconciliation |
+| [0141](ADR-0141-one-journal-entry-per-posting-scope-then-the-idempotency-sweep.md) | One journal entry per posting scope, for ever, then the idempotency records swept | Proposed | 16 | Ledger · Platform |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
@@ -256,3 +257,4 @@ task whose measurement justifies it (`PHASE_16_PLAN.md` §6.5, §24; `P16-TSK-01
 objectives and the post-recovery gate) and ADR-0129 (availability and the multi-region stance), all `Proposed`, from
 `PHASE_16_PLAN.md`; the next free number is ADR-0130.)*
 *(`P16-TSK-009`, 2026-11-13, wrote ADR-0134 (the connection budget at ten replicas), `Proposed`, the number the coordinator reserved for it in wave D.)*
+*(`P16-TSK-011`, 2026-11-13, wrote ADR-0141 (one journal entry per posting scope, then the idempotency sweep), `Proposed`, the number the coordinator reserved for it in wave E.)*

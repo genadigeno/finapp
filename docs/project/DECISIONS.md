@@ -1403,6 +1403,13 @@ cannot log in; the books are verified again; a person releases, with a record na
 to an instant from an encrypted WAL archive, held before its server first starts. →
 [ADR-0140](../adr/ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md)
 
+**One journal entry per posting scope, for ever, then the idempotency records swept** (`THREAT_MODEL.md` §6 item 18, debt row #61).
+A census of the journal's duplicated scopes, kept as a row, then a unique index the census must allow (a duplicate stops the release,
+never deleted); a posting or reversal retried after its record is gone answered by the recorded entry, a different request the
+conflict; then a sweep of terminal records past their expiry and a grace (30 days, never under a day) that refuses while the
+uniqueness is absent, and the application's `DELETE` revoked. What the sweep leaves to commands with no second arbiter is item 63. →
+[ADR-0141](../adr/ADR-0141-one-journal-entry-per-posting-scope-then-the-idempotency-sweep.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

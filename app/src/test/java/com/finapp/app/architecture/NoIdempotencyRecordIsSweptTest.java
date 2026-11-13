@@ -131,9 +131,9 @@ class NoIdempotencyRecordIsSweptTest {
     void theUniquenessTheSweepWaitsForIsTheLedgers() {
         Path uniqueness = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals(UNIQUENESS_MIGRATION))
-                .filter(path -> path.toString().replace('\', '/').contains("ledger/src/main/resources/db/migration/ledger/"))
+                .filter(path -> path.toString().replace('\\', '/').contains("ledger/src/main/resources/db/migration/ledger/"))
                 .findFirst().orElseThrow();
-        String sql = withoutComments(read(uniqueness)).replaceAll("\s+", " ");
+        String sql = withoutComments(read(uniqueness)).replaceAll("\\s+", " ");
         assertThat(sql)
                 .contains("CREATE UNIQUE INDEX IF NOT EXISTS journal_entry_one_per_idempotency_scope ON ledger.journal_entry"
                         + " (idempotency_scope);")
@@ -200,7 +200,7 @@ class NoIdempotencyRecordIsSweptTest {
      * {@code ledger.journal_entry}'s {@code idempotency_scope} and raises when there is none.
      */
     private static boolean insideTheGuardedSweep(Path migration, String sql, int at) {
-        String path = migration.toString().replace('\', '/');
+        String path = migration.toString().replace('\\', '/');
         if (!migration.getFileName().toString().equals(SWEEP_MIGRATION) || !path.contains("platform/src/main/resources/db/migration/platform")) {
             return false;
         }
