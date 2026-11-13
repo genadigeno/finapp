@@ -604,7 +604,8 @@ experiments_clear_faults() {
 }
 
 # experiments_kill_jvm <pod>: SIGKILL to the pod's application process, from the node it runs on - the PID namespace's parent, so the signal
-# is delivered to a process that is its own namespace's init. Prints "<node> <container> <pid>".
+# is delivered to a process that is its own namespace's init. Sets KILLED to "<node> <container> <pid>"; never called inside $( ), where a
+# refusal would end a subshell and not the run.
 experiments_kill_jvm() {
     node=$(kube -n finapp get pod "$1" -o jsonpath='{.spec.nodeName}')
     container=$(kube -n finapp get pod "$1" -o jsonpath='{.status.containerStatuses[?(@.name=="app")].containerID}' | sed 's#^containerd://##')
@@ -615,7 +616,7 @@ experiments_kill_jvm() {
     case $pid in '' | *[!0-9]*) cannot "the application process of $1 could not be found on $node" ;; esac
     dock exec "$node" kill -9 "$pid" || cannot "SIGKILL could not be sent to $1's process on $node"
     printf '%s\tkill -9\t%s on %s, pid %s\n' "$(date -u +%H:%M:%S)" "$1" "$node" "$pid" >> "$EXP_ART/faults.log"
-    printf '%s %s %s\n' "$node" "$container" "$pid"
+    KILLED="$node $container $pid"
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -788,6 +789,7 @@ experiments_steady() {
 
 # Stop: every fault the experiment put on is removed, and the cluster read to have none left.
 experiments_stop() {
+    cp "$FAULTS" "$FAULTS.cleared"
     while IFS= read -r fault; do
         [ -n "$fault" ] || continue
         # shellcheck disable=SC2086
@@ -795,7 +797,6 @@ experiments_stop() {
     done <<EOF
 $(awk '{line[NR] = $0} END {for (i = NR; i >= 1; i--) print line[i]}' "$FAULTS")
 EOF
-    cp "$FAULTS" "$FAULTS.cleared"
     left=$(experiments_faults_left)
     [ -z "$left" ] || fail "$EXP_ID stop: a fault is still on after its removal: $left"
     experiments_record stopped "${EXP_STOPPED:-on schedule, no stop condition met}"
@@ -893,17 +894,18 @@ E01_fault() {
         experiments_context_check || fail "the safety boundary refused before the kill: $EXP_REASON"
     fi
     E01_KILLED_AT=$(date +%s)
-    killed=$(experiments_kill_jvm "$E01_VICTIM")
-    experiments_record fault "kill -9 of $E01_VICTIM's JVM ($killed) at $(date -u -d "@$E01_KILLED_AT" +%H:%M:%SZ), its payout's claim IN_PROGRESS and held at the provider"
-    log "E01: $E01_VICTIM's JVM killed with SIGKILL ($killed), its payout under a claim IN_PROGRESS"
+    experiments_kill_jvm "$E01_VICTIM"
+    experiments_record fault "kill -9 of $E01_VICTIM's JVM ($KILLED) at $(date -u -d "@$E01_KILLED_AT" +%H:%M:%SZ), its payout's claim IN_PROGRESS and held at the provider"
+    log "E01: $E01_VICTIM's JVM killed with SIGKILL ($KILLED), its payout under a claim IN_PROGRESS"
 }
 
 E01_observe() {
     sleep 10
     experiments_fault_off hold hold-payouts
     wait "$E01_FIRST" 2>/dev/null || true
-    grep -q '^curl=0$' "$EXP_DIR/payout-first.txt" && grep -q '^status=20[01]$' "$EXP_DIR/payout-first.txt" \
-        && fail "E01: the payout in flight on the killed replica was answered, so it was not in flight when the process died"
+    if grep -q '^curl=0$' "$EXP_DIR/payout-first.txt" && grep -q '^status=20[01]$' "$EXP_DIR/payout-first.txt"; then
+        fail "E01: the payout in flight on the killed replica was answered, so it was not in flight when the process died"
+    fi
     experiments_record "in flight" "the payout sent to the killed replica: $(grep -h '^curl=\|^status=' "$EXP_DIR/payout-first.txt" | tr '\n' ' ')"
     # Until the killed replica is ready again: its endpoint's removal, its restart, and the stop condition (a second replica unready).
     removed=""
@@ -987,7 +989,10 @@ E01_recover() {
     failed_victim=$(awk -F'\t' -v v="$E01_VICTIM_IP" '$2 == v && ($3 >= 500 || $4 == 0)' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
     failed_other=$(awk -F'\t' -v v="$E01_VICTIM_IP" '$2 != v && ($3 >= 500 || $4 == 0)' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
     served_other=$(awk -F'\t' -v v="$E01_VICTIM_IP" '$2 != v && $3 < 500 && $4 != 0' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
-    experiments_record "failed at the edge" "$failed_victim answers the edge could not get from the killed replica, $failed_other from the others, which served $served_other, of $answers since the minute before the kill"
+    served_victim=$(awk -F'\t' -v v="$E01_VICTIM_IP" '$2 == v && $3 < 500 && $4 != 0' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
+    experiments_record "failed at the edge" "$failed_victim answers the edge could not get from the killed replica, which served $served_victim; $failed_other from the others, which served $served_other; of $answers since the minute before the kill"
+    # The control: the killed replica's own address read in the lines, so a failure meant for it would have been seen.
+    [ "$served_victim" -ge 1 ] || fail "E01: no answer of the killed replica was read in the edge's lines, so its failures could not have been: see experiments/E01/edge-answers.tsv"
     [ "$failed_other" = 0 ] || fail "E01: the edge answered $failed_other requests with a failure from a replica that was not killed"
     [ "$served_other" -ge 1 ] || fail "E01: the other replicas served nothing through the edge, so the others serving was not shown"
     pass "E01: every failed answer at the edge ($failed_victim) was the killed replica's; the others served $served_other; $(workload_failed e01) workload attempts failed and were retried by key, none unresolved"
