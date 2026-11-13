@@ -29988,7 +29988,7 @@ on none:
   removed on every way out). A fleet-wide hole longer than five minutes pages `GaugesStaleAcrossTheFleet`, its expected signal there
   (`EXP_PAGES_EXPECTED`); E14's one replica should not.
 
-**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `IN_PROGRESS` (2026-11-13; branch `P16-TSK-022` from master `1fbdf71c`, designed) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until the design)*
+**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-022` from master `1fbdf71c`, wave D, master merged in once; no migration; ADR-0139; every cluster run owed under PI-025; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until the design, then "`IN_PROGRESS`" until its gate)*
 - **Objective**: as decided:
   - E05, a database primary failover under load on the test-only synchronous standby pair;
   - its interruption measured;
@@ -30036,6 +30036,39 @@ on none:
   `synchronous_standby_names` is the drill's to decide; the harness's `psql_query` and census read `finapp-postgres-0` through its pod,
   so after a promotion they must read the promoted one; and the scope's steady state refuses to start an experiment unless the standby
   is synchronous.
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-022` from master `1fbdf71c`, master merged in once; no migration; ADR-0139;
+  `OPERATIONS_RUNBOOK.md` §11.54 the drill's procedure and empty record, §11.40 corrected; `RESILIENCE_EXPERIMENTS.md` E05, E06, E56
+  and E57; under the owner's word of 2026-11-13, "we dont need long running checks and tests", **nothing ran on a cluster: every run is
+  owed under `POSTPONED_ISSUES.md` PI-025**):* **The socket timeout**: `socketTimeout: 300` on the writer's driver properties, which the
+  reporting pool takes too. Reading the code corrected the item's premise: the longest statement bound armed on the writer's pool is
+  report generation's four-minute budget (the shared report snapshots: final statements, the report run desk, the close's final trial
+  balance), not the checks' 30 s, so a number chosen from 30 s would have failed those reads. Five minutes is every armed bound and a
+  minute for the server's answer, and frees a black-holed connection with ten minutes of ADR-0128's in-region objective left;
+  `DatabaseSocketTimeoutTest` holds both, discovering every class that arms `statement_timeout` and the bound properties their beans read, and that no
+  overlay moves a bound. A statement it cuts is the existing "committed, answer lost" case. The stale "no socket timeout" sentences
+  were corrected wherever they stood (the runbook's §6 gauge section, §11.8, §11.40 and risk's proofs; `DISTRIBUTED_EXECUTION.md`; the
+  debt register; three classes' and risk's rule's comments; ADR-0016's note). **The drill** (the experiments scope): **E06**, the
+  primary's unclean stop in place (PI-024's step, under C11); **E57**, the database hop black-holed for the whole fleet (a latency toxic,
+  then Toxiproxy's `timeout` toxic with no timeout), first with the socket timeout and then with the fleet rolled without it (a new
+  `setting` fault, undone on every way out), each held connection read from the writer pool's meter; **E05**, the primary's server
+  killed with `SIGKILL` from its node, a payout held at the provider with its claim `IN_PROGRESS`, the old primary fenced and its pod
+  gone before anything is promoted, the promotion refused unless the primary named the standby synchronous at its last read and the
+  standby holds the last commit the drill saw acknowledged, the standby promoted alone (`synchronous_standby_names` reset: the routed
+  question decided), the Service moved, every harness read following the primary (`PG_POD`), the old primary never back. Each reads the
+  journal with a digest per entry before its fault and compares it after, records each replica's readiness (an outage shorter than
+  three failed checks may leave them ready: recorded, never assumed), asserts no money-moving success while the database was away and
+  reads the interruption from the edge's answers; E05 also measures the card payments caught mid-call (the routed measurement). The
+  entry's probe is `REHEARSAL_PROBE=async-standby` (E56): the refusal fires, the probe overrides it, and the comparison must name the lost
+  entries. The load scope records each statement's longest execution (`pg-statements_longest.tsv`) for E29's owed run, the socket
+  timeout's measured evidence. **Acceptance**: E05 and E06 with interruption times - built, contract-tested, run owed (PI-025); the
+  socket timeout decided with its evidence - decided from the code's armed bounds and the recovery objective, its measured evidence (E57,
+  E29's longest statement) owed (PI-025), with ADR-0139's revision rule; §11.40's record filled - owed (PI-025), §11.54 written; the
+  readiness cells of §3.3 (and §3.1, §4.2) re-ruled. **Deviation**: the failover runs under the experiments scope's retrying workload, not
+  the sustained k6 profile: the load sampler stops at the first unreadable sample, and a failover makes them all unreadable; routed to
+  `P16-TST-001` with what the soak needs. **Owner item 61** (new, awaiting the owner): the `500` while the database is away, recommended
+  `503` with `Retry-After` in a task of its own after the load-shedding answer. **Routed**: `P16-TSK-021` (E14's bound; E57's black-hole
+  step on the `toxic` primitive, where the two meet), `P16-TSK-023` (the drill's rules for the matrix), `P16-TST-001` (the failover in
+  the soak). **Owed under PI-025**: E06, E57 and E05 at three replicas, E56, and E29's longest statement. **Guards**: GATE_SUMMARY.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
 - **Objective**: as decided:

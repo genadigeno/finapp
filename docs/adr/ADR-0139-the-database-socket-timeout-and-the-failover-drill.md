@@ -28,7 +28,7 @@ Reading the code for that decision found three things its options had not said:
 
 The statement bounds the code arms are seven registered properties (`CONFIGURATION_REGISTER.md`: the checks 30 s, the gauges 2 s, the GL
 reads 10 s, report generation 4 min, operational reports 30 s, the source census 30 s, the risk proofs 5 s) and risk's evaluation
-budget (250 ms, a constant), armed in six classes. The statements that arm none (requests, ticks, sweeps) were measured once past the
+budget (250 ms, a constant), armed in six classes and described in one interface. The statements that arm none (requests, ticks, sweeps) were measured once past the
 platform's break, at three replicas (E30, `CAPACITY_MODEL.md` §3.4): request p99 at most 22 s, the slowest statement's mean 2.7 s. The
 runs that would measure them at the sustained profile and the black-holed connection itself were postponed by the owner on
 2026-11-13 (`POSTPONED_ISSUES.md` PI-025).

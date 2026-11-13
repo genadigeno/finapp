@@ -92,10 +92,15 @@ class DatabaseSocketTimeoutTest {
             "the checks', the gauges' and the GL reads' statement-timeout, or GlSnapshots.STATEMENT_TIMEOUT",
             "app/src/main/java/com/finapp/app/accounting/JdbcReportSnapshots.java", "the two report budgets",
             "risk/src/main/java/com/finapp/risk/JdbcEvaluationBudget.java", "EvaluationBudget.READ_TIMEOUT",
+            "risk/src/main/java/com/finapp/risk/EvaluationBudget.java", "EvaluationBudget.READ_TIMEOUT, the contract JdbcEvaluationBudget arms",
             "risk/src/main/java/com/finapp/risk/RiskProofs.java", "finapp.risk.proofs.statement-timeout, or RiskProofs.STATEMENT_TIMEOUT");
 
-    /** A statement bound armed in Java: {@code set_config('statement_timeout', ...)}, as every site arms it. */
-    private static final Pattern ARMS = Pattern.compile("set_config\\('statement_timeout'");
+    /**
+     * A statement bound armed in Java: {@code set_config('statement_timeout', ...)}, as every site arms it today, or a
+     * {@code SET [LOCAL | SESSION] statement_timeout}, the other spelling a later site could use.
+     */
+    private static final Pattern ARMS =
+            Pattern.compile("set_config\\('statement_timeout'|(?i)\\bSET\\s+(?:LOCAL\\s+|SESSION\\s+)?statement_timeout\\b");
 
     /** A property the code reads with a default: {@code Value("${name:default}")}, the annotation spelled short or in full. */
     private static final Pattern READS = Pattern.compile("Value\\(\"\\$\\{([a-z][a-z0-9.-]*)[:}]");
