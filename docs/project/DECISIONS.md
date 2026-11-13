@@ -1409,6 +1409,13 @@ clock; the copy the database's own text, written once, read back and compared, a
 recomputes; a copy that differs stops the chain. No audit record is deleted. Dead sessions' rows go a grace past their idle bound,
 never a live one. → [ADR-0135](../adr/ADR-0135-audit-archival-by-verified-segment.md)
 
+**The relay drains while its batch is full; three test-only brokers where the experiments run.** A candidate another relay already
+drained takes no slot of the batch, and a cycle that worked its whole batch and failed nothing is followed at once by another, the lock,
+the order and the conditional mark unchanged; measured by E47, owed (PI-025). The `kind` overlay's broker is three-capable and committed
+at one; the experiments scope, and the load scope when asked, run three with the catalogue's posture, SCRAM on every broker and the
+quorum and replication over mutual TLS, each broker behind a proxy of its own. *(Added 2026-11-13, `Proposed`.)* →
+[ADR-0136](../adr/ADR-0136-the-event-pipeline-at-load.md)
+
 **The post-recovery hold is the role lock, held through the window.** The platform's roles stay `NOLOGIN` from before a restore to
 its release; the window since the restore's point is reconciled by one command acting as the application's role while those roles
 cannot log in; the books are verified again; a person releases, with a record naming the reports it rests on. Locally, a recovery

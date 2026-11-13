@@ -148,11 +148,14 @@ class ExperimentsRehearsalContractTest {
     @DisplayName("the proxy is on the application's three hops alone, its admin API on its own loopback, and the clients' URLs and verify-full unchanged")
     void theProxyIsOnTheApplicationsHopsAndTlsIsUnchanged() {
         String proxy = read(PROXY);
-        assertThat(proxy).as("its three proxies are the run's three services")
+        assertThat(proxy).as("its proxies are the run's three services and, since P16-TSK-013, each of its three brokers by its own name")
                 .contains("\"upstream\": \"finapp-postgres.finapp.svc.cluster.local:5432\"")
                 .contains("\"upstream\": \"finapp-kafka.finapp.svc.cluster.local:9092\"")
-                .contains("\"upstream\": \"finapp-simulator.finapp-rehearsal.svc.cluster.local:8443\"");
-        assertThat(proxy.split("\"upstream\": ", -1)).as("three, and no fourth").hasSize(4);
+                .contains("\"upstream\": \"finapp-simulator.finapp-rehearsal.svc.cluster.local:8443\"")
+                .contains("{\"name\": \"kafka-0\", \"listen\": \"0.0.0.0:19092\", \"upstream\": \"finapp-kafka-0.finapp-kafka.finapp.svc.cluster.local:9092\"")
+                .contains("{\"name\": \"kafka-1\", \"listen\": \"0.0.0.0:19093\", \"upstream\": \"finapp-kafka-1.finapp-kafka.finapp.svc.cluster.local:9092\"")
+                .contains("{\"name\": \"kafka-2\", \"listen\": \"0.0.0.0:19094\", \"upstream\": \"finapp-kafka-2.finapp-kafka.finapp.svc.cluster.local:9092\"");
+        assertThat(proxy.split("\"upstream\": ", -1)).as("six, and no seventh").hasSize(7);
         assertThat(proxy).as("the admin API on the pod's loopback")
                 .contains("args: [\"-host=127.0.0.1\", \"-config=/etc/finapp-toxiproxy/proxies.json\"]");
         assertThat(proxy.lines().filter(line -> !line.stripLeading().startsWith("#")).toList()).as("exposed by no Service and no policy")
@@ -160,8 +163,9 @@ class ExperimentsRehearsalContractTest {
         assertThat(proxy).as("admitting the application's pods alone").contains("pod-security.kubernetes.io/enforce: restricted")
                 .contains("name: default-deny\n  namespace: finapp-experiments").contains("runAsNonRoot: true").contains("readOnlyRootFilesystem: true");
         String data = function("experiments_data_tier");
-        assertThat(data).as("the application's own names resolved to the proxy in its pods, and only those three")
+        assertThat(data).as("the application's own names resolved to the proxy in its pods, and each broker's own name to its own proxy's address")
                 .contains("      hostAliases:").contains("            - $PG_HOST\n            - $KAFKA_HOST\n            - $SIM_HOST\n")
+                .contains("get service \"finapp-toxiproxy-kafka-$i\"").contains("$(brokers_name \"$i\")\" >> \"$WORK/host-aliases.yaml\"")
                 .contains("\"$A/Deployment.finapp-app.yaml\"").doesNotContain("Job.finapp-migrator");
         assertThat(harness).as("the client's URL the same bytes in every scope, verify-full against the run's CA")
                 .contains("DB_URL=\"jdbc:postgresql://$PG_HOST:5432/finapp?sslmode=verify-full&sslrootcert=/etc/finapp-local-ca/ca.crt\"")
@@ -172,7 +176,7 @@ class ExperimentsRehearsalContractTest {
                 .contains("host(a.client_addr) = '$proxy_pod'").contains("[ \"$tls\" = \"$all\" ] && [ \"$proxied\" = \"$all\" ]");
         assertThat(topology).as("the consumer groups' members at the proxy's address and none elsewhere; every replica accepted on every hop")
                 .contains("kafka-consumer-groups.sh --describe --all-groups --members").contains("[ \"$other\" = 0 ] || fail")
-                .contains("for proxy in postgres kafka; do").contains("'\"message\":\"Accepted client\"'")
+                .contains("for proxy in postgres kafka kafka-0 kafka-1 kafka-2; do").contains("'\"message\":\"Accepted client\"'")
                 .contains("[ \"$callers\" -ge 1 ] || fail \"topology: no replica's provider call went through the proxy");
     }
 
@@ -250,8 +254,10 @@ class ExperimentsRehearsalContractTest {
                 .contains("other) EXP_REASON=\"endpoint: $key is read from a source this check does not read\"")
                 .contains("[ \"$end_providers\" -ge 3 ] ||");
         assertThat(endpoints).as("the hostAliases the run's three names to its proxy, and the proxy's upstreams the run's three services")
-                .contains("[ \"$aliases\" = \"$proxy $PG_HOST $KAFKA_HOST $SIM_HOST\" ]")
-                .contains("\"kafka=$KAFKA_HOST:9092 postgres=$PG_HOST:5432 simulator=$SIM_HOST:8443 \"");
+                .contains("expected=\"$proxy $PG_HOST $KAFKA_HOST $SIM_HOST\"").contains("$broker_proxy $(brokers_name \"$i\")\"")
+                .contains("[ -n \"$proxy\" ] && [ \"$aliases\" = \"$expected\" ]")
+                .contains("printf 'kafka=%s:9092\\npostgres=%s:5432\\nsimulator=%s:8443\\n' \"$KAFKA_HOST\" \"$PG_HOST\" \"$SIM_HOST\"")
+                .contains("printf 'kafka-%s=%s:9092\\n' \"$i\" \"$(brokers_name \"$i\")\"").contains("[ \"$upstreams\" = \"$wanted_upstreams\" ]");
         String secrets = read(SECRETS);
         assertThat(secrets).as("kind-secrets.sh's ledger holds hashes alone, and never inside the repository")
                 .contains("[ -z \"$LEDGER\" ] || printf '%s' \"$fresh\" | sha256sum | cut -c1-64 >> \"$LEDGER\"")
@@ -319,7 +325,7 @@ class ExperimentsRehearsalContractTest {
         assertThat(on).as("the boundary, then the registry, then the fault")
                 .startsWith("\n    experiments_guard\n    printf '%s\\n' \"$*\" >> \"$FAULTS\"\n");
         for (String kind : List.of("toxic)", "proxy-down)", "hold)", "store-hold)", "partition)", "node-paused)", "scaled)",
-                "setting)")) {
+                "setting)", "brokers-stopped)", "relay-held)", "min-isr)")) {
             assertThat(on).as("put on: %s", kind).contains("        " + kind);
             assertThat(function("experiments_undo")).as("taken off: %s", kind).contains("        " + kind);
         }
@@ -346,7 +352,7 @@ class ExperimentsRehearsalContractTest {
         String left = function("experiments_faults_left");
         assertThat(left).as("read, never trusted: an unreadable proxy or simulator is a fault left on")
                 .contains("|| echo \"the proxy could not be read\"").contains("|| echo \"the simulator could not be read\"")
-                .contains("not its three").contains("--filter status=paused");
+                .contains("not its six").contains("= \"$((3 + KAFKA_BROKERS))\" ]").contains("--filter status=paused");
         String stop = function("experiments_stop");
         assertThat(stop).as("an experiment's stop removes its faults and reads that none is left").contains("experiments_fault_off $fault")
                 .contains("[ -z \"$left\" ] || fail");
@@ -421,7 +427,7 @@ class ExperimentsRehearsalContractTest {
         assertThat(function("experiments_scope")).contains("case $PROBE in crash-with-faults | term-with-faults) experiments_crash ;; esac")
                 .contains("[ \"$PROBE\" != guard-off ] || fail");
         String crash = function("experiments_crash");
-        for (String kind : List.of("toxic", "proxy-down", "hold", "store-hold", "partition", "scaled", "node-paused")) {
+        for (String kind : List.of("toxic", "proxy-down", "hold", "store-hold", "partition", "scaled", "node-paused", "brokers-stopped", "relay-held", "min-isr")) {
             assertThat(crash).as("the crash probes put on a %s", kind).contains("experiments_fault_on " + kind + " ");
         }
         assertThat(crash).contains("kill -TERM $$").contains("\n    false\n");

@@ -2261,6 +2261,10 @@ below exist today.*
 *(2026-11-12: still not rehearsed. `P15-TSK-032`'s `incidents` scope holds the broker outage, a refused credential, a poison
 record and an abandoned event (`platform-broker`, `platform-dead-letters`) and never ran them: the owner postponed the platform
 scopes' remaining runs, `POSTPONED_ISSUES.md` PI-024. §11.38 counts the section read.)*
+*(2026-11-13, `P16-TSK-013`: the broker outage (E09), one broker of three lost (E08), duplicates (E22), delays (E23) and a day's replay
+through the door below (E49) are built on three test-only brokers, §11.51, and not run: owed under `POSTPONED_ISSUES.md` PI-025. The
+broker outage's part of PI-024, which owner decision C11 gives to Phase 16's experiments, closes only when E09 runs. Replaying more than
+the door's 1,000 events an order is §11.51's procedure.)*
 
 **The consumer signals** (`P15-TSK-025`). Two series name what a poll cannot otherwise say. **`finapp.inbox.poll.failures{outcome}`** counts every thrown consumer poll: `InboxPollFailing` (page) reads `failed`, sustained for 15 minutes, and `InboxPollRefused` (page) reads `refused`, for 5. **`finapp.inbox.consumer.evictions`** counts a commit the group refused because it had already evicted the member: `InboxConsumerEvicted` (ticket). **`finapp.inbox.commits.deferred`** counts a commit a rebalance refused, sent after the next poll *(added 2026-11-09, `P15-TSK-012`; no alert reads it yet)*: one is nothing, and a sustained rate is a group that keeps rebalancing with its committed offsets standing still. `finapp.inbox.lag{module}` is what `InboxLagHigh` (ticket, over 1000 records in a group for 15 minutes) and `ConsumptionBurnFast` read; a group's lag is the sum of its members', and a consumer whose polls throw publishes NaN, never its last number.
 
@@ -3251,6 +3255,7 @@ latest; the run, as its record names it.
 | §11.49 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.54 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
 | §11.50 | `platform`, `identity` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
+| §11.51 | `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | §11.55 | `platform`, `settlement`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
@@ -5033,7 +5038,8 @@ two databases are more than a runner holds, and an experiment's numbers are the 
   theirs, resolve the three names they already use to it (`hostAliases` in the scope's copy of the Deployment): their URLs, their
   bootstrap servers and `verify-full` are the other scopes' bytes, and the proxy passes bytes, so TLS is end to end. The migrator, the
   bootstrap Job and the harness never pass through it. Its admin API listens on its own pod's loopback and is driven by `kubectl exec`
-  of its own CLI;
+  of its own CLI *(2026-11-13, `P16-TSK-013`: the scope now runs three brokers, and the broker hop is four proxies - the bootstrap's and
+  one per broker, each broker's name sent to a Service of its own - so six in all; §11.51)*;
 - **a synchronous standby** of the test-only PostgreSQL (owner decision C7), in another zone than the primary: a base backup through the
   primary's own name at `verify-full`, as `finapp_replicator` through the slot `finapp_standby`, then streaming, then the primary's
   `synchronous_standby_names` set to `FIRST 1 (finapp_standby)` at run time. From then on a commit returns only once the standby has
@@ -5053,7 +5059,8 @@ provider holds an answer for 20 s at most):
   the edge's certificates, issued in the cluster by the run's own cert-manager, and the telemetry stack's namespace are outside it;
 - **endpoint**: every value of the application's environment that holds a URL is the simulator, the run's own database URL or its own
   collector; its bootstrap servers are the run's broker; its `hostAliases` send only the run's three names to the run's proxy; the proxy's
-  three upstreams are the run's three services.
+  three upstreams are the run's three services *(2026-11-13, `P16-TSK-013`: and each broker's own name to its own proxy's Service, the
+  six upstreams the three services and the three brokers; §11.51)*.
 Every run proves each refusal by a plant beside its control (`experiments-boundary`): the marker removed, the payment webhook key
 replaced by a value the run did not make, the payment provider's URL replaced by one that is not the simulator; each refused by its own
 check with no fault on, put back, and the boundary passing again (`experiments/boundary.tsv`).
@@ -5328,7 +5335,9 @@ hop's return the outbox drains, each event published once, the inbox deduplicati
 financial is lost: the outbox is the source. *Provider*: calls time out at the adapter's own bounds. A call that never reached the
 provider answers `503`; one sent and unanswered is recorded unknown, never sent again. The sweeps ask the provider once it answers;
 a card payment caught mid-call waits the sweep's ten-minute dispatched age. *Do*: §11.22: watch `PaymentUnknownAged` and
-`MerchantPayoutUnknownAged` clear; never resend an ambiguous call by hand.
+`MerchantPayoutUnknownAged` clear; never resend an ambiguous call by hand. *(2026-11-13: the scope runs three brokers, §11.51, and a
+client reaches each through that broker's own proxy once the bootstrap has answered, so the broker's hop is four proxies - `kafka` and
+`kafka-0` to `kafka-2` - and the cut takes all four, both ways. Not run: owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 **E16 - the cluster's resolver lost.** *Signature*: established connections carry on; only a new connection needs a name. In a
 deployment the client resolves the database's, the broker's and the provider's names itself, and a new connection fails with an unknown
@@ -5706,6 +5715,165 @@ minute on, the live one kept, the dead swept. Each archive census reads every au
 digests and chain recomputed, and every archived object digested in the store against its recorded digest.
 
 **The last record.** None: E44, E45 and E46 have not run (PI-025).
+
+### 11.51 The event pipeline at load: three brokers, a broker lost, all lost, duplicates, delays, a poison burst, a scaled fleet and a day's replay (`P16-TSK-013`, ADR-0136)
+
+*Written by `P16-TSK-013` (2026-11-13) from what it built. **Nothing here has run on a cluster**: the owner postponed Phase 16's `kind`
+runs until after the project's phases ("we dont need long running checks and tests"), and every run below is owed under
+`POSTPONED_ISSUES.md` PI-025. `PipelineRehearsalContractTest` holds the harness's text, not a run. The three-broker configuration, the
+probe's premise and E23's lock key alone were proven in containers (the record at the end).*
+
+**The cluster.** `infra/scripts/kind-rehearsal/brokers.sh`. The `kind` overlay's broker StatefulSet is committed at one replica and is
+three-capable: its start script gives a pod a node id (its ordinal + 1) and its own advertised names whenever the rendered configuration
+names no node. `REHEARSAL_KAFKA_BROKERS` is 3 in the `experiments` scope, always; 1 or 3 in the `load` scope; 1 in every other scope,
+whose own steps assume one broker, and anything else is refused before the run builds anything. At three, in the run's own rendered copy:
+three replicas started in parallel, the headless Service publishing them before they are ready (a quorum of three cannot form one pod
+at a time), the namespace quota grown by two brokers. The posture is `infra/kafka/broker.properties` and `infra/kafka/topics.yaml`
+unchanged: replication 3, `min.insync.replicas` 2, unclean election off. The listeners: SASL_SSL with SCRAM-SHA-512 for the clients on
+9092, as at one; KRaft's quorum on 9093 and the brokers' replication on 9095, each over mutual TLS from the run's local CA (the broker
+certificate names every broker and carries `clientAuth`; its subject is the one super user beside loopback's `ANONYMOUS`); loopback on
+9094 for the startup probe. The harness's admin tools (`kafka_admin`) run on the mutual-TLS listener through a running broker, because at
+three each broker advertises its loopback listener as `localhost` and a tool there reaches only its own broker. Every topic is created
+at the catalogue's replication and `min.insync.replicas`, and `brokers_check` reads, at the topics' step and at every experiment's steady
+state: every broker ready, a quorum of three with a leader, every topic at the posture, no replica out of sync.
+
+**The proxy, per broker.** In the `experiments` scope each broker advertises its own name, so each has a Toxiproxy hop (`kafka-0`,
+`kafka-1`, `kafka-2`) and a Service of its own beside the bootstrap's (`kafka`); the application's `hostAliases` send each broker's name
+to its Service's address. The safety boundary reads four alias entries and six upstreams, and the topology check holds that every
+replica reached the database hop and all four broker hops through the proxy. A fault on "the broker hop" is a fault on the four.
+
+#### Running the experiments: E08, E09, E22, E23, E49 and E68
+
+```
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E08 E09 E22 E23 E49 E68" infra/scripts/kind-rehearsal.sh
+```
+
+Each in the step shape of §11.46, each ending in the census, each under the workload unless it says otherwise. What each counts is
+PostgreSQL's, never the broker's: every outbox row published, every record a catalogued handler names found once in its consumer's inbox
+(the census's lost-event check), no inbox row added for a record already applied, nothing parked but E68's own.
+
+- **E08, one broker of three lost.** The quorum's leader's broker JVM killed with SIGKILL from its node; the admin tools moved to a
+  survivor. Every partition's in-sync replicas and end offset are read about every 10 s into `experiments/E08/isr.tsv`: a partition that
+  takes a write while fewer than `min.insync.replicas` copies are in sync at the readings on both sides of it fails the experiment, and
+  the sampler must have seen the kill shrink a set (its control). No replica may go unready; nothing may be abandoned; the broker must be
+  back in sync within 600 s. Stop: two brokers down at once. The relay's failed attempts are recorded: a leader's move may cost one
+  attempt its retry, which the outbox holds.
+- **E09, every broker stopped.** The StatefulSet at zero (fault kind `brokers-stopped`), held 10 minutes at least and until
+  `OutboxPublicationStalled` fires (§11.21; its rule needs the oldest row past 5 minutes for 5 minutes), 15 at most, or E09 fails; the
+  stop condition at 30 minutes. 15 minutes is well inside the relay's retry window: 1,711 s of backoff before a row's fourteenth and
+  last attempt (`RetryPolicy.DEFAULT`), so no row is abandoned; an outage held to the stop's 30 minutes would abandon some. Every replica must stay ready (Kafka is
+  not in readiness), at least one money movement must be answered meanwhile, rows must wait, and the event freshness must burn. Then the
+  brokers come back, the outbox drains within 15 minutes and every group settles.
+- **E22, duplication.** First 200 published rows of handled types are unmarked by the run's own superuser, as a relay that crashed
+  between the broker's acknowledgement and its mark leaves them, and the relay sends them again under their event ids. Then the
+  workload stopped, the fleet scaled to zero through the registry, every group reset to its earliest retained offset once it has no
+  member, and the fleet started: every retained record is redelivered. The duplicates are counted from the replicas' counters (whole
+  totals, never `increase()`, which loses what a new replica counted before its first scrape); no inbox row may be added for an event
+  written before the experiment, no second risk signal for one source event, nothing failed or parked.
+- **E23, delay.** A session of the run's superuser holds the relay's own advisory lock - namespace 1, the key `OutboxRelay` derives from
+  an aggregate's id (`UUID.hashCode()`) - on the first eight aggregates with rows waiting, for 10 minutes (fault kind `relay-held`).
+  Eight is fewer than the 32 candidates a relay reads, so every other aggregate goes on publishing. At the release the held rows publish
+  in their aggregates' order, after every other aggregate's later records. The held rows must be late by at least 300 s; per consumer
+  and aggregate, no record may be applied before an earlier one (each inbox row's server time against the outbox's order); nothing parked.
+- **E49, a day's replay.** The procedure below, performed by the harness for every handled type over the run's own day.
+- **E68, a burst of poison records.** Six records that are no event, each with a key of its own so they spread over the partitions,
+  written to `finapp.payments` by the brokers' administrator (`kafka_admin`'s console producer, `acks=all`) while the workload runs.
+  Every group that reads the topic (read from the groups at the steady state) must park each record once, after its budget of five
+  failures and two minutes, both (§11.6's poison record, six at once): the observation is bounded at three minutes a record and five
+  more, as if every record had landed on one partition. Meanwhile those groups must go on applying records written after the burst
+  (`parking.tsv`), no member may be evicted (`finapp_inbox_consumer_evictions_total` unchanged), nothing else may park, and no
+  correctness page but `InboxDeadLetterParked` may fire - which must fire, its positive control. Then every partition settles past the
+  burst. The recovery stops the workload, waits until no record of the burst is still failing, and does §11.6's procedure for each:
+  a release refused (`deadletter.NotReleasable`), then a discard proposed by the operator, refused to the operator and approved by the
+  controller, until the page clears. The controller is given `EVENT_OPERATOR` from SQL at the steady state, as the `load` scope seeds its
+  operators; this scope runs no grant door. Each discard waits for a fresh second-factor step, so expect about half a minute a park. The
+  census's nothing-parked clause leaves out a record whose approved discard's approver is not its proposer, and counts every other row,
+  a handled one included: a record two persons discarded is decided, not stopped, and its row stays as evidence.
+
+**The probe** (`REHEARSAL_PROBE=min-isr-one`, with `E08`): every topic's `min.insync.replicas` set to 1 and a probe topic of two copies
+(the highest-ordinal broker's and the admin broker's) written once a second with `acks=all`; that broker killed and held down 90 s by
+the StatefulSet one short. The probe topic keeps one copy in sync and its writes are still acknowledged - a record held by one replica,
+the risk 2 refuses - and E08's copy check must name it and turn the run red. The stop deletes the probe topic and puts the catalogue's
+value back; the exit trap does too (fault kind `min-isr`).
+
+#### Running the pipeline at load: E47 and E48
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=pipeline REHEARSAL_KAFKA_BROKERS=3 infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=pipeline REHEARSAL_KAFKA_BROKERS=3 REHEARSAL_LOAD_REPLICAS=7 infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=pipeline REHEARSAL_KAFKA_BROKERS=3 REHEARSAL_LOAD_REPLICAS=7 REHEARSAL_LOAD_SCALE="3 7 3" infra/scripts/kind-rehearsal.sh
+```
+
+The first two are E47 at three and at seven replicas; the third is E48. The profile (`kind-rehearsal/load/pipeline.json`): checkouts
+alone at the target's peak for 10 minutes, three times it for a minute, the peak for 15 more, then 2 minutes of the whole mix at the
+average so every route the judge's spread reads is served. The burst runs past what the platform carries by design, so the iterations
+the generator cannot start there are recorded, not failed. `kind-rehearsal/pipeline.sh` reads every 30 s into `load/`: `pipeline.tsv`
+(the outbox's backlog and oldest row, the events and aggregates published and the events written in the interval, the fleet's ready
+count), `lag.tsv` (each group's lag per partition and its member) and `members.tsv` (each group's members and idle members); and the
+topics' end offsets at the load's start and end. After the census it writes `load/pipeline-summary.txt`: the relay's ceiling (the most
+published in an interval with a backlog standing at both its ends, in events and aggregates a second), each group's lag at the peak,
+the drain after the burst (the first reading with every group under the consumption objective's 1,000 and the oldest row under the
+freshness objective's 60 s), and the skew by key (each topic's busiest partition against its mean, `skew.tsv`). These are recorded,
+never a verdict (`PHASE_16_PLAN.md` §5.3). The run fails on its census, on the pipeline unread (a gap over 90 s) and, for E48, on a count
+the fleet never reached or a group whose members never followed it. E48 holds the autoscaler at each count, so that it does not undo
+the scale, and writes the membership changes it read and any idle member.
+
+#### Replaying a day of events through the audited door
+
+The door (`POST /v1/operator/events/replays`, §11.6) replays one event type over a window of first publication, `[from, to)`, at most
+1,000 events an order, one transaction and one audit record (`outbox.EventReplayOrdered`) each; it refuses an event past the inbox's
+dedupe window unless every consumer of the type is naturally idempotent. A day is therefore many orders:
+
+1. For each event type a consumer handles (`docs/events/handler-catalogue.yaml`), list its published events' first publication
+   instants over the day and cut them into windows of at most 900 (a margin under the bound for events written while you count). The
+   harness's E49 does it in one query (`experiments.sh`, `E49_steady`).
+2. Order each window through the door, with the reason the incident names. Each answer's `requeued` must equal the window's count; a
+   `REPLAY_TOO_LARGE` means the window was cut too wide: cut it again, never raise the bound.
+3. Watch the relay publish the requeued rows (`finapp.outbox.pending` falling) and the groups settle (`finapp.inbox.lag`); the inbox
+   counts what consumers had already applied as `finapp.inbox.consumption{outcome="duplicate"}` and applies nothing twice.
+4. Check that the audit trail holds one record per order, and that no record parked (`InboxDeadLetterParked` silent).
+
+At the target's volume (`CAPACITY_MODEL.md` §3.2, about 3.2 million events a day, of which the handled types are a part) a day is
+hundreds of orders. E49 records the replay's rate on its own run's volume; the time a target's day would take is not measured here.
+Whether the door should take a day in one order is `THREAT_MODEL.md` §6 item 58 (b).
+
+#### Reading a run
+
+`experiments/<id>/record.tsv` for each experiment, beside `isr.tsv` (E08), `fleet.tsv`, `held.txt` (E23), `windows.txt` and
+`replays.tsv` (E49), `parking.tsv`, `parks-by-group.tsv`, `parks.txt` and `client.log` (E68), `faults.log` and `relay-hold.out`;
+`load/pipeline-summary.txt` and its tables for E47 and E48. A result goes into
+`RESILIENCE_EXPERIMENTS.md` in §1.2's form, and the run's record here.
+
+#### The record
+
+- **2026-11-13, containers, no `kind`** (the task's branch): three `apache/kafka:4.3.1` containers by the overlay's digest on a throwaway
+  network, each given a pod's names, started by the overlay's own start script with the harness's own `brokers_config`, its certificate
+  (`brokers_sans`, `serverAuth,clientAuth`) and its topic posture; then `brokers_check` itself, `kafka_admin` in its three-broker form
+  through `docker exec`. Green: a quorum of three with a leader, two topics at replication 3 and `min.insync.replicas` 2, no replica out
+  of sync; a SCRAM client over SASL_SSL reached all three brokers by their own names over verified TLS and wrote with `acks=all`; one
+  broker killed: 24 partitions under-replicated and none under `min.insync.replicas`, an `acks=all` write still accepted. The first
+  attempt failed at the quorum: the super user named the certificate's subject wrongly (`CN=finapp-kafka`, where `issue kafka` makes
+  `CN=kafka`), so every controller request was refused as not yet authorised; fixed before the green attempt.
+- **2026-11-13, containers, no `kind`: the probe's premise and E08's copy check** (the same three containers; `experiments.sh`'s
+  `experiments_min_isr_on`, `experiments_min_isr_off`, `experiments_isr_sampler` and `experiments_single_replica_writes` as they then
+  stood, the last one's label of its first finding changed since and its rule not). The probe topic of two copies at
+  `min.insync.replicas` 1 on the highest-ordinal broker and the first, written once a second with `acks=all`; that broker killed and held
+  down 90 s, then started. Green: over 7 samples the check named `probe.min-isr` in 4 intervals of writes with one copy in sync, while
+  the catalogue's topics never read below two; the control, the probe topic set back to 2, took no write with one copy in 30 s; the
+  probe topic deleted and the topics back at 2. Two attempts before it saw nothing, and changed the probe: with the victim started again
+  after 20 s (as a kubelet would), its copy was back in sync between two samples, with or without a replication throttle on it, so the
+  probe now holds its victim down for its window (the StatefulSet one short).
+- **2026-11-13, containers, no `kind`: E23's lock key and its hold.** The hold's key expression, as `experiments_relay_hold` writes it,
+  evaluated by the overlay's `postgres:18.6` for five UUIDs (the two ends of the range among them) equalled Java's `UUID.hashCode()` for
+  each, read from `jshell` in the build's JDK image. The hold's whole script, taken out of `experiments.sh`, ran for 3 s against a
+  stand-in outbox of two aggregates with waiting rows: both held and printed, and no advisory lock left after its `pg_advisory_unlock_all()`.
+- **2026-11-13, the image only, no broker: E68's writer.** `kafka-console-producer.sh --help` from the overlay's `apache/kafka:4.3.1` by
+  its digest, in a container with no network, lists `--command-config`, `--command-property` and `--reader-property`, the flags E68's
+  burst passes through `kafka_admin` (and `--property`, `--producer.config` and `--producer-property` as deprecated). Nothing was
+  produced or consumed.
+- **Owed under PI-025**: every cluster run of this section - E08 (with the probe), E09, E22, E23, E49 and E68 in the `experiments` scope
+  at three replicas; E47 at three and at seven; E48. And §11.47's E15 with its cut widened to every broker's own proxy (its register
+  row's note of 2026-11-13).
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

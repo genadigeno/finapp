@@ -29758,7 +29758,7 @@ on none:
   run; the archive's queue (`platform.audit_archive_pending`) grows with the table while no environment names a store, which the
   growth figures should count.
 
-**P16-TSK-013 — The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
+**P16-TSK-013 — The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-013` from master `1fbdf71c`, wave D; no migration; ADR-0136; every cluster run owed under PI-025; marks no task `READY` - the coordinator does; read `READY` from 2026-11-13, marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step")
 - **Objective**: `PHASE_16_PLAN.md` §7 at the engineering workload on a test-only three-broker KRaft cluster on `kind`, with
   replication 3 and `min.insync.replicas` 2.
 - **Affected components**: `deploy/overlays/kind/kafka.yaml`, `infra/kafka/topics.yaml` (read, unchanged for production), `platform`'s
@@ -29802,8 +29802,44 @@ on none:
   not measured. At E30's step 3 (27.3 events a second) publication stayed within 4 s. Measure the relay's ceiling in aggregates and
   events a second at three and seven replicas, and whether more relays add drain; `event_freshness` (60 s) is at stake well below
   the target's 89.3 events a second at peak.
+ - *As built (2026-11-13, the gate's record; branch `P16-TSK-013` from master `1fbdf71c`, masters `6f23a4a1`, `9ec48bdc`, `d7081fa9` and
+   `4dcce65d`, then `215deb70`, merged in (the last four after the gate, at the coordinator's word); no
+   migration; ADR-0136 `Proposed`; `OPERATIONS_RUNBOOK.md` §11.51 is the procedure and the record, `RESILIENCE_EXPERIMENTS.md` E08, E09,
+   E22, E23 and E47–E49 the rows; under the owner's word of 2026-11-13, "we dont need long running checks and tests", **no cluster run
+   was made: every acceptance criterion below that needs one is built, contract-tested and its run owed under `POSTPONED_ISSUES.md`
+   PI-025**):* **The relay** (ADR-0136, the ceiling `-007` routed here): a candidate another relay drained after the candidates were read
+   takes no slot of the batch (`OutboxRelay`, `RelayPollResult.batchFull`), and the schedule's tick polls again at once while a cycle
+   worked its whole batch and failed nothing (`OutboxRelaySchedule.tick`), asking its stop and its hold before each further cycle; the
+   lock, the read inside it, the order and the conditional mark unchanged; held by `OutboxRelaySlotTest` and `OutboxRelayScheduleTest`,
+   its database case `OutboxRelayTest#aDrainedCandidateTakesNoSlot` written and owed (PI-023); its effect unmeasured (E47). **Three
+   brokers** (`kind-rehearsal/brokers.sh`): the overlay's StatefulSet three-capable and **committed at one** - a deviation from "the
+   kind overlay's broker StatefulSet at three": three run in the experiments scope always and in the load scope on
+   `REHEARSAL_KAFKA_BROKERS=3`, from the run's own rendered copy, and are refused in the other scopes, whose own steps assume one broker
+   (`THREAT_MODEL.md` §6 item 58 (a) puts every scope's move to the owner); the catalogue's posture whole, SASL_SSL with SCRAM on every
+   broker, the quorum and replication over mutual TLS, the admin tools on that listener, `brokers_check` at the topics' step and every
+   steady state; proven in containers (§11.51's record), never on `kind`. **The proxies** (`-019`'s routed note): one Toxiproxy hop and
+   Service per broker, the boundary and the topology check over six proxies. **Scope items**: partition skew per key - E47's
+   records per partition per topic (read from the code meanwhile: the merchant's fee events are keyed by the merchant,
+   `CAPACITY_MODEL.md` §3.2's note); lag at peak and drain after a burst, the relay's ceiling - E47, the `pipeline` profile at three
+   and seven replicas; scale 3 → 7 → 3 during load - E48 (`REHEARSAL_LOAD_SCALE`); E08, E09, E22, E23 - the experiments scope; a day's
+   replay through the audited door - E49 and §11.51's procedure (the door's 1,000-event bound kept; one order for a day is item 58
+   (b)); a poison record burst parking without stopping the group - **E68** (reserved by the coordinator for this scope item): six
+   records that are no event, a key each, on `finapp.payments`; every group that reads it parks each once while it keeps applying, no
+   member evicted, `InboxDeadLetterParked` its only page; a release refused and each park discarded by two persons; the census's
+   nothing-parked clause now leaves out a record whose approved discard's approver is not its proposer, and counts every other row (a
+   change to a shared clause, without which no run that discards through the door could end green). **The probe** (`REHEARSAL_PROBE=min-isr-one`): every topic at
+   `min.insync.replicas` 1 and a probe topic of two copies, its victim held down 90 s, E08's copy check required to name the one-copy
+   writes; its premise proven in containers on the third attempt (§11.51's record), the cluster probe owed. **Acceptance
+   (`PHASE_GATES.md` §5 Phase 16's Kafka block)**: lag per group at peak and drained after a burst; scale under load with one effect per
+   record; one broker lost without an error; all brokers lost 10 minutes and every row published once after; a day's replay with zero
+   second effects - each **built, contract-tested (`PipelineRehearsalContractTest`), run owed (PI-025)**; every experiment's register
+   row filled in the not-run form. §11.6's rehearsal (that part of PI-024 under C11) closes only with E09. **E15** (`P16-TSK-021`'s,
+   merged before this task's end, so the note routed to it had no owner): its broker-hop cut widened here to every broker's own proxy
+   as well as the bootstrap's, held by `PipelineRehearsalContractTest#e15CutsEveryBrokersHop`, its run owed with the cut (a dated
+   note on its register row and on this task's PI-025 bullet). Routed: to `P16-TSK-014` (the load scope's three brokers, the pipeline
+   sampler and the scale at ten).
 
-**P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `PLANNED`
+**P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-013`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its dependencies, `P16-TSK-009` and `P16-TSK-013`, both `COMPLETE`)
 - **Objective**: the ten-instance answer counted. Ten application replicas carry the engineering workload on `kind`, scale between
   three and ten under a real metric, and roll during load, with one effect per key and the census green throughout. This closes the
   deviation B that the Phase 15 completion gate left with this task, and `P15-REM-007`'s observed scaling.
@@ -29835,6 +29871,13 @@ on none:
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.28's record at ten; `P15-REM-007` closed.
 - **Risk**: High (the machine may not hold ten; the record says so). **Cx**: L.
+- *Routed from `P16-TSK-013` (2026-11-13):* the load scope takes three test-only brokers (`REHEARSAL_KAFKA_BROKERS=3`,
+  `kind-rehearsal/brokers.sh`) and reads the event pipeline every 30 s (`kind-rehearsal/pipeline.sh`: each group's lag per partition,
+  its members and idle members, the outbox's backlog and the relay's drain), with a scale through counts under load
+  (`REHEARSAL_LOAD_SCALE`, today 3 to 7, the autoscaler held at each count; E48; `OPERATIONS_RUNBOOK.md` §11.51). Ten replicas and
+  twelve partitions: no member idle is expected at ten; the members table records it. A count of ten needs C3's budget beside
+  `pipeline_preflight`'s check (today it refuses a count past 7 or past `REHEARSAL_LOAD_REPLICAS`; `P16-TSK-009`'s overlay admits ten, so
+  the case goes to the overlay's ceiling here, with E48's budget judged at each count).
 - **Routed from `P16-TSK-009` (2026-11-13): what the run at ten starts from.** The `kind` overlay admits ten (13 instances, 116 connections,
   a quota of 16 pods; ADR-0134). Every run holds its fleet at its count in its own copy, `REHEARSAL_LOAD_REPLICAS` up to 10 in the load
   scope, the autoscaler held there (minimum and maximum). A run that lets the metric decide between three and ten is this task's: leave
@@ -30213,7 +30256,7 @@ on none:
   `kind` the experiments scope names a test-only store in `finapp-rehearsal`. That store's own outage is E44's; E11 keeps the
   infrastructure stores (the restore's archive, the Terraform state), and its row may want a dated note saying so.
 
-**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-022` from master `1fbdf71c`, wave D, master merged in five times (`ac5aa4a3`, `9ec48bdc`, `ac8f2d81`, `d7081fa9`, `215deb70`); no migration; ADR-0139; every cluster run owed under PI-025; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until the design, then "`IN_PROGRESS`" until its gate)*
+**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-022` from master `1fbdf71c`, wave D, master merged in six times (`ac5aa4a3`, `9ec48bdc`, `ac8f2d81`, `d7081fa9`, `215deb70`, `16581447`); no migration; ADR-0139; every cluster run owed under PI-025; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until the design, then "`IN_PROGRESS`" until its gate)*
 - **Objective**: as decided:
   - E05, a database primary failover under load on the test-only synchronous standby pair;
   - its interruption measured;
@@ -30278,7 +30321,7 @@ on none:
   (`kind-rehearsal.sh`'s `fleet_patch`): 60 at three, the count the experiments scope runs at. `experiments/standby.yaml` keeps
   `max_connections=60`, which still equals the run's primary at three. A hot standby refuses to start below its primary's setting, so a
   failover drill at more than three replicas needs the standby's value taken from the run's copy, not the file.
-- *As built (2026-11-13, the gate's record; branch `P16-TSK-022` from master `1fbdf71c`, master merged in five times (`ac5aa4a3`, `9ec48bdc`, `ac8f2d81`, `d7081fa9`, `215deb70`); no migration; ADR-0139;
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-022` from master `1fbdf71c`, master merged in six times (`ac5aa4a3`, `9ec48bdc`, `ac8f2d81`, `d7081fa9`, `215deb70`, `16581447`); no migration; ADR-0139;
   `OPERATIONS_RUNBOOK.md` §11.54 the drill's procedure and empty record, §11.40 corrected; `RESILIENCE_EXPERIMENTS.md` E05, E06, E56
   and E57; under the owner's word of 2026-11-13, "we dont need long running checks and tests", **nothing ran on a cluster: every run is
   owed under `POSTPONED_ISSUES.md` PI-025**):* **The socket timeout**: `socketTimeout: 300` on the writer's driver properties, which the
@@ -30310,7 +30353,7 @@ on none:
   `P16-TST-001` with what the soak needs. **Owner item 61** (new, awaiting the owner): the `500` while the database is away, recommended
   `503` with `Retry-After` in a task of its own after the load-shedding answer. **Routed**: `P16-TSK-021` (E14's bound; E57's black-hole
   step on the `toxic` primitive, where the two meet), `P16-TSK-023` (the drill's rules for the matrix), `P16-TST-001` (the failover in
-  the soak). **Owed under PI-025**: E06, E57 and E05 at three replicas, E56, and E29's longest statement. **Guards**: `DatabaseSocketTimeoutTest` (6) and `ExperimentsRehearsalContractTest` (19: seven members new, one strengthened) hold the work; sixteen hermetic probes in five rounds, each caught (`MUTATION_TESTING.md` §2). The third merge brought `P16-TSK-009`'s routed note: the `kind` primary's `max_connections` is now set per run at the budget's count, and a hot standby refuses to start below it, so the standby now takes the run's primary's value from its rendered copy (`experiments_standby`; contract member and probe, round five). The merges kept both sides throughout; the second brought `P16-TSK-021`'s E14, whose record and pin said the data source set no socket timeout: E14 now reads and records the timeout it runs under (its pin re-stated, round four), and its row, runbook §11.47's sentence, its T14 row and its PI-025 bullet carry dated notes; the guards the resolutions touched ran green after each merge. The final run (14:10Z), 71 named `app` classes and the ArchUnit suites the filter pulls in (8, 24 tests): 656 tests, 5 failed, the five red on master's bytes too (a control run, 14:34Z, with the six classes this branch edits put back to master's): `OwnershipIsScopedTest` (`JdbcMerchantPayoutStore.recordSweepFailure` unclassified), `CashAtBankHasOnePosterTest`, `CounterpartyClearingIsNamedByDeclarationsTest` and `FxBooksHaveOnePosterTest` (the source census's `SettlementJournalSources` and `FxJournalSources` naming those books), and `RequestDecimalsAreBoundedTest` (a `StackOverflowError` in its pattern) - none of them this task's, reported to the coordinator; `MigratorMatchesTheBuildTest` (4) and `AdvisoryNamespaceIsPinnedTest` (1) green. Not run: `AlertRulesResolveTest` (database tier) and `RiskAlertRulesTest` (slow), each reading `risk.yml`, whose comment alone changed..
+  the soak). **Owed under PI-025**: E06, E57 and E05 at three replicas, E56, and E29's longest statement. **Guards**: `DatabaseSocketTimeoutTest` (6) and `ExperimentsRehearsalContractTest` (19: seven members new, one strengthened) hold the work; sixteen hermetic probes in five rounds, each caught (`MUTATION_TESTING.md` §2). The third merge brought `P16-TSK-009`'s routed note: the `kind` primary's `max_connections` is now set per run at the budget's count, and a hot standby refuses to start below it, so the standby now takes the run's primary's value from its rendered copy (`experiments_standby`; contract member and probe, round five). The merges kept both sides throughout; the second brought `P16-TSK-021`'s E14, whose record and pin said the data source set no socket timeout: E14 now reads and records the timeout it runs under (its pin re-stated, round four), and its row, runbook §11.47's sentence, its T14 row and its PI-025 bullet carry dated notes; the guards the resolutions touched ran after each merge, green but for `OutboundCallsAreBoundedTest`'s three after the fifth, red on master's inventory too (a control run: the audit archive's HTTP client and schedule missing from it, master's, not this task's); after the sixth (`16581447`, `P16-TSK-013`'s: the fault kind `setting` beside `brokers-stopped`, `relay-held` and `min-isr`, the database's experiments beside the event pipeline's, the probe `async-standby` beside `min-isr-one`, item 61 after item 58), the 19 classes it touched, 246 tests, and the 8 ArchUnit suites the filter pulls in, 24 tests, 0 failed. The final run (14:10Z), 71 named `app` classes and the ArchUnit suites the filter pulls in (8, 24 tests): 656 tests, 5 failed, the five red on master's bytes too (a control run, 14:34Z, with the six classes this branch edits put back to master's): `OwnershipIsScopedTest` (`JdbcMerchantPayoutStore.recordSweepFailure` unclassified), `CashAtBankHasOnePosterTest`, `CounterpartyClearingIsNamedByDeclarationsTest` and `FxBooksHaveOnePosterTest` (the source census's `SettlementJournalSources` and `FxJournalSources` naming those books), and `RequestDecimalsAreBoundedTest` (a `StackOverflowError` in its pattern) - none of them this task's, reported to the coordinator; `MigratorMatchesTheBuildTest` (4) and `AdvisoryNamespaceIsPinnedTest` (1) green. Not run: `AlertRulesResolveTest` (database tier) and `RiskAlertRulesTest` (slow), each reading `risk.yml`, whose comment alone changed.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
 - **Objective**: as decided:

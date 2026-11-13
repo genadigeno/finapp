@@ -639,6 +639,18 @@ commit and the date; do not delete the entry.
     REHEARSAL_EXPERIMENTS=E40`) at three replicas. Nothing ran before the word. The new SQL, the `\watch` sampler, the server's log formats
     and the readers were run in a throwaway container of the pinned PostgreSQL image (no `kind`, no application) on 2026-11-13; on a
     cluster they are unproven.
+  - `P16-TSK-013` (the event pipeline on three test-only brokers, `OPERATIONS_RUNBOOK.md` §11.51, whose record carries each run): in the
+    `experiments` scope at three replicas, **E08** with the entry's probe **`REHEARSAL_PROBE=min-isr-one`** (its `MUTATION_TESTING.md`
+    §2 row with it), **E09**, **E22**, **E23**, **E49** and **E68**, the poison-record burst
+    (`REHEARSAL_EXPERIMENTS="E08 E09 E22 E23 E49 E68"`), with the scope's topology checks over the six proxies on the same run; in the
+    `load` scope on three brokers (`REHEARSAL_KAFKA_BROKERS=3`), **E47**, the pipeline profile, at three and at seven replicas
+    (`REHEARSAL_LOAD_PROFILE=pipeline`, `REHEARSAL_LOAD_REPLICAS` 3 and 7), which measures ADR-0136's relay drain, and **E48**, the fleet
+    scaled 3 → 7 → 3 under it (`REHEARSAL_LOAD_SCALE="3 7 3"`). Not one of them ran; the three-broker configuration, the probe's premise
+    and E23's lock key ran only in containers (§11.51's record). §11.6's broker outage, the part of PI-024 that owner decision C11 gives
+    to these experiments, closes only with E09. *(2026-11-13: `P16-TSK-021`'s **E15** ran its broker-hop cut on the bootstrap's proxy
+    alone; at the scope's three brokers a client reaches each broker through that broker's own proxy, so this task widened the cut to all
+    four proxies (E15's register row, its dated note). E15's run in `P16-TSK-021`'s bullet below is owed with that cut; a run that cuts
+    the bootstrap's alone would read "the cut was not felt".)*
   - The coordinator's rules split (2026-11-13, branch `P16-chore-rules-split`; `docs/project/history/CHANGE_LOG.md`): kind's rules
     in two ConfigMaps, `finapp-prometheus-rules` and `finapp-prometheus-rules-domain`, projected into `/etc/prometheus-rules`. Owed:
     the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's

@@ -175,6 +175,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0134](ADR-0134-the-connection-budget-at-ten-replicas.md) | The connection budget at ten replicas: a larger server, no smaller pool, no transaction-mode pooler yet | Proposed | 16 | Platform · every module (operated at scale) |
 | [0139](ADR-0139-the-database-socket-timeout-and-the-failover-drill.md) | The data source's socket timeout and the rules of the local database failover drill: five minutes, above every armed statement bound; fence, check, promote alone, move the Service | Proposed | 16 | Platform · every module that reads the database |
 | [0135](ADR-0135-audit-archival-by-verified-segment.md) | Audit archival by verified segment, and the session sweep: a database-written queue, one segment in flight, write once, read back, then mark | Proposed | 16 | Platform · Identity · Security |
+| [0136](ADR-0136-the-event-pipeline-at-load.md) | The event pipeline at load: the relay drains while its batch is full, and three test-only brokers where the experiments run | Proposed | 16 | Platform (the outbox relay, the inbox) · the `kind` rehearsal |
 | [0140](ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md) | The post-recovery hold and point-in-time recovery: the role lock held through the window, the window acting as the application's role, a person's recorded release | Proposed | 16 | Platform · Settlement · Reconciliation |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
