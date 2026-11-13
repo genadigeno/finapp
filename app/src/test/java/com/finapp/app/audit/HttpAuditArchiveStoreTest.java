@@ -109,6 +109,8 @@ class HttpAuditArchiveStoreTest {
         assertThatExceptionOfType(AuditArchiveStoreException.class).isThrownBy(() -> store.get(KEY, 1)).withMessageContaining("503");
         forced = 0;
 
+        // An object to read, then its answer's headers sent and its body never: the exchange ends at the timeout.
+        assertThat(store.putIfAbsent(KEY, new byte[] {1, 2})).isEqualTo(AuditArchiveStore.Put.WRITTEN);
         stall = true;
         long started = System.nanoTime();
         assertThatExceptionOfType(AuditArchiveStoreException.class).isThrownBy(() -> store.get(KEY, 1)).withMessageContaining("within");

@@ -211,6 +211,10 @@ class StampOrderedReadsAreJudgedTest {
                 CLAIM);
         read("payments.JdbcWithdrawalStore|SINGLE_ROW|id", 1, Judgement.RANKED,
                 "the withdrawal event table's bigint identity sequence: the first terminal transition by its own row order (a terminal status is reached once), never a stamp");
+        // P16-TSK-010: the audit archive's backlog gauge (finapp.audit.archive.pending.oldest); enqueued_at is the database's own
+        // clock, and the claim picks its rows by its own lock, never by this read.
+        read("platform.JdbcAuditArchiveSegments|MIN_MAX|min(p.enqueued_at)", 1, Judgement.DISPLAYS,
+                GAUGE);
         read("platform.OutboxBacklog|MIN_MAX|min(coalesce(replay_ordered_at, occurred_at))", 2, Judgement.DISPLAYS,
                 GAUGE);
         read("reconciliation.JdbcBreakCaseStore|SINGLE_ROW|id", 1, Judgement.NAMED,

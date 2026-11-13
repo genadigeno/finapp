@@ -84,7 +84,7 @@ class AuditArchiveScheduleTest {
         assertThat(registry.find(AuditArchiveMeters.SEGMENTS).tag("outcome", "idle").counter()).as("idle is not an outcome counted").isNull();
         assertThat(registry.get(AuditArchiveMeters.ENABLED).gauge().value()).isZero();
         assertThat(registry.get(AuditArchiveMeters.PENDING).gauge().value()).isEqualTo(4);
-        assertThat(registry.get(AuditArchiveMeters.OLDEST).gauge().value()).isEqualTo(90.5);
+        assertThat(registry.get(AuditArchiveMeters.OLDEST).gauge().value()).as("whole seconds").isEqualTo(90);
     }
 
     @Test

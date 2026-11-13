@@ -1343,12 +1343,12 @@ E46_steady() {
     # The plants, by the run's own throwaway superuser, removed at the recovery: a session live for the whole soak, never touched, and
     # forty dead an hour past their idle bound, the sweep's positive control.
     E46_LIVE=$(psql_query -c "INSERT INTO identity.session (id, identity_id, token_hash, assurance, status, issued_at, idle_expires_at,
-        absolute_expires_at, device, revoked_at, live_from) VALUES (gen_random_uuid(), '$identity', 'e46-live', 'PASSWORD', 'ACTIVE', now(),
-        now() + interval '2 hours', now() + interval '3 hours', NULL, NULL, now()) RETURNING id" | head -1 | tr -d '[:space:]')
+        absolute_expires_at, device, revoked_at, live_from) VALUES (gen_random_uuid(), '$identity', encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'base64'), 'PASSWORD', 'ACTIVE', now(),
+        now() + interval '2 hours', now() + interval '3 hours', 'e46 plant, live', NULL, now()) RETURNING id" | head -1 | tr -d '[:space:]')
     [ -n "$E46_LIVE" ] || cannot "E46: the live session could not be planted"
     psql_query -c "INSERT INTO identity.session (id, identity_id, token_hash, assurance, status, issued_at, idle_expires_at, absolute_expires_at,
-        device, revoked_at, live_from) SELECT gen_random_uuid(), '$identity', 'e46-dead-' || g, 'PASSWORD', 'ACTIVE', now() - interval '2 hours',
-        now() - interval '1 hour', now() - interval '1 hour', NULL, NULL, now() - interval '2 hours' FROM generate_series(1, 40) g" >/dev/null \
+        device, revoked_at, live_from) SELECT gen_random_uuid(), '$identity', encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'base64'), 'PASSWORD', 'ACTIVE', now() - interval '2 hours',
+        now() - interval '1 hour', now() - interval '1 hour', 'e46 plant, dead', NULL, now() - interval '2 hours' FROM generate_series(1, 40) g" >/dev/null \
         || cannot "E46: the dead sessions could not be planted"
     experiments_record plants "a session live for three hours ($E46_LIVE) and forty an hour past their idle bound"
 }
@@ -1366,7 +1366,7 @@ E46_observe() {
         # Past the bound: an idle bound more than the grace (5 min) and two ticks (2 x 30 s) ago - a row the sweep should have taken.
         row=$(psql_query -c "SELECT count(*) || E'\t' || count(*) FILTER (WHERE status = 'ACTIVE' AND idle_expires_at > now() AND absolute_expires_at > now())
             || E'\t' || count(*) FILTER (WHERE idle_expires_at < now() - interval '6 minutes') || E'\t' || count(*) FILTER (WHERE id = '$E46_LIVE')
-            || E'\t' || count(*) FILTER (WHERE token_hash LIKE 'e46-dead-%') FROM identity.session" | tr -d '\r')
+            || E'\t' || count(*) FILTER (WHERE device = 'e46 plant, dead') FROM identity.session" | tr -d '\r')
         now=$(date +%s)
         printf '%s\t%s\n' "$now" "$row" >> "$EXP_DIR/sessions.tsv"
         [ "$(printf '%s' "$row" | cut -f4 | tr -d '[:space:]')" = 1 ] || { EXP_STOPPED="the live session planted was deleted"; return 0; }
@@ -1392,6 +1392,6 @@ E46_recover() {
     [ "$(workload_unresolved e46)" = 0 ] || fail "E46: $(workload_unresolved e46) requests stayed unresolved: see workload-e46.tsv"
     assert_flows_ran e46
     # The plants' teardown, by the superuser that planted them.
-    psql_query -c "DELETE FROM identity.session WHERE token_hash = 'e46-live' OR token_hash LIKE 'e46-dead-%'" >/dev/null \
+    psql_query -c "DELETE FROM identity.session WHERE device IN ('e46 plant, live', 'e46 plant, dead')" >/dev/null \
         || fail "E46: the planted sessions could not be removed"
 }

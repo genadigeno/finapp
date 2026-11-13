@@ -484,6 +484,6 @@ class ExperimentsRehearsalContractTest {
         assertThat(function("E46_observe")).as("never a live session, nothing past the grace and two ticks, the planted dead swept")
                 .contains("EXP_STOPPED=\"the live session planted was deleted\"").contains("idle_expires_at < now() - interval '6 minutes'")
                 .contains("finapp_retention_swept_total{type=\"session\"}").contains("[ \"$dead\" = 0 ] || fail");
-        assertThat(function("E46_recover")).as("the plants' teardown").contains("DELETE FROM identity.session WHERE token_hash = 'e46-live'");
+        assertThat(function("E46_recover")).as("the plants' teardown").contains("DELETE FROM identity.session WHERE device IN ('e46 plant, live', 'e46 plant, dead')");
     }
 }

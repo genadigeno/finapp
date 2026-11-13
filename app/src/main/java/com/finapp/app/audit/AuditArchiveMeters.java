@@ -58,16 +58,14 @@ public final class AuditArchiveMeters {
         }
         this.failed = segments(registry, FAILED);
         this.rows = Counter.builder(ROWS).description("Audit rows in the segments this instance archived").register(registry);
-        Gauge.builder(PENDING, segments, source -> read(source).pending())
+        Gauge.builder(PENDING, () -> pending(segments))
                 .description("Audit rows no archive segment holds yet, counted up to " + PENDING_CAP
                         + ". Fleet-wide from every instance: aggregate with max(), never sum()")
-                .strongReference(true)
                 .register(registry);
-        Gauge.builder(OLDEST, segments, source -> read(source).oldestSeconds())
-                .description("How long the oldest audit row no archive segment holds has waited, on the database's clock; 0 when none"
-                        + " waits. Fleet-wide from every instance: aggregate with max(), never sum()")
+        Gauge.builder(OLDEST, () -> oldestSeconds(segments))
+                .description("How long the oldest audit row no archive segment holds has waited, in whole seconds on the database's"
+                        + " clock; 0 when none waits. Fleet-wide from every instance: aggregate with max(), never sum()")
                 .baseUnit("seconds")
-                .strongReference(true)
                 .register(registry);
         Gauge.builder(ENABLED, () -> enabled ? 1 : 0)
                 .description("1 where this instance archives the audit trail (finapp.audit.archive.endpoint is set), 0 where it does not")
@@ -88,7 +86,10 @@ public final class AuditArchiveMeters {
             counter.increment();
         }
         if (result.outcome() == AuditArchival.Outcome.ARCHIVED) {
-            rows.increment(result.rows());
+            // One by one: a row count, never an amount, and no floating point in this class (INV-MON-01's rule).
+            for (int row = 0; row < result.rows(); row++) {
+                rows.increment();
+            }
         }
     }
 
@@ -97,16 +98,25 @@ public final class AuditArchiveMeters {
         failed.increment();
     }
 
-    private record Reading(double pending, double oldestSeconds) {}
+    /** The queued rows, counted up to the cap; {@code null}, which the gauge reports as no value, when the database cannot be read. */
+    private static Long pending(AuditArchiveSegments segments) {
+        AuditArchiveSegments.Backlog backlog = read(segments);
+        return backlog == null ? null : backlog.pending();
+    }
 
-    private static Reading read(AuditArchiveSegments segments) {
+    /** The oldest queued row's wait in whole seconds; {@code null}, no value, when the database cannot be read. */
+    private static Long oldestSeconds(AuditArchiveSegments segments) {
+        AuditArchiveSegments.Backlog backlog = read(segments);
+        return backlog == null ? null : backlog.oldest().toSeconds();
+    }
+
+    private static AuditArchiveSegments.Backlog read(AuditArchiveSegments segments) {
         try {
-            AuditArchiveSegments.Backlog backlog = segments.backlog(PENDING_CAP);
-            return new Reading(backlog.pending(), backlog.oldest().toMillis() / 1000.0);
+            return segments.backlog(PENDING_CAP);
         } catch (RuntimeException failure) {
             // No value, never a zero: an unread backlog must not look like an empty one. The class only.
             log.warn("Could not read the audit archive's backlog for metrics: {}", failure.getClass().getSimpleName());
-            return new Reading(Double.NaN, Double.NaN);
+            return null;
         }
     }
 }
