@@ -348,6 +348,13 @@ write rate and the bloat. Measured: —.
 build, so every insert into the journal, and with it every posting, waits that long. The migrator's `lock_timeout` bounds only the wait for
 the lock. E39 measures the stop on the soak's journal, and the build rate extrapolates it to the target's. Measured: —.
 
+**The posting scope's uniqueness on the hot path** (`P16-TSK-011`, ADR-0141; routed here by this section's task). Read: each posting
+adds one probe of `journal_entry_one_per_idempotency_scope` (the lookup a fresh claim makes) and one entry in it (the conditional insert);
+each claim's completion one entry in `idempotency_record_sweepable`, partial on the terminal states; no row lock and no new hot row.
+**Derived**: about 434,000 entries a day (§3.1), so the index grows by that many entries a day and the idempotency sweep keeps the record
+table at about 31 days of keyed commands. E62 measures the posting's cost against E38's run on the tree before the uniqueness, and E64 the
+census and both builds' write stop on the soak's tables (each build holds `SHARE` on its table for its length, as above). Measured: —.
+
 **The plans and the soak's growth** (`PHASE_16_PLAN.md` §6.5, §6.7). E39 writes the top statements' plans, every sequential scan, the named
 tables' growth and dead rows, autovacuum's runs, the checkpoints and the WAL a money movement. Measured: —.
 

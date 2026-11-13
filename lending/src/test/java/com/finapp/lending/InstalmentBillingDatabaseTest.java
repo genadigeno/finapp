@@ -672,11 +672,16 @@ class InstalmentBillingDatabaseTest {
         asOwner("UPDATE ledger.journal_entry SET posting_date = posting_date - " + days + ", value_date = value_date - "
                 + days + " WHERE id IN (SELECT l.entry_id FROM ledger.journal_line l JOIN ledger.ledger_account a"
                 + " ON a.id = l.ledger_account_id WHERE a.owner_ref = '" + id + "');"
+                // The scopes are unique since ledger V037 (P16-TSK-011), checked row by row like the dated uniques below: each
+                // re-dated scope could meet its neighbour's old one mid-statement, so every scope moves aside first ('#'), as the
+                // idempotency records' keys do, then takes its new date.
+                + " UPDATE ledger.journal_entry SET idempotency_scope = idempotency_scope || '#' WHERE idempotency_scope LIKE"
+                + " 'ledger.post:lending.accrual:" + id + ":%' OR idempotency_scope LIKE 'ledger.post:lending.billing:" + id + ":%';"
                 + " UPDATE ledger.journal_entry SET idempotency_scope = 'ledger.post:lending.accrual:" + id + ":'"
-                + " || value_date WHERE idempotency_scope LIKE 'ledger.post:lending.accrual:" + id + ":%';"
+                + " || value_date WHERE idempotency_scope LIKE 'ledger.post:lending.accrual:" + id + ":%#';"
                 + " UPDATE ledger.journal_entry SET idempotency_scope = 'ledger.post:lending.billing:" + id + ":' || ("
                 + String.format(dated, "idempotency_scope") + " - " + days + ") WHERE idempotency_scope LIKE"
-                + " 'ledger.post:lending.billing:" + id + ":%';"
+                + " 'ledger.post:lending.billing:" + id + ":%#';"
                 + " UPDATE platform.idempotency_record SET idempotency_key = idempotency_key || '#' WHERE scope = 'ledger.post'"
                 + " AND (idempotency_key LIKE 'lending.accrual:" + id + ":%' OR idempotency_key LIKE 'lending.billing:" + id
                 + ":%');"

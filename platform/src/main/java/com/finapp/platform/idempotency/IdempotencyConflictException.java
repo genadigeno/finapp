@@ -19,7 +19,11 @@ public final class IdempotencyConflictException extends RuntimeException {
 
     private final IdempotencyKey key;
 
-    IdempotencyConflictException(IdempotencyKey key) {
+    /**
+     * Public since `P16-TSK-011`: once a key's record has been swept, the ledger judges a re-presented posting against the
+     * journal entry its scope already holds, and a different request is this same refusal, not another kind.
+     */
+    public IdempotencyConflictException(IdempotencyKey key) {
         super("Idempotency key " + key + " was already used for a different request (INV-IDEM-03)");
         this.key = key;
     }

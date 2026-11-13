@@ -178,6 +178,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0136](ADR-0136-the-event-pipeline-at-load.md) | The event pipeline at load: the relay drains while its batch is full, and three test-only brokers where the experiments run | Proposed | 16 | Platform (the outbox relay, the inbox) · the `kind` rehearsal |
 | [0137](ADR-0137-load-shedding-before-the-financial-effect.md) | Load shedding before the financial effect: a door in front of every borrow, per-class bounds, never after a claim | Proposed | 16 | Platform · the API surface · checkout |
 | [0140](ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md) | The post-recovery hold and point-in-time recovery: the role lock held through the window, the window acting as the application's role, a person's recorded release | Proposed | 16 | Platform · Settlement · Reconciliation |
+| [0141](ADR-0141-one-journal-entry-per-posting-scope-then-the-idempotency-sweep.md) | One journal entry per posting scope, for ever, then the idempotency records swept | Proposed | 16 | Ledger · Platform |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
@@ -260,3 +261,4 @@ task whose measurement justifies it (`PHASE_16_PLAN.md` §6.5, §24; `P16-TSK-01
 objectives and the post-recovery gate) and ADR-0129 (availability and the multi-region stance), all `Proposed`, from
 `PHASE_16_PLAN.md`; the next free number is ADR-0130.)*
 *(`P16-TSK-009`, 2026-11-13, wrote ADR-0134 (the connection budget at ten replicas), `Proposed`, the number the coordinator reserved for it in wave D.)*
+*(`P16-TSK-011`, 2026-11-13, wrote ADR-0141 (one journal entry per posting scope, then the idempotency sweep), `Proposed`, the number the coordinator reserved for it in wave E.)*

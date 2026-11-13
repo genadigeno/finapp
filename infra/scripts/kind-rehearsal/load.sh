@@ -86,6 +86,13 @@
 #                        index build on ledger.journal_line (load/index-build.sql, THREAT_MODEL.md section 6 item 42 (b)) measures the
 #                        write stop a migration's CREATE INDEX makes under the load, and the throwaway index is dropped.
 # The probe of E38 (the lock order removed from the transfer's two account locks) is a throwaway branch's, section 11.48.
+#
+# THE POSTING SCOPE (P16-TSK-011; ADR-0141; OPERATIONS_RUNBOOK.md section 11.56). After a "contention" profile's load (E62: E38's profile on a
+# tree carrying the posting scope's uniqueness) load/posting-scope.sql reads the lookup each fresh claim makes and the conditional entry
+# insert from pg_stat_statements, and both new indexes' size and use (load/posting-scope.tsv), for section 11.56's comparison with E38's run
+# on the tree before; their absence fails the run, since then it drove another path. In a "soak" (E64), once the journal_line build has
+# finished and at 92% of the load, load/scope-build.sql times the census's read of the journal and the two builds the task's migrations
+# make, each a throwaway twin under the migrator's lock_timeout (load/scope-build-stops.tsv); a scope held twice fails the run.
 
 LOAD_PROFILE_NAME=${REHEARSAL_LOAD_PROFILE:-demonstration}
 LOAD_CUSTOMERS=${REHEARSAL_LOAD_CUSTOMERS:-20}
@@ -807,6 +814,75 @@ load_soak_tick() {
         LOAD_INDEX=$!
         BACKGROUND="$BACKGROUND $LOAD_INDEX"
     fi
+    # P16-TSK-011 (E64): the posting scope's census and its two builds, once the journal_line build has finished, so no two stops overlap.
+    if [ -z "${LOAD_SCOPE_BUILD:-}" ] && [ -n "${LOAD_INDEX:-}" ] && [ "$1" -ge $(($2 * 92 / 100)) ] && ! kill -0 "$LOAD_INDEX" 2>/dev/null; then
+        load_scope_build &
+        LOAD_SCOPE_BUILD=$!
+        BACKGROUND="$BACKGROUND $LOAD_SCOPE_BUILD"
+    fi
+}
+
+# P16-TSK-011 (E64; load/scope-build.sql; OPERATIONS_RUNBOOK.md section 11.56): the census of the journal's posting scopes and the two
+# builds the task's migrations make (a unique index on journal_entry's idempotency_scope, a partial one on idempotency_record's expiry),
+# each a throwaway twin, under the migrator's own lock_timeout, read from its code as load_index_build reads it; up to three tries if
+# that lock_timeout refuses a lock. Runs in the background: its record is load/scope-build.tsv, judged after the load.
+load_scope_build() {
+    set +e
+    seconds=$(sed -n 's/.*Duration LOCK_TIMEOUT = Duration\.ofSeconds(\([0-9]*\));.*/\1/p' \
+        "$ROOT/migrator/src/main/java/com/finapp/migrator/MigrationPlan.java" | head -1)
+    case $seconds in '' | *[!0-9]*) echo "the migrator's lock_timeout could not be read from MigrationPlan.java" >> "$LOAD_ART/scope-build.log"; return 1 ;; esac
+    try=1
+    while [ "$try" -le 3 ]; do
+        printf 'try\t%s\t%s\n' "$try" "$(date +%s)" >> "$LOAD_ART/scope-build.tsv"
+        if psql_query -v "lock_timeout=${seconds}s" -f - < "$LOAD_SRC/scope-build.sql" >> "$LOAD_ART/scope-build.tsv" 2>> "$LOAD_ART/scope-build.log"; then
+            return 0
+        fi
+        grep -q 'lock timeout' "$LOAD_ART/scope-build.log" || return 1
+        try=$((try + 1))
+        sleep 10
+    done
+    return 1
+}
+
+# After the soak (E64): the census's read and each build's write stop, from its lock request to its commit, the tables' sizes, the census
+# finding no scope held twice, and both twins dropped. A duplicated scope on the soak's journal is the run's failure, never a number.
+load_scope_judge() {
+    [ -n "${LOAD_SCOPE_BUILD:-}" ] || fail "the posting scope's builds never started: the soak ended before 92% of its length, or the journal_line build was still running"
+    wait "$LOAD_SCOPE_BUILD" 2>/dev/null || true
+    f="$LOAD_ART/scope-build.tsv"
+    census=$(awk -F'|' '$1 == "census-start" {s = $2} $1 == "census" {printf "%.1f %s %s %s", $2 - s, $3, $4, $5; exit}' "$f")
+    journal=$(awk -F'|' '$1 == "journal-start" {s = $2} $1 == "journal-built" {printf "%.1f %s", $2 - s, $3; exit}' "$f")
+    records=$(awk -F'|' '$1 == "records-start" {s = $2; r = $3; b = $4} $1 == "records-built" {printf "%.1f %s %s %s", $2 - s, $3, r, b; exit}' "$f")
+    dropped=$(awk -F'|' '$1 == "dropped" {print $3; exit}' "$f")
+    [ -n "$census" ] && [ -n "$journal" ] && [ -n "$records" ] || fail "the posting scope's census and builds did not complete under the load (three tries at the migrator's lock_timeout, a ten-minute bound on each build): see load/scope-build.log"
+    [ "$dropped" = 0 ] || fail "a twin of the posting scope's builds was not dropped: see load/scope-build.tsv"
+    set -- $census
+    [ "$4" = 0 ] || fail "the census found $4 posting scopes held by more than one journal entry on the soak's journal: one key's second effect (load/scope-build.tsv)"
+    printf 'step\tseconds\tdetail\ncensus\t%s\t%s entries, %s scopes, %s held twice\n' "$1" "$2" "$3" "$4" > "$LOAD_ART/scope-build-stops.tsv"
+    set -- $journal
+    printf 'journal_entry unique build\t%s\t%s bytes of index\n' "$1" "$2" >> "$LOAD_ART/scope-build-stops.tsv"
+    set -- $records
+    printf 'idempotency_record partial build\t%s\t%s bytes of index over %s rows, %s bytes of heap\n' "$1" "$2" "$3" "$4" >> "$LOAD_ART/scope-build-stops.tsv"
+    pass "the posting scope's census and builds on the soak's tables: each step's stop in load/scope-build-stops.tsv, no scope held twice"
+}
+
+# P16-TSK-011 (E62; load/posting-scope.sql; OPERATIONS_RUNBOOK.md section 11.56): after a contention profile's load, the posting scope's
+# cost on the hot path - the lookup each fresh claim makes, the conditional entry insert, the claim's own statements - and both new
+# indexes' size and use. Compared with E38's run on the tree before the uniqueness by section 11.56's reading, never judged here.
+load_posting_scope() {
+    pg_admin -f - < "$LOAD_SRC/posting-scope.sql" > "$LOAD_ART/posting-scope.tsv" 2>> "$LOAD_ART/statistics-errors.log" \
+        || cannot "the posting scope's statements could not be read from pg_stat_statements: see load/statistics-errors.log"
+    psql_query -F '|' -A -t -c "SELECT 'index', s.indexrelname, s.idx_scan, s.idx_tup_read, pg_relation_size(s.indexrelid),
+        (SELECT reltuples::bigint FROM pg_class WHERE oid = s.relid) FROM pg_stat_user_indexes s
+        WHERE s.indexrelname IN ('journal_entry_one_per_idempotency_scope', 'idempotency_record_sweepable')" \
+        >> "$LOAD_ART/posting-scope.tsv" 2>> "$LOAD_ART/statistics-errors.log" \
+        || cannot "the posting scope's indexes could not be read: see load/statistics-errors.log"
+    for step in scope_lookup entry_insert; do
+        grep -q "^statement|$step|" "$LOAD_ART/posting-scope.tsv" || fail "E62: no $step statement in pg_stat_statements after the load: the posting path this run drove is not the one the tree holds (load/posting-scope.tsv)"
+    done
+    grep -q '^index|journal_entry_one_per_idempotency_scope|' "$LOAD_ART/posting-scope.tsv" \
+        || fail "E62: the posting scope's unique index is not on the run's journal (load/posting-scope.tsv)"
+    pass "the posting scope on the hot path: the lookup's and the conditional insert's calls and times, and both indexes, in load/posting-scope.tsv"
 }
 
 # The transactional index build on the journal (load/index-build.sql; THREAT_MODEL.md section 6 item 42 (b)), while the load still runs: up
@@ -871,6 +947,7 @@ load_soak_judge() {
     printf 'wal bytes\t%s\nmovements\t%s\nbytes a movement\t%s\n' "$wal" "$moved" "$(awk -v w="$wal" -v m="$moved" 'BEGIN {if (m > 0) printf "%.0f", w / m}')" \
         > "$LOAD_ART/wal-per-movement.tsv"
     load_index_judge
+    load_scope_judge
     pass "the soak: the named tables read $samples times (load/pg-soak-tables.tsv), $(grep -c . "$LOAD_ART/autovacuum.txt" || true) autovacuum runs and $(grep -c 'checkpoint complete' "$LOAD_ART/checkpoints.txt" || true) checkpoints from the server's log, $wal WAL bytes over $moved money movements; the top statements' plans: $PG_PLANS_SUMMARY"
 }
 
@@ -1248,6 +1325,8 @@ EOF
     # P16-TSK-008: the contended rows' waits and the deadlocks (E38); the soak's tables, log, plans and index build (E39).
     [ "$LOAD_CONTENTION_ON" != true ] || load_contention_judge
     [ "$LOAD_SOAK" != true ] || load_soak_judge
+    # P16-TSK-011: the posting scope's cost on the hot path, after the contention profile's load (E62).
+    [ "$LOAD_CONTENTION_ON" != true ] || load_posting_scope
 }
 
 # The shed census (P16-TSK-016, ADR-0137; OPERATIONS_RUNBOOK.md section 11.52). A shed request was refused before its handler, so it

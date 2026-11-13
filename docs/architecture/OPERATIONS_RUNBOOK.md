@@ -3258,6 +3258,7 @@ latest; the run, as its record names it.
 | §11.51 | `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | §11.52 | `platform`, `checkout` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | §11.55 | `platform`, `settlement`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
+| §11.56 | `ledger`, `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3816,14 +3817,19 @@ No lease and no leader: `FOR UPDATE SKIP LOCKED` means instances delete disjoint
 tagged `type="outbox_event"` or `type="inbox_message"`. *(2026-11-13: and `session-retention-sweep`, on the same interval and batch,
 tagged `type="session"`: a dead session's row once its idle bound passed more than `finapp.identity.session.sweep.grace` ago,
 default 30 days, judged on the database's clock (identity `V027`).)*
+*(Since `P16-TSK-011`, 2026-11-13: and `idempotency-retention-sweep`, on the same interval and batch size, deletes `COMPLETED` and
+`FAILED` idempotency records whose own `expires_at` is more than `finapp.idempotency.sweep.grace` (default 30 days, refused under a
+day) behind the database's clock, through platform `V016`'s function, which refuses every batch while the journal's posting scope is
+not uniquely indexed (§11.56). Its counters are tagged `type="idempotency_record"`. The window counter's sweep is §11.30's.)*
 
 **What is never deleted.** A pending or an abandoned outbox row, and a published one that a parked record not yet settled still
 names. An inbox record younger than either bound, or one a replay order has extended. A live session, ever: the sweep selects a row
 only once its idle bound has passed by the grace, and a live session's has not passed at all; nor a dead one inside the grace.
-`platform.idempotency_record` is not swept at all: it grows, by ruling, until the posting scope is unique (`THREAT_MODEL.md` §6
-item 18). Audit records are never deleted: they are archived by copy, §11.50. Nor are parked records, discard decisions or callback
-hints (`DATA_RETENTION.md`). *(Read "`platform.idempotency_record`, sessions and audit records are not swept at all. They grow, by
-ruling, until Phase 16." until 2026-11-13.)*
+An idempotency record in flight (`IN_PROGRESS`, the lease's to resolve), or one whose expiry is not yet more than the grace behind the
+database's clock. Audit records are never deleted: they are archived by copy, §11.50. Nor are parked records, discard decisions or
+callback hints (`DATA_RETENTION.md`). *(Read "`platform.idempotency_record`, sessions and audit records are not swept at all. They grow,
+by ruling, until Phase 16." until 2026-11-13, and then "`platform.idempotency_record` is not swept at all: it grows, by ruling, until
+the posting scope is unique" until the idempotency sweep the same day.)*
 
 **The session sweep's grace.** A row stays the grace past its idle bound so that a reported takeover can still be read (which device,
 how strongly the person signed in); the login, its rotations and its revocation stay in the audit trail whatever the sweep does. To
@@ -3837,6 +3843,8 @@ expected.
 | SQLState | Means | Do |
 |---|---|---|
 | `55000` | `platform.inbox_message` has a column the sweep was not reviewed against, so the inbox's sweep stops and deletes nothing. It may carry a state *(2026-11-13: on `type="session"`, the same of `identity.session`: a new column may carry a hold)* | Nothing is at risk: a kept record only costs storage. Ship a migration that reviews the column, adds a positive condition for its terminal values and lists it. **Never** add the column to the function's list by hand |
+| `55000` on `idempotency_record` | The same for `platform.idempotency_record`'s columns, or the journal's posting scope is not uniquely indexed (the index missing, invalid or reshaped), so the sweep deletes nothing (§11.56) | Nothing is at risk. For a column, as above. For the index, read the ledger's schema version first; never drop or rebuild it by hand to clear this |
+| `22023` on `idempotency_record` | A grace under a day, or a batch outside 1 to 1000, reached the function: an instance whose start refusal was bypassed | Correct `finapp.idempotency.sweep.grace` or the batch size in the overlay (§11.31) |
 | `08*`, `null`, or an exception class instead of a SQLState | The database was unreachable or the pool was exhausted | The next tick retries. Treat it as the database's or the pool's incident |
 | `42883` or `42501` | The function does not exist, or the role cannot execute it | Platform `V012` (identity `V027` for the session sweep) did not apply as it should: read the schema version before anything else |
 
@@ -3858,6 +3866,9 @@ harmless. Correctness does not depend on them: a row that is not deleted costs s
   5 minutes, the oldest record the broker can redeliver.
 - `finapp.outbox.retention`: an instance refuses to start with it below `finapp.inbox.retention`, because an audited replay
   reads the outbox across that window. Lowering it deletes only what is then past it.
+- `finapp.idempotency.sweep.grace` (`FINANCIAL`, §11.31's path): an instance refuses to start with it under a day, and the function
+  refuses the same. Raising it keeps every record still there at once. Lowering it shortens how long a command whose only arbiter is
+  its record is answered (`THREAT_MODEL.md` §6 item 63): the owner's to decide, never to relieve space.
 
 **Never** delete from these tables by hand to relieve space: a dedupe record removed early makes the next redelivery of that
 message a second effect (`INV-IDEM-04`). The application role cannot, and an operator with the migrator's credential must not.
@@ -5548,6 +5559,81 @@ three-replica overlay renders, byte for byte except the generated ConfigMap's na
 the overlay unchanged but the autoscaler's minimum. The manifest policies passed on the three overlays, kubeconform passed on `kind`,
 and the budget's plants were refused in containers (§11.14's check, its budget plants only, 2026-11-13). `LoadRehearsalContractTest`
 and `KindRehearsalContractTest` hold what the run would assert.
+
+### 11.56 One journal entry per posting scope, the idempotency records swept, and the runs that measure both (`P16-TSK-011`, ADR-0141)
+
+**What it is.** Ledger `V036` counts, on each database it reaches, the journal's posting scopes held by more than one entry and keeps the
+counts as a row of `ledger.posting_scope_census`. Ledger `V037` refuses to go on unless every census row says zero
+(`posting_scope_census_found_no_duplicate`), then builds `journal_entry_one_per_idempotency_scope`: from then on a posting is once for
+ever, whatever becomes of its idempotency record. Platform `V016` sweeps those records: `COMPLETED` or `FAILED`, past their own expiry by
+more than `finapp.idempotency.sweep.grace` (30 days by default, never under a day), through `platform.sweep_expired_idempotency_records`
+alone. The application's `DELETE` on the table is revoked. The schedule, its counters and pausing it are §11.15's.
+
+**The migration stops at the census** (`MigratorJobFailed`, §11.41; the Job's log names
+`posting_scope_census_found_no_duplicate`). A posting scope is held by more than one journal entry: a command posted twice. **Delete
+nothing, and do not edit the census.** Neither is possible for the application, and the journal refuses it to everyone.
+1. The environment stays on the release before, which never sweeps and is safe; the rollout waits (`schemaVersion`, §11.1c).
+2. Read the census as the migrator: `SELECT * FROM ledger.posting_scope_census ORDER BY taken_at;`.
+3. List the scopes, and nothing else, as the migrator: `SELECT idempotency_scope, count(*), min(created_at), max(created_at) FROM
+   ledger.journal_entry GROUP BY idempotency_scope HAVING count(*) > 1;`. Each is a second financial effect. Treat each as a
+   reconciliation break: find the command (the scope names its key), decide with the owner which entry stands, and correct the other by
+   a reversal (ADR-0141; `INV-REV-01`). A reversal does not remove the duplicate scope.
+4. The way forward is the owner's: the index cannot be built over those rows as `V037` writes it. Raise it as an incident (§11.12), with
+   the list. Never move the migration on by hand.
+
+**The sweep fails** (`finapp.retention.sweep.failed{type="idempotency_record"}`). Read the instance's `Retention sweep of
+idempotency_record failed` line for its SQLState, as §11.15 says. `55000` here is either a column of the table the sweep was not reviewed
+against, or the journal's posting scope not uniquely indexed (the index missing, invalid or of another shape). Nothing is at risk: a kept
+record costs storage. Do not drop or rebuild the index by hand to clear it. Read the ledger's schema version first. An index left invalid
+by a build outside the migration is dropped and built again, valid, by the same name, under a change of its own.
+
+**A retry answered by the journal.** A posting or a reversal whose record was swept answers the recorded entry: the same identifier, the
+posting meter's `REPLAYED`, nothing written. A different request under the key is `INV-IDEM-03`'s conflict. A command whose only arbiter
+is its record (a transfer, a card checkout: each posts under a key derived from a row it creates), retried after its record is swept, is a new command: §6 item 63 of `THREAT_MODEL.md`.
+If a client reports one, find both commands by the key and treat the second as a duplicate the client asked for, a reconciliation break.
+
+**Running E62, E63 and E64** (`RESILIENCE_EXPERIMENTS.md`). One full cluster at a time, as §11.43 and §11.46.
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=concurrent infra/scripts/kind-rehearsal.sh          # E62, on this tree
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E63 infra/scripts/kind-rehearsal.sh            # E63
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak infra/scripts/kind-rehearsal.sh                # E64, inside E39's soak
+```
+
+- **E62** is E38's run with `load-posting-scope` after the judgement: `load/posting-scope.tsv` lists the lookup (`scope_lookup`), the
+  conditional insert (`entry_insert`), the lines, the claim's insert and completion, and both new indexes. Its control is E38 on commit
+  `ac5aa4a3`, the tree before the uniqueness, at the same replica count: there `statements.tsv`'s last snapshot holds the plain insert and no
+  lookup. Read each operation's latency per stage (`k6/stages.tsv`) and each hot row's waits (`contention-rows.tsv`) beside the control's,
+  and write the difference with its cause in the record. A difference is a reading, never a verdict (`PHASE_16_PLAN.md` §5.2).
+- **E63** ages every terminal record two minutes into the workload (`experiments/e63-age.sql`, one transaction) and waits for the
+  replicas' own sweep, up to three of its intervals (read from the code) and five minutes. `experiments/E63/record.tsv` keeps the counts,
+  the counter per replica and the duplicate's refusal (`duplicate.txt`).
+- **E64** runs at 92% of the soak, after E39's journal_line build: `load/scope-build-stops.tsv` holds the census's read and each build's
+  write stop, beside the table's rows and bytes. Read the posting's and the claim's answers in each window from the generator's series as
+  §11.48 reads E39's build. The stop extrapolated to production's journal decides whether `V037` and `V016` are built ahead of their
+  migrations, `CONCURRENTLY` and by their names (each file says how), before the release reaches production.
+
+**Failure and rollback.** `V036`'s census row stays: it is evidence. `V037` and `V016` are not reverted: a release before them runs on
+their schema (each file's contract marker), and a rollback stops the sweep, while the index keeps every posting once. To pause the sweep
+alone, §11.15. A grace below a day is refused at start and by the function.
+
+**The record.** None. Not run, owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13, "we dont need long running
+checks and tests"): E62 at three replicas on this tree and its control E38 at three on `ac5aa4a3`, E63 at three, and E64 inside E39's
+soak at three. `PostingScopeRehearsalContractTest` holds what the runs would assert, and `PostingScopeUniquenessDatabaseTest` (written,
+owed to the database pass) what PostgreSQL does with the statements through the application's code.
+
+**The container check** (2026-11-13, a throwaway `postgres:18.6` with no application and no `kind`; ledger `V001`-`V037` and platform
+`V001`-`V016` applied by `psql`, each file in its own transaction with its schema first on the path, as the superuser rather than the
+migrator, the three roles created bare). On an empty journal the census wrote one row of zeros and `V037` built a valid, immediate unique
+index; the census refused an edit and a truncation. An entry and its two lines committed; a second entry under its scope `ON CONFLICT
+DO NOTHING` inserted nothing, and a plain one was refused naming the index. As `finapp_app` the sweep took the `COMPLETED` and the
+`FAILED` record two days past their expiry and left the one 12 hours past it and the `IN_PROGRESS` one three days past it (2 swept); it
+refused a grace of a day less a millisecond and a batch of 1,001 (`22023`); the role's own `DELETE` was refused, and a role without the
+grant could not execute the function; with the unique index dropped, or replaced by a partial twin, and with a column added to the
+table, the function refused (`55000`). On a second database holding two committed entries under one scope (ledger `V001`-`V035`), `V036`
+recorded 2 entries, 1 scope, 1 held twice, 1 surplus; `V037` then failed at `posting_scope_census_found_no_duplicate`, leaving the census
+row, both entries and no index. Not proven by it: the migrator's own run (Flyway, its role, its lock timeout), the application's code
+on PostgreSQL, ten writers or sweepers at once, and anything under load.
 
 ### 11.54 Running the database failover drill and reading its record (`P16-TSK-022`, ADR-0139)
 

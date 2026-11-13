@@ -709,3 +709,12 @@ commit and the date; do not delete the entry.
     18.6 (the functions by hand: the claim, a lease taken over, both refusals at the mark, the chain, the decoder, the grants, the
     sweep keeping a live session) and of the test-only store on the JDK image (write once, `412`, `405`, a bad checksum `400`). Its
     database cases (`AuditArchivalDatabaseTest`, `SessionSweepDatabaseTest`) are owed to the database pass, PI-023's kind.
+  - `P16-TSK-011` (the posting scope made unique, the idempotency records swept; `OPERATIONS_RUNBOOK.md` §11.56, whose record holds
+    only the container check; ADR-0141): **E62**, the concurrent-financial profile (`REHEARSAL_LOAD_PROFILE=concurrent`) at three
+    replicas on this task's tree, read by `load/posting-scope.sql`, with its control **E38 at three replicas on commit `ac5aa4a3`**, the
+    tree before the uniqueness, the comparison written in §11.56's record; **E63**, the records swept under the workload by the
+    replicas' own schedules (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E63`) at three replicas; **E64**, the census and the two
+    builds timed inside E39's soak (`REHEARSAL_LOAD_PROFILE=soak`) at three replicas, `load/scope-build-stops.tsv` in §11.56's record.
+    Nothing ran on a cluster. Ran instead, 2026-11-13, in a throwaway `postgres:18.6` container: the ledger and platform chains with
+    `V036`, `V037` and `V016`, the census, its stop on a planted duplicate, the conditional insert and the sweep's selection, floors and
+    refusals (§11.56's record). The database cases `PostingScopeUniquenessDatabaseTest` are owed to PI-023's pass.

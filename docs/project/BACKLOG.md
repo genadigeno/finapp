@@ -29686,7 +29686,7 @@ on none:
     items 18, 23 and 57). A short container check ran both migrations' functions on PostgreSQL 18.6 and the test-only store on the
     JDK image; nothing ran on a cluster.
 
-**P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
+**P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `COMPLETE` (2026-11-13; branch `P16-TSK-011` from master `ac5aa4a3`, fast-forwarded to `d7081fa9` before its first commit, master `ce1abd2e` merged in; gate `COMPLETE` 2026-11-13; marked `READY` by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`) *(read "`READY`" until its gate)*
 - **Objective**: as decided:
   - land a uniqueness on the posting scope (`journal_entry.idempotency_scope` is not `UNIQUE`);
   - then sweep expired idempotency records, which today would remove the second rank of posting once-ness;
@@ -29723,6 +29723,59 @@ on none:
   first), which suits an idempotency sweep run as the role that keeps `DELETE` or a definer function. `THREAT_MODEL.md` T37's
   idempotency row is the `GAP` this entry closes (item 18's note says so), and `DATA_RETENTION.md` §1's idempotency row still reads
   "Not swept". `ShutdownOrderTest` counts forty-one lifecycle components and thirty-eight schedules since: a new schedule moves both.
+- *As built (`P16-TSK-011`, 2026-11-13; ADR-0141 `Proposed`; built, contract-tested, its cluster runs owed under `POSTPONED_ISSUES.md`
+  PI-025 by the owner's word of 2026-11-13, "we dont need long running checks and tests"):*
+  - **The census and the uniqueness.** Ledger `V036` creates `ledger.posting_scope_census` (counts only, no constraint so it always
+    records, append-only for every role by trigger, `TRUNCATE` refused) and writes one row: entries read, scopes, scopes held twice,
+    surplus entries. Ledger `V037` adds `posting_scope_census_found_no_duplicate` (every row zero; an unknown count fails it) and then
+    `CREATE UNIQUE INDEX IF NOT EXISTS journal_entry_one_per_idempotency_scope ON ledger.journal_entry (idempotency_scope)`, in its
+    transaction; its contract marker waives `UNIQUE,CHECK` with `data-fix=V036`, the expand-only lint's first data fix. **A duplicate
+    stops the release at the census's `CHECK`, nothing deleted** (runbook §11.56 says what a person does). `ledger.journal_line`'s
+    schema is not touched (item 55's checkpoint is unaffected).
+  - **The conflict mapped to the stored outcome.** `JdbcJournalEntryStore.append` inserts `ON CONFLICT (idempotency_scope) DO NOTHING`
+    and raises `PostingScopeTakenException` (new) when nothing was inserted, before any line, the transaction still usable.
+    `PostingService` looks the scope up first inside a fresh claim, so a retry whose record was swept is answered with the recorded
+    entry's identifier before any cutoff is read, compared field by field with the request (a different one is `INV-IDEM-03`'s
+    `IdempotencyConflictException`, its constructor made public); the race with a writer that claimed nothing is answered the same way.
+    `ReversalService` answers a reversal the journal holds under its key **before its bound**, which counted that reversal and so
+    refused a full reversal's retry even with its record kept (found here, fixed by the same lookup). `AdjustmentService` lets the
+    exception propagate: its scope is once per proposal under the proposal's lock.
+  - **The sweep.** Platform `V016` (`V015` is `P16-TSK-010`'s): the partial index `idempotency_record_sweepable`, the `SECURITY DEFINER`
+    function `platform.sweep_expired_idempotency_records(grace_ms, batch)` - `COMPLETED`/`FAILED` only, expiry more than the grace behind
+    the database's clock, refused under a day and outside 1..1000 (`22023`), refused (`55000`) while a valid, non-partial unique index on
+    exactly `ledger.journal_entry (idempotency_scope)` is absent and at any column it was not reviewed against, `FOR UPDATE SKIP LOCKED` in
+    a materialised CTE, `EXECUTE` to `finapp_app` alone - and **the application's `DELETE` revoked** (marker `waives=REVOKE`).
+    `RetentionSweep.ofExpiredIdempotencyRecords` (floor `IDEMPOTENCY_GRACE_FLOOR`, a day); a `RetentionSweepSchedule` bean (the fifth since the merge),
+    `idempotency-retention-sweep`, on the retention sweeps' interval and batch (500, five minutes: about 2.9 million records a day an
+    instance against about 0.8 million keyed a day at W1, **derived**); `finapp.idempotency.sweep.grace` (`FINANCIAL`, default
+    `P30D`); `type="idempotency_record"` eager on the retention counters.
+  - **The harness, built and not run:** E62 (E38's profile on this tree, `load/posting-scope.sql`, against E38 on `ac5aa4a3`), E63 (the
+    records aged in one transaction and swept by the replicas' own schedules, `experiments/e63-age.sql` and `e63-duplicate.sql`), E64 (the
+    census and both builds timed in E39's soak, `load/scope-build.sql`); `PostingScopeRehearsalContractTest`; runbook §11.56, §11.15 widened.
+  - **Proven without a cluster:** the hermetic tests (`PostingScopeUniquenessMigrationTest`, `PostingAfterTheSweepTest`,
+    `IdempotencySweepMigrationTest`, `NoIdempotencyRecordIsSweptTest` re-scoped to admit the one guarded function, keeping its members for
+    the mutation rows); a two-minute container check of the SQL on `postgres:18.6` (§11.56's record: the chain applied, the census, its stop
+    on a planted duplicate, the conditional insert, the sweep's selection, floors, refusals and the revoke); `sast.sh` green (61 findings,
+    61 rows); nine hermetic probes, every one caught (`MUTATION_TESTING.md` §2). **Tests, fresh XML:** before the merge, 73 named classes,
+    926 tests (`LoanWriteOffsTest`'s 26 from the first pass, its inputs unchanged), and the 7 rule suites the filters pull in, 20 tests;
+    after the merge of `ce1abd2e`, the same 73 named classes, 940 tests, and the 7 suites, 20 tests - 0 failed each time.
+  - **Owed:** E62, E63 and E64 at three replicas, and E38 on `ac5aa4a3` as E62's control (PI-025); `PostingScopeUniquenessDatabaseTest`
+    (ten writers of one scope, a post and a reversal after their record's sweep, the sweep's bounds and refusals, ten sweepers) and
+    `InstalmentBillingDatabaseTest.advance`'s two-step re-key under the new index (PI-023's kind). **Acceptance:** the constraint in
+    place - met (`V037`); zero duplicate scopes found - met where the census has run (an empty journal in the container check), each
+    environment's own row written at its migration; the sweep running - built, its run on a cluster owed (E63); the grant revoked - met
+    (`V016`, proven in the container); the census green after a sweep under load - built, contract-tested, run owed (E63, PI-025).
+  - **Owner item:** `THREAT_MODEL.md` §6 item 63, what the sweep leaves to a command whose only arbiter is its record (recommendation
+    (i), keep 30 days; (iii) a second arbiter per money-moving command later).
+  - **`P16-TSK-010`'s routed note, answered after the merge of master `ce1abd2e`:** the idempotency sweep is a platform table's, so it
+    is `RetentionSweep`'s own factory (`ofExpiredIdempotencyRecords`, with its floor) beside `ofModuleFunction`, which serves a module's
+    own; it runs as a definer function, the application's `DELETE` revoked. T37's idempotency `GAP` row is replaced by the sweep's
+    `EXISTS` row and item 18 recorded closed; `DATA_RETENTION.md` §1's idempotency row no longer reads "Not swept"; `ShutdownOrderTest`
+    counts forty-two lifecycle components and thirty-nine schedules (the fifth `RetentionSweepSchedule` bean), and
+    `DISTRIBUTED_EXECUTION.md` §3 likewise.
+  - **Deviations:** the branch was fast-forwarded from `ac5aa4a3` to `d7081fa9` before its first commit, after the outage, to meet the
+    newer master's shared records; platform `V016`, not `V015`, beside `P16-TSK-010`'s `V015` (merged since); the reversal's lookup moved before
+    its bound, which changes the record-kept path too (a full reversal's retry now replays instead of being refused as over-reversing).
 
 **P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
 - **Objective**: decide, from the soak's growth rates extrapolated to the production target, whether any high-volume table needs
