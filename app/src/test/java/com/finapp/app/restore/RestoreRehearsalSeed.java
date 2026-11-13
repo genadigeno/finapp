@@ -85,8 +85,10 @@ import org.springframework.context.support.GenericApplicationContext;
  * financial-data provider are simulators started in this JVM and registered as primary beans of this context alone; credit's decision
  * hints, which the inbox would deliver, are handed to origination directly, and the sweeps the application schedules are built as the
  * application builds them and swept once. No journal entry and no balance is written by SQL. No card payment and no FX conversion
- * runs: each needs a simulated provider this seed does not start, so their proofs are read over no rows. Every line it prints is a
- * count or a status, never an amount.
+ * runs: each needs a simulated provider this seed does not start, so {@code FX_BOOKS} and {@code POSITION} judge the books and positions
+ * the migrations open, and the one merchant payable is the BNPL purchase's. The credit evidence its decisions write stands under the key
+ * ring version the script makes active, version 2 of two, which every restore's verification must still hold. Every line it prints is
+ * a count or a status, never an amount.
  *
  * <p>Not a test, and never run by one: {@code infra/scripts/restore-rehearsal.sh} runs it against its own throwaway source.
  */
