@@ -33,7 +33,9 @@ Every experiment, in §3 and §4.2, carries every field:
 | Result | Empty (`—`) until a run fills it (§1.2) |
 | Remediation | Empty (`—`) unless a result failed (§1.2) |
 
-A field that does not apply reads `N/A: ` followed by its reason. A bare `N/A` is refused.
+A field that does not apply reads `N/A: ` followed by its reason. A bare `N/A` is refused. A run the owner postponed reads, in
+Result, `N/A: not run (<date>)` followed by the reason and the postponed issue that owes it (`POSTPONED_ISSUES.md` PI-025, the
+owner's word of 2026-11-13); its Runs in keeps the task that built it, and a later run replaces the cell with its result.
 
 ### 1.2 A result, and its remediation
 

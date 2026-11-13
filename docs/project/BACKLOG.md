@@ -29440,7 +29440,7 @@ on none:
   the profiles, the replica patch, the per-stage cuts, the lost token, the probe's index and the undriven reasons; six probes in two
   rounds, each caught (`MUTATION_TESTING.md` §2).
 
-**P16-TSK-008 — Hot rows, locks, deadlocks and plans under load** — `PLANNED`
+**P16-TSK-008 — Hot rows, locks, deadlocks and plans under load** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: measure every known contended financial resource and the database's behaviour under the concurrent-financial and
   soak profiles, and decide by measurement whether any needs a mechanism (`PHASE_16_PLAN.md` §6.3–§6.5, §6.7).
 - **Affected components**: `ledger` (the projection's hot rows), `fx` (`FX_POSITION`, `FX_SPREAD_REVENUE`), `lending` and `bnpl`
@@ -29496,7 +29496,7 @@ on none:
   decide by measurement (an ADR first where it changes the ledger's reads, `PHASE_16_PLAN.md` §5.4); the hot merchant also serialises
   its `ledger.account_balance` upserts (mean 14 ms in that run).
 
-**P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `PLANNED`
+**P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: make ten replicas possible without breaking the connection budget, decided by measurement, and give the HPA a
   metric to act on. Today `maxReplicas` 7 + 2 × `maxSurge` 1 + 1 = 10 = `FINAPP_DB_INSTANCES`. Ten replicas need 13 instances and
   104 connections, against 88 usable. The `kind` rehearsal installs no metrics source, so the HPA has never scaled (`P15-REM-007`,
@@ -29539,7 +29539,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's budget procedure; `DISTRIBUTED_EXECUTION.md` §4a.
 - **Risk**: Medium. **Cx**: M.
 
-**P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `PLANNED`
+**P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: as decided 2026-11-09, scheduled into Phase 16's archival:
   - the audit archival designed in `DATA_RETENTION.md` §3 is built;
   - expired session rows are swept, sized by the volume `-007` measured.
@@ -29637,7 +29637,7 @@ on none:
 - **Operational documentation**: `DATA_ARCHITECTURE.md`'s growth section.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-013 — The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `PLANNED`
+**P16-TSK-013 — The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: `PHASE_16_PLAN.md` §7 at the engineering workload on a test-only three-broker KRaft cluster on `kind`, with
   replication 3 and `min.insync.replicas` 2.
 - **Affected components**: `deploy/overlays/kind/kafka.yaml`, `infra/kafka/topics.yaml` (read, unchanged for production), `platform`'s
@@ -29744,7 +29744,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.30 and §11.14.
 - **Risk**: Medium. **Cx**: M.
 
-**P16-TSK-016 — Load shedding before the financial effect, and bulkheads** — `PLANNED`
+**P16-TSK-016 — Load shedding before the financial effect, and bulkheads** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: when the platform cannot finish a money-moving command in time, refuse it with `503` and `Retry-After` before its
   idempotency claim and before any financial effect, never after (`DELIVERY_PLAN.md` §Phase 16 §7). Give each class of work that can
   starve another its own bound.
@@ -29825,7 +29825,7 @@ on none:
   owner (`THREAT_MODEL.md` §6 item 51). Hermetic tests for every sweep's skip, count, backoff and exclusion; the entry's probe
   and ten more Java and harness probes, and seven rule probes, performed (`MUTATION_TESTING.md` §2); database cases written and owed (PI-023). **E28** (runbook §11.39 (a); PI-024's poisoned-row step under C11) `PASSED` on `kind` at 3 replicas, commit `e9cdbb3a`, 2026-11-13 02:22-02:34Z, development mode (the `incidents` prefix, `platform-prepare`, `platform-poisoned-rows`): `PaymentSweepRowUnreadable` fired 95 s after the plant and reached `placeholder-page`, the record held 2 failures, the row stayed `CAPTURE_DISPATCHED`, no replica's tick failed whole, census green, the cluster deleted and the lock released. A first run at `82bab047` passed the same assertions and read `COULD NOT RUN`: the harness's development mode left `wanted`'s refusal of the scope's last unnamed step as the sourced file's status under `set -e`; `platform.sh` now ends its sequences in a zero status (`PlatformRehearsalContractTest#theSequenceEndsInAZeroStatus`, its probe performed).
 
-**P16-TSK-018 — Timeouts and retries classified; provider outages and slow providers (C12)** — `PLANNED`
+**P16-TSK-018 — Timeouts and retries classified; provider outages and slow providers (C12)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)
 - **Objective**: one inventory of every outbound call's connect, request and overall bound and of every retry, each retry classified
   safe; the provider-outage experiments E17–E21 run; automatic rail availability decided from measured failure rates.
 - **Affected components**: every provider adapter (`payments`, `merchant`, `fx`, `kyc`, `credit`, `paymentmethods`, `settlement`),
@@ -29979,7 +29979,7 @@ on none:
   outside the simulator). Each passes the boundary first and is removed at the experiment's stop and on every
   way out. On several nodes, read Prometheus through its pod (`experiments_prometheus`), not the API server's proxy.
 
-**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `PLANNED`
+**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)
 - **Objective**: as decided:
   - E05, a database primary failover under load on the test-only synchronous standby pair;
   - its interruption measured;
@@ -30057,7 +30057,7 @@ on none:
 - **Operational documentation**: the matrix referenced from the runbook's incident section (§11.12).
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-024 — Restore and point-in-time recovery with the post-recovery verification (`THREAT_MODEL.md` §6 item 44 (a); ADR-0128)** — `PLANNED`
+**P16-TSK-024 — Restore and point-in-time recovery with the post-recovery verification (`THREAT_MODEL.md` §6 item 44 (a); ADR-0128)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: as decided:
   - the restore's lending and BNPL proofs judged over a source that holds a loan and a BNPL obligation;
   - a point-in-time restore from archived WAL to an instant before a planted bad write, verified;
