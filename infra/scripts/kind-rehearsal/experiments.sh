@@ -697,9 +697,11 @@ EOF
     [ "$tls" = "$all" ] && [ "$proxied" = "$all" ] \
         || fail "topology: of $all application sessions $tls are TLS and $proxied arrive from the proxy ($proxy_pod); every one must be both"
     kafka_admin kafka-consumer-groups.sh --describe --all-groups --members > "$EXP_ART/members.txt" 2>/dev/null || true
-    members=$(awk '$1 ~ /^finapp\./ && $3 ~ /^\// {print $3}' "$EXP_ART/members.txt" | sort | uniq -c | tr -s ' ' | tr '\n' ';')
-    other=$(awk -v p="/$proxy_pod" '$1 ~ /^finapp\./ && $3 ~ /^\// && $3 != p' "$EXP_ART/members.txt" | grep -c . || true)
-    counted=$(awk -v p="/$proxy_pod" '$1 ~ /^finapp\./ && $3 == p' "$EXP_ART/members.txt" | grep -c . || true)
+    # A member's host is the one field of its line written /<address>, whichever column the broker's version puts it in.
+    hosts=$(awk '$1 ~ /^finapp\./ {for (i = 2; i <= NF; i++) if ($i ~ /^\/[0-9]/) print $i}' "$EXP_ART/members.txt")
+    members=$(printf '%s\n' "$hosts" | grep . | sort | uniq -c | tr -s ' ' | tr '\n' ';')
+    other=$(printf '%s\n' "$hosts" | grep . | grep -vxF "/$proxy_pod" | grep -c . || true)
+    counted=$(printf '%s\n' "$hosts" | grep -cxF "/$proxy_pod" || true)
     [ "$counted" -ge 1 ] && [ "$other" = 0 ] || fail "topology: the consumer groups' members are not all at the proxy's address: $members"
     kube -n finapp-experiments logs deploy/finapp-toxiproxy -c toxiproxy --tail=-1 > "$EXP_ART/toxiproxy.log" 2>&1 || true
     # Every replica opens its database and broker connections as it starts; a replica opens one to a provider only when it first calls
