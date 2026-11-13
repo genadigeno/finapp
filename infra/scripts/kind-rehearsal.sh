@@ -47,7 +47,8 @@
 # workers, each a zone, with Toxiproxy on the application's three hops and a synchronous standby of the test-only PostgreSQL, then the
 # failure experiments of kind-rehearsal/experiments.sh (REHEARSAL_EXPERIMENTS, E01 by default), each steady state, fault, observation,
 # stop, recovery and census, behind the safety boundary's refusals and their plants. Its probes are guard-off, crash-with-faults and
-# term-with-faults. It refuses a cluster of its name it did not make and mark, before it changes anything in it.
+# term-with-faults, and E05's async-standby (P16-TSK-022: an asynchronous standby promoted after a planted lag, which the journal's
+# checksum must show). It refuses a cluster of its name it did not make and mark, before it changes anything in it.
 #
 # A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
 # common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
@@ -757,9 +758,13 @@ PROPERTIES
 kube -n finapp rollout status statefulset/finapp-postgres --timeout=240s >> "$ART/apply.log" 2>&1 || fail "the test-only PostgreSQL did not become ready"
 kube -n finapp rollout status statefulset/finapp-kafka --timeout=300s >> "$ART/apply.log" 2>&1 || fail "the test-only broker did not become ready"
 
+# The pod that is the primary: the test-only server's own, until the experiments scope's failover (E05, P16-TSK-022) promotes the standby
+# and moves the Service to it, when every read after it must be of the promoted one.
+PG_POD=finapp-postgres-0
+
 psql_query() {
     # The superuser over the pod's own socket: the census and the seed read and write what no application role may.
-    kube -n finapp exec -i finapp-postgres-0 -c postgres -- psql -q -X -A -t -U finapp -d finapp "$@"
+    kube -n finapp exec -i "$PG_POD" -c postgres -- psql -q -X -A -t -U finapp -d finapp "$@"
 }
 
 kafka_admin() {

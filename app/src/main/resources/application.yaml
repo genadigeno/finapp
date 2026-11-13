@@ -84,9 +84,20 @@ spring:
         # is longer than a probe interval; a blackholed database would otherwise leave
         # readiness unanswered rather than negative.
         connectTimeout: 5
-        # socketTimeout is deliberately NOT set. It bounds how long a QUERY may run, and
-        # choosing that number without any real queries to measure would be a guess that
-        # aborts legitimate work later. It belongs with Phase 3, where the queries exist.
+        # How long one read of the connection may wait for the server, in seconds (P16-TSK-022,
+        # ADR-0139; THREAT_MODEL.md section 6 item 42 (h)). After a failover a connection the
+        # network black-holed never answers: without this, a request or a tick holding one
+        # waited until the pod was replaced, holding its thread and one of the pool's seven.
+        #
+        # It must stay above every statement bound the code arms, on either pool, or that
+        # statement fails every time it runs. The longest is the report generation budget,
+        # finapp.accounting.report.generation-timeout (four minutes): the shared report
+        # snapshots arm it on this pool, and report generation on the reporting pool, which
+        # takes these properties too (ReportingPool). Five minutes leaves the server a minute
+        # to answer a statement it cancelled, and frees a black-holed connection well inside
+        # the in-region recovery objective (ADR-0128: 15 minutes to money movement).
+        # DatabaseSocketTimeoutTest holds both sides, reading the register's bounds.
+        socketTimeout: 300
         ApplicationName: finapp
 
 # ---------------------------------------------------------------------------
