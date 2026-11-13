@@ -29846,7 +29846,10 @@ on none:
   edge reaching the replicas through their Service (the register's dated note). `ExperimentsRehearsalContractTest` (12 members) holds
   it; the entry's probe (an unmarked context, on a cluster made by hand) and 15 more harness and contract probes performed
   (`MUTATION_TESTING.md` §2). Not run here: CI (the scope is the reference machine's, as the load scope); `docker stop` of a node, a
-  promotion, three brokers (routed below).
+  promotion, three brokers (routed below). **Every cluster run ran on commit `a6fee3a1`**; the later commits (from `88d027da`: the
+  standby's phrase by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret discoverer reads, wording) were
+  run in containers and by the contract test, not on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks
+  and tests"): E01 on the final bytes is owed under `POSTPONED_ISSUES.md` PI-025.
 
 **P16-TSK-020 — Instance, pod and node failures at load** — `PLANNED`
 - **Objective**: E01–E04 and E25 under the sustained profile at ten replicas.

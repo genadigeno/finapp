@@ -106,7 +106,10 @@ replicas on a cluster of three zones (`OPERATIONS_RUNBOOK.md` §11.46). It is it
 development runs on the same kept cluster, stopped or corrected on what each found - the first at the boundary's own control (the
 application's ConfigMap has a generated name), the second at the edge's attribution (the edge names no replica), the third green with the
 kill's time read two seconds early and the workload's failed requests not yet held to the edge's - and §11.46's record lists them. Its
-success criteria are sharpened by the dated note in the row; its 10-replica run is still to come.)*
+success criteria are sharpened by the dated note in the row; its 10-replica run is still to come. It ran on commit `a6fee3a1`. The
+branch's later commits (from `88d027da`: the standby's phrase delivered by reference rather than by a mounted file, the replication
+role's SQL written with a placeholder, the script's names the secret discoverer reads, and wording) were not run on a cluster, by the
+owner's word of 2026-11-13 ("we dont need long running checks and tests"); that run is owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 | ID | Scenario | Hypothesis | Affected | Expected behaviour | Safety | Success criteria | Stop | Instances | Runs in | Result | Remediation |
 |---|---|---|---|---|---|---|---|---|---|---|---|

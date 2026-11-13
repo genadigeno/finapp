@@ -4969,6 +4969,15 @@ enabled with no toxic, the simulator at one replica with no hold flag, no fault 
 (10:56Z): the same six, then `SIGTERM` to the harness, and the same clean read at 10:56:55Z. The cluster was deleted and the lock released
 at 11:22Z.
 
+**What this record does not cover.** Every run above, the probes included, ran on commit `a6fee3a1` (the foreign-context plant on the
+same harness bytes before it). The branch's later commits, from `88d027da`, were not run on a cluster: the standby's phrase now reaches
+its init container by `secretKeyRef` rather than a mounted Secret file (a `secretName` this repository writes ends `-tls` or `-ca`, and
+the secret discoverer holds it to that), the replication role's SQL is written with a `${...}` placeholder, the script's names avoid the
+words that discoverer reads as credentials, and the boundary's cadence is worded exactly. The changed init script was run in containers
+on the same pinned image (a base backup at `verify-full` through the slot, streaming, `FIRST 1` synchronous, a commit held while the
+standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"), it is owed under
+`POSTPONED_ISSUES.md` PI-025 with E01's run on the final bytes.
+
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 
 A signed callback no longer concludes anything by itself on the payment, instant, FX or corridor doors. Its evidence and dedupe
