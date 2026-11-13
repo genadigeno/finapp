@@ -4,7 +4,8 @@
 -- statistics.sql's do. statistics.sql reads the fifteen busiest tables, whichever they are; these are named, so the append-heavy and the
 -- update-heavy tables of section 6.7 are read at every sample whatever their rank: the journal, the balance projection, the outbox, the
 -- inbox, the idempotency claims, the audit trail, the window counter (unlogged: a restart empties it), the payment attempts and their
--- history, and the sweeps' failure records (P16-TSK-017's side tables). Live and dead rows, the writes by kind, the vacuum and analyze
+-- history, the sweeps' failure records (P16-TSK-017's side tables) and the audit archive's queue (P16-TSK-010's, which grows with the audit
+-- trail while no store is named: P16-TSK-012's growth reading counts it). Live and dead rows, the writes by kind, the vacuum and analyze
 -- runs, the heap's, the indexes' and the whole relation's bytes: growth and bloat are read as differences. No row of any table is read.
 \set ON_ERROR_STOP on
 \pset format unaligned
@@ -20,7 +21,7 @@ SELECT 'soak-tables', t.schemaname || '.' || t.relname, t.n_live_tup, t.n_dead_t
                                      ('platform', 'outbox_event'), ('platform', 'inbox_message'), ('platform', 'idempotency_record'),
                                      ('platform', 'audit_record'), ('platform', 'window_counter'), ('payments', 'payment_attempt'),
                                      ('payments', 'payment_attempt_event'), ('payments', 'sweep_row_failure'),
-                                     ('merchant', 'sweep_row_failure'))
+                                     ('merchant', 'sweep_row_failure'), ('platform', 'audit_archive_pending'))
  ORDER BY 2;
 
 -- Every table's bytes together, and the WAL's position, so a sample's growth and WAL volume are differences of the same read.

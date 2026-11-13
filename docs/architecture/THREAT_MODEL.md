@@ -632,6 +632,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T14 | Shedding seen on a real cluster: the spike profile's shed requests leaving no idempotency claim and no transfer, with the shed rate and each spike's recovery measured; a slowed database shed while every correctness gauge stays readable, and the shedding stopping after it; the stress profile's break crossed with the source-join census reading at every sample and no checkout's creating answer lost after its commit | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T14 | A database connection the network black-holes (after a failover, a hung or vanished server) is given up by the driver after the data source's socket timeout, five minutes, rather than holding its thread and one of the pool's seven until the pod is replaced; the reporting pool takes the same value; it stays above every statement bound the code arms on either pool (report generation's four minutes the longest), the bounds discovered from the arming sites and the register and moved by no overlay, and frees a connection with ten minutes of the in-region recovery objective left | EXISTS | `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theDataSourceGivesUpABlackHoledConnection`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#itIsAboveEveryArmedBound`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theBoundsAreDiscovered`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theReportingPoolCarriesIt`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#itFreesABlackHoledConnectionInTime` |
 | T14 | On a real cluster, the black-holed database hop held for the whole fleet: every held connection given up within the socket timeout, and, as the control, still held without it; the longest statement under the sustained profile measured below half the timeout | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
+| T14 | Report generation bounded: its trial-balance definitions fold the journal from inception, so one statement's cost grows with the journal's lifetime and, at the target, passes the four-minute generation bound within the first year unless it folds more than about 2.1 million lines a second; it runs on the primary, one connection an instance; the bound on the read is not decided | GAP | `owner item 64`; owner: the owner, since 2026-11-13 |
 | T15 | An unbalanced journal entry is refused at commit, whoever writes it, raw SQL included (`INV-LED-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#aDirectUnbalancedInsertIsRefusedAtCommit` |
 | T15 | The application role holds no `UPDATE`, `DELETE` or `TRUNCATE` on the journal | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theColumnSweep` |
 | T15 | The journal's append-only trigger binds even the migrator (`INV-HIST-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
@@ -650,6 +651,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T15 | Refusal of a balanced, rule-shaped entry inserted by a holder of the application's credential (a definer-rights posting path as the journal's only `INSERT`, the projection's `UPDATE` revoked, a role per module), and detection of one whose domain record was written first | GAP | `PI-016`; owner: the owner, since 2026-11-08 |
 | T15 | Risk's monitoring sweep, the rescreening enumeration and the opening position stop on a raw writer's id - a stall that pages, or a `500` - where the resolution sweeps skip, record and page: kept failing closed by the owner's decision of 2026-11-13 (item 51 (i)); no test yet plants such an id at each of the three and sees it stop and page | GAP | `owner item 51`; owner: the owner, since 2026-11-13 |
 | T16 | Ten instances submitting one key produce exactly one transfer (`INV-IDEM-01`) | EXISTS | `app/src/test/java/com/finapp/app/transfers/TransferExecutionDatabaseTest.java#tenConcurrentIdenticalKeysProduceOneTransfer` |
+| T16 | No once-ness check, balance check or decision can read a copy behind the primary (`PHASE_GATES.md` §5 Phase 16 criterion 6, ADR-0142): one primary data source serves every door. No production class but the endpoint reader names a database's address; none but the reporting pool builds a pool or a connection; no bean declares a `DataSource`; only report generation's wiring reaches the reporting pool, a money-moving door planted there refused; that pool connects to the writer's own address; and the driver may take only a primary, a `targetServerType` admitting a standby, or several hosts without `targetServerType=primary`, refusing to start | EXISTS | `app/src/test/java/com/finapp/app/architecture/OnePrimaryServesEveryDoorTest.java#onlyReportGenerationReachesTheReportingPool`; `app/src/test/java/com/finapp/app/architecture/OnePrimaryServesEveryDoorTest.java#aMoneyMovingDoorOnTheReportingPoolIsRefused`; `app/src/test/java/com/finapp/app/architecture/OnePrimaryServesEveryDoorTest.java#nothingButTheReportingPoolBuildsAConnection`; `app/src/test/java/com/finapp/app/architecture/OnePrimaryServesEveryDoorTest.java#onlyTheEndpointReadsADatabaseAddress`; `app/src/test/java/com/finapp/app/architecture/OnePrimaryServesEveryDoorTest.java#noProductionBeanDeclaresADataSource`; `app/src/test/java/com/finapp/app/database/ReportingPoolEndpointTest.java#theReportingPoolReachesTheWritersEndpoint`; `app/src/test/java/com/finapp/app/security/PrimaryOnlyGuardTest.java#aSettingThatAdmitsAStandbyIsRefused`; `app/src/test/java/com/finapp/app/security/PrimaryOnlyGuardTest.java#severalHostsNeedThePrimaryOnly`; `app/src/test/java/com/finapp/app/security/PrimaryOnlyGuardTest.java#theGuardIsWiredAndReadsTheEffectiveConfiguration` |
 | T16 | A key reused with a different request is refused as a distinct conflict, never replayed (`INV-IDEM-03`) | EXISTS | `platform/src/test/java/com/finapp/platform/idempotency/IdempotentExecutorTest.java#differingFingerprintIsRejected` |
 | T16 | A merchant's payout key is that merchant's own: two merchants, one key value, two payouts | EXISTS | `app/src/test/java/com/finapp/app/merchant/MerchantPayoutEndpointDatabaseTest.java#aClientKeyIsEachMerchantsOwn` |
 | T16 | Every idempotency claim scoped to its principal, each money-moving scope moved behind a tested transition path | REMEDIATION | `X-TSK-003` |
@@ -824,6 +826,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T37 | The session table bounded over a soak (experiment E46, built and not run) | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T37 | Idempotency records swept past their own expiry and `finapp.idempotency.sweep.grace`, leaderless, batched under `SKIP LOCKED`, terminal records only, the batch and the grace bounded at start and in the function, a column it was not reviewed against stopping it *(this row replaced, 2026-11-13, the `GAP` row "Growth of the idempotency table: not swept, by ruling, until the posting scope is unique", held by owner item 18)* | EXISTS | `platform/src/test/java/com/finapp/platform/retention/IdempotencySweepMigrationTest.java#eachBatchIsBoundedAndDisjoint`; `platform/src/test/java/com/finapp/platform/retention/IdempotencySweepMigrationTest.java#theGraceHasTheSameFloorInBothPlaces`; `platform/src/test/java/com/finapp/platform/retention/IdempotencySweepMigrationTest.java#anUnreviewedColumnStopsTheSweep` |
 | T37 | Growth of the audit table: every row is kept by design (ADR-0010), archived but never deleted; a row may leave the table only after its archived copy is verified and a jurisdiction's period has run, and that period is not chosen | GAP | `owner item 23`; owner: the owner, since 2026-11-09 |
+| T37 | The named tables' growth per hour and per money movement read from the soak's own samples, and report generation's slowest statement fitted to the journal's lines, each read against ADR-0142's thresholds (no table partitioned, no replica routed) on a real cluster, riding the eight-hour soak | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T38 | A permission denial is audited | EXISTS | `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#aDenialIsAudited` |
 | T38 | An operator act is recorded `EMPLOYEE`, decided per request from the server's record of roles and never from the client; a customer refused at an operator route `CUSTOMER` | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#anOperatorActIsTypedEmployee`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusalIsTypedByWhoTried`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRoleHolderOnACustomerRouteIsACustomer` |
 | T38 | A refused step-up is recorded once per refused request, committed on its own, naming the route pattern and no session, code or factor | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusedStepUpIsRecorded`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#anOperationsRefusalIsRecordedOnce` |
@@ -1326,6 +1329,10 @@ owner.**
    absent, and the application's unused `DELETE` revoked. T16's and T37's rows hold it, its runs on a cluster are owed under
    `PI-025` and its database cases under `PI-023`, and what the sweep leaves to commands with no second arbiter is item 63. The item
    is closed. *(The sentence before read so until then: T37's idempotency row is `EXISTS` since.)*
+   *(2026-11-13: the partitioning half of that schedule is ruled. No table is partitioned at the target (ADR-0142, `Proposed`), by
+   derivation, because a time key would split the idempotency claim's and the inbox's arbiters and open a drop no history guard sees.
+   The reading that would overturn it is owed under `PI-025`. The audit archive needs none: it is built by segment, not by
+   partition (ADR-0135). The idempotency sweep, the uniqueness before it and the grant's revoke stay this item's, as above.)*
 
 ---
 
@@ -2566,6 +2573,32 @@ owner.**
     callers rehearsed. Until decided: §4's T23 `GAP` row naming this item, and E19's Result cell.
 
     *Awaiting the owner* (2026-11-13).
+
+64. **T14's residual: report generation folds the journal from inception** *(added 2026-11-13 by the partitioning and replica
+    decisions, ADR-0142)*. A report run's trial-balance definitions read every journal line dated before the period for its opening:
+    the trial balance's opening and its ledger windows, the balance sheet, the GL activity's and the purpose reports' openings. So one
+    statement's cost grows with the journal's lifetime. At the target the journal gains about 0.5 billion lines a year (`CAPACITY_MODEL.md`
+    §3.6, derived). Each statement is bounded at four minutes (`finapp.accounting.report.generation-timeout`), so a run fails
+    `GENERATION_TIMED_OUT` within the first year unless one statement folds more than about 2.1 million lines a second, a rate not
+    measured (E65 measures it, owed under `PI-025`). The load is bounded meanwhile: one connection an instance, on the primary, by
+    the reporting pool. A person asks for the runs, so the failure is loud: the run says why, and nothing about money changes. The close's
+    own checks run on the writer's pool and are not this item. The options:
+    - **(i) Bound the opening by a checkpoint per locked month**: when a month locks, store its GL groups (purpose, owner kind,
+      currency, scale, direction) of every line dated before the next month's start, under the mapping version it pinned. A run's
+      opening is then the latest locked month's checkpoint plus the lines dated after it. The posting cutoff (ADR-0114) keeps the lines
+      below a locked month fixed, so the checkpoint holds while the cutoff stands. A move back over it voids it and the read folds whole.
+      The proofs and the close's GL = ledger check keep the whole fold, so a checkpoint never verifies itself. It needs a table, the
+      lock's write of it under the close's transaction, its database cases, and a regeneration of a FINAL run that reads the same
+      checkpoint it read.
+    - **(ii) Route report generation to a read replica**: moves the fold's cost off the primary and bounds nothing. The bound is still
+      passed, and a FINAL run then needs replay past its lock (ADR-0142 decision 2's conditions).
+    - **(iii) Keep it**, raising the bound when a real environment's journal nears it. That moves the date, not the curve.
+
+    *Recommendation*: **(i)**, in a task of its own with its database cases run before it merges, ahead of any real environment holding
+    a year of journal. It is the same class of bound ADR-0133 decision 3 proposes for the account folds, at the period's grain the
+    posting cutoff already enforces. (ii) is never the remedy for the fold.
+
+    *Awaiting the owner* (2026-11-13). Until decided: §4's T14 `GAP` row naming this item.
 
 ## 7. Decided against
 

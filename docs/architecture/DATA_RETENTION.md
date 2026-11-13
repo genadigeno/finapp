@@ -119,7 +119,10 @@ operational table keeps every row; relieving its size is the partitioning's ques
 
 **What this leaves open:** the archive's retention (`OPEN`, `THREAT_MODEL.md` §6 item 23 (b)); the real bucket's request signing
 and credential, and the read path's access control and its own audit record (item 57); the partition interval, by measurement
-(`P16-TSK-012`). The archival's runs on `kind` are owed (`POSTPONED_ISSUES.md` PI-025).
+(`P16-TSK-012`). The archival's runs on `kind` are owed (`POSTPONED_ISSUES.md` PI-025). *(2026-11-13: decided by ADR-0142,
+`Proposed`. The audit trail is not partitioned: every row is kept, so a partition buys no retention until item 23 (b)'s period is
+decided, and a detach or drop is an erasure no history guard refuses. That is revisited, by a new ADR, only when that period is
+decided and the archive's segments cover what a partition would hold.)*
 
 ---
 

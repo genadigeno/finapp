@@ -1435,6 +1435,14 @@ conflict; then a sweep of terminal records past their expiry and a grace (30 day
 uniqueness is absent, and the application's `DELETE` revoked. What the sweep leaves to commands with no second arbiter is item 63. →
 [ADR-0141](../adr/ADR-0141-one-journal-entry-per-posting-scope-then-the-idempotency-sweep.md)
 
+**No table partitioned and no read replica routed at the target (proposed).** Partitioning would split the once-ness arbiters (the
+idempotency claim, the inbox, the posting scope) and open a drop or detach no history guard sees, and the journal's hot reads are by
+account over its whole history, which no time key prunes; the swept tables' sweeps keep pace at the minimum fleet by derivation. One
+primary serves every door, held by a guard in layers (who reads an address, who builds a connection, no `DataSource` bean, only report
+generation on the reporting pool, that pool on the writer's address, the driver refusing to pick a standby); report generation is the
+only read ever eligible for a replica, under stated conditions. Each decision's overturning reading, E65, is built and owed under
+`POSTPONED_ISSUES.md` PI-025; report generation's from-inception fold is `THREAT_MODEL.md` §6 item 64. → [ADR-0142](../adr/ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

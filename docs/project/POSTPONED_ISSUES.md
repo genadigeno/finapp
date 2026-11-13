@@ -718,3 +718,12 @@ commit and the date; do not delete the entry.
     Nothing ran on a cluster. Ran instead, 2026-11-13, in a throwaway `postgres:18.6` container: the ledger and platform chains with
     `V036`, `V037` and `V016`, the census, its stop on a planted duplicate, the conditional insert and the sweep's selection, floors and
     refusals (§11.56's record). The database cases `PostingScopeUniquenessDatabaseTest` are owed to PI-023's pass.
+  - `P16-TSK-012` (partitioning and read replicas, ADR-0142; `OPERATIONS_RUNBOOK.md` §11.57, whose record is empty; `CAPACITY_MODEL.md`
+    §3.6, its measured cells `—`): **E65**, the decisions' readings, riding E39's eight-hour soak at three replicas in one run
+    (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak REHEARSAL_LOAD_DECISIONS=1`): seven `TRIAL_BALANCE` runs over the growing journal,
+    their slowest statement fitted to its lines against the four-minute bound, and every named table's growth per hour and per money
+    movement read against ADR-0142's thresholds. Nothing ran before the word. `load/reports.awk` and `load/growth.awk` were run on
+    synthetic inputs on the development machine, and `load/reports.sql` with the reader's delta in a throwaway container of the pinned
+    PostgreSQL image (2026-11-13, no `kind`, no application: a `finapp_reporting` role's two statements read by role, the role line
+    present). The report runs through the operator edge, the journal's count, the run's row and the judge are unproven on a cluster.
+    No mutation probe of this task needs a cluster.

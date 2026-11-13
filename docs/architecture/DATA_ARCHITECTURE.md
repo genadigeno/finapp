@@ -34,6 +34,29 @@ The unit of work is a JDBC `Connection`, transactions are begun explicitly, and
 classpath. This decision governs **authoritative state only**; derived read models and reporting
 projections are Phase 14's decision.
 
+## Growth, Partitioning and Read Replicas
+
+Decided by [ADR-0142](../adr/ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md) (`Proposed`, 2026-11-13,
+`P16-TSK-012`). The figures, derived and read, are [`CAPACITY_MODEL.md`](CAPACITY_MODEL.md) §3.6; none is measured until E65 runs
+(`POSTPONED_ISSUES.md` PI-025).
+
+- **No table is partitioned.** A partitioned table's unique constraints must contain the partition key. Here those uniques are the
+  once-ness arbiters (the idempotency claim, the inbox's dedupe row, the outbox's event identity, the posting scope) and the journal's
+  integrity keys, and a time key would make each hold within a partition only. A partition can also be detached or dropped, which no
+  history guard refuses. The journal is never deleted, so a partition buys it no retention. Its hot reads are by account over the whole
+  history, which no time key prunes: ADR-0133's checkpoint and item 64's decision bound those reads instead.
+- **Retention is a batched, leaderless `DELETE`** (`OPERATIONS_RUNBOOK.md` §11.15). At the target the outbox's sweep has 2.7 times the
+  capacity its writes need at the three-replica minimum, by derivation.
+- **One primary serves every door.** Every decision, balance and once-ness check reads the primary under its lock, through the writer's
+  pool. Report generation's own pool (`finapp_reporting`) is built on the same address. No read replica is routed, and the driver may
+  take only a primary (`PrimaryOnlyGuard`). `OnePrimaryServesEveryDoorTest`, `ReportingPoolEndpointTest` and `PrimaryOnlyGuardTest` hold
+  `PHASE_GATES.md` §5 Phase 16 criterion 6.
+- **The only read a replica could ever serve is report generation**, by a later ADR. The reporting role alone would reach the replica,
+  every run would state the replica's replay position, a FINAL run would be refused unless the replica had replayed past its period's lock,
+  and a replica down would make reporting refuse while money moved on.
+- **What would overturn either decision** is ADR-0142's list, read by E65 from the soak's samples. Any such reading becomes a new ADR
+  before anything is built.
+
 ## Data Rules
 
 - Use constraints to enforce important invariants.

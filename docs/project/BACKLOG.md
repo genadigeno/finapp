@@ -29776,8 +29776,13 @@ on none:
   - **Deviations:** the branch was fast-forwarded from `ac5aa4a3` to `d7081fa9` before its first commit, after the outage, to meet the
     newer master's shared records; platform `V016`, not `V015`, beside `P16-TSK-010`'s `V015` (merged since); the reversal's lookup moved before
     its bound, which changes the record-kept path too (a full reversal's retry now replays instead of being refused as over-reversing).
+- *Routed from `P16-TSK-012` (2026-11-13):* ADR-0142 keeps `ledger.journal_entry` and `platform.idempotency_record` unpartitioned
+  because a partition key would split this entry's arbiters: the posting scope's new uniqueness holds across the whole journal only
+  while no partition splits it. Once the sweep exists, the idempotency table is a swept table under ADR-0142's thresholds: its rows a day
+  at the target (at least 377,000, `CAPACITY_MODEL.md` §3.6) against its sweep's capacity, read by E65 from the soak's samples, so
+  `CAPACITY_MODEL.md` §3.6's row gains the sweep's capacity with it.
 
-**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
+**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-012` from master `ac5aa4a3`, wave E; no migration; ADR-0142 `Proposed`; one new owner item, `THREAT_MODEL.md` §6 item 64; E65's run owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)" until its gate)
 - **Objective**: decide, from the soak's growth rates extrapolated to the production target, whether any high-volume table needs
   partitioning. Decide whether report generation needs a replica, and hold `PHASE_GATES.md` §5 Phase 16 criterion 6 by a guard
   either way.
@@ -29805,6 +29810,53 @@ on none:
 - **Definition of done**: `DOD-ARCH`, `DOD-FIN`.
 - **Operational documentation**: `DATA_ARCHITECTURE.md`'s growth section.
 - **Risk**: Low. **Cx**: M.
+- **As built (2026-11-13; branch `P16-TSK-012` from master `ac5aa4a3`; no migration; the run owed under `POSTPONED_ISSUES.md` PI-025 by
+  the owner's word of 2026-11-13, "we dont need long running checks and tests").** "By measurement" is met as the coordinator's brief
+  read it: each decision is taken on what can be derived today (W1–W8's arithmetic, the schema, the statements), names the reading that
+  would confirm or overturn it, and that reading is **built, contract-tested and its run owed**. No figure is claimed as measured.
+  - **Growth per table per day**, derived, and **the queries a partition key would serve**, read from the code: `CAPACITY_MODEL.md` §3.6.
+    The journal takes ≈ 434,000 entries and ≈ 1.4 million lines a day, never deleted. The outbox takes ≈ 3.2 million events a day,
+    kept 30 days, and its sweep has 2.7 times the capacity the target needs at the three-replica minimum (8.64 million a day). The inbox
+    takes at most ≈ 2.3 million rows a day, kept 14 days. The idempotency records, at least 377,000 a day, are unswept until
+    `P16-TSK-011`. The audit trail takes ≈ 0.6–1.4 million rows a day. Bytes are E65's.
+  - **ADR-0142** (`Proposed`), one ADR for both decisions, "no partitioning" recorded the same way. **No table is partitioned.** A time key
+    would split the once-ness arbiters (the idempotency claim, the inbox, the outbox's identity, the posting scope) and open a detach or
+    drop no history guard refuses, and the journal's hot reads are by account over its whole history, which no time key prunes. **No
+    replica is routed.** Report generation is the only read ever eligible, under five stated conditions: the reporting role alone,
+    the replay position stated, a FINAL refused before replay past its lock, a replica down refusing reporting, and the guard turned to
+    its second branch. Each decision's overturning thresholds are stated.
+  - **Criterion 6's guard, its first branch, green and red on the entry's probe.** `OnePrimaryServesEveryDoorTest`: no production class but
+    `DatabaseEndpoint` names a database's address; none but `ReportingPool` builds a connection; no `@Bean` declares a `DataSource`; only
+    report generation's wiring reaches the reporting pool. Each rule carries its planted violation (in `OnePrimaryPlants`, a test source
+    holding no test, so the guard itself stays in the architecture tier) and its census, and the build's test fixtures are set aside by a
+    rule that proves none is in a main source set. `ReportingPoolEndpointTest`: the pool connects to the
+    writer's own address under any name a replica route might take. **`PrimaryOnlyGuard`** (new production code, a startup guard)
+    refuses a `targetServerType` admitting a standby, and several hosts without `targetServerType=primary`. pgjdbc's default `any`
+    would otherwise let a URL alone put either pool on a standby. The entry's probe (a money-moving door, `TransferBeans`'
+    `transferExecution`, wired to `ReportingConnections`) turned the guard red (`MUTATION_TESTING.md` §2).
+  - **E65** (`RESILIENCE_EXPERIMENTS.md`, `OPERATIONS_RUNBOOK.md` §11.57, `REHEARSAL_LOAD_DECISIONS=1` riding E39's soak): seven
+    `TRIAL_BALANCE` runs over the growing journal, each read as `finapp_reporting`'s statements before and after (`load/reports.sql`), fitted
+    by `load/reports.awk` against the bound read from `AccountingBeans`; and every named table's growth per hour and per movement
+    (`load/growth.awk`). The run fails on a run not `PROVISIONAL`, a sample never asked, one run read twice, a blind reader, or a table never
+    read. Held by `DecisionReadingsRehearsalContractTest` (six members, each probed). **Run owed (PI-025).** The awk readers were run on
+    synthetic inputs, and `reports.sql` in a throwaway container of the pinned PostgreSQL image. The report runs through the edge are
+    unproven on a cluster.
+  - **Found by reading: report generation folds the journal from inception.** One statement passes its four-minute bound at the target
+    within the first year unless it folds more than ≈ 2.1 million lines a second. That is put to the owner as `THREAT_MODEL.md` §6
+    item 64, recommendation (i): an opening checkpoint per locked month, in a task of its own. A replica is never the remedy.
+  - **Acceptance criteria**: an ADR for each decision - met (ADR-0142); criterion 6's guard green and red on its probe - met; growth
+    measured in the soak - built, contract-tested, run owed (PI-025, E65 with E39).
+  - **The guard narrowed at the second integration with master** (2026-11-13, master `ce1abd2e`): `P16-TSK-016`'s load-shedding
+    door (`HikariPoolQueue`) holds the writer pool's own type to read its queue, and the guard's connection rule refused it as a pool of
+    its own. It now tells the two apart: any reference to the driver, `DriverManager`, a `javax.sql` source or Spring's builders still
+    refuses a class, and of HikariCP's types a class may only read the pool's statistics and fixed settings (a list that admits).
+    Building one, by a constructor or a constructor reference, configuring one, borrowing a connection from it, unwrapping its driver
+    source, setting it or closing it still refuses the class. The shedding door is seen judged and passing by the rule's census, six
+    planted ways stay refused beside a planted reader that passes, and two production plants went red (`MUTATION_TESTING.md` §2).
+  - **The routed note below, answered at the integration with master** (2026-11-13): the archive's queue
+    (`platform.audit_archive_pending`) is one of `load/soak.sql`'s named tables now, so E39's samples and E65's growth reading count it,
+    and `CAPACITY_MODEL.md` §3.6 carries it and the session table. ADR-0142's audit-trail decision stands with ADR-0135's segments, the
+    jurisdiction's period being `THREAT_MODEL.md` §6 item 23 (b).
 - *Routed from `P16-TSK-010` (2026-11-13):* the audit archive is built without partitions (ADR-0135): every audit row is queued in its
   own transaction and cut into segments, so partitioning `platform.audit_record` is not needed for the archive. If a partition is
   ever detached, it may go only once every row in it is in an `ARCHIVED` segment and `THREAT_MODEL.md` §6 item 23 (b)'s period has
@@ -30443,6 +30495,12 @@ on none:
   `503` with `Retry-After` in a task of its own after the load-shedding answer. **Routed**: `P16-TSK-021` (E14's bound; E57's black-hole
   step on the `toxic` primitive, where the two meet), `P16-TSK-023` (the drill's rules for the matrix), `P16-TST-001` (the failover in
   the soak). **Owed under PI-025**: E06, E57 and E05 at three replicas, E56, and E29's longest statement. **Guards**: `DatabaseSocketTimeoutTest` (6) and `ExperimentsRehearsalContractTest` (19: seven members new, one strengthened) hold the work; sixteen hermetic probes in five rounds, each caught (`MUTATION_TESTING.md` §2). The third merge brought `P16-TSK-009`'s routed note: the `kind` primary's `max_connections` is now set per run at the budget's count, and a hot standby refuses to start below it, so the standby now takes the run's primary's value from its rendered copy (`experiments_standby`; contract member and probe, round five). The merges kept both sides throughout; the second brought `P16-TSK-021`'s E14, whose record and pin said the data source set no socket timeout: E14 now reads and records the timeout it runs under (its pin re-stated, round four), and its row, runbook §11.47's sentence, its T14 row and its PI-025 bullet carry dated notes; the guards the resolutions touched ran after each merge, green but for `OutboundCallsAreBoundedTest`'s three after the fifth, red on master's inventory too (a control run: the audit archive's HTTP client and schedule missing from it, master's, not this task's); after the sixth (`16581447`, `P16-TSK-013`'s: the fault kind `setting` beside `brokers-stopped`, `relay-held` and `min-isr`, the database's experiments beside the event pipeline's, the probe `async-standby` beside `min-isr-one`, item 61 after item 58), the 19 classes it touched, 246 tests, and the 8 ArchUnit suites the filter pulls in, 24 tests, 0 failed. The final run (14:10Z), 71 named `app` classes and the ArchUnit suites the filter pulls in (8, 24 tests): 656 tests, 5 failed, the five red on master's bytes too (a control run, 14:34Z, with the six classes this branch edits put back to master's): `OwnershipIsScopedTest` (`JdbcMerchantPayoutStore.recordSweepFailure` unclassified), `CashAtBankHasOnePosterTest`, `CounterpartyClearingIsNamedByDeclarationsTest` and `FxBooksHaveOnePosterTest` (the source census's `SettlementJournalSources` and `FxJournalSources` naming those books), and `RequestDecimalsAreBoundedTest` (a `StackOverflowError` in its pattern) - none of them this task's, reported to the coordinator; `MigratorMatchesTheBuildTest` (4) and `AdvisoryNamespaceIsPinnedTest` (1) green. Not run: `AlertRulesResolveTest` (database tier) and `RiskAlertRulesTest` (slow), each reading `risk.yml`, whose comment alone changed.
+- *Routed from `P16-TSK-012` (2026-11-13): a URL the driver could route is refused at startup.* `PrimaryOnlyGuard` (ADR-0142) refuses a
+  `targetServerType` other than `primary` and a database URL naming more than one host, or a `host` or `service` parameter, without
+  `targetServerType=primary` under the driver's own spelling. The drill's promotion by the Service's selector keeps one host, so it
+  passes. A drill that lists the primary and the standby in the URL must say `targetServerType=primary`, or every replica refuses to
+  start. With it, a connection made while the standby is still read-only is refused by the driver rather than served stale, which is
+  worth counting in the interruption the drill measures.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-022`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its dependencies, `P16-TSK-005`, `P16-TSK-013` and `P16-TSK-022`, all `COMPLETE`)
 - **Objective**: as decided:

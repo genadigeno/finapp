@@ -406,6 +406,17 @@ holding that no money-moving door reaches that pool, and every report from a rep
 position. Absent that measurement no replica is routed, and the criterion holds by a guard that one primary data source
 serves every financial door (`-012`).
 
+*(Erratum, 2026-11-13, `P16-TSK-012`; ADR-0142, `Proposed`; `CAPACITY_MODEL.md` §3.6. The soak's growth rates and a report's cost were
+not measured: the owner postponed every `kind` run (`POSTPONED_ISSUES.md` PI-025). So §6.5's partitioning and this section's replica are
+decided on W1–W8's arithmetic and the code, and each decision names the reading that would overturn it, E65, built to ride the soak and
+owed. **(1)** No table is partitioned. A time key would split the once-ness arbiters and open a drop no history guard sees, and the
+journal's hot reads are by account over its whole history. **(2)** No replica is routed. The guard holds one primary for every door in
+layers, the driver's own choice of host among them (`PrimaryOnlyGuard`). **(3)** Report generation folds the journal from inception, so
+its cost grows with the journal: at the target one statement passes its four-minute bound within the first year if it folds fewer than
+about 2.1 million lines a second, a rate E65 measures. That is
+a bound on the read (`THREAT_MODEL.md` §6 item 64, the owner's), never a reason for a replica, which would move the cost without bounding
+it.)*
+
 ### 6.7 Vacuum, WAL, checkpoints, backup and restore performance
 
 The soak records autovacuum runs and dead tuples on the append-heavy and update-heavy tables (the balance projection, the

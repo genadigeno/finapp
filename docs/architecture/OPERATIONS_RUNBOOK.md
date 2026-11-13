@@ -3259,6 +3259,7 @@ latest; the run, as its record names it.
 | §11.52 | `platform`, `checkout` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | §11.55 | `platform`, `settlement`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.56 | `ledger`, `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
+| §11.57 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -6046,6 +6047,63 @@ over the real executor), `SheddingIsWiredTest` (the door before every borrow, ev
 `CheckoutCreateIsOneTransactionTest`, and the harness's text by `LoadRehearsalContractTest` and `ExperimentsRehearsalContractTest`;
 the spike profile's six scenarios read by the pinned k6's `inspect` (2026-11-13, a container check: each a ramping-arrival-rate
 executor, the spikes at ten times the peak).
+
+### 11.57 Partitioning and read replicas: the readings that confirm or overturn ADR-0142, and a URL the driver could route (`P16-TSK-012`)
+
+**What it is.** ADR-0142 decides that no table is partitioned and that no read replica is routed, from W1–W8's arithmetic and the code
+(`CAPACITY_MODEL.md` §3.6). E65 is the reading that would confirm or overturn both. It rides the soak (E39, §11.48) on the reference
+machine's own cluster and injects nothing. **It has not run** (`POSTPONED_ISSUES.md` PI-025): what follows is how it runs and how it is
+read, held by `DecisionReadingsRehearsalContractTest`.
+
+**Running E65.** `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak REHEARSAL_LOAD_DECISIONS=1 infra/scripts/kind-rehearsal.sh`, at three
+replicas. The flag is refused on any other profile, and the preflight reads the report generation bound from `AccountingBeans`' default
+before anything is built, refusing a deployed overlay that sets it. At 10%, 20% ... 70% of the load, in the load's own loop, the harness:
+- counts the journal's lines and entries;
+- reads report generation's statements (`load/reports.sql`: `finapp_reporting`'s in the `finapp` database, from `pg_stat_statements`);
+- asks this month's `TRIAL_BALANCE` as the rehearsal's operator through the operator edge (`Rehearsal.java trial-balance-report`, which waits
+  up to 60 s for the run to leave `GENERATING`);
+- reads the statements again, and then the run's own row (status, claim to completion on the database's clock).
+
+Each sample lands under `load/reports/`. After the load, E39's judge runs, and then E65's. The run fails if fewer than seven runs were
+asked, if a run is not `PROVISIONAL`, if two samples read one run, if the role was not on the server, or if a run's statements were not
+seen as the role's. That last check is the reader's control: a blind reader would otherwise report a free report.
+
+**Reading the replica decision** (`load/reports.tsv`, `load/reports-reading.txt`). `load/reports.awk` fits each run's slowest statement
+(the bound is a statement's, `SET LOCAL statement_timeout`) against the journal's lines when it ran. It writes the statement's milliseconds
+a million lines, its fixed part, and the lines at which one statement reaches the bound. Read it against the target's journal: about 0.5
+billion lines a year (`CAPACITY_MODEL.md` §3.6).
+- Lines at the bound below the target's journal after a year: report generation fails `GENERATION_TIMED_OUT` at the target within
+  that year. That is `THREAT_MODEL.md` §6 item 64's to bound, never a replica's.
+- The core-seconds a run costs at the target's journal (the fit at those lines), times the runs a day the owner expects, divided over
+  the busiest hour, against the database's CPU the target's peak leaves free (E29 and E30 at seven replicas, owed under PI-025). Only
+  a share past that headroom, once the fold is bounded, reopens a replica, by a new ADR on ADR-0142 decision 2's conditions.
+
+**Reading the partitioning decision** (`load/growth.tsv`, from E39's `load/pg-soak-tables.tsv`). `load/growth.awk` writes each named
+table's inserted and deleted rows, per hour and per money movement, its dead rows' largest and last share of its live rows, its autovacuum
+runs and its bytes, first and last, per live row and per movement. Multiply a figure per movement by the target's 377,000 movements a day
+(`CAPACITY_MODEL.md` §3.1). Then:
+- **A swept table** (the outbox, the inbox): its rows a day at the target against its sweep's derived capacity at three replicas (8.64
+  million a day, §3.6), and its dead share at the end against its autovacuum trigger (`autovacuum_vacuum_scale_factor` × live rows +
+  `autovacuum_vacuum_threshold`, the server's, or the table's own storage parameters). Rows past the capacity, or dead rows above the trigger
+  and rising through the soak, overturn the decision for that table: change the sweep's cadence and batch first (§11.15), and partition
+  only by a new ADR that keeps the table's arbiter whole.
+- **An append-only table** (the journal, the audit trail, the payment attempts and their history): its autovacuum runs from E39's
+  `autovacuum.txt`. A run whose length grows with the table's whole size rather than with the rows written since the last one
+  overturns the decision for that table, by a new ADR. The journal's index build stop is item 42 (b)'s (§11.48).
+- **Bytes a day at the target**: bytes per movement × 377,000, beside the rows. This fills `CAPACITY_MODEL.md` §3.6's bytes, each cell
+  naming the run.
+
+**A URL the driver could route: the application refuses to start.** `PrimaryOnlyGuard` refuses a `targetServerType` other than
+`primary` (or `master`), in the URL or in `spring.datasource.hikari.data-source-properties`, and a URL naming more than one host, or a
+`host` or `service` parameter, without `targetServerType=primary` under the driver's own spelling. The log names the setting. What to do:
+- For one database endpoint (the managed database's, which moves with a failover), remove the setting or the second host.
+- For a list of hosts, set `spring.datasource.hikari.data-source-properties.targetServerType=primary`, or `?targetServerType=primary` in
+  the URL. An environment variable's form arrives lower-cased, which the driver ignores, so it is refused.
+
+Never point either pool at a replica to relieve the primary. ADR-0142 decision 2 says what must exist first.
+
+**The record.** Empty: E65 has not run. It is owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13), and its first
+run writes its record here with its commit, its artefacts, the fit and each table's reading against ADR-0142.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 
