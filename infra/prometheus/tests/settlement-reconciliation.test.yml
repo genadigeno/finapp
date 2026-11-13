@@ -876,8 +876,9 @@ tests:
               summary: "Another suspense item past 30 days, while one already stands (INV-REC-05)"
               description: "2 suspense items are over 30 days old now, more than at any moment of the last two hours while one stood: a new one aged, behind the one SuspenseItemAged already holds. Follow up with GET /v1/operator/reports/reconciliation/suspense. See OPERATIONS_RUNBOOK.md section 11.23."
 
-  # What raises nothing, past every for: the first to age (critical, low: 0 then 1 - the age rule's to raise); a count that falls
-  # (high, suspense: a resolution, high unreadable on b for twenty minutes meanwhile); a count that stands for four hours (medium).
+  # What raises nothing, past every for and while each change is still inside the two-hour window (130m): the first to age (critical,
+  # low: 0 then 1 at 61m - the age rule's to raise, the window's least still 0); a count that falls (high, suspense: a resolution, high
+  # unreadable on b for twenty minutes meanwhile); a count that stands for four hours (medium).
   - interval: 1m
     input_series:
       - series: 'finapp_reconciliation_break_aged{job="finapp", instance="a:8081", severity="critical"}'
@@ -901,58 +902,93 @@ tests:
       - series: 'finapp_reconciliation_suspense_aged{job="finapp", instance="b:8081"}'
         values: '2x60 1x180'
     alert_rule_test:
-      - eval_time: 200m
+      - eval_time: 130m
         alertname: BreakNewlyAgedCritical
         exp_alerts: []
-      - eval_time: 200m
+      - eval_time: 130m
         alertname: BreakNewlyAgedHigh
         exp_alerts: []
-      - eval_time: 200m
+      - eval_time: 130m
         alertname: BreakNewlyAgedMedium
         exp_alerts: []
-      - eval_time: 200m
+      - eval_time: 130m
         alertname: BreakNewlyAgedLow
         exp_alerts: []
-      - eval_time: 200m
+      - eval_time: 130m
         alertname: SuspenseItemNewlyAged
         exp_alerts: []
 
-  # Unreadable on every instance for twenty minutes, then back at the count it stood at: no rise.
+  # Unreadable on every instance for twenty minutes (the window's least passes over the NaN), then back one higher: a second aged while
+  # nobody could read, and every rule fires once its for has passed (the hour's at 181m).
   - interval: 1m
     input_series:
       - series: 'finapp_reconciliation_break_aged{job="finapp", instance="a:8081", severity="critical"}'
-        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x119'
+        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 2x119'
       - series: 'finapp_reconciliation_break_aged{job="finapp", instance="b:8081", severity="critical"}'
-        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x119'
+        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 2x119'
       - series: 'finapp_reconciliation_break_aged{job="finapp", instance="a:8081", severity="high"}'
-        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x119'
+        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 2x119'
       - series: 'finapp_reconciliation_break_aged{job="finapp", instance="b:8081", severity="high"}'
-        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x119'
+        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 2x119'
       - series: 'finapp_reconciliation_break_aged{job="finapp", instance="a:8081", severity="medium"}'
-        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x119'
+        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 2x119'
       - series: 'finapp_reconciliation_break_aged{job="finapp", instance="b:8081", severity="medium"}'
-        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x119'
+        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 2x119'
       - series: 'finapp_reconciliation_break_aged{job="finapp", instance="a:8081", severity="low"}'
-        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x119'
+        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 2x119'
       - series: 'finapp_reconciliation_break_aged{job="finapp", instance="b:8081", severity="low"}'
-        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x119'
+        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 2x119'
       - series: 'finapp_reconciliation_suspense_aged{job="finapp", instance="a:8081"}'
-        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x119'
+        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 2x119'
       - series: 'finapp_reconciliation_suspense_aged{job="finapp", instance="b:8081"}'
-        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 1x119'
+        values: '1x100 NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN 2x119'
     alert_rule_test:
-      - eval_time: 200m
+      - eval_time: 190m
         alertname: BreakNewlyAgedCritical
-        exp_alerts: []
-      - eval_time: 200m
+        exp_alerts:
+          - exp_labels:
+              owner: reconciliation
+              severity: page
+              break_severity: critical
+            exp_annotations:
+              summary: "Another CRITICAL reconciliation break, while one already stands"
+              description: "2 open CRITICAL breaks now, more than at any moment of the last two hours while one stood: a new one, behind the one BreakAgeCritical already holds. Follow up with GET /v1/operator/reconciliation/breaks. See OPERATIONS_RUNBOOK.md section 11.23."
+      - eval_time: 190m
         alertname: BreakNewlyAgedHigh
-        exp_alerts: []
-      - eval_time: 200m
+        exp_alerts:
+          - exp_labels:
+              owner: reconciliation
+              severity: page
+              break_severity: high
+            exp_annotations:
+              summary: "Another HIGH reconciliation break past a day, while one already stands"
+              description: "2 open HIGH breaks are over a day old now, more than at any moment of the last two hours while one stood: a new one aged, behind the one BreakAgeHigh already holds. Follow up with GET /v1/operator/reconciliation/breaks. See OPERATIONS_RUNBOOK.md section 11.23."
+      - eval_time: 190m
         alertname: BreakNewlyAgedMedium
-        exp_alerts: []
-      - eval_time: 200m
+        exp_alerts:
+          - exp_labels:
+              owner: reconciliation
+              severity: ticket
+              break_severity: medium
+            exp_annotations:
+              summary: "Another MEDIUM reconciliation break past five days, while one already stands"
+              description: "2 open MEDIUM breaks are over five days old now, more than at any moment of the last two hours while one stood. Follow up with GET /v1/operator/reconciliation/breaks. See OPERATIONS_RUNBOOK.md section 11.23."
+      - eval_time: 190m
         alertname: BreakNewlyAgedLow
-        exp_alerts: []
-      - eval_time: 200m
+        exp_alerts:
+          - exp_labels:
+              owner: reconciliation
+              severity: ticket
+              break_severity: low
+            exp_annotations:
+              summary: "Another LOW reconciliation break past fifteen days, while one already stands"
+              description: "2 open LOW breaks are over fifteen days old now, more than at any moment of the last two hours while one stood. Follow up with GET /v1/operator/reconciliation/breaks. See OPERATIONS_RUNBOOK.md section 11.23."
+      - eval_time: 190m
         alertname: SuspenseItemNewlyAged
-        exp_alerts: []
+        exp_alerts:
+          - exp_labels:
+              owner: reconciliation
+              severity: ticket
+            exp_annotations:
+              summary: "Another suspense item past 30 days, while one already stands (INV-REC-05)"
+              description: "2 suspense items are over 30 days old now, more than at any moment of the last two hours while one stood: a new one aged, behind the one SuspenseItemAged already holds. Follow up with GET /v1/operator/reports/reconciliation/suspense. See OPERATIONS_RUNBOOK.md section 11.23."
