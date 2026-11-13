@@ -29456,6 +29456,17 @@ on none:
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`.
 - **Operational documentation**: `CAPACITY_MODEL.md`'s contention section; the debt rows' dispositions.
 - **Risk**: Medium. **Cx**: L.
+- **Routed from `P16-TSK-007` (2026-11-13): the merchant payable read folds the merchant's whole history on every request, and it is
+  the first limit's largest consumer.** `MerchantPayable` reads through `JdbcPositionBreakdown`, one statement over every
+  `ledger.journal_line` of the merchant's payable account with a correlated counterparty subquery per line, so each
+  `GET /v1/merchant/payable` costs time in proportion to the account's lifetime history (about 10 µs a line on an idle core of the
+  test-only server: 4,039 lines in 41.9 ms, `EXPLAIN ANALYZE` on the kept cluster, `build/rehearsal/experiments/E30/r3/load/fold-explain.txt`).
+  In the stress run at three replicas (`RESILIENCE_EXPERIMENTS.md` E30) the one merchant of the load harness took every payment, two
+  lines each, and the statement's share of all statement time rose 39%, 69%, 86% and 81% across the first four steps, its mean
+  20, 74, 255 and 2,658 ms: four fifths of a database at its one core (`CAPACITY_MODEL.md` §3.4). W4's 2,000 merchants spread the lines,
+  but each merchant's read still grows with its own history, without bound. A plan, a snapshot or a bounded read is this task's to
+  decide by measurement (an ADR first where it changes the ledger's reads, `PHASE_16_PLAN.md` §5.4); the hot merchant also serialises
+  its `ledger.account_balance` upserts (mean 14 ms in that run).
 
 **P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `PLANNED`
 - **Objective**: make ten replicas possible without breaking the connection budget, decided by measurement, and give the HPA a
@@ -29722,6 +29733,17 @@ on none:
 - **Definition of done**: `DOD-API`, `DOD-FIN`.
 - **Operational documentation**: a runbook section on a shedding platform.
 - **Risk**: High. **Cx**: L.
+- **Routed from `P16-TSK-007` (2026-11-13): two failures after the effect, and the correctness monitors starved, all at the pool's
+  bound.** Found by the load harness's stress runs on `kind` (`OPERATIONS_RUNBOOK.md` §11.45, `RESILIENCE_EXPERIMENTS.md` E30):
+  **(1)** `CheckoutService.create` opens the session in one transaction and reads it back in a second; when the second waits past the
+  pool's 5 s bound the merchant is answered `500` after the session committed, and the session token, which only the creating answer
+  carries, is lost: the retry under the same key is a replay without it, so the session can never be paid (12 such sessions in E30's
+  fourth step at three replicas, 13 in a compressed development run; nothing moved, the census agrees). **(2)** The source-join census's
+  batches take connections from the same pool as requests: with the pool exhausted they fail (`CannotCreateTransactionException`), the
+  census turns unhealthy and its gauge reads no value, so `CorrectnessUnverifiable`'s expression is non-empty and the load harness's
+  sampler, which never passes blind, stopped the run (E30, sample 35, 0.49 of the target's peak). A per-class bound that keeps the
+  correctness monitors reading under load, and a create that cannot answer `500` after its effect, are this task's (with `P16-TSK-009`
+  for the pool's size).
 
 **P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-017` from master `c9c07831`, wave B beside `-006`; payments `V040`, merchant `V016`, reconciliation `V025`, no ADR; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, ...)" until the gate)
 - **Objective**: as decided 2026-11-12. A sweep's failed tick is metered and paged (item 42 (i) (i)), and each listing skips and
