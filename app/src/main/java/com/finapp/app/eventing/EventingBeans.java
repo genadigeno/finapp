@@ -3,6 +3,7 @@ package com.finapp.app.eventing;
 import com.finapp.app.lifecycle.WorkHold;
 import com.finapp.app.security.ConfinedCredential;
 import com.finapp.app.security.KafkaTransportGuard;
+import com.finapp.identity.SessionRetention;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.deadletter.DeadLetterOperations;
 import com.finapp.platform.deadletter.DeadLetterStore;
@@ -176,7 +177,27 @@ public class EventingBeans {
     /** Eager either way, as the consumers' counters are: the two tables' series exist on an instance whose sweeps are off. */
     @Bean
     RetentionSweepMeters retentionSweepMeters(MeterRegistry registry) {
-        return new RetentionSweepMeters(registry, List.of("outbox_event", "inbox_message", "window_counter"));
+        return new RetentionSweepMeters(registry, List.of("outbox_event", "inbox_message", "window_counter", SessionRetention.TABLE));
+    }
+
+    /**
+     * Dead sessions' rows past {@code finapp.identity.session.sweep.grace} (`P16-TSK-010`; identity {@code V027}): never a live
+     * session, by the function's predicate on the database's clock. The grace is refused under a minute at start, as the function
+     * refuses it.
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "finapp.retention.sweep.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    RetentionSweepSchedule sessionRetentionSweepSchedule(
+            RetentionConnectionSource connections,
+            @Value("${finapp.identity.session.sweep.grace:P30D}") Duration grace,
+            @Value("${finapp.retention.sweep.interval:PT5M}") Duration interval,
+            @Value("${finapp.retention.sweep.batch-size:500}") int batchSize,
+            RetentionSweepMeters meters) {
+        return new RetentionSweepSchedule(
+                "session-retention-sweep", SessionRetention.sweep(connections, grace, batchSize), interval, meters);
     }
 
     // The relay schedule's gate, for its reason: a background worker deleting rows would race the suites' assertions.

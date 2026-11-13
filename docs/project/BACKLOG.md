@@ -29607,6 +29607,11 @@ on none:
 - **Definition of done**: `DOD-FIN`, `DOD-KERNEL`.
 - **Operational documentation**: `DATA_RETENTION.md`; `OPERATIONS_RUNBOOK.md` §11.15.
 - **Risk**: High (the posting path). **Cx**: L.
+- *Routed from `P16-TSK-010` (2026-11-13):* item 18's other two parts are built and its third is this entry's. A module's own sweep
+  function runs as a platform retention sweep through `RetentionSweep.ofModuleFunction` (identity `V027`'s session sweep is the
+  first), which suits an idempotency sweep run as the role that keeps `DELETE` or a definer function. `THREAT_MODEL.md` T37's
+  idempotency row is the `GAP` this entry closes (item 18's note says so), and `DATA_RETENTION.md` §1's idempotency row still reads
+  "Not swept". `ShutdownOrderTest` counts forty-one lifecycle components and thirty-eight schedules since: a new schedule moves both.
 
 **P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `PLANNED`
 - **Objective**: decide, from the soak's growth rates extrapolated to the production target, whether any high-volume table needs
@@ -29636,6 +29641,11 @@ on none:
 - **Definition of done**: `DOD-ARCH`, `DOD-FIN`.
 - **Operational documentation**: `DATA_ARCHITECTURE.md`'s growth section.
 - **Risk**: Low. **Cx**: M.
+- *Routed from `P16-TSK-010` (2026-11-13):* the audit archive is built without partitions (ADR-0135): every audit row is queued in its
+  own transaction and cut into segments, so partitioning `platform.audit_record` is not needed for the archive. If a partition is
+  ever detached, it may go only once every row in it is in an `ARCHIVED` segment and `THREAT_MODEL.md` §6 item 23 (b)'s period has
+  run; the archive's queue (`platform.audit_archive_pending`) grows with the table while no environment names a store, which the
+  growth figures should count.
 
 **P16-TSK-013 — The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: `PHASE_16_PLAN.md` §7 at the engineering workload on a test-only three-broker KRaft cluster on `kind`, with
@@ -29714,6 +29724,10 @@ on none:
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.28's record at ten; `P15-REM-007` closed.
 - **Risk**: High (the machine may not hold ten; the record says so). **Cx**: L.
+- *Routed from `P16-TSK-010` (2026-11-13):* E45, the audit archive's holder killed between its copy and its mark, is owed at ten
+  replicas (`RESILIENCE_EXPERIMENTS.md`, the entry's acceptance: archival and the session sweep at ten instances, each row once).
+  It runs in the experiments scope (`REHEARSAL_EXPERIMENTS=E45`), which today deploys three; it needs this entry's ten-replica
+  topology and budget there. Owed under `POSTPONED_ISSUES.md` PI-025.
 
 **P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `PLANNED`
 - **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection
@@ -29978,6 +29992,10 @@ on none:
   `finapp/experiment-fault`, `scaled <namespace> <deployment> <replicas> <replicas to restore>` (E16's CoreDNS would be its first use
   outside the simulator). Each passes the boundary first and is removed at the experiment's stop and on every
   way out. On several nodes, read Prometheus through its pod (`experiments_prometheus`), not the API server's proxy.
+- *Routed from `P16-TSK-010` (2026-11-13):* E11's hypothesis reads "The application uses none" of object storage. Since
+  `P16-TSK-010` the audit archive writes to a store when one is named (ADR-0135); no committed environment names one yet, and on
+  `kind` the experiments scope names a test-only store in `finapp-rehearsal`. That store's own outage is E44's; E11 keeps the
+  infrastructure stores (the restore's archive, the Terraform state), and its row may want a dated note saying so.
 
 **P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)
 - **Objective**: as decided:

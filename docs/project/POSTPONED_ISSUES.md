@@ -626,3 +626,14 @@ commit and the date; do not delete the entry.
     the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's
     `/api/v1/rules` listing every group of all thirteen rule files (`OPERATIONS_RUNBOOK.md` §11.34's alerts on `kind`). Proven
     without a cluster only: the stream rendered, `kubeconform -strict` and the pipeline's policies green.
+  - **`P16-TSK-010`** (the audit archival and the session sweep, `OPERATIONS_RUNBOOK.md` §11.50 and §11.15; `RESILIENCE_EXPERIMENTS.md`):
+    **E44**, the archive's store stopped mid-run, at three replicas (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E44`); **E45**,
+    a holder killed between its copy and its mark, at three replicas and, once the ten-replica topology exists, at ten (the entry's
+    acceptance: archival and the sweep at ten instances, each row once); **E46**, the session table bounded over a 45-minute soak at
+    three replicas (the entry's acceptance: the sessions table bounded over the soak); and the crash probes (`crash-with-faults`,
+    `term-with-faults`) once more on these bytes, which now put the store's read hold on as well. Their records go in §11.50's last
+    record and the register's rows; the alerts `AuditArchiveCopyDiffers` and `AuditArchiveBehind` seen on a cluster with them. Nothing
+    of the task ran on a cluster; what ran outside one: a short container check of platform `V015` and identity `V027` on PostgreSQL
+    18.6 (the functions by hand: the claim, a lease taken over, both refusals at the mark, the chain, the decoder, the grants, the
+    sweep keeping a live session) and of the test-only store on the JDK image (write once, `412`, `405`, a bad checksum `400`). Its
+    database cases (`AuditArchivalDatabaseTest`, `SessionSweepDatabaseTest`) are owed to the database pass, PI-023's kind.

@@ -1385,6 +1385,12 @@ window, and a person releases money movement. → [ADR-0128](../adr/ADR-0128-rec
 financial-operation availability stated apart from service availability; a read replica, if any, serves the reporting pool
 alone. → [ADR-0129](../adr/ADR-0129-availability-and-the-multi-region-stance.md)
 
+**The audit trail archived by verified segment; dead sessions swept** (`P16-TSK-010`, 2026-11-13, `Proposed`). A queue written by a
+trigger in each audit row's own transaction, never a cursor; one claimer and one segment in flight under a lease on the database's
+clock; the copy the database's own text, written once, read back and compared, and only then marked with digests the database
+recomputes; a copy that differs stops the chain. No audit record is deleted. Dead sessions' rows go a grace past their idle bound,
+never a live one. → [ADR-0135](../adr/ADR-0135-audit-archival-by-verified-segment.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

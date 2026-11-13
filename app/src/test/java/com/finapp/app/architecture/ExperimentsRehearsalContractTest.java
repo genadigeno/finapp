@@ -47,6 +47,8 @@ class ExperimentsRehearsalContractTest {
     private static final String CLUSTER = "infra/scripts/kind-rehearsal/experiments/kind-cluster.yaml";
     private static final String PROXY = "infra/scripts/kind-rehearsal/experiments/toxiproxy.yaml";
     private static final String STANDBY = "infra/scripts/kind-rehearsal/experiments/standby.yaml";
+    private static final String ARCHIVE_STORE = "infra/scripts/kind-rehearsal/experiments/archive-store.yaml";
+    private static final String ARCHIVE_PROGRAM = "infra/scripts/kind-rehearsal/ArchiveStore.java";
     private static final String SECRETS = "infra/scripts/kind-secrets.sh";
     private static final String PINS = "infra/scanner-pins.sh";
 
@@ -211,7 +213,7 @@ class ExperimentsRehearsalContractTest {
         }
         assertThat(read("deploy/overlays/kind/kustomization.yaml")).as("the kind overlay keeps its one node's relaxation; the scope restores the rule in its copy")
                 .contains("path: /spec/template/spec/topologySpreadConstraints/0/whenUnsatisfiable\n        value: ScheduleAnyway");
-        for (String manifest : List.of(PROXY, STANDBY)) {
+        for (String manifest : List.of(PROXY, STANDBY, ARCHIVE_STORE)) {
             String text = read(manifest);
             assertThat(text.replace("\n# ", " ")).as("%s says it is test-only, and every object of it is labelled so", manifest)
                     .contains("Test-only and never rendered by any overlay").doesNotContain("kind: ClusterRole").doesNotContain("kind: DaemonSet").doesNotContain("privileged: true");
@@ -312,7 +314,7 @@ class ExperimentsRehearsalContractTest {
         String on = function("experiments_fault_on");
         assertThat(on).as("the boundary, then the registry, then the fault")
                 .startsWith("\n    experiments_guard\n    printf '%s\\n' \"$*\" >> \"$FAULTS\"\n");
-        for (String kind : List.of("toxic)", "proxy-down)", "hold)", "partition)", "node-paused)", "scaled)")) {
+        for (String kind : List.of("toxic)", "proxy-down)", "hold)", "store-hold)", "partition)", "node-paused)", "scaled)")) {
             assertThat(on).as("put on: %s", kind).contains("        " + kind);
             assertThat(function("experiments_undo")).as("taken off: %s", kind).contains("        " + kind);
         }
@@ -408,10 +410,80 @@ class ExperimentsRehearsalContractTest {
         assertThat(function("experiments_scope")).contains("case $PROBE in crash-with-faults | term-with-faults) experiments_crash ;; esac")
                 .contains("[ \"$PROBE\" != guard-off ] || fail");
         String crash = function("experiments_crash");
-        for (String kind : List.of("toxic", "proxy-down", "hold", "partition", "scaled", "node-paused")) {
+        for (String kind : List.of("toxic", "proxy-down", "hold", "store-hold", "partition", "scaled", "node-paused")) {
             assertThat(crash).as("the crash probes put on a %s", kind).contains("experiments_fault_on " + kind + " ");
         }
         assertThat(crash).contains("kill -TERM $$").contains("\n    false\n");
         assertThat(harness).contains("guard-off, crash-with-faults and").contains("term-with-faults");
+    }
+
+    @Test
+    @DisplayName("the audit archive's test-only store is write once, keeps its objects across a scale to zero, admits the application alone, and is named"
+            + " to it in the scope's own copy alone, the endpoint check admitting that one URL (P16-TSK-010)")
+    void theArchiveStoreIsWriteOnceAndTheScopesOwn() {
+        String store = read(ARCHIVE_STORE);
+        assertThat(store).as("its objects on a claim of their own, one writer at a time")
+                .contains("kind: PersistentVolumeClaim").contains("claimName: finapp-archive-store").contains("type: Recreate")
+                .contains("image: JDK_IMAGE").contains("readOnlyRootFilesystem: true").contains("runAsNonRoot: true")
+                .contains("/store/ArchiveStore.java\", \"/tls/keystore.p12\", \"/tls/store-phrase\", \"/archive\"");
+        assertThat(store).as("reached by the application on 8443 under the label its test-only egress admits, and reaching nothing")
+                .contains("finapp/role: provider-simulator").contains("              app.kubernetes.io/name: finapp-app\n      ports:\n        - protocol: TCP\n          port: 8443")
+                .contains("policyTypes:\n    - Ingress\n    - Egress\n  ingress:");
+        String program = read(ARCHIVE_PROGRAM);
+        assertThat(program).as("write once: an object where one is answers 412, a delete 405, one writer of a key by a hard link, a bad checksum 400")
+                .contains("if (Files.exists(target)) {\n            return 412;").contains("Files.createLink(target, aside);")
+                .contains("catch (FileAlreadyExistsException taken) {\n                return 412;").contains("status = 405;")
+                .contains("return 400;").contains("Path.of(\"/tmp/hold-reads\")").contains("Path.of(\"/tmp/requests.tsv\")");
+        String settings = function("experiments_archive_settings");
+        assertThat(settings).as("named in the scope's own rendered ConfigMap, never a committed overlay")
+                .contains("\"$A\"/ConfigMap.finapp-app-config-*.yaml").contains("FINAPP_AUDIT_ARCHIVE_ENDPOINT: \"$ARCHIVE_URL\"")
+                .contains("FINAPP_AUDIT_ARCHIVE_LEASE: \"PT30S\"").contains("FINAPP_IDENTITY_SESSION_SWEEP_GRACE: \"PT5M\"")
+                .contains("FINAPP_RETENTION_SWEEP_INTERVAL: \"PT30S\"");
+        assertThat(function("experiments_render")).contains("    experiments_archive_settings\n");
+        assertThat(experiments).contains("ARCHIVE_URL=\"https://$ARCHIVE_HOST:8443\"");
+        assertThat(function("experiments_endpoints_check")).as("the one archive URL admitted, by name")
+                .contains("FINAPP_AUDIT_ARCHIVE_ENDPOINT)\n                [ \"$value\" = \"$ARCHIVE_URL\" ] ||");
+        String deploy = function("experiments_archive_store");
+        assertThat(deploy).as("its keystore made per run and its phrase in the ledger")
+                .contains("issue archive-store \"DNS:$ARCHIVE_HOST").contains("od -An -N16 -tx1 /dev/urandom")
+                .contains("secret_of finapp-rehearsal finapp-archive-store-tls").contains("rollout status deployment/finapp-archive-store");
+        assertThat(function("experiments_data_tier")).contains("    experiments_archive_store\n");
+        assertThat(function("experiments_clear_faults")).contains("experiments_store rm -f /tmp/hold-reads")
+                .contains("rollout status deployment/finapp-archive-store");
+        assertThat(function("experiments_faults_left")).contains("|| echo \"the archive store could not be read\"").contains("grep -x 'hold-reads'");
+    }
+
+    @Test
+    @DisplayName("E44, E45 and E46 measure what their rows name: nothing marked with the store down, a holder killed between copy and mark taken over"
+            + " once, the session table bounded with a live session kept; the archive census reads the table and the store (P16-TSK-010)")
+    void e44ToE46MeasureWhatTheirRowsName() {
+        String census = function("archive_census");
+        assertThat(census).as("every audit row queued or in one segment, the digests and chain recomputed, every object digested where it lies")
+                .contains("= EXISTS (SELECT 1 FROM platform.audit_archive_member m WHERE m.audit_id = a.audit_id)")
+                .contains("encode(sha256(convert_to(platform.audit_archive_content(s.segment_seq), 'UTF8')), 'hex')")
+                .contains("s.previous_manifest_sha256 IS DISTINCT FROM p.manifest_sha256")
+                .contains("sha256sum audit/v1/segments/* audit/v1/manifests/*").contains("comm -23")
+                .contains("'|the census had segments to read|'").contains("EXP_STOPPED=\"${EXP_STOPPED:+$EXP_STOPPED; }the archive census");
+        assertThat(function("E44_fault")).contains("experiments_fault_on scaled finapp-rehearsal finapp-archive-store 0 1");
+        assertThat(function("E44_observe")).as("nothing marked but the one in flight, the queue grown, the failures counted, every replica ready")
+                .contains("[ \"$archived\" -le $((E44_AT_ARCHIVED + 1)) ]").contains("[ \"${last:-0}\" -gt \"${first:-0}\" ]")
+                .contains("finapp_audit_archive_segments_total{outcome=\"store_unavailable\"}")
+                .contains("EXP_STOPPED=\"a replica unready while the archive store was down");
+        assertThat(function("E44_recover")).contains("archive_drained 600 ||").contains("archive_census E44").contains("assert_flows_ran e44");
+        String fault = function("E45_fault");
+        assertThat(fault).as("the holder found between copy and mark before the kill: its read held, its copy in the store, its segment claimed")
+                .contains("experiments_fault_on store-hold hold-reads").contains("experiments_store test -f \"$ARCHIVE_OBJECTS/$E45_KEY\"")
+                .contains("WHERE state = 'CLAIMED'").contains("experiments_context_check || fail");
+        assertThat(fault.indexOf("experiments_store test -f")).isLessThan(fault.indexOf("experiments_kill_jvm \"$E45_VICTIM\""));
+        assertThat(function("E45_observe")).as("taken over once, the file written once and found again")
+                .contains("[ \"${state##*|}\" -ge 1 ] || fail").contains("[ \"$written\" = 1 ] || fail").contains("[ \"$found\" -ge 1 ] || fail")
+                .contains("EXP_STOPPED=\"a second replica unready while the killed holder was replaced");
+        assertThat(function("E45_recover")).contains("archive_census E45");
+        assertThat(function("E46_steady")).as("a live session and forty dead planted by the run's own superuser")
+                .contains("now() + interval '2 hours'").contains("generate_series(1, 40)");
+        assertThat(function("E46_observe")).as("never a live session, nothing past the grace and two ticks, the planted dead swept")
+                .contains("EXP_STOPPED=\"the live session planted was deleted\"").contains("idle_expires_at < now() - interval '6 minutes'")
+                .contains("finapp_retention_swept_total{type=\"session\"}").contains("[ \"$dead\" = 0 ] || fail");
+        assertThat(function("E46_recover")).as("the plants' teardown").contains("DELETE FROM identity.session WHERE token_hash = 'e46-live'");
     }
 }
