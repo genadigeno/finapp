@@ -43,6 +43,12 @@
 # infra/scanner-pins.sh and back, under the workload, with the census after each leg (kind-rehearsal/rolls.sh, OPERATIONS_RUNBOOK.md
 # sections 11.26 and 11.28).
 #
+# `experiments` (P16-TSK-019, ADR-0127, OPERATIONS_RUNBOOK.md section 11.46): release N alone on a cluster of one control plane and three
+# workers, each a zone, with Toxiproxy on the application's three hops and a synchronous standby of the test-only PostgreSQL, then the
+# failure experiments of kind-rehearsal/experiments.sh (REHEARSAL_EXPERIMENTS, E01 by default), each steady state, fault, observation,
+# stop, recovery and census, behind the safety boundary's refusals and their plants. Its probes are guard-off, crash-with-faults and
+# term-with-faults. It refuses a cluster of its name it did not make and mark, before it changes anything in it.
+#
 # A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
 # common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
 # that a kept cluster is what it is used against, and refused whenever CI is set: a record is only ever of a whole run.
@@ -62,9 +68,14 @@ DIR="$ROOT/infra/scripts/kind-rehearsal"
 # The load harness (P16-TSK-006): functions only, called under REHEARSAL_SCOPE=load.
 # shellcheck source=infra/scripts/kind-rehearsal/load.sh
 . "$DIR/load.sh"
+# The failure-injection toolkit (P16-TSK-019): functions only, called under REHEARSAL_SCOPE=experiments.
+# shellcheck source=infra/scripts/kind-rehearsal/experiments.sh
+. "$DIR/experiments.sh"
 
 CLUSTER=${REHEARSAL_CLUSTER:-finapp-rehearsal}
 NODE="$CLUSTER-control-plane"
+# Where images are loaded: the one node, or every node of the experiments scope's cluster (P16-TSK-019), set once it exists.
+NODES=$NODE
 KIND_BIN=${KIND:-kind}
 ART=${REHEARSAL_ARTEFACTS:-$ROOT/build/rehearsal}
 PROBE=${REHEARSAL_PROBE:-}
@@ -78,7 +89,7 @@ ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 # What the run rehearses: `release` (the default, P15-TSK-012's walk from N - 1 to N and back) or `rotations` (P15-TSK-020: release N alone,
 # then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
 SCOPE=${REHEARSAL_SCOPE:-release}
-case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; rolls) ;; load) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery, rolls or load, not $SCOPE" >&2; exit 2 ;; esac
+case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; rolls) ;; load) ;; experiments) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery, rolls, load or experiments, not $SCOPE" >&2; exit 2 ;; esac
 # Every scope but `release` deploys release N alone: the steps below that name N - 1 deploy N.
 N_ONLY=""
 case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
@@ -86,6 +97,8 @@ case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
 [ "$SCOPE" != rolls ] || N_ONLY=1
 # The load scope (P16-TSK-006) loads release N alone too.
 [ "$SCOPE" != load ] || N_ONLY=1
+# The experiments scope (P16-TSK-019) too.
+[ "$SCOPE" != experiments ] || N_ONLY=1
 # The platform scopes' API audit log (Q12): only they write one.
 AUDITED=""
 case $SCOPE in signals | incidents) AUDITED=1 ;; esac
@@ -192,6 +205,8 @@ finish() {
     for pid in $BACKGROUND; do
         kill "$pid" 2>/dev/null
     done
+    # The experiments' faults (P16-TSK-019), on every way out and before the cluster goes: a kept cluster is left with none on.
+    experiments_clear_faults
     for container in $CONTAINERS; do
         dock rm -f "$container" >/dev/null 2>&1
     done
@@ -246,7 +261,8 @@ normalized() {
 }
 
 # load_tagged <repository> <tag> [digest]: pulled on the host and imported into the node, so that a digest-pinned manifest finds its
-# image by the digest it names without the node reaching a registry.
+# image by the digest it names without the node reaching a registry. Every node of the cluster ($NODES): one, except in the experiments
+# scope (P16-TSK-019), whose workers run every pod.
 load_tagged() {
     source_ref="$1:$2"
     if ! dock image inspect "$source_ref" >/dev/null 2>&1; then
@@ -258,26 +274,34 @@ load_tagged() {
         fi
     fi
     if dock save --platform linux/amd64 "$source_ref" -o "$(dpath "$WORK/image.tar")" 2>/dev/null; then
-        dock exec -i "$NODE" ctr -n k8s.io images import --platform linux/amd64 - < "$WORK/image.tar" >> "$ART/images.log" 2>&1 \
-            || cannot "could not import $source_ref into the node"
+        for node in $NODES; do
+            dock exec -i "$node" ctr -n k8s.io images import --platform linux/amd64 - < "$WORK/image.tar" >> "$ART/images.log" 2>&1 \
+                || cannot "could not import $source_ref into the node $node"
+        done
     elif [ -n "${3:-}" ]; then
         # Docker Desktop's image store can refuse to save one platform of an index it holds - "does not provide the specified platform"
         # while its own listing shows that platform's content (seen for Loki and kube-router, P15-TSK-023) - and saved whole the index
         # names the blobs of platforms never pulled, which the node's import cannot find. The node then pulls its own platform of the
         # pinned digest itself, and the tag names the same image.
-        dock exec "$NODE" ctr -n k8s.io images pull --platform linux/amd64 "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
-            || cannot "the node could not pull $1@$3"
-        dock exec "$NODE" ctr -n k8s.io images tag --force "$(normalized "$1")@$3" "$(normalized "$source_ref")" >> "$ART/images.log" 2>&1 \
-            || cannot "could not name $1@$3 as $source_ref in the node"
+        for node in $NODES; do
+            dock exec "$node" ctr -n k8s.io images pull --platform linux/amd64 "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
+                || cannot "the node $node could not pull $1@$3"
+            dock exec "$node" ctr -n k8s.io images tag --force "$(normalized "$1")@$3" "$(normalized "$source_ref")" >> "$ART/images.log" 2>&1 \
+                || cannot "could not name $1@$3 as $source_ref in the node $node"
+        done
     else
         dock save "$source_ref" -o "$(dpath "$WORK/image.tar")" || cannot "could not save $source_ref"
-        dock exec -i "$NODE" ctr -n k8s.io images import --platform linux/amd64 - < "$WORK/image.tar" >> "$ART/images.log" 2>&1 \
-            || cannot "could not import $source_ref into the node"
+        for node in $NODES; do
+            dock exec -i "$node" ctr -n k8s.io images import --platform linux/amd64 - < "$WORK/image.tar" >> "$ART/images.log" 2>&1 \
+                || cannot "could not import $source_ref into the node $node"
+        done
     fi
     rm -f "$WORK/image.tar"
     if [ -n "${3:-}" ]; then
-        dock exec "$NODE" ctr -n k8s.io images tag --force "$(normalized "$source_ref")" "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
-            || cannot "could not tag $source_ref by digest in the node"
+        for node in $NODES; do
+            dock exec "$node" ctr -n k8s.io images tag --force "$(normalized "$source_ref")" "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
+                || cannot "could not tag $source_ref by digest in the node $node"
+        done
     fi
 }
 
@@ -292,8 +316,10 @@ load_built() {
     digest=$(imported_digest "$1")
     case $digest in sha256:*) ;; *) cannot "no digest for $1 in the node" ;; esac
     ref="${1%:*}@$digest"
-    dock exec "$NODE" ctr -n k8s.io images tag --force "$(normalized "$1")" "$(normalized "${1%:*}")@$digest" >> "$ART/images.log" 2>&1 \
-        || cannot "could not tag $1 by digest in the node"
+    for node in $NODES; do
+        dock exec "$node" ctr -n k8s.io images tag --force "$(normalized "$1")" "$(normalized "${1%:*}")@$digest" >> "$ART/images.log" 2>&1 \
+            || cannot "could not tag $1 by digest in the node $node"
+    done
     printf '%s' "$ref"
 }
 
@@ -373,11 +399,15 @@ issue() {
         -out "$1.crt") >/dev/null 2>&1 || cannot "a certificate for $1 could not be issued"
 }
 
-# secret_of <namespace> <name> <key=file>...: applied through stdin, base64 from the host, never on a command line.
+# secret_of <namespace> <name> <key=file>...: applied through stdin, base64 from the host, never on a command line. Each value's sha256
+# goes to the run's ledger ($WORK/ledger, beside kind-secrets.sh's), which the experiments scope's boundary reads (P16-TSK-019).
 secret_of() {
     namespace=$1
     name=$2
     shift 2
+    for entry in "$@"; do
+        sha256sum < "${entry#*=}" | cut -c1-64 >> "$WORK/ledger"
+    done
     {
         printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: %s\n  namespace: %s\ntype: Opaque\ndata:\n' "$name" "$namespace"
         for entry in "$@"; do
@@ -459,18 +489,25 @@ if [ -n "${REHEARSAL_REUSE_CLUSTER:-}" ] && "$KIND_BIN" get clusters 2>/dev/null
     REUSING=1
 fi
 if [ -n "$REUSING" ]; then
+    # The experiments scope (P16-TSK-019) reuses only a cluster it made and marked: refused before anything in it changes.
+    [ "$SCOPE" != experiments ] || experiments_cluster_owned
     # A development aid, for a run that is being debugged: the images stay loaded and only what the run deploys is thrown away.
     CLUSTER_UP=1
     log "reusing the cluster $CLUSTER: its namespaces are removed first"
     # A rotations run (P15-TSK-020) leaves ExternalSecrets whose finalizer only the operator clears: removed while it still runs, or the
     # namespace never finishes terminating.
     kube -n finapp delete externalsecrets.external-secrets.io --all --ignore-not-found --wait=true --timeout=120s >> "$ART/cluster.log" 2>&1 || true
-    kube delete namespace finapp finapp-edge finapp-observability finapp-rehearsal cert-manager --ignore-not-found --wait=true --timeout=300s >> "$ART/cluster.log" 2>&1 \
+    kube delete namespace finapp finapp-edge finapp-observability finapp-rehearsal finapp-experiments cert-manager --ignore-not-found --wait=true --timeout=300s >> "$ART/cluster.log" 2>&1 \
         || cannot "the cluster's namespaces could not be removed"
 else
 dock pull --quiet "$KIND_NODE_IMAGE" >/dev/null || cannot "could not pull the node image"
+# The experiments scope (P16-TSK-019) deletes a cluster of its name only if it made and marked it: another is refused, and left as it was.
+if [ "$SCOPE" = experiments ] && "$KIND_BIN" get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
+    experiments_cluster_owned
+fi
 "$KIND_BIN" delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true
 CLUSTER_CONFIG="$DIR/kind-cluster.yaml"
+[ "$SCOPE" != experiments ] || CLUSTER_CONFIG=$EXPERIMENTS_CONFIG
 if [ -n "$AUDITED" ]; then
     # The platform scopes (Q12): the committed cluster, its API server writing kind-rehearsal/audit-policy.yaml's log. The policy is mounted
     # from the artefacts, which outlive the run, so a kept cluster's API server can still restart; it holds no value of any kind.
@@ -510,7 +547,9 @@ fi
 "$KIND_BIN" create cluster --name "$CLUSTER" --image "$KIND_NODE_IMAGE" --config "$(dpath "$CLUSTER_CONFIG")" \
     --kubeconfig "$(dpath "$WORK/kubeconfig")" --wait 180s >> "$ART/cluster.log" 2>&1 || cannot "the cluster did not come up: see cluster.log"
 CLUSTER_UP=1
+[ "$SCOPE" != experiments ] || experiments_cluster_made
 fi
+[ "$SCOPE" != experiments ] || NODES=$(experiments_nodes | tr '\n' ' ')
 SERVER_VERSION=$(kube version -o json | sed -n 's/.*"gitVersion": *"\(v[^"]*\)".*/\1/p' | tail -1)
 log "cluster up: Kubernetes $SERVER_VERSION, node image $KIND_NODE_VERSION, kind $("$KIND_BIN" version)"
 printf '%s\n' "$SERVER_VERSION" > "$ART/server-version.txt"
@@ -531,8 +570,10 @@ ref_of_built() {
 }
 
 if [ -z "$REUSING" ] && [ -n "$CA_BUNDLE" ]; then
-    dock cp "$(dpath "$CA_BUNDLE")" "$NODE:/etc/ssl/certs/ca-certificates.crt" || cannot "the CA bundle could not be copied into the node"
-    dock exec "$NODE" systemctl restart containerd || cannot "the node's containerd could not be restarted"
+    for node in $NODES; do
+        dock cp "$(dpath "$CA_BUNDLE")" "$node:/etc/ssl/certs/ca-certificates.crt" || cannot "the CA bundle could not be copied into the node $node"
+        dock exec "$node" systemctl restart containerd || cannot "the node $node's containerd could not be restarted"
+    done
 fi
 
 step images-loaded
@@ -561,6 +602,10 @@ if [ "$SCOPE" = rolls ]; then
     load_tagged "$TRAEFIK_ROLL_REPOSITORY" "$TRAEFIK_ROLL_VERSION" "$TRAEFIK_ROLL_DIGEST"
     load_tagged "$POSTGRES_ROLL_REPOSITORY" "$POSTGRES_ROLL_VERSION" "$POSTGRES_ROLL_DIGEST"
     load_tagged "$KAFKA_ROLL_REPOSITORY" "$KAFKA_ROLL_VERSION" "$KAFKA_ROLL_DIGEST"
+fi
+if [ "$SCOPE" = experiments ]; then
+    # The fault proxy (P16-TSK-019, owner decision C6), by its digest, into every node.
+    load_tagged "$TOXIPROXY_REPOSITORY" "$TOXIPROXY_VERSION" "$TOXIPROXY_DIGEST"
 fi
 IMAGE_APP_N=$(load_built finapp-app:rehearsal-n)
 IMAGE_MIGRATOR_N=$(load_built finapp-migrator:rehearsal-n)
@@ -616,8 +661,10 @@ if [ -n "$AUDITED" ]; then
     # both, and only these scopes name them, so the release's and the rotations' runs keep their measured shape.
     EXTRA_PROVIDER_NAMES="$EXTRA_PROVIDER_NAMES FINAPP_FX_REFERENCE_URL FINAPP_FX_PROVIDER_URL"
 fi
-PATH="$WORK/bin:$PATH" \
-    FINAPP_DB_URL="jdbc:postgresql://$PG_HOST:5432/finapp?sslmode=verify-full&sslrootcert=/etc/finapp-local-ca/ca.crt" \
+# The application's database URL, the same in every scope: the experiments scope's boundary holds the delivered Secret to it (P16-TSK-019).
+DB_URL="jdbc:postgresql://$PG_HOST:5432/finapp?sslmode=verify-full&sslrootcert=/etc/finapp-local-ca/ca.crt"
+PATH="$WORK/bin:$PATH" KIND_SECRETS_LEDGER="$WORK/ledger" \
+    FINAPP_DB_URL="$DB_URL" \
     FINAPP_DB_APP_USER=finapp_app FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_MIGRATOR_USER=finapp_migrator FINAPP_DB_MASTER_USER=finapp \
     FINAPP_KAFKA_BOOTSTRAPSERVERS="$KAFKA_HOST:9092" FINAPP_KAFKA_SASL_USERNAME=finapp_app \
     FINAPP_PAYMENTS_PROVIDER_URL="$SIM_URL" FINAPP_PAYMENTMETHODS_TOKENISATION_URL="$SIM_URL" FINAPP_MERCHANT_PAYOUT_PROVIDER_URL="$SIM_URL" \
@@ -659,6 +706,8 @@ YAML
     awk -v wait="$WORK/job-wait.yaml" '/^      containers:$/ {while ((getline line < wait) > 0) print line} {print}' "$A/Job.finapp-migrator.yaml" > "$WORK/job.tmp"
     mv "$WORK/job.tmp" "$A/Job.finapp-migrator.yaml"
 fi
+# The experiments scope's own copy (P16-TSK-019): the base's zone rule, the standby's hba line, the quota grown by the standby.
+[ "$SCOPE" != experiments ] || experiments_render
 # Everything but what a release orders: the Deployment, its autoscaler and the Job.
 for file in "$A"/*.yaml; do
     case $(basename "$file") in
@@ -716,6 +765,12 @@ kafka_admin() {
     shift
     kube -n finapp exec -i finapp-kafka-0 -c kafka -- "/opt/kafka/bin/$tool" --bootstrap-server localhost:9094 "$@"
 }
+
+# The experiments scope (P16-TSK-019): the fault proxy on the application's three hops and the synchronous standby, before any replica starts.
+if [ "$SCOPE" = experiments ]; then
+    step experiments-topology-made
+    experiments_data_tier
+fi
 
 step topics-and-acls
 catalogue="$ROOT/infra/kafka/topics.yaml"
@@ -800,8 +855,10 @@ dock run --rm -v "$(dpath "$chart"):/chart" "$HELM_IMAGE" template cert-manager 
 kube create namespace cert-manager >> "$ART/apply.log" 2>&1 || cannot "could not create cert-manager's namespace"
 # The node pulls these three itself, as it would from any registry: `docker save` of a Docker-schema image from a containerd store here writes only its manifest.
 for component in cert-manager-controller cert-manager-webhook cert-manager-cainjector; do
-    dock exec "$NODE" crictl pull "quay.io/jetstack/$component:$CERT_MANAGER_VERSION" >> "$ART/images.log" 2>&1 \
-        || cannot "the node could not pull $component: see images.log"
+    for node in $NODES; do
+        dock exec "$node" crictl pull "quay.io/jetstack/$component:$CERT_MANAGER_VERSION" >> "$ART/images.log" 2>&1 \
+            || cannot "the node $node could not pull $component: see images.log"
+    done
 done
 kube apply --server-side -f - < "$WORK/cert-manager.yaml" >> "$ART/apply.log" 2>&1 || cannot "could not apply cert-manager: see apply.log"
 for deployment in cert-manager cert-manager-webhook cert-manager-cainjector; do
@@ -828,9 +885,12 @@ fi
 
 NODE_IP=$(dock inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "$NODE")
 [ -n "$NODE_IP" ] || cannot "the node has no address on the kind network"
+OPERATOR_IP=$NODE_IP
+# Several nodes (P16-TSK-019): each edge's NodePort answers only where one of its controllers runs, so each host gets such a worker.
+[ "$SCOPE" != experiments ] || experiments_edge_addresses
 
 client() {
-    dock run --rm --network kind --add-host "public.finapp.test:$NODE_IP" --add-host "operator.finapp.test:$NODE_IP" \
+    dock run --rm --network kind --add-host "public.finapp.test:$NODE_IP" --add-host "operator.finapp.test:$OPERATOR_IP" \
         -v "$(dpath "$CLIENT"):/work" -v "$(dpath "$DIR"):/src:ro" "$JDK_IMAGE" java --source 21 /src/Rehearsal.java /work "$@"
 }
 
@@ -896,7 +956,8 @@ census() {
     # The telemetry steps' one traced top-up, of its own planted amount (P15-TSK-023); zero until it runs.
     expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS + ${TELEMETRY_TOPUPS:-0} + ${LOAD_TOPUPS:-0} ))
     expected_checkouts=$(( $(flow_ok_count checkout) + SMOKE_CHECKOUTS + ${LOAD_CHECKOUTS:-0} ))
-    expected_payouts=$(( $(flow_ok_count payout) + SMOKE_PAYOUTS ))
+    # E01's own payout, sent by the experiments scope (P16-TSK-019); zero in every other scope.
+    expected_payouts=$(( $(flow_ok_count payout) + SMOKE_PAYOUTS + ${EXPERIMENTS_PAYOUTS:-0} ))
     # Every top-up credits one wallet: 5.00 in a smoke, 0.05 in the workload. Transfers move money between the same wallets and a checkout is paid by card.
     expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} + ${LOAD_WALLET_MINOR:-0} ))
     if ! lag_settled "$label"; then
@@ -1404,7 +1465,7 @@ no_pod_terminating() {
 start_workload() {
     name="$CLUSTER-workload-$1"
     # shellcheck disable=SC2086
-    dock run -d --name "$name" --network kind --add-host "public.finapp.test:$NODE_IP" --add-host "operator.finapp.test:$NODE_IP" \
+    dock run -d --name "$name" --network kind --add-host "public.finapp.test:$NODE_IP" --add-host "operator.finapp.test:$OPERATOR_IP" \
         -e "WORKLOAD_RETRY=${2:-}" -e "WORKLOAD_EDGE=${3:-}" -e "WORKLOAD_RETRY_SECONDS=${WORKLOAD_RETRY_SECONDS:-240}" \
         -v "$(dpath "$CLIENT"):/work" -v "$(dpath "$DIR"):/src:ro" "$JDK_IMAGE" java --source 21 /src/Rehearsal.java /work workload "$1" >/dev/null \
         || cannot "the workload could not start"
@@ -1602,6 +1663,14 @@ fi
 # pipeline up with every committed rule loaded.
 if [ "$SCOPE" = load ]; then
     load_scope
+    step end
+    finish
+fi
+
+# The experiments scope (P16-TSK-019) stops it here too: N is deployed on the experiments' cluster, smoked, its census green, the cluster
+# suites passed, the telemetry pipeline up, the fault proxy on the application's hops and the standby synchronous.
+if [ "$SCOPE" = experiments ]; then
+    experiments_scope
     step end
     finish
 fi

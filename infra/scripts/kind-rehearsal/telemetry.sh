@@ -40,10 +40,13 @@ telemetry_image() {
         load_tagged "$1" "$2" "$3"
         return
     fi
-    dock exec "$NODE" ctr -n k8s.io images pull --platform linux/amd64 "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
-        || cannot "the node could not pull $1@$3"
-    dock exec "$NODE" ctr -n k8s.io images tag --force "$(normalized "$1")@$3" "$(normalized "$1:$2")" >> "$ART/images.log" 2>&1 \
-        || cannot "could not name $1@$3 as $1:$2 in the node"
+    # Every node of the cluster: one, except the experiments scope's several (P16-TSK-019).
+    for node in ${NODES:-$NODE}; do
+        dock exec "$node" ctr -n k8s.io images pull --platform linux/amd64 "$(normalized "$1")@$3" >> "$ART/images.log" 2>&1 \
+            || cannot "the node $node could not pull $1@$3"
+        dock exec "$node" ctr -n k8s.io images tag --force "$(normalized "$1")@$3" "$(normalized "$1:$2")" >> "$ART/images.log" 2>&1 \
+            || cannot "could not name $1@$3 as $1:$2 in the node $node"
+    done
 }
 
 telemetry_deploy() {

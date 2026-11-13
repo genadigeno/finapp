@@ -1,0 +1,287 @@
+# The test-only synchronous standby (P16-TSK-019, owner decision C7, ADR-0127 decision 4): PostgreSQL's own streaming replication beside
+# the kind overlay's test-only server, the shape of the reference cloud's Multi-AZ database - one standby, synchronous, in another zone.
+# Never rendered by any overlay and refused in a deployed one: the experiments scope applies this file itself, POSTGRES_IMAGE written in
+# as the kind overlay's own pinned reference, after it has made the replication role, its slot and the Secret below.
+#
+# HOW IT IS MADE. The init container takes a base backup of the primary through the primary's own name, finapp-postgres, as
+# finapp_replicator, at verify-full against the run's local CA, with the slot finapp_standby so that the primary keeps every WAL segment
+# the standby has not received; it writes standby.signal, and does nothing on a later start, when the data directory is already there.
+# The server then streams from the primary under the same conninfo. Its password comes from finapp-kind-postgres-replication, generated
+# per run (experiments.sh), copied by the init container into a file of mode 0600 on the standby's own volume, because libpq reads no
+# password file the group can read. Once the standby streams, the harness sets the primary's synchronous_standby_names to
+# 'FIRST 1 (finapp_standby)' at run time (ALTER SYSTEM on the test-only server), so from then on a commit returns only once this
+# standby has it, and the kind overlay's server is unchanged in every other scope.
+#
+# THE SETTINGS are the primary's (deploy/overlays/kind/postgres.yaml): a hot standby needs max_connections and the rest at least the
+# primary's, and a promoted standby (E05, P16-TSK-022) must serve as the primary served. It presents the primary's certificate: it is the
+# server the same name will lead to after a promotion moves the Service. Promotion and the move are E05's, not this file's.
+#
+# THE ZONE. Required to be in another zone than the primary, as a Multi-AZ standby is: the experiments' cluster labels each worker a zone.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-postgres-standby
+  namespace: finapp
+  labels:
+    finapp/test-only: "true"
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: finapp-postgres-standby
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: finapp-postgres-standby
+  namespace: finapp
+  labels:
+    finapp/test-only: "true"
+spec:
+  serviceName: finapp-postgres-standby
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-postgres-standby
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-postgres-standby
+        finapp/test-only: "true"
+    spec:
+      serviceAccountName: finapp-test-only
+      automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: finapp-postgres
+              topologyKey: topology.kubernetes.io/zone
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: base-backup
+          image: POSTGRES_IMAGE
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              data=/var/lib/postgresql/18/docker
+              if [ -s "$data/PG_VERSION" ]; then
+                  echo "the standby's data directory is there: no base backup"
+                  exit 0
+              fi
+              umask 077
+              mkdir -p /var/lib/postgresql/18
+              printf 'finapp-postgres.finapp.svc.cluster.local:5432:replication:finapp_replicator:%s\n' "$(cat /etc/finapp-replication/password)" \
+                  > /var/lib/postgresql/replication.pgpass
+              pg_basebackup -D "$data" -X stream -c fast -S finapp_standby -R -d "host=finapp-postgres.finapp.svc.cluster.local port=5432 \
+                  user=finapp_replicator application_name=finapp_standby sslmode=verify-full sslrootcert=/etc/finapp-local-ca/ca.crt \
+                  passfile=/var/lib/postgresql/replication.pgpass"
+              test -f "$data/standby.signal"
+              echo "base backup taken"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+            - name: local-ca
+              mountPath: /etc/finapp-local-ca
+              readOnly: true
+            - name: replication
+              mountPath: /etc/finapp-replication
+              readOnly: true
+      containers:
+        - name: postgres
+          image: POSTGRES_IMAGE
+          args:
+            - -c
+            - max_connections=60
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/etc/finapp-postgres-tls/tls.crt
+            - -c
+            - ssl_key_file=/etc/finapp-postgres-tls/tls.key
+            - -c
+            - hba_file=/etc/finapp-postgres-hba/pg_hba.conf
+            - -c
+            - shared_preload_libraries=pg_stat_statements
+            - -c
+            - track_io_timing=on
+            - -c
+            - hot_standby=on
+            - -c
+            - primary_slot_name=finapp_standby
+          ports:
+            - name: postgres
+              containerPort: 5432
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "finapp", "-d", "finapp"]
+            periodSeconds: 2
+            failureThreshold: 90
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "finapp", "-d", "finapp"]
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "finapp", "-d", "finapp"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+            - name: tls
+              mountPath: /etc/finapp-postgres-tls
+              readOnly: true
+            - name: hba
+              mountPath: /etc/finapp-postgres-hba
+              readOnly: true
+            - name: local-ca
+              mountPath: /etc/finapp-local-ca
+              readOnly: true
+      volumes:
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: tls
+          secret:
+            secretName: finapp-kind-postgres-tls
+            defaultMode: 288
+        - name: hba
+          configMap:
+            name: finapp-kind-postgres-hba
+        - name: local-ca
+          secret:
+            secretName: finapp-kind-local-ca
+        - name: replication
+          secret:
+            secretName: finapp-kind-postgres-replication
+            defaultMode: 288
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+---
+# The standby streams from the primary, and the primary admits it: replication on 5432, and the resolver.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-postgres-standby
+  namespace: finapp
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-postgres-standby
+  policyTypes:
+    - Ingress
+    - Egress
+  # The proxy's path to it, which a promotion (E05) uses; nothing reaches it before then, the harness's own reads being through the pod.
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-experiments
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-toxiproxy
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-postgres-replication
+  namespace: finapp
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-postgres-standby
+      ports:
+        - protocol: TCP
+          port: 5432

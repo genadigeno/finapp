@@ -308,6 +308,8 @@ check postgres-roll "$POSTGRES_ROLL_REPOSITORY" "$POSTGRES_ROLL_VERSION" "$POSTG
 check kafka-roll    "$KAFKA_ROLL_REPOSITORY"    "$KAFKA_ROLL_VERSION"    "$KAFKA_ROLL_DIGEST"    roll-target
 # The load generator (P16-TSK-006): k6, for the kind rehearsal's load scope.
 check k6 "$K6_REPOSITORY" "$K6_VERSION" "$K6_DIGEST" list_tags_dockerhub
+# The fault proxy (P16-TSK-019): Toxiproxy, for the kind rehearsal's experiments scope.
+check toxiproxy "$TOXIPROXY_REPOSITORY" "$TOXIPROXY_VERSION" "$TOXIPROXY_DIGEST" list_tags_ghcr
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

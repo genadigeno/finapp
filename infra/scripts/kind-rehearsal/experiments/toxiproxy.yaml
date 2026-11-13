@@ -1,0 +1,329 @@
+# The fault proxy (P16-TSK-019, ADR-0127 decision 3, owner decision C6): Toxiproxy, by the digest infra/scanner-pins.sh pins, placed on the
+# three hops the application takes - to PostgreSQL, to the broker and to the provider simulator - and on nothing else. Test-only and never
+# rendered by any overlay: the experiments scope applies this file itself, the image's reference written in for TOXIPROXY_IMAGE.
+#
+# HOW IT IS ON THE PATH. The application's Deployment is given hostAliases (by the harness, in its own rendered copy) that resolve the three
+# names it already uses - finapp-postgres.finapp.svc.cluster.local, finapp-kafka.finapp.svc.cluster.local and
+# finapp-simulator.finapp-rehearsal.svc.cluster.local - to this Service's address. Nothing else of the client changes: its URLs, its
+# bootstrap servers and verify-full are the other scopes' bytes. The proxy passes bytes, so TLS is between the application and the server
+# it named, end to end; a certificate that did not name that host would be refused exactly as without the proxy. The migrator, the
+# bootstrap Job and the harness resolve those names through the cluster's DNS and never pass here. The broker advertises the same name it
+# is reached by, so the connections that follow the bootstrap come here too.
+#
+# THE ADMIN API listens on the pod's own loopback (-host=127.0.0.1): no Service and no policy expose 8474, and the harness drives it only as
+# `kubectl exec` of the image's own toxiproxy-cli. Its three proxies and their upstreams are this file's, and the harness's endpoint guard
+# refuses any other.
+#
+# The restricted profile holds: the image is two static binaries on an empty root, run here as 65532 with every capability dropped.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: finapp-experiments
+  labels:
+    finapp/test-only: "true"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: finapp-experiments
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finapp-toxiproxy-config
+  namespace: finapp-experiments
+  labels:
+    finapp/test-only: "true"
+data:
+  proxies.json: |
+    [
+      {"name": "postgres", "listen": "0.0.0.0:5432", "upstream": "finapp-postgres.finapp.svc.cluster.local:5432", "enabled": true},
+      {"name": "kafka", "listen": "0.0.0.0:9092", "upstream": "finapp-kafka.finapp.svc.cluster.local:9092", "enabled": true},
+      {"name": "simulator", "listen": "0.0.0.0:8443", "upstream": "finapp-simulator.finapp-rehearsal.svc.cluster.local:8443", "enabled": true}
+    ]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-toxiproxy
+  namespace: finapp-experiments
+  labels:
+    finapp/test-only: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: finapp-toxiproxy
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+    - name: kafka
+      port: 9092
+      targetPort: kafka
+    - name: simulator
+      port: 8443
+      targetPort: simulator
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-toxiproxy
+  namespace: finapp-experiments
+  labels:
+    finapp/test-only: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-toxiproxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-toxiproxy
+        finapp/role: fault-proxy
+        finapp/test-only: "true"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: toxiproxy
+          image: TOXIPROXY_IMAGE
+          imagePullPolicy: IfNotPresent
+          args: ["-host=127.0.0.1", "-config=/etc/finapp-toxiproxy/proxies.json"]
+          ports:
+            - name: postgres
+              containerPort: 5432
+            - name: kafka
+              containerPort: 9092
+            - name: simulator
+              containerPort: 8443
+          # The API on the pod's loopback answering is readiness: a TCP probe of a proxy port would open a connection upstream each period.
+          readinessProbe:
+            exec:
+              command: ["/toxiproxy-cli", "list"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: config
+              mountPath: /etc/finapp-toxiproxy
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: finapp-toxiproxy-config
+---
+# What the proxy admits and reaches: the application's pods on the three ports, and the three servers and the resolver. The upstreams are
+# resolved per connection, so a database Service moved to a promoted standby (E05) is followed; the standby's pods are named for that.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-toxiproxy
+  namespace: finapp-experiments
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-toxiproxy
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 8443
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-postgres
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-postgres-standby
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-rehearsal
+          podSelector:
+            matchLabels:
+              finapp/role: provider-simulator
+      ports:
+        - protocol: TCP
+          port: 8443
+---
+# The application's way to the proxy. Its own policies (the base's and the kind overlay's data tier) still let it reach the three servers
+# directly; the hostAliases decide that it does not, and the experiments scope checks it on every session (experiments.sh).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-app-experiments-proxy
+  namespace: finapp
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-experiments
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-toxiproxy
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 8443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-data-tier-experiments-proxy
+  namespace: finapp
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-experiments
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-toxiproxy
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-broker-experiments-proxy
+  namespace: finapp
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-kafka
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-experiments
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-toxiproxy
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-simulator-experiments-proxy
+  namespace: finapp-rehearsal
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-simulator
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-experiments
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-toxiproxy
+      ports:
+        - protocol: TCP
+          port: 8443

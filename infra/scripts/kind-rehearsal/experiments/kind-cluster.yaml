@@ -1,0 +1,21 @@
+# The experiments scope's cluster (P16-TSK-019, ADR-0127 decision 4, PHASE_16_PLAN.md section 9.1): one control plane and three workers,
+# each worker a zone of its own, so that a node's loss and the zone spread mean something here. A node is a container on the one machine,
+# not a machine: what a zone means on it is a label and a separate kubelet, never a separate failure domain of power or network. The rest
+# is the rehearsal's own cluster (kind-cluster.yaml): the Kubernetes minor the Terraform roots declare, kind's default pod subnet because
+# the overlay's FINAPP_EDGE_PROXIES is that value, and the default CNI. The control plane keeps kind's NoSchedule taint on a cluster of
+# several nodes, so every workload runs on the workers and the control plane is the API alone.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  podSubnet: 10.244.0.0/16
+nodes:
+  - role: control-plane
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: zone-a
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: zone-b
+  - role: worker
+    labels:
+      topology.kubernetes.io/zone: zone-c

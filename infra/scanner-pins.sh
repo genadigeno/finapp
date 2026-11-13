@@ -228,3 +228,11 @@ KAFKA_ROLL_DIGEST=sha256:852a0d49fc4e656b022e7f23785411802c9a088c78a7c5e39f33969
 K6_REPOSITORY=grafana/k6
 K6_VERSION=2.3.0
 K6_DIGEST=sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8
+
+# The fault proxy (P16-TSK-019, ADR-0127 decision 3, owner decision C6): Toxiproxy, sourced by the kind rehearsal's experiments scope
+# (infra/scripts/kind-rehearsal/experiments.sh), which runs it in the run's own cluster on the application's hops to PostgreSQL, the broker
+# and the provider simulator, by this digest and never by its tag. A tool outside the build graph, like every image above. 2.13.0, out
+# since 2026-10-14 when this was pinned.
+TOXIPROXY_REPOSITORY=ghcr.io/shopify/toxiproxy
+TOXIPROXY_VERSION=2.13.0
+TOXIPROXY_DIGEST=sha256:5d3dae09bc185dcc5ff6cf43abf6062a4a720aff0c4306a471e773acdcd107aa

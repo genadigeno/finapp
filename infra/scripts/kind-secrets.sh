@@ -20,6 +20,10 @@
 # in the repository, or to the output. Generated per run, so a second run against the same cluster fails on the first object that
 # already exists, rather than quietly changing values the rehearsal's roles were created with.
 #
+# THE LEDGER (P16-TSK-019). With KIND_SECRETS_LEDGER naming a file outside the repository, the sha256 of every value this run puts in an
+# object - generated or taken from the caller - is appended to it, and nothing else: no name, no value. The kind rehearsal's experiments
+# scope reads it to refuse any Secret value its run did not make (ADR-0127 decision 5).
+#
 # Usage:
 #   FINAPP_DB_URL=... [every other non-secret name] infra/scripts/kind-secrets.sh apply <namespace>
 #   FINAPP_DB_URL=... [every other non-secret name] infra/scripts/kind-secrets.sh render <empty directory outside the repository>
@@ -43,6 +47,14 @@ if [ "$MODE" = render ]; then
     place=$(CDPATH= cd -- "$TARGET" && pwd)
     case "$place/" in
         "$ROOT"/*) echo "refusing to write generated values inside the repository: $place" >&2; exit 1 ;;
+    esac
+fi
+
+LEDGER=${KIND_SECRETS_LEDGER:-}
+if [ -n "$LEDGER" ]; then
+    ledger_dir=$(CDPATH= cd -- "$(dirname -- "$LEDGER")" && pwd) || { echo "the ledger's directory does not exist: $LEDGER" >&2; exit 1; }
+    case "$ledger_dir/" in
+        "$ROOT"/*) echo "refusing to write the ledger inside the repository: $ledger_dir" >&2; exit 1 ;;
     esac
 fi
 
@@ -70,6 +82,7 @@ remember() {
             ;;
     esac
     eval "value_$1=\$fresh"
+    [ -z "$LEDGER" ] || printf '%s' "$fresh" | sha256sum | cut -c1-64 >> "$LEDGER"
 }
 
 # write <object name>, with "KEY=value" lines on stdin.
