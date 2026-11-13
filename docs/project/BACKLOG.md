@@ -29839,7 +29839,7 @@ on none:
    note on its register row and on this task's PI-025 bullet). Routed: to `P16-TSK-014` (the load scope's three brokers, the pipeline
    sampler and the scale at ten).
 
-**P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `PLANNED`
+**P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-013`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its dependencies, `P16-TSK-009` and `P16-TSK-013`, both `COMPLETE`)
 - **Objective**: the ten-instance answer counted. Ten application replicas carry the engineering workload on `kind`, scale between
   three and ten under a real metric, and roll during load, with one effect per key and the census green throughout. This closes the
   deviation B that the Phase 15 completion gate left with this task, and `P15-REM-007`'s observed scaling.
