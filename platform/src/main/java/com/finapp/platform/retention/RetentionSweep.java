@@ -6,13 +6,15 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
- * Deletes one batch of rows past their retention bound (`P15-TSK-029`, C12; the window counter's, `P15-TSK-022`; the idempotency
- * records', `P16-TSK-011`, platform {@code V016}).
+ * Deletes one batch of rows past their retention bound (`P15-TSK-029`, C12; the window counter's, `P15-TSK-022`; a module's own,
+ * the session sweep's first, `P16-TSK-010`; the idempotency records', `P16-TSK-011`, platform {@code V016}).
  *
  * <p><strong>The predicate is the database's, not this class's.</strong> Each sweep is one call of a {@code SECURITY DEFINER}
- * function in platform {@code V012}, the only path by which the application can delete from these tables, and that function
+ * function (platform {@code V012} and {@code V014}, or the owning module's, identity {@code V027}), the only path by which the
+ * application can delete from these tables, and that function
  * chooses the rows: published outbox rows, and inbox records past both their written expiry and the retention in force. This
  * class supplies the bound and the batch size, and owns the transaction.
  *
@@ -52,6 +54,9 @@ public final class RetentionSweep {
     public static final Duration IDEMPOTENCY_GRACE_FLOOR = Duration.ofDays(1);
 
     private static final String SWEEP_IDEMPOTENCY_SQL = "SELECT platform.sweep_expired_idempotency_records(?, ?)";
+    private static final Pattern TABLE_NAME = Pattern.compile("[a-z][a-z0-9_]{0,62}");
+
+    private static final Pattern MODULE_FUNCTION = Pattern.compile("[a-z][a-z0-9_]{0,62}\\.sweep_[a-z0-9_]{1,57}");
 
     private final RetentionConnectionSource connections;
     private final String table;
@@ -128,6 +133,28 @@ public final class RetentionSweep {
                             + " may still present");
         }
         return new RetentionSweep(connections, "idempotency_record", SWEEP_IDEMPOTENCY_SQL, grace, batchSize);
+    }
+
+    /**
+     * A sweep a module owns (`P16-TSK-010`): one call of its own schema's {@code SECURITY DEFINER} function, which chooses the rows
+     * as the sweeps above do and takes the bound in milliseconds and the batch size. The module names the function and states the
+     * floor of its bound; this class keeps the batch's transaction and connection. The name is checked to be a schema-qualified
+     * {@code sweep_} function, so it can only ever name one: it is a constant of the owning module, never configuration.
+     *
+     * @param table the table the function deletes from: a metric tag, so a closed set
+     * @param function {@code <schema>.sweep_<what>}
+     */
+    public static RetentionSweep ofModuleFunction(
+            RetentionConnectionSource connections, String table, String function, Duration bound, int batchSize) {
+        Objects.requireNonNull(table, "table");
+        Objects.requireNonNull(function, "function");
+        if (!TABLE_NAME.matcher(table).matches()) {
+            throw new IllegalArgumentException("a table's name is lower-case letters, digits and underscores: " + table);
+        }
+        if (!MODULE_FUNCTION.matcher(function).matches()) {
+            throw new IllegalArgumentException("a module's sweep is <schema>.sweep_<what>: " + function);
+        }
+        return new RetentionSweep(connections, table, "SELECT " + function + "(?, ?)", bound, batchSize);
     }
 
     private static void requireBeyondRedelivery(Duration dedupeWindow) {

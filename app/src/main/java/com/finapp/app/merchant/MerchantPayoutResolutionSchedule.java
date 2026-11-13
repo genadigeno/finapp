@@ -1,6 +1,7 @@
 package com.finapp.app.merchant;
 
 import com.finapp.app.lifecycle.ScheduleDrain;
+import com.finapp.app.lifecycle.TickPhase;
 import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.app.telemetry.MerchantMeters;
 import com.finapp.app.telemetry.SweepMeters;
@@ -73,7 +74,7 @@ public final class MerchantPayoutResolutionSchedule implements SmartLifecycle {
                         });
         executor.scheduleWithFixedDelay(
                 this::sweepQuietly,
-                pollInterval.toMillis(),
+                TickPhase.firstDelayMillis(pollInterval),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
         drain.started(executor);

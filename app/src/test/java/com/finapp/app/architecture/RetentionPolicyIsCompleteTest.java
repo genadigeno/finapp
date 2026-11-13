@@ -92,7 +92,8 @@ class RetentionPolicyIsCompleteTest {
         assertThat(row("platform.inbox_message")[PERIOD]).contains("`finapp.inbox.retention`");
         // P16-TSK-011: swept since platform V016, past its own expiry and a named grace, never an in-flight claim.
         assertThat(row("platform.idempotency_record")[PERIOD]).contains("`finapp.idempotency.sweep.grace`").contains("never an in-flight claim");
-        assertThat(row("identity.session")[PERIOD]).contains("not swept");
+        // P16-TSK-010: swept since identity V027, by a named grace past the row's own idle bound, never a live session.
+        assertThat(row("identity.session")[PERIOD]).contains("`finapp.identity.session.sweep.grace`").contains("never selected");
         assertThat(row("platform.inbox_parked_record")[PERIOD]).contains("never swept");
         assertThat(row("payments.callback_hint")[PERIOD]).contains("not swept");
     }

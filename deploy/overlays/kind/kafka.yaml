@@ -1,4 +1,10 @@
-# Test-only, single-node, gone with its cluster: the kind rehearsal's broker, in KRaft mode. Refused in any other overlay.
+# Test-only, gone with its cluster: the kind rehearsal's broker, in KRaft mode. Refused in any other overlay.
+#
+# ONE BROKER OR THREE (P16-TSK-013, OPERATIONS_RUNBOOK.md section 11.51). Committed at one replica, which every rehearsal scope ran on
+# before Phase 16. The experiments scope, and the load scope when asked (REHEARSAL_KAFKA_BROKERS=3), run three from the run's own
+# rendered copy (infra/scripts/kind-rehearsal/brokers.sh): replication 3 and min.insync.replicas 2 as infra/kafka/topics.yaml declares,
+# SASL_SSL with SCRAM on every broker, the brokers' quorum and replication over mutual TLS on 9093 and 9095. The start script below
+# is what makes one StatefulSet serve both: a pod of several takes its node id and advertised names from its own name.
 #
 # Its log directory (the topics, the consumer groups' offsets, and in KRaft the metadata: ACLs and SCRAM credentials) is on a volume claim
 # that kind's own provisioner backs, not an emptyDir (P16-TSK-005), so a roll that replaces the pod keeps it: `format --ignore-formatted`
@@ -7,12 +13,13 @@
 # SASL_SSL on 9092, as every deployed client needs: SCRAM-SHA-512 and a certificate from the rehearsal's local CA. The application
 # connects as itself, with the catalogued ACLs and nothing more, because KafkaTransportGuard refuses PLAINTEXT off loopback.
 #
-# TWO LOOPBACK-ONLY LISTENERS, the rest of the wiring. CONTROLLER on 9093 is KRaft's own. LOCAL on 9094 is the broker's own traffic
+# TWO LOOPBACK-ONLY LISTENERS at one broker, the rest of the wiring (three: kind-rehearsal/brokers.sh). CONTROLLER on 9093 is
+# KRaft's own. LOCAL on 9094 is the broker's own traffic
 # and the admin tools the rehearsal runs through `kubectl exec` (topics, ACLs): its principal, ANONYMOUS, is the only super user,
 # and it never leaves the pod, so no NetworkPolicy names it and no client can present it.
 #
 # Everything generated is the rehearsal's, never committed: the broker's keystore (finapp-kind-kafka-tls), its properties from
-# infra/kafka/broker.properties with replication overridden to one node (finapp-kind-kafka-config), and the SCRAM passwords in
+# infra/kafka/broker.properties with replication overridden to one node at one broker (finapp-kind-kafka-config), and the SCRAM passwords in
 # finapp-kind-kafka-scram. The kafka-storage step that takes those passwords formats the directory at the first start of this pod and
 # leaves it alone at every later one, a roll's included: the credential is in the metadata from then on.
 #
@@ -29,6 +36,21 @@ data:
     #!/bin/sh
     set -eu
     cp /etc/finapp-kind-kafka-config/server.properties /tmp/server.properties
+    # Three brokers (P16-TSK-013): a configuration naming no node is one for several, and each pod takes its identity from its
+    # name - node id its ordinal + 1, and its own name advertised on the client and replication listeners - and writes the admin
+    # tools' client configuration for the mutual-TLS listener. A single broker's configuration names its node and is left alone.
+    if ! grep -q '^node.id=' /tmp/server.properties; then
+      ordinal=${KAFKA_POD_NAME##*-}
+      case $KAFKA_POD_NAME:$ordinal in
+        finapp-kafka-*:[0-9] | finapp-kafka-*:[0-9][0-9]) ;;
+        *) echo "start.sh: the pod name $KAFKA_POD_NAME carries no broker ordinal" >&2; exit 1 ;;
+      esac
+      name="$KAFKA_POD_NAME.finapp-kafka.$KAFKA_POD_NAMESPACE.svc.cluster.local"
+      printf 'node.id=%s\nadvertised.listeners=SASL_SSL://%s:9092,INTERNAL://%s:9095,LOCAL://localhost:9094\n' \
+          "$((ordinal + 1))" "$name" "$name" >> /tmp/server.properties
+      printf 'security.protocol=SSL\nssl.keystore.type=PEM\nssl.keystore.location=%s\nssl.truststore.type=PEM\nssl.truststore.location=%s\n' \
+          /etc/finapp-kind-kafka-tls/keystore.pem /etc/finapp-kind-kafka-tls/truststore.pem > /tmp/admin.properties
+    fi
     /opt/kafka/bin/kafka-storage.sh format --ignore-formatted --cluster-id 4L6g3nShT-eMCtK--X86sw \
         --config /tmp/server.properties \
         --add-scram "SCRAM-SHA-512=[name=$KAFKA_APP_USER,password=$KAFKA_APP_PASSWORD]"
@@ -87,10 +109,24 @@ spec:
           ports:
             - name: kafka
               containerPort: 9092
+            # At three brokers (P16-TSK-013): KRaft's quorum and the brokers' replication, each over mutual TLS.
+            - name: controller
+              containerPort: 9093
+            - name: internal
+              containerPort: 9095
           env:
             # kafka-server-start's default heap is 1 GiB, the whole of this container's limit.
             - name: KAFKA_HEAP_OPTS
               value: -Xms512m -Xmx512m
+            # The pod's identity, read by start.sh when the configuration is one for several brokers.
+            - name: KAFKA_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KAFKA_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: KAFKA_APP_USER
               valueFrom:
                 secretKeyRef:

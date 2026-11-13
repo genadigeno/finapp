@@ -193,7 +193,12 @@ handlers name in the handler catalogue, and applies the ones it handles (`PHASE_
 | `finapp.kyc` | `party` | registrations only, outside W1–W8 | — |
 
 At peak the busiest topic, `payments`, carries 1,140,000 ÷ 36,000 ≈ 32 records a second over 12 partitions. `P16-TSK-013`
-measures the skew by key.
+measures the skew by key. *(2026-11-13: built as E47's records per partition per topic over the load, `load/skew.tsv`, and not yet run:
+owed under `POSTPONED_ISSUES.md` PI-025. Read from the code meanwhile: every record's key is its aggregate's id (`PendingEvent.partitionKey`).
+Most aggregates are minted per movement - a payment, a transfer, a journal entry - and a key carries one movement's few records. One
+is not: the merchant's fee events (`merchant.FeeAssessed`, `merchant.FeeReturned`, `MerchantSettlement`) are keyed by the merchant, so
+`finapp.merchant` carries every fee of a merchant on one partition, and the relay drains them as one aggregate, in order, one instance
+at a time. Over W4's 2,000 merchants that spreads; on the rehearsal's one merchant every fee lands on one partition. E47 reads how much.)*
 
 ### 3.4 Resource cost per operation: measured (`P16-TSK-007`)
 
@@ -226,7 +231,7 @@ the statements and commits it took.
 | Merchant API | 4.69 a second (11.05, peak 11.1) | 47 (6) | 474 (13) | 753 (21) | 0 of 1,298 (0 of 2,639) | replicas 6, database 0.9, edge 4.6 (alone, while the merchant's payable history was short) | 1,496 MiB; heap 444 MB | under 0.1 ms | not exported | 2.1 (3), wait ≤ 2 ms, none pending | 0.2 ms alone; the payable read's mean 20 ms at E30's step 1, 74 ms at step 2, 255 ms at step 3 (below) | E30 step 3; isolation stage 2 |
 | Settlement ingestion | one PSP file of 4 captures (8 lines with their fees), accepted 5 s after it arrived | — | — | — | the file taken whole, every line an item | not separable (inside the top-up stage) | — | — | — | — | — | isolation, `load/written-settlement.tsv`, `load/settlement.log` |
 | Reconciliation | that file's batch completed 6 s after the file arrived, every capture allocated to its expectation | — | — | — | none abandoned | not separable | — | — | — | — | — | isolation, as above |
-| Credit decision | — | — | — | — | — | — | — | — | — | — | — | not driven: no `kind` deployment can configure a bureau (unresolved question 13), so no decision there is the target's (`INV-CRD-10`); a simulated bureau is routed to `P16-TSK-018` |
+| Credit decision | — | — | — | — | — | — | — | — | — | — | — | not driven: no `kind` deployment can configure a bureau (unresolved question 13), so no decision there is the target's (`INV-CRD-10`); no simulated bureau is built for `kind` in Phase 16 (the owner's decision of 2026-11-13 on that question) |
 | Lending repayment | — | — | — | — | — | — | — | — | — | — | — | not driven: no loan can be approved on `kind` (`INV-CRD-09`, `INV-CRD-10`), as above |
 | BNPL purchase or instalment | — | — | — | — | — | — | — | — | — | — | — | not driven: no BNPL agreement can be approved on `kind`, as above |
 | Events written and consumed | 27.3 written a second, published 0.6 to 1.0 s after their write on average, 4.0 s at most; 44.4 a second alone in the checkout stage, published 6 s after their write in its first minute and 59 s in its last (the relay behind, below) | — | — | — | no dead letter | — | — | — | — | — | — | E30 step 3 and isolation stage 7, `load/written-events-per-minute.tsv` |
@@ -246,6 +251,12 @@ after the last (`OutboxRelay`'s default, `finapp.outbox.poll-interval` `PT1S`), 
 compete for them (read from the code, not measured), so the fleet's drain is bounded by aggregates, not by events or CPU.
 `event_freshness` (published within 60 s) would be breached within minutes of the target's checkout peak, and the target writes twice
 this (§3.1: 89.3 a second). Routed to `P16-TSK-013`.
+
+*(2026-11-13, `P16-TSK-013`, ADR-0136: changed, not yet measured. A candidate another relay drained after the candidates were read now
+takes no slot of the batch, and a cycle that worked its whole batch and failed nothing is followed at once by another, a short or failed
+one waiting the interval as before; the lock, the order and the conditional mark are unchanged. The relay's ceiling in events and
+aggregates a second at three and seven replicas, and whether more relays add drain, are E47's (`OPERATIONS_RUNBOOK.md` §11.51), owed under
+`POSTPONED_ISSUES.md` PI-025: no figure above is replaced, and none is claimed for the change.)*
 
 **The first limit of the stress profile** (`PHASE_16_PLAN.md` §5.4, read in the fixed order generator, edge, application CPU,
 threads, pool, database CPU, locks, I/O, broker): **the database's CPU**, at three replicas. E30's run (2026-11-13 09:14–09:32 UTC,
@@ -445,7 +456,8 @@ These are candidates, each confirmed or struck by measurement:
 read**, a whole-history read that folds the merchant payable account's every line on each call, the database's CPU in E30's break
 (routed to `P16-TSK-008`); and **the outbox relay's drain**, at most 8 aggregates a poll per replica each second, behind the target's
 checkout peak with no resource near its limit (routed to `P16-TSK-013`). Neither is confirmed at the production target's shape (2,000
-merchants, ten replicas), and neither has been changed.
+merchants, ten replicas), and neither has been changed. *(2026-11-13, `P16-TSK-013`: the relay's drain changed by ADR-0136, the ADR
+this section asks for, and not yet measured: E47, owed under PI-025, §3.4's note.)*
 
 *(2026-11-13, `P16-TSK-008`, read and derived, nothing measured: §3.5.)* The payable read's bound is ADR-0133 decision 3, proposed, its build
 the owner's to place (`THREAT_MODEL.md` §6 item 55). Read from the code beside it: **every balance decision folds the account's whole

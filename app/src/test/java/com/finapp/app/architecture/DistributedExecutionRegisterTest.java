@@ -36,7 +36,7 @@ import org.springframework.context.SmartLifecycle;
  * <p><strong>What it holds.</strong>
  * <ul>
  *   <li>Every lifecycle component - a concrete production {@link SmartLifecycle} of {@code com.finapp}, read from the bytecode: the
- *       schedules, the consumers, the gauge refresher, the telemetry flush, forty-one beans of thirty-eight classes today - is named in
+ *       schedules, the consumers, the gauge refresher, the telemetry flush, forty-two beans of thirty-nine classes today - is named in
  *       a Component cell, by its own name or, nested, by its top-level class's.
  *   <li>The code's arbiters: every production class whose code (comments aside) takes a PostgreSQL advisory lock is named in an
  *       Owner cell of the register's namespace table, which says of itself that every component taking one reserves a namespace
@@ -114,7 +114,7 @@ class DistributedExecutionRegisterTest {
         assertThat(register.components()).as("the component table's rows, wrapped ones joined").hasSizeGreaterThanOrEqualTo(195);
         assertThat(register.namespaces()).as("the namespace table's rows").hasSizeGreaterThanOrEqualTo(16);
         assertThat(names(register.components())).as("the classes the Component cells name").hasSizeGreaterThan(330);
-        assertThat(code.lifecycle()).as("the lifecycle classes: ShutdownOrderTest's forty-one beans").hasSizeGreaterThanOrEqualTo(38);
+        assertThat(code.lifecycle()).as("the lifecycle classes: ShutdownOrderTest's forty-two beans").hasSizeGreaterThanOrEqualTo(38);
         assertThat(code.schedules()).as("the schedule classes").hasSizeGreaterThanOrEqualTo(35);
         assertThat(code.advisory()).as("the classes taking an advisory lock").hasSizeGreaterThanOrEqualTo(20);
         assertThat(code.taken()).as("the namespaces taken, in Java and in the migrations").hasSizeGreaterThanOrEqualTo(15);

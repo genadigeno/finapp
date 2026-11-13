@@ -26,12 +26,19 @@
 # A refusal fails the run before any fault. The harness holds no kubeconfig: kube runs inside the node.
 #
 # THE FAULTS. experiments_fault_on <kind> ... registers a fault in $WORK/faults before injecting it, and experiments_fault_off removes it.
-# Kinds: toxic (a Toxiproxy toxic on one proxy), proxy-down (a proxy disabled), hold (one of the simulator's hold flags), partition (a
-# NetworkPolicy labelled finapp/experiment-fault), node-paused (`docker pause` of a node of this cluster) and scaled (a Deployment scaled,
-# its count to restore recorded). A kill, a deletion or an eviction is instant and is logged, not registered. finish() calls
+# Kinds: toxic (a Toxiproxy toxic on one proxy), proxy-down (a proxy disabled), hold (one of the simulator's hold flags), store-hold (the
+# archive store's read hold, P16-TSK-010), partition (a NetworkPolicy labelled finapp/experiment-fault), node-paused (`docker pause` of a
+# node of this cluster), scaled (a Deployment scaled, its count to restore recorded) and setting (P16-TSK-022: a variable set on the
+# application's Deployment, removed again); and P16-TSK-013's brokers-stopped (the broker StatefulSet at zero, back at the run's count),
+# relay-held (a database session holding the relay's own lock on a few aggregates, ended) and min-isr (every topic's min.insync.replicas
+# lowered with a probe topic written beside them, the catalogue's value back and the probe topic deleted). A kill, a deletion or an
+# eviction is instant and is logged, not registered; so are E05's fence of the old primary and its promotion, which are a person's acts in
+# the drill and are never undone (a fenced primary brought back beside a promoted standby would split the record). finish() calls
 # experiments_clear_faults on every way out, the INT and TERM traps and an unguarded failure included: every registered fault undone,
-# newest first, then a blanket reset that needs no record (every proxy enabled with no toxic, both hold flags removed, every labelled
-# policy deleted, every paused node of this cluster unpaused), then a read that nothing is left (experiments/faults-cleared.txt).
+# newest first, then a blanket reset that needs no record (every proxy enabled with no toxic, the three hold flags and every degradation
+# flag removed, every labelled policy deleted, every paused node of this cluster unpaused, the setting E57 uses removed, the brokers at
+# their count, any relay hold ended, the topics at the catalogue's posture), then a read that nothing is left
+# (experiments/faults-cleared.txt).
 #
 # THE STEP SHAPE (ADR-0127 decision 1): experiment_run <id> runs <id>-steady, -fault, -observe, -stop, -recover and -census in that order.
 # The steady state is read before the fault (the fleet ready on three nodes in three zones, the standby streaming and synchronous, every
@@ -45,11 +52,57 @@
 # is taken over and completed once by another; every failed answer the edge gave was the killed replica's; no second replica unready
 # while it was replaced (its stop condition); the census green.
 #
+# E51 (P16-TSK-016, ADR-0137; OPERATIONS_RUNBOOK.md section 11.52; at three replicas): the database slowed by a latency toxic on the
+# application's database hop while the workload runs and retries by its keys. Requests are shed before their claims (the fleet's
+# finapp_shedding_requests_total rising, the workload's shed answers counted); no correctness page fires and every correctness gauge stays
+# readable (CorrectnessUnverifiable's expression, evaluated at once, empty) through the fault; once the toxic is removed the fleet stops
+# shedding within its bound, and every request the workload sent resolves by its key, one effect each, the census green. A fault that
+# sheds nothing proves nothing: E51 then could not run.
+#
+# THE DATABASE (P16-TSK-022, ADR-0139; OPERATIONS_RUNBOOK.md sections 11.40 and 11.54), each under the workload retrying by key, with the
+# journal read with a digest per entry before the fault and compared after it, and the public edge's answers read for the interruption:
+#   E06  the primary stopped uncleanly in place (pg_ctl stop -m immediate), no failover: readiness down and back, no replica restarted, the
+#        unlogged window counters empty, the standby synchronous again, nothing committed lost;
+#   E57  every answer of the database hop black-holed (Toxiproxy's timeout toxic, after a latency toxic so that statements are in flight),
+#        twice: with the data source's socket timeout, each held connection given up within it; without it (a rolling update setting it
+#        to none), each still held past it. The fleet's blind page (GaugesStaleAcrossTheFleet) is the fault's expected signal here;
+#   E05  the primary's server killed with SIGKILL from its node, a payout held at the provider with its claim IN_PROGRESS; the old primary
+#        fenced (its StatefulSet at zero) and its pod gone before anything is promoted; the promotion refused unless the primary named the
+#        standby synchronous at its last read and the standby holds the last commit the drill saw acknowledged; the standby promoted alone
+#        (synchronous_standby_names none, ADR-0139), the Service moved to it, every read after it of the promoted one (PG_POD); nothing
+#        acknowledged lost, the payout's key answered once, no money-moving command answered with a success while the database was away,
+#        the interruption measured. It leaves one server and no standby, so it runs last.
+#
+# THE EVENT PIPELINE (P16-TSK-013; OPERATIONS_RUNBOOK.md section 11.51), on the scope's three brokers (kind-rehearsal/brokers.sh), each
+# under the workload unless it says otherwise, each judged by PostgreSQL's count - every outbox row published, every record a handler
+# names in its consumer's inbox, no inbox row added for a record already applied, nothing parked - and the census:
+#   E08  the quorum leader's broker killed with SIGKILL: every partition's in-sync replicas and end offset sampled through a survivor, no
+#        write acknowledged by fewer than min.insync.replicas copies, no replica unready, the broker back in sync (stop: two down);
+#   E09  every broker stopped at least 10 minutes and until OutboxPublicationStalled fires (15 at most): money still moves, every replica
+#        ready, rows wait inside the relay's retry window, the event freshness burns; then the outbox drains and the groups settle;
+#   E22  published rows sent again, as a relay that crashed between the acknowledgement and its mark sends them, then every group reset
+#        to its earliest offset with the fleet at zero: every applied record absorbed, counted duplicate, none failed or parked;
+#   E23  the relay's own lock held on a few aggregates for 10 minutes as their rows appear: their records arrive after every other
+#        aggregate's, each applied once and, per consumer and aggregate, in order;
+#   E49  the run's day replayed through the audited operator door, every handled type in windows under its bound: every record absorbed,
+#        an audit record per order, the replay's rate recorded;
+#   E68  a burst of six records that are no event on finapp.payments: every group that reads it parks each one after its budget while
+#        its other partitions keep applying, no member evicted, InboxDeadLetterParked the only page; a release refused, each park
+#        discarded by two persons, the page cleared.
+#
 # THE PROBES (REHEARSAL_PROBE), each a deliberate break that must turn the run red:
 #   guard-off          the refusals answer "pass" without reading anything: every plant of experiments_boundary goes unrefused;
 #   crash-with-faults  every kind of fault put on, then an unguarded failure: the exit trap must leave none on (read on a kept cluster);
-#   term-with-faults   the same, then SIGTERM to the harness itself, the signal path of the same trap.
-# REHEARSAL_EXPERIMENTS names the experiments to run (E01 by default; the catalogue is P16-TSK-020...-023's and P16-TSK-027's).
+#   term-with-faults   the same, then SIGTERM to the harness itself, the signal path of the same trap;
+#   min-isr-one        (P16-TSK-013, with E08) every topic at min.insync.replicas 1 and a probe topic of two copies written beside them: the
+#                      highest-ordinal broker killed and held down 90 s leaves the probe topic one copy in sync, its writes still acknowledged,
+#                      and E08's copy check must see them;
+#   async-standby      E05 with its standby made asynchronous and cut from the primary's WAL before the fault (the entry's probe, register
+#                      E56): the promotion is refused, the probe promotes it anyway, and the journal's comparison must show the commits lost.
+# REHEARSAL_EXPERIMENTS names the experiments to run (E01 by default; the catalogue is P16-TSK-008's, -013's, -018's, -020...-023's and
+# P16-TSK-027's).
+# The provider experiments E17, E18 and E21 (P16-TSK-018) degrade the simulator one rail at a time (its flags degrade-<rail>-unavailable and
+# -silent, put on and taken off by the hold kind) or slow its hop (a latency toxic); E19 and E20 refuse to run, each naming why.
 #
 # E40 (P16-TSK-008, at three replicas): the sweeps' failure storm - every call to the provider simulator hangs for the payment sweep's
 # dispatched age and fifteen minutes more, so every candidate of the sweeps fails and is recorded and backed off; the eight listings' plans
@@ -80,14 +133,32 @@
 # none the age left younger and no claim in flight touched; the fleet's swept counter moved; a second entry under an aged posting's scope
 # still refused by the journal's unique index (inserted and rolled back by the superuser); the workload's same-key retries answered alike
 # throughout and nothing unresolved; the census green, its clause "one journal entry per posting scope" among them.
+#
+# THE AUDIT ARCHIVE (P16-TSK-010; ADR-0135; OPERATIONS_RUNBOOK.md section 11.50). The scope deploys the archive's test-only store
+# (experiments/archive-store.yaml, ArchiveStore.java: write once, its objects on a claim of their own) and names it to the application in
+# its own rendered ConfigMap alone, with the settings its experiments run at (experiments_archive_settings); the endpoint check admits that
+# one URL under FINAPP_AUDIT_ARCHIVE_ENDPOINT. E44: the store scaled to zero for three minutes mid-run - nothing marked, the queue grows,
+# the failures counted, every replica ready, then the queue drained and the archive census green. E45: every read held at the store, the
+# holder killed between its copy and its mark, its segment taken over at the lease, its file written once and found again, marked once.
+# E46: the session table bounded over a soak, a live session planted kept and forty dead ones swept. archive_census reads every audit row
+# queued or in one segment, every segment's digests and chain recomputed, and every archived object digested in the store. Built and not
+# run: their runs are owed under POSTPONED_ISSUES.md PI-025.
 
 EXPERIMENTS=${REHEARSAL_EXPERIMENTS:-E01}
+# Every degradation flag the simulator reads (Simulator.java): the clearing removes each, whatever was registered.
+EXPERIMENTS_DEGRADATIONS="degrade-card-unavailable degrade-card-silent degrade-tokenisation-unavailable degrade-tokenisation-silent degrade-payout-unavailable degrade-payout-silent degrade-fx-unavailable degrade-fx-silent degrade-reference-unavailable degrade-reference-silent"
 TOXIPROXY_IMAGE="$TOXIPROXY_REPOSITORY@$TOXIPROXY_DIGEST"
 EXPERIMENTS_MARKER=finapp-experiments-marker
 EXPERIMENTS_CONFIG="$DIR/experiments/kind-cluster.yaml"
 EXPERIMENTS_COLLECTOR=http://finapp-collector.finapp-observability.svc.cluster.local:4318/
-# The census's expected payouts take this: E01's own payout, zero in every other scope.
+# The audit archive's test-only store (P16-TSK-010), named to the application in this scope's own copy alone.
+ARCHIVE_HOST=finapp-archive-store.finapp-rehearsal.svc.cluster.local
+ARCHIVE_URL="https://$ARCHIVE_HOST:8443"
+ARCHIVE_OBJECTS=/archive/finapp-audit-archive
+# The census's expected payouts take this: E01's and E05's own payouts, zero in every other scope.
 EXPERIMENTS_PAYOUTS=0
+# The application name of E23's relay hold, the session that holds some aggregates' relay locks (P16-TSK-013).
+EXPERIMENTS_HOLD_APP=finapp-experiments-relay-hold
 # And its expected transfers this: E13's two cut transfers (P16-TSK-021), zero in every other scope.
 EXPERIMENTS_TRANSFERS=0
 # P16-TSK-021's marks: the comment on a black hole's rules, the application names of the holder's and the lock's sessions, the limited
@@ -185,6 +256,7 @@ experiments_render() {
     log "the experiments' copy: the zone constraint DoNotSchedule, the hba's replication line, the quota grown by the standby ($(tr '\n' ' ' < "$quota" | sed 's/.*hard: *//'))"
     # E24 (P16-TSK-021): the primary on a filesystem of its claim's own size, only when E24 is named; every other run as before.
     case " $EXPERIMENTS " in *" E24 "*) experiments_limited_volume ;; esac
+    experiments_archive_settings
 }
 
 # E24's volume. kind's provisioner (local-path) backs a claim with a directory on the node, so a claim has no size of its own and filling it
@@ -220,6 +292,47 @@ experiments_limited_volume() {
     log "E24: a 2 GiB filesystem on every worker, the primary's claim of class finapp-experiments-limited"
 }
 
+# The audit archive named to the application in this scope's copy alone (P16-TSK-010): its store, and the settings E44-E46 run at - a
+# lease and a tick short enough for a takeover inside an experiment, a session grace of five minutes and the retention sweeps' tick at
+# thirty seconds so E46 sees dead sessions go. Literals of the run's own rendered ConfigMap, never of a committed overlay.
+experiments_archive_settings() {
+    config=$(ls "$A"/ConfigMap.finapp-app-config-*.yaml 2>/dev/null | head -1)
+    [ -n "$config" ] || cannot "the application's rendered ConfigMap could not be found for the archive's settings"
+    cat > "$WORK/archive-settings.yaml" <<YAML
+  FINAPP_AUDIT_ARCHIVE_ENDPOINT: "$ARCHIVE_URL"
+  FINAPP_AUDIT_ARCHIVE_INTERVAL: "PT10S"
+  FINAPP_AUDIT_ARCHIVE_LEASE: "PT30S"
+  FINAPP_AUDIT_ARCHIVE_TIMEOUT: "PT3S"
+  FINAPP_IDENTITY_SESSION_SWEEP_GRACE: "PT5M"
+  FINAPP_RETENTION_SWEEP_INTERVAL: "PT30S"
+YAML
+    awk -v settings="$WORK/archive-settings.yaml" '/^data:$/ && !done {print; while ((getline line < settings) > 0) print line; done = 1; next} {print}' \
+        "$config" > "$WORK/config.tmp" && mv "$WORK/config.tmp" "$config"
+    grep -q "^  FINAPP_AUDIT_ARCHIVE_ENDPOINT: \"$ARCHIVE_URL\"$" "$config" || cannot "the archive's settings could not be added to the application's ConfigMap"
+    log "the experiments' copy: the audit archive named ($ARCHIVE_URL), its lease 30 s and tick 10 s; the session grace 5 min, the sweeps' tick 30 s"
+}
+
+# The archive's test-only store (experiments/archive-store.yaml, ArchiveStore.java), over TLS from the local CA, its objects on a claim of
+# their own so that a scale to zero keeps them. Its keystore's phrase is generated here and written to the ledger by secret_of.
+experiments_archive_store() {
+    issue archive-store "DNS:$ARCHIVE_HOST,DNS:finapp-archive-store,DNS:finapp-archive-store.finapp-rehearsal"
+    od -An -N16 -tx1 /dev/urandom | tr -d ' \n' > "$CA_DIR/archive-store.phrase"
+    (cd "$CA_DIR" && openssl pkcs12 -export -inkey archive-store.key -in archive-store.crt -certfile ca.crt \
+        -passout "file:archive-store.phrase" -out archive-store.p12) >/dev/null 2>&1 || cannot "the archive store's keystore could not be made"
+    secret_of finapp-rehearsal finapp-archive-store-tls "keystore.p12=$CA_DIR/archive-store.p12" "store-phrase=$CA_DIR/archive-store.phrase"
+    {
+        printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: finapp-archive-store-source\n  namespace: finapp-rehearsal\ndata:\n  ArchiveStore.java: |\n'
+        sed 's/^/    /' "$DIR/ArchiveStore.java"
+    } | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the archive store's source"
+    sed "s#JDK_IMAGE#$JDK_IMAGE#" "$DIR/experiments/archive-store.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the archive store"
+    kube -n finapp-rehearsal rollout status deployment/finapp-archive-store --timeout=180s >> "$ART/apply.log" 2>&1 \
+        || fail "the archive store did not become ready"
+}
+
+experiments_store() {
+    kube -n finapp-rehearsal exec deploy/finapp-archive-store -c store -- "$@"
+}
+
 # Once the test-only PostgreSQL and the broker are ready: the proxy, then the standby, then the application's way to the proxy.
 experiments_data_tier() {
     experiments_paths
@@ -238,10 +351,22 @@ experiments_data_tier() {
             - $KAFKA_HOST
             - $SIM_HOST
 YAML
+    # Each broker's own name to its own proxy's address (P16-TSK-013): the names the three brokers advertise after the bootstrap.
+    EXPERIMENTS_BROKER_ALIASES=""
+    i=0
+    while [ "$i" -lt "$KAFKA_BROKERS" ]; do
+        ip=$(kube -n finapp-experiments get service "finapp-toxiproxy-kafka-$i" -o jsonpath='{.spec.clusterIP}')
+        case $ip in *.*.*.*) ;; *) cannot "the proxy of broker $i has no address" ;; esac
+        printf '        - ip: "%s"\n          hostnames:\n            - %s\n' "$ip" "$(brokers_name "$i")" >> "$WORK/host-aliases.yaml"
+        EXPERIMENTS_BROKER_ALIASES="$EXPERIMENTS_BROKER_ALIASES
+$ip $(brokers_name "$i")"
+        i=$((i + 1))
+    done
     awk -v aliases="$WORK/host-aliases.yaml" '/^      serviceAccountName: / && !done {while ((getline line < aliases) > 0) print line; done = 1} {print}' \
         "$A/Deployment.finapp-app.yaml" > "$WORK/deployment.tmp" && mv "$WORK/deployment.tmp" "$A/Deployment.finapp-app.yaml"
     grep -q "^        - ip: \"$PROXY_IP\"$" "$A/Deployment.finapp-app.yaml" || cannot "the application's names could not be sent to the proxy"
-    log "the fault proxy on the application's three hops at $PROXY_IP; the standby synchronous"
+    experiments_archive_store
+    log "the fault proxy on the application's three hops at $PROXY_IP, each of the $KAFKA_BROKERS brokers at its own; the standby synchronous; the audit archive's store ready"
 }
 
 # The standby (owner decision C7): the role, its password and its slot on the primary, the base backup, streaming, then synchronous.
@@ -259,7 +384,12 @@ SQL
     rm -f "$WORK/replication.phrase"
     image=$(sed -n 's/^ *image: \(postgres:18\.6@sha256:[0-9a-f]*\)$/\1/p' "$ROOT/deploy/overlays/kind/postgres.yaml")
     [ -n "$image" ] || cannot "the test-only PostgreSQL's pinned image could not be read from the kind overlay"
-    sed "s#POSTGRES_IMAGE#$image#" "$DIR/experiments/standby.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "the standby could not be applied"
+    # A hot standby refuses to start below its primary's max_connections, and a promoted one must serve as the primary served: the run's
+    # own primary's value, which fleet_patch set to the formula at the run's count (P16-TSK-009), never the file's (P16-TSK-022).
+    primary_max=$(sed -n 's/^ *- max_connections=\([0-9]*\)$/\1/p' "$A/StatefulSet.finapp-postgres.yaml" | head -1)
+    case $primary_max in '' | *[!0-9]*) cannot "the run's primary's max_connections could not be read from its rendered copy" ;; esac
+    sed "s#POSTGRES_IMAGE#$image#; s#^\( *- \)max_connections=[0-9]*\$#\1max_connections=$primary_max#" "$DIR/experiments/standby.yaml" \
+        | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "the standby could not be applied"
     kube -n finapp rollout status statefulset/finapp-postgres-standby --timeout=420s >> "$ART/apply.log" 2>&1 || {
         kube -n finapp logs finapp-postgres-standby-0 -c base-backup >> "$ART/experiments/standby.log" 2>&1 || true
         fail "the standby did not become ready: see experiments/standby.log"
@@ -453,6 +583,9 @@ NODE
             FINAPP_DB_URL)
                 [ "$value" = "$DB_URL" ] || { EXP_REASON="endpoint: the database URL is not the run's own"; return 1; }
                 continue ;;
+            FINAPP_AUDIT_ARCHIVE_ENDPOINT)
+                [ "$value" = "$ARCHIVE_URL" ] || { EXP_REASON="endpoint: the audit archive's store is not the run's own"; return 1; }
+                continue ;;
         esac
         case $value in
             *://*)
@@ -478,11 +611,29 @@ $deployment
 EOF
     aliases=$(printf '%s\n' "$deployment" | sed -n 's/^ALIAS //p')
     proxy=$(kube -n finapp-experiments get service finapp-toxiproxy -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
-    [ -n "$proxy" ] && [ "$aliases" = "$proxy $PG_HOST $KAFKA_HOST $SIM_HOST" ] \
-        || { EXP_REASON="endpoint: the application's names are sent to '$aliases', not the run's three to its proxy at '$proxy'"; return 1; }
+    # The run's three names to its proxy, then each broker's own name to its own proxy's address, read from the cluster (P16-TSK-013).
+    expected="$proxy $PG_HOST $KAFKA_HOST $SIM_HOST"
+    i=0
+    while [ "$i" -lt "$KAFKA_BROKERS" ]; do
+        broker_proxy=$(kube -n finapp-experiments get service "finapp-toxiproxy-kafka-$i" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+        [ -n "$broker_proxy" ] || { EXP_REASON="endpoint: broker $i's proxy has no address"; return 1; }
+        expected="$expected
+$broker_proxy $(brokers_name "$i")"
+        i=$((i + 1))
+    done
+    [ -n "$proxy" ] && [ "$aliases" = "$expected" ] \
+        || { EXP_REASON="endpoint: the application's names are sent to '$(printf '%s' "$aliases" | tr '\n' ';')', not the run's three to its proxy at '$proxy' and each broker's to its own"; return 1; }
     upstreams=$(experiments_toxiproxy list 2>/dev/null | awk -F'\t' 'NF >= 4 {print $1 "=" $3}' | sort | tr '\n' ' ')
-    [ "$upstreams" = "kafka=$KAFKA_HOST:9092 postgres=$PG_HOST:5432 simulator=$SIM_HOST:8443 " ] \
-        || { EXP_REASON="endpoint: the proxy's upstreams are '$upstreams', not the run's three services"; return 1; }
+    wanted_upstreams=$({
+        printf 'kafka=%s:9092\npostgres=%s:5432\nsimulator=%s:8443\n' "$KAFKA_HOST" "$PG_HOST" "$SIM_HOST"
+        i=0
+        while [ "$i" -lt "$KAFKA_BROKERS" ]; do
+            printf 'kafka-%s=%s:9092\n' "$i" "$(brokers_name "$i")"
+            i=$((i + 1))
+        done
+    } | sort | tr '\n' ' ')
+    [ "$upstreams" = "$wanted_upstreams" ] \
+        || { EXP_REASON="endpoint: the proxy's upstreams are '$upstreams', not the run's three services and its brokers ('$wanted_upstreams')"; return 1; }
     return 0
 }
 
@@ -565,8 +716,9 @@ experiments_simulator() {
 }
 
 # experiments_fault_on <kind> <arguments>:
-#   toxic <proxy> <name> <type> <attribute=value>...   proxy-down <proxy>   hold <flag file>   partition <namespace> <name> <file>
+#   toxic <proxy> <name> <type> <attribute=value>...   proxy-down <proxy>   hold <flag file>   store-hold <flag file>   partition <namespace> <name> <file>
 #   node-paused <node container>   scaled <namespace> <deployment> <replicas> <replicas to restore>
+#   setting <variable> <value>   (P16-TSK-022: a variable set on the application's Deployment, a rolling update; its value one word)
 #   blackhole <pod> <address> <port>   held <seconds>   locked <table> <seconds>   filled <node container>   (P16-TSK-021)
 experiments_fault_on() {
     experiments_guard
@@ -601,12 +753,18 @@ experiments_fault_on() {
             experiments_toxiproxy list | awk -F'\t' -v p="$1" '$1 == p && $4 == "enabled" {found = 1} END {exit !found}' \
                 && experiments_toxiproxy toggle "$1" >> "$EXP_ART/faults.log" 2>&1 ;;
         hold) experiments_simulator touch "/tmp/$1" >> "$EXP_ART/faults.log" 2>&1 ;;
+        store-hold) experiments_store touch "/tmp/$1" >> "$EXP_ART/faults.log" 2>&1 ;;
         partition) kube -n "$1" apply -f - < "$3" >> "$EXP_ART/faults.log" 2>&1 ;;
         node-paused)
             [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$1" 2>/dev/null)" = "$CLUSTER" ] \
                 || fail "the safety boundary refused to pause $1: it is not a node of $CLUSTER"
             dock pause "$1" >> "$EXP_ART/faults.log" 2>&1 ;;
         scaled) kube -n "$1" scale "deployment/$2" --replicas="$3" >> "$EXP_ART/faults.log" 2>&1 ;;
+        setting) kube -n finapp set env deployment/finapp-app "$1=$2" >> "$EXP_ART/faults.log" 2>&1 ;;
+        # P16-TSK-013's three: every broker stopped (E09); a relay hold on some aggregates (E23); a topic posture lowered (the probe).
+        brokers-stopped) kube -n finapp scale statefulset/finapp-kafka --replicas="${1:-0}" >> "$EXP_ART/faults.log" 2>&1 ;;
+        relay-held) experiments_relay_hold "$1" "$2" ;;
+        min-isr) experiments_min_isr_on "$1" "$3" >> "$EXP_ART/faults.log" 2>&1 ;;
         *) cannot "no fault of the kind $kind" ;;
     esac || cannot "the fault $kind $* could not be put on"
 }
@@ -622,9 +780,14 @@ experiments_undo() {
                 experiments_toxiproxy toggle "$1"
             fi ;;
         hold) experiments_simulator rm -f "/tmp/$1" ;;
+        store-hold) experiments_store rm -f "/tmp/$1" ;;
         partition) kube -n "$1" delete networkpolicy "$2" --ignore-not-found ;;
         node-paused) dock unpause "$1" ;;
         scaled) kube -n "$1" scale "deployment/$2" --replicas="$4" ;;
+        setting) kube -n finapp set env deployment/finapp-app "$1-" ;;
+        brokers-stopped) kube -n finapp scale statefulset/finapp-kafka --replicas="$KAFKA_BROKERS" ;;
+        relay-held) experiments_relay_release ;;
+        min-isr) experiments_min_isr_off "${2:-$(brokers_replication | cut -d' ' -f2)}" ;;
         # A replica that has gone took its namespace and its rules with it.
         blackhole) if experiments_netns "$1"; then experiments_blackhole_clear; fi ;;
         held) experiments_holder_stop ;;
@@ -673,9 +836,14 @@ experiments_faults_left() {
     fi
     proxies=$(experiments_toxiproxy list 2>/dev/null) || echo "the proxy could not be read"
     printf '%s\n' "$proxies" | awk -F'\t' 'NF >= 5 && ($4 != "enabled" || $5 != "0") {print "proxy " $1 " " $4 " with " $5 " toxics"}'
-    [ "$(printf '%s\n' "$proxies" | awk -F'\t' 'NF >= 5' | grep -c . || true)" = 3 ] || echo "the proxy lists $(printf '%s\n' "$proxies" | grep -c . || true) proxies, not its three"
+    # Its three hops' proxies and one per broker (P16-TSK-013): six.
+    [ "$(printf '%s\n' "$proxies" | awk -F'\t' 'NF >= 5' | grep -c . || true)" = "$((3 + KAFKA_BROKERS))" ] \
+        || echo "the proxy lists $(printf '%s\n' "$proxies" | grep -c . || true) proxies, not its six"
     files=$(experiments_simulator ls -a /tmp 2>/dev/null) || echo "the simulator could not be read"
     printf '%s\n' "$files" | grep -x 'hold-payouts\|hold-inquiries' | sed "s/^/the simulator's flag /"
+    printf '%s\n' "$files" | grep -x 'degrade-[a-z]*-unavailable\|degrade-[a-z]*-silent' | sed "s/^/the simulator's flag /"
+    stored=$(experiments_store ls -a /tmp 2>/dev/null) || echo "the archive store could not be read"
+    printf '%s\n' "$stored" | grep -x 'hold-reads' | sed "s/^/the archive store's flag /"
     for namespace in finapp finapp-experiments finapp-rehearsal; do
         kube -n "$namespace" get networkpolicy -l finapp/experiment-fault=true -o name 2>/dev/null | sed "s#^#$namespace #"
     done
@@ -684,6 +852,24 @@ experiments_faults_left() {
         now=$(kube -n "$namespace" get "deployment/$deployment" -o jsonpath='{.spec.replicas}' 2>/dev/null)
         [ "$now" = "$restore" ] || echo "$namespace/$deployment at $now replicas, not $restore"
     done < "$FAULTS.cleared"
+    # A setting (P16-TSK-022): read from the Deployment itself, which still names it until it is removed.
+    named=" $(kube -n finapp get deployment finapp-app -o jsonpath='{range .spec.template.spec.containers[*].env[*]}{.name}{" "}{end}' 2>/dev/null) "
+    while read -r kind variable value; do
+        [ "$kind" = setting ] || continue
+        case $named in *" $variable "*) echo "the application's Deployment still sets $variable" ;; esac
+    done < "$FAULTS.cleared"
+    # P16-TSK-013's: the brokers at their count, no relay hold's session, every topic at the catalogue's min.insync.replicas.
+    brokers=$(kube -n finapp get statefulset/finapp-kafka -o jsonpath='{.spec.replicas}' 2>/dev/null)
+    [ "$brokers" = "$KAFKA_BROKERS" ] || echo "the brokers at ${brokers:-unreadable} replicas, not $KAFKA_BROKERS"
+    held=$(psql_query -c "SELECT count(*) FROM pg_stat_activity WHERE application_name = '$EXPERIMENTS_HOLD_APP'" 2>/dev/null | tr -d '[:space:]')
+    [ "$held" = 0 ] || echo "a relay hold's session is still open (${held:-unreadable})"
+    if [ "$brokers" = "$KAFKA_BROKERS" ] && [ "$KAFKA_BROKERS" != 1 ]; then
+        in_sync=$(brokers_replication | cut -d' ' -f2)
+        lowered=$(kafka_admin kafka-topics.sh --describe --topics-with-overrides 2>/dev/null \
+            | awk -v isr="$in_sync" '$1 == "Topic:" && $3 != "Partition:" && $2 ~ /^finapp\./ && $0 !~ ("min[.]insync[.]replicas=" isr "(,|[[:space:]]|$)") {print $2}' | tr '\n' ' ')
+        [ -z "$lowered" ] || echo "topics not at min.insync.replicas $in_sync: $lowered"
+        ! kafka_admin kafka-topics.sh --list 2>/dev/null | grep -qx 'probe.min-isr' || echo "the probe's topic probe.min-isr is still there"
+    fi
     experiments_faults_left_021
     return 0
 }
@@ -726,6 +912,7 @@ experiments_clear_faults() {
     : > "$FAULTS"
     # What the undoing restarted, ready before it is read.
     kube -n finapp-rehearsal rollout status deployment/finapp-simulator --timeout=180s >> "$EXP_ART/faults.log" 2>&1
+    kube -n finapp-rehearsal rollout status deployment/finapp-archive-store --timeout=180s >> "$EXP_ART/faults.log" 2>&1
     kube -n finapp-experiments rollout status deployment/finapp-toxiproxy --timeout=120s >> "$EXP_ART/faults.log" 2>&1
     # The blanket reset: what no record is needed for.
     for proxy in $(experiments_toxiproxy list 2>/dev/null | awk -F'\t' 'NF >= 4 {print $1}'); do
@@ -737,9 +924,23 @@ experiments_clear_faults() {
     for flag in hold-payouts hold-inquiries; do
         experiments_simulator rm -f "/tmp/$flag" >> "$EXP_ART/faults.log" 2>&1
     done
+    # The provider experiments' degradation flags (P16-TSK-018), each a rail and a mode.
+    for flag in $EXPERIMENTS_DEGRADATIONS; do
+        experiments_simulator rm -f "/tmp/$flag" >> "$EXP_ART/faults.log" 2>&1
+    done
+    experiments_store rm -f /tmp/hold-reads >> "$EXP_ART/faults.log" 2>&1
     for namespace in finapp finapp-experiments finapp-rehearsal; do
         kube -n "$namespace" delete networkpolicy -l finapp/experiment-fault=true --ignore-not-found >> "$EXP_ART/faults.log" 2>&1
     done
+    # The one setting an experiment puts on (E57's leg without the socket timeout), removed whether or not it was recorded: a no-op when absent.
+    kube -n finapp set env deployment/finapp-app SPRING_APPLICATION_JSON- >> "$EXP_ART/faults.log" 2>&1
+    # P16-TSK-013's: the brokers back at their count, any relay hold's session ended, the topics at the catalogue's posture.
+    if [ "$(kube -n finapp get statefulset/finapp-kafka -o jsonpath='{.spec.replicas}' 2>/dev/null)" != "$KAFKA_BROKERS" ]; then
+        experiments_undo brokers-stopped >> "$EXP_ART/faults.log" 2>&1
+        kube -n finapp rollout status statefulset/finapp-kafka --timeout=300s >> "$EXP_ART/faults.log" 2>&1
+    fi
+    experiments_relay_release >> "$EXP_ART/faults.log" 2>&1
+    [ "$KAFKA_BROKERS" = 1 ] || experiments_undo min-isr >> "$EXP_ART/faults.log" 2>&1
     # P16-TSK-021's kinds: every marked rule in every replica's namespace, the holder told to stop and every held or locking session ended,
     # every ballast removed.
     for pod in $(experiments_fleet | awk -F'|' 'NF >= 5 && $6 == "" {print $1}'); do
@@ -759,7 +960,7 @@ experiments_clear_faults() {
         log "!! a fault is still on after the exit trap: $(printf '%s' "$left" | tr '\n' ';')"
         [ "$FAILED" != 0 ] || FAILED=1
     else
-        log "every fault removed and none left on: the proxies enabled with no toxic, no hold flag, no fault policy, no paused node, every scaled Deployment back, no black-hole rule, no held or locking session, no ballast"
+        log "every fault removed and none left on: the proxies enabled with no toxic, no hold flag, no fault policy, no paused node, every scaled Deployment back, no black-hole rule, no held or locking session, no ballast, the brokers at their count, no relay hold, every topic at its posture and no probe topic"
     fi
 }
 
@@ -1121,6 +1322,7 @@ experiments_topology_check() {
     case $rule in *"topology.kubernetes.io/zone=DoNotSchedule"*) ;; *) fail "topology: the zone constraint is not DoNotSchedule ($rule)" ;; esac
     pass "topology: three replicas ready on three nodes in three zones ($(printf '%s' "$zones" | sed 's/^ //')), the zone constraint DoNotSchedule"
     experiments_standby_check
+    brokers_check
     proxy_pod=$(kube -n finapp-experiments get pods -l app.kubernetes.io/name=finapp-toxiproxy -o jsonpath='{.items[0].status.podIP}')
     [ -n "$proxy_pod" ] || fail "topology: the fault proxy has no pod address"
     sessions=$(psql_query -c "SELECT count(*) || '|' || count(*) FILTER (WHERE s.ssl) || '|' || count(*) FILTER (WHERE host(a.client_addr) = '$proxy_pod')
@@ -1141,15 +1343,17 @@ EOF
     kube -n finapp-experiments logs deploy/finapp-toxiproxy -c toxiproxy --tail=-1 > "$EXP_ART/toxiproxy.log" 2>&1 || true
     # Every replica opens its database and broker connections as it starts; a replica opens one to a provider only when it first calls
     # one, so the provider hop is held to have carried some replica's calls, the run's own names sending every one there.
+    # The broker hop is four proxies at three brokers (P16-TSK-013): the bootstrap's, and each broker's own, which a replica's producer and
+    # consumers reach for the partitions that broker leads - every broker leads some of every topic's twelve.
     for ip in $(printf '%s\n' "$fleet" | awk -F'|' 'NF >= 5 && $6 == "" {print $5}'); do
-        for proxy in postgres kafka; do
+        for proxy in postgres kafka kafka-0 kafka-1 kafka-2; do
             grep '"message":"Accepted client"' "$EXP_ART/toxiproxy.log" | grep "\"name\":\"$proxy\"" | grep -q "\"client\":\"$ip:" \
                 || fail "topology: the replica at $ip never reached the $proxy hop through the proxy: see experiments/toxiproxy.log"
         done
     done
     callers=$(grep '"message":"Accepted client"' "$EXP_ART/toxiproxy.log" | grep '"name":"simulator"' | sed -n 's/.*"client":"\([0-9.]*\):.*/\1/p' | sort -u | grep -c . || true)
     [ "$callers" -ge 1 ] || fail "topology: no replica's provider call went through the proxy: see experiments/toxiproxy.log"
-    pass "topology: every one of $all application sessions arrives from the proxy over TLS; $counted consumer-group members at its address and none elsewhere; every replica accepted by the database and broker proxies, $callers by the simulator's (the clients' URLs and verify-full unchanged)"
+    pass "topology: every one of $all application sessions arrives from the proxy over TLS; $counted consumer-group members at its address and none elsewhere; every replica accepted by the database proxy and the four broker proxies (the bootstrap's and each broker's own), $callers by the simulator's (the clients' URLs and verify-full unchanged)"
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -1170,6 +1374,10 @@ experiments_scope() {
         experiments_boundary
     fi
     case $PROBE in crash-with-faults | term-with-faults) experiments_crash ;; esac
+    # The entry's probe of P16-TSK-022 is E05's: without it the plant would never be put on, and the run could not go red for its reason.
+    if [ "$PROBE" = async-standby ]; then
+        case " $EXPERIMENTS " in *" E05 "*) ;; *) cannot "PROBE async-standby plants E05's standby: name E05 in REHEARSAL_EXPERIMENTS" ;; esac
+    fi
     for id in $EXPERIMENTS; do
         if wanted "$id"; then
             command -v "${id}_fault" >/dev/null 2>&1 || cannot "no experiment $id in this toolkit"
@@ -1272,6 +1480,7 @@ YAML
     experiments_fault_on toxic postgres crash-latency latency latency=50
     experiments_fault_on proxy-down simulator
     experiments_fault_on hold hold-payouts
+    experiments_fault_on store-hold hold-reads
     experiments_fault_on partition finapp experiments-crash-partition "$WORK/fault-policy.yaml"
     experiments_fault_on scaled finapp-rehearsal finapp-simulator 0 1
     # P16-TSK-021's kinds too: a replica black-holed from the database, the holder, a lock, and a ballast where E24's volume is mounted.
@@ -1288,10 +1497,15 @@ YAML
             break
         fi
     done
+    # P16-TSK-013's three kinds: the topics' posture lowered with the probe topic, a relay hold, every broker stopped.
+    experiments_fault_on min-isr 1 "$(brokers_replication | cut -d' ' -f2)" finapp-kafka-1
+    experiments_fault_on relay-held 600 8
+    experiments_fault_on brokers-stopped 0
+    crash_kinds="$crash_kinds, the topics at one copy in sync with the probe topic written, a relay hold, every broker stopped"
     experiments_faults_left > "$EXP_ART/faults-before-crash.txt" 2>&1 || true
     experiments_fault_on node-paused "$victim_node"
     echo "paused node $victim_node" >> "$EXP_ART/faults-before-crash.txt"
-    log "PROBE $PROBE: every kind of fault on - a toxic, a proxy down, a hold, a partition, a scale to zero, $crash_kinds, a paused node ($victim_node) - and now the harness dies"
+    log "PROBE $PROBE: every kind of fault on - a toxic, a proxy down, the simulator's hold and the archive store's, a partition, a scale to zero, $crash_kinds, a paused node ($victim_node) - and now the harness dies"
     if [ "$PROBE" = term-with-faults ]; then
         kill -TERM $$
         sleep 30
@@ -1480,6 +1694,1810 @@ E01_recover() {
         || fail "E01: $failed_requests of the workload's requests failed where the edge failed $failed_inside in the killed replica's window: a request failed that was not on it"
     pass "E01: the failed requests were those on the killed replica - its held payout and $failed_requests of the workload's, each a failure at the edge in its window, none outside it; $served answers served; none unresolved"
 }
+
+# ---------------------------------------------------------------------------------------------------
+# What the database's experiments share (P16-TSK-022): the journal before and after, the edge's answers, the fleet's readiness, the bounds.
+# ---------------------------------------------------------------------------------------------------
+
+# The money-moving commands of the rehearsal's workload, as the edge logs their paths: a success on one needs the database.
+EXPERIMENTS_MONEY_PATHS='^/v1/(transfers|payments|checkout/sessions|merchant/payouts)(/|$)'
+
+# experiments_socket_timeout: the data source's socket timeout, read from application.yaml into EXP_SOCKET_TIMEOUT (ADR-0139), and refused
+# if the run's rendered overlay could set another.
+experiments_socket_timeout() {
+    EXP_SOCKET_TIMEOUT=$(sed -n 's/^        socketTimeout: \([0-9]*\)$/\1/p' "$ROOT/app/src/main/resources/application.yaml")
+    case $EXP_SOCKET_TIMEOUT in '' | *[!0-9]* | 0) cannot "the data source's socket timeout could not be read from application.yaml" ;; esac
+    if grep -q 'SPRING_APPLICATION_JSON\|SOCKETTIMEOUT' "$A/all.yaml"; then
+        cannot "the rendered overlay sets the data source's socket timeout, which these experiments read from application.yaml"
+    fi
+}
+
+# experiments_retry_bound: how long the workload retries one request by its key while the database is taken away, into EXP_RETRY_SECONDS:
+# past twice the longest dispatched age the code declares (a card payment or a payout caught mid-call concludes only once its sweep asks
+# the provider), five minutes for the sweep's poll, the claim's lease and the pause, and the socket timeout a held request may wait.
+experiments_retry_bound() {
+    experiments_socket_timeout
+    minutes=$(for source in app/src/main/java/com/finapp/app/payments/PaymentSweeperSchedule.java app/src/main/java/com/finapp/app/merchant/MerchantPayoutBeans.java; do
+        sed -n 's/.*finapp\.\(payments\|merchant\.payout\)\.sweeper\.dispatched-age:PT\([0-9]*\)M}.*/\2/p' "$ROOT/$source"
+    done | sort -n | tail -1)
+    case $minutes in '' | *[!0-9]*) cannot "the sweeps' dispatched age could not be read from the code" ;; esac
+    if grep -Eq 'SWEEPER_DISPATCHED_?AGE' "$A/all.yaml"; then
+        cannot "the rendered overlay sets a sweep's dispatched age, which this bound reads from the code's default"
+    fi
+    EXP_RETRY_SECONDS=$((2 * minutes * 60 + 300 + EXP_SOCKET_TIMEOUT + 60))
+}
+
+# experiments_restarts: every application pod and its restart count, one word each, sorted.
+experiments_restarts() {
+    experiments_fleet | awk -F'|' 'NF >= 5 && $6 == "" {print $1 ":" $3}' | sort | tr '\n' ' '
+}
+
+# experiments_db_snapshot <dir> <label>: in one REPEATABLE READ READ ONLY transaction on the primary, every journal entry with a digest of
+# its row and its lines' rows, and the row counts of the tables that only grow, into <dir>/journal-<label>.tsv. Read through psql_query,
+# so after a promotion it is the promoted server's. An empty journal is refused: a comparison over nothing proves nothing.
+experiments_db_snapshot() {
+    psql_query -F "$(printf '\t')" -f - > "$1/journal-$2.tsv" 2> "$1/journal-$2.err" <<'SQL' || cannot "the journal could not be read ($2): see $1/journal-$2.err"
+\set ON_ERROR_STOP on
+BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SELECT 'entry', e.id, md5(e::text || ';' || coalesce((SELECT string_agg(l::text, ';' ORDER BY l.id) FROM ledger.journal_line l
+       WHERE l.entry_id = e.id), ''))
+  FROM ledger.journal_entry e ORDER BY e.id;
+SELECT 'count', 'ledger.journal_entry', count(*) FROM ledger.journal_entry;
+SELECT 'count', 'ledger.journal_line', count(*) FROM ledger.journal_line;
+SELECT 'count', 'platform.audit_record', count(*) FROM platform.audit_record;
+SELECT 'count', 'platform.outbox_event', count(*) FROM platform.outbox_event;
+SELECT 'count', 'platform.idempotency_record', count(*) FROM platform.idempotency_record;
+SELECT 'count', 'transfers.transfer', count(*) FROM transfers.transfer;
+SELECT 'count', 'payments.payment_intent', count(*) FROM payments.payment_intent;
+SELECT 'count', 'merchant.merchant_payout', count(*) FROM merchant.merchant_payout;
+COMMIT;
+SQL
+    entries=$(awk -F'\t' '$1 == "entry"' "$1/journal-$2.tsv" | grep -c . || true)
+    [ "$entries" -gt 0 ] || cannot "the journal read empty ($2): a comparison over nothing proves nothing"
+}
+
+# experiments_db_compare <dir> <before> <after>: every entry read before is there after with the same digest, and no counted table shrank.
+# Sets DB_COMPARED, DB_MISSING, DB_CHANGED and DB_FEWER (each table whose count went down, or nothing).
+experiments_db_compare() {
+    read -r DB_COMPARED DB_MISSING DB_CHANGED <<EOF
+$(awk -F'\t' 'FNR == NR { if ($1 == "entry") after[$2] = $3; next }
+    $1 == "entry" { n++; if (!($2 in after)) missing++; else if (after[$2] != $3) changed++ }
+    END { print n + 0, missing + 0, changed + 0 }' "$1/journal-$3.tsv" "$1/journal-$2.tsv")
+EOF
+    DB_FEWER=$(awk -F'\t' 'FNR == NR { if ($1 == "count") after[$2] = $3; next }
+        $1 == "count" && (!($2 in after) || after[$2] + 0 < $3 + 0) { printf "%s %s -> %s; ", $2, $3, after[$2] }' \
+        "$1/journal-$3.tsv" "$1/journal-$2.tsv")
+    experiments_record journal "$DB_COMPARED entries read before the fault: $DB_MISSING missing after it, $DB_CHANGED changed; tables that shrank: ${DB_FEWER:-none}"
+}
+
+# experiments_edge_read <dir> <epoch>: every answer of the public edge since <epoch> into <dir>/edge-answers.tsv, one line each: the second it
+# ended, the second it started, its start as logged, the edge's status, the application's (0: none), its method and its path. The edge
+# reaches the replicas through their Service and names none of them; the lines are read beside a control, served answers in them.
+experiments_edge_read() {
+    since=$(date -u -d "@$2" +%Y-%m-%dT%H:%M:%SZ)
+    : > "$1/edge-lines.tsv"
+    for pod in $(kube -n finapp-edge get pods -l app.kubernetes.io/name=finapp-edge-public -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.containers[0].name}{"\n"}{end}' | awk -F'|' '$2 == "edge" {print $1}'); do
+        kube -n finapp-edge logs "$pod" -c edge --since-time="$since" 2>/dev/null \
+            | sed -n 's/.*"DownstreamStatus":\([0-9]*\).*"Duration":\([0-9]*\).*"OriginStatus":\([0-9]*\).*"RequestMethod":"\([A-Z]*\)".*"RequestPath":"\([^"]*\)".*"StartUTC":"\([^"]*\)".*/\6\t\1\t\3\t\2\t\4\t\5/p' \
+            >> "$1/edge-lines.tsv"
+    done
+    : > "$1/edge-answers.tsv"
+    while IFS="$(printf '\t')" read -r started status origin took method path; do
+        began=$(date -u -d "$started" +%s 2>/dev/null) || continue
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$((began + (took + 999999999) / 1000000000))" "$began" "$started" "$status" "$origin" "$method" "$path" \
+            >> "$1/edge-answers.tsv"
+    done < "$1/edge-lines.tsv"
+    EDGE_SERVED=$(awk -F'\t' '$4 < 500 && $5 != 0' "$1/edge-answers.tsv" | grep -c . || true)
+    EDGE_FAILED=$(awk -F'\t' '$4 >= 500' "$1/edge-answers.tsv" | grep -c . || true)
+    [ "$EDGE_SERVED" -ge 10 ] || fail "$EXP_ID: the edge's lines held $EDGE_SERVED served answers since $since, too few to show they were read: see experiments/$EXP_ID/edge-answers.tsv"
+}
+
+# experiments_money_succeeded <dir> <from> <to>: how many money-moving commands the application answered with a success ending in [from, to].
+experiments_money_succeeded() {
+    awk -F'\t' -v from="$2" -v to="$3" -v paths="$EXPERIMENTS_MONEY_PATHS" \
+        '$6 == "POST" && $7 ~ paths && $5 >= 200 && $5 < 300 && $1 >= from && $1 <= to' "$1/edge-answers.tsv" | grep -c . || true
+}
+
+# experiments_money_back <dir> <from>: the second the first money-moving command started at or after <from> ended in a success from the
+# application, or "-": money movement's interruption ends there.
+experiments_money_back() {
+    awk -F'\t' -v from="$2" -v paths="$EXPERIMENTS_MONEY_PATHS" \
+        '$6 == "POST" && $7 ~ paths && $5 >= 200 && $5 < 300 && $2 >= from && (first == "" || $1 < first) {first = $1}
+        END {print (first == "" ? "-" : first)}' "$1/edge-answers.tsv"
+}
+
+# experiments_readiness <dir> <from>: the fleet's samples after <from> (fleet.tsv, every 2 s) per second into <dir>/readiness.tsv - ready
+# replicas, replicas - and FLEET_FIRST_UNREADY (a replica first read unready), FLEET_NONE_READY (no replica ready), FLEET_LAST_UNREADY and
+# FLEET_ALL_READY (every replica ready again after the last unready reading), each a second or "-". Readiness takes three failed checks ten
+# seconds apart, so an outage shorter than that may leave every replica ready throughout: recorded, never assumed.
+experiments_readiness() {
+    awk -F'\t' -v from="$2" 'NR > 1 && $1 >= from && $8 == "-" { pods[$1]++; if ($4 == "True") ready[$1]++ }
+        END { for (s in pods) print s "\t" ready[s] + 0 "\t" pods[s] }' "$1/fleet.tsv" | sort -n > "$1/readiness.tsv"
+    read -r FLEET_FIRST_UNREADY FLEET_NONE_READY FLEET_LAST_UNREADY FLEET_ALL_READY <<EOF
+$(awk -F'\t' '{ at[NR] = $1; full[NR] = ($2 == $3) } $2 < $3 { if (first == "") first = $1; last = $1 } $2 == 0 && none == "" { none = $1 }
+    END { back = "-"; if (last != "") for (i = 1; i <= NR; i++) if (at[i] > last && full[i]) { back = at[i]; break }
+          print (first == "" ? "-" : first), (none == "" ? "-" : none), (last == "" ? "-" : last), back }' "$1/readiness.tsv")
+EOF
+}
+
+# experiments_since <second> <origin>: "<n> s" after the origin, or the word itself when it is not a second.
+experiments_since() {
+    case $1 in '' | *[!0-9]*) printf '%s' "${1:--}" ;; *) printf '%s s' "$(($1 - $2))" ;; esac
+}
+
+# experiments_kill_server <pod>: SIGKILL to the test-only PostgreSQL's postmaster, its container's first process, from the node it runs on:
+# every backend dies with it, so the server stops as a crash stops it. Sets KILLED_EPOCH and KILLED; never called inside $( ).
+experiments_kill_server() {
+    node=$(kube -n finapp get pod "$1" -o jsonpath='{.spec.nodeName}')
+    container=$(kube -n finapp get pod "$1" -o jsonpath='{.status.containerStatuses[?(@.name=="postgres")].containerID}' | sed 's#^containerd://##')
+    [ -n "$node" ] && [ -n "$container" ] || cannot "the pod $1 has no node or no running server to kill"
+    [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$node" 2>/dev/null)" = "$CLUSTER" ] \
+        || fail "the safety boundary refused to kill on $node: it is not a node of $CLUSTER"
+    pid=$(dock exec "$node" crictl inspect --output go-template --template '{{.info.pid}}' "$container" 2>/dev/null)
+    case $pid in '' | *[!0-9]*) cannot "the server process of $1 could not be found on $node" ;; esac
+    KILLED_EPOCH=$(date +%s)
+    dock exec "$node" kill -9 "$pid" || cannot "SIGKILL could not be sent to $1's server on $node"
+    printf '%s\tkill -9\t%s on %s, pid %s\n' "$(date -u +%H:%M:%S)" "$1" "$node" "$pid" >> "$EXP_ART/faults.log"
+    KILLED="$node $container $pid"
+}
+
+# experiments_watch_pages: at most every 15 s, whether a correctness page fires; on the first one (or a Prometheus that does not answer) it
+# sets EXP_STOPPED and returns 1. The pages EXP_PAGES_EXPECTED names are the fault's own expected signal and are recorded, not a stop.
+experiments_watch_pages() {
+    now=$(date +%s)
+    [ $((now - ${PAGES_AT:-0})) -ge 15 ] || return 0
+    PAGES_AT=$now
+    firing=""
+    for page in $(experiments_pages_firing); do
+        case " ${EXP_PAGES_EXPECTED:-} " in *" $page "*) ;; *) firing="$firing $page" ;; esac
+    done
+    if [ -n "$firing" ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a correctness page during the experiment:$firing"
+        log "$EXP_ID STOP: $EXP_STOPPED"
+        return 1
+    fi
+    printf '%s\tnone%s\n' "$(date -u +%H:%M:%S)" "${EXP_PAGES_EXPECTED:+ beside the expected $EXP_PAGES_EXPECTED}" >> "$EXP_DIR/pages.tsv"
+    return 0
+}
+
+# experiments_ready_again <deadline>: until three replicas read ready and none terminating, the pages watched meanwhile; 1 when the deadline
+# passes first or a page stops the experiment.
+experiments_ready_again() {
+    PAGES_AT=0
+    while [ "$(date +%s)" -lt "$1" ]; do
+        experiments_watch_pages || return 1
+        ready=$(experiments_fleet | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == ""' | grep -c . || true)
+        [ "$ready" -ge 3 ] && return 0
+        sleep 2
+    done
+    return 1
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E06: the primary stopped uncleanly in place, no failover (POSTPONED_ISSUES.md PI-024's step, run under owner decision C11).
+# ---------------------------------------------------------------------------------------------------
+
+E06_steady() {
+    experiments_retry_bound
+    WORKLOAD_RETRY_SECONDS=$EXP_RETRY_SECONDS start_workload e06 retry
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E06_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E06_SAMPLER"
+    E06_RESTARTS=$(experiments_restarts)
+    # The positive control: rows in the unlogged window counters, so "empty after the stop" is a reading, not a table always empty.
+    client sign-in-flood e06 3 >> "$EXP_DIR/client.log" 2>&1 || true
+    E06_COUNTED=$(psql_query -c "SELECT count(*) FROM platform.window_counter" | tr -d '[:space:]')
+    [ "${E06_COUNTED:-0}" -gt 0 ] || cannot "E06: no door hit was counted before the stop, so the counters' emptying would read nothing"
+    experiments_record counters "$E06_COUNTED rows in platform.window_counter before the stop"
+}
+
+E06_fault() {
+    experiments_db_snapshot "$EXP_DIR" before
+    E06_DB_BEFORE=$(db_epoch)
+    datadir=$(psql_query -c "SHOW data_directory" | tr -d '[:space:]')
+    [ -n "$datadir" ] && [ -n "$E06_DB_BEFORE" ] || cannot "E06: the server's data directory or clock could not be read"
+    if [ "$PROBE" != guard-off ]; then
+        experiments_context_check || fail "the safety boundary refused before the stop: $EXP_REASON"
+    fi
+    E06_FAULT_AT=$(date +%s)
+    # An immediate stop: no checkpoint, every backend ended at once, the container ending with its first process and restarted in its pod on
+    # the same volume. Not a failover: the Service, the standby and the primary's name are left as they are.
+    kube -n finapp exec finapp-postgres-0 -c postgres -- pg_ctl stop -m immediate -D "$datadir" >> "$EXP_ART/faults.log" 2>&1 || true
+    printf '%s\tpg_ctl stop -m immediate\tfinapp-postgres-0\n' "$(date -u +%H:%M:%S)" >> "$EXP_ART/faults.log"
+    experiments_record fault "the primary's server stopped immediately in place at $(date -u -d "@$E06_FAULT_AT" +%H:%M:%SZ), under the workload"
+}
+
+E06_observe() {
+    # Its stop condition: the server not accepting connections 10 minutes after the stop.
+    E06_BACK_AT=""
+    PAGES_AT=0
+    while [ "$(date +%s)" -lt $((E06_FAULT_AT + 600)) ]; do
+        experiments_watch_pages || return 0
+        if [ "$(psql_query -c 'SELECT 1' 2>/dev/null | tr -d '[:space:]')" = 1 ]; then
+            E06_BACK_AT=$(date +%s)
+            break
+        fi
+        sleep 2
+    done
+    [ -n "$E06_BACK_AT" ] || { EXP_STOPPED="the server not accepting connections 10 min after its restart"; return 0; }
+    # The control: the server really stopped - it started again after the moment read before the stop.
+    started=$(psql_query -c "SELECT extract(epoch FROM pg_postmaster_start_time())::bigint" | tr -d '[:space:]')
+    [ "${started:-0}" -gt "$E06_DB_BEFORE" ] || fail "E06: the server's start time ($started) is not after the stop: it was never stopped"
+    deadline=$(( $(date +%s) + 120 ))
+    until [ "$(experiments_replication)" = "finapp_standby|streaming|sync" ]; do
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            EXP_STOPPED="the standby not synchronous again 120 s after the server returned: '$(experiments_replication)'"
+            return 0
+        fi
+        sleep 2
+    done
+    experiments_ready_again $((E06_FAULT_AT + 600)) || { [ -n "$EXP_STOPPED" ] || EXP_STOPPED="the fleet not ready 10 min after the stop"; return 0; }
+    after=$(psql_query -c "SELECT count(*) FROM platform.window_counter" | tr -d '[:space:]')
+    experiments_record counters "$E06_COUNTED rows before the stop, $after after it (an unlogged table is emptied by a crash)"
+    [ "$after" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the unlogged counters kept $after rows across the stop"
+    pass "E06: the server stopped immediately and back $(experiments_since "$E06_BACK_AT" "$E06_FAULT_AT") after, the standby synchronous again, the fleet ready"
+}
+
+E06_recover() {
+    ready_three 400 || fail "E06: the fleet did not return to three ready replicas"
+    sleep 20
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E06_SAMPLER" 2>/dev/null || true
+    stop_workload e06
+    [ "$(workload_unresolved e06)" = 0 ] || fail "E06: $(workload_unresolved e06) requests stayed unresolved: see workload-e06.tsv"
+    assert_flows_ran e06
+    experiments_record workload "$(cat "$CLIENT/workload-e06.summary")"
+    experiments_db_snapshot "$EXP_DIR" after
+    experiments_db_compare "$EXP_DIR" before after
+    if [ "$DB_MISSING" != 0 ] || [ "$DB_CHANGED" != 0 ] || [ -n "$DB_FEWER" ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the journal before the stop is not whole after it: $DB_MISSING missing, $DB_CHANGED changed${DB_FEWER:+; shrank: $DB_FEWER}"
+    fi
+    experiments_readiness "$EXP_DIR" "$E06_FAULT_AT"
+    [ "$(experiments_restarts)" = "$E06_RESTARTS" ] \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a replica restarted for the database's stop: $E06_RESTARTS -> $(experiments_restarts)"
+    experiments_edge_read "$EXP_DIR" $((E06_FAULT_AT - 60))
+    away=$(experiments_money_succeeded "$EXP_DIR" $((E06_FAULT_AT + 5)) "${E06_BACK_AT:-$(date +%s)}")
+    [ "$away" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$away money-moving commands answered a success while the server was down"
+    back=$(experiments_money_back "$EXP_DIR" "$E06_FAULT_AT")
+    experiments_record timeline "the stop at 0 s; a replica first unready $(experiments_since "$FLEET_FIRST_UNREADY" "$E06_FAULT_AT"), none ready $(experiments_since "$FLEET_NONE_READY" "$E06_FAULT_AT"), every replica ready again $(experiments_since "$FLEET_ALL_READY" "$E06_FAULT_AT"); the server accepting $(experiments_since "$E06_BACK_AT" "$E06_FAULT_AT"); the first money-moving success $(experiments_since "$back" "$E06_FAULT_AT") (the interruption)"
+    experiments_record "at the edge" "$EDGE_FAILED failed answers and $EDGE_SERVED served since the minute before the stop; $away money-moving successes while the server was down"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E57: every answer of the database hop black-holed, with and without the data source's socket timeout (THREAT_MODEL.md section 6 item
+# 42 (h); ADR-0139). The hop is the fault proxy's, so the hole is the whole fleet's, as a failover's black-holed connections are.
+# ---------------------------------------------------------------------------------------------------
+
+E57_steady() {
+    experiments_retry_bound
+    WORKLOAD_RETRY_SECONDS=$EXP_RETRY_SECONDS start_workload e57 retry
+    sleep 8
+    replicas=$(e57_active | grep -c '^[0-9]' || true)
+    [ "$replicas" = 3 ] || cannot "E57: Prometheus read the writer's pool of $replicas replicas, not three, so a held connection could not be seen"
+    experiments_record bound "the socket timeout $EXP_SOCKET_TIMEOUT s (application.yaml); with it each held connection given up by $((EXP_SOCKET_TIMEOUT + 45)) s and not before $((EXP_SOCKET_TIMEOUT - 30)) s; without it each still held at $((EXP_SOCKET_TIMEOUT + 65)) s"
+}
+
+# e57_active: each replica's writer pool's connections in use, as Prometheus last scraped them, "<instance> <count>" a line, or UNREADABLE.
+e57_active() {
+    answer=$(experiments_prometheus "/api/v1/query?query=$(urlencode 'sum by (instance) (hikaricp_connections_active{job="finapp",pool!="finapp-reporting"})')" 2>/dev/null || true)
+    case $answer in *'"status":"success"'*) ;; *) echo UNREADABLE; return 0 ;; esac
+    printf '%s' "$answer" | grep -o '"instance":"[^"]*"},"value":\[[0-9.]*,"[0-9.]*"\]' \
+        | sed 's/"instance":"\([^"]*\)"},"value":\[[0-9.]*,"\([0-9.]*\)"\]/\1 \2/'
+}
+
+# e57_hole <leg>: a latency toxic first, so that statements are in flight on every replica, then Toxiproxy's timeout toxic with no timeout,
+# which keeps each connection open and passes nothing back; both registered, so the stop and every way out remove them. Sets E57_HOLE_AT.
+e57_hole() {
+    experiments_fault_on toxic postgres "e57-$1-slow" latency latency=3000
+    sleep 6
+    experiments_fault_on toxic postgres "e57-$1-hole" timeout timeout=0
+    E57_HOLE_AT=$(date +%s)
+    experiments_record "$1: hole" "every answer of the database hop held from $(date -u -d "@$E57_HOLE_AT" +%H:%M:%SZ)"
+}
+
+# e57_watch <seconds> <leg>: every 5 s for <seconds> after the hole, each replica's connections in use, into <leg>.tsv; a correctness page
+# other than the fleet's blind one stops it. Sets E57_HELD (the replicas holding a connection 20 to 35 s after the hole), E57_FIRST_FREED
+# and E57_LAST_FREED (when the held ones first read none in use, in seconds after the hole; the last "-" while one still holds) and
+# E57_STILL (the held ones still holding at the end).
+e57_watch() {
+    printf 'epoch\tafter\tinstance\tactive\n' > "$EXP_DIR/$2.tsv"
+    PAGES_AT=0
+    EXP_PAGES_EXPECTED=GaugesStaleAcrossTheFleet
+    while [ "$(date +%s)" -lt $((E57_HOLE_AT + $1)) ]; do
+        now=$(date +%s)
+        e57_active | while read -r instance active; do
+            printf '%s\t%s\t%s\t%s\n' "$now" "$((now - E57_HOLE_AT))" "$instance" "${active:--}"
+        done >> "$EXP_DIR/$2.tsv"
+        experiments_watch_pages || break
+        sleep 5
+    done
+    EXP_PAGES_EXPECTED=""
+    E57_HELD=$(awk -F'\t' 'NR > 1 && $2 >= 20 && $2 < 35 && $4 + 0 >= 1 {print $3}' "$EXP_DIR/$2.tsv" | sort -u | tr '\n' ' ')
+    read -r E57_FIRST_FREED E57_LAST_FREED <<EOF
+$(awk -F'\t' -v held=" $E57_HELD" 'NR > 1 && $2 >= 20 && index(held, " " $3 " ") && $4 == "0" && !($3 in freed) { freed[$3] = $2 }
+    END { n = 0; first = ""; last = ""; for (i in freed) { n++; if (first == "" || freed[i] + 0 < first + 0) first = freed[i]; if (freed[i] + 0 > last + 0) last = freed[i] }
+          total = split(held, h, " "); print (first == "" ? "-" : first), (n < total || last == "" ? "-" : last) }' "$EXP_DIR/$2.tsv")
+EOF
+    E57_STILL=$(awk -F'\t' -v held=" $E57_HELD" 'NR > 1 && index(held, " " $3 " ") { last[$3] = $4 }
+        END { for (i in last) if (last[i] + 0 >= 1) print i }' "$EXP_DIR/$2.tsv" | sort | tr '\n' ' ')
+}
+
+E57_fault() {
+    # With the socket timeout, as the fleet is deployed.
+    e57_hole with
+}
+
+E57_observe() {
+    e57_watch $((EXP_SOCKET_TIMEOUT + 45)) with
+    [ -n "$EXP_STOPPED" ] && return 0
+    [ -n "$E57_HELD" ] || cannot "E57 with: no replica held a connection 20 s after the hole, so the leg shows nothing"
+    experiments_record "with: held" "replicas $E57_HELD held a connection 20 s after the hole; the first freed at $E57_FIRST_FREED s, the last at $E57_LAST_FREED s; still holding at the end: ${E57_STILL:-none}"
+    if [ "$E57_LAST_FREED" = - ] || [ "$E57_LAST_FREED" -gt $((EXP_SOCKET_TIMEOUT + 45)) ]; then
+        EXP_STOPPED="with the socket timeout a held connection was not given up within it and 45 s: last freed $E57_LAST_FREED, still ${E57_STILL:-none}"
+        return 0
+    fi
+    if [ "$E57_FIRST_FREED" -lt $((EXP_SOCKET_TIMEOUT - 30)) ]; then
+        EXP_STOPPED="a held connection was freed at $E57_FIRST_FREED s, before the socket timeout could have freed it: something else did, and the leg measures nothing"
+        return 0
+    fi
+    experiments_fault_off toxic postgres e57-with-hole timeout timeout=0
+    experiments_fault_off toxic postgres e57-with-slow latency latency=3000
+    ready_three 600 || { EXP_STOPPED="the fleet not ready again 10 min after the hole was removed"; return 0; }
+    # Without it: the fleet rolled with the driver's socket timeout set to none, through Spring's own JSON source, read before application.yaml.
+    experiments_fault_on setting SPRING_APPLICATION_JSON '{"spring":{"datasource":{"hikari":{"data-source-properties":{"socketTimeout":"0"}}}}}'
+    kube -n finapp rollout status deployment/finapp-app --timeout=900s >> "$EXP_DIR/rollout.log" 2>&1 || cannot "E57: the fleet did not roll without the socket timeout"
+    ready_three 600 || cannot "E57: the fleet without the socket timeout did not reach three ready replicas"
+    e57_hole without
+    e57_watch $((EXP_SOCKET_TIMEOUT + 65)) without
+    [ -n "$EXP_STOPPED" ] && return 0
+    [ -n "$E57_HELD" ] || cannot "E57 without: no replica held a connection 20 s after the hole, so the leg shows nothing"
+    experiments_record "without: held" "replicas $E57_HELD held a connection 20 s after the hole; still holding $((EXP_SOCKET_TIMEOUT + 65)) s after it: ${E57_STILL:-none}"
+    if [ "$E57_STILL" != "$E57_HELD" ]; then
+        EXP_STOPPED="without the socket timeout a held connection was given up anyway (held $E57_HELD, still $E57_STILL): the with leg's freeing was not the timeout's"
+        return 0
+    fi
+    pass "E57: with the socket timeout every held connection given up within it; without it every one still held past it"
+}
+
+E57_recover() {
+    # The stop removed the hole and the setting: the fleet rolled back with the socket timeout, the held threads gone with their pods.
+    kube -n finapp rollout status deployment/finapp-app --timeout=900s >> "$EXP_DIR/rollout.log" 2>&1 || fail "E57: the fleet did not roll back"
+    ready_three 600 || fail "E57: the fleet did not return to three ready replicas"
+    sleep 20
+    stop_workload e57
+    [ "$(workload_unresolved e57)" = 0 ] || fail "E57: $(workload_unresolved e57) requests stayed unresolved: see workload-e57.tsv"
+    assert_flows_ran e57
+    experiments_record workload "$(cat "$CLIENT/workload-e57.summary")"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E05: the database primary lost and the synchronous standby promoted (owner decision C7; OPERATIONS_RUNBOOK.md sections 11.40 and 11.54;
+# ADR-0139). Run last: it leaves one server and no standby.
+# ---------------------------------------------------------------------------------------------------
+
+E05_steady() {
+    [ "${EXPERIMENTS##* }" = E05 ] || cannot "E05 leaves the cluster one server and no standby, so no experiment's steady state could follow it: name it last in REHEARSAL_EXPERIMENTS ($EXPERIMENTS)"
+    experiments_retry_bound
+    WORKLOAD_RETRY_SECONDS=$EXP_RETRY_SECONDS start_workload e05 retry
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E05_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E05_SAMPLER"
+    E05_RESTARTS=$(experiments_restarts)
+    E05_TARGET_IP=$(experiments_fleet | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == "" {print $5}' | sort | head -1)
+    E05_MERCHANT=$(sed -n 's/^merchant.key=//p' "$CLIENT/state.properties")
+    [ -n "$E05_TARGET_IP" ] && [ -n "$E05_MERCHANT" ] || cannot "E05: no ready replica or no merchant to pay out"
+    E05_KEY="e05-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+    client sign-in-flood e05 3 >> "$EXP_DIR/client.log" 2>&1 || true
+    E05_COUNTED=$(psql_query -c "SELECT count(*) FROM platform.window_counter" | tr -d '[:space:]')
+    [ "${E05_COUNTED:-0}" -gt 0 ] || cannot "E05: no door hit was counted before the failover, so the counters' emptying would read nothing"
+    printf '%s' "$PG_POD" > "$EXP_DIR/primary"
+    experiments_record pair "the primary $PG_POD in $(experiments_zone_of_pod finapp finapp-postgres-0), the standby finapp-postgres-standby-0 in $(experiments_zone_of_pod finapp finapp-postgres-standby-0), synchronous (FIRST 1)"
+}
+
+# e05_standby <psql arguments>: the superuser on the standby's own socket.
+e05_standby() {
+    kube -n finapp exec -i finapp-postgres-standby-0 -c postgres -- psql -q -X -A -t -U finapp -d finapp "$@"
+}
+
+# e05_payout <address> <label>: the merchant's payout of 0.10 EUR under E05's key, sent to one replica from the edge's probe pod. The key
+# travels on stdin; the answer's status and body are kept.
+e05_payout() {
+    printf '%s\n' "$E05_MERCHANT" | kube -n finapp-edge exec -i np-edge -c probe -- /bin/sh -c '
+        IFS= read -r bearer
+        curl -s -w "\nstatus=%{http_code}\n" --max-time 90 -X POST -H "Authorization: Bearer $bearer" -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $1" -d "{\"amount\":\"0.10\",\"currency\":\"EUR\"}" "http://$2:8080/v1/merchant/payouts"
+        echo "curl=$?"' probe "$E05_KEY" "$1" > "$EXP_DIR/payout-$2.txt" 2>&1
+}
+
+e05_claim() {
+    psql_query -c "SELECT state FROM platform.idempotency_record WHERE idempotency_key = '$E05_KEY'" 2>/dev/null | tr -d '[:space:]'
+}
+
+# e05_processing_sampler <dir>: every 5 s the card payments caught between their provider's call and its outcome (PROCESSING), read from the
+# server <dir>/primary names, into <dir>/processing.tsv until <dir>/processing-stop exists; a read that fails is "-".
+e05_processing_sampler() {
+    set +e
+    printf 'epoch\tprocessing\n' > "$1/processing.tsv"
+    while [ ! -f "$1/processing-stop" ]; do
+        PG_POD=$(cat "$1/primary")
+        n=$(psql_query -c "SELECT count(*) FROM payments.payment_intent WHERE status = 'PROCESSING'" 2>/dev/null | tr -d '[:space:]')
+        printf '%s\t%s\n' "$(date +%s)" "${n:--}" >> "$1/processing.tsv"
+        sleep 5
+    done
+}
+
+# PROBE async-standby (the entry's probe; RESILIENCE_EXPERIMENTS.md E56): the primary made asynchronous and the standby cut from its WAL, each
+# by the server's own setting, so the primary acknowledges commits the standby never receives; held until the standby has missed journal
+# entries. E05 then runs as written: its promotion is refused, the probe overrides the refusal, and the comparison must show the loss.
+e05_plant_lag() {
+    psql_query -c "ALTER SYSTEM SET synchronous_standby_names = ''" >> "$EXP_DIR/plant.log" 2>&1 \
+        || cannot "PROBE async-standby: the primary could not be made asynchronous"
+    psql_query -c "SELECT pg_reload_conf()" >> "$EXP_DIR/plant.log" 2>&1 || cannot "PROBE async-standby: the primary's configuration was not reloaded"
+    e05_standby -c "ALTER SYSTEM SET primary_conninfo = ''" >> "$EXP_DIR/plant.log" 2>&1 \
+        || cannot "PROBE async-standby: the standby could not be cut from the primary's WAL"
+    e05_standby -c "SELECT pg_reload_conf()" >> "$EXP_DIR/plant.log" 2>&1 || cannot "PROBE async-standby: the standby's configuration was not reloaded"
+    deadline=$(( $(date +%s) + 60 ))
+    while [ -n "$(experiments_replication)" ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || cannot "PROBE async-standby: the standby still streams 60 s after its cut"
+        sleep 2
+    done
+    behind=0
+    deadline=$(( $(date +%s) + 120 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        on_primary=$(psql_query -c "SELECT count(*) FROM ledger.journal_entry" | tr -d '[:space:]')
+        on_standby=$(e05_standby -c "SELECT count(*) FROM ledger.journal_entry" | tr -d '[:space:]')
+        behind=$(( ${on_primary:-0} - ${on_standby:-0} ))
+        [ "$behind" -ge 5 ] && break
+        sleep 5
+    done
+    [ "$behind" -ge 5 ] || cannot "PROBE async-standby: the standby missed only $behind journal entries in 120 s, too few to show"
+    experiments_record plant "PROBE async-standby: the standby asynchronous and cut; the primary holds $behind journal entries the standby never received"
+}
+
+E05_fault() {
+    # The worst moment for the record: a payout's effect taken at the provider, its answer held, its claim IN_PROGRESS on the primary.
+    experiments_fault_on hold hold-payouts
+    e05_payout "$E05_TARGET_IP" first &
+    E05_FIRST=$!
+    deadline=$(( $(date +%s) + 60 ))
+    claim=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        claim=$(e05_claim)
+        [ "$claim" = IN_PROGRESS ] && break
+        sleep 1
+    done
+    [ "$claim" = IN_PROGRESS ] || cannot "E05: the payout never held a claim IN_PROGRESS, so the failover would find nothing in flight"
+    [ "$PROBE" != async-standby ] || e05_plant_lag
+    # Before the fault: the journal, then the last commit the drill sees acknowledged, then whether the primary names the standby synchronous.
+    experiments_db_snapshot "$EXP_DIR" before
+    tag=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
+    E05_MARK=$(psql_query -c "SELECT pg_logical_emit_message(true, 'finapp-experiments', 'e05-$tag')::text" | tr -d '[:space:]')
+    case $E05_MARK in */*) ;; *) cannot "E05: the acknowledged mark could not be written on the primary" ;; esac
+    E05_SYNC_AT_FAULT=$(experiments_replication)
+    if [ "$PROBE" != guard-off ]; then
+        experiments_context_check || fail "the safety boundary refused before the kill: $EXP_REASON"
+    fi
+    e05_processing_sampler "$EXP_DIR" &
+    E05_PROCESSING=$!
+    BACKGROUND="$BACKGROUND $E05_PROCESSING"
+    experiments_kill_server finapp-postgres-0
+    E05_FAULT_AT=$KILLED_EPOCH
+    # The fence: the old primary's StatefulSet to zero, so the kubelet's restart of the killed container is ended and no second primary can
+    # serve. The drill's act, logged and never undone (a primary back beside a promoted standby would split the record).
+    kube -n finapp scale statefulset/finapp-postgres --replicas=0 >> "$EXP_ART/faults.log" 2>&1 || cannot "E05: the old primary could not be fenced"
+    printf '%s\tfenced\tstatefulset/finapp-postgres at 0 replicas, its volume kept\n' "$(date -u +%H:%M:%S)" >> "$EXP_ART/faults.log"
+    experiments_record fault "kill -9 of finapp-postgres-0's server ($KILLED) at $(date -u -d "@$E05_FAULT_AT" +%H:%M:%SZ), the payout's claim IN_PROGRESS and held at the provider; the last acknowledged commit at $E05_MARK, the primary naming the standby '$E05_SYNC_AT_FAULT'; the old primary fenced"
+}
+
+E05_observe() {
+    sleep 5
+    experiments_fault_off hold hold-payouts
+    # Never two primaries: the fenced one's pod gone before anything is promoted.
+    kube -n finapp wait --for=delete pod/finapp-postgres-0 --timeout=180s >> "$EXP_ART/faults.log" 2>&1 \
+        || cannot "E05: the fenced primary's pod was still there 180 s after the fence"
+    E05_GONE_AT=$(date +%s)
+    # The promotion's check (ADR-0139): the primary named the standby synchronous at its last read, and the standby holds the last commit
+    # the drill saw acknowledged. Otherwise refused: promoting it would lose what the primary acknowledged.
+    held=$(e05_standby -c "SELECT greatest(coalesce(pg_last_wal_receive_lsn(), '0/0'::pg_lsn), coalesce(pg_last_wal_replay_lsn(), '0/0'::pg_lsn)) >= '$E05_MARK'::pg_lsn" | tr -d '[:space:]')
+    E05_REFUSED=""
+    [ "$E05_SYNC_AT_FAULT" = "finapp_standby|streaming|sync" ] || E05_REFUSED="the primary did not name the standby synchronous at its last read ('$E05_SYNC_AT_FAULT')"
+    [ "$held" = t ] || E05_REFUSED="${E05_REFUSED:+$E05_REFUSED; }the standby does not hold the last acknowledged commit ($E05_MARK)"
+    if [ -n "$E05_REFUSED" ]; then
+        experiments_record promotion "refused: $E05_REFUSED"
+        if [ "$PROBE" != async-standby ]; then
+            EXP_STOPPED="the standby not caught up when the promotion was due, the promotion refused: $E05_REFUSED"
+            log "E05 STOP: $EXP_STOPPED"
+            e05_unfence
+            return 0
+        fi
+        log "PROBE async-standby: the promotion refused as it must be ($E05_REFUSED); the probe promotes the standby anyway, as a person overriding the refusal would"
+    fi
+    E05_PROMOTE_FROM=$(date +%s)
+    promoted=$(e05_standby -c "SELECT pg_promote(true, 60)" | tr -d '[:space:]')
+    [ "$promoted" = t ] || cannot "E05: the standby did not promote within 60 s ('$promoted')"
+    [ "$(e05_standby -c 'SELECT pg_is_in_recovery()' | tr -d '[:space:]')" = f ] || cannot "E05: the promoted standby still reads in recovery"
+    E05_PROMOTED_AT=$(date +%s)
+    # The new primary alone (ADR-0139): it names no synchronous standby, or every commit would wait for one it does not have.
+    e05_standby -c "ALTER SYSTEM RESET synchronous_standby_names" >> "$EXP_DIR/promotion.log" 2>&1 || cannot "E05: the new primary's synchronous_standby_names could not be reset"
+    e05_standby -c "SELECT pg_reload_conf()" >> "$EXP_DIR/promotion.log" 2>&1 || cannot "E05: the new primary's configuration was not reloaded"
+    names=$(e05_standby -c "SHOW synchronous_standby_names" | tr -d '[:space:]')
+    [ -z "$names" ] || cannot "E05: the new primary still names a synchronous standby ('$names')"
+    # The Service moved to the promoted pod: the name the clients and the fault proxy use now leads to it, and verify-full holds, the standby
+    # presenting the primary's certificate. Every read after this is of the promoted server.
+    kube -n finapp patch service finapp-postgres --type=merge -p '{"spec":{"selector":{"app.kubernetes.io/name":"finapp-postgres-standby"}}}' \
+        >> "$EXP_ART/faults.log" 2>&1 || cannot "E05: the Service could not be moved to the promoted standby"
+    printf '%s\tmoved\tservice/finapp-postgres to finapp-postgres-standby-0\n' "$(date -u +%H:%M:%S)" >> "$EXP_ART/faults.log"
+    PG_POD=finapp-postgres-standby-0
+    printf '%s' "$PG_POD" > "$EXP_DIR/primary"
+    promoted_ip=$(kube -n finapp get pod finapp-postgres-standby-0 -o jsonpath='{.status.podIP}')
+    endpoints=""
+    deadline=$(( $(date +%s) + 60 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        endpoints=$(kube -n finapp get endpointslices -l kubernetes.io/service-name=finapp-postgres -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]}{" "}{end}' | sed 's/ *$//')
+        [ "$endpoints" = "$promoted_ip" ] && break
+        sleep 1
+    done
+    [ -n "$promoted_ip" ] && [ "$endpoints" = "$promoted_ip" ] || cannot "E05: the Service's endpoints read '$endpoints', not the promoted server's"
+    E05_MOVED_AT=$(date +%s)
+    experiments_record promotion "the old primary's pod gone $(experiments_since "$E05_GONE_AT" "$E05_FAULT_AT"); promoted ${E05_REFUSED:+against the refusal (PROBE async-standby) }in $((E05_PROMOTED_AT - E05_PROMOTE_FROM)) s, $(experiments_since "$E05_PROMOTED_AT" "$E05_FAULT_AT") after the fault, alone (no synchronous standby named); the Service's endpoint the promoted server $(experiments_since "$E05_MOVED_AT" "$E05_FAULT_AT")"
+    experiments_ready_again $((E05_FAULT_AT + 600)) || { [ -n "$EXP_STOPPED" ] || EXP_STOPPED="the fleet not ready on the new primary 10 min after the fault"; return 0; }
+    after=$(psql_query -c "SELECT count(*) FROM platform.window_counter" | tr -d '[:space:]')
+    experiments_record counters "$E05_COUNTED rows before the failover, $after after it (a promoted standby never held an unlogged table's rows)"
+    pass "E05: the standby promoted alone and the Service moved, every replica ready on it"
+}
+
+# e05_unfence: a refused promotion's way back - the old primary returned on its volume, the standby streaming and synchronous from it again.
+e05_unfence() {
+    kube -n finapp scale statefulset/finapp-postgres --replicas=1 >> "$EXP_ART/faults.log" 2>&1 || cannot "E05: the old primary could not be brought back"
+    kube -n finapp rollout status statefulset/finapp-postgres --timeout=300s >> "$EXP_ART/faults.log" 2>&1 || cannot "E05: the old primary did not return"
+    printf '%s\tunfenced\tstatefulset/finapp-postgres at 1 replica: the promotion refused\n' "$(date -u +%H:%M:%S)" >> "$EXP_ART/faults.log"
+    deadline=$(( $(date +%s) + 120 ))
+    until [ "$(experiments_replication)" = "finapp_standby|streaming|sync" ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || cannot "E05: the standby did not stream synchronously from the primary brought back"
+        sleep 2
+    done
+    E05_MOVED_AT=$(date +%s)
+}
+
+E05_recover() {
+    ready_three 400 || fail "E05: the fleet did not return to three ready replicas"
+    # The payout held when the primary was lost: its key sent until answered (409 while the claim's lease holds), its claim completed once.
+    wait "$E05_FIRST" 2>/dev/null || true
+    experiments_record "in flight" "the payout held at the provider when the primary was lost: $(grep -h '^curl=\|^status=' "$EXP_DIR/payout-first.txt" | tr '\n' ' ')"
+    deadline=$(( $(date +%s) + 900 ))
+    answered=""
+    tries=0
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        tries=$((tries + 1))
+        e05_payout "$E05_TARGET_IP" "retry-$tries" || true
+        status=$(sed -n 's/^status=//p' "$EXP_DIR/payout-retry-$tries.txt")
+        printf '%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$tries" "${status:-none}" >> "$EXP_DIR/retries.tsv"
+        case $status in 200 | 201) answered=$tries; break ;; esac
+        sleep 5
+    done
+    [ -n "$answered" ] || fail "E05: the payout's key was not answered within 900 s: see experiments/E05/retries.tsv"
+    [ "$(e05_claim)" = COMPLETED ] || fail "E05: the payout's claim is $(e05_claim), not COMPLETED, after its key was answered"
+    EXPERIMENTS_PAYOUTS=$((EXPERIMENTS_PAYOUTS + 1))
+    experiments_record claim "the payout's claim completed once, answered on try $answered ($(cut -f3 "$EXP_DIR/retries.tsv" | tr '\n' ' '))"
+    sleep 20
+    touch "$EXP_DIR/sampler-stop" "$EXP_DIR/processing-stop"
+    wait "$E05_SAMPLER" 2>/dev/null || true
+    wait "$E05_PROCESSING" 2>/dev/null || true
+    stop_workload e05
+    [ "$(workload_unresolved e05)" = 0 ] || fail "E05: $(workload_unresolved e05) requests stayed unresolved: see workload-e05.tsv"
+    assert_flows_ran e05
+    experiments_record workload "$(cat "$CLIENT/workload-e05.summary")"
+    # Nothing acknowledged lost: every entry read before the fault on the new primary, unchanged, and no counted table shrank.
+    experiments_db_snapshot "$EXP_DIR" after
+    experiments_db_compare "$EXP_DIR" before after
+    if [ "$DB_MISSING" != 0 ] || [ "$DB_CHANGED" != 0 ] || [ -n "$DB_FEWER" ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the journal before the failover is not whole after it: $DB_MISSING missing, $DB_CHANGED changed of $DB_COMPARED${DB_FEWER:+; shrank: $DB_FEWER}"
+    fi
+    if [ "$PROBE" = async-standby ]; then
+        [ "$DB_MISSING" -gt 0 ] || fail "PROBE async-standby: the standby was promoted behind the primary, and the comparison showed no lost entry: it reads nothing"
+        log "PROBE async-standby: the comparison showed $DB_MISSING journal entries the promoted standby never received"
+    fi
+    experiments_readiness "$EXP_DIR" "$E05_FAULT_AT"
+    [ "$(experiments_restarts)" = "$E05_RESTARTS" ] \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a replica restarted for the failover: $E05_RESTARTS -> $(experiments_restarts)"
+    experiments_edge_read "$EXP_DIR" $((E05_FAULT_AT - 60))
+    away=$(experiments_money_succeeded "$EXP_DIR" $((E05_FAULT_AT + 5)) "${E05_MOVED_AT:-$(date +%s)}")
+    [ "$away" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$away money-moving commands answered a success while no primary served"
+    back=$(experiments_money_back "$EXP_DIR" "$E05_FAULT_AT")
+    caught=$(awk -F'\t' -v k="$E05_FAULT_AT" 'NR > 1 && $1 >= k && $2 != "-" {print $2; exit}' "$EXP_DIR/processing.tsv")
+    cleared=$(awk -F'\t' -v k="${E05_MOVED_AT:-$E05_FAULT_AT}" 'NR > 1 && $1 >= k && $2 == "0" {print $1; exit}' "$EXP_DIR/processing.tsv")
+    experiments_record timeline "the kill at 0 s; a replica first unready $(experiments_since "$FLEET_FIRST_UNREADY" "$E05_FAULT_AT"), none ready $(experiments_since "$FLEET_NONE_READY" "$E05_FAULT_AT"), every replica ready again $(experiments_since "$FLEET_ALL_READY" "$E05_FAULT_AT"); the old primary gone $(experiments_since "$E05_GONE_AT" "$E05_FAULT_AT"); promoted $(experiments_since "${E05_PROMOTED_AT:-}" "$E05_FAULT_AT"); the Service on it $(experiments_since "${E05_MOVED_AT:-}" "$E05_FAULT_AT"); the first money-moving success $(experiments_since "$back" "$E05_FAULT_AT") (the interruption)"
+    experiments_record "caught mid-call" "${caught:-no} card payments PROCESSING at the first read after the fault; none left $(experiments_since "$cleared" "$E05_FAULT_AT") (the payment sweep's dispatched age concludes them)"
+    experiments_record "at the edge" "$EDGE_FAILED failed answers and $EDGE_SERVED served since the minute before the fault; $away money-moving successes while no primary served"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The event pipeline (P16-TSK-013; PHASE_16_PLAN.md section 7; OPERATIONS_RUNBOOK.md section 11.51): E08, E09, E22, E23, E49 and E68, on
+# the scope's three brokers. What every one of them counts is PostgreSQL's, never the broker's: every outbox row published, every published
+# record a catalogued handler names found in its consumer's inbox (lost_events, in the census), no inbox row added for a record a
+# consumer had already applied, no record parked but E68's own, and the census green.
+# ---------------------------------------------------------------------------------------------------
+
+# experiments_pages_check <experiment>: a correctness page firing stops the experiment (ADR-0127 decision 6); 1 when it did.
+experiments_pages_check() {
+    firing=$(experiments_pages_firing)
+    if [ -n "$firing" ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a correctness page during the experiment: $firing"
+        log "$1 STOP: $EXP_STOPPED"
+        return 1
+    fi
+    printf '%s\tnone\n' "$(date -u +%H:%M:%S)" >> "$EXP_DIR/pages.tsv"
+    return 0
+}
+
+# experiments_prom_value <query>: the first value of an instant query, or nothing.
+experiments_prom_value() {
+    experiments_prometheus "/api/v1/query?query=$(urlencode "$1")" 2>/dev/null | sed -n 's/.*"value":\[[^,]*,"\([^"]*\)"\].*/\1/p' | head -1
+}
+
+# experiments_inbox_total <outcome>: the fleet's inbox deliveries of that outcome, summed over the replicas' counters as Prometheus last
+# scraped them. A difference across a window where the replicas stayed the same, or the whole of it for replicas started after an
+# instant, is what they counted; an increase() would lose what a new replica counted before its first scrape.
+experiments_inbox_total() {
+    value=$(experiments_prom_value "sum(finapp_inbox_consumption_total{outcome=\"$1\"})")
+    case $value in '') printf 'unreadable' ;; *) printf '%s' "${value%%.*}" ;; esac
+}
+
+# experiments_applied <since epoch>: inbox rows for events first written before that instant, one per (consumer, event).
+experiments_applied() {
+    psql_query -c "SELECT count(*) FROM platform.inbox_message i JOIN platform.outbox_event e ON i.dedupe_key = e.event_id::text
+        WHERE e.occurred_at < to_timestamp($1)" | tr -d '[:space:]'
+}
+
+# experiments_parked <since epoch>: records parked since that instant.
+experiments_parked() {
+    psql_query -c "SELECT count(*) FROM platform.inbox_parked_record WHERE parked_at >= to_timestamp($1)" 2>/dev/null | tr -d '[:space:]'
+}
+
+# experiments_dead_lettered: outbox rows abandoned and not discarded.
+experiments_dead_lettered() {
+    psql_query -c "SELECT count(*) FROM platform.outbox_event WHERE dead_lettered_at IS NOT NULL AND discarded_at IS NULL" | tr -d '[:space:]'
+}
+
+# experiments_moved <workload>: the workload's money movements answered ok so far.
+experiments_moved() {
+    awk -F'\t' '($1 == "transfer" || $1 == "top-up" || $1 == "checkout" || $1 == "payout") && $NF == "ok"' "$CLIENT/workload-$1.tsv" 2>/dev/null | grep -c . || true
+}
+
+# experiments_kill_broker <pod>: SIGKILL to a broker's JVM from its node, as experiments_kill_jvm does to a replica's. Sets KILLED_EPOCH.
+experiments_kill_broker() {
+    node=$(kube -n finapp get pod "$1" -o jsonpath='{.spec.nodeName}')
+    container=$(kube -n finapp get pod "$1" -o jsonpath='{.status.containerStatuses[?(@.name=="kafka")].containerID}' | sed 's#^containerd://##')
+    [ -n "$node" ] && [ -n "$container" ] || cannot "the broker $1 has no node or no running container to kill"
+    [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$node" 2>/dev/null)" = "$CLUSTER" ] \
+        || fail "the safety boundary refused to kill on $node: it is not a node of $CLUSTER"
+    if [ "$PROBE" != guard-off ]; then
+        experiments_context_check || fail "the safety boundary refused before the kill: $EXP_REASON"
+    fi
+    pid=$(dock exec "$node" crictl inspect --output go-template --template '{{.info.pid}}' "$container" 2>/dev/null)
+    case $pid in '' | *[!0-9]*) cannot "the broker process of $1 could not be found on $node" ;; esac
+    KILLED_EPOCH=$(date +%s)
+    dock exec "$node" kill -9 "$pid" || cannot "SIGKILL could not be sent to $1's process on $node"
+    printf '%s\tkill -9\t%s on %s, pid %s\n' "$(date -u +%H:%M:%S)" "$1" "$node" "$pid" >> "$EXP_ART/faults.log"
+}
+
+# experiments_min_isr <n>: every catalogued topic's min.insync.replicas set to n, through the brokers' admin listener.
+experiments_min_isr() {
+    for topic in $(sed -n 's/^  \(finapp\.[a-z]*\): domain-events$/\1/p' "$ROOT/infra/kafka/topics.yaml"); do
+        kafka_admin kafka-configs.sh --alter --entity-type topics --entity-name "$topic" --add-config "min.insync.replicas=$1" || return 1
+    done
+}
+
+# experiments_min_isr_on <n> <broker pod>: the probe's fault (min-isr-one). Every topic at min.insync.replicas n, and a probe topic of
+# two copies, on that broker and the admin broker, at n too, written once a second for five minutes with acks=all from the admin broker.
+experiments_min_isr_on() {
+    experiments_min_isr "$1" || return 1
+    kafka_admin kafka-topics.sh --create --if-not-exists --topic probe.min-isr --replica-assignment "$(( ${2##*-} + 1 )):$(( ${KAFKA_ADMIN_POD##*-} + 1 ))" \
+        --config "min.insync.replicas=$1" || return 1
+    kube -n finapp exec -i "$KAFKA_ADMIN_POD" -c kafka -- /bin/sh -c 'end=$(( $(date +%s) + 300 ))
+        while [ "$(date +%s)" -lt "$end" ]; do date +%s; sleep 1; done | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server "$1" \
+            --producer.config /tmp/admin.properties --topic probe.min-isr --producer-property acks=all \
+            --producer-property request.timeout.ms=4000 --producer-property delivery.timeout.ms=5000' \
+        probe "$(brokers_name "${KAFKA_ADMIN_POD##*-}"):9095" >> "$EXP_ART/probe-producer.log" 2>&1 &
+    BACKGROUND="$BACKGROUND $!"
+}
+
+# experiments_min_isr_off <n>: the probe topic deleted and every topic at min.insync.replicas n again.
+experiments_min_isr_off() {
+    kafka_admin kafka-topics.sh --delete --if-exists --topic probe.min-isr
+    experiments_min_isr "$1"
+}
+
+# experiments_isr_sampler <dir>: every partition's in-sync replicas and end offset, about every 10 s, into <dir>/isr.tsv, until
+# <dir>/isr-stop exists. Read through a broker the experiment keeps running (KAFKA_ADMIN_POD).
+experiments_isr_sampler() {
+    set +e
+    printf 'epoch\ttopic\tpartition\tisr\tend\n' > "$1/isr.tsv"
+    while [ ! -f "$1/isr-stop" ]; do
+        epoch=$(date +%s)
+        kafka_admin kafka-topics.sh --describe 2>/dev/null \
+            | awk '$1 == "Topic:" && $3 == "Partition:" {for (i = 1; i <= NF; i++) if ($i == "Isr:") n = split($(i + 1), r, ","); print $2 ":" $4 "\t" n}' \
+            > "$1/isr.now"
+        kafka_admin kafka-get-offsets.sh 2>/dev/null | awk -F: '$1 ~ /^(finapp|probe)\./ {print $1 ":" $2 "\t" $3}' > "$1/offsets.now"
+        awk -F'\t' -v epoch="$epoch" 'FNR == NR {isr[$1] = $2; next} ($1 in isr) {split($1, p, ":"); print epoch "\t" p[1] "\t" p[2] "\t" isr[$1] "\t" $2}' \
+            "$1/isr.now" "$1/offsets.now" >> "$1/isr.tsv"
+        sleep 5
+    done
+}
+
+# experiments_single_replica_writes <isr.tsv> <in sync required>: the intervals in which a partition took a write while fewer replicas than required were
+# in sync at the samples on both sides of it - an acknowledged record held by too few copies. Prints "<count> <first: topic:partition@epoch>".
+experiments_single_replica_writes() {
+    awk -F'\t' -v need="$2" 'NR > 1 {
+        k = $2 ":" $3
+        if ((k in last_isr) && last_isr[k] < need && $4 < need && $5 > last_end[k]) { n++; if (first == "") first = k "@" $1 }
+        last_isr[k] = $4; last_end[k] = $5 }
+        END {print n + 0, (first == "" ? "-" : first)}' "$1"
+}
+
+# E08: one broker of three killed - the quorum's leader, whose broker leads some of every topic's partitions - while the workload runs.
+E08_steady() {
+    brokers_check
+    start_workload e08 retry
+    sleep 8
+    kafka_admin kafka-metadata-quorum.sh describe --status > "$EXP_DIR/quorum-before.txt" 2>&1 || fail "E08: the quorum could not be read"
+    leader=$(sed -n 's/^LeaderId:[[:space:]]*\([0-9]*\)[[:space:]]*$/\1/p' "$EXP_DIR/quorum-before.txt")
+    case $leader in [1-9]) ;; *) fail "E08: the quorum names no leader: see experiments/E08/quorum-before.txt" ;; esac
+    E08_VICTIM="finapp-kafka-$((leader - 1))"
+    # The admin tools through a broker the experiment keeps running.
+    KAFKA_ADMIN_POD=finapp-kafka-$(( leader % KAFKA_BROKERS ))
+    if [ "$PROBE" = min-isr-one ]; then
+        # The probe holds its victim down for its window by the StatefulSet's count, which stops only the highest ordinal.
+        E08_VICTIM="finapp-kafka-$((KAFKA_BROKERS - 1))"
+        KAFKA_ADMIN_POD=finapp-kafka-0
+    fi
+    E08_RESTARTS=$(kube -n finapp get pod "$E08_VICTIM" -o jsonpath='{.status.containerStatuses[0].restartCount}')
+    E08_FAILED_BEFORE=$(experiments_prom_value 'sum(finapp_outbox_publication_total{outcome="failed"})')
+    experiments_isr_sampler "$EXP_DIR" &
+    E08_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E08_SAMPLER"
+    experiments_sampler "$EXP_DIR" &
+    E08_FLEET=$!
+    BACKGROUND="$BACKGROUND $E08_FLEET"
+    sleep 20
+    experiments_record victim "$E08_VICTIM (the quorum's leader is node $leader${PROBE:+; PROBE $PROBE takes the highest ordinal}), $E08_RESTARTS restarts before; the admin tools through $KAFKA_ADMIN_POD"
+}
+
+E08_fault() {
+    if [ "$PROBE" = min-isr-one ]; then
+        # The entry's probe: every topic's min.insync.replicas set to 1 and, beside them, a topic of two copies on the victim and the
+        # admin broker written once a second with acks=all. The catalogue's topics keep two copies in sync when one broker of three goes;
+        # the probe topic keeps one, and with min.insync.replicas 1 its writes are still acknowledged - a record held by one replica,
+        # the risk 2 exists to refuse. The victim is then held down for the window (the StatefulSet one short), so that the one-copy
+        # writes are sampled on both sides whatever a restart would take. The check below must see them and turn the run red; the stop
+        # puts the catalogue's value back.
+        experiments_fault_on min-isr 1 "$(brokers_replication | cut -d' ' -f2)" "$E08_VICTIM"
+        log "PROBE min-isr-one: every topic at min.insync.replicas 1, and probe.min-isr written on $E08_VICTIM and $KAFKA_ADMIN_POD"
+        sleep 15
+    fi
+    experiments_kill_broker "$E08_VICTIM"
+    E08_KILLED_AT=$KILLED_EPOCH
+    [ "$PROBE" != min-isr-one ] || experiments_fault_on brokers-stopped "$((KAFKA_BROKERS - 1))"
+    experiments_record fault "kill -9 of $E08_VICTIM's broker at $(date -u -d "@$E08_KILLED_AT" +%H:%M:%SZ)"
+    log "E08: $E08_VICTIM's broker killed with SIGKILL"
+}
+
+E08_observe() {
+    returned=""
+    pages_at=0
+    deadline=$((E08_KILLED_AT + 600))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        now=$(date +%s)
+        # The stop condition: two brokers down at once. The probe's held victim is one: a pod the StatefulSet stopped is no pod.
+        down=$(( KAFKA_BROKERS - $(brokers_ready | awk -F'|' '$2 == "True"' | grep -c . || true) ))
+        if [ "$down" -ge 2 ] && [ -z "$EXP_STOPPED" ]; then
+            EXP_STOPPED="two brokers down at once"
+            log "E08 STOP: $EXP_STOPPED"
+            break
+        fi
+        if [ $((now - pages_at)) -ge 15 ]; then
+            pages_at=$now
+            experiments_pages_check E08 || break
+        fi
+        # The probe's window: 90 s held down, then the StatefulSet whole again and its victim a new pod.
+        if [ "$PROBE" = min-isr-one ] && [ $((now - E08_KILLED_AT)) -ge 90 ] && grep -qx "brokers-stopped $((KAFKA_BROKERS - 1))" "$FAULTS"; then
+            experiments_fault_off brokers-stopped "$((KAFKA_BROKERS - 1))"
+            E08_RESTARTS=-1
+        fi
+        state=$(kube -n finapp get pod "$E08_VICTIM" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}|{.status.containerStatuses[0].restartCount}' 2>/dev/null)
+        if [ "${state%%|*}" = True ] && [ "${state##*|}" -gt "$E08_RESTARTS" ]; then
+            under=$(kafka_admin kafka-topics.sh --describe --under-replicated-partitions 2>/dev/null | grep -c 'Topic: finapp\.' || true)
+            if [ "$under" = 0 ]; then
+                returned=$((now - E08_KILLED_AT))
+                break
+            fi
+        fi
+        sleep 2
+    done
+    touch "$EXP_DIR/isr-stop"
+    wait "$E08_SAMPLER" 2>/dev/null || true
+    set -- $(experiments_single_replica_writes "$EXP_DIR/isr.tsv" "$(brokers_replication | cut -d' ' -f2)")
+    samples=$(awk -F'\t' 'NR > 1 {print $1}' "$EXP_DIR/isr.tsv" | sort -u | grep -c . || true)
+    under_sampled=$(awk -F'\t' -v k="$E08_KILLED_AT" 'NR > 1 && $1 >= k && $4 < 3' "$EXP_DIR/isr.tsv" | grep -c . || true)
+    experiments_record "copies" "$samples samples of every partition's in-sync replicas and end offset; $under_sampled partition readings below three in sync after the kill; $1 intervals in which a partition took a write with fewer than two in sync (first: $2)"
+    # The control: the sampler saw the kill shrink the in-sync sets, so a write on too few copies would have been seen.
+    [ "$samples" -ge 3 ] && [ "$under_sampled" -ge 1 ] || fail "E08: the sampler read $samples samples and no partition below three in sync after the kill, so it shows nothing: see experiments/E08/isr.tsv"
+    [ "$1" = 0 ] || fail "E08: $1 intervals in which a partition took a write acknowledged by fewer than two replicas in sync (first: $2)${PROBE:+ (PROBE $PROBE)}"
+    [ -n "$EXP_STOPPED" ] && return 0
+    [ -n "$returned" ] || { EXP_STOPPED="the killed broker was not back in sync within 600 s"; return 0; }
+    if [ "$PROBE" != min-isr-one ]; then
+        exit_code=$(kube -n finapp get pod "$E08_VICTIM" -o jsonpath='{.status.containerStatuses[0].lastState.terminated.exitCode}')
+        [ "$exit_code" = 137 ] || fail "E08: the killed broker ended with $exit_code, not 137: it was not a SIGKILL"
+    fi
+    failed_after=$(experiments_prom_value 'sum(finapp_outbox_publication_total{outcome="failed"})')
+    experiments_record "returned" "the broker restarted in its pod (exit 137), every partition back in sync $returned s after the kill; the relay's failed attempts ${E08_FAILED_BEFORE:-unread} before, ${failed_after:-unread} after (recorded: a leader's move may cost an attempt its retry, which the outbox holds)"
+    pass "E08: one broker of three lost and back in $returned s; no write was acknowledged by fewer than two copies; the fleet served on"
+}
+
+E08_recover() {
+    brokers_check
+    sleep 10
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E08_FLEET" 2>/dev/null || true
+    stop_workload e08
+    [ "$(workload_unresolved e08)" = 0 ] || fail "E08: $(workload_unresolved e08) requests stayed unresolved: see workload-e08.tsv"
+    assert_flows_ran e08
+    unready=$(awk -F'\t' -v at="$E08_KILLED_AT" 'NR > 1 && $1 >= at && $4 != "True"' "$EXP_DIR/fleet.tsv" | grep -c . || true)
+    experiments_record workload "$(cat "$CLIENT/workload-e08.summary"); $unready replica readings unready after the kill"
+    [ "$unready" = 0 ] || fail "E08: a replica went unready while a broker was lost: Kafka is not in readiness"
+    [ "$(experiments_dead_lettered)" = 0 ] || fail "E08: an outbox row was abandoned"
+    KAFKA_ADMIN_POD=finapp-kafka-0
+}
+
+# E09: every broker stopped for at least 10 minutes, until OutboxPublicationStalled fires (15 at most), while money keeps moving.
+E09_steady() {
+    brokers_check
+    start_workload e09 retry
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E09_FLEET=$!
+    BACKGROUND="$BACKGROUND $E09_FLEET"
+    E09_PENDING_BEFORE=$(pending_events)
+    experiments_record "outbox before" "$E09_PENDING_BEFORE rows pending"
+}
+
+E09_fault() {
+    experiments_fault_on brokers-stopped 0
+    deadline=$(( $(date +%s) + 180 ))
+    until [ -z "$(brokers_ready)" ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || cannot "E09: the brokers did not stop within 180 s"
+        sleep 2
+    done
+    E09_STOPPED_AT=$(date +%s)
+    E09_MOVED_BEFORE=$(experiments_moved e09)
+    experiments_record fault "every broker stopped (the StatefulSet at zero) at $(date -u -d "@$E09_STOPPED_AT" +%H:%M:%SZ)"
+}
+
+E09_observe() {
+    stalled=""
+    burning=""
+    pages_at=0
+    while :; do
+        now=$(date +%s)
+        held=$((now - E09_STOPPED_AT))
+        if [ $((now - pages_at)) -ge 15 ]; then
+            pages_at=$now
+            experiments_pages_check E09 || break
+            if [ -z "$stalled" ]; then
+                answer=$(experiments_prometheus "/api/v1/query?query=$(urlencode 'ALERTS{alertname="OutboxPublicationStalled",alertstate="firing"}')" 2>/dev/null || true)
+                case $answer in *'"alertname":"OutboxPublicationStalled"'*) stalled=$held ;; esac
+            fi
+            ratio=$(experiments_prom_value 'max(finapp:slo_event_freshness:error_ratio_rate5m)')
+            case $ratio in '' | 0 | 0.0) ;; *) [ -n "$burning" ] || burning="$held s in, at $ratio" ;; esac
+        fi
+        # Stop condition and its limit: the outage held past 30 minutes. Held at least 10, until the stall has paged, 15 at most.
+        if [ "$held" -ge 1800 ]; then
+            EXP_STOPPED="the outage held 30 minutes"
+            break
+        fi
+        if [ "$held" -ge 600 ] && { [ -n "$stalled" ] || [ "$held" -ge 900 ]; }; then
+            break
+        fi
+        sleep 5
+    done
+    E09_HELD=$(( $(date +%s) - E09_STOPPED_AT ))
+    moved=$(( $(experiments_moved e09) - E09_MOVED_BEFORE ))
+    pending=$(pending_events)
+    unready=$(awk -F'\t' -v at="$E09_STOPPED_AT" 'NR > 1 && $1 >= at && $4 != "True"' "$EXP_DIR/fleet.tsv" | grep -c . || true)
+    experiments_record "outage" "held $E09_HELD s; $pending outbox rows waiting at its end; $moved money movements answered ok during it; OutboxPublicationStalled firing ${stalled:+$stalled s in}${stalled:-never}; the event freshness burn ${burning:-never seen}; $unready replica readings unready"
+    [ -n "$EXP_STOPPED" ] && return 0
+    [ -n "$stalled" ] || { EXP_STOPPED="OutboxPublicationStalled did not fire within 15 minutes of the outage"; return 0; }
+    [ "$unready" = 0 ] || fail "E09: a replica went unready while the brokers were away: Kafka is not in readiness"
+    [ "$moved" -ge 1 ] || fail "E09: no money movement was answered while the brokers were away"
+    [ "$pending" -ge 1 ] || fail "E09: no outbox row waited during the outage, so it shows nothing"
+    [ -n "$burning" ] || fail "E09: the event freshness objective did not burn during the outage"
+    [ "$(experiments_dead_lettered)" = 0 ] || fail "E09: an outbox row was abandoned during the outage, inside the relay's retry window"
+    pass "E09: the brokers away $E09_HELD s; $pending rows waited in the outbox, $moved movements answered, every replica ready, the stall paged $stalled s in"
+}
+
+E09_recover() {
+    kube -n finapp rollout status statefulset/finapp-kafka --timeout=300s >> "$ART/apply.log" 2>&1 || fail "E09: the brokers did not come back"
+    back=$(date +%s)
+    brokers_check
+    drained 900 || fail "E09: the outbox did not drain within 15 minutes of the brokers' return: $(pending_events) rows pending"
+    experiments_record drained "the outbox drained $(( $(date +%s) - back )) s after the brokers were back"
+    lag_settled e09 || fail "E09: a partition is unowned or lagging after the return: see consumer-groups-e09.txt"
+    sleep 10
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E09_FLEET" 2>/dev/null || true
+    stop_workload e09
+    [ "$(workload_unresolved e09)" = 0 ] || fail "E09: $(workload_unresolved e09) requests stayed unresolved: see workload-e09.tsv"
+    assert_flows_ran e09
+    [ "$(experiments_dead_lettered)" = 0 ] || fail "E09: an outbox row was abandoned"
+    experiments_record workload "$(cat "$CLIENT/workload-e09.summary")"
+}
+
+# E22: duplication. (a) Published rows sent again, as a relay that crashed between the broker's acknowledgement and its mark sends
+# them; (b) every consumer group reset to the earliest retained offset, the fleet stopped for it. The inbox must absorb every one.
+E22_steady() {
+    brokers_check
+    start_workload e22 retry
+    sleep 30
+    stop_workload e22
+    assert_flows_ran e22
+    lag_settled e22-before || fail "E22: the groups were not settled before the experiment"
+    E22_FROM=$(db_epoch)
+    E22_APPLIED_BEFORE=$(experiments_applied "$E22_FROM")
+    E22_RISK_BEFORE=$(psql_query -c "SELECT count(*) FROM risk.risk_signal" | tr -d '[:space:]')
+    experiments_record "applied before" "$E22_APPLIED_BEFORE inbox rows for events written before the experiment; $E22_RISK_BEFORE risk signals"
+}
+
+E22_fault() {
+    # (a) The 200 latest published rows of a type a catalogued handler names, their marks taken off by the run's own superuser, as a
+    # crash between the acknowledgement and the mark leaves them: the relay sends them again under the same event id.
+    E22_DUPLICATES_BEFORE=$(experiments_inbox_total duplicate)
+    E22_FAILED_BEFORE=$(experiments_inbox_total failed)
+    E22_SENT=$(psql_query -v "handlers=$HANDLERS" -f - <<'SQL' | tr -d '[:space:]'
+\set ON_ERROR_STOP on
+WITH chosen AS (
+    SELECT e.event_id FROM platform.outbox_event e
+     WHERE e.published_at IS NOT NULL AND e.discarded_at IS NULL AND e.replay_ordered_at IS NULL
+       AND e.event_type IN (SELECT h.event_type FROM (VALUES :handlers) AS h (consumer, event_type))
+     ORDER BY e.event_id DESC LIMIT 200),
+sent AS (
+    UPDATE platform.outbox_event e SET published_at = NULL FROM chosen c WHERE e.event_id = c.event_id RETURNING 1)
+SELECT count(*) FROM sent;
+SQL
+)
+    case $E22_SENT in '' | *[!0-9]*) cannot "E22: the rows could not be sent again: '$E22_SENT'" ;; esac
+    [ "$E22_SENT" -ge 10 ] || cannot "E22: only $E22_SENT published rows of a handled type to send again"
+    E22_SENT_AT=$(date +%s)
+    experiments_record fault "(a) $E22_SENT published rows of handled types unmarked, to be sent again under their event ids"
+}
+
+E22_observe() {
+    drained 300 || { EXP_STOPPED="the rows sent again were not published within 300 s"; return 0; }
+    lag_settled e22-sent || { EXP_STOPPED="the groups did not settle after the rows were sent again"; return 0; }
+    # Two scrapes past the last delivery, then the same replicas' counters again.
+    sleep 45
+    after=$(experiments_inbox_total duplicate)
+    failed_after=$(experiments_inbox_total failed)
+    case $E22_DUPLICATES_BEFORE:$after:$E22_FAILED_BEFORE:$failed_after in *unreadable*) fail "E22: Prometheus did not answer for the inbox's outcomes" ;; esac
+    duplicates_a=$((after - E22_DUPLICATES_BEFORE))
+    failed_a=$((failed_after - E22_FAILED_BEFORE))
+    # (b) The fleet stopped, every group reset to the earliest retained record, the fleet started: every record redelivered.
+    experiments_fault_on scaled finapp finapp-app 0 3
+    deadline=$(( $(date +%s) + 300 ))
+    until [ "$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name 2>/dev/null | grep -c . || true)" = 0 ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || cannot "E22: the fleet did not stop within 300 s"
+        sleep 3
+    done
+    # A reset needs groups with no member: a member that left without a word stays until its session times out.
+    deadline=$(( $(date +%s) + 120 ))
+    until kafka_admin kafka-consumer-groups.sh --describe --all-groups --state 2>/dev/null | awk '$1 ~ /^finapp\./ && $NF != 0 {busy = 1} END {exit busy}'; do
+        [ "$(date +%s)" -lt "$deadline" ] || cannot "E22: a consumer group kept a member 120 s after the fleet stopped"
+        sleep 5
+    done
+    kafka_admin kafka-consumer-groups.sh --reset-offsets --all-groups --all-topics --to-earliest --execute > "$EXP_DIR/reset.txt" 2>&1 \
+        || cannot "E22: the groups could not be reset: see experiments/E22/reset.txt"
+    kafka_admin kafka-consumer-groups.sh --describe --all-groups > "$EXP_DIR/groups-reset.txt" 2>/dev/null || true
+    E22_REDELIVER=$(awk '$1 ~ /^finapp\./ && $6 ~ /^[0-9]+$/ {n += $6} END {print n + 0}' "$EXP_DIR/groups-reset.txt")
+    E22_RESET_AT=$(date +%s)
+    experiments_fault_off scaled finapp finapp-app 0 3
+    ready_three 600 || { EXP_STOPPED="the fleet did not return to three ready replicas after the reset"; return 0; }
+    lag_settled e22-reset || { EXP_STOPPED="the groups did not settle after the reset"; return 0; }
+    sleep 45
+    # Every replica now started after the reset: its counters are what it did since.
+    duplicates_b=$(experiments_inbox_total duplicate)
+    failed_b=$(experiments_inbox_total failed)
+    case $duplicates_b:$failed_b in *unreadable*) fail "E22: Prometheus did not answer for the inbox's outcomes" ;; esac
+    failed=$((failed_a + failed_b))
+    parked=$(experiments_parked "$E22_SENT_AT")
+    applied=$(experiments_applied "$E22_FROM")
+    risk=$(psql_query -c "SELECT count(*) - count(DISTINCT source_event_id) || '|' || count(*) FROM risk.risk_signal" | tr -d '[:space:]')
+    experiments_record "absorbed" "(a) $E22_SENT rows sent again, ${duplicates_a} deliveries counted duplicate; (b) $E22_REDELIVER records redelivered after the reset at $(date -u -d "@$E22_RESET_AT" +%H:%M:%SZ), ${duplicates_b} counted duplicate; ${failed} failed, ${parked:-unread} parked; inbox rows for events before the experiment $E22_APPLIED_BEFORE before and $applied after; risk signals ${risk#*|} (${risk%%|*} for a repeated source event)"
+    [ "$duplicates_a" -ge 1 ] && [ "$duplicates_b" -ge 1 ] || fail "E22: the inbox counted no duplicate (${duplicates_a} and ${duplicates_b}), so the duplicates were not delivered"
+    [ "$E22_REDELIVER" -ge 1 ] || fail "E22: the reset redelivered nothing: see experiments/E22/groups-reset.txt"
+    [ "$failed" = 0 ] && [ "$parked" = 0 ] || EXP_STOPPED="a duplicate failed or parked ($failed failed, ${parked:-unread} parked)"
+    [ "$applied" = "$E22_APPLIED_BEFORE" ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a second effect: inbox rows for events before the experiment went from $E22_APPLIED_BEFORE to $applied"
+    [ "${risk%%|*}" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a second risk signal for one source event"
+    [ -n "$EXP_STOPPED" ] || pass "E22: $E22_SENT rows sent again and $E22_REDELIVER records redelivered, every applied one absorbed by the inbox, no second effect"
+}
+
+E22_recover() {
+    ready_three 300 || fail "E22: the fleet is not three ready replicas"
+    experiments_topology_check
+}
+
+# E23: delay. A session of the run's superuser holds the relay's own lock on a few aggregates as their rows appear, for 10 minutes, and
+# lets go: their records reach the consumers 10 minutes late, after later records of every other aggregate, each aggregate in its order.
+E23_steady() {
+    brokers_check
+    start_workload e23 retry
+    sleep 8
+    E23_FROM=$(db_epoch)
+}
+
+E23_fault() {
+    experiments_fault_on relay-held 600 8
+    E23_HELD_AT=$(date +%s)
+    experiments_record fault "the relay's lock held on the first 8 aggregates with rows waiting, for 600 s, from $(date -u -d "@$E23_HELD_AT" +%H:%M:%SZ)"
+}
+
+# experiments_relay_hold <seconds> <aggregates>: a session holding the relay's own advisory lock (namespace 1, the key OutboxRelay takes:
+# Java's UUID.hashCode() of the aggregate id) on the first <aggregates> aggregates with a row waiting, taken as they appear, for <seconds>.
+# The relay try-locks and moves on (a refused lock takes no slot), so their rows wait in order while every other aggregate publishes. It
+# writes nothing; its end, or its termination, releases them. It prints each aggregate it held, HELD|<id>|<when>, before it ends.
+experiments_relay_hold() {
+    kube -n finapp exec -i finapp-postgres-0 -c postgres -- psql -q -X -A -t -U finapp -d finapp > "$EXP_ART/relay-hold.out" 2>&1 <<SQL &
+\set ON_ERROR_STOP on
+SET application_name = '$EXPERIMENTS_HOLD_APP';
+CREATE TEMP TABLE held (aggregate_id uuid PRIMARY KEY, held_at timestamptz NOT NULL);
+DO \$\$
+DECLARE
+    candidate uuid;
+    hilo bigint;
+    until timestamptz := clock_timestamp() + make_interval(secs => $1);
+BEGIN
+    WHILE clock_timestamp() < until LOOP
+        IF (SELECT count(*) FROM held) < $2 THEN
+            FOR candidate IN SELECT DISTINCT e.aggregate_id FROM platform.outbox_event e
+                              WHERE e.published_at IS NULL AND e.discarded_at IS NULL
+                                AND NOT EXISTS (SELECT 1 FROM held h WHERE h.aggregate_id = e.aggregate_id) LOOP
+                EXIT WHEN (SELECT count(*) FROM held) >= $2;
+                hilo := ('x' || substr(replace(candidate::text, '-', ''), 1, 16))::bit(64)::bigint
+                      # ('x' || substr(replace(candidate::text, '-', ''), 17, 16))::bit(64)::bigint;
+                IF pg_try_advisory_lock(1, ((hilo >> 32) # hilo)::bit(32)::int) THEN
+                    INSERT INTO held VALUES (candidate, clock_timestamp());
+                END IF;
+            END LOOP;
+        END IF;
+        PERFORM pg_sleep(0.2);
+    END LOOP;
+END
+\$\$;
+SELECT 'HELD|' || aggregate_id || '|' || extract(epoch FROM held_at)::bigint FROM held ORDER BY held_at;
+SELECT pg_advisory_unlock_all();
+SQL
+    EXPERIMENTS_HOLD_PID=$!
+    BACKGROUND="$BACKGROUND $EXPERIMENTS_HOLD_PID"
+    deadline=$(( $(date +%s) + 30 ))
+    until [ "$(psql_query -c "SELECT count(*) FROM pg_stat_activity WHERE application_name = '$EXPERIMENTS_HOLD_APP'" | tr -d '[:space:]')" = 1 ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        sleep 1
+    done
+}
+
+# Its undo: the holding session ended, which releases every lock it took.
+experiments_relay_release() {
+    psql_query -c "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name = '$EXPERIMENTS_HOLD_APP'"
+}
+
+E23_observe() {
+    pages_at=0
+    while kill -0 "$EXPERIMENTS_HOLD_PID" 2>/dev/null; do
+        now=$(date +%s)
+        if [ $((now - pages_at)) -ge 15 ]; then
+            pages_at=$now
+            experiments_pages_check E23 || { experiments_fault_off relay-held 600 8; return 0; }
+        fi
+        [ $((now - E23_HELD_AT)) -lt 1800 ] || { EXP_STOPPED="the hold outlived 30 minutes"; experiments_fault_off relay-held 600 8; return 0; }
+        sleep 5
+    done
+    E23_RELEASED_AT=$(date +%s)
+    grep '^HELD|' "$EXP_ART/relay-hold.out" | cut -d'|' -f2,3 > "$EXP_DIR/held.txt" || true
+    held=$(grep -c . "$EXP_DIR/held.txt" || true)
+    [ "$held" -ge 1 ] || { EXP_STOPPED="the hold caught no aggregate: see experiments/relay-hold.out"; return 0; }
+    ids=$(cut -d'|' -f1 "$EXP_DIR/held.txt" | sed "s/.*/'&'/" | paste -sd, -)
+    # Every held aggregate's rows published within two minutes of the release; the late ones were late.
+    deadline=$((E23_RELEASED_AT + 120))
+    until [ "$(psql_query -c "SELECT count(*) FROM platform.outbox_event WHERE aggregate_id IN ($ids) AND published_at IS NULL AND discarded_at IS NULL" | tr -d '[:space:]')" = 0 ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || { EXP_STOPPED="a held aggregate's rows were not published within 120 s of the release"; return 0; }
+        sleep 3
+    done
+    late=$(psql_query -c "SELECT count(*) || '|' || coalesce(max(extract(epoch FROM published_at - occurred_at))::bigint, 0)
+        FROM platform.outbox_event WHERE aggregate_id IN ($ids) AND published_at >= to_timestamp($E23_RELEASED_AT - 5)" | tr -d '[:space:]')
+    lag_settled e23 || { EXP_STOPPED="the groups did not settle after the release"; return 0; }
+    sleep 10
+    # Per consumer and aggregate, each record applied after every earlier one: the inbox row's server time (its expiry less the
+    # retention every row carries) against the outbox's order of the aggregate's events.
+    violations=$(psql_query -c "SELECT count(*) FROM (
+        SELECT i.expires_at, max(i.expires_at) OVER (PARTITION BY i.consumer, e.aggregate_id ORDER BY e.event_id
+                                                     ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS before
+          FROM platform.inbox_message i JOIN platform.outbox_event e ON i.dedupe_key = e.event_id::text
+         WHERE e.occurred_at >= to_timestamp($E23_FROM)) o WHERE o.before > o.expires_at" | tr -d '[:space:]')
+    applied=$(psql_query -c "SELECT count(*) || '|' || count(DISTINCT i.dedupe_key) FROM platform.inbox_message i
+        JOIN platform.outbox_event e ON i.dedupe_key = e.event_id::text WHERE e.aggregate_id IN ($ids)" | tr -d '[:space:]')
+    parked=$(experiments_parked "$E23_HELD_AT")
+    experiments_record "delayed" "$held aggregates held $((E23_RELEASED_AT - E23_HELD_AT)) s; ${late%%|*} of their rows published after the release, the latest ${late##*|} s after it was written; their records applied ${applied%%|*} times by consumers over ${applied##*|} events; $violations order violations per consumer and aggregate since the experiment began; ${parked:-unread} parked"
+    [ "${late%%|*}" -ge 1 ] && [ "${late##*|}" -ge 300 ] || fail "E23: no held row was published late, so the hold delayed nothing: see experiments/E23/held.txt"
+    [ "$violations" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$violations records applied before an earlier record of their aggregate"
+    [ "$parked" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$parked records parked"
+    [ -n "$EXP_STOPPED" ] || pass "E23: $held aggregates' records held $((E23_RELEASED_AT - E23_HELD_AT)) s and released after every other aggregate's, each applied once and in its aggregate's order"
+}
+
+E23_recover() {
+    stop_workload e23
+    [ "$(workload_unresolved e23)" = 0 ] || fail "E23: $(workload_unresolved e23) requests stayed unresolved: see workload-e23.tsv"
+    assert_flows_ran e23
+}
+
+# E49: the run's day replayed through the audited door, inside the dedupe window: every event type a catalogued handler names, every
+# event of it the run published, in windows of at most 900 under the door's bound of 1000 a command, each an operator's audited order.
+E49_steady() {
+    brokers_check
+    lag_settled e49-before || fail "E49: the groups were not settled before the replay"
+    E49_FROM=$(db_epoch)
+    E49_APPLIED_BEFORE=$(experiments_applied "$E49_FROM")
+    psql_query -v "handlers=$HANDLERS" -f - > "$EXP_DIR/windows.txt" <<'SQL' || cannot "E49: the replay's windows could not be read"
+\set ON_ERROR_STOP on
+WITH published AS (
+    SELECT e.event_type, coalesce(e.first_published_at, e.published_at) AS t
+      FROM platform.outbox_event e
+     WHERE e.published_at IS NOT NULL AND e.discarded_at IS NULL
+       AND e.event_type IN (SELECT h.event_type FROM (VALUES :handlers) AS h (consumer, event_type))),
+numbered AS (
+    SELECT event_type, t, (row_number() OVER (PARTITION BY event_type ORDER BY t) - 1) / 900 AS chunk FROM published),
+chunks AS (
+    SELECT event_type, chunk, min(t) AS first_t, max(t) AS last_t, count(*) AS events FROM numbered GROUP BY event_type, chunk)
+SELECT event_type || '|' || to_char(first_t AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|'
+       || to_char(coalesce(lead(first_t) OVER (PARTITION BY event_type ORDER BY chunk), last_t + interval '1 millisecond') AT TIME ZONE 'UTC',
+                  'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|' || events
+  FROM chunks ORDER BY event_type, chunk;
+SQL
+    E49_WINDOWS=$(grep -c '|' "$EXP_DIR/windows.txt" || true)
+    E49_EVENTS=$(awk -F'|' '{n += $4} END {print n + 0}' "$EXP_DIR/windows.txt")
+    [ "$E49_WINDOWS" -ge 1 ] && [ "$E49_EVENTS" -ge 1 ] || cannot "E49: the run published no event of a handled type to replay"
+    experiments_record "the day" "$E49_EVENTS published events of $(cut -d'|' -f1 "$EXP_DIR/windows.txt" | sort -u | grep -c .) handled types, in $E49_WINDOWS windows of at most 900; $E49_APPLIED_BEFORE inbox rows for them before"
+}
+
+E49_fault() {
+    E49_DUPLICATES_BEFORE=$(experiments_inbox_total duplicate)
+    E49_FAILED_BEFORE=$(experiments_inbox_total failed)
+    E49_STARTED=$(date +%s)
+    requeued=0
+    n=0
+    while IFS='|' read -r type from to events; do
+        [ -n "$type" ] || continue
+        n=$((n + 1))
+        answer=$(client replay "$type" "$from" "$to" "E49: the run's day replayed inside the dedupe window" 2>&1 | grep '^replay ' | tail -1)
+        got=$(printf '%s' "$answer" | sed -n 's/.* requeued=\([0-9]*\) .*/\1/p')
+        printf '%s\t%s\t%s\t%s\t%s\n' "$type" "$from" "$to" "$events" "${got:-refused}" >> "$EXP_DIR/replays.tsv"
+        [ "${got:-x}" = "$events" ] || fail "E49: the window $n of $type ($from to $to) requeued '${got:-refused}' of its $events events: see experiments/E49/replays.tsv"
+        requeued=$((requeued + got))
+    done < "$EXP_DIR/windows.txt"
+    E49_REQUEUED=$requeued
+    E49_ORDERED_AT=$(date +%s)
+    experiments_record fault "$n audited replay orders through the operator door, $E49_REQUEUED events requeued, in $((E49_ORDERED_AT - E49_STARTED)) s"
+}
+
+E49_observe() {
+    drained 1800 || { EXP_STOPPED="the replayed rows were not published within 30 minutes"; return 0; }
+    E49_PUBLISHED_AT=$(date +%s)
+    lag_settled e49 || { EXP_STOPPED="the groups did not settle after the replay"; return 0; }
+    E49_SETTLED_AT=$(date +%s)
+    sleep 45
+    duplicates_after=$(experiments_inbox_total duplicate)
+    failed_after=$(experiments_inbox_total failed)
+    case $E49_DUPLICATES_BEFORE:$duplicates_after:$E49_FAILED_BEFORE:$failed_after in *unreadable*) fail "E49: Prometheus did not answer for the inbox's outcomes" ;; esac
+    duplicates=$((duplicates_after - E49_DUPLICATES_BEFORE))
+    failed=$((failed_after - E49_FAILED_BEFORE))
+    parked=$(experiments_parked "$E49_STARTED")
+    applied=$(experiments_applied "$E49_FROM")
+    audits=$(psql_query -c "SELECT count(*) FROM platform.audit_record WHERE operation = 'outbox.EventReplayOrdered' AND occurred_at >= to_timestamp($E49_STARTED - 5)" | tr -d '[:space:]')
+    windows=$(grep -c . "$EXP_DIR/replays.tsv" || true)
+    rate=$(awk -v e="$E49_REQUEUED" -v s="$((E49_SETTLED_AT - E49_STARTED))" 'BEGIN {printf "%.1f", (s > 0 ? e / s : 0)}')
+    experiments_record "replayed" "$E49_REQUEUED events requeued, every one published again $((E49_PUBLISHED_AT - E49_STARTED)) s after the first order, every group settled $((E49_SETTLED_AT - E49_STARTED)) s after it ($rate events a second from order to settled, measured on this run's volume); $duplicates deliveries counted duplicate, $failed failed, ${parked:-unread} parked; inbox rows for the replayed events $E49_APPLIED_BEFORE before and $applied after; $audits audit records for $windows orders"
+    [ "$duplicates" -ge 1 ] || fail "E49: the inbox counted no duplicate, so the replayed records were not delivered"
+    [ "$audits" = "$windows" ] || fail "E49: $audits audit records for $windows replay orders"
+    [ "$failed" = 0 ] && [ "$parked" = 0 ] || EXP_STOPPED="a replayed record failed or parked ($failed failed, ${parked:-unread} parked)"
+    [ "$applied" = "$E49_APPLIED_BEFORE" ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a second effect: inbox rows for the replayed events went from $E49_APPLIED_BEFORE to $applied"
+    [ -n "$EXP_STOPPED" ] || pass "E49: the run's $E49_REQUEUED published events replayed in $windows audited orders, every one absorbed, no second effect"
+}
+
+E49_recover() {
+    experiments_topology_check
+}
+
+# E68: a burst of poison records. Six records that are no event, each with a key of its own so the burst spreads over finapp.payments'
+# partitions, written by the brokers' administrator while the workload runs. Every group that reads the topic must park each one after
+# its budget (five failures and two minutes, both: EventingBeans), a park of its own per group, while its other partitions keep applying,
+# no member is evicted and no correctness page but the parked one fires; a release of one is refused (a record that was never an event
+# cannot be released), and each is discarded by two persons. A record written is instant and is logged, not registered: its undo is the
+# discard, which takes two persons, and the recovery does it.
+E68_RECORDS=6
+
+# e68_pages_tick: experiments_pages_tick's read with the page this experiment exists to raise left out. InboxDeadLetterParked is its
+# positive control, its first firing kept in E68_PAGED; any other correctness page, or a Prometheus that did not answer, stops it.
+e68_pages_tick() {
+    now=$(date +%s)
+    [ $((now - ${EXP_PAGES_AT:-0})) -ge 15 ] || return 0
+    EXP_PAGES_AT=$now
+    firing=$(experiments_pages_firing)
+    case " $firing " in *" InboxDeadLetterParked "*) E68_PAGED=${E68_PAGED:-$now} ;; esac
+    others=$(printf '%s\n' $firing | grep -vx InboxDeadLetterParked | paste -sd' ' -)
+    if [ -n "$others" ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a correctness page during the experiment: $others"
+        log "E68 STOP: $EXP_STOPPED"
+        return 1
+    fi
+    printf '%s\t%s\n' "$(date -u +%H:%M:%S)" "${firing:-none}" >> "$EXP_DIR/pages.tsv"
+    return 0
+}
+
+# e68_rows <state>: the burst's records in that state, every group's: unreadable records of finapp.payments first failed since the burst.
+e68_rows() {
+    psql_query -c "SELECT count(*) FROM platform.inbox_parked_record WHERE state = '$1' AND topic = 'finapp.payments'
+        AND dedupe_key LIKE 'malformed:%' AND first_failed_at >= to_timestamp($E68_BURST_AT - 5)" | tr -d '[:space:]'
+}
+
+# e68_applied: inbox rows of the groups that read finapp.payments, for events first written after the burst.
+e68_applied() {
+    psql_query -c "SELECT count(*) FROM platform.inbox_message i JOIN platform.outbox_event e ON i.dedupe_key = e.event_id::text
+        WHERE e.occurred_at >= to_timestamp($E68_BURST_AT) AND 'finapp.' || split_part(i.consumer, '.', 1) IN ($E68_GROUP_LIST)" | tr -d '[:space:]'
+}
+
+E68_steady() {
+    brokers_check
+    lag_settled e68-before || fail "E68: the groups were not settled before the burst"
+    E68_GROUPS=$(awk '$1 ~ /^finapp\./ && $2 == "finapp.payments" {print $1}' "$ART/consumer-groups-e68-before.txt" | sort -u | paste -sd' ' -)
+    [ -n "$E68_GROUPS" ] || cannot "E68: no consumer group reads finapp.payments: see consumer-groups-e68-before.txt"
+    E68_GROUP_LIST=$(printf '%s\n' $E68_GROUPS | sed "s/.*/'&'/" | paste -sd, -)
+    [ "$(psql_query -c "SELECT count(*) FROM platform.inbox_parked_record WHERE state IN ('FAILING', 'PARKED')" | tr -d '[:space:]')" = 0 ] \
+        || fail "E68: a record was failing or parked before the burst"
+    # The discard's second person: the controller, given the event operator's role from SQL as the load scope seeds its operators (this
+    # scope runs no grant door). The operator, the first person, holds it from the seed.
+    psql_query <<SQL >> "$EXP_DIR/seed.log" 2>&1 || cannot "E68: the discard's second person could not be seeded"
+INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at)
+ SELECT uuidv7(), i.id, 'EVENT_OPERATOR', i.id, now() FROM identity.identity i
+  WHERE i.login_identifier = '$(sed -n 's/^controller.login=//p' "$CLIENT/state.properties")'
+  AND NOT EXISTS (SELECT 1 FROM identity.role_assignment r WHERE r.identity_id = i.id AND r.role_name = 'EVENT_OPERATOR' AND r.revoked_at IS NULL);
+SQL
+    start_workload e68 retry
+    sleep 30
+    E68_EVICTIONS_BEFORE=$(experiments_prom_value 'sum(finapp_inbox_consumer_evictions_total) or vector(0)')
+    case $E68_EVICTIONS_BEFORE in '') cannot "E68: Prometheus did not answer for the consumers' evictions" ;; esac
+    experiments_record groups "finapp.payments read by $E68_GROUPS; ${E68_EVICTIONS_BEFORE%%.*} evictions before the burst"
+}
+
+E68_fault() {
+    E68_TAG=$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
+    E68_BURST_AT=$(db_epoch)
+    i=1
+    while [ "$i" -le "$E68_RECORDS" ]; do
+        printf 'e68-%s-%s:this is not an event\n' "$E68_TAG" "$i"
+        i=$((i + 1))
+    done | kafka_admin kafka-console-producer.sh --topic finapp.payments --command-property acks=all \
+        --reader-property parse.key=true --reader-property key.separator=: > "$EXP_DIR/burst.log" 2>&1 \
+        || cannot "E68: the burst could not be written: see experiments/E68/burst.log"
+    log "E68: $E68_RECORDS poison records written to finapp.payments, not registered: their undo is the discard, in the recovery"
+    experiments_record fault "$E68_RECORDS records that are no event written to finapp.payments at $(date -u -d "@$E68_BURST_AT" +%H:%M:%SZ), keyed e68-$E68_TAG-1 to e68-$E68_TAG-$E68_RECORDS"
+}
+
+E68_observe() {
+    groups=$(printf '%s\n' $E68_GROUPS | grep -c .)
+    E68_EXPECTED=$((E68_RECORDS * groups))
+    E68_PAGED=""
+    # Each record holds its partition for its budget, so the bound is every record on one partition, three minutes each, and five more.
+    deadline=$(( $(date +%s) + E68_RECORDS * 180 + 300 ))
+    printf 'time\tfailing\tparked\tapplied since the burst\n' > "$EXP_DIR/parking.tsv"
+    while :; do
+        e68_pages_tick || return 0
+        failing=$(e68_rows FAILING)
+        parked=$(e68_rows PARKED)
+        printf '%s\t%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$failing" "$parked" "$(e68_applied)" >> "$EXP_DIR/parking.tsv"
+        [ "$parked" = "$E68_EXPECTED" ] && break
+        [ "$(date +%s)" -lt "$deadline" ] || { EXP_STOPPED="$parked of the burst's $E68_EXPECTED parks within $((E68_RECORDS * 180 + 300)) s"; return 0; }
+        sleep 10
+    done
+    E68_PARKED_AT=$(date +%s)
+    applied=$(e68_applied)
+    # The page fires on the parked gauge, which each replica reads at most a minute late.
+    deadline=$((E68_PARKED_AT + 300))
+    until [ -n "$E68_PAGED" ]; do
+        EXP_PAGES_AT=0
+        e68_pages_tick || return 0
+        [ -n "$E68_PAGED" ] && break
+        [ "$(date +%s)" -lt "$deadline" ] || { EXP_STOPPED="InboxDeadLetterParked did not fire within 300 s of the last park"; return 0; }
+        sleep 15
+    done
+    lag_settled e68 || { EXP_STOPPED="the groups did not move past the burst once it was parked"; return 0; }
+    evictions=$(experiments_prom_value 'sum(finapp_inbox_consumer_evictions_total) or vector(0)')
+    case $evictions in '') fail "E68: Prometheus did not answer for the consumers' evictions" ;; esac
+    evicted=$(( ${evictions%%.*} - ${E68_EVICTIONS_BEFORE%%.*} ))
+    psql_query -F "$(printf '\t')" -c "SELECT consumer_group, count(*), count(DISTINCT partition_number || ':' || record_offset), count(DISTINCT partition_number)
+        FROM platform.inbox_parked_record WHERE state = 'PARKED' AND topic = 'finapp.payments' AND dedupe_key LIKE 'malformed:%'
+         AND first_failed_at >= to_timestamp($E68_BURST_AT - 5) GROUP BY consumer_group ORDER BY 1" > "$EXP_DIR/parks-by-group.tsv"
+    short=$(awk -F'\t' -v n="$E68_RECORDS" '$2 != n || $3 != n' "$EXP_DIR/parks-by-group.tsv" | grep -c . || true)
+    listed=$(grep -c . "$EXP_DIR/parks-by-group.tsv" || true)
+    others=$(( $(experiments_parked "$E68_BURST_AT") - E68_EXPECTED ))
+    experiments_record parked "$E68_EXPECTED parks ($E68_RECORDS records for each of $groups groups, over $(cut -f4 "$EXP_DIR/parks-by-group.tsv" | sort -n | tail -1) partitions at most) $((E68_PARKED_AT - E68_BURST_AT)) s after the burst; InboxDeadLetterParked firing $((E68_PAGED - E68_BURST_AT)) s after it; $applied records written after the burst applied by these groups meanwhile; $evicted members evicted; $others other records parked"
+    [ "$listed" = "$groups" ] && [ "$short" = 0 ] || fail "E68: not every group parked each record once: see experiments/E68/parks-by-group.tsv"
+    [ "$applied" -ge 1 ] || EXP_STOPPED="the groups applied nothing written after the burst while it was parking, so the burst stopped them"
+    [ "$evicted" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$evicted members evicted past their poll budget during the burst"
+    [ "$others" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$others records parked beside the burst"
+    [ -n "$EXP_STOPPED" ] || pass "E68: $E68_RECORDS poison records parked by each of $groups groups, its page fired, the groups kept applying and moved past them, no member evicted"
+}
+
+E68_recover() {
+    experiments_workload_end e68
+    # Every record of the burst parked before any is discarded: one still failing would park after the discards.
+    deadline=$(( $(date +%s) + E68_RECORDS * 180 + 300 ))
+    until [ "$(e68_rows FAILING)" = 0 ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || fail "E68: a record of the burst still failing $((E68_RECORDS * 180 + 300)) s into the recovery"
+        sleep 10
+    done
+    parked=$(e68_rows PARKED)
+    client dead-letters parked > "$EXP_DIR/client.log" 2>&1 < /dev/null || fail "E68: the dead-letter queue could not be read"
+    sed -n 's/^platform dead-letters parked kind=INBOX_RECORD id=malformed:finapp\.payments:[^ ]* .*park=\([^ ]*\).*/\1/p' "$EXP_DIR/client.log" \
+        | grep -vx -- - > "$EXP_DIR/parks.txt" || true
+    parks=$(grep -c . "$EXP_DIR/parks.txt" || true)
+    [ "$parks" = "$parked" ] || fail "E68: the queue lists $parks of the burst's $parked parks: see experiments/E68/client.log"
+    [ "$parks" -ge 1 ] || fail "E68: nothing of the burst to discard"
+    client release-parked "$(head -1 "$EXP_DIR/parks.txt")" >> "$EXP_DIR/client.log" 2>&1 < /dev/null || true
+    grep -q '^platform release-parked status=4.. code=deadletter.NotReleasable' "$EXP_DIR/client.log" \
+        || fail "E68: a record that was never an event was not refused release: $(grep '^platform release-parked' "$EXP_DIR/client.log")"
+    # Each park discarded by two persons: proposed by the operator, refused to the operator, approved by the controller.
+    while read -r park; do
+        client discard INBOX_RECORD "$park" > "$EXP_DIR/discard.out" 2>&1 < /dev/null || fail "E68: the discard of $park could not run"
+        cat "$EXP_DIR/discard.out" >> "$EXP_DIR/client.log"
+        grep -q '^platform discard self status=403' "$EXP_DIR/discard.out" && grep -q '^platform discard approved status=200' "$EXP_DIR/discard.out" \
+            || fail "E68: the discard of $park was not two persons' act: see experiments/E68/client.log"
+    done < "$EXP_DIR/parks.txt"
+    discarded=$(psql_query -c "SELECT count(*) FROM platform.dead_letter_discard d JOIN platform.inbox_parked_record p ON d.subject_id = p.park_id
+        WHERE d.subject_kind = 'INBOX_RECORD' AND d.status = 'APPROVED' AND d.decided_by <> d.proposed_by AND p.state = 'DISCARDED'
+          AND p.topic = 'finapp.payments' AND p.dedupe_key LIKE 'malformed:%' AND p.first_failed_at >= to_timestamp($E68_BURST_AT - 5)" | tr -d '[:space:]')
+    [ "$discarded" = "$parks" ] || fail "E68: $discarded approved two-person discards for the burst's $parks parks"
+    deadline=$(( $(date +%s) + 600 ))
+    while experiments_alert_firing InboxDeadLetterParked; do
+        [ "$(date +%s)" -lt "$deadline" ] || fail "E68: InboxDeadLetterParked still firing 600 s after the discards"
+        sleep 15
+    done
+    [ "$(e68_rows FAILING)|$(e68_rows PARKED)" = "0|0" ] || fail "E68: a record of the burst is failing or parked after the discards"
+    experiments_record discarded "a release refused (deadletter.NotReleasable); $parks parks discarded, each proposed by one person and approved by another; InboxDeadLetterParked cleared"
+    experiments_topology_check
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The provider experiments (P16-TSK-018): E17 the card PSP out, E18 the FX provider and the reference out, E21 every provider slow;
+# E19 and E20 refused with their reasons. docs/architecture/TIMEOUTS_AND_RETRIES.md section 5; OPERATIONS_RUNBOOK.md section 11.53.
+# Each degrades the simulator through the fault registry (the hold kind puts a flag file on and takes it off, Simulator.java reads
+# it) or the proxy (a latency toxic on the simulator's hop), so the boundary passes before every fault and the exit trap clears it.
+# Each reads the platform's side (the database, Prometheus) and the provider's side (the simulator's requests.tsv) and judges both.
+# ---------------------------------------------------------------------------------------------------
+
+# How long each phase of a provider fault holds: long enough for several sweep ticks, short of the unknown-age page's 15 minutes.
+PROVIDER_PHASE_SECONDS=${REHEARSAL_PROVIDER_PHASE_SECONDS:-240}
+
+# The bound a card movement is resolved within once its provider answers again, read from the code's default as the load scope reads
+# it (never copied): twice the payment sweep's dispatched age, and five minutes for the sweep's poll, the claim's lease and the client.
+provider_resolve_seconds() {
+    age=$(sed -n 's/.*finapp\.payments\.sweeper\.dispatched-age:PT\([0-9]*\)M}.*/\1/p' \
+        "$ROOT/app/src/main/java/com/finapp/app/payments/PaymentSweeperSchedule.java" | head -1)
+    case $age in '' | *[!0-9]*) cannot "the payment sweep's dispatched age could not be read from PaymentSweeperSchedule.java" ;; esac
+    ! grep -Eqr 'SWEEPER_DISPATCHED_?AGE|sweeper\.dispatched-age' "$ROOT/deploy" \
+        || cannot "a deployed overlay sets the payment sweep's dispatched age, which this bound reads from the code's default"
+    PROVIDER_RESOLVE_SECONDS=$((2 * age * 60 + 300))
+}
+
+# provider_requests: the simulator's own record of every request, degraded or not (Simulator.java's requests.tsv), into the
+# experiment's directory: millis, method, path, our key or the inquired reference, what became of it.
+provider_requests() {
+    sleep 3
+    experiments_simulator cat /tmp/requests.tsv > "$EXP_DIR/requests.tsv" 2>/dev/null || cannot "$EXP_ID: the simulator's requests could not be read"
+    [ -s "$EXP_DIR/requests.tsv" ] || cannot "$EXP_ID: the simulator recorded no request at all, so nothing could be judged"
+}
+
+# provider_blind_resends <since millis>: every dispatch key the provider received again with no answered inquiry of it in between - a blind resend
+# of an ambiguous call, which the platform must never make (PHASE_16_PLAN.md section 8). A resend after an inquiry is class (c), the
+# provider having said it never saw the first. Prints one line per blind resend; nothing printed is none.
+provider_blind_resends() {
+    awk -F'\t' -v since="$1" '$1 >= since && $4 != "-" {
+        if ($2 == "POST") { key = $3 "|" $4; if ((key in sent) && !asked[$4]) print; sent[key] = 1; asked[$4] = 0 }
+        else if ($5 == "inquiry") asked[$4] = 1
+    }' "$EXP_DIR/requests.tsv"
+}
+
+# provider_rail_outcomes <label>: the acting judgements so far, by rail and outcome (finapp.payments.rail.outcome, counted after commit).
+provider_rail_outcomes() {
+    answer=$(experiments_prometheus "/api/v1/query?query=$(urlencode 'sum by (rail, outcome) (finapp_payments_rail_outcome_total)')" 2>/dev/null || true)
+    case $answer in *'"status":"success"'*) ;; *) cannot "$EXP_ID: Prometheus did not answer the rail outcomes ($1)" ;; esac
+    printf '%s' "$answer" | grep -o '"metric":{[^}]*},"value":\[[^]]*\]' \
+        | sed -n 's/.*"outcome":"\([^"]*\)".*"rail":"\([^"]*\)".*"\([0-9.e+]*\)"\]$/\2\t\1\t\3/p' | sort > "$EXP_DIR/rail-outcomes-$1.tsv"
+}
+
+# provider_failure_rates <from label> <to label>: per rail, the share of the acting judgements between two readings that failed or were left
+# unknown - the measurement owner decision C12 waits on (TIMEOUTS_AND_RETRIES.md section 5). Recorded, never judged.
+provider_failure_rates() {
+    rates=$(awk -F'\t' -v from="$EXP_DIR/rail-outcomes-$1.tsv" '
+        BEGIN { while ((getline line < from) > 0) { split(line, f, "\t"); before[f[1] "\t" f[2]] = f[3] } }
+        { delta = $3 - before[$1 "\t" $2]; all[$1] += delta; if ($2 == "FAILED" || $2 == "UNKNOWN") bad[$1] += delta }
+        END { for (rail in all) printf "%s %d of %d (%s); ", rail, bad[rail], all[rail], (all[rail] > 0 ? sprintf("%.4f", bad[rail] / all[rail]) : "none judged") }' \
+        "$EXP_DIR/rail-outcomes-$2.tsv")
+    experiments_record "failure rate per rail, $1 to $2" "${rates:-no judgement}"
+}
+
+# provider_page <name>: whether a page fires now, by name, for the record ("firing", "silent" or "unreadable").
+provider_page() {
+    answer=$(experiments_prometheus "/api/v1/query?query=$(urlencode "ALERTS{alertstate=\"firing\",alertname=\"$1\"}")" 2>/dev/null || true)
+    case $answer in *'"status":"success"'*) ;; *) echo unreadable; return 0 ;; esac
+    case $answer in *"\"alertname\":\"$1\""*) echo firing ;; *) echo silent ;; esac
+}
+
+# provider_watch <seconds> <what>: the experiment held for a phase, its correctness pages watched every 15 s (ADR-0127 decision 6), and the
+# experiment's own stop condition (provider_stop_condition, set by each experiment) read on each pass. Returns early on a stop.
+provider_watch() {
+    until_epoch=$(( $(date +%s) + $1 ))
+    while [ "$(date +%s)" -lt "$until_epoch" ]; do
+        firing=$(experiments_pages_firing)
+        if [ -n "$firing" ]; then
+            EXP_STOPPED="a correctness page during $2: $firing"
+            log "$EXP_ID STOP: $EXP_STOPPED"
+            return 0
+        fi
+        # Called in this shell, never inside $( ): the stop condition keeps its count across passes, and a refusal ends the run.
+        provider_stop_condition
+        if [ -n "$PROVIDER_STOP" ]; then
+            EXP_STOPPED="$PROVIDER_STOP, during $2"
+            log "$EXP_ID STOP: $EXP_STOPPED"
+            return 0
+        fi
+        printf '%s\t%s\tnone\n' "$(date -u +%H:%M:%S)" "$2" >> "$EXP_DIR/pages.tsv"
+        sleep 15
+    done
+}
+
+# Card attempts born since the experiment's start: captured ones whose authorization and capture the provider never took, and ones still
+# waiting on an answer.
+provider_card_unanswered() {
+    # Called inside $( ): it never ends the run itself, and an unreadable side is printed as a problem.
+    psql_query -c "SELECT a.status || ' ' || a.auth_reference || ' ' || coalesce(a.capture_reference, '-') FROM payments.payment_attempt a
+        WHERE a.rail = 'card' AND a.created_at >= to_timestamp($PROVIDER_START) AND a.status IN ('AUTHORIZED', 'CAPTURED')" \
+        > "$EXP_DIR/card-concluded.raw" 2>/dev/null || { echo "the concluded card attempts could not be read"; return 0; }
+    tr -d '\r' < "$EXP_DIR/card-concluded.raw" > "$EXP_DIR/card-concluded.txt"
+    [ -s "$EXP_DIR/requests.tsv" ] || { echo "the provider's requests could not be read"; return 0; }
+    awk -F'\t' '$5 == "effect" && ($3 == "/authorizations" || $3 == "/captures") {print $3 " " $4}' "$EXP_DIR/requests.tsv" | sort -u > "$EXP_DIR/card-effects.txt"
+    awk 'NR == FNR {taken[$0] = 1; next}
+        NF >= 2 && !(("/authorizations " $2) in taken) {print "authorized with no authorization the provider took: " $0}
+        NF >= 3 && $1 == "CAPTURED" && !(("/captures " $3) in taken) {print "captured with no capture the provider took: " $0}' \
+        "$EXP_DIR/card-effects.txt" "$EXP_DIR/card-concluded.txt"
+}
+
+provider_card_waiting() {
+    psql_query -c "SELECT count(*) FROM payments.payment_attempt WHERE rail = 'card' AND created_at >= to_timestamp($PROVIDER_START)
+        AND status IN ('AUTH_DISPATCHED', 'AUTH_UNKNOWN', 'CAPTURE_DISPATCHED', 'CAPTURE_UNKNOWN', 'VOID_DISPATCHED', 'VOID_UNKNOWN')" | tr -d '[:space:]'
+}
+
+# Card attempts that left one unknown state more than once: an unknown is resolved once.
+provider_card_resolved_twice() {
+    psql_query -c "SELECT count(*) FROM (SELECT e.attempt_id, e.from_status FROM payments.payment_attempt_event e
+        JOIN payments.payment_attempt a ON a.id = e.attempt_id
+        WHERE a.rail = 'card' AND a.created_at >= to_timestamp($PROVIDER_START) AND e.from_status LIKE '%\_UNKNOWN'
+        GROUP BY e.attempt_id, e.from_status HAVING count(*) > 1) twice" | tr -d '[:space:]'
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E17: the card PSP unavailable (503), then silent past the timeout, under the workload, at three replicas.
+# ---------------------------------------------------------------------------------------------------
+
+E17_steady() {
+    provider_resolve_seconds
+    PROVIDER_START=$(db_epoch)
+    PROVIDER_START_MILLIS=$((PROVIDER_START * 1000))
+    # The client keeps asking under each key until its movement ends, past the outage and the sweep's resolution: what it was told is
+    # then what the platform concluded, so the census's client counts and the provider's keys can agree.
+    WORKLOAD_RETRY_SECONDS=$((2 * PROVIDER_PHASE_SECONDS + PROVIDER_RESOLVE_SECONDS))
+    start_workload e17 retry
+    unset WORKLOAD_RETRY_SECONDS
+    sleep 60
+    provider_rail_outcomes steady-start
+    sleep 60
+    provider_rail_outcomes steady
+    experiments_record "steady state" "the workload running with retries under its keys for $((2 * PROVIDER_PHASE_SECONDS + PROVIDER_RESOLVE_SECONDS)) s; the card rail answering"
+}
+
+# Each experiment's own stop condition (its register row's), read on every pass of provider_watch; sets PROVIDER_STOP. A reading that
+# cannot be made is a stop too: a count nobody could read is not a zero.
+provider_stop_condition() {
+    PROVIDER_STOP=""
+    case $EXP_ID in
+        E17)
+            experiments_simulator cat /tmp/requests.tsv > "$EXP_DIR/requests.tsv" 2>/dev/null || true
+            unanswered=$(provider_card_unanswered)
+            [ -z "$unanswered" ] || PROVIDER_STOP="a payment posted without a provider answer: $(printf '%s' "$unanswered" | head -1)" ;;
+        E18)
+            stale=$(provider_fx_stale)
+            [ "$stale" = 0 ] || PROVIDER_STOP="a conversion on a stale rate, or the count unreadable ('$stale')" ;;
+        E21)
+            provider_unaffected_breach ;;
+    esac
+}
+
+E17_fault() {
+    experiments_fault_on hold degrade-card-unavailable
+    experiments_record fault "the card rail answered 503 for every request (degrade-card-unavailable) from $(date -u +%H:%M:%SZ)"
+    provider_watch "$PROVIDER_PHASE_SECONDS" "the card rail unavailable"
+    provider_rail_outcomes unavailable
+    [ -n "$EXP_STOPPED" ] && return 0
+    experiments_fault_off hold degrade-card-unavailable
+    experiments_fault_on hold degrade-card-silent
+    experiments_record fault "the card rail silent past the timeout for every request (degrade-card-silent) from $(date -u +%H:%M:%SZ)"
+}
+
+E17_observe() {
+    [ -n "$EXP_STOPPED" ] && return 0
+    provider_watch "$PROVIDER_PHASE_SECONDS" "the card rail silent"
+    provider_rail_outcomes silent
+    experiments_record "unknown-age page during the fault" "PaymentUnknownAged $(provider_page PaymentUnknownAged)"
+}
+
+E17_recover() {
+    # The fault is off (the stop removed it). Every card movement born since the start resolves within the bound, each unknown once.
+    deadline=$(( $(date +%s) + PROVIDER_RESOLVE_SECONDS ))
+    waiting=1
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        waiting=$(provider_card_waiting)
+        [ "$waiting" = 0 ] && break
+        sleep 15
+    done
+    [ "$waiting" = 0 ] || fail "E17: $waiting card attempts born since the start still wait on an answer $PROVIDER_RESOLVE_SECONDS s after the provider returned"
+    stop_workload e17
+    assert_flows_ran e17
+    experiments_record workload "$(cat "$CLIENT/workload-e17.summary")"
+    provider_rail_outcomes returned
+    provider_failure_rates steady-start steady
+    provider_failure_rates steady unavailable
+    provider_failure_rates unavailable silent
+    provider_failure_rates silent returned
+    provider_requests
+    unanswered=$(provider_card_unanswered)
+    [ -z "$unanswered" ] || fail "E17: a payment concluded without its provider's answer: $(printf '%s' "$unanswered" | head -3 | tr '\n' ';')"
+    twice=$(provider_card_resolved_twice)
+    [ "$twice" = 0 ] || fail "E17: $twice card attempts left one unknown state more than once"
+    blind=$(provider_blind_resends "$PROVIDER_START_MILLIS")
+    [ -z "$blind" ] || fail "E17: a dispatch sent to the provider again with no inquiry of it in between: $(printf '%s' "$blind" | head -3 | tr '\n' ';')"
+    degraded=$(awk -F'\t' -v since="$PROVIDER_START_MILLIS" '$1 >= since && ($5 == "unavailable" || $5 == "silent")' "$EXP_DIR/requests.tsv" | grep -c . || true)
+    [ "$degraded" -ge 1 ] || fail "E17: the provider degraded no request, so nothing was shown: the control"
+    concluded=$(grep -c . "$EXP_DIR/card-concluded.txt" || true)
+    experiments_record "provider's side" "$degraded requests degraded; no blind resend; $concluded card attempts concluded since the start, each on an answer the provider took"
+    experiments_record "unknowns" "none left waiting; none resolved twice"
+    experiments_record "unknown-age page after" "PaymentUnknownAged $(provider_page PaymentUnknownAged)"
+    pass "E17: 0 card payments concluded without the provider's answer, every unknown resolved once within $PROVIDER_RESOLVE_SECONDS s of the provider's return, no blind resend ($degraded degraded requests)"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E18: the FX provider unavailable, then the reference rate source unavailable past its staleness, at three replicas.
+# ---------------------------------------------------------------------------------------------------
+
+# Conversions booked since the start on a stale rate: a quote priced from a reference older than its pair's maximum age when issued, or a
+# trade booked after its quote expired.
+provider_fx_stale() {
+    psql_query -c "SELECT count(*) FROM fx.trade t JOIN fx.quote q ON q.id = t.quote_id JOIN fx.rate_snapshot s ON s.id = q.reference_snapshot_id
+        JOIN fx.pricing_pair p ON p.policy_id = q.pricing_policy_version_id AND p.source_currency = q.source_currency
+         AND p.destination_currency = q.destination_currency AND p.purpose = q.purpose
+        WHERE t.booked_at >= to_timestamp($PROVIDER_START)
+          AND (q.issued_at - s.received_at > p.reference_max_age_seconds * interval '1 second' OR t.booked_at > q.expires_at)" 2>/dev/null \
+        | tr -d '[:space:]'
+}
+
+# e18_conversion <label>: one customer conversion through the doors (a quote, then the conversion); its line in platform-client.log.
+e18_conversion() {
+    client fx-conversion "$1" >> "$ART/platform-client.log" 2>&1 || true
+    grep "^platform fx-conversion $1 " "$ART/platform-client.log" | tail -1
+}
+
+E18_steady() {
+    case " $EXTRA_PROVIDER_NAMES " in *" FINAPP_FX_PROVIDER_URL "*) ;; *) cannot "E18: the run names no FX provider to the application" ;; esac
+    PROVIDER_START=$(db_epoch)
+    # Section 2's pricing policy, by two persons, as the platform scopes do (OPERATIONS_RUNBOOK.md section 2): no quote without it.
+    client platform-prepare >> "$ART/platform-client.log" 2>&1 || fail "E18: the platform's persons could not be registered: see platform-client.log"
+    psql_query -f - < "$CLIENT/seed-platform.sql" >> "$ART/seed.log" 2>&1 || fail "E18: the platform seed failed: see seed.log"
+    psql_query -f - < "$CLIENT/ids.sql" > "$CLIENT/ids.properties" 2>> "$ART/seed.log" || fail "E18: the identities could not be read"
+    client platform-staff >> "$ART/platform-client.log" 2>&1 || fail "E18: the staff's roles could not be granted: see platform-client.log"
+    client activate-pricing >> "$ART/platform-client.log" 2>&1 || fail "E18: the pricing policy could not be activated: see platform-client.log"
+    grep -q '^platform activate-pricing .*approved status=20[01]' "$ART/platform-client.log" || fail "E18: the pricing policy was not activated by a second person"
+    PROVIDER_MAX_AGE=$(psql_query -c "SELECT max(p.reference_max_age_seconds) FROM fx.pricing_pair p JOIN fx.pricing_policy_version v ON v.id = p.policy_id
+        WHERE v.status = 'ACTIVE'" | tr -d '[:space:]')
+    case $PROVIDER_MAX_AGE in '' | *[!0-9]*) cannot "E18: the active pricing policy's reference maximum age could not be read" ;; esac
+    control=$(e18_conversion e18-steady)
+    case $control in *" status=20"[01]" trade="[!-]*) ;; *) fail "E18: the control conversion before the fault was not booked: $control" ;; esac
+    start_workload e18 retry
+    experiments_record "steady state" "a conversion booked before the fault ($control); the reference's maximum age $PROVIDER_MAX_AGE s"
+}
+
+E18_fault() {
+    experiments_fault_on hold degrade-fx-unavailable
+    experiments_record fault "the FX provider answered 503 for every quote and execution (degrade-fx-unavailable) from $(date -u +%H:%M:%SZ)"
+    refused=0
+    for try in 1 2 3; do
+        answer=$(e18_conversion "e18-provider-out-$try")
+        printf '%s\n' "$answer" >> "$EXP_DIR/conversions.txt"
+        case $answer in *" status=20"[01]" trade="[!-]*) ;; *) refused=$((refused + 1)) ;; esac
+        sleep 20
+    done
+    experiments_record "provider out" "$refused of 3 conversions refused while no firm quote could be had"
+    [ "$refused" = 3 ] || fail "E18: a conversion was booked while the FX provider gave no quote: see experiments/E18/conversions.txt"
+    provider_watch 60 "the FX provider unavailable"
+    [ -n "$EXP_STOPPED" ] && return 0
+    experiments_fault_off hold degrade-fx-unavailable
+    experiments_fault_on hold degrade-reference-unavailable
+    experiments_record fault "the reference rate source answered 503 (degrade-reference-unavailable) from $(date -u +%H:%M:%SZ), the FX provider answering"
+}
+
+E18_observe() {
+    [ -n "$EXP_STOPPED" ] && return 0
+    # Past the reference's maximum age, and a fetch interval more: every quote must now be refused on its stale reference.
+    provider_watch $((PROVIDER_MAX_AGE + 60)) "the reference unavailable, ageing past its maximum"
+    [ -n "$EXP_STOPPED" ] && return 0
+    before=$(provider_quote_outcome refused_reference_stale)
+    stale_refused=0
+    for try in 1 2 3; do
+        answer=$(e18_conversion "e18-reference-stale-$try")
+        printf '%s\n' "$answer" >> "$EXP_DIR/conversions.txt"
+        case $answer in *" status=503 "*"code=fx.RateUnavailable"*) stale_refused=$((stale_refused + 1)) ;; esac
+        sleep 10
+    done
+    # Refused for the stale reference itself, not for another rate trouble that answers the same code: the quote's own outcome, counted.
+    sleep 30
+    after=$(provider_quote_outcome refused_reference_stale)
+    case "$before$after" in *[!0-9]* | '') fail "E18: the quotes' outcomes could not be read from Prometheus ('$before', '$after')" ;; esac
+    experiments_record "reference stale" "$stale_refused of 3 conversions refused fx.RateUnavailable past the reference's maximum age; refused_reference_stale counted $((after - before)) times"
+    [ "$stale_refused" = 3 ] || fail "E18: a quote was not refused on a stale reference: see experiments/E18/conversions.txt"
+    [ $((after - before)) -ge 3 ] || fail "E18: the refusals were not counted as the reference's staleness (refused_reference_stale rose by $((after - before)))"
+}
+
+# provider_quote_outcome <outcome>: the quotes refused or issued with that outcome so far (finapp.fx.quote), a whole number.
+provider_quote_outcome() {
+    experiments_prometheus "/api/v1/query?query=$(urlencode "sum(finapp_fx_quote_total{outcome=\"$1\"}) or vector(0)")" 2>/dev/null \
+        | sed -n 's/.*"value":\[[^,]*,"\([0-9]*\)\(\.[0-9]*\)\{0,1\}"\].*/\1/p'
+}
+
+E18_recover() {
+    deadline=$(( $(date +%s) + 300 ))
+    answer=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        answer=$(e18_conversion e18-returned)
+        case $answer in *" status=20"[01]" trade="[!-]*) break ;; esac
+        sleep 20
+    done
+    case $answer in *" status=20"[01]" trade="[!-]*) ;; *) fail "E18: no conversion was booked within 300 s of the providers' return: $answer" ;; esac
+    stop_workload e18
+    assert_flows_ran e18
+    stale=$(provider_fx_stale)
+    [ "$stale" = 0 ] || fail "E18: $stale conversions booked on a stale rate"
+    booked=$(psql_query -c "SELECT count(*) FROM fx.trade WHERE booked_at >= to_timestamp($PROVIDER_START)" | tr -d '[:space:]')
+    [ "${booked:-0}" -ge 2 ] || fail "E18: only ${booked:-0} conversions were booked, so the stale-rate count read almost nothing: the control"
+    provider_requests
+    blind=$(provider_blind_resends "$((PROVIDER_START * 1000))")
+    [ -z "$blind" ] || fail "E18: an FX dispatch sent again with no inquiry of it in between: $(printf '%s' "$blind" | head -3 | tr '\n' ';')"
+    experiments_record conversions "$booked booked since the start, none on a stale rate; the conversion after the return: $answer"
+    pass "E18: 0 conversions on a stale rate ($booked booked and judged), quotes refused while the provider gave none and once the reference aged past $PROVIDER_MAX_AGE s"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E21: every provider slowed to two, then ten, times its steady latency (a latency toxic on the simulator's hop), at three replicas.
+# ---------------------------------------------------------------------------------------------------
+
+# provider_latency_ms <window>: the card provider calls' mean latency over the window, in whole milliseconds (finapp.payments.provider.latency
+# publishes _sum and _count, no buckets).
+provider_latency_ms() {
+    query="1000 * sum(increase(finapp_payments_provider_latency_seconds_sum[$1])) / sum(increase(finapp_payments_provider_latency_seconds_count[$1]))"
+    experiments_prometheus "/api/v1/query?query=$(urlencode "$query")" 2>/dev/null | sed -n 's/.*"value":\[[^,]*,"\([0-9.]*\)"\].*/\1/p' | cut -d. -f1
+}
+
+# The routes that call no provider, within their objectives (SLOS.md section 2): their 5-minute error ratios, read now.
+provider_unaffected_ratios() {
+    for objective in transfer_latency:0.01 authentication_latency:0.05 transfer_availability:0.001; do
+        name=${objective%%:*}
+        budget=${objective##*:}
+        value=$(experiments_prometheus "/api/v1/query?query=$(urlencode "max(finapp:slo_${name}:error_ratio_rate5m)")" 2>/dev/null \
+            | sed -n 's/.*"value":\[[^,]*,"\([0-9.eE+-]*\)"\].*/\1/p')
+        printf '%s %s %s\n' "$name" "${value:-unread}" "$budget"
+    done
+}
+
+# The stop condition: an unaffected route past its objective for five minutes running (twenty passes of provider_watch's 15 s).
+# Run in this shell (provider_stop_condition), so its count of passes over the objective survives from one pass to the next.
+provider_unaffected_breach() {
+    over=$(provider_unaffected_ratios | awk '$2 != "unread" && $2 + 0 > $3 + 0 {print $1}' | tr '\n' ' ')
+    if [ -n "$over" ]; then
+        E21_OVER=$((${E21_OVER:-0} + 1))
+    else
+        E21_OVER=0
+    fi
+    [ "${E21_OVER:-0}" -lt 20 ] || PROVIDER_STOP="an unaffected route past its objective for 5 minutes: $over"
+}
+
+# The hinted inquiries the bulkhead refused, from every replica's lines (no meter counts them: TIMEOUTS_AND_RETRIES.md section 6).
+provider_bulkhead_refusals() {
+    total=0
+    for pod in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name 2>/dev/null); do
+        count=$(kube -n finapp logs "$pod" --since-time="$1" 2>/dev/null | grep -c 'Too many hinted inquiries are running on this instance' || true)
+        total=$((total + ${count:-0}))
+    done
+    echo "$total"
+}
+
+E21_steady() {
+    start_workload e21 retry
+    sleep 180
+    E21_NORMAL=$(provider_latency_ms 2m)
+    case $E21_NORMAL in '' | *[!0-9]*) cannot "E21: the card provider's steady latency could not be read from Prometheus" ;; esac
+    [ "$E21_NORMAL" -ge 1 ] || E21_NORMAL=1
+    E21_SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    provider_rail_outcomes steady
+    experiments_record "steady state" "the card provider's mean latency ${E21_NORMAL} ms over two minutes; unaffected routes: $(provider_unaffected_ratios | tr '\n' ';')"
+}
+
+E21_fault() {
+    E21_OVER=0
+    experiments_fault_on toxic simulator e21-twice latency "latency=$E21_NORMAL"
+    experiments_record fault "every provider call delayed by ${E21_NORMAL} ms more (two times its steady latency) from $(date -u +%H:%M:%SZ)"
+    provider_watch "$PROVIDER_PHASE_SECONDS" "the providers at two times their latency"
+    experiments_record "at two times" "card provider latency $(provider_latency_ms 2m) ms; unaffected routes: $(provider_unaffected_ratios | tr '\n' ';'); bulkhead refusals so far $(provider_bulkhead_refusals "$E21_SINCE")"
+    provider_rail_outcomes twice
+    [ -n "$EXP_STOPPED" ] && return 0
+    experiments_fault_off toxic simulator e21-twice latency "latency=$E21_NORMAL"
+    experiments_fault_on toxic simulator e21-tenfold latency "latency=$((9 * E21_NORMAL))"
+    experiments_record fault "every provider call delayed by $((9 * E21_NORMAL)) ms more (ten times its steady latency) from $(date -u +%H:%M:%SZ)"
+}
+
+E21_observe() {
+    [ -n "$EXP_STOPPED" ] && return 0
+    provider_watch "$PROVIDER_PHASE_SECONDS" "the providers at ten times their latency"
+    experiments_record "at ten times" "card provider latency $(provider_latency_ms 2m) ms; unaffected routes: $(provider_unaffected_ratios | tr '\n' ';'); bulkhead refusals so far $(provider_bulkhead_refusals "$E21_SINCE")"
+    provider_rail_outcomes tenfold
+}
+
+E21_recover() {
+    sleep 120
+    stop_workload e21
+    assert_flows_ran e21
+    [ "$(workload_unresolved e21)" = 0 ] || fail "E21: $(workload_unresolved e21) requests stayed unresolved under slow providers: see workload-e21.tsv"
+    provider_rail_outcomes returned
+    provider_failure_rates steady twice
+    provider_failure_rates twice tenfold
+    provider_failure_rates tenfold returned
+    unread=$(provider_unaffected_ratios | awk '$2 == "unread" {print $1}' | tr '\n' ' ')
+    [ -z "$unread" ] || fail "E21: the unaffected routes' objectives could not be read ($unread), so nothing was shown"
+    experiments_record "bulkhead refusals" "$(provider_bulkhead_refusals "$E21_SINCE") hinted inquiries left to the sweep by the bulkhead"
+    pass "E21: the routes that call no provider stayed within their objectives at two and ten times the providers' latency, every request resolved"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E19 and E20: refused, each with its reason, before any fault.
+# ---------------------------------------------------------------------------------------------------
+
+E19_steady() {
+    cannot "E19 cannot be driven: no production path runs a KYC case's checks (VerificationRunService.runChecks has callers only in tests) and the kind overlay configures no KYC provider (THREAT_MODEL.md section 6 item 60)"
+}
+E19_fault() { :; }
+E19_observe() { :; }
+E19_recover() { :; }
+
+E20_steady() {
+    cannot "E20 rests on the recorded fail-safe: no deployment can configure a bureau, and the owner decided on 2026-11-13 that none is built for kind in Phase 16 (unresolved question 13), so there is no bureau here to take away"
+}
+E20_fault() { :; }
+E20_observe() { :; }
+E20_recover() { :; }
 
 # ---------------------------------------------------------------------------------------------------
 # E40: the sweeps' failure storm (P16-TSK-008; routed by P16-TSK-017; OPERATIONS_RUNBOOK.md section 11.48), at three replicas.
@@ -2084,7 +4102,9 @@ E14_steady() {
     E14_NODE=$NS_NODE
     E14_PID=$NS_PID
     E14_RETRIES2=$(experiments_in_netns sysctl -n net.ipv4.tcp_retries2 2>/dev/null | tr -d '[:space:]')
-    experiments_record victim "$E14_VICTIM on $E14_NODE in $(experiments_zone_of_pod finapp "$E14_VICTIM"), $E14_RESTARTS restarts before; net.ipv4.tcp_retries2 ${E14_RETRIES2:-unread} in its namespace; the data source sets no socket timeout"
+    # The data source sets a socket timeout since ADR-0139 (P16-TSK-022): read, so the record says what the held threads ran under.
+    experiments_socket_timeout
+    experiments_record victim "$E14_VICTIM on $E14_NODE in $(experiments_zone_of_pod finapp "$E14_VICTIM"), $E14_RESTARTS restarts before; net.ipv4.tcp_retries2 ${E14_RETRIES2:-unread} in its namespace; the data source's socket timeout $EXP_SOCKET_TIMEOUT s (application.yaml, ADR-0139)"
 }
 
 E14_fault() {
@@ -2134,7 +4154,7 @@ E14_observe() {
     held_count=$(grep -c . "$EXP_DIR/held.tsv" || true)
     freed=$(awk -F'\t' '$3 != "-"' "$EXP_DIR/held.tsv" | grep -c . || true)
     longest=$(awk -F'\t' '$3 != "-" && $3 + 0 > m {m = $3 + 0} END {print m + 0}' "$EXP_DIR/held.tsv")
-    experiments_record held "$held_count connections of the cut replica held by the black hole (sent, retransmitting, unanswered); $freed freed by the kernel, the last $longest s after the cut; $((held_count - freed)) still held when the cut ended $((E14_ENDED_AT - E14_CUT_AT)) s after it (net.ipv4.tcp_retries2 ${E14_RETRIES2:-unread}, no socket timeout): the measurement the socket timeout is decided from"
+    experiments_record held "$held_count connections of the cut replica held by the black hole (sent, retransmitting, unanswered); $freed freed by the kernel, the last $longest s after the cut; $((held_count - freed)) still held when the cut ended $((E14_ENDED_AT - E14_CUT_AT)) s after it (net.ipv4.tcp_retries2 ${E14_RETRIES2:-unread}, the data source's socket timeout ${EXP_SOCKET_TIMEOUT} s): the measurement the socket timeout is decided from, and held to"
     out=$(awk -F'\t' -v k="$E14_CUT_AT" 'NR > 1 && $1 >= k && $2 != "true" {print $1 - k; exit}' "$EXP_DIR/endpoint.tsv")
     [ -n "$out" ] || fail "E14: the cut replica's endpoint never left the Service: its readiness did not tell"
     experiments_record "routed around" "the cut replica's endpoint read not ready $out s after the cut"
@@ -2186,6 +4206,14 @@ E15_steady() {
 E15_fault() {
     experiments_fault_on toxic kafka e15-broker-down timeout timeout=0
     experiments_fault_on toxic kafka e15-broker-up timeout timeout=0 stream=upstream
+    # At three brokers (P16-TSK-013) a client reaches each broker through that broker's own proxy once the bootstrap has answered: the
+    # broker's hop is the four proxies, and a cut on the bootstrap's alone would leave every established link to a broker open.
+    i=0
+    while [ "$i" -lt "$KAFKA_BROKERS" ]; do
+        experiments_fault_on toxic "kafka-$i" "e15-broker-$i-down" timeout timeout=0
+        experiments_fault_on toxic "kafka-$i" "e15-broker-$i-up" timeout timeout=0 stream=upstream
+        i=$((i + 1))
+    done
     E15_BROKER_AT=$(date +%s)
     printf 'time\tunpublished\toldest_seconds\n' > "$EXP_DIR/outbox.tsv"
     experiments_record fault "the broker's hop black-holed both ways for every replica at $(date -u -d "@$E15_BROKER_AT" +%H:%M:%SZ)"
@@ -2215,6 +4243,12 @@ E15_observe() {
     experiments_edge_answers "$E15_BROKER_AT" "$EXP_DIR/edge-broker.tsv"
     served=$(awk -F'\t' '$2 >= 200 && $2 < 300 && $3 != 0' "$EXP_DIR/edge-broker.tsv" | grep -c . || true)
     [ "$served" -ge 10 ] || fail "E15: the platform served $served answers while the broker was cut off: money must still move"
+    i=0
+    while [ "$i" -lt "$KAFKA_BROKERS" ]; do
+        experiments_fault_off toxic "kafka-$i" "e15-broker-$i-up" timeout timeout=0 stream=upstream
+        experiments_fault_off toxic "kafka-$i" "e15-broker-$i-down" timeout timeout=0
+        i=$((i + 1))
+    done
     experiments_fault_off toxic kafka e15-broker-up timeout timeout=0 stream=upstream
     experiments_fault_off toxic kafka e15-broker-down timeout timeout=0
     back_at=$(date +%s)
@@ -2490,4 +4524,399 @@ E63_recover() {
     experiments_workload_end e63
     experiments_record recovered "$young records completed in the age's last 30 s still kept; a second entry under a posting's scope refused by journal_entry_one_per_idempotency_scope"
     pass "E63: every aged record swept by the replicas' own schedules, none younger and none in flight touched, the posting scope still unique on the swept journal, nothing unresolved"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The audit archive and the session sweep (P16-TSK-010; ADR-0135; OPERATIONS_RUNBOOK.md section 11.50): E44, E45, E46. Built and not run:
+# by the owner's word of 2026-11-13 their runs are owed under POSTPONED_ISSUES.md PI-025.
+# ---------------------------------------------------------------------------------------------------
+
+# One line: archived segments, queued audit rows, claimed segments.
+archive_state() {
+    psql_query -c "SELECT (SELECT count(*) FROM platform.audit_archive_segment WHERE state = 'ARCHIVED') || E'\t'
+        || (SELECT count(*) FROM platform.audit_archive_pending) || E'\t'
+        || (SELECT count(*) FROM platform.audit_archive_segment WHERE state = 'CLAIMED')" | tr -d '\r'
+}
+
+archive_archived() { archive_state | cut -f1 | tr -d '[:space:]'; }
+
+# archive_wait_archived <segments> <seconds>: 0 once at least that many segments are archived.
+archive_wait_archived() {
+    deadline=$(( $(date +%s) + $2 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        [ "$(archive_archived)" -ge "$1" ] 2>/dev/null && return 0
+        sleep 5
+    done
+    return 1
+}
+
+# archive_drained <seconds>: 0 once nothing is queued and nothing claimed.
+archive_drained() {
+    deadline=$(( $(date +%s) + $1 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        [ "$(archive_state | cut -f2,3 | tr -d '[:space:]')" = "00" ] && return 0
+        sleep 5
+    done
+    return 1
+}
+
+# experiments_series <PromQL>: the first sample's value of an instant query, empty when Prometheus did not answer one.
+experiments_series() {
+    experiments_prometheus "/api/v1/query?query=$(urlencode "$1")" 2>/dev/null | sed -n 's/.*"value":\[[^,]*,"\([^"]*\)"\].*/\1/p' | head -1
+}
+
+# archive_census <id>: the archive against its table and its store, once the queue has drained. Each clause one line of the experiment's
+# archive-census.tsv; any FAIL stops the experiment as failed, and a census that read nothing fails the run.
+archive_census() {
+    out="$EXP_DIR/archive-census.tsv"
+    : > "$out"
+    archive_drained 600 || printf 'FAIL|the archive drained within 600 s|%s archived, queued and claimed\n' "$(archive_state | tr '\t' ' ')" >> "$out"
+    psql_query -f - >> "$out" 2>&1 <<'SQL'
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END || '|every audit row queued or in one segment, never both, never neither|' || count(*) || ' rows not so'
+  FROM platform.audit_record a
+ WHERE EXISTS (SELECT 1 FROM platform.audit_archive_pending p WHERE p.audit_id = a.audit_id)
+     = EXISTS (SELECT 1 FROM platform.audit_archive_member m WHERE m.audit_id = a.audit_id);
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END || '|every segment holds the rows it counted|' || count(*) || ' segments not so'
+  FROM platform.audit_archive_segment s
+ WHERE s.row_count <> (SELECT count(*) FROM platform.audit_archive_member m WHERE m.segment_seq = s.segment_seq);
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END || '|every archived segment''s digests are its rows''|' || count(*) || ' differ'
+  FROM platform.audit_archive_segment s
+ WHERE s.state = 'ARCHIVED'
+   AND (s.content_sha256 <> encode(sha256(convert_to(platform.audit_archive_content(s.segment_seq), 'UTF8')), 'hex')
+        OR s.manifest_sha256 <> encode(sha256(convert_to(platform.audit_archive_manifest(s.segment_seq), 'UTF8')), 'hex'));
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END || '|every archived segment names its predecessor''s manifest|' || count(*) || ' breaks'
+  FROM platform.audit_archive_segment s
+  LEFT JOIN platform.audit_archive_segment p ON p.segment_seq = s.segment_seq - 1
+ WHERE s.state = 'ARCHIVED' AND s.segment_seq > 1 AND s.previous_manifest_sha256 IS DISTINCT FROM p.manifest_sha256;
+SELECT CASE WHEN count(*) > 0 THEN 'PASS' ELSE 'FAIL' END || '|the census had segments to read|' || count(*) || ' archived'
+  FROM platform.audit_archive_segment s WHERE s.state = 'ARCHIVED';
+SQL
+    # The store's copies, digested where they lie, against the digests the database recorded at each mark.
+    psql_query -c "SELECT 'audit/v1/segments/' || lpad(segment_seq::text, 12, '0') || '.ndjson ' || content_sha256 FROM platform.audit_archive_segment
+        WHERE state = 'ARCHIVED' UNION ALL SELECT 'audit/v1/manifests/' || lpad(segment_seq::text, 12, '0') || '.json ' || manifest_sha256
+        FROM platform.audit_archive_segment WHERE state = 'ARCHIVED'" | tr -d '\r' | grep . | sort > "$EXP_DIR/recorded-digests.txt"
+    if experiments_store sh -c "cd $ARCHIVE_OBJECTS && sha256sum audit/v1/segments/* audit/v1/manifests/*" > "$EXP_DIR/store-digests.raw" 2>&1; then
+        awk '{print $2 " " $1}' "$EXP_DIR/store-digests.raw" | sort > "$EXP_DIR/store-digests.txt"
+        missing=$(comm -23 "$EXP_DIR/recorded-digests.txt" "$EXP_DIR/store-digests.txt" | grep -c . || true)
+        recorded=$(grep -c . "$EXP_DIR/recorded-digests.txt" || true)
+        if [ "$missing" = 0 ] && [ "$recorded" -gt 0 ]; then verdict=PASS; else verdict=FAIL; fi
+        printf '%s|every archived object in the store with the digest recorded at its mark|%s of %s missing or different\n' "$verdict" "$missing" "$recorded" >> "$out"
+    else
+        printf 'FAIL|the store objects could be read|see store-digests.raw\n' >> "$out"
+    fi
+    grep -q '^PASS|' "$out" || fail "$1: the archive census printed no verdict: see experiments/$1/archive-census.tsv"
+    if grep -q '^FAIL' "$out"; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the archive census: $(grep '^FAIL' "$out" | tr '\n' ';' | cut -c1-400)"
+    fi
+    experiments_record "archive census" "$(grep -c '^PASS' "$out") clauses PASS, $(grep -c '^FAIL' "$out" || true) FAIL: see archive-census.tsv"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E44: the archive store stopped mid-run, at three replicas.
+# ---------------------------------------------------------------------------------------------------
+
+E44_steady() {
+    start_workload e44 retry
+    archive_wait_archived 1 300 || cannot "E44: no audit segment was archived in 300 s, so a stopped store would interrupt nothing"
+    experiments_record "archive before" "$(archive_state | awk -F'\t' '{print $1 " segments archived, " $2 " rows queued, " $3 " claimed"}')"
+}
+
+E44_fault() {
+    experiments_fault_on scaled finapp-rehearsal finapp-archive-store 0 1
+    E44_AT=$(date +%s)
+    E44_AT_ARCHIVED=$(archive_archived)
+    experiments_record fault "the archive store scaled to zero at $(iso "$E44_AT"), its volume kept, $E44_AT_ARCHIVED segments archived then"
+}
+
+E44_observe() {
+    printf 'epoch\tarchived\tqueued\tclaimed\n' > "$EXP_DIR/archive.tsv"
+    deadline=$((E44_AT + 180))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        printf '%s\t%s\n' "$(date +%s)" "$(archive_state)" >> "$EXP_DIR/archive.tsv"
+        # The archive is not in readiness: a replica unready while only the store is down is the stop condition.
+        unready=$(experiments_fleet | awk -F'|' 'NF >= 5 && $2 != "True" && $6 == "" {print $1}' | head -1)
+        [ -z "$unready" ] || { EXP_STOPPED="a replica unready while the archive store was down: $unready"; return 0; }
+        firing=$(experiments_pages_firing)
+        [ -z "$firing" ] || { EXP_STOPPED="a correctness page during the experiment: $firing"; return 0; }
+        sleep 10
+    done
+    archived=$(archive_archived)
+    # A segment whose copy was read back just before the store went may be marked just after: one, never more.
+    [ "$archived" -le $((E44_AT_ARCHIVED + 1)) ] \
+        || fail "E44: $((archived - E44_AT_ARCHIVED)) segments were marked archived with the store down: a mark without a copy read back"
+    first=$(awk -F'\t' 'NR == 2 {print $3}' "$EXP_DIR/archive.tsv")
+    last=$(awk -F'\t' 'END {print $3}' "$EXP_DIR/archive.tsv")
+    [ "${last:-0}" -gt "${first:-0}" ] || fail "E44: no audit row queued while the store was down ($first then $last), so the fault met no work"
+    unavailable=$(experiments_series 'sum(finapp_audit_archive_segments_total{outcome="store_unavailable"})')
+    [ "${unavailable%%.*}" -ge 1 ] 2>/dev/null || fail "E44: no attempt was counted store_unavailable (read '$unavailable'): the failure was not seen"
+    experiments_record observed "180 s with the store gone: $((archived - E44_AT_ARCHIVED)) segments marked, the queue $first then $last rows, $unavailable attempts counted store_unavailable, every replica ready, no page"
+    pass "E44: with the archive store down nothing was marked and the queue grew; every replica stayed ready and the failures were counted"
+}
+
+E44_recover() {
+    kube -n finapp-rehearsal rollout status deployment/finapp-archive-store --timeout=180s >> "$EXP_ART/faults.log" 2>&1 \
+        || fail "E44: the archive store did not return"
+    stop_workload e44
+    [ "$(workload_unresolved e44)" = 0 ] || fail "E44: $(workload_unresolved e44) requests stayed unresolved: see workload-e44.tsv"
+    assert_flows_ran e44
+    returned=$(date +%s)
+    archive_drained 600 || fail "E44: the archive did not catch up within 600 s of the store's return: $(archive_state | tr '\t' ' ')"
+    experiments_record "caught up" "the queue drained $(( $(date +%s) - returned )) s after the workload stopped, the store back"
+    archive_census E44
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E45: a holder killed between the copy and the mark, its segment taken over and marked once; each row in one segment. At three replicas
+# here, where fleet_patch holds the fleet; at ten once this scope runs at ten, which kind's overlay admits (owed under PI-025).
+# ---------------------------------------------------------------------------------------------------
+
+E45_steady() {
+    start_workload e45 retry
+    archive_wait_archived 1 300 || cannot "E45: no audit segment was archived in 300 s, so no holder would be found"
+    experiments_store sh -c ': > /tmp/held.txt' || cannot "E45: the archive store's held list could not be emptied"
+}
+
+E45_fault() {
+    # Every read held at the store: the next holder writes both objects, then waits on its read-back, its copy made and its mark not.
+    experiments_fault_on store-hold hold-reads
+    deadline=$(( $(date +%s) + 120 ))
+    caller=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        caller=$(experiments_store cat /tmp/held.txt 2>/dev/null | head -1 | cut -f1)
+        [ -n "$caller" ] && break
+        sleep 1
+    done
+    [ -n "$caller" ] || cannot "E45: no archive read reached the store in 120 s, so no holder stood between copy and mark"
+    E45_SEGMENT=$(psql_query -c "SELECT segment_seq FROM platform.audit_archive_segment WHERE state = 'CLAIMED'" | tr -d '[:space:]')
+    [ -n "$E45_SEGMENT" ] || cannot "E45: no segment was claimed while its read was held"
+    E45_KEY=$(printf 'audit/v1/segments/%012d.ndjson' "$E45_SEGMENT")
+    experiments_store test -f "$ARCHIVE_OBJECTS/$E45_KEY" \
+        || cannot "E45: segment $E45_SEGMENT's copy is not in the store, so its holder was not between copy and mark"
+    E45_VICTIM=$(experiments_fleet | awk -F'|' -v ip="$caller" '$5 == ip {print $1}' | head -1)
+    [ -n "$E45_VICTIM" ] || cannot "E45: the held read came from $caller, which no application pod holds"
+    if [ "$PROBE" != guard-off ]; then
+        experiments_context_check || fail "the safety boundary refused before the kill: $EXP_REASON"
+    fi
+    experiments_kill_jvm "$E45_VICTIM"
+    E45_KILLED_AT=$KILLED_EPOCH
+    experiments_fault_off store-hold hold-reads
+    experiments_record fault "kill -9 of $E45_VICTIM's JVM ($KILLED) at $(iso "$E45_KILLED_AT"), holding segment $E45_SEGMENT: its copy in the store, its mark not made"
+}
+
+E45_observe() {
+    deadline=$((E45_KILLED_AT + 300))
+    state=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        state=$(psql_query -c "SELECT state || '|' || reclaims FROM platform.audit_archive_segment WHERE segment_seq = $E45_SEGMENT" | tr -d '[:space:]')
+        [ "${state%%|*}" = ARCHIVED ] && break
+        # The killed replica is unready while it restarts; a second one is the stop condition.
+        unready=$(experiments_fleet | awk -F'|' -v v="$E45_VICTIM" 'NF >= 5 && $1 != v && $2 != "True" && $6 == "" {print $1}' | head -1)
+        [ -z "$unready" ] || { EXP_STOPPED="a second replica unready while the killed holder was replaced: $unready"; return 0; }
+        firing=$(experiments_pages_firing)
+        [ -z "$firing" ] || { EXP_STOPPED="a correctness page during the experiment: $firing"; return 0; }
+        sleep 3
+    done
+    [ "${state%%|*}" = ARCHIVED ] || { EXP_STOPPED="segment $E45_SEGMENT not archived within 300 s of its holder's death ($state)"; return 0; }
+    [ "${state##*|}" -ge 1 ] || fail "E45: segment $E45_SEGMENT was marked without a takeover (reclaims ${state##*|}): the kill missed its holder"
+    experiments_store cat /tmp/requests.tsv > "$EXP_DIR/store-requests.tsv" 2>&1 || fail "E45: the store's request log could not be read"
+    written=$(awk -F'\t' -v k="/finapp-audit-archive/$E45_KEY" '$2 == "PUT" && $3 == k && $4 == 200' "$EXP_DIR/store-requests.tsv" | grep -c . || true)
+    found=$(awk -F'\t' -v k="/finapp-audit-archive/$E45_KEY" '$2 == "PUT" && $3 == k && $4 == 412' "$EXP_DIR/store-requests.tsv" | grep -c . || true)
+    [ "$written" = 1 ] || fail "E45: segment $E45_SEGMENT's file was written $written times, where write once means one"
+    [ "$found" -ge 1 ] || fail "E45: no takeover found segment $E45_SEGMENT's file already there: the copy was not reused"
+    experiments_record "takeover" "segment $E45_SEGMENT archived by another replica after ${state##*|} takeover(s), its file written once and found $found time(s)"
+    pass "E45: the holder killed between copy and mark; its segment taken over, its copy found and read back, marked once"
+}
+
+E45_recover() {
+    ready_three 400 || fail "E45: the fleet did not return to three ready replicas"
+    stop_workload e45
+    [ "$(workload_unresolved e45)" = 0 ] || fail "E45: $(workload_unresolved e45) requests stayed unresolved: see workload-e45.tsv"
+    assert_flows_ran e45
+    archive_census E45
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E46: the session table bounded over a soak, the sweep at a grace of five minutes and a tick of thirty seconds (this scope's settings).
+# ---------------------------------------------------------------------------------------------------
+
+E46_steady() {
+    start_workload e46 retry
+    identity=$(psql_query -c "SELECT id FROM identity.identity ORDER BY created_at LIMIT 1" | tr -d '[:space:]')
+    [ -n "$identity" ] || cannot "E46: no identity exists to plant sessions under"
+    # The plants, by the run's own throwaway superuser, removed at the recovery: a session live for the whole soak, never touched, and
+    # forty dead an hour past their idle bound, the sweep's positive control.
+    E46_LIVE=$(psql_query -c "INSERT INTO identity.session (id, identity_id, token_hash, assurance, status, issued_at, idle_expires_at,
+        absolute_expires_at, device, revoked_at, live_from) VALUES (gen_random_uuid(), '$identity', encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'base64'), 'PASSWORD', 'ACTIVE', now(),
+        now() + interval '2 hours', now() + interval '3 hours', 'e46 plant, live', NULL, now()) RETURNING id" | head -1 | tr -d '[:space:]')
+    [ -n "$E46_LIVE" ] || cannot "E46: the live session could not be planted"
+    psql_query -c "INSERT INTO identity.session (id, identity_id, token_hash, assurance, status, issued_at, idle_expires_at, absolute_expires_at,
+        device, revoked_at, live_from) SELECT gen_random_uuid(), '$identity', encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'base64'), 'PASSWORD', 'ACTIVE', now() - interval '2 hours',
+        now() - interval '1 hour', now() - interval '1 hour', 'e46 plant, dead', NULL, now() - interval '2 hours' FROM generate_series(1, 40) g" >/dev/null \
+        || cannot "E46: the dead sessions could not be planted"
+    experiments_record plants "a session live for three hours ($E46_LIVE) and forty an hour past their idle bound"
+}
+
+E46_fault() {
+    E46_MINUTES=${REHEARSAL_E46_MINUTES:-45}
+    E46_AT=$(date +%s)
+    experiments_record fault "none injected: the workload signs in for $E46_MINUTES minutes while the session sweep runs every 30 s at a grace of 5 minutes"
+}
+
+E46_observe() {
+    printf 'epoch\tsessions\tlive\tpast_bound\tplanted_live\tplanted_dead\n' > "$EXP_DIR/sessions.tsv"
+    deadline=$((E46_AT + E46_MINUTES * 60))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        # Past the bound: an idle bound more than the grace (5 min) and two ticks (2 x 30 s) ago - a row the sweep should have taken.
+        row=$(psql_query -c "SELECT count(*) || E'\t' || count(*) FILTER (WHERE status = 'ACTIVE' AND idle_expires_at > now() AND absolute_expires_at > now())
+            || E'\t' || count(*) FILTER (WHERE idle_expires_at < now() - interval '6 minutes') || E'\t' || count(*) FILTER (WHERE id = '$E46_LIVE')
+            || E'\t' || count(*) FILTER (WHERE device = 'e46 plant, dead') FROM identity.session" | tr -d '\r')
+        now=$(date +%s)
+        printf '%s\t%s\n' "$now" "$row" >> "$EXP_DIR/sessions.tsv"
+        [ "$(printf '%s' "$row" | cut -f4 | tr -d '[:space:]')" = 1 ] || { EXP_STOPPED="the live session planted was deleted"; return 0; }
+        if [ $((now - E46_AT)) -ge 120 ] && [ "$(printf '%s' "$row" | cut -f3 | tr -d '[:space:]')" != 0 ]; then
+            EXP_STOPPED="rows past the grace and two ticks remain $((now - E46_AT)) s in: the table is not bounded ($row)"
+            return 0
+        fi
+        firing=$(experiments_pages_firing)
+        [ -z "$firing" ] || { EXP_STOPPED="a correctness page during the soak: $firing"; return 0; }
+        sleep 30
+    done
+    dead=$(awk -F'\t' 'END {print $6}' "$EXP_DIR/sessions.tsv")
+    [ "$dead" = 0 ] || fail "E46: $dead of the planted dead sessions remain: the sweep took nothing"
+    swept=$(experiments_series 'sum(finapp_retention_swept_total{type="session"})')
+    [ "${swept%%.*}" -ge 40 ] 2>/dev/null || fail "E46: the sweep counted $swept sessions deleted, fewer than the forty planted"
+    most=$(awk -F'\t' 'NR > 1 && $2 > m {m = $2} END {print m + 0}' "$EXP_DIR/sessions.tsv")
+    experiments_record observed "$E46_MINUTES minutes: at most $most session rows, none past the grace and two ticks after the first two minutes, the live plant kept, $swept deleted"
+    pass "E46: the session table bounded over the soak - nothing left past the grace, the live session kept, the planted dead swept"
+}
+
+E46_recover() {
+    stop_workload e46
+    [ "$(workload_unresolved e46)" = 0 ] || fail "E46: $(workload_unresolved e46) requests stayed unresolved: see workload-e46.tsv"
+    assert_flows_ran e46
+    # The plants' teardown, by the superuser that planted them.
+    psql_query -c "DELETE FROM identity.session WHERE device IN ('e46 plant, live', 'e46 plant, dead')" >/dev/null \
+        || fail "E46: the planted sessions could not be removed"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E51: the database slowed under the workload - shedding before the claim, the monitors readable, the shedding stopping after
+# (P16-TSK-016, ADR-0137; OPERATIONS_RUNBOOK.md section 11.52), at three replicas.
+# ---------------------------------------------------------------------------------------------------
+
+# The latency the toxic adds to every answer from the database, in milliseconds: enough for the schedules' and the workload's
+# transactions to hold the seven connections and queue past the shedding door's threshold.
+E51_LATENCY_MS=${REHEARSAL_E51_LATENCY_MS:-250}
+# How long the toxic stays on, and how long the fleet has to stop shedding once it is gone.
+E51_HOLD_SECONDS=300
+E51_RECOVERY_BOUND=600
+
+# e51_shed: the fleet's shed answers so far (every outcome of finapp_shedding_requests_total but admitted, summed), or nothing when the
+# cluster's Prometheus did not answer.
+e51_shed() {
+    experiments_prometheus "/api/v1/query?query=$(urlencode 'sum(finapp_shedding_requests_total{outcome!="admitted"})')" 2>/dev/null \
+        | sed -n 's/.*"value":\[[^,]*,"\([0-9.e+]*\)"\].*/\1/p' | awk '{printf "%d\n", $1}'
+}
+
+# e51_unverifiable: empty when every correctness gauge is readable on some instance (CorrectnessUnverifiable's expression, evaluated at
+# once, as the load sampler does); UNREADABLE when Prometheus did not answer; otherwise the gauges no instance can read.
+e51_unverifiable() {
+    answer=$(experiments_prometheus "/api/v1/query?query=$(urlencode "$E51_UNVERIFIABLE")" 2>/dev/null || true)
+    case $answer in *'"status":"success"'*) ;; *) echo UNREADABLE; return 0 ;; esac
+    case $answer in *'"result":[]'*) ;; *) printf '%s' "$answer" | grep -o '"__name__":"[^"]*"' | sort -u | tr '\n' ' ' ;; esac
+}
+
+E51_steady() {
+    E51_UNVERIFIABLE=$(awk '/- alert: CorrectnessUnverifiable$/ {found = 1; next} found && /^ *expr: / {sub(/^ *expr: /, ""); print; exit}' \
+        "$ROOT/infra/prometheus/rules/correctness.yml")
+    [ -n "$E51_UNVERIFIABLE" ] || cannot "E51: CorrectnessUnverifiable's expression could not be read from correctness.yml"
+    unverifiable=$(e51_unverifiable)
+    [ -z "$unverifiable" ] || fail "E51 steady state: a correctness gauge unreadable before the fault: $unverifiable"
+    # Retrying by key for 15 minutes: the fault holds 5, and a payment caught mid-call waits the sweep's dispatched age (E07's window).
+    experiments_start_workload e51 900
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E51_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E51_SAMPLER"
+    E51_SHED_BEFORE=$(e51_shed)
+    [ -n "$E51_SHED_BEFORE" ] || cannot "E51: the fleet's shedding meter could not be read before the fault"
+    experiments_record "shed before" "$E51_SHED_BEFORE requests shed by the fleet before the fault; every correctness gauge readable"
+}
+
+E51_fault() {
+    experiments_fault_on toxic postgres e51-latency latency "latency=$E51_LATENCY_MS"
+    E51_FAULT_AT=$(date +%s)
+    experiments_record fault "a latency toxic of $E51_LATENCY_MS ms on every answer from the database, on the application's database hop, at $(date -u -d "@$E51_FAULT_AT" +%H:%M:%SZ)"
+    log "E51: the database slowed by $E51_LATENCY_MS ms an answer, the workload running"
+}
+
+E51_observe() {
+    deadline=$((E51_FAULT_AT + E51_HOLD_SECONDS))
+    E51_SHED_DURING=$E51_SHED_BEFORE
+    zero_since=""
+    : > "$EXP_DIR/observed.tsv"
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        firing=$(experiments_pages_firing)
+        if [ -n "$firing" ]; then
+            EXP_STOPPED="a correctness page during the experiment: $firing"
+            log "E51 STOP: $EXP_STOPPED"
+            return 0
+        fi
+        unverifiable=$(e51_unverifiable)
+        if [ -n "$unverifiable" ]; then
+            EXP_STOPPED="a correctness gauge no instance could read while the database was slow: $unverifiable"
+            log "E51 STOP: $EXP_STOPPED"
+            return 0
+        fi
+        ready=$(kube -n finapp get deployment finapp-app -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+        if [ "${ready:-0}" = 0 ]; then
+            [ -n "$zero_since" ] || zero_since=$(date +%s)
+            if [ $(( $(date +%s) - zero_since )) -ge 60 ]; then
+                EXP_STOPPED="no replica ready for 60 s while the database was slow"
+                log "E51 STOP: $EXP_STOPPED"
+                return 0
+            fi
+        else
+            zero_since=""
+        fi
+        shed=$(e51_shed)
+        [ -z "$shed" ] || E51_SHED_DURING=$shed
+        printf '%s\t%s\t%s\tnone\n' "$(date -u +%H:%M:%S)" "${ready:-0}" "${shed:-unread}" >> "$EXP_DIR/observed.tsv"
+        sleep 15
+    done
+    shed=$((E51_SHED_DURING - E51_SHED_BEFORE))
+    [ "$shed" -ge 1 ] || cannot "E51: the slowed database shed nothing in $E51_HOLD_SECONDS s, so shedding before the claim was not tried (REHEARSAL_E51_LATENCY_MS raises the toxic): see experiments/E51/observed.tsv"
+    experiments_record "shed during" "$shed requests shed by the fleet while the database was slow; no correctness page; every correctness gauge readable at every look (every 15 s)"
+    pass "E51: the slowed database made the fleet shed $shed requests, no correctness page fired and every correctness gauge stayed readable"
+}
+
+E51_recover() {
+    removed=$(date +%s)
+    # The fleet stops shedding: its shed count unchanged for 60 s, within the bound; the seconds from the toxic's removal to its last change.
+    last_count=$(e51_shed)
+    last_change=$removed
+    while :; do
+        sleep 5
+        now=$(date +%s)
+        count=$(e51_shed)
+        if [ -n "$count" ] && [ "$count" != "$last_count" ]; then
+            last_count=$count
+            last_change=$now
+        fi
+        [ $((now - last_change)) -lt 60 ] || break
+        if [ $((now - removed)) -ge "$E51_RECOVERY_BOUND" ]; then
+            EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }still shedding $E51_RECOVERY_BOUND s after the database's latency was removed"
+            break
+        fi
+    done
+    experiments_record recovered "the last shed $((last_change - removed)) s after the toxic was removed (read every 5 s; none for the 60 s after it)"
+    ready_three 400 || fail "E51: the fleet did not return to three ready replicas"
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E51_SAMPLER" 2>/dev/null || true
+    stop_workload e51
+    [ "$(workload_unresolved e51)" = 0 ] || fail "E51: $(workload_unresolved e51) requests stayed unresolved by their keys: see workload-e51.tsv"
+    assert_flows_ran e51
+    shed_answers=$(grep -c 'ATTEMPT-FAILED .*answered 503: .*api\.Overloaded' "$CLIENT/workload-e51.tsv" || true)
+    experiments_record workload "$(cat "$CLIENT/workload-e51.summary"); $shed_answers of its attempts answered 503 api.Overloaded and retried by their keys"
+    pass "E51: the fleet stopped shedding $((last_change - removed)) s after the database recovered; every request resolved by its key, $shed_answers shed attempts among them"
 }

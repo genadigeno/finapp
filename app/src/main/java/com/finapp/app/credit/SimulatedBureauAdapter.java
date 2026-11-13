@@ -14,6 +14,7 @@ import com.finapp.credit.CreditSourceKind;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.MonetaryException;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.platform.outbound.OutboundExchange;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -165,7 +166,7 @@ public final class SimulatedBureauAdapter implements CreditBureau {
                 .build();
         HttpResponse<byte[]> response;
         try {
-            response = http.send(post, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, post, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (HttpTimeoutException slow) {
             return unavailable(UnavailableCause.TIMEOUT, null);
         } catch (IOException broken) {

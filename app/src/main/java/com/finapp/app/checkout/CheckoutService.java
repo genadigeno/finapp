@@ -261,26 +261,31 @@ public class CheckoutService {
                         amount,
                         body.lineSummary());
         try {
-            CheckoutSessions.OpenedSession opened =
-                    inOneTransaction(unitOfWork -> checkout.open(unitOfWork, command));
-            CheckoutSession session =
-                    inOneTransaction(
-                            unitOfWork ->
-                                    checkout
-                                            .ownedBy(
-                                                    unitOfWork,
-                                                    merchant.merchantId(),
-                                                    opened.id())
-                                            .orElseThrow(CheckoutService::sessionNotFound));
-            return new CreatedSessionView(
-                    session.id().value().toString(),
-                    session.status().name(),
-                    session.expiresAt().toString(),
-                    // THE ONE UNWRAP ON THIS PATH, at the one boundary that must transmit the
-                    // freshly minted token - and empty on a replay, because the claim records
-                    // the session id alone (CheckoutSessions.open's recorded reasoning).
-                    opened.token().map(token -> token.expose()).orElse(null),
-                    opened.replayed());
+            // ONE TRANSACTION (`P16-TSK-016`, routed from `P16-TSK-007`'s E30): the session is
+            // opened - its key claimed, its row and audit record written - and read back in the
+            // same unit of work, so the two commit together or not at all. Read back in a second
+            // transaction, a borrow refused at the pool's 5 s bound answered the merchant 500
+            // AFTER the session had committed, and the token, which this answer alone carries,
+            // was lost for good: the retry under the key replays without it. Now any failure
+            // before the commit rolls the session back with its claim, and the retry is a first
+            // attempt that mints a token.
+            return inOneTransaction(
+                    unitOfWork -> {
+                        CheckoutSessions.OpenedSession opened = checkout.open(unitOfWork, command);
+                        CheckoutSession session =
+                                checkout.ownedBy(unitOfWork, merchant.merchantId(), opened.id())
+                                        .orElseThrow(CheckoutService::sessionNotFound);
+                        return new CreatedSessionView(
+                                session.id().value().toString(),
+                                session.status().name(),
+                                session.expiresAt().toString(),
+                                // THE ONE UNWRAP ON THIS PATH, at the one boundary that must
+                                // transmit the freshly minted token - and empty on a replay,
+                                // because the claim records the session id alone
+                                // (CheckoutSessions.open's recorded reasoning).
+                                opened.token().map(token -> token.expose()).orElse(null),
+                                opened.replayed());
+                    });
         } catch (MerchantNotTradingException refused) {
             throw new ApiException(
                     CheckoutErrorCode.NOT_TRADING,

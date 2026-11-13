@@ -1,6 +1,7 @@
 package com.finapp.app.payments;
 
 import com.finapp.app.lifecycle.ScheduleDrain;
+import com.finapp.app.lifecycle.TickPhase;
 import com.finapp.payments.CallbackHintResolution;
 import java.time.Duration;
 import java.util.Objects;
@@ -42,7 +43,7 @@ public final class CallbackHintResolutionSchedule implements SmartLifecycle {
                         });
         executor.scheduleWithFixedDelay(
                 this::sweepQuietly,
-                pollInterval.toMillis(),
+                TickPhase.firstDelayMillis(pollInterval),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
         drain.started(executor);

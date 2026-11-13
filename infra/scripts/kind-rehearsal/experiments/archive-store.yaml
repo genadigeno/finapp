@@ -1,0 +1,142 @@
+# The audit archive's test-only store (P16-TSK-010; OPERATIONS_RUNBOOK.md section 11.50). Test-only and never rendered by any overlay: the
+# experiments scope applies it itself (experiments_archive_store), after creating its ConfigMap (ArchiveStore.java) and Secret (a
+# keystore from the local CA, generated per run). Its image is the JDK the application is built with, by the digest the root Dockerfile
+# pins. It stands for the real bucket, an external service the application reaches out to, so it carries the label the application's
+# test-only egress admits on 8443, the simulator's: nothing in deploy/ changes for it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-archive-store
+  namespace: finapp-rehearsal
+  labels:
+    finapp/test-only: "true"
+spec:
+  selector:
+    app.kubernetes.io/name: finapp-archive-store
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+---
+# Its objects outlive the pod: E44 scales the store to zero and back, and what it held must be there to be read back after.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: finapp-archive-store
+  namespace: finapp-rehearsal
+  labels:
+    finapp/test-only: "true"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-archive-store
+  namespace: finapp-rehearsal
+  labels:
+    finapp/test-only: "true"
+spec:
+  replicas: 1
+  # One writer of the volume at a time: the old pod gone before the new one mounts it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-archive-store
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-archive-store
+        finapp/role: provider-simulator
+        finapp/test-only: "true"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: store
+          image: JDK_IMAGE
+          imagePullPolicy: IfNotPresent
+          command: ["java", "-XX:MaxRAMPercentage=60.0", "--source", "21", "/store/ArchiveStore.java", "/tls/keystore.p12", "/tls/store-phrase", "/archive"]
+          ports:
+            - name: https
+              containerPort: 8443
+          readinessProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 2
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: source
+              mountPath: /store
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            - name: objects
+              mountPath: /archive
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: source
+          configMap:
+            name: finapp-archive-store-source
+        - name: tls
+          secret:
+            secretName: finapp-archive-store-tls
+        - name: objects
+          persistentVolumeClaim:
+            claimName: finapp-archive-store
+        - name: tmp
+          emptyDir: {}
+---
+# The store admits the application and nothing else, and reaches nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-archive-store
+  namespace: finapp-rehearsal
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-archive-store
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+      ports:
+        - protocol: TCP
+          port: 8443

@@ -184,7 +184,7 @@ groups:
           description: "No replica has published finapp.config.fingerprint for 15 minutes, so ConfigFingerprintDisagrees is blind. See OPERATIONS_RUNBOOK.md section 11.31."
       - alert: PlatformGaugesUnreadable
         # Aggregation: per instance by (job, instance) - x != x holds for NaN alone, and one instance unable to read is that instance's fault
-        expr: label_replace(max by (job, instance) (finapp_outbox_pending != finapp_outbox_pending), "gauge", "finapp_outbox_pending", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_seconds != finapp_outbox_oldest_seconds), "gauge", "finapp_outbox_oldest_seconds", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_publishable_seconds != finapp_outbox_oldest_publishable_seconds), "gauge", "finapp_outbox_oldest_publishable_seconds", "", "") or label_replace(max by (job, instance) (finapp_inbox_lag != finapp_inbox_lag), "gauge", "finapp_inbox_lag", "", "") or label_replace(max by (job, instance) (finapp_platform_clock_offset_seconds != finapp_platform_clock_offset_seconds), "gauge", "finapp_platform_clock_offset_seconds", "", "")
+        expr: label_replace(max by (job, instance) (finapp_outbox_pending != finapp_outbox_pending), "gauge", "finapp_outbox_pending", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_seconds != finapp_outbox_oldest_seconds), "gauge", "finapp_outbox_oldest_seconds", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_publishable_seconds != finapp_outbox_oldest_publishable_seconds), "gauge", "finapp_outbox_oldest_publishable_seconds", "", "") or label_replace(max by (job, instance) (finapp_inbox_lag != finapp_inbox_lag), "gauge", "finapp_inbox_lag", "", "") or label_replace(max by (job, instance) (finapp_platform_clock_offset_seconds != finapp_platform_clock_offset_seconds), "gauge", "finapp_platform_clock_offset_seconds", "", "") or label_replace(max by (job, instance) (finapp_audit_archive_pending_oldest_seconds != finapp_audit_archive_pending_oldest_seconds), "gauge", "finapp_audit_archive_pending_oldest_seconds", "", "")
         for: 15m
         labels:
           severity: ticket
@@ -322,3 +322,33 @@ groups:
         annotations:
           summary: "No controller of the {{ $labels.edge }} edge can be scraped"
           description: "No controller of the {{ $labels.edge }} edge has answered its scrape for 5 minutes, so it may be down and its errors cannot be counted. See OPERATIONS_RUNBOOK.md section 11.42."
+
+  # The audit archive (P16-TSK-010; ADR-0135; OPERATIONS_RUNBOOK.md section 11.50). A copy that differs from its rows pages: the chain
+  # stops there, and an archive that is not its rows is an incident before it is a fault. A backlog an hour old where an instance archives
+  # tickets. Where no instance archives (no store named, every committed environment today) the backlog only grows, by design, and nothing
+  # fires: finapp_audit_archive_enabled is 0 on every instance there. Its backlog gauge unreadable is PlatformGaugesUnreadable's.
+  - name: audit-archive
+    labels:
+      owner: platform
+    rules:
+      - alert: AuditArchiveCopyDiffers
+        # Aggregation: sum() - one archive chain for the fleet: a copy that differs on any instance stops it for every instance
+        # A segment whose copy read back is missing or not its rows, or whose digests the database refused: never marked, so nothing is
+        # archived behind it until a person has read why.
+        expr: sum(increase(finapp_audit_archive_segments_total{outcome=~"mismatch|refused"}[15m])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "An audit archive copy is not its rows"
+          description: "A segment's copy read back from the archive store is missing or differs from its audit rows, so it was not marked and the archive has stopped behind it. No audit record is lost: every row is still in the database. See OPERATIONS_RUNBOOK.md section 11.50."
+      - alert: AuditArchiveBehind
+        # Aggregation: max() - every instance reads the one queue, so the fleet's oldest is the reading; gated on an instance archiving at all
+        # The store down, the archive stopped by the database (a column not reviewed, a queued row with no record), or a copy that differs.
+        expr: max(finapp_audit_archive_pending_oldest_seconds) > 3600 and on() max(finapp_audit_archive_enabled) == 1
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The audit archive is behind"
+          description: "An audit row has waited over an hour for the archive while an instance archives. Nothing is lost: the rows wait in the database. See OPERATIONS_RUNBOOK.md section 11.50."

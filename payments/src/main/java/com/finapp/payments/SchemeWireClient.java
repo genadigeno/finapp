@@ -1,6 +1,7 @@
 package com.finapp.payments;
 
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.platform.outbound.OutboundExchange;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URI;
@@ -259,7 +260,7 @@ final class SchemeWireClient {
                         .build();
         HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, request, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (IOException nothingUsable) {
             return new Fetched(Optional.of(PushInquiryAnswer.indeterminate()), null, "");
         } catch (InterruptedException interrupted) {
@@ -306,7 +307,7 @@ final class SchemeWireClient {
                         .build();
         HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, request, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (IOException nothingUsable) {
             // No NOTHING_SENT for an inquiry: one that never arrived is simply asked again.
             return PushInquiryAnswer.indeterminate();
@@ -381,7 +382,7 @@ final class SchemeWireClient {
                         .build();
         HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, request, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (ConnectException refused) {
             // The one transport failure that is knowledge: nothing was transmitted.
             return new Received(true, 0, null, "");

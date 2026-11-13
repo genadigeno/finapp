@@ -21,3 +21,13 @@ SELECT 'statements_total', coalesce(sum(s.calls), 0), round(coalesce(sum(s.total
   FROM pg_stat_statements s
   JOIN pg_database d ON d.oid = s.dbid
  WHERE d.datname = 'finapp';
+
+-- The longest single execution of each of finapp's statements since the load began (P16-TSK-022, ADR-0139): the measured longest
+-- legitimate statement, which the data source's socket timeout must stay above (a statement that arms no bound of its own is measured
+-- here, the rest are bounded by the code). Cumulative, as the extension keeps it: the last sample is the run's.
+SELECT 'statements_longest', s.queryid, s.calls, round(s.max_exec_time::numeric, 1)
+  FROM pg_stat_statements s
+  JOIN pg_database d ON d.oid = s.dbid
+ WHERE d.datname = 'finapp'
+ ORDER BY s.max_exec_time DESC
+ LIMIT 10;

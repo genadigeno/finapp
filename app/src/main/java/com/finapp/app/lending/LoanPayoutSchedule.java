@@ -1,6 +1,7 @@
 package com.finapp.app.lending;
 
 import com.finapp.app.lifecycle.ScheduleDrain;
+import com.finapp.app.lifecycle.TickPhase;
 import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.lending.LendingSpans;
 import com.finapp.lending.LoanPayoutStore;
@@ -103,7 +104,7 @@ public final class LoanPayoutSchedule implements SmartLifecycle {
             thread.setDaemon(true);
             return thread;
         });
-        executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
+        executor.scheduleWithFixedDelay(this::sweepQuietly, TickPhase.firstDelayMillis(pollInterval), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
         drain.started(executor);
     }

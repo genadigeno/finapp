@@ -25,7 +25,8 @@ import java.util.function.Function;
  * transaction admits it; the {@code RiskProofs.bound} idiom), {@code finapp.accounting.gl.statement-timeout},
  * {@link #STATEMENT_TIMEOUT} by default. A statement past it is cancelled by PostgreSQL ({@code 57014}) and the read ends
  * as {@link ReadTimedOut} - the door's {@code accounting.ReadTimedOut} 503, never a stack trace - and the snapshot rolls
- * back like any other. A connection the network black-holes is not bounded here (the data source sets no socket timeout).
+ * back like any other. A connection the network black-holes is not bounded here: the data source's socket timeout gives it up
+ * after five minutes (ADR-0139).
  */
 public final class GlSnapshots {
 

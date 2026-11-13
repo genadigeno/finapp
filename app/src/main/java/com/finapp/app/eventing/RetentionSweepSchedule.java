@@ -14,9 +14,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 
 /**
- * Runs one {@link RetentionSweep} on a fixed delay, on every instance (`P15-TSK-029`, C12). One class, four beans: the outbox's
- * published rows and the inbox's expired records; the window counter's ended windows (`P15-TSK-022`); and the idempotency
- * records past their expiry and grace (`P16-TSK-011`). *(Read "two beans" and stopped at the inbox until 2026-11-13.)*
+ * Runs one {@link RetentionSweep} on a fixed delay, on every instance (`P15-TSK-029`, C12). One class, five beans: the outbox's
+ * published rows and the inbox's expired records; the window counter's ended windows (`P15-TSK-022`); dead sessions
+ * (`P16-TSK-010`); and the idempotency records past their expiry and grace (`P16-TSK-011`). *(Read "two beans" and stopped at the
+ * inbox until 2026-11-13.)*
  *
  * <p><strong>No lease, no leader: idempotent per row.</strong> {@code nothingSchedulesAmbiently}'s bar is idempotent per period
  * or a lease, and this stands on the first half. Each batch is one transaction deleting rows it holds under

@@ -173,3 +173,11 @@ pass its own. The same reasoning led `V004` to remove `IdempotencyRecord.isStale
 
 `DISTRIBUTED_EXECUTION.md` §4 (*Found again*) records how the defect hid, and `X-TSK-008` records the
 same shape elsewhere.
+
+## Read-note: the session sweep built (2026-11-13)
+
+`P16-TSK-010` built the sweep this record named ([ADR-0135](ADR-0135-audit-archival-by-verified-segment.md) decision 9; identity
+`V027`): a dead session's row goes `finapp.identity.session.sweep.grace` (default 30 days) after its idle bound, judged on the
+database's clock. The caution recorded here, an early expiry logging a user out, cannot arise: the sweep selects only rows whose
+idle bound has passed, which a live session's has not, and it never moves a bound. Expiry stays derived; there is still no
+`EXPIRED` status. This record's decision and status are unchanged.

@@ -140,3 +140,40 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+---
+# The brokers to one another, when the rehearsal runs three (P16-TSK-013, infra/scripts/kind-rehearsal/brokers.sh): KRaft's quorum on
+# 9093 and the replication and admin listener on 9095, each over mutual TLS from the rehearsal's local CA. Nothing else may reach either
+# port, and at one broker neither leaves the pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-kafka-peers
+  labels:
+    finapp/test-only: "true"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-kafka
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-kafka
+      ports:
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 9095
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-kafka
+      ports:
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 9095

@@ -1,5 +1,6 @@
 package com.finapp.merchant;
 
+import com.finapp.platform.outbound.OutboundExchange;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URI;
@@ -99,7 +100,7 @@ public final class SimulatedPayoutProvider implements PayoutProvider {
                         .build();
         HttpResponse<byte[]> response;
         try {
-            response = http.send(send, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, send, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (ConnectException refused) {
             // The one transport failure that is knowledge: nothing was transmitted.
             return PayoutAnswer.nothingSent();
@@ -143,7 +144,7 @@ public final class SimulatedPayoutProvider implements PayoutProvider {
                         .build();
         HttpResponse<byte[]> response;
         try {
-            response = http.send(ask, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, ask, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (IOException nothingUsable) {
             // Read-only: a refused connection here says nothing about the payout.
             return PayoutQueryAnswer.indeterminate();

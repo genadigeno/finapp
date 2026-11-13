@@ -7,11 +7,16 @@
 # finapp-simulator.finapp-rehearsal.svc.cluster.local - to this Service's address. Nothing else of the client changes: its URLs, its
 # bootstrap servers and verify-full are the other scopes' bytes. The proxy passes bytes, so TLS is between the application and the server
 # it named, end to end; a certificate that did not name that host would be refused exactly as without the proxy. The migrator, the
-# bootstrap Job and the harness resolve those names through the cluster's DNS and never pass here. The broker advertises the same name it
-# is reached by, so the connections that follow the bootstrap come here too.
+# bootstrap Job and the harness resolve those names through the cluster's DNS and never pass here.
+#
+# THREE BROKERS (P16-TSK-013, kind-rehearsal/brokers.sh). The bootstrap name reaches a broker through the `kafka` proxy, and each broker
+# then advertises its own name (finapp-kafka-<n>.finapp-kafka.finapp.svc.cluster.local:9092), which a client connects to directly: without
+# a proxy of its own each, the clients would reach the brokers past this one (P16-TSK-019's routed note). So each broker has a proxy
+# (kafka-0, kafka-1, kafka-2) and a Service of its own, whose 9092 is that proxy's port, and the hostAliases send each broker's name to
+# its Service. A fault on the broker hop is a fault on the four.
 #
 # THE ADMIN API listens on the pod's own loopback (-host=127.0.0.1): no Service and no policy expose 8474, and the harness drives it only as
-# `kubectl exec` of the image's own toxiproxy-cli. Its three proxies and their upstreams are this file's, and the harness's endpoint guard
+# `kubectl exec` of the image's own toxiproxy-cli. Its six proxies and their upstreams are this file's, and the harness's endpoint guard
 # refuses any other.
 #
 # The restricted profile holds: the image is two static binaries on an empty root, run here as 65532 with every capability dropped.
@@ -49,6 +54,9 @@ data:
     [
       {"name": "postgres", "listen": "0.0.0.0:5432", "upstream": "finapp-postgres.finapp.svc.cluster.local:5432", "enabled": true},
       {"name": "kafka", "listen": "0.0.0.0:9092", "upstream": "finapp-kafka.finapp.svc.cluster.local:9092", "enabled": true},
+      {"name": "kafka-0", "listen": "0.0.0.0:19092", "upstream": "finapp-kafka-0.finapp-kafka.finapp.svc.cluster.local:9092", "enabled": true},
+      {"name": "kafka-1", "listen": "0.0.0.0:19093", "upstream": "finapp-kafka-1.finapp-kafka.finapp.svc.cluster.local:9092", "enabled": true},
+      {"name": "kafka-2", "listen": "0.0.0.0:19094", "upstream": "finapp-kafka-2.finapp-kafka.finapp.svc.cluster.local:9092", "enabled": true},
       {"name": "simulator", "listen": "0.0.0.0:8443", "upstream": "finapp-simulator.finapp-rehearsal.svc.cluster.local:8443", "enabled": true}
     ]
 ---
@@ -73,6 +81,56 @@ spec:
     - name: simulator
       port: 8443
       targetPort: simulator
+---
+# One Service per broker (P16-TSK-013): each broker advertises its own name on 9092, and a hostAlias can send a name to an address but
+# not to a port, so each broker's name resolves to its own address here, whose 9092 is that broker's proxy.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-toxiproxy-kafka-0
+  namespace: finapp-experiments
+  labels:
+    finapp/test-only: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: finapp-toxiproxy
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: kafka-0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-toxiproxy-kafka-1
+  namespace: finapp-experiments
+  labels:
+    finapp/test-only: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: finapp-toxiproxy
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: kafka-1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-toxiproxy-kafka-2
+  namespace: finapp-experiments
+  labels:
+    finapp/test-only: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: finapp-toxiproxy
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: kafka-2
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -110,6 +168,12 @@ spec:
               containerPort: 5432
             - name: kafka
               containerPort: 9092
+            - name: kafka-0
+              containerPort: 19092
+            - name: kafka-1
+              containerPort: 19093
+            - name: kafka-2
+              containerPort: 19094
             - name: simulator
               containerPort: 8443
           # The API on the pod's loopback answering is readiness: a TCP probe of a proxy port would open a connection upstream each period.
@@ -170,6 +234,13 @@ spec:
           port: 5432
         - protocol: TCP
           port: 9092
+        # Each broker's own proxy (P16-TSK-013): a policy sees the pod's port its Service sent 9092 to.
+        - protocol: TCP
+          port: 19092
+        - protocol: TCP
+          port: 19093
+        - protocol: TCP
+          port: 19094
         - protocol: TCP
           port: 8443
   egress:
@@ -250,6 +321,13 @@ spec:
           port: 5432
         - protocol: TCP
           port: 9092
+        # Each broker's own proxy (P16-TSK-013): a policy sees the pod's port its Service sent 9092 to.
+        - protocol: TCP
+          port: 19092
+        - protocol: TCP
+          port: 19093
+        - protocol: TCP
+          port: 19094
         - protocol: TCP
           port: 8443
 ---

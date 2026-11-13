@@ -137,7 +137,12 @@ class MigrationsAreExpandOnlyTest {
      * holds it equal to what the rule refuses, so it can neither keep a stale entry nor grow without a version and a reason. Empty
      * when the rule was written: no migration above the floor tightened an old table.
      */
-    private static final Map<String, String> GRANDFATHERED = Map.of();
+    private static final Map<String, String> GRANDFATHERED = Map.of(
+            // P16-TSK-010: the audit archive's queue backfilled from the audit table's own primary key, a uuid NOT NULL and unique by
+            // that key, into a new table whose only constraints are that key and a defaulted NOT NULL time: no old row can fail them,
+            // and the copy changes no old row.
+            "platform/V015__audit_archival.sql",
+            "the archive's queue is filled from platform.audit_record's primary key, which already holds every constraint the queue judges");
 
     @Test
     @DisplayName("every tightening since the last release leaves the old rows to a later release or names its data fix, and nothing"

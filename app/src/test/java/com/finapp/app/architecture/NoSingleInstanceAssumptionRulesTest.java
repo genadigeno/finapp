@@ -451,7 +451,13 @@ class NoSingleInstanceAssumptionRulesTest {
                     // one head row FOR UPDATE SKIP LOCKED, so ten instances judge each entry once, and a contender does nothing
                     // that tick. Register row: DISTRIBUTED_EXECUTION.md section 3; the ten-walker race is
                     // SourceCensusDatabaseTest#tenWalkersJudgeEachEntryOnce (owed, C14).
-                    "com.finapp.app.accounting.SourceCensusSchedule");
+                    "com.finapp.app.accounting.SourceCensusSchedule",
+                    // P16-TSK-010: the audit archive - one claimer at a time by the archive's head row FOR UPDATE SKIP LOCKED,
+                    // one segment in flight under a lease on the database's clock, the mark fenced by the claim's holder token,
+                    // and each audit row in one segment by a primary key. A contender does nothing that tick; a lapsed holder's
+                    // segment is taken over and its copy written again or found. Register row: DISTRIBUTED_EXECUTION.md
+                    // section 3; the ten-archiver race is AuditArchivalDatabaseTest#tenArchiversArchiveEachRowOnce (owed, PI-023's kind).
+                    "com.finapp.app.audit.AuditArchiveSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

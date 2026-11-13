@@ -1518,7 +1518,8 @@ The proofs write nothing and decide nothing: each reading takes one read-only sn
 - **The proofs unread** - `RiskProofReadingsFailing` (one instance's `finapp.risk.proof.reading{outcome="failed"}` at
   two floors in a row - `by (instance)`, each reading its own: a statement past its bound, a lost connection, a refused start - the `Could not read the risk proofs` warn lines
   name the class) and `RiskProofReadingsStalled` (no `completed` reading on an instance in two floors: a reading stuck on a
-  connection the network black-holed - the data source sets no socket timeout - or killed by an `Error`; restart that
+  connection the network black-holed - given up after the data source's socket timeout, five minutes since 2026-11-13 (ADR-0139; until then
+  never) - or killed by an `Error`; restart that
   instance, that one pod, evicted under break-glass (section 11.25; section 11's fleet rule), nothing is lost). While either stands, the velocity proof and the censuses are not watched: read the four
   reports by hand for today until the readings complete. The rules' figures are floors of the default
   `finapp.risk.proofs.refresh` (15 min, `RiskObjectives.proofReadingFloors`): the failing rule's window and wait two
@@ -1843,7 +1844,7 @@ refusing a role that can write: section 11.37, `P15-TSK-043`.)*
 
 **`AccountingGaugesUnreadable`, `RegulatoryAttentionUnreadable`, and the two stall rules' unreadable sections.** A gauge publishing NaN for 15 minutes **in scrapes that complete**: an accounting read is failing while the rest of the scrape is not, such as one statement past its bound or a grant gone. While a gauge is NaN **its threshold alert cannot fire**: whether a close has stalled is unknown, not fine. Every instance runs every read, so `pg_stat_activity` shows them by their statement. Raising the timeout is a choice to wait longer on that one thread, so on every other accounting gauge behind it.
 
-**A read that never returns: restart that instance.** The data source sets no `socketTimeout`, so a socket the network black-holed never returns and no statement timeout reaches it. It holds the one thread, so **every gauge on that instance, every module's, goes to no value**: it stands on its last reading until its ask has gone unanswered for `finapp.gauges.stale-after` (2 minutes), and then says so, and `GaugesStale` tickets on that instance (section 11.8). That is the right signal: nothing is being read. Tell it from a thread merely behind by what an operator can read, since nobody can take a thread dump in a deployed environment (no role may exec into a pod, and the management port exposes health, info and the scrape alone): that instance's gauge canary holds at no value without a break, where a thread behind alternates between a number and none; its pool is not starved, its threads waiting for a connection at nought; and the other instances, on the same database, keep reading. *(Read "A thread dump shows `gauge-refresher` inside a read" until 2026-11-12.)* Nothing else frees it; nothing is lost by the restart, since a gauge decides nothing. The restart is of that one pod, evicted under break-glass (section 11.25), never of the fleet (section 11's fleet rule). *(Until `P15-TSK-024`: "every accounting gauge", standing "for four floors, a minute for most and four for the two with the 60 s floor".)*
+**A read that never returns: restart that instance.** A socket the network black-holed answers nothing, and no statement timeout reaches it: since 2026-11-13 the data source gives it up after its `socketTimeout`, five minutes (ADR-0139), so the read fails and the thread goes on; restart the instance only if it is still held past that. *(Read "The data source sets no `socketTimeout`, so a socket the network black-holed never returns" until then.)* It holds the one thread, so **every gauge on that instance, every module's, goes to no value**: it stands on its last reading until its ask has gone unanswered for `finapp.gauges.stale-after` (2 minutes), and then says so, and `GaugesStale` tickets on that instance (section 11.8). That is the right signal: nothing is being read. Tell it from a thread merely behind by what an operator can read, since nobody can take a thread dump in a deployed environment (no role may exec into a pod, and the management port exposes health, info and the scrape alone): that instance's gauge canary holds at no value without a break, where a thread behind alternates between a number and none; its pool is not starved, its threads waiting for a connection at nought; and the other instances, on the same database, keep reading. *(Read "A thread dump shows `gauge-refresher` inside a read" until 2026-11-12.)* Before the socket timeout nothing else frees it; nothing is lost by the restart, since a gauge decides nothing. The restart is of that one pod, evicted under break-glass (section 11.25), never of the fleet (section 11's fleet rule). *(Until `P15-TSK-024`: "every accounting gauge", standing "for four floors, a minute for most and four for the two with the 60 s floor".)*
 
 **The whole scrape holds.** Since `P15-TSK-024` no gauge reads on the scrape thread, so with the pool exhausted or the database gone a scrape still completes at once: `up` stays 1, each read gauge publishes NaN once its read fails, and the unreadable rules above hold their 15 minutes. A database in trouble makes every read wait the pool's 5 s (`spring.datasource.hikari.connection-timeout`) and fail, about sixty classes in turn, so the one thread falls behind: each failed read is NaN at every scrape, so the unreadable rules hold, and the canary, a constant read between them, is NaN for most of each pass, which `GaugesStale` counts (section 11.8). A database that answers slowly but answers is the harder case: every gauge alternates between a number and NaN, no `for` above holds, and only `GaugesStale` sees it *(the fix round of 2026-11-08; until then this paragraph said every gauge of the instance went NaN past `finapp.gauges.stale-after`, and `GaugesStale` waited for its canary to hold NaN for 5 minutes, which a thread behind by less than about seven minutes never gives)*. *(Until `P15-TSK-024` about sixty other modules' classes read on the scrape thread: measured with the database gone, one scrape took 96.7 s against the local 5 s timeout, `up` went to 0, no NaN was stored, and none of these rules could hold its `for`.)*
 
@@ -1938,7 +1939,7 @@ together, leaves nothing serving, and makes every group rebalance on the way bac
 | 11.12 Incident response: severity, roles, communication, the freeze, a restore decided, a compromised operator credential, post-incident review *(written 2026-11-12, below)* | `-032` | `-032` (a game day, on `kind`) | `platform` |
 | 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) | `platform` |
 | 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads *(written 2026-11-08, below)* | `-009` | `-009` (the check runs on Docker, each plant refused) | `platform` |
-| 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below)* | `-029` | `-032` | `platform` |
+| 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below; widened 2026-11-13 by `P16-TSK-010`: the session sweep)* | `-029` | `-032` | `platform` |
 | 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` | `platform` |
 | 11.26 The edge: two controllers, the generated route lists, a renewed certificate *(written 2026-11-09, below)* | `-011` | `-012`, `-020` | `platform`, `identity` |
 | 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` | `accounting` |
@@ -2260,6 +2261,10 @@ below exist today.*
 *(2026-11-12: still not rehearsed. `P15-TSK-032`'s `incidents` scope holds the broker outage, a refused credential, a poison
 record and an abandoned event (`platform-broker`, `platform-dead-letters`) and never ran them: the owner postponed the platform
 scopes' remaining runs, `POSTPONED_ISSUES.md` PI-024. §11.38 counts the section read.)*
+*(2026-11-13, `P16-TSK-013`: the broker outage (E09), one broker of three lost (E08), duplicates (E22), delays (E23) and a day's replay
+through the door below (E49) are built on three test-only brokers, §11.51, and not run: owed under `POSTPONED_ISSUES.md` PI-025. The
+broker outage's part of PI-024, which owner decision C11 gives to Phase 16's experiments, closes only when E09 runs. Replaying more than
+the door's 1,000 events an order is §11.51's procedure.)*
 
 **The consumer signals** (`P15-TSK-025`). Two series name what a poll cannot otherwise say. **`finapp.inbox.poll.failures{outcome}`** counts every thrown consumer poll: `InboxPollFailing` (page) reads `failed`, sustained for 15 minutes, and `InboxPollRefused` (page) reads `refused`, for 5. **`finapp.inbox.consumer.evictions`** counts a commit the group refused because it had already evicted the member: `InboxConsumerEvicted` (ticket). **`finapp.inbox.commits.deferred`** counts a commit a rebalance refused, sent after the next poll *(added 2026-11-09, `P15-TSK-012`; no alert reads it yet)*: one is nothing, and a sustained rate is a group that keeps rebalancing with its committed offsets standing still. `finapp.inbox.lag{module}` is what `InboxLagHigh` (ticket, over 1000 records in a group for 15 minutes) and `ConsumptionBurnFast` read; a group's lag is the sum of its members', and a consumer whose polls throw publishes NaN, never its last number.
 
@@ -2473,7 +2478,7 @@ instance stopped and the database cut off from every replica, and never ran (`PO
 
 **`GaugesStale` (ticket).** The instance answers its scrapes, but its canary, `finapp.gauges.refreshed` (a constant 1 read through the same thread), was no value at more than 6 of the last 30 minutes' 120 evaluations, over 90 s: the gauge thread left asks unanswered past `finapp.gauges.stale-after`, and every `finapp` gauge of that instance was stale with it. **It counts; it does not wait for NaN to hold.** A thread behind but not stuck answers each ask about one pass of its queue (C) after it, so the canary, and every gauge whose read succeeds, is a number for about two minutes after each answer and NaN for the rest, about C - 120 s of every C. A rule that needs NaN to hold for its `for` fires only once C - 120 s outlasts that `for` (for 5 minutes, a pass over seven), and every threshold rule's `for` on that instance restarts at each NaN. So while this fires, **that instance's threshold rules cannot be trusted**: they are not merely late. A fleet-wide `max()` still reads the instances whose thread answers, so one instance behind blinds only its own per-instance rules (the `…SweeperOff` switches among them); every instance behind at once, a database in trouble, blinds the fleet's. The count fires five minutes after the seventh stale evaluation, about eight and a half minutes after a read hangs. A start whose first reads take a minute, or one short burst, stays under it. Two causes:
 
-- **A read that never returns** holds the one thread. The data source sets no `socketTimeout`, so a socket the network black-holed never returns and no statement timeout reaches it. Nobody can take a thread dump in a deployed environment (no role may exec into a pod; the management port exposes `health`, `info` and `prometheus` alone), so read it from outside: that instance's canary, `finapp_gauges_refreshed`, holds at no value without a break, where a thread behind alternates; `hikaricp_connections_pending` on that instance stays at nought, so its pool is not starved; and the other instances, on the same database, keep reading. *(Read "A thread dump shows `gauge-refresher` inside a read" until 2026-11-12.)* **Restart that instance**, that one pod, evicted under break-glass (section 11.25; section 11's fleet rule): nothing else frees it.
+- **A read that never returns** holds the one thread. A socket the network black-holed answers nothing and no statement timeout reaches it; since 2026-11-13 the data source gives it up after its `socketTimeout`, five minutes (ADR-0139), and the thread goes on *(until then it never returned)*. Nobody can take a thread dump in a deployed environment (no role may exec into a pod; the management port exposes `health`, `info` and `prometheus` alone), so read it from outside: that instance's canary, `finapp_gauges_refreshed`, holds at no value without a break, where a thread behind alternates; `hikaricp_connections_pending` on that instance stays at nought, so its pool is not starved; and the other instances, on the same database, keep reading. *(Read "A thread dump shows `gauge-refresher` inside a read" until 2026-11-12.)* **Restart that instance**, that one pod, evicted under break-glass (section 11.25; section 11's fleet rule), if it is still held past the socket timeout: before it nothing else frees it.
 - **The thread behind its asks.** Either the reads wait on a database in trouble (each up to the pool's 5 s, `spring.datasource.hikari.connection-timeout`, then fails; about sixty classes in turn make a pass near 300 s), or they are simply slow (the proofs at volume, `CURRENT_STATE.md`'s owner item (a) of `P15-TSK-024`). A read that fails is NaN at every scrape, so its module's unreadable rule holds its `for` and fires beside this. A read that succeeds slowly alternates as above, and only this alert sees it. The instance's requests fail the same way: read the database and `hikaricp_connections_pending` directly. When the reads are fast again, the thread catches up and the count leaves its 30-minute window with no restart.
 
 One gauge NaN while the canary is 1 is not this alert: that gauge's read is failing (a statement past its bound, a grant gone), and its module's unreadable rule answers it. **Every gauge an alert reads has one**, and `PlatformAlertRulesTest#everyGaugeAnAlertReadsCanBeSeenUnreadable` holds that over every rule file: accounting's, BNPL's, credit's, lending's and risk's `…GaugesUnreadable` and their stall and attention rules, `MustBeZeroGaugeUnreadable`, `ReferenceRateNeverFetched`, `SettlementSourceNeverAccepted`, and, since `P15-TSK-024`'s fix round (2026-11-08), **`FxGaugesUnreadable`** (`infra/prometheus/rules/fx.yml`: the cover ages, the FX books proof and plan verdict, the outbound credits' ages, the in-transit age, the counterparty review age, the missing rule sets) and **`ReconciliationGaugesUnreadable`** (`settlement-reconciliation.yml`: the run, file, suspense and break ages and the overdue expectations), with `BnplGaugesUnreadable` now reading the negative merchant payables too. Each of those two names the series in its `gauge` label and the instance; for either, check that instance's database connectivity and its log, where the gauge's class names its failed read, and if `GaugesStale` fires on the same instance start there. Only the sweeps' switches (`…sweeper.enabled`) have no unreadable rule: they are configuration constants, read from no database, so their only NaN is the canary's, which this alert counts. *(Until the fix round this paragraph claimed the domain rules covered every gauge; fifteen gauges had none, six of them read by seven paging rules.)*
@@ -3218,7 +3223,7 @@ latest; the run, as its record names it.
 | §11.12 | `platform` | 1 | 3 | 4 | kind | 2026-11-12 | `ca4c323a` | `dev5, the signals scope's development run` | postponed by the owner (PI-024) |
 | §11.13 | `platform` | 1 | 2 | 3 | containers | 2026-11-12 | `59d8b87e` | `terraform-check.sh, 43 plants, P15-TSK-017's final bytes` | — |
 | §11.14 | `platform` | 1 | 2 | 3 | containers | 2026-11-12 | `59d8b87e` | `manifest-check.sh, 283 plants, P15-TSK-017's final bytes` | — |
-| §11.15 | `platform` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.15 | `platform`, `identity` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.20 | `ledger`, `accounting`, `platform`, `payments` | 0 | 8 | 8 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.21 | `platform` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.22 | `identity`, `ledger`, `payments`, `transfers`, `checkout`, `merchant`, `kyc`, `consent` | 0 | 15 | 15 | — | — | — | — | postponed by the owner (PI-024) |
@@ -3244,9 +3249,14 @@ latest; the run, as its record names it.
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | §11.45 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `89b8fc60`, `f021383f` | `§11.45's record: E30 at three replicas and the isolation run` | — |
 | §11.46 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `a6fee3a1` | `§11.46's record: E01's run and the probes` | — |
+| §11.53 | `payments`, `fx`, `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | §11.47 | `platform` | 0 | 8 | 8 | — | — | — | — | Phase 16 drill |
 | §11.48 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.49 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
+| §11.54 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
+| §11.50 | `platform`, `identity` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
+| §11.51 | `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
+| §11.52 | `platform`, `checkout` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | §11.55 | `platform`, `settlement`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.56 | `ledger`, `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
@@ -3403,7 +3413,10 @@ rehearsed and two read.
 *(Written by `P15-TSK-032`, 2026-11-12, from the application's configuration, its probes and `infra/terraform/modules/postgres`
 (Multi-AZ with a synchronous standby, never applied). **Procedure only: the failover drill is Phase 16's**, and no managed database
 exists to fail over. What RDS does is read from its documentation and the module's plan, and is unverified here. The `kind`
-rehearsal restarts one database and never fails one over; what that does and does not show is below.)*
+rehearsal restarts one database and never fails one over; what that does and does not show is below.)* *(2026-11-13, `P16-TSK-022`:
+the failover drill is built - E05, the failover on the test-only synchronous pair, and E06, this section's unclean restart, in the
+experiments scope, §11.54 says how to run and read them - and the data source's socket timeout set, five minutes (ADR-0139). Neither
+drill has run: both are owed under `POSTPONED_ISSUES.md` PI-025, so this section's numbers stay unmeasured.)*
 
 **What a failover is here.** RDS moves the instance's endpoint to its standby in another zone. The standby is synchronous, so
 every transaction the primary acknowledged is on it; nothing committed is lost, and nothing is restored. How long the endpoint is
@@ -3415,7 +3428,9 @@ promoted) is not this section: it is §11.35's restore, decided as §11.12 says.
 - **Readiness goes down, liveness does not.** The pool's connections to the old primary fail, and readiness's `db` contributor
   answers `503` on every replica once its check fails (the pool's 5 s wait, `spring.datasource.hikari.connection-timeout`, inside
   the probe's 7 s), so the Service routes nothing to them. Liveness never reads the database (ADR-0016), so **no replica
-  restarts**, which is right: a restart adds a cold start and a rebalance of every group to the outage.
+  restarts**, which is right: a restart adds a cold start and a rebalance of every group to the outage. *(2026-11-13: the probe
+  marks a replica unready after three failed checks ten seconds apart (`deploy/base/deployment.yaml`), so an outage shorter than about
+  thirty seconds may leave every replica ready throughout, its requests failing meanwhile.)*
 - **Requests in flight fail, and a retry with the same key is safe.** A money-moving command whose client retries with the same
   `Idempotency-Key` takes one effect: one that committed before the failover answers its stored result, one that did not runs
   once (`INV-IDEM-*`). "The database committed and the answer was lost" is that case.
@@ -3424,10 +3439,12 @@ promoted) is not this section: it is §11.35's restore, decided as §11.12 says.
   inbox transaction, so a record whose transaction died is redelivered into the dedupe.
 - **New connections reach the new primary** as the endpoint's name resolves to it, and readiness returns at the next probe that
   borrows one; the schema guard's verdict stands across the outage (a failed read moves no verdict, §11.1c).
-- **A connection the network black-holed never returns**, because the data source sets no socket timeout
-  (`application.yaml`). On the gauge thread it leaves that replica's gauges stale (`GaugesStale`, §11.8); the abuse doors' counts
-  give their place back after 2 s (§11.30); a request or a tick holding one waits until the operating system gives the connection
-  up. Only replacing that pod frees it.
+- **A connection the network black-holed is given up after the data source's socket timeout, five minutes** (`application.yaml`,
+  ADR-0139): the request or tick holding it fails, as any lost connection fails it, and is retried by its key or at the next tick.
+  Meanwhile it holds its thread and one of the pool's seven: on the gauge thread it leaves that replica's gauges stale (`GaugesStale`,
+  §11.8); the abuse doors' counts give their place back after 2 s (§11.30). The five minutes stay above the longest statement bound
+  the code arms, report generation's four. *(Read "never returns, because the data source sets no socket timeout ... Only replacing
+  that pod frees it" until 2026-11-13.)*
 - **The abuse counters start again**: `platform.window_counter` is unlogged, so a failover empties it, every source with a fresh
   window (§11.30).
 
@@ -3437,16 +3454,18 @@ promoted) is not this section: it is §11.35's restore, decided as §11.12 says.
 2. **Leave the fleet alone.** Do not restart or scale it. Watch readiness come back on every replica (`kubectl get pods -n finapp`
    with the read-only role) and the database alerts clear.
 3. **A replica still unready, or still failing requests, once the others serve**: replace that one pod by eviction under
-   break-glass (§11.25), one at a time (§11's fleet rule).
+   break-glass (§11.25), one at a time (§11's fleet rule). Since 2026-11-13 a replica held only by black-holed connections frees
+   itself within the socket timeout (five minutes after the failover); evict sooner only if the incident cannot wait for it.
 4. **Verify after**: the trial balance silent (`LedgerTrialBalanceNonZero`), the outbox draining (`OutboxPublicationStalled`
    clears), the unknown-outcome alerts clearing as the sweeps resume (§11.22), nothing dead-lettered or parked that the outage
    explains (§11.6). Nothing is repaired: a synchronous standby holds every acknowledged commit.
 5. **Record** the provider's event time, each replica's unready and ready times (the kubelet's events), the requests failed
    (`http_server_requests_seconds_count` with a `5xx` status) and any pod replaced.
 
-**What this does not cover.** The drill: a real failover under load, its measured interruption and how long the application takes
-to see the new primary (Phase 16). A socket timeout, which would bound the black-holed connection above and is unset by an
-earlier decision (`application.yaml`'s note). A read replica or another region (Phase 16).
+**What this does not cover.** A managed failover's own interruption, which needs a real environment (designed-only, the resilience
+register's D01). The local drill's measured interruption and how long the application takes to see the new primary are E05's,
+built and owed (§11.54, PI-025). A read replica or another region (Phase 16). *(Read "The drill: a real failover under load ... A
+socket timeout, which would bound the black-holed connection above and is unset by an earlier decision" until 2026-11-13.)*
 
 **The `kind` restart, and what it shows.** On `kind` the database is one PostgreSQL pod whose data lives on a volume claim
 (`deploy/overlays/kind/postgres.yaml`; in an `emptyDir` until 2026-11-12, when deleting the pod deleted the database). The rehearsal
@@ -3456,7 +3475,9 @@ shows readiness down and back on every replica with none restarted, claims lapsi
 taken, and the abuse table empty after. It does not show a standby taking over, an endpoint moving, a connection black-holed (a
 stopped server resets its connections), or anything of the managed service's own. **The last record**: not run. The
 `incidents` scope's database-restart step holds the `kind` half above and never ran (`POSTPONED_ISSUES.md` PI-024); the failover itself is a Phase
-16 drill.
+16 drill. *(2026-11-13: both are now built in the experiments scope, on its cluster of three zones with the synchronous standby - E06 the
+unclean stop in place, E05 the failover, E57 the black-holed connections with and without the socket timeout (§11.54) - and none has
+run: owed under PI-025. This record fills from their first runs.)*
 
 ### 11.41 The migrator Job watched: `MigratorJobFailed`, `MigratorJobOverdue`, `ClusterWatchBlind`; a run's lines in Loki (`P16-TSK-003`)
 
@@ -3785,35 +3806,47 @@ rollout and the measured connection peak (`-012`), and delivery (§11.36). *(Rea
 [`DATA_RETENTION.md`](DATA_RETENTION.md).)*
 *(2026-11-12: still not rehearsed. The `incidents` scope's retention step (published rows backdated and swept, a sweep the role
 cannot run, the sweeps paused, a bound refused at start) never ran (`POSTPONED_ISSUES.md` PI-024).)*
+*(2026-11-13, widened by `P16-TSK-010`: the session sweep, a fourth schedule, below. Not rehearsed either: its run on `kind`, E46, is
+owed under `POSTPONED_ISSUES.md` PI-025. The window counter's sweep, the third, is §11.30's.)*
 
 **What runs.** Two schedules on every instance, `outbox-retention-sweep` and `inbox-retention-sweep`, each every
 `finapp.retention.sweep.interval` (default five minutes) and each deleting up to 20 batches of
 `finapp.retention.sweep.batch-size` (default 500, at most 1,000) per tick. Published outbox rows go past
 `finapp.outbox.retention` (default 30 days). Inbox records go past both their written expiry and `finapp.inbox.retention`.
 No lease and no leader: `FOR UPDATE SKIP LOCKED` means instances delete disjoint batches. The counters are per table,
-tagged `type="outbox_event"` or `type="inbox_message"`.
-*(Since `P16-TSK-011`, 2026-11-13: a third schedule, `idempotency-retention-sweep`, on the same interval and batch size, deletes
-`COMPLETED` and `FAILED` idempotency records whose own `expires_at` is more than `finapp.idempotency.sweep.grace` (default 30 days,
-refused under a day) behind the database's clock, through platform `V016`'s function, which refuses every batch while the journal's
-posting scope is not uniquely indexed (§11.56). Its counters are tagged `type="idempotency_record"`. The window counter's sweep is
-§11.30's.)*
+tagged `type="outbox_event"` or `type="inbox_message"`. *(2026-11-13: and `session-retention-sweep`, on the same interval and batch,
+tagged `type="session"`: a dead session's row once its idle bound passed more than `finapp.identity.session.sweep.grace` ago,
+default 30 days, judged on the database's clock (identity `V027`).)*
+*(Since `P16-TSK-011`, 2026-11-13: and `idempotency-retention-sweep`, on the same interval and batch size, deletes `COMPLETED` and
+`FAILED` idempotency records whose own `expires_at` is more than `finapp.idempotency.sweep.grace` (default 30 days, refused under a
+day) behind the database's clock, through platform `V016`'s function, which refuses every batch while the journal's posting scope is
+not uniquely indexed (§11.56). Its counters are tagged `type="idempotency_record"`. The window counter's sweep is §11.30's.)*
 
 **What is never deleted.** A pending or an abandoned outbox row, and a published one that a parked record not yet settled still
-names. An inbox record younger than either bound, or one a replay order has extended. An idempotency record in flight
-(`IN_PROGRESS`, the lease's to resolve), or one whose expiry is not yet more than the grace behind the database's clock.
-Sessions and audit records are not swept at all. Nor are parked records, discard decisions or callback hints (`DATA_RETENTION.md`).
-*(Read "`platform.idempotency_record`, sessions and audit records are not swept at all. They grow, by ruling, until Phase 16." until
-2026-11-13.)*
+names. An inbox record younger than either bound, or one a replay order has extended. A live session, ever: the sweep selects a row
+only once its idle bound has passed by the grace, and a live session's has not passed at all; nor a dead one inside the grace.
+An idempotency record in flight (`IN_PROGRESS`, the lease's to resolve), or one whose expiry is not yet more than the grace behind the
+database's clock. Audit records are never deleted: they are archived by copy, §11.50. Nor are parked records, discard decisions or
+callback hints (`DATA_RETENTION.md`). *(Read "`platform.idempotency_record`, sessions and audit records are not swept at all. They grow,
+by ruling, until Phase 16." until 2026-11-13, and then "`platform.idempotency_record` is not swept at all: it grows, by ruling, until
+the posting scope is unique" until the idempotency sweep the same day.)*
+
+**The session sweep's grace.** A row stays the grace past its idle bound so that a reported takeover can still be read (which device,
+how strongly the person signed in); the login, its rotations and its revocation stay in the audit trail whatever the sweep does. To
+keep dead sessions longer, raise `finapp.identity.session.sweep.grace` in the environment's overlay (§11.31): rows not yet swept are
+kept at once. Lowering it deletes only what is then past it, never a live session; an instance refuses to start with it under a
+minute, and the function refuses such a grace too (`22023`). A session's audit records then name an id no row holds, which is
+expected.
 
 **`finapp.retention.sweep.failed` rising.** Read the instance's `Retention sweep of <table> failed` line for its SQLState.
 
 | SQLState | Means | Do |
 |---|---|---|
-| `55000` | `platform.inbox_message` has a column the sweep was not reviewed against, so the inbox's sweep stops and deletes nothing. It may carry a state | Nothing is at risk: a kept record only costs storage. Ship a migration that reviews the column, adds a positive condition for its terminal values and lists it. **Never** add the column to the function's list by hand |
+| `55000` | `platform.inbox_message` has a column the sweep was not reviewed against, so the inbox's sweep stops and deletes nothing. It may carry a state *(2026-11-13: on `type="session"`, the same of `identity.session`: a new column may carry a hold)* | Nothing is at risk: a kept record only costs storage. Ship a migration that reviews the column, adds a positive condition for its terminal values and lists it. **Never** add the column to the function's list by hand |
 | `55000` on `idempotency_record` | The same for `platform.idempotency_record`'s columns, or the journal's posting scope is not uniquely indexed (the index missing, invalid or reshaped), so the sweep deletes nothing (§11.56) | Nothing is at risk. For a column, as above. For the index, read the ledger's schema version first; never drop or rebuild it by hand to clear this |
 | `22023` on `idempotency_record` | A grace under a day, or a batch outside 1 to 1000, reached the function: an instance whose start refusal was bypassed | Correct `finapp.idempotency.sweep.grace` or the batch size in the overlay (§11.31) |
 | `08*`, `null`, or an exception class instead of a SQLState | The database was unreachable or the pool was exhausted | The next tick retries. Treat it as the database's or the pool's incident |
-| `42883` or `42501` | The function does not exist, or the role cannot execute it | Platform `V012` did not apply as it should: read the schema version before anything else |
+| `42883` or `42501` | The function does not exist, or the role cannot execute it | Platform `V012` (identity `V027` for the session sweep) did not apply as it should: read the schema version before anything else |
 
 **A table still growing.** Compare `finapp.retention.swept` with the table's arrival rate. An outbox that keeps
 growing with a healthy sweep is usually a backlog (pending rows, which are never swept): §11.6. If the sweep is merely behind,
@@ -4754,9 +4787,10 @@ until the party facts they need exist, `CURRENT_STATE.md`'s unresolved questions
 the bureau's total balance: unassessed, the policy's fallback decides (`INV-CRD-10`), a BNPL policy declining and a loan policy referring
 to a person, and a person's approval of the referral is refused while the exposure is unassessed (`credit.ExposureUnassessable`,
 `INV-CRD-09`, no exception). So no BNPL agreement and no loan can exist on `kind` for a purchase, an instalment or a repayment to act on, and
-a loan decision there is the fail-safe path, `RESILIENCE_EXPERIMENTS.md` E20's, not the target's. All three are routed to `P16-TSK-018`,
-whose E20 needs a simulated bureau on `kind`: an application change, and the owner's word on unresolved question 13 for a test-only
-deployment.
+a loan decision there is the fail-safe path, `RESILIENCE_EXPERIMENTS.md` E20's, not the target's. *(Until 2026-11-13 this said all three
+were routed to the provider experiments' task, whose E20 would need a simulated bureau on `kind`. The owner decided that day, on
+unresolved question 13, that no test-only bureau is built for `kind` in Phase 16: the three stay undriven there until the question is
+answered, and E20 rests on the recorded fail-safe.)*
 
 **Running it.** One full cluster at a time on the machine. From the repository root, with the rehearsal's own prerequisites (§11.28):
 
@@ -4925,8 +4959,8 @@ activations (credit's seeded scorecard and loan policies, lending's capital and 
 version reading no source, proposed by one person and activated by another, referred each of three EUR 2,000.00 loan applications at once;
 an underwriter granted through the administrator's door took each case and its approval was refused `422 credit.ExposureUnassessable`
 (a person may decline, never approve, while the bureau's total balance is absent: `INV-CRD-09`). Without a loan there is nothing to repay,
-and a BNPL policy cannot refer, so it declines. Driving them needs a simulated bureau on `kind`, an application change (routed to
-`P16-TSK-018`); the harness was not changed to work around either invariant.
+and a BNPL policy cannot refer, so it declines. Driving them needs a simulated bureau on `kind`, an application change the owner
+decided on 2026-11-13 not to build in Phase 16 (unresolved question 13); the harness was not changed to work around either invariant.
 
 **What it adds to §11.43's run.**
 - `load-run`: every 10 s, besides §11.43's samples, every pod's own cgroup inside the node (`pods.tsv`: CPU, the time its containers were
@@ -5016,7 +5050,8 @@ two databases are more than a runner holds, and an experiment's numbers are the 
   theirs, resolve the three names they already use to it (`hostAliases` in the scope's copy of the Deployment): their URLs, their
   bootstrap servers and `verify-full` are the other scopes' bytes, and the proxy passes bytes, so TLS is end to end. The migrator, the
   bootstrap Job and the harness never pass through it. Its admin API listens on its own pod's loopback and is driven by `kubectl exec`
-  of its own CLI;
+  of its own CLI *(2026-11-13, `P16-TSK-013`: the scope now runs three brokers, and the broker hop is four proxies - the bootstrap's and
+  one per broker, each broker's name sent to a Service of its own - so six in all; §11.51)*;
 - **a synchronous standby** of the test-only PostgreSQL (owner decision C7), in another zone than the primary: a base backup through the
   primary's own name at `verify-full`, as `finapp_replicator` through the slot `finapp_standby`, then streaming, then the primary's
   `synchronous_standby_names` set to `FIRST 1 (finapp_standby)` at run time. From then on a commit returns only once the standby has
@@ -5036,7 +5071,8 @@ provider holds an answer for 20 s at most):
   the edge's certificates, issued in the cluster by the run's own cert-manager, and the telemetry stack's namespace are outside it;
 - **endpoint**: every value of the application's environment that holds a URL is the simulator, the run's own database URL or its own
   collector; its bootstrap servers are the run's broker; its `hostAliases` send only the run's three names to the run's proxy; the proxy's
-  three upstreams are the run's three services.
+  three upstreams are the run's three services *(2026-11-13, `P16-TSK-013`: and each broker's own name to its own proxy's Service, the
+  six upstreams the three services and the three brokers; §11.51)*.
 Every run proves each refusal by a plant beside its control (`experiments-boundary`): the marker removed, the payment webhook key
 replaced by a value the run did not make, the payment provider's URL replaced by one that is not the simulator; each refused by its own
 check with no fault on, put back, and the boundary passing again (`experiments/boundary.tsv`).
@@ -5170,6 +5206,68 @@ on the same pinned image (a base backup at `verify-full` through the slot, strea
 standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"), it is owed under
 `POSTPONED_ISSUES.md` PI-025 with E01's run on the final bytes.
 
+### 11.53 A provider unavailable, silent or slow; the provider experiments (`P16-TSK-018`)
+
+**What the platform does by itself.** Every call to a provider is bounded three times, by one setting per provider: the connection,
+the response's headers, and the body after them (`docs/architecture/TIMEOUTS_AND_RETRIES.md` section 2). A provider that
+answers `503`, says nothing past the bound, or stalls its body is an ambiguous answer, never a failure and never a success: the payment,
+payout, withdrawal or cover rests `UNKNOWN`, and its sweep asks the provider (an inquiry, which changes nothing) until it answers. Nothing
+is resent blind: a sweep re-sends only after the provider's own inquiry said it never saw the first attempt, and then under the first
+attempt's reference. Instances started together spread their sweeps' first ticks over an interval, so a recovering provider is not met
+by every replica at once. A customer's command answers `503` only when the provider could not be asked at all; an unknown answers what the
+platform knows. Rail availability is never switched by the platform itself: it is a person's recorded act (ADR-0060 decision 4).
+
+#### A provider unavailable or silent
+
+**What you see.** The rail's judgements turning `FAILED` or `UNKNOWN` (`finapp.payments.rail.outcome` by rail); its calls' latency at
+the setting's bound (`finapp.payments.provider.latency`); then, if it lasts, an unknown-age page: `PaymentUnknownAged`,
+`WithdrawalUnknownAged` or `MerchantPayoutUnknownAged` (section 11.22), each after 15 minutes. FX: quotes refused `fx.RateUnavailable`
+once the reference is older than its pair's maximum age (section 4 for the cover).
+
+1. **Read which rail.** The outcomes by rail say which provider; a refused connection, a `503` and a timeout all look the same from
+   here, and none of them is evidence that money did not move.
+2. **Resend nothing by hand.** An unknown is concluded by its sweep's inquiry once the provider answers, within twice the payment
+   sweep's dispatched age and five minutes (the default age is 10 minutes). A person re-driving a payment is the duplicate this
+   design exists to prevent.
+3. **If it lasts, stop new traffic to the rail, as a recorded act.** `POST /v1/operator/rails/{rail}/availability` with a reason
+   (ADR-0060 decision 4), so new payments route elsewhere or are refused before any effect; FX and corridors have their own doors
+   (sections 2 and 3b). Automation does not do this (owner decision C12, `TIMEOUTS_AND_RETRIES.md` section 5).
+4. **When it answers again**, watch the unknown-age gauges fall to nothing, then make the rail available again with a reason. A late
+   answer that contradicts a concluded failure is reconciliation's break, never a second effect.
+
+#### A provider slow
+
+**What you see.** Its latency rising with no failures yet; the hinted inquiries the webhook doors left to the sweep (the line "Too many
+hinted inquiries are running on this instance", no meter yet); the routes that call no provider, transfers and sign-in, within their
+objectives (`SLOS.md` section 2). A slow provider holds a request thread for at most its setting's bound; how many at once is the
+bulkheads' (`P16-TSK-016`). Nothing to do while the other routes hold; past the bound it is the case above.
+
+#### Running the provider experiments and reading their record
+
+`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS='E17 E18 E21'` on the reference machine, at three replicas, as section 11.46: each in
+the step shape, each fault through the registry and the boundary. The simulator's degradation flags (`Simulator.java`):
+`/tmp/degrade-<rail>-unavailable` answers the rail `503` at once, `/tmp/degrade-<rail>-silent` holds its requests past the bound;
+neither takes an effect or records an answer, and every request, degraded or not, is a line of the simulator's `/tmp/requests.tsv`.
+`REHEARSAL_PROVIDER_PHASE_SECONDS` sets each phase (240 s by default).
+
+- **E17**: the card rail unavailable, then silent, under the workload retrying under its keys. Judged: no card attempt authorized or
+  captured without the effect the provider took; every unknown since the start resolved once within the bound; no dispatch key sent
+  again without an answered inquiry of it between (a blind resend); the failure rate per rail before, during and after; the census.
+- **E18**: the FX provider unavailable (three conversions, each refused), then the reference unavailable past its maximum age (three
+  conversions refused, `refused_reference_stale` counted). Judged: no conversion booked on a stale rate, over conversions that exist.
+- **E21**: a latency toxic on the simulator's hop, one, then nine, times the card provider's steady latency more. Judged: the routes
+  that call no provider within their objectives; the bulkhead's refusals and the rates recorded.
+- **E19** and **E20** refuse to run: no production path runs a KYC case's checks and `kind` configures no KYC provider
+  (`THREAT_MODEL.md` section 6 item 60); no deployment configures a bureau, and the owner decided on 2026-11-13 that none is built for
+  `kind` in Phase 16 (unresolved question 13), so E20 rests on the recorded fail-safe.
+
+Each record is `experiments/<id>/record.tsv` beside `requests.tsv` and `rail-outcomes-*.tsv`; the verdict goes to
+`RESILIENCE_EXPERIMENTS.md` in its grammar.
+
+**The record.** None. Written 2026-11-13; by the owner's word of that day ("we dont need long running checks and tests") no provider
+experiment has run: E17, E18 and E21 at three replicas are owed under `POSTPONED_ISSUES.md` PI-025, and with them the failure rates per
+rail that owner decision C12 waits on.
+
 ### 11.47 Network, DNS, connection and disk faults: each fault's signature, and running them (`P16-TSK-021`, ADR-0127)
 
 *(Written by `P16-TSK-021`, 2026-11-13, from the experiments' steps in `kind-rehearsal/experiments.sh`, the platform's configuration and
@@ -5235,8 +5333,9 @@ a table lock the run holds, after its transaction has written; it must leave not
 
 **E14 - one replica black-holed from the database (item 42 (h)).** *Signature*: that replica alone: its pool's validations failing at
 2 s, new connections failing at the 5 s connect timeout, readiness `503`, its endpoint leaving the Service; the others serving and
-taking its leases as they lapse. The threads that held a connection at the cut stay blocked, because the data source sets no socket
-timeout. The kernel retransmits their unanswered sends until it gives up: `net.ipv4.tcp_retries2`, by default about fifteen minutes.
+taking its leases as they lapse. The threads that held a connection at the cut stay blocked until the data source's socket timeout gives
+the connection up, five minutes since 2026-11-13 (ADR-0139; read "because the data source sets no socket timeout" until then); without it
+the kernel retransmits their unanswered sends until it gives up: `net.ipv4.tcp_retries2`, by default about fifteen minutes.
 Until then `GaugesStale` may ticket for that instance if its gauge thread was one of them. *Do*: §11.40 step 3: once the others serve,
 replace that one pod by eviction under break-glass (§11.25). It does not restart by itself: liveness never reads the database. The run
 measures, per held connection (the namespace's sockets to the hop with a retransmission timer running, read every 5 s), how long the
@@ -5248,7 +5347,9 @@ hop's return the outbox drains, each event published once, the inbox deduplicati
 financial is lost: the outbox is the source. *Provider*: calls time out at the adapter's own bounds. A call that never reached the
 provider answers `503`; one sent and unanswered is recorded unknown, never sent again. The sweeps ask the provider once it answers;
 a card payment caught mid-call waits the sweep's ten-minute dispatched age. *Do*: §11.22: watch `PaymentUnknownAged` and
-`MerchantPayoutUnknownAged` clear; never resend an ambiguous call by hand.
+`MerchantPayoutUnknownAged` clear; never resend an ambiguous call by hand. *(2026-11-13: the scope runs three brokers, §11.51, and a
+client reaches each through that broker's own proxy once the bootstrap has answered, so the broker's hop is four proxies - `kafka` and
+`kafka-0` to `kafka-2` - and the cut takes all four, both ways. Not run: owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 **E16 - the cluster's resolver lost.** *Signature*: established connections carry on; only a new connection needs a name. In a
 deployment the client resolves the database's, the broker's and the provider's names itself, and a new connection fails with an unknown
@@ -5533,6 +5634,418 @@ table, the function refused (`55000`). On a second database holding two committe
 recorded 2 entries, 1 scope, 1 held twice, 1 surplus; `V037` then failed at `posting_scope_census_found_no_duplicate`, leaving the census
 row, both entries and no index. Not proven by it: the migrator's own run (Flyway, its role, its lock timeout), the application's code
 on PostgreSQL, ten writers or sweepers at once, and anything under load.
+
+### 11.54 Running the database failover drill and reading its record (`P16-TSK-022`, ADR-0139)
+
+**What it is.** Three experiments of the experiments scope (§11.46), on its cluster of three zones with the test-only primary and its
+synchronous standby (owner decision C7), and the drill's probe. Each runs in the scope's step shape under the rehearsal's workload, which
+retries every request by its key for longer than a payment caught mid-call takes to conclude (twice the longest dispatched age the code
+declares, five minutes, and the socket timeout). Each reads the journal in one consistent snapshot before its fault, every entry with a
+digest of its row and its lines, and compares it after. Each reads the public edge's answers for the interruption: the first
+money-moving command answered with a success after the fault, and none while the database was away.
+
+- **E06, the unclean stop in place** (§11.40's `kind` half, the step PI-024 left, run under owner decision C11): `pg_ctl stop -m immediate`
+  inside the primary's pod; the container restarts in its pod on its volume. Not a failover.
+- **E57, the black-holed connection with and without the socket timeout** (`THREAT_MODEL.md` §6 item 42 (h)): every answer of the
+  database hop held by the fault proxy - a latency toxic first, so that statements are in flight, then its timeout toxic with no timeout -
+  for the whole fleet, as a failover's black-holed connections are. First with the socket timeout, as deployed; then with the fleet rolled
+  without it (the registered `setting` fault, removed at stop and on every way out). Each replica's writer pool is read from Prometheus
+  every 5 s. `GaugesStaleAcrossTheFleet` pages once the fleet's gauges are blind for five minutes: here it is the fault's expected
+  signal, recorded beside the pages watched, and any other correctness page stops the experiment.
+- **E05, the failover**: the primary's server killed with `SIGKILL` from its node while a payout is held at the provider with its claim
+  `IN_PROGRESS`; then the drill's own steps, which are a person's in a real environment:
+  1. **Fence** the old primary: its StatefulSet to zero, and wait for its pod to be gone. Never two primaries: a primary brought back beside
+     a promoted standby would split the record.
+  2. **Check** before promoting: the primary named the standby synchronous at the last read before its loss, and the standby holds the
+     last commit the drill saw acknowledged. Otherwise **refuse** (the experiment's stop condition): bring the old primary back on its
+     volume and the standby streams from it again. A standby behind is never promoted; data that is gone is §11.35's restore.
+  3. **Promote** the standby (`pg_promote`), and run it **alone**: `synchronous_standby_names` reset to none, or every commit would wait
+     for a standby it does not have. Until a standby is built again, losing its volume loses what it committed since the promotion.
+  4. **Move the Service** `finapp-postgres` to the promoted pod. The fault proxy resolves its upstream per connection, so new connections
+     reach the new primary at `verify-full` (the standby presents the primary's certificate); every read of the harness after this is of
+     the promoted server.
+  E05 leaves one server and no standby, so it runs last.
+
+**Running it.** One full cluster at a time, under the machine's lock, as §11.46:
+
+```
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E06 E57 E05" infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E05 REHEARSAL_PROBE=async-standby infra/scripts/kind-rehearsal.sh
+```
+
+The second is the drill's probe (the resilience register's E56): the primary made asynchronous and the standby cut from its WAL before
+the fault, each by the server's own setting, until the standby has missed journal entries. The promotion is then refused as it must be,
+the probe promotes anyway, and the journal's comparison must name the entries lost. The run is red for that reason, or red because the
+comparison read nothing. Its cluster's data is then diverged by design: delete it.
+
+**What a green run says** (each a line of `assertions.tsv` and the experiment's `record.tsv`):
+- E06: the server started again after the stop (its start time read), accepting connections within 10 minutes (its stop condition),
+  the standby synchronous again, every replica ready, the unlogged window counters empty after holding rows before, the journal whole,
+  no replica restarted, no money-moving success while the server was down; the timeline and the interruption recorded.
+- E57: with the socket timeout, every replica holding a connection 20 s after the hole reads none in use by the timeout and 45 s, and
+  none before the timeout less 30 s; without it, every one still holds at the timeout and 65 s. A leg with nothing in flight cannot run.
+- E05: the promotion's check passed; the standby promoted alone and the Service moved; every replica ready on it; the payout's key
+  answered once and its claim `COMPLETED`; every journal entry read before the fault present and unchanged, no counted table shrunk; no
+  money-moving success between the fault and the move; no replica restarted; the timeline - the kill, the first replica unready, none
+  ready, the old pod gone, promoted, moved, every replica ready, the first money-moving success (the interruption) - and the card payments
+  caught mid-call, and when the payment sweep concluded them, recorded.
+- Then each experiment's census, after which no page fires.
+
+**Reading the record** (under `$REHEARSAL_ARTEFACTS/experiments/<id>`):
+
+| File | What it holds |
+|---|---|
+| `record.tsv` | The experiment's record: the pair, the fault, the promotion and its check, the counters, the claim, the journal, the timeline, the payments caught mid-call, the edge, the verdict |
+| `journal-before.tsv`, `journal-after.tsv` | Each journal entry and its digest, and the counted tables, before the fault and after the recovery |
+| `edge-answers.tsv` | Every answer of the public edge from the minute before the fault: ended, started, the edge's and the application's status, the method and the path |
+| `fleet.tsv`, `readiness.tsv` | The fleet every 2 s, and per second the ready replicas against the replicas |
+| `processing.tsv` (E05) | The card payments `PROCESSING` every 5 s, read from whichever server is the primary |
+| `with.tsv`, `without.tsv` (E57) | Each replica's writer connections in use every 5 s after the hole |
+| `payout-*.txt`, `retries.tsv` (E05) | The held payout's tries under its key and each answer |
+| `plant.log` (the probe), `promotion.log` (E05) | The probe's settings; the new primary's settings |
+
+**When it is red.** A refused promotion is the drill doing its job: read why in `record.tsv`, and find why the standby was behind before
+anything else. A journal entry missing or changed after E05 or E06 is a lost acknowledged commit: an incident in a real environment
+(§11.12), never a number to retry into a pass. E57 freeing a connection before the timeout, or without it, says something else freed it
+and the leg measured nothing; a connection still held past the timeout with it says the timeout did not take.
+
+**The socket timeout's evidence.** ADR-0139 decided five minutes from the bounds the code arms (report generation's four the longest)
+and the in-region recovery objective, which `DatabaseSocketTimeoutTest` holds. Its measurements are owed: E57's two legs, and the
+longest statement under the sustained profile, which the load scope now records every 10 s (`pg-statements_longest.tsv`, each
+statement's longest execution) and E29's owed run reads. If a statement that arms no bound of its own measures past half the timeout,
+or E57's leg with the timeout does not free within it, the ADR is revisited, never the value alone.
+
+**Failure and rollback.** The run's own cluster only. A fenced or promoted pair is not put back by the exit trap: after E05 or the probe,
+delete the kept cluster (`kind delete cluster`) rather than reuse it.
+
+**The last record.** Not run. The owner postponed Phase 16's `kind` runs on 2026-11-13 ("we dont need long running checks and tests"):
+E05, E06, E57 and the probe, each at three replicas, are owed under `POSTPONED_ISSUES.md` PI-025, with E29's longest statement. Their
+text is held by `ExperimentsRehearsalContractTest`; nothing here has run on a cluster, and no number above is a measurement.
+
+### 11.50 The audit archive - `AuditArchiveCopyDiffers`, `AuditArchiveBehind`; its store, a copy that differs, the read path, and its experiments (`P16-TSK-010`, ADR-0135)
+
+*(Written by `P16-TSK-010`, 2026-11-13, from the code it landed. Not rehearsed: its experiments E44 and E45 on `kind` are owed under
+`POSTPONED_ISSUES.md` PI-025, and no environment but that scope's names a store. The policy is [`DATA_RETENTION.md`](DATA_RETENTION.md)
+§3.)*
+
+**What runs, and where.** On an instance whose `finapp.audit.archive.endpoint` names a store, the `audit-archive` schedule ticks every
+`finapp.audit.archive.interval` (default one minute) and archives up to twenty segments a tick, each up to
+`finapp.audit.archive.batch-size` audit rows (default 1,000, at most 10,000). One instance claims at a time, by the archive's head row
+under `SKIP LOCKED`; one segment is in flight, under a lease of `finapp.audit.archive.lease` (default two minutes) on the database's
+clock, which must exceed four store calls at `finapp.audit.archive.timeout` (default five seconds) and ten seconds more, or the
+instance refuses to start. Each segment is written once to the store, its file and its manifest read back and compared byte for
+byte, and only then marked `ARCHIVED`. **No committed environment names a store today**: there the queue,
+`platform.audit_archive_pending`, only grows, every audit row waiting in it, and nothing fires, because
+`finapp.audit.archive.enabled` is 0. Nothing is ever deleted from `platform.audit_record`.
+
+**Its signals.** `finapp.audit.archive.segments{outcome}`: `archived`; `store_unavailable` (the store did not answer within its
+bound, or refused); `mismatch` (the copy read back is missing or not the segment's rows); `fenced` (another instance took the
+segment over first: normal after a lapse); `refused` (the database refused the copy's digests as not the rows'); `failed` (the
+database ended the attempt: the line names the SQLState). `finapp.audit.archive.rows`; `finapp.audit.archive.pending` (counted up
+to 100,001) and `finapp.audit.archive.pending.oldest` (seconds); `finapp.audit.archive.enabled`. The segment table,
+`platform.audit_archive_segment`, is the archival's own record: each segment's rows, id and time range, holder token, takeovers
+(`reclaims`) and digests.
+
+**`AuditArchiveBehind`** (ticket): an audit row has waited over an hour while an instance archives. Read the `audit-archive`
+lines and the outcome counter:
+
+| You see | It means | Do |
+|---|---|---|
+| `store_unavailable` rising | The store is down, slow past the timeout, or refusing | Nothing is lost: every row waits in the queue. Restore the store; the segment in flight is taken over when its lease lapses and the queue drains by itself. A store slower than the timeout everywhere: raise `finapp.audit.archive.timeout` and the lease with it (§11.31) |
+| `failed`, SQLState `55000` | `platform.audit_record` has a column, a type or an order format 1 was not reviewed against: a line would not carry every column, so nothing is archived | Ship a migration that reviews the column and replaces `audit_archive_line`, `audit_archive_record` and the review with a new format. **Never** edit the review's list by hand |
+| `failed`, SQLState `XX001` | A queued id has no audit row: an audit record was deleted, which only the schema's owner can do | `OPERATIONS_RUNBOOK.md` §11.12, `SEV-1`: the trail has lost a record. **Never** remove the queued id to let the archive go on: nothing is cut over a gap until the record's loss is understood |
+| `failed`, `08*` or a class | The database was unreachable or the pool exhausted | The next tick retries: the database's or the pool's incident |
+| `fenced` alone, `archived` rising | Instances took over each other's lapsed segments | Normal after a replica died mid-segment |
+
+**`AuditArchiveCopyDiffers`** (page): a segment's copy read back is missing, or is not its rows, or the database refused its
+digests. The segment is never marked, and every later attempt meets the same object, so **the archive stops there**, every row
+still in the database. Treat it as an incident first (§11.12): something other than this archive wrote that key, or the store
+lost or damaged an object it had accepted. Do: keep the object as it is (the bucket's lock and history are the evidence); read the
+store's own history of the key; compare the object with `SELECT platform.audit_archive_content(<segment>)` on the database. The way
+on, once understood, is the owner's (`THREAT_MODEL.md` §6 item 57 (c)): nothing here re-keys, rewrites or skips a segment.
+
+**After a restore or a recovery to an instant** (§11.35, §11.55). The restored segment table is as of the restore's point, and the
+store keeps every object written since. The next segment is cut again from the restored queue. If it holds the same rows as the
+copy already under its key, the copy is read back equal and marked. If not, it is a copy that differs, and the archive stops, paging,
+with nothing overwritten. Expect that after any restore to a point before the last archived segment. Read it with the procedure
+above, knowing the cause. The objects past the point are evidence: they hold audit records the restored database may no longer
+have. Keep them, and read them beside the restore's window (§11.55's gate). Keep `finapp.audit.archive.endpoint` unset on a restored
+environment until the owner's way on (item 57 (c)) is decided.
+
+**Pause it, or name a store.** Unset `finapp.audit.archive.endpoint`, or set the store, in the environment's overlay (§11.31), and
+let the fleet roll; the schedule exists only where it is named. Pausing is always safe: rows wait in the queue. A real bucket also
+needs request signing and the pod role's credential, which are not built (item 57 (a)): no committed overlay names one until they
+are.
+
+**The read path: restore a segment to a scratch schema.** While the table holds every row, a question is the table's. To read the
+archive itself (for a segment `n`):
+1. Read its record: `SELECT state, row_count, content_sha256, manifest_sha256, previous_manifest_sha256 FROM
+   platform.audit_archive_segment WHERE segment_seq = n` (`ARCHIVED`, or there is nothing to read).
+2. Fetch its two objects, `audit/v1/segments/<n, twelve digits>.ndjson` and `audit/v1/manifests/<n>.json`, from the store: on
+   `kind`, `kubectl -n finapp-rehearsal exec deploy/finapp-archive-store -c store -- cat /archive/finapp-audit-archive/<key>`; from a
+   real bucket, with the bucket's read access (item 57 (b): no application door does this, and no audit record says who read).
+3. `sha256sum` each and compare with the recorded digests; read the manifest's `previous_manifest_sha256` and compare it with
+   segment `n - 1`'s `manifest_sha256`. Any difference: stop, `AuditArchiveCopyDiffers`' procedure above.
+4. Load the file's lines into a scratch table under break-glass (§11.25), one `text` line per row, and read them back as rows:
+   `SELECT (platform.audit_archive_record(line)).* FROM scratch.lines`. Each row is the audit record as it was archived, every
+   column in the table's order; compare with `platform.audit_record` by `audit_id` where it still holds them.
+
+**Its experiments** (`RESILIENCE_EXPERIMENTS.md`; the toolkit §11.46): `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E44 E45 E46"`.
+The scope deploys the test-only store (`kind-rehearsal/experiments/archive-store.yaml`, `ArchiveStore.java`: write once, its objects on a
+claim of their own) and names it in its own rendered ConfigMap with a lease of 30 s, a tick of 10 s, a session grace of 5 minutes and the
+retention sweeps' tick at 30 s. **E44**: the store scaled to zero for three minutes under the workload; nothing marked but a segment
+already read back, the queue grows, `store_unavailable` counted, every replica ready, no page; then the queue drains and the archive
+census is green. **E45**: every read held at the store, the holder found by its held read and killed between its copy and its mark; its
+segment taken over at the lease, its file written once and found again (`412`), marked once. **E46** (§11.15's sweep): a soak of
+`REHEARSAL_E46_MINUTES` (45) with a live session and forty dead ones planted; nothing past the grace and two ticks from the second
+minute on, the live one kept, the dead swept. Each archive census reads every audit row queued or in one segment, each segment's count,
+digests and chain recomputed, and every archived object digested in the store against its recorded digest.
+
+**The last record.** None: E44, E45 and E46 have not run (PI-025).
+
+### 11.51 The event pipeline at load: three brokers, a broker lost, all lost, duplicates, delays, a poison burst, a scaled fleet and a day's replay (`P16-TSK-013`, ADR-0136)
+
+*Written by `P16-TSK-013` (2026-11-13) from what it built. **Nothing here has run on a cluster**: the owner postponed Phase 16's `kind`
+runs until after the project's phases ("we dont need long running checks and tests"), and every run below is owed under
+`POSTPONED_ISSUES.md` PI-025. `PipelineRehearsalContractTest` holds the harness's text, not a run. The three-broker configuration, the
+probe's premise and E23's lock key alone were proven in containers (the record at the end).*
+
+**The cluster.** `infra/scripts/kind-rehearsal/brokers.sh`. The `kind` overlay's broker StatefulSet is committed at one replica and is
+three-capable: its start script gives a pod a node id (its ordinal + 1) and its own advertised names whenever the rendered configuration
+names no node. `REHEARSAL_KAFKA_BROKERS` is 3 in the `experiments` scope, always; 1 or 3 in the `load` scope; 1 in every other scope,
+whose own steps assume one broker, and anything else is refused before the run builds anything. At three, in the run's own rendered copy:
+three replicas started in parallel, the headless Service publishing them before they are ready (a quorum of three cannot form one pod
+at a time), the namespace quota grown by two brokers. The posture is `infra/kafka/broker.properties` and `infra/kafka/topics.yaml`
+unchanged: replication 3, `min.insync.replicas` 2, unclean election off. The listeners: SASL_SSL with SCRAM-SHA-512 for the clients on
+9092, as at one; KRaft's quorum on 9093 and the brokers' replication on 9095, each over mutual TLS from the run's local CA (the broker
+certificate names every broker and carries `clientAuth`; its subject is the one super user beside loopback's `ANONYMOUS`); loopback on
+9094 for the startup probe. The harness's admin tools (`kafka_admin`) run on the mutual-TLS listener through a running broker, because at
+three each broker advertises its loopback listener as `localhost` and a tool there reaches only its own broker. Every topic is created
+at the catalogue's replication and `min.insync.replicas`, and `brokers_check` reads, at the topics' step and at every experiment's steady
+state: every broker ready, a quorum of three with a leader, every topic at the posture, no replica out of sync.
+
+**The proxy, per broker.** In the `experiments` scope each broker advertises its own name, so each has a Toxiproxy hop (`kafka-0`,
+`kafka-1`, `kafka-2`) and a Service of its own beside the bootstrap's (`kafka`); the application's `hostAliases` send each broker's name
+to its Service's address. The safety boundary reads four alias entries and six upstreams, and the topology check holds that every
+replica reached the database hop and all four broker hops through the proxy. A fault on "the broker hop" is a fault on the four.
+
+#### Running the experiments: E08, E09, E22, E23, E49 and E68
+
+```
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E08 E09 E22 E23 E49 E68" infra/scripts/kind-rehearsal.sh
+```
+
+Each in the step shape of §11.46, each ending in the census, each under the workload unless it says otherwise. What each counts is
+PostgreSQL's, never the broker's: every outbox row published, every record a catalogued handler names found once in its consumer's inbox
+(the census's lost-event check), no inbox row added for a record already applied, nothing parked but E68's own.
+
+- **E08, one broker of three lost.** The quorum's leader's broker JVM killed with SIGKILL from its node; the admin tools moved to a
+  survivor. Every partition's in-sync replicas and end offset are read about every 10 s into `experiments/E08/isr.tsv`: a partition that
+  takes a write while fewer than `min.insync.replicas` copies are in sync at the readings on both sides of it fails the experiment, and
+  the sampler must have seen the kill shrink a set (its control). No replica may go unready; nothing may be abandoned; the broker must be
+  back in sync within 600 s. Stop: two brokers down at once. The relay's failed attempts are recorded: a leader's move may cost one
+  attempt its retry, which the outbox holds.
+- **E09, every broker stopped.** The StatefulSet at zero (fault kind `brokers-stopped`), held 10 minutes at least and until
+  `OutboxPublicationStalled` fires (§11.21; its rule needs the oldest row past 5 minutes for 5 minutes), 15 at most, or E09 fails; the
+  stop condition at 30 minutes. 15 minutes is well inside the relay's retry window: 1,711 s of backoff before a row's fourteenth and
+  last attempt (`RetryPolicy.DEFAULT`), so no row is abandoned; an outage held to the stop's 30 minutes would abandon some. Every replica must stay ready (Kafka is
+  not in readiness), at least one money movement must be answered meanwhile, rows must wait, and the event freshness must burn. Then the
+  brokers come back, the outbox drains within 15 minutes and every group settles.
+- **E22, duplication.** First 200 published rows of handled types are unmarked by the run's own superuser, as a relay that crashed
+  between the broker's acknowledgement and its mark leaves them, and the relay sends them again under their event ids. Then the
+  workload stopped, the fleet scaled to zero through the registry, every group reset to its earliest retained offset once it has no
+  member, and the fleet started: every retained record is redelivered. The duplicates are counted from the replicas' counters (whole
+  totals, never `increase()`, which loses what a new replica counted before its first scrape); no inbox row may be added for an event
+  written before the experiment, no second risk signal for one source event, nothing failed or parked.
+- **E23, delay.** A session of the run's superuser holds the relay's own advisory lock - namespace 1, the key `OutboxRelay` derives from
+  an aggregate's id (`UUID.hashCode()`) - on the first eight aggregates with rows waiting, for 10 minutes (fault kind `relay-held`).
+  Eight is fewer than the 32 candidates a relay reads, so every other aggregate goes on publishing. At the release the held rows publish
+  in their aggregates' order, after every other aggregate's later records. The held rows must be late by at least 300 s; per consumer
+  and aggregate, no record may be applied before an earlier one (each inbox row's server time against the outbox's order); nothing parked.
+- **E49, a day's replay.** The procedure below, performed by the harness for every handled type over the run's own day.
+- **E68, a burst of poison records.** Six records that are no event, each with a key of its own so they spread over the partitions,
+  written to `finapp.payments` by the brokers' administrator (`kafka_admin`'s console producer, `acks=all`) while the workload runs.
+  Every group that reads the topic (read from the groups at the steady state) must park each record once, after its budget of five
+  failures and two minutes, both (§11.6's poison record, six at once): the observation is bounded at three minutes a record and five
+  more, as if every record had landed on one partition. Meanwhile those groups must go on applying records written after the burst
+  (`parking.tsv`), no member may be evicted (`finapp_inbox_consumer_evictions_total` unchanged), nothing else may park, and no
+  correctness page but `InboxDeadLetterParked` may fire - which must fire, its positive control. Then every partition settles past the
+  burst. The recovery stops the workload, waits until no record of the burst is still failing, and does §11.6's procedure for each:
+  a release refused (`deadletter.NotReleasable`), then a discard proposed by the operator, refused to the operator and approved by the
+  controller, until the page clears. The controller is given `EVENT_OPERATOR` from SQL at the steady state, as the `load` scope seeds its
+  operators; this scope runs no grant door. Each discard waits for a fresh second-factor step, so expect about half a minute a park. The
+  census's nothing-parked clause leaves out a record whose approved discard's approver is not its proposer, and counts every other row,
+  a handled one included: a record two persons discarded is decided, not stopped, and its row stays as evidence.
+
+**The probe** (`REHEARSAL_PROBE=min-isr-one`, with `E08`): every topic's `min.insync.replicas` set to 1 and a probe topic of two copies
+(the highest-ordinal broker's and the admin broker's) written once a second with `acks=all`; that broker killed and held down 90 s by
+the StatefulSet one short. The probe topic keeps one copy in sync and its writes are still acknowledged - a record held by one replica,
+the risk 2 refuses - and E08's copy check must name it and turn the run red. The stop deletes the probe topic and puts the catalogue's
+value back; the exit trap does too (fault kind `min-isr`).
+
+#### Running the pipeline at load: E47 and E48
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=pipeline REHEARSAL_KAFKA_BROKERS=3 infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=pipeline REHEARSAL_KAFKA_BROKERS=3 REHEARSAL_LOAD_REPLICAS=7 infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=pipeline REHEARSAL_KAFKA_BROKERS=3 REHEARSAL_LOAD_REPLICAS=7 REHEARSAL_LOAD_SCALE="3 7 3" infra/scripts/kind-rehearsal.sh
+```
+
+The first two are E47 at three and at seven replicas; the third is E48. The profile (`kind-rehearsal/load/pipeline.json`): checkouts
+alone at the target's peak for 10 minutes, three times it for a minute, the peak for 15 more, then 2 minutes of the whole mix at the
+average so every route the judge's spread reads is served. The burst runs past what the platform carries by design, so the iterations
+the generator cannot start there are recorded, not failed. `kind-rehearsal/pipeline.sh` reads every 30 s into `load/`: `pipeline.tsv`
+(the outbox's backlog and oldest row, the events and aggregates published and the events written in the interval, the fleet's ready
+count), `lag.tsv` (each group's lag per partition and its member) and `members.tsv` (each group's members and idle members); and the
+topics' end offsets at the load's start and end. After the census it writes `load/pipeline-summary.txt`: the relay's ceiling (the most
+published in an interval with a backlog standing at both its ends, in events and aggregates a second), each group's lag at the peak,
+the drain after the burst (the first reading with every group under the consumption objective's 1,000 and the oldest row under the
+freshness objective's 60 s), and the skew by key (each topic's busiest partition against its mean, `skew.tsv`). These are recorded,
+never a verdict (`PHASE_16_PLAN.md` §5.3). The run fails on its census, on the pipeline unread (a gap over 90 s) and, for E48, on a count
+the fleet never reached or a group whose members never followed it. E48 holds the autoscaler at each count, so that it does not undo
+the scale, and writes the membership changes it read and any idle member.
+
+#### Replaying a day of events through the audited door
+
+The door (`POST /v1/operator/events/replays`, §11.6) replays one event type over a window of first publication, `[from, to)`, at most
+1,000 events an order, one transaction and one audit record (`outbox.EventReplayOrdered`) each; it refuses an event past the inbox's
+dedupe window unless every consumer of the type is naturally idempotent. A day is therefore many orders:
+
+1. For each event type a consumer handles (`docs/events/handler-catalogue.yaml`), list its published events' first publication
+   instants over the day and cut them into windows of at most 900 (a margin under the bound for events written while you count). The
+   harness's E49 does it in one query (`experiments.sh`, `E49_steady`).
+2. Order each window through the door, with the reason the incident names. Each answer's `requeued` must equal the window's count; a
+   `REPLAY_TOO_LARGE` means the window was cut too wide: cut it again, never raise the bound.
+3. Watch the relay publish the requeued rows (`finapp.outbox.pending` falling) and the groups settle (`finapp.inbox.lag`); the inbox
+   counts what consumers had already applied as `finapp.inbox.consumption{outcome="duplicate"}` and applies nothing twice.
+4. Check that the audit trail holds one record per order, and that no record parked (`InboxDeadLetterParked` silent).
+
+At the target's volume (`CAPACITY_MODEL.md` §3.2, about 3.2 million events a day, of which the handled types are a part) a day is
+hundreds of orders. E49 records the replay's rate on its own run's volume; the time a target's day would take is not measured here.
+Whether the door should take a day in one order is `THREAT_MODEL.md` §6 item 58 (b).
+
+#### Reading a run
+
+`experiments/<id>/record.tsv` for each experiment, beside `isr.tsv` (E08), `fleet.tsv`, `held.txt` (E23), `windows.txt` and
+`replays.tsv` (E49), `parking.tsv`, `parks-by-group.tsv`, `parks.txt` and `client.log` (E68), `faults.log` and `relay-hold.out`;
+`load/pipeline-summary.txt` and its tables for E47 and E48. A result goes into
+`RESILIENCE_EXPERIMENTS.md` in §1.2's form, and the run's record here.
+
+#### The record
+
+- **2026-11-13, containers, no `kind`** (the task's branch): three `apache/kafka:4.3.1` containers by the overlay's digest on a throwaway
+  network, each given a pod's names, started by the overlay's own start script with the harness's own `brokers_config`, its certificate
+  (`brokers_sans`, `serverAuth,clientAuth`) and its topic posture; then `brokers_check` itself, `kafka_admin` in its three-broker form
+  through `docker exec`. Green: a quorum of three with a leader, two topics at replication 3 and `min.insync.replicas` 2, no replica out
+  of sync; a SCRAM client over SASL_SSL reached all three brokers by their own names over verified TLS and wrote with `acks=all`; one
+  broker killed: 24 partitions under-replicated and none under `min.insync.replicas`, an `acks=all` write still accepted. The first
+  attempt failed at the quorum: the super user named the certificate's subject wrongly (`CN=finapp-kafka`, where `issue kafka` makes
+  `CN=kafka`), so every controller request was refused as not yet authorised; fixed before the green attempt.
+- **2026-11-13, containers, no `kind`: the probe's premise and E08's copy check** (the same three containers; `experiments.sh`'s
+  `experiments_min_isr_on`, `experiments_min_isr_off`, `experiments_isr_sampler` and `experiments_single_replica_writes` as they then
+  stood, the last one's label of its first finding changed since and its rule not). The probe topic of two copies at
+  `min.insync.replicas` 1 on the highest-ordinal broker and the first, written once a second with `acks=all`; that broker killed and held
+  down 90 s, then started. Green: over 7 samples the check named `probe.min-isr` in 4 intervals of writes with one copy in sync, while
+  the catalogue's topics never read below two; the control, the probe topic set back to 2, took no write with one copy in 30 s; the
+  probe topic deleted and the topics back at 2. Two attempts before it saw nothing, and changed the probe: with the victim started again
+  after 20 s (as a kubelet would), its copy was back in sync between two samples, with or without a replication throttle on it, so the
+  probe now holds its victim down for its window (the StatefulSet one short).
+- **2026-11-13, containers, no `kind`: E23's lock key and its hold.** The hold's key expression, as `experiments_relay_hold` writes it,
+  evaluated by the overlay's `postgres:18.6` for five UUIDs (the two ends of the range among them) equalled Java's `UUID.hashCode()` for
+  each, read from `jshell` in the build's JDK image. The hold's whole script, taken out of `experiments.sh`, ran for 3 s against a
+  stand-in outbox of two aggregates with waiting rows: both held and printed, and no advisory lock left after its `pg_advisory_unlock_all()`.
+- **2026-11-13, the image only, no broker: E68's writer.** `kafka-console-producer.sh --help` from the overlay's `apache/kafka:4.3.1` by
+  its digest, in a container with no network, lists `--command-config`, `--command-property` and `--reader-property`, the flags E68's
+  burst passes through `kafka_admin` (and `--property`, `--producer.config` and `--producer-property` as deprecated). Nothing was
+  produced or consumed.
+- **Owed under PI-025**: every cluster run of this section - E08 (with the probe), E09, E22, E23, E49 and E68 in the `experiments` scope
+  at three replicas; E47 at three and at seven; E48. And §11.47's E15 with its cut widened to every broker's own proxy (its register
+  row's note of 2026-11-13).
+
+### 11.52 A shedding platform: reading it, changing its bounds, and the drills that measure it (`P16-TSK-016`, ADR-0137)
+
+**What it is.** Each replica refuses, before the handler, a request it cannot serve in time, with `503 api.Overloaded` and a jittered
+`Retry-After` (`API_CONVENTIONS.md` §5a). Before the handler means before any idempotency claim: **a shed request did nothing**, so
+there is nothing to reconcile, reverse or look for, and the client's retry under the same key is a first attempt. Three rules, per
+replica: the writer pool's queue (`finapp.shedding.pool-waiters` threads already waiting: every public request shed), the command
+permits (`finapp.shedding.command-permits` commands in flight: the next command shed), and the deadline (a command whose session or
+key lookups left it less than one pool wait of `finapp.shedding.deadline`). The operator surface and the provider callbacks are never
+shed, so this section's steps work on a shedding platform.
+
+**The signals.**
+- `finapp_shedding_requests_total{type,outcome}` per replica: `type` is `command` or `read`, `outcome` is `admitted`, `pool`, `permits`
+  or `deadline`. The shed share of a class is `(pool + permits + deadline) / (admitted + pool + permits)`: the door counts each
+  request once, and the deadline counts the commands the door had admitted.
+- A shed is a `5xx` on its route, so sustained shedding spends the route's availability objective and the burn alerts page or ticket
+  (`SLOS.md` §2, §11.8): no alert of its own.
+- `hikaricp_connections_pending` and `hikaricp_connections_active` (the queue the door reads), `tomcat_threads_busy_threads`, and the
+  edge's access lines (`DownstreamStatus` 503 with `OriginStatus` 503: the replica's answer, not the edge's).
+- The other classes' own bounds: `finapp_payments_callback_inquiries_total{outcome}` (`admitted`, `refused`) for the hinted
+  provider inquiries' bulkhead - a refused one is left to the sweep, so a rising refused share is a slow provider holding the
+  permits, not a lost delivery; and the operational report door's two permits, whose refusal is `503 accounting.ReadTimedOut`
+  (§10.2) and is counted only as a `5xx` on the operator surface.
+
+**Reading a shedding platform** (the first procedure). Take the outcome that dominates, per replica, over the last 15 minutes:
+
+```
+sum by (instance, type, outcome) (increase(finapp_shedding_requests_total{outcome!="admitted"}[15m]))
+```
+
+1. **`pool` on every replica**: the database is slow or a statement is. Read §11.45's first limit in its order from the database's
+   side (`pg_stat_activity` by wait event, `pg_stat_statements` by total time). The fix is the statement or the database, never the
+   threshold: raising `pool-waiters` moves the queue into the pool, where the correctness monitors and the schedules wait behind it
+   (the source-join census starved there in E30).
+2. **`pool` on one replica**: that replica's connections are held (a long report, a stuck transaction). §11.8's "Instance down"
+   reasoning applies; restart that instance only under break-glass (§11.25) if it does not recover.
+3. **`permits`**: more commands at once than a replica holds. If the autoscaler is at its ceiling, that is capacity
+   (`CAPACITY_MODEL.md` §5); if not, scaling is behind the burst. Raising the permits toward the pool's size lets commands alone hold
+   every connection.
+4. **`deadline`**: the lookups before the command (the session's, the merchant key's) waited most of a pool wait: read as (1).
+5. **Every outcome `admitted` and clients still answered `503`**: not the door. `api.Overloaded` is the door's alone; another `503`
+   is its own code (`api.TemporarilyUnavailable`, a provider's), and an edge `503` with no origin status is the edge's.
+
+What not to do: never resend a shed client's request on its behalf (the client holds the key and the retry is its), never turn the
+door off to make the errors stop (no switch exists, by design), and never look for an effect of a shed request: none exists.
+
+**Changing a bound** (the second procedure). A literal in the environment's overlay (`FINAPP_SHEDDING_POOL_WAITERS`,
+`FINAPP_SHEDDING_COMMAND_PERMITS`, `FINAPP_SHEDDING_DEADLINE`, `FINAPP_SHEDDING_RETRY_AFTER`, `FINAPP_SHEDDING_RETRY_AFTER_SPREAD`;
+`CONFIGURATION_REGISTER.md`) rolled through the overlay (§11's first rule). A replica refuses to start when the command permits are
+not fewer than its pool's connections or the deadline does not exceed one pool wait (`LoadShedding`), so a rollout with such a value
+stops at its first pod. A change of the pool's size (`spring.datasource.hikari.maximum-pool-size`) or wait changes what these bound:
+read them again with it. The defaults come from the pool's arithmetic (7 connections, a 5 s wait), not from a measurement; the drills
+below calibrate them.
+
+**The drills** (the third procedure), each on the run's own `kind` cluster, one cluster at a time (§11.43, §11.46):
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=spike infra/scripts/kind-rehearsal.sh          # E50
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E51 infra/scripts/kind-rehearsal.sh      # E51
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=stress infra/scripts/kind-rehearsal.sh         # E52
+```
+
+- **E50, the spike profile** (`load/spike.json`, `PHASE_16_PLAN.md` §5.1): the target's mix at its peak, three spikes of ten times it
+  for 10 s. One keyed command in twenty is sent once: a shed one is never retried and its key is logged (`SHED-ONCE`). The `load-shed`
+  step reads every such key against the database (no idempotency claim under any, no transfer under any reference;
+  `load/shed-census.txt`), and fails when the profile shed nothing. Every other shed request is retried after its `Retry-After`, and
+  the census counts one effect per key. Recorded, never a verdict: the shed answers per second (`load/k6/shed.tsv`) and, per spike,
+  those during it and after it and the seconds from its end to the last (`load/k6/shed-recovery.tsv`). If the edge's per-source
+  in-flight tier answers `429` before any replica sheds, the generators' addresses are too few for the spike: run again with
+  `REHEARSAL_LOAD_GENERATORS` raised, and record it.
+- **E51, the database slowed** (`experiments.sh`): a latency toxic on the application's database hop (`REHEARSAL_E51_LATENCY_MS`,
+  250 by default) while the workload retries by its keys. The fleet must shed (or the run could not run), no correctness page fire
+  and every correctness gauge stay readable through it, the fleet stop shedding within 10 minutes of the toxic's removal, and every
+  request resolve by its key; `experiments/E51/record.tsv`.
+- **E52, the stress profile's break with shedding**: E30's run again on this tree. Every sample must read past E30's stop (its 35th,
+  the census starved), and no checkout be abandoned (`k6/stages.tsv`'s abandoned column zero: no creating answer `500` after its
+  session committed).
+
+**The record.** None: no drill has run. The owner postponed Phase 16's `kind` runs on 2026-11-13 ("we dont need long running checks
+and tests"); E50 at three replicas, E51 at three and E52 at three are owed under `POSTPONED_ISSUES.md` PI-025, and this record is
+filled from their runs. Built and held meanwhile: `ShedBeforeTheClaimTest` (a shed leaves no claim and its retry is a first attempt,
+over the real executor), `SheddingIsWiredTest` (the door before every borrow, every money-moving route a command),
+`CheckoutCreateIsOneTransactionTest`, and the harness's text by `LoadRehearsalContractTest` and `ExperimentsRehearsalContractTest`;
+the spike profile's six scenarios read by the pinned k6's `inspect` (2026-11-13, a container check: each a ramping-arrival-rate
+executor, the spikes at ten times the peak).
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

@@ -2,6 +2,7 @@ package com.finapp.app.settlement;
 
 import com.finapp.settlement.SettlementFile;
 import com.finapp.settlement.SettlementReportCollector;
+import com.finapp.platform.outbound.OutboundExchange;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URI;
@@ -107,7 +108,7 @@ public final class HttpSettlementReportCollector implements SettlementReportColl
                         .build();
         try {
             HttpResponse<Optional<byte[]>> answer =
-                    http.send(get, HttpSettlementReportCollector::boundedBody);
+                    OutboundExchange.send(http, get, HttpSettlementReportCollector::boundedBody, timeout);
             return switch (answer.statusCode()) {
                 case 200 ->
                         answer.body()

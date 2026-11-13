@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 
 import com.finapp.platform.testing.ScriptedSweepConnections;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -135,5 +136,44 @@ class RetentionSweepTest {
                 .isThrownBy(() -> RetentionSweep.ofExpiredInboxMessages(database::open, Duration.ZERO, 5));
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> RetentionSweep.ofPublishedOutboxEvents(database::open, Duration.ofDays(30), Duration.ZERO, 5));
+    }
+
+    @Test
+    @DisplayName("a module's own sweep calls its schema's sweep function with the bound and the batch, in one transaction (P16-TSK-010)")
+    void aModulesSweepCallsItsOwnFunction() {
+        ScriptedSweepConnections database = new ScriptedSweepConnections().deleting(4);
+
+        RetentionSweep sweep = RetentionSweep.ofModuleFunction(database::open, "session", "identity.sweep_expired_sessions", Duration.ofDays(30), 500);
+        int deleted = sweep.sweepBatch();
+
+        assertThat(deleted).isEqualTo(4);
+        assertThat(sweep.table()).isEqualTo("session");
+        ScriptedSweepConnections.Batch batch = database.batches().get(0);
+        assertThat(batch.statement()).isEqualTo("SELECT identity.sweep_expired_sessions(?, ?)");
+        assertThat(batch.boundMillis()).isEqualTo(Duration.ofDays(30).toMillis());
+        assertThat(batch.batchSize()).isEqualTo(500);
+        assertThat(batch.committed()).isTrue();
+        assertThat(batch.closed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a module's sweep names a schema-qualified sweep_ function and a plain table, and nothing that could carry more SQL (P16-TSK-010)")
+    void aModulesSweepNamesOnlyAFunction() {
+        ScriptedSweepConnections database = new ScriptedSweepConnections();
+        Duration day = Duration.ofDays(1);
+
+        for (String function : List.of("sweep_expired_sessions", "identity.delete_sessions", "identity.sweep_x(1); DROP TABLE t; --",
+                "Identity.sweep_x", "identity.sweep_", "identity.sweep_x(?, ?)")) {
+            assertThatIllegalArgumentException().as(function)
+                    .isThrownBy(() -> RetentionSweep.ofModuleFunction(database::open, "session", function, day, 5));
+        }
+        for (String table : List.of("Session", "session; --", "identity.session", "")) {
+            assertThatIllegalArgumentException().as(table)
+                    .isThrownBy(() -> RetentionSweep.ofModuleFunction(database::open, table, "identity.sweep_expired_sessions", day, 5));
+        }
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> RetentionSweep.ofModuleFunction(database::open, "session", "identity.sweep_expired_sessions", Duration.ZERO, 5));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> RetentionSweep.ofModuleFunction(database::open, "session", "identity.sweep_expired_sessions", day, 0));
     }
 }

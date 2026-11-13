@@ -1,5 +1,6 @@
 package com.finapp.merchant;
 
+import com.finapp.platform.outbound.OutboundExchange;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -70,7 +71,7 @@ public final class SimulatedPayoutDestinationTokenisation implements PayoutDesti
                         .build();
         HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, request, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (IOException nothingUsable) {
             return Exchange.unavailable();
         } catch (InterruptedException interrupted) {
