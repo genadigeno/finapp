@@ -827,6 +827,23 @@ It depends on no owner decision and changes no runtime behaviour. Built and gate
 
 ### Just completed
 
+**`P16-TSK-010` — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `COMPLETE` (2026-11-13; branch `P16-TSK-010`
+from master `1fbdf71c`, wave D, masters `6f23a4a1` and `ac5aa4a3` merged in; ADR-0135 `Proposed`; platform `V015`, identity `V027`).
+**The audit archive**: every audit row queued by a trigger in the transaction that writes it, so no cursor or clock can pass one; one
+claimer at a time by a head row under `SKIP LOCKED`, one segment in flight under a lease on the database's clock, each row in one segment
+by a key; the segment's file and manifest the database's own text, chained by digest; written once to a store, read back and compared,
+and only then marked, by the holder, with digests the database recomputes from the rows. A store down leaves the segment to its lease
+and loses nothing; a copy that differs is never marked and stops the chain (`AuditArchiveCopyDiffers` pages; `AuditArchiveBehind`
+tickets). It runs where `finapp.audit.archive.endpoint` names a store, which no committed environment does; no audit row is deleted or
+altered, and the application role gains no write on any audit or archive table. **The session sweep**: a dead session's row
+`finapp.identity.session.sweep.grace` (30 days) past its idle bound, on the database's clock, never a live session, a fourth
+`RetentionSweepSchedule`. **On `kind`, built and not run** (PI-025): the test-only write-once store and E44 (the store stopped mid-run),
+E45 (a holder killed between copy and mark, at three and at ten) and E46 (the session table over a soak). Corrections to the entry: no
+partition first (`-012`'s decision); "item 21 (b)" is item 23 (b); no audit-row rate was measured, so none is claimed. **Threat model**:
+T10's archival row and T37's session row `EXISTS`; their database cases `GAP | PI-023`, their runs `GAP | PI-025`; owner item 57 added
+(the real bucket's signing and credential, the read door, a copy that differs). Short container checks: both migrations' functions on
+PostgreSQL 18.6, and the test-only store on the JDK image. Probes P1-P7 caught (`MUTATION_TESTING.md` §2). Tests: TESTS_FINAL.
+
 **`P16-TSK-008` — Hot rows, locks, deadlocks and plans under load** — `COMPLETE` (2026-11-13; branch `P16-TSK-008` from master `1fbdf71c`, wave D; no migration, no application code; ADR-0133 `Proposed`; marks no task `READY` - the coordinator does). **Built, contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025** (the owner's word of 2026-11-13): no `kind` run, no measured figure. **E38**, the concurrent-financial profile (`load/concurrent.json`: every transfer between one pair of customers one way and back, every checkout to the one merchant, the engineering workload and two of the target's bursts), its waits sampled every 250 ms and resolved to their rows (`load/contention.sql`, `contention.awk`), the server's own log of every long wait, deadlock and serialisation failure read (`load/locks.awk`), a control wait the sampler and the log must both see, every deadlock the server counted required to have its record; **E38's probe**, the transfer's fixed lock order dropped on a throwaway branch (not `lockBalancesInOrder`: none of its callers is driven on `kind`); **E39**, the soak (eight hours at the engineering workload, the payable read left out), the named tables every 60 s, autovacuum and checkpoints from the log, auto_explain's window (preloaded inert on the `kind` overlay's test-only server) for the top statements' plans, and a transactional index build on the journal under the migrator's own lock timeout for item 42 (b); **E40**, the sweeps' failure storm in the experiments scope. Runbook §11.48, `CAPACITY_MODEL.md` §3.5 (its measured cells `—`), register rows E38–E40 (not run). **Ruled by reading** (`CURRENT_STATE.md`'s debt rows): #52, #53, the source lock, the rescreening census, the whole-day proofs, the capital row and L6 kept, each naming the run that measures it; capital tranches undecided. **ADR-0133**: no hot-row mechanism before a run names a row ("no mechanism needed at the target" waits on E38); the merchant payable read (E30's first limit) bounded by a commit-order checkpoint, proposed, its build `THREAT_MODEL.md` §6 item 55's (recommendation (i)); read from the code beside it, every balance decision folds its account's whole history under the row lock (two new debt rows). **Tests**: `ContentionRehearsalContractTest` (new, eight members, each probed) and `LoadRehearsalContractTest`'s staged-profiles member widened; the guards reading the changed files, named in the change log's row. The new SQL, the sampler and the readers proven in a throwaway container of the pinned PostgreSQL image.
 
 ### Previously
@@ -1528,6 +1545,16 @@ Resolved during initiation:
 ---
 
 ## Next Task
+
+**After `P16-TSK-010`'s gate (2026-11-13):** marks no task `READY` (the coordinator does at its merge). It unblocks no task by
+dependency; `P16-TSK-011` (`READY`) may run its idempotency sweep through `RetentionSweep.ofModuleFunction` (routed onto its entry), and
+`P16-TSK-012` and `P16-TSK-014` carry routed notes (the archive needs no partition; E45 at ten replicas waits for the ten-replica
+topology), as does `P16-TSK-021` (E11 now has an application store beside the infrastructure's). Lifecycle counts moved:
+`ShutdownOrderTest` 41 components and 38 schedules. **Owner item**: `THREAT_MODEL.md` §6 item 57, the audit archive outside `kind` -
+*recommended*: (a) the AWS SDK's S3 and STS clients with the first real environment, (b) the runbook's read procedure while the table
+holds every row and an operator door before any row may leave it, (c) a copy that differs stays stopped until explained, then re-keyed
+by a reviewed, four-eyes change. Integration note: platform `V015` and identity `V027` take numbers no other wave D task held on this
+branch's base; a parallel task adding either schema's next migration renumbers at its merge.
 
 **After `P16-TSK-008`'s merge (2026-11-13, master `1713f635`, a fast-forward of its branch, which had merged master `6f23a4a1`):** Phase 16 at 10 of 34, **M16.3 at 1 of 5**. Newly eligible and marked `READY` under the owner's word to start wave E as dependencies merge ("start wave E after D too"): `P16-TSK-011` (posting once-ness made unique, then idempotency records swept) and `P16-TSK-012` (partitioning and read-replica decisions), each launched from this master with no cluster runs (PI-025). **Owner item open:** `THREAT_MODEL.md` §6 item 55, the merchant payable read whose cost grows with the merchant's history (recommendation (i), ADR-0133's commit-order checkpoint built in a task of its own). Routed by `-008`: `-012` reads E39's table growth for partitioning. The older load profiles' wording that routes a simulated bureau to `P16-TSK-018` is overtaken by the owner's decision on question 13; `-018` aligns it.
 

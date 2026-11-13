@@ -29578,7 +29578,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's budget procedure; `DISTRIBUTED_EXECUTION.md` §4a.
 - **Risk**: Medium. **Cx**: M.
 
-**P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `IN_PROGRESS` (2026-11-13: designed on branch `P16-TSK-010` from master `1fbdf71c`; read `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`) until then)
+**P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `COMPLETE` (2026-11-13; its completion gate on branch `P16-TSK-010` from master `1fbdf71c`, masters `6f23a4a1` and `ac5aa4a3` merged in; the runs on `kind` owed under `POSTPONED_ISSUES.md` PI-025 and its database cases to the database pass, by the owner's word of 2026-11-13; read `READY`, marked by the coordinator at `P16-TSK-007`'s merge, until then)
 - **Objective**: as decided 2026-11-09, scheduled into Phase 16's archival:
   - the audit archival designed in `DATA_RETENTION.md` §3 is built;
   - expired session rows are swept, sized by the volume `-007` measured.
@@ -29613,6 +29613,39 @@ on none:
 - **Definition of done**: `DOD-KERNEL`, `DOD-SEC`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.15 widened.
 - **Risk**: Medium. **Cx**: L.
+- **As built (2026-11-13; ADR-0135, `Proposed`; design corrections: no partition first, since partitioning is `-012`'s ADR; a
+  segment of committed rows is the unit, because a committed audit row never changes; "item 21 (b)" read as item 23 (b); `-007`
+  measured no audit-row rate, so none is claimed):**
+  - **The audit archive** (platform `V015`): every audit row queued by an `AFTER INSERT` trigger in its own transaction
+    (`platform.audit_archive_pending`), the rows before the migration queued under the trigger's lock; segments cut from the queue
+    into `platform.audit_archive_member`, one segment per row by its key; one claimer at a time (the head row `FOR UPDATE SKIP
+    LOCKED`) and one `CLAIMED` segment (a partial unique index) under a lease on the database's clock; the segment's file and manifest
+    the database's own text (format 1, every column in order, UTC microseconds), chained by digest; `complete_audit_archive_segment`
+    marks once, by the holder (`AAHLD` otherwise), with digests it recomputes from the rows (`AADGS` otherwise); a column added stops
+    it (`55000`), a queued id with no row stops it (`XX001`); `platform.audit_archive_record` decodes a line. The engine
+    (`AuditArchival`) writes both objects once, reads both back and compares them byte for byte, and only then marks: a store down
+    leaves the segment to its lease, a copy that differs is never marked. The store is a port; `HttpAuditArchiveStore` speaks S3's
+    `PUT If-None-Match: *` and `GET`, https off loopback, each exchange bounded in time and size, unsigned (item 57 (a)). The
+    `AuditArchiveSchedule` runs only where `finapp.audit.archive.endpoint` names a store, which no committed overlay does. No audit
+    row is deleted or altered; the application role gains no write on any audit or archive table.
+  - **The session sweep** (identity `V027`, `SessionRetention`, a fourth `RetentionSweepSchedule` bean): `ACTIVE` or `REVOKED` rows
+    whose idle bound passed more than `finapp.identity.session.sweep.grace` (30 days, at least a minute) ago, on the database's
+    clock, so never a live session; an unreviewed column stops it. `RetentionSweep.ofModuleFunction` runs a module's own sweep
+    function.
+  - **Meters and alerts**: `finapp.audit.archive.segments{outcome}`, `.rows`, `.pending`, `.pending.oldest`, `.enabled`; the session
+    sweep on `finapp.retention.swept{type="session"}`; `AuditArchiveCopyDiffers` (page) and `AuditArchiveBehind` (ticket) in
+    `platform.yml`, the backlog gauge in `PlatformGaugesUnreadable`, with promtool cases.
+  - **On `kind`, built and not run**: the test-only write-once store (`ArchiveStore.java`, `experiments/archive-store.yaml`), the
+    experiments scope's settings and endpoint check, the `store-hold` fault, E44 (the store stopped mid-run), E45 (a holder killed
+    between copy and mark, at three and owed at ten) and E46 (the session table over a soak), with the archive census; held by
+    `ExperimentsRehearsalContractTest`.
+  - **Acceptance, under the owner's word of 2026-11-13**: archival and the sweep at ten instances, each row once - built, the claim
+    protocol held hermetically and by the migration's text, the ten-way database cases written and owed (PI-023's kind), **E45 at ten
+    owed (PI-025)**; an unavailable store loses nothing - **met hermetically** (`AuditArchivalTest#anUnavailableStoreLosesNothing`),
+    **E44 owed (PI-025)**; the sessions table bounded over the soak - built, **E46 owed (PI-025)**; item 18's readiness and
+    threat-model rows re-ruled - met (T10's archival row and T37's session row `EXISTS`, the rest `GAP` naming PI-023, PI-025, owner
+    items 18, 23 and 57). A short container check ran both migrations' functions on PostgreSQL 18.6 and the test-only store on the
+    JDK image; nothing ran on a cluster.
 
 **P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
 - **Objective**: as decided:
