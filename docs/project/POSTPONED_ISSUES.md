@@ -662,3 +662,11 @@ commit and the date; do not delete the entry.
     row; and the longest statement under the sustained profile, which the load scope now records (`pg-statements_longest.tsv`) and
     `P16-TSK-007`'s owed E29 run reads, the measurement ADR-0139's revision rule needs for the socket timeout. Nothing of the task ran on
     a cluster; its hermetic probes are in `MUTATION_TESTING.md` §2.
+  - `P16-TSK-024` (restore and point-in-time recovery, `OPERATIONS_RUNBOOK.md` §11.35 and §11.55; ADR-0140): **E59**, the whole
+    seeded restore rehearsal on the task's tree (`infra/scripts/restore-rehearsal.sh` with its defaults: the widened seed, the
+    logical restore and its gate, every plant, `key-version-missing` among them), then the logical restore of a `kind` database after
+    the soak (`RESTORE_SOURCE=kind:<node>` after `P16-TST-001`'s run with `REHEARSAL_KEEP=1`), its record in §11.35 and the two sizes'
+    lines of `rates.tsv` in §11.55; **E60**, the point-in-time recovery to T and its `wal-gap` and `wal-damaged` plants (the same
+    seeded run), its record in §11.55; **E61**, the post-recovery gate on both restores (the same run), and on `kind` the broker step
+    of §11.35 step 6 for a restored database at three replicas, with **F15**, its record in §11.55. Ran instead, 2026-11-13, in
+    containers: the seed's check (`RESTORE_STOP_AFTER=source`) and the recovery's mechanics over a bare server (§11.55's record).

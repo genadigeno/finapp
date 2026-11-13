@@ -756,7 +756,8 @@ jobs:
           retention-days: 30
 
   # ---------------------------------------------------------------------------
-  # The restore rehearsal (P15-TSK-030, OPERATIONS_RUNBOOK.md section 11.35): a logical
+  # The restore rehearsal (P15-TSK-030, OPERATIONS_RUNBOOK.md sections 11.35 and 11.55; widened by
+  # P16-TSK-024 with a point-in-time recovery, the post-recovery gate and a seed holding every product): a logical
   # backup of a database the platform's own services wrote, encrypted as it is written,
   # restored into a fresh PostgreSQL held so that no platform role can log in, its
   # transaction counter moved past the restored journal, and proven financially whole by
@@ -790,7 +791,7 @@ jobs:
             exit 0
           fi
           git fetch --no-tags --depth=1 origin "$BASE"
-          if git diff --name-only "origin/$BASE" HEAD | grep -Eq '(^[a-z]+/src/main/resources/db/migration/|^infra/scripts/restore-rehearsal|^app/src/test/java/com/finapp/app/restore/|^infra/postgres/|^\.github/workflows/ci\.yml$|^gradle/libs\.versions\.toml$|^infra/scripts/kind-rehearsal/gl-mapping\.json$|^app/build\.gradle\.kts$|^deploy/overlays/kind/postgres\.yaml$|^(accounting|ledger|accounts|transfers|lending|bnpl|fx|merchant)/src/main/java/|^app/src/main/java/com/finapp/app/(accounting|ledger|reconciliation)/)'; then
+          if git diff --name-only "origin/$BASE" HEAD | grep -Eq '(^[a-z]+/src/main/resources/db/migration/|^infra/scripts/restore-rehearsal|^app/src/test/java/com/finapp/app/restore/|^infra/postgres/|^\.github/workflows/ci\.yml$|^gradle/libs\.versions\.toml$|^infra/scripts/kind-rehearsal/gl-mapping\.json$|^app/build\.gradle\.kts$|^deploy/overlays/kind/postgres\.yaml$|^(accounting|ledger|accounts|transfers|lending|bnpl|fx|merchant|credit|settlement|reconciliation|consent|checkout|identity|platform)/src/main/java/|^app/src/main/java/com/finapp/app/(accounting|ledger|reconciliation|credit|lending|bnpl|merchant|settlement|checkout|consent|session|security)/|^app/src/test/java/com/finapp/app/credit/(LendingStormCredit|SimulatedBureauEngine)\.java$|^infra/scripts/KeyCheckValue\.java$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
