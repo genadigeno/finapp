@@ -52,6 +52,9 @@ class AlertCatalogueTest {
     private static final String KIND_RULES = "deploy/observability/overlays/kind/rules/";
     private static final String KIND_KUSTOMIZATION = "deploy/observability/overlays/kind/kustomization.yaml";
 
+    /** The rules ConfigMaps' names begin so: the platform's {@code finapp-prometheus-rules} and the domains' {@code -domain} (2026-11-13). */
+    private static final String RULES_CONFIG_MAP = "finapp-prometheus-rules";
+
     private static final Pattern SECTIONS =
             Pattern.compile("OPERATIONS_RUNBOOK\\.md,? sections? ([0-9]+(?:\\.[0-9]+)*(?:(?:, | and )[0-9]+(?:\\.[0-9]+)*)*)");
 
@@ -106,21 +109,55 @@ class AlertCatalogueTest {
     private static final int MARGIN = 32_768;
 
     @Test
-    @DisplayName("kind's rules ConfigMap fits a client-side apply's annotation with 32 KiB to spare, measured as kubectl writes it: every file"
-            + " JSON-escaped, < > & as six bytes each, plus a kilobyte for the object around them (P15-TSK-032)")
+    @DisplayName("each of kind's rules ConfigMaps fits a client-side apply's annotation with 32 KiB to spare, measured on its own as kubectl"
+            + " writes it: every file it lists JSON-escaped, < > & as six bytes each, plus a kilobyte for the object around them (P15-TSK-032;"
+            + " split in two 2026-11-13)")
     void theRulesConfigMapFitsAClientSideApply() throws IOException {
-        long serialised = 1_024;
+        Path copies = RepositoryPaths.locate(KIND_RULES + "slo.yml").getParent();
+        Map<String, List<String>> configMaps = rulesConfigMaps();
+        assertThat(configMaps).as("the platform's rules ConfigMap and the domains'").containsKeys(RULES_CONFIG_MAP, RULES_CONFIG_MAP + "-domain");
         int files = 0;
-        try (Stream<Path> copies = Files.list(RepositoryPaths.locate(KIND_RULES + "slo.yml").getParent())) {
-            for (Path file : copies.sorted().toList()) {
-                serialised += file.getFileName().toString().length() + 6 + escapedLength(Files.readString(file));
+        long all = 0;
+        for (Map.Entry<String, List<String>> configMap : configMaps.entrySet()) {
+            long serialised = 1_024;
+            for (String file : configMap.getValue()) {
+                serialised += file.length() + 6 + escapedLength(Files.readString(copies.resolve(file)));
                 files++;
             }
+            assertThat(serialised).as("%s as kubectl's last-applied annotation holds it: past %s bytes move a file to the other rules ConfigMap,"
+                    + " split it again, or apply the overlay server-side, before it reaches the %s-byte cap", configMap.getKey(),
+                    ANNOTATIONS_CAP - MARGIN, ANNOTATIONS_CAP).isLessThanOrEqualTo(ANNOTATIONS_CAP - MARGIN).isGreaterThan(1_024);
+            all += serialised;
         }
-        assertThat(files).as("the copies were read").isGreaterThanOrEqualTo(13);
-        assertThat(serialised).as("the rules ConfigMap as kubectl's last-applied annotation holds it: past %s bytes split the ConfigMap, or"
-                + " apply the overlay server-side, before it reaches the %s-byte cap", ANNOTATIONS_CAP - MARGIN, ANNOTATIONS_CAP)
-                .isLessThanOrEqualTo(ANNOTATIONS_CAP - MARGIN).isGreaterThan(150_000);
+        long copied;
+        try (Stream<Path> listed = Files.list(copies)) {
+            copied = listed.count();
+        }
+        assertThat(files).as("the copies were read: every file of the directory measured in a ConfigMap").isEqualTo((int) copied)
+                .isGreaterThanOrEqualTo(13);
+        assertThat(all).as("the copies were read, whole").isGreaterThan(150_000);
+    }
+
+    /**
+     * Each rules ConfigMap kind's overlay generates, by name, and the files it lists under {@code rules/} (2026-11-13): every generator whose
+     * name begins {@link #RULES_CONFIG_MAP}, and any other generator listing a rule file, so that none can list one unmeasured.
+     */
+    private static Map<String, List<String>> rulesConfigMaps() {
+        Map<String, List<String>> configMaps = new TreeMap<>();
+        for (Object node : (List<?>) yaml(KIND_KUSTOMIZATION).get("configMapGenerator")) {
+            Map<String, Object> generator = map(node);
+            String name = String.valueOf(generator.get("name"));
+            List<String> files = generator.get("files") == null ? List.of()
+                    : ((List<?>) generator.get("files")).stream().map(String::valueOf).toList();
+            if (name.startsWith(RULES_CONFIG_MAP) || files.stream().anyMatch(file -> file.startsWith("rules/"))) {
+                assertThat(name).as("a generator listing a rule file is a rules ConfigMap").startsWith(RULES_CONFIG_MAP);
+                assertThat(files).as("%s lists rule files, and nothing else", name).isNotEmpty()
+                        .allSatisfy(file -> assertThat(file).matches("rules/[a-z0-9-]+\\.yml"));
+                assertThat(configMaps.put(name, files.stream().map(file -> file.substring("rules/".length())).toList()))
+                        .as("%s is generated once", name).isNull();
+            }
+        }
+        return configMaps;
     }
 
     /** A string's length as Go's encoding/json writes it, which kubectl uses: HTML-escaped. */
@@ -340,7 +377,8 @@ class AlertCatalogueTest {
 
     @Test
     @DisplayName("kind's Prometheus loads every rule file as committed: its copy holds each file byte for byte and nothing else, the overlay"
-            + " lists each, and deploy/'s Alertmanager is generated from the committed routing (P15-TSK-032)")
+            + " lists each in exactly one of its rules ConfigMaps, and deploy/'s Alertmanager is generated from the committed routing"
+            + " (P15-TSK-032; two ConfigMaps 2026-11-13)")
     void kindLoadsEveryRuleFileAsCommitted() throws IOException {
         Set<String> source = new TreeSet<>();
         try (Stream<Path> files = Files.list(rulesDirectory())) {
@@ -357,13 +395,19 @@ class AlertCatalogueTest {
                     .isEqualTo(RepositoryPaths.read("infra/prometheus/rules/" + file));
         }
         String kustomization = RepositoryPaths.read(KIND_KUSTOMIZATION).replace("\r\n", "\n");
-        Matcher listed = Pattern.compile("(?m)^      - rules/(\\S+)$").matcher(kustomization);
-        Set<String> generated = new TreeSet<>();
-        while (listed.find()) {
-            generated.add(listed.group(1));
+        Map<String, List<String>> configMaps = rulesConfigMaps();
+        assertThat(configMaps.keySet()).as("the platform's rules ConfigMap and the domains' (2026-11-13)")
+                .contains(RULES_CONFIG_MAP, RULES_CONFIG_MAP + "-domain");
+        Map<String, String> generated = new TreeMap<>();
+        for (Map.Entry<String, List<String>> configMap : configMaps.entrySet()) {
+            for (String file : configMap.getValue()) {
+                String also = generated.put(file, configMap.getKey());
+                assertThat(also).as("%s is listed once, in one rules ConfigMap: here in %s, and in %s too", file, configMap.getKey(), also).isNull();
+            }
         }
-        assertThat(generated).as("the rules ConfigMap lists every file").isEqualTo(source);
-        assertThat(kustomization).contains("  - name: finapp-prometheus-rules\n").contains("  - ../../alertmanager\n");
+        assertThat(generated.keySet()).as("the rules ConfigMaps together list every file: list a new one in one of them").isEqualTo(source);
+        assertThat(kustomization).contains("  - name: finapp-prometheus-rules\n").contains("  - name: finapp-prometheus-rules-domain\n")
+                .contains("  - ../../alertmanager\n");
         assertThat(RepositoryPaths.read("deploy/observability/alertmanager/kustomization.yaml").replace("\r\n", "\n"))
                 .contains("  - name: finapp-alertmanager-config\n    files:\n      - alertmanager.yml\n");
     }

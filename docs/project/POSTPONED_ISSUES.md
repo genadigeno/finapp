@@ -630,3 +630,8 @@ commit and the date; do not delete the entry.
     REHEARSAL_EXPERIMENTS=E40`) at three replicas. Nothing ran before the word. The new SQL, the `\watch` sampler, the server's log formats
     and the readers were run in a throwaway container of the pinned PostgreSQL image (no `kind`, no application) on 2026-11-13; on a
     cluster they are unproven.
+  - The coordinator's rules split (2026-11-13, branch `P16-chore-rules-split`; `docs/project/history/CHANGE_LOG.md`): kind's rules
+    in two ConfigMaps, `finapp-prometheus-rules` and `finapp-prometheus-rules-domain`, projected into `/etc/prometheus-rules`. Owed:
+    the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's
+    `/api/v1/rules` listing every group of all thirteen rule files (`OPERATIONS_RUNBOOK.md` §11.34's alerts on `kind`). Proven
+    without a cluster only: the stream rendered, `kubeconform -strict` and the pipeline's policies green.
