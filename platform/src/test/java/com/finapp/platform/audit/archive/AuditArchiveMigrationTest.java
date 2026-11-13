@@ -181,7 +181,7 @@ class AuditArchiveMigrationTest {
         }
         assertThat(columns).as("V009's columns were read").hasSizeGreaterThanOrEqualTo(11);
         Pattern added = Pattern.compile("(?i)ALTER TABLE platform\\.audit_record[^;]*ADD COLUMN\\s+([a-z_]+)\\s+([a-z]+)");
-        try (Stream<Path> files = Files.list(RepositoryPaths.locate(DIRECTORY))) {
+        try (Stream<Path> files = Files.list(RepositoryPaths.locate(AUDIT_TABLE).getParent())) {
             files.filter(file -> file.getFileName().toString().endsWith(".sql")).sorted().forEach(file -> {
                 Matcher addition = added.matcher(flat(withoutComments(read(file))));
                 while (addition.find()) {

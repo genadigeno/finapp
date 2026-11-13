@@ -113,18 +113,17 @@ class SessionSweepMigrationTest {
         return columns;
     }
 
-    /** Every identity migration on the test's classpath, by name, in order: the directory the build's resources are copied to. */
+    /**
+     * Every identity migration, by name, in order, listed from the module's source directory: the test runs in the module's directory,
+     * and on its classpath the main resources arrive packed in a jar, which cannot be listed as a directory.
+     */
     private static List<String> everyMigration() {
-        try {
-            java.net.URL directory = SessionSweepMigrationTest.class.getClassLoader().getResource("db/migration/identity");
-            assertThat(directory).as("the identity migrations on the classpath").isNotNull();
-            try (var listing = java.nio.file.Files.list(java.nio.file.Path.of(directory.toURI()))) {
-                return listing.map(path -> path.getFileName().toString()).filter(name -> name.endsWith(".sql")).sorted().toList();
-            }
+        java.nio.file.Path directory = java.nio.file.Path.of("src/main/resources/db/migration/identity");
+        assertThat(directory).as("the identity migrations' source directory, from the module's own").isDirectory();
+        try (var listing = java.nio.file.Files.list(directory)) {
+            return listing.map(path -> path.getFileName().toString()).filter(name -> name.endsWith(".sql")).sorted().toList();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
-        } catch (java.net.URISyntaxException e) {
-            throw new IllegalStateException(e);
         }
     }
 
