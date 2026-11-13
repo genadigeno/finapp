@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -57,7 +56,7 @@ class SheddingIsWiredTest {
     private RequestMappingHandlerMapping mappings;
 
     @Autowired private LoadShedding shedding;
-    @Autowired private DataSource dataSource;
+    @Autowired private org.springframework.context.ApplicationContext context;
     @Autowired private MeterRegistry registry;
 
     private final Map<String, HandlerMethod> served = new TreeMap<>();
@@ -169,7 +168,7 @@ class SheddingIsWiredTest {
     @Test
     @DisplayName("the bounds were built against the real pool: its size and borrow wait read from it, the permits fewer, the meter eager")
     void theBoundsFitTheRealPool() throws Exception {
-        HikariDataSource pool = dataSource.unwrap(HikariDataSource.class);
+        HikariDataSource pool = WriterPool.of(context);
         assertThat(shedding.pool().size()).isEqualTo(pool.getMaximumPoolSize());
         assertThat(shedding.pool().borrowWait()).isEqualTo(Duration.ofMillis(pool.getConnectionTimeout()));
         assertThat(shedding.bounds().commandPermits()).as("commands alone never hold the whole pool").isLessThan(pool.getMaximumPoolSize());

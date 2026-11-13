@@ -8,14 +8,10 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.zaxxer.hikari.HikariDataSource;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.io.PrintWriter;
-import java.lang.reflect.Proxy;
-import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.random.RandomGenerator;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -145,9 +141,7 @@ class LoadSheddingTest {
         try (HikariDataSource hikari = new HikariDataSource()) {
             hikari.setMaximumPoolSize(7);
             hikari.setConnectionTimeout(5000);
-            DataSource traced = wrapping(hikari);
-
-            PoolQueue read = HikariPoolQueue.of(traced);
+            PoolQueue read = PoolSources.throughAWrapper(hikari);
 
             assertThat(read.size()).isEqualTo(7);
             assertThat(read.borrowWait()).isEqualTo(Duration.ofSeconds(5));
@@ -158,25 +152,6 @@ class LoadSheddingTest {
     @Test
     @DisplayName("a data source that is not HikariCP is refused at start: a door that cannot read the queue would admit everything")
     void aPoolItCannotReadIsRefused() {
-        DataSource other = (DataSource) Proxy.newProxyInstance(DataSource.class.getClassLoader(), new Class<?>[] {DataSource.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "isWrapperFor" -> false;
-                    case "unwrap" -> throw new SQLException("not a wrapper");
-                    case "toString" -> "another pool";
-                    default -> throw new UnsupportedOperationException(method.getName());
-                });
-        assertThatIllegalStateException().isThrownBy(() -> HikariPoolQueue.of(other)).withMessageContaining("not a HikariCP pool");
-    }
-
-    /** A wrapper that unwraps as {@code TracedDataSource} does: itself, or its delegate. */
-    private static DataSource wrapping(DataSource delegate) {
-        return (DataSource) Proxy.newProxyInstance(DataSource.class.getClassLoader(), new Class<?>[] {DataSource.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "isWrapperFor" -> ((Class<?>) args[0]).isInstance(proxy) || delegate.isWrapperFor((Class<?>) args[0]);
-                    case "unwrap" -> ((Class<?>) args[0]).isInstance(proxy) ? proxy : delegate.unwrap((Class<?>) args[0]);
-                    case "getLogWriter" -> (PrintWriter) null;
-                    case "toString" -> "traced";
-                    default -> throw new UnsupportedOperationException(method.getName());
-                });
+        assertThatIllegalStateException().isThrownBy(PoolSources::fromAnotherPool).withMessageContaining("not a HikariCP pool");
     }
 }

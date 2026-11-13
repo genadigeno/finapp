@@ -18,23 +18,18 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.security.Sensitive;
 import java.security.SecureRandom;
-import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.SimpleTransactionStatus;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The checkout's create cannot answer {@code 500} after its session committed (`P16-TSK-016`, routed from `P16-TSK-007`'s E30 and
@@ -54,26 +49,13 @@ class CheckoutCreateIsOneTransactionTest {
 
     private final Transactions transactions = new Transactions();
     private final CheckoutSessions sessions = mock(CheckoutSessions.class);
-    private final DataSource dataSource = mock(DataSource.class);
-    private final List<Connection> handedOut = new ArrayList<>();
+    private final CheckoutServiceOverPorts ports = new CheckoutServiceOverPorts();
     private final MerchantId merchant = MerchantId.of(IDS.next());
     private final AuthenticatedMerchant caller = new AuthenticatedMerchant(merchant, MerchantApiKeyId.of(IDS.next()), Set.of(),
             Optional.empty());
 
-    @SuppressWarnings("unchecked") // Mockito's mocks of the generic ports are raw.
     private CheckoutService service() throws Exception {
-        when(dataSource.getConnection()).thenAnswer(ignored -> {
-            Connection connection = mock(Connection.class);
-            handedOut.add(connection);
-            return connection;
-        });
-        return new CheckoutService(sessions, mock(com.finapp.app.telemetry.CheckoutMeters.class),
-                mock(com.finapp.merchant.MerchantSettlement.class), mock(com.finapp.app.payments.PaymentService.class),
-                mock(com.finapp.payments.PaymentParticipants.class), mock(com.finapp.ledger.LedgerAccountStore.class),
-                mock(com.finapp.identity.IdentityStore.class), mock(com.finapp.platform.idempotency.IdempotentExecutor.class),
-                mock(com.finapp.platform.audit.AuditWriter.class), mock(com.finapp.platform.outbox.OutboxWriter.class), IDS, CLOCK,
-                new TransactionTemplate(transactions), dataSource, mock(com.finapp.identity.MfaEnrolmentStore.class),
-                mock(CheckoutDoorStepUp.class));
+        return ports.service(sessions, transactions, IDS, CLOCK);
     }
 
     private CheckoutSession open() {
@@ -100,9 +82,9 @@ class CheckoutCreateIsOneTransactionTest {
         assertThat(transactions.begun).as("one transaction for the open and its read").isEqualTo(1);
         assertThat(transactions.committed).isEqualTo(1);
         assertThat(transactions.rolledBack).isZero();
-        assertThat(handedOut).as("one connection, handed to both steps").hasSize(1);
-        org.mockito.Mockito.verify(sessions).open(eq(handedOut.get(0)), any());
-        org.mockito.Mockito.verify(sessions).ownedBy(handedOut.get(0), merchant, session.id());
+        assertThat(ports.handedOut).as("one connection, handed to both steps").hasSize(1);
+        org.mockito.Mockito.verify(sessions).open(eq(ports.handedOut.get(0)), any());
+        org.mockito.Mockito.verify(sessions).ownedBy(ports.handedOut.get(0), merchant, session.id());
         assertThat(created.checkoutId()).isEqualTo(session.id().value().toString());
         assertThat(created.sessionToken()).isEqualTo("the-token");
         assertThat(created.alreadyCreated()).isFalse();
