@@ -680,15 +680,20 @@ short costs money.**
 **The ceiling is real too.** Records accumulate, and an unbounded table degrades the index that
 `INV-IDEM-01` depends on. Retention is therefore explicit and swept, not left to grow.
 
-**Sweeping — not built, by ruling.** This record is **not swept**: `P15-TSK-002` (C15, debt row #61)
-ruled that `journal_entry.idempotency_scope` is not `UNIQUE`, so the record is posting once-ness's
-second rank, and any later sweep lands that uniqueness first (both Phase 16). `P15-TSK-029` swept the
-outbox and the inbox and left this table alone, and `NoIdempotencyRecordIsSweptTest` holds that no
-production statement deletes from it. Deleting expired records remains the retention job's work when
-it comes. No index on `expires_at` is created by `V002`: its right shape depends on the predicate that
-sweep uses — a plain btree and a partial index restricted to terminal states have different write costs
-— and an index maintained on every insert for a query nobody has written yet is a cost with no benefit.
-The task that writes the sweep adds the index its query needs.
+**Sweeping — built, after the posting scope's uniqueness (`P16-TSK-011`, ADR-0141).** Ledger `V037`
+made `journal_entry.idempotency_scope` unique, over `V036`'s census of the rows already there, so a
+posting is once for ever and the record is no longer its second rank (debt row #61). Platform `V016`
+then sweeps: a `COMPLETED` or `FAILED` record whose own `expires_at` is more than
+`finapp.idempotency.sweep.grace` (default 30 days, never less than a day) behind the database's clock,
+in batches under `FOR UPDATE SKIP LOCKED`, through one `SECURITY DEFINER` function that refuses every
+batch while that unique index is absent or invalid. The application role's `DELETE` is revoked, and
+`NoIdempotencyRecordIsSweptTest` holds that no other statement deletes from the table. Until a record is
+swept it answers every retry, so a key is answered for its expiry plus the grace: the floor below is the
+expiry, and the grace is the margin above it (`THREAT_MODEL.md` §6 item 63 says what a sweep leaves to a
+command whose only arbiter is its record). The index is `V016`'s `idempotency_record_sweepable`, partial
+on the two terminal states, so an in-flight claim costs it nothing. *(Read "Sweeping — not built, by
+ruling", with this record not swept and `V002`'s deliberately absent index waiting for the sweep's
+predicate, until 2026-11-13.)*
 
 **Never sweep a non-terminal record.** An `IN_PROGRESS` claim older than its expiry is not
 garbage; it is a command whose outcome is unknown, and deleting it discards the evidence that

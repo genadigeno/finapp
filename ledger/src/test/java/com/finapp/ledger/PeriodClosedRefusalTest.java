@@ -144,6 +144,10 @@ class PeriodClosedRefusalTest {
                     if (method.getName().equals("append")) {
                         throw refusal;
                     }
+                    if (method.getName().equals("findByIdempotencyScope")) {
+                        // A first attempt: no entry under the scope, so the claim goes on to post (P16-TSK-011).
+                        return Optional.empty();
+                    }
                     throw new UnsupportedOperationException(method.getName());
                 });
     }

@@ -22,7 +22,7 @@ A purge built against an invented period is a defect waiting for one (C12).
 |---|---|---|---|---|---|
 | **Operational** | Published outbox rows, `platform.outbox_event` | `finapp.outbox.retention`, default 30 days from publication, refused at start below the inbox's dedupe window. Longer for a row a standing parked record names | Diagnosis, an audited replay reading across that window, and a release republishing a parked record's event | The sweep, past the bound, published rows only | Built |
 | **Operational** | Dedupe records, `platform.inbox_message` | `finapp.inbox.retention`, default 14 days from processing, and never less than the record's own written expiry | Every redelivery window (`DATA_MIGRATIONS.md` §9); it must exceed every topic's retention | The sweep, past both bounds | Built |
-| **Operational** | Idempotency records, `platform.idempotency_record` | Kept: not swept | Debt row #61, ruled not settled: `journal_entry.idempotency_scope` is not `UNIQUE`, so the record is posting once-ness's second rank | A later sweep lands that uniqueness first; both Phase 16 | Not swept |
+| **Operational** | Idempotency records, `platform.idempotency_record` | Its own `expires_at` (the retention its caller wrote, 24 hours today: `DATA_MIGRATIONS.md` §8's retry window), then `finapp.idempotency.sweep.grace`, default 30 days, refused at start and by the function below a day; a `COMPLETED` or `FAILED` record only, never an in-flight claim. Until it is swept a record answers every retry, so a key is answered for at least its expiry plus the grace | A retry of a command whose only arbiter is its record is a new command once the record is gone (`THREAT_MODEL.md` §6 item 63). A posting is not such a command: one journal entry per posting scope, for ever (ledger `V037`, debt row #61 settled on 2026-11-13), and the sweep refuses while that uniqueness is absent | The sweep (platform `V016`), past both bounds, terminal records only | Built *(read "Kept: not swept", ruled by debt row #61 not settled, until 2026-11-13)* |
 | **Operational** | Session rows, `identity.session` | Kept: not swept | ADR-0030 named a sweep, with the caution that an early expiry logs a user out; no real volume exists to size it | A sweep, Phase 16 | Not swept |
 | **Operational** | Parked records and discard decisions, `platform.inbox_parked_record` and `platform.dead_letter_discard` | Kept: never swept | A parked record is a message nobody has handled, and a discard is a recorded four-eyes decision | Nothing ends them | Kept for ever |
 | **Operational** | Callback hints, `payments.callback_hint` | Kept: not swept | Operational state, never financial truth. A concluded row is safe to delete, and no volume yet asks for it | A sweep of concluded rows, when volume does | Not swept |
@@ -57,8 +57,12 @@ throttle's counters, are that process's state, and retention is not what bounds 
   writes with, read from the consumer, and it has no setting of its own. An instance refuses to start with that retention at or
   below the oldest record the broker can redeliver (8 days and 5 minutes today), and the sweep's function refuses such a bound
   too. The sweep also waits for the row's `expires_at`, which a replay order extends, so a row a replay depends on stays.
-- **Deletion has one path.** The application role holds no `DELETE` on either table. Two `SECURITY DEFINER` functions (platform
-  `V012`) are the only way, and each deletes only what its predicate selects. A holder of the application's credential still holds
+- **A record a retry can still present is kept.** An idempotency record goes only once its own expiry is more than the grace behind
+  the database's clock, never less than a day, so neither a skewed instance's written expiry nor a setting can take one early; an
+  in-flight claim is the lease's, never the sweep's; and the sweep refuses every batch while the journal's posting scope is not
+  uniquely indexed, so a posting stays once after its record goes (platform `V016`, ledger `V037`, `P16-TSK-011`).
+- **Deletion has one path.** The application role holds no `DELETE` on any of these tables. `SECURITY DEFINER` functions (platform
+  `V012`, and `V016` for the idempotency records) are the only way, and each deletes only what its predicate selects. A holder of the application's credential still holds
   `UPDATE` on the outbox, so it can back-date `published_at` and reach a published row. It cannot change an inbox record's
   `processed_at`, so a dedupe record younger than the floor stays out of its reach.
 - **Batched and leaderless.** `FOR UPDATE SKIP LOCKED` in one short transaction per batch, so N instances delete disjoint

@@ -3,9 +3,11 @@ package com.finapp.ledger;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
+import com.finapp.platform.idempotency.IdempotencyConflictException;
 import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.RequestFingerprint;
+import com.finapp.platform.idempotency.StoredResponse;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
@@ -44,6 +46,16 @@ import java.util.UUID;
  * entry's identifier comes back from the stored response; a minted-and-discarded identifier
  * costs nothing (ADR-0013's recorded stance).
  *
+ * <h2>Once for ever, whatever becomes of the record (`P16-TSK-011`, ADR-0141)</h2>
+ *
+ * <p>The idempotency record answers retries until it is swept (platform {@code V016}); the
+ * journal answers them for ever, because {@code journal_entry.idempotency_scope} is unique
+ * ({@code V037}). Inside the claim, the scope is looked up first: an entry there is a retry
+ * whose record has gone, answered with that entry's identifier when it is this request, refused
+ * as {@code INV-IDEM-03}'s conflict when it is not, and nothing is written either way. A writer
+ * that claimed nothing and committed the scope meanwhile meets the index, which writes nothing
+ * and aborts nothing ({@link PostingScopeTakenException}), and is answered the same way.
+ *
  * <h2>What is deliberately absent</h2>
  *
  * <p><strong>Account status is not checked here, and that is a recorded remainder with an
@@ -64,6 +76,7 @@ public final class PostingService {
     private static final int MAX_SCOPE_AND_KEY_LENGTH = 200;
 
     private final IdempotentExecutor executor;
+    private final JournalEntryStore<Connection> journal;
     private final PostingEffect effect;
     private final IdGenerator ids;
     private final Clock clock;
@@ -80,6 +93,7 @@ public final class PostingService {
             Clock clock,
             PostingObserver observer) {
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
+        this.journal = Objects.requireNonNull(journal, "journal must not be null");
         // The write set is PostingEffect's (extracted by P3-TSK-016 when the reversal became
         // its second caller); the constructor keeps taking the stores so wiring stays honest.
         this.effect =
@@ -172,12 +186,37 @@ public final class PostingService {
                         correlation,
                         scopeAndKey);
 
+        boolean[] answeredByTheJournal = {false};
         IdempotentExecutor.ExecutionOutcome outcome =
                 executor.execute(
                         unitOfWork,
                         key,
                         fingerprint,
-                        uow -> recordDated(uow, command, entry, attribution, actor, correlation));
+                        uow -> {
+                            // The journal first (P16-TSK-011): the claim was fresh, which is a first attempt or a
+                            // retry whose record has been swept. The second has an entry under this scope, and
+                            // answers it - before any cutoff is read or any insert is tried, so a period closed
+                            // since is no refusal of a posting that already happened.
+                            Optional<JournalEntryId> recorded =
+                                    journal.findByIdempotencyScope(uow, scopeAndKey);
+                            if (recorded.isPresent()) {
+                                answeredByTheJournal[0] = true;
+                                return recorded(uow, recorded.get(), command, key);
+                            }
+                            try {
+                                return recordDated(uow, command, entry, attribution, actor, correlation);
+                            } catch (PostingScopeTakenException taken) {
+                                // A writer that claimed nothing committed this scope while we posted: V037's
+                                // index refused ours, wrote nothing and aborted nothing.
+                                answeredByTheJournal[0] = true;
+                                return recorded(
+                                        uow,
+                                        journal.findByIdempotencyScope(uow, scopeAndKey)
+                                                .orElseThrow(() -> taken),
+                                        command,
+                                        key);
+                            }
+                        });
 
         JournalEntryId posted =
                 JournalEntryId.of(
@@ -192,7 +231,45 @@ public final class PostingService {
                                                                             + " carries the"
                                                                             + " entry id")),
                                         StandardCharsets.UTF_8)));
-        return new PostingResult(posted, outcome.replayed());
+        return new PostingResult(posted, outcome.replayed() || answeredByTheJournal[0]);
+    }
+
+    /**
+     * The stored outcome of a posting the journal already holds under this command's scope (`P16-TSK-011`): the same bytes
+     * the first execution recorded, its entry's identifier, when the entry is this request; {@code INV-IDEM-03}'s conflict
+     * when it is not. With the idempotency record swept, the entry is the request's only witness, so it is compared field
+     * by field with what the fingerprint covers: the kind, the reference, the value date, the lines in order, and the
+     * posting date - equal, or later for a {@link PostingCommand.Dating#FLOOR_AT_FIRST_OPEN} request, which the cutoff may
+     * have moved forward and never back. A floored entry retried {@code AS_STATED} is refused here, where its record would
+     * have replayed it: a refusal, never a second entry. Nothing is written: no entry, audit, event or projection.
+     */
+    private CommandResult recorded(
+            Connection unitOfWork, JournalEntryId recorded, PostingCommand command, IdempotencyKey key) {
+        JournalEntryStore.PostedEntry posted =
+                journal.findById(unitOfWork, recorded)
+                        .orElseThrow(
+                                () ->
+                                        new LedgerStorageException(
+                                                "journal entry " + recorded
+                                                        + " was found by its scope and then not by its id"));
+        LocalDate stated = command.postingDate();
+        LocalDate booked = posted.entry().postingDate();
+        boolean dated =
+                booked.equals(stated)
+                        || (command.dating() == PostingCommand.Dating.FLOOR_AT_FIRST_OPEN
+                                && booked.isAfter(stated));
+        boolean same =
+                dated
+                        && posted.attribution().entryType() == JournalEntryType.POSTING
+                        && posted.attribution().reference().equals(command.reference())
+                        && posted.entry().valueDate().equals(command.valueDate())
+                        && posted.entry().lines().equals(command.lines());
+        if (!same) {
+            throw new IdempotencyConflictException(key);
+        }
+        return CommandResult.succeeded(
+                StoredResponse.of(
+                        recorded.value().toString().getBytes(StandardCharsets.UTF_8), "text/plain"));
     }
 
     /**

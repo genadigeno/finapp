@@ -8,7 +8,8 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * Deletes one batch of rows past their retention bound (`P15-TSK-029`, C12; the window counter's, `P15-TSK-022`).
+ * Deletes one batch of rows past their retention bound (`P15-TSK-029`, C12; the window counter's, `P15-TSK-022`; the idempotency
+ * records', `P16-TSK-011`, platform {@code V016}).
  *
  * <p><strong>The predicate is the database's, not this class's.</strong> Each sweep is one call of a {@code SECURITY DEFINER}
  * function in platform {@code V012}, the only path by which the application can delete from these tables, and that function
@@ -42,6 +43,15 @@ public final class RetentionSweep {
     private static final String SWEEP_INBOX_SQL = "SELECT platform.sweep_expired_inbox_messages(?, ?)";
 
     private static final String SWEEP_WINDOW_COUNTER_SQL = "SELECT platform.sweep_expired_window_counters(?, ?)";
+
+    /**
+     * The least an idempotency record is kept past its own expiry (`P16-TSK-011`, platform {@code V016}): its expiry is written
+     * from an instance's clock, and the instances' clocks are bounded, never equal (ADR-0014). The function refuses a grace below
+     * it too; {@code IdempotencySweepMigrationTest} holds the two equal.
+     */
+    public static final Duration IDEMPOTENCY_GRACE_FLOOR = Duration.ofDays(1);
+
+    private static final String SWEEP_IDEMPOTENCY_SQL = "SELECT platform.sweep_expired_idempotency_records(?, ?)";
 
     private final RetentionConnectionSource connections;
     private final String table;
@@ -99,6 +109,25 @@ public final class RetentionSweep {
      */
     public static RetentionSweep ofExpiredWindowCounters(RetentionConnectionSource connections, Duration grace, int batchSize) {
         return new RetentionSweep(connections, "window_counter", SWEEP_WINDOW_COUNTER_SQL, grace, batchSize);
+    }
+
+    /**
+     * The terminal records of {@code platform.idempotency_record} whose own expiry passed more than {@code grace} ago
+     * (`P16-TSK-011`, platform {@code V016}). The function selects {@code COMPLETED} and {@code FAILED} records only, never an
+     * {@code IN_PROGRESS} claim, and refuses every batch while {@code ledger.journal_entry.idempotency_scope} is not uniquely
+     * indexed, so a posting stays once after its record goes.
+     *
+     * @param grace how long past its expiry a record is kept: refused below {@link #IDEMPOTENCY_GRACE_FLOOR}
+     */
+    public static RetentionSweep ofExpiredIdempotencyRecords(RetentionConnectionSource connections, Duration grace, int batchSize) {
+        positive(grace, "grace");
+        if (grace.compareTo(IDEMPOTENCY_GRACE_FLOOR) < 0) {
+            throw new IllegalArgumentException(
+                    "the idempotency records' grace " + grace + " is below " + IDEMPOTENCY_GRACE_FLOOR
+                            + ": a record's expiry is written on an instance's clock, and a record swept that soon after it is one a retry"
+                            + " may still present");
+        }
+        return new RetentionSweep(connections, "idempotency_record", SWEEP_IDEMPOTENCY_SQL, grace, batchSize);
     }
 
     private static void requireBeyondRedelivery(Duration dedupeWindow) {
