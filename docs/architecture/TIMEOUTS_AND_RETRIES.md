@@ -65,10 +65,15 @@ transmitted). Every adapter maps every other failure to its own "we do not know"
 | `SimulatedBureauAdapter` | Credit bureau report (POST, `Idempotency-Key`) | yes | yes | yes | none: never composed; `CreditBeans` refuses `finapp.credit.bureau.url` (unresolved question 13) | Nothing on any deployment today | `Unavailable`: the policy's fallback |
 | `SimulatedFinancialDataAdapter` | Financial data summary (POST, `Idempotency-Key`) | yes | yes | yes | none: never composed; `CreditBeans` refuses `finapp.credit.findata.url` (unresolved question 14) | Nothing on any deployment today | `Unavailable`: the policy's fallback |
 | `SimulatedSecondBureauAdapter` | Second bureau file (POST, `X-Request-Reference`) | yes | yes | yes | none: never composed | Nothing on any deployment today | `Unavailable`: the policy's fallback |
+| `HttpAuditArchiveStore` | The audit archive's object store, not a provider (S3's subset, ADR-0135): write once (PUT, `If-None-Match: *`), read back (GET) | yes | yes | yes | `finapp.audit.archive.timeout` (PT5S; PT3S in the experiments scope): the connect bound the whole of it, the headers and the body half each, so an exchange ends within it and the lease outlasts four store calls (`AuditArchiveBeans` refuses a lease that does not) | The audit archive schedule only, and only where `finapp.audit.archive.endpoint` names a store (no committed overlay does) | `STORE_UNAVAILABLE`: nothing marked, the segment left under its lease and taken over when the lease lapses |
 
-Every provider call is made between transactions, holding no database connection (ADR-0046). The defaults are a provider's
+Every provider call is made between transactions, holding no database connection (ADR-0046); so is every archive store call, each
+database call of the archival returning its connection before the store is called. The defaults are a provider's
 answer time on a real network; the `kind` overlay raises the five it names because the rehearsal's simulator is one small JVM
-behind a TLS handshake on a shared machine (`deploy/overlays/kind/kustomization.yaml`).
+behind a TLS handshake on a shared machine (`deploy/overlays/kind/kustomization.yaml`). *(The archive store's row, 2026-11-13: a
+coordinator's repair found `OutboundCallsAreBoundedTest` red on master - `P16-TSK-010`'s store and schedule were written beside
+`P16-TSK-018`'s inventory and merged after it, and the store awaited its exchange for the whole timeout from the call, outside
+`OutboundExchange`. It now builds its own client and goes through the helper, the timeout split so the whole stays within it.)*
 
 ### 2.2 The JDK's own retries inside an exchange
 
@@ -123,6 +128,7 @@ a draw from one interval to just under two; `one interval` is exactly one interv
 | `SettlementPullSchedule` | PT5M | the settlement report sources | one per window | One pull per source and key per window, by a permit; the content address deduplicates a report pulled twice | (b) | one interval |
 | `AccountingCloseSchedule` | PT1H, PT30S, PT1M, PT1M by leg | the database; the regulatory reporting provider, in-process, no network | every instance | Period opening, close checks, orphaned report runs, the regulatory inquiry: each under a lease or a claim; a resend only under its permit | (a) | one interval |
 | `SourceCensusSchedule` | PT1M | the database only | one at a time | The census's walk from its single head row | (a) | one interval |
+| `AuditArchiveSchedule` | `finapp.audit.archive.interval` (PT1M; PT10S in the experiments scope) | the audit archive's object store, only where `finapp.audit.archive.endpoint` names one | one at a time | Up to twenty segments a tick, one claimer at a time by the archive's head row under `SKIP LOCKED` and one segment in flight under a lease on the database's clock; a segment whose store call failed stays claimed and is taken over when its lease lapses. Its objects are written once at their keys (`If-None-Match: *`; a second write is answered `412`, the first object kept), read back and compared before the mark, which the database fences against a holder taken over | (a), (b), (c) | one interval |
 | `BnplDisputeSchedule` | PT60S | the database only | every instance | Claimed rows under a re-stamped permit | (a) | one interval |
 | `BnplOriginationSchedule` | PT5S | the database only | every instance | Applications and offers under `SKIP LOCKED` claims | (a) | one interval |
 | `BnplServicingSchedule` | PT30S | the database only | every instance | Servicing steps under `SKIP LOCKED` claims | (a) | one interval |
@@ -169,7 +175,8 @@ inquiries, re-asks and re-sends reach a recovering provider at the same moment o
 spread: every claim and transition is the database's.
 
 **Where it is not added, and why.** The two schedules that act once per window (the rate fetch, the settlement pull) send one
-request per window cluster-wide whatever their phases. The database-only schedules reach nothing outside. The outbox relay's
+request per window cluster-wide whatever their phases. The audit archive acts one instance at a time, by its head row and its
+segment's lease, so its store sees one writer whatever the phases. The database-only schedules reach nothing outside. The outbox relay's
 per-row backoff stays unjittered, as `RetryPolicy` decided: its herd is bounded by the poll's batch, not by the backlog, and is
 spread by the relay schedule's own jittered phase; jitter there waits for E09's measured herd. The Kafka clients jitter their own
 backoff. The inbox's pause is one consumer's, on one partition.

@@ -3697,6 +3697,22 @@ class OwnershipIsScopedTest {
                                         + " stands in for an ownership check is that the platform"
                                         + " holds both halves.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.recordSweepFailure",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P16-TSK-017, classified when the guard was found red on master (2026-11-13). The"
+                                        + " payout resolution sweep's record of a row it failed to judge: the payout id"
+                                        + " comes only from the sweep's own listing (findSweepable: every merchant's"
+                                        + " aged DISPATCHED and UNKNOWN payouts, or the id of a row the listing could"
+                                        + " not read), read by the platform's own schedule and passed by"
+                                        + " MerchantPayoutResolution.recordFailure in a transaction of its own - never"
+                                        + " an identifier from a request, and no route reaches it. What stands in for an ownership check is that the platform"
+                                        + " read the id itself. It writes merchant.sweep_row_failure only - the leg,"
+                                        + " the id, counts and times on the database's clock, a failure class name"
+                                        + " (INV-AUD-02) - and touches no payout; nothing it writes is served to a"
+                                        + " tenant, and its conditional upsert counts one failure per backoff window"
+                                        + " however many instances failed the row.")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantPayoutStore.pageCompleted",
                             new Entry(
                                     Scope.ADMINISTERED,
