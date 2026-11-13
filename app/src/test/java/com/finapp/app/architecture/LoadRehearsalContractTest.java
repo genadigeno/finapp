@@ -410,10 +410,15 @@ class LoadRehearsalContractTest {
                     .isCloseTo(1.25, org.assertj.core.data.Offset.offset(0.001));
         }
         assertThat(stress).contains("  \"stress\": true,");
-        for (String name : List.of("demonstration", "normal", "peak", "sustained", "isolation")) {
-            assertThat(read("infra/scripts/kind-rehearsal/load/" + name + ".json")).as("only the stress profile runs past the break")
+        for (String name : List.of("demonstration", "normal", "peak", "sustained", "isolation", "soak")) {
+            assertThat(read("infra/scripts/kind-rehearsal/load/" + name + ".json"))
+                    .as("only the stress profile, and the concurrent profile by the target's burst (P16-TSK-008), run past the break")
                     .doesNotContain("\"stress\"");
         }
+        // P16-TSK-008: the concurrent-financial profile's bursts are the target's (W2: three times its peak for 60 s), past kind's break
+        // (E30), so its dropped iterations are recorded as the stress profile's are.
+        assertThat(read("infra/scripts/kind-rehearsal/load/concurrent.json")).as("the concurrent profile runs past the break by its bursts alone")
+                .contains("  \"stress\": true,").contains("[60, 3.0]");
         assertThat(read(MODEL)).as("a staged profile is still an open model: ramping arrivals, a one-second step, the rate rounded per time unit")
                 .contains("executor: 'ramping-arrival-rate',").contains("steps.push({ target, duration: '1s' });")
                 .contains("return Math.round(operation.rate * stage[1]);");

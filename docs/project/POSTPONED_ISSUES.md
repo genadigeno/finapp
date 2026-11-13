@@ -630,6 +630,15 @@ commit and the date; do not delete the entry.
     `ProviderExperimentsContractTest`. E19 and E20 are not owed here: E19 cannot be driven until a production path runs a KYC case's
     checks (`THREAT_MODEL.md` section 6 item 60), and E20 rests on the recorded fail-safe by the owner's decision of 2026-11-13 on
     unresolved question 13.
+  - `P16-TSK-008` (hot rows, locks, deadlocks and plans; `OPERATIONS_RUNBOOK.md` §11.48, whose record is empty; `CAPACITY_MODEL.md`
+    §3.5, its measured cells `—`): **E38**, the concurrent-financial profile (`REHEARSAL_LOAD_PROFILE=concurrent`) at seven replicas and
+    at three, with its control wait, its per-row waits, the server's lock log and every deadlock explained in the record; **E38's
+    probe**, the transfer's fixed lock order dropped on a throwaway branch, at seven replicas, with its `MUTATION_TESTING.md` §2 row;
+    **E39**, the eight-hour soak (`REHEARSAL_LOAD_PROFILE=soak`) at three replicas, with its plans window and the transactional index
+    build on the journal that decides `THREAT_MODEL.md` §6 item 42 (b); **E40**, the sweeps' failure storm (`REHEARSAL_SCOPE=experiments
+    REHEARSAL_EXPERIMENTS=E40`) at three replicas. Nothing ran before the word. The new SQL, the `\watch` sampler, the server's log formats
+    and the readers were run in a throwaway container of the pinned PostgreSQL image (no `kind`, no application) on 2026-11-13; on a
+    cluster they are unproven.
   - The coordinator's rules split (2026-11-13, branch `P16-chore-rules-split`; `docs/project/history/CHANGE_LOG.md`): kind's rules
     in two ConfigMaps, `finapp-prometheus-rules` and `finapp-prometheus-rules-domain`, projected into `/etc/prometheus-rules`. Owed:
     the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's
