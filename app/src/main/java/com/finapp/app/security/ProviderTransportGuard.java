@@ -50,7 +50,10 @@ public class ProviderTransportGuard {
                     "finapp.corridor.provider.url",
                     // P9-TSK-026 (M9.8): the second providers, each its own transport row.
                     "finapp.fx.provider.b.url",
-                    "finapp.corridor.provider.b.url");
+                    "finapp.corridor.provider.b.url",
+                    // P16-TSK-010: the audit archive's store. Not a provider, but a hop off the machine that carries every audit
+                    // record, so the same rule: https, or plain http to loopback alone.
+                    "finapp.audit.archive.endpoint");
 
     /**
      * Every settlement pull source URL (`P8-TSK-021`): {@code https} or {@code sftp} off

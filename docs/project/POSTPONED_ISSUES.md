@@ -621,6 +621,15 @@ commit and the date; do not delete the entry.
     ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
     commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
     discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
+  - **`P16-TSK-018`** (the provider experiments, `OPERATIONS_RUNBOOK.md` section 11.53, whose record is empty; `RESILIENCE_EXPERIMENTS.md`
+    E17, E18 and E21; `docs/architecture/TIMEOUTS_AND_RETRIES.md` section 5): **E17**, the card rail unavailable and then silent past
+    the timeout, at three replicas (`REHEARSAL_EXPERIMENTS=E17`); **E18**, the FX provider and then the reference rates taken away, at
+    three replicas; **E21**, every provider slowed to two and then ten times its steady latency, at three replicas; and with them the
+    **failure rates per rail** each run records, which owner decision C12 waits on before automatic rail availability can be decided.
+    Nothing ran before the word; the simulator's degradation controls and the three experiments ran only through
+    `ProviderExperimentsContractTest`. E19 and E20 are not owed here: E19 cannot be driven until a production path runs a KYC case's
+    checks (`THREAT_MODEL.md` section 6 item 60), and E20 rests on the recorded fail-safe by the owner's decision of 2026-11-13 on
+    unresolved question 13.
   - `P16-TSK-008` (hot rows, locks, deadlocks and plans; `OPERATIONS_RUNBOOK.md` §11.48, whose record is empty; `CAPACITY_MODEL.md`
     §3.5, its measured cells `—`): **E38**, the concurrent-financial profile (`REHEARSAL_LOAD_PROFILE=concurrent`) at seven replicas and
     at three, with its control wait, its per-row waits, the server's lock log and every deadlock explained in the record; **E38's
@@ -669,3 +678,14 @@ commit and the date; do not delete the entry.
     seeded run), its record in §11.55; **E61**, the post-recovery gate on both restores (the same run), and on `kind` the broker step
     of §11.35 step 6 for a restored database at three replicas, with **F15**, its record in §11.55. Ran instead, 2026-11-13, in
     containers: the seed's check (`RESTORE_STOP_AFTER=source`) and the recovery's mechanics over a bare server (§11.55's record).
+  - **`P16-TSK-010`** (the audit archival and the session sweep, `OPERATIONS_RUNBOOK.md` §11.50 and §11.15; `RESILIENCE_EXPERIMENTS.md`):
+    **E44**, the archive's store stopped mid-run, at three replicas (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E44`); **E45**,
+    a holder killed between its copy and its mark, at three replicas and, once the experiments scope runs at ten (`kind`'s overlay admits ten, ADR-0134), at ten (the entry's
+    acceptance: archival and the sweep at ten instances, each row once); **E46**, the session table bounded over a 45-minute soak at
+    three replicas (the entry's acceptance: the sessions table bounded over the soak); and the crash probes (`crash-with-faults`,
+    `term-with-faults`) once more on these bytes, which now put the store's read hold on as well. Their records go in §11.50's last
+    record and the register's rows; the alerts `AuditArchiveCopyDiffers` and `AuditArchiveBehind` seen on a cluster with them. Nothing
+    of the task ran on a cluster; what ran outside one: a short container check of platform `V015` and identity `V027` on PostgreSQL
+    18.6 (the functions by hand: the claim, a lease taken over, both refusals at the mark, the chain, the decoder, the grants, the
+    sweep keeping a live session) and of the test-only store on the JDK image (write once, `412`, `405`, a bad checksum `400`). Its
+    database cases (`AuditArchivalDatabaseTest`, `SessionSweepDatabaseTest`) are owed to the database pass, PI-023's kind.

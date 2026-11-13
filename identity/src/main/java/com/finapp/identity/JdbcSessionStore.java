@@ -267,7 +267,7 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
 
         // THE SAME PREDICATE AS findLive, and that is the point rather than tidiness. There is no
-        // EXPIRED status and no sweep (ADR-0030, P1-TSK-013), so counting `status = 'ACTIVE'` alone
+        // EXPIRED status and no sweep that marks one (ADR-0030, P1-TSK-013), so counting `status = 'ACTIVE'` alone
         // would count sessions nobody can use - and it would be wrong in the REASSURING direction,
         // reporting live customers indefinitely. A gauge that disagreed with the lookup about what
         // a session is would be a number an operator could not act on. Since X-TSK-007 it is the

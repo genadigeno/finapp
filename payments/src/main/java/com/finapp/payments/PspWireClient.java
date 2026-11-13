@@ -1,5 +1,6 @@
 package com.finapp.payments;
 
+import com.finapp.platform.outbound.OutboundExchange;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URI;
@@ -108,7 +109,7 @@ final class PspWireClient {
 
         HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, request, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (ConnectException refused) {
             // The one transport failure that is knowledge: nothing was transmitted.
             return ProviderAnswer.nothingSent();
@@ -230,7 +231,7 @@ final class PspWireClient {
 
         HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, request, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (IOException nothingUsable) {
             // No NOTHING_SENT for a query: a query that never reached the provider changes
             // nothing and is simply asked again; the distinction only pays where a caller acts
