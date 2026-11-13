@@ -6312,14 +6312,15 @@ production capacity or a real zone's loss (D02 is designed-only).
 **Running it.** One full cluster at a time, under the machine's lock, from the repository root:
 
 ```
-REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E01 E02 E03 E04 E25" REHEARSAL_EXPERIMENTS_REPLICAS=10 REHEARSAL_EXPERIMENTS_LOAD=sustained infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E01 E02 E03 E25 E04" REHEARSAL_EXPERIMENTS_REPLICAS=10 REHEARSAL_EXPERIMENTS_LOAD=sustained infra/scripts/kind-rehearsal.sh
 ```
 
 and the entry's probe, the same run with `REHEARSAL_PROBE=pdb-removed` (it needs E02, and the run must end red at E02's stop). The
 harness refuses before it builds anything: an experiment of these four named without a load, any other experiment named with one (its
 census is the full one, which a load still in flight cannot pass), E01 at ten without a load, the probe without E02, and E01 or E03 named
 after E04 (they send straight to a replica through the edge's probe pod, a bare pod E04's worker may carry away). The order above is the
-runbook's. The machine must hold ten 1 GiB replicas and a surge beside the data tier, its standby and three brokers on four nodes: a pod
+runbook's: E04 last, because a failed experiment ends the run and E04 is the one expected to find something (below), and because it moves
+the cluster's own units off its worker. The machine must hold ten 1 GiB replicas and a surge beside the data tier, its standby and three brokers on four nodes: a pod
 the machine cannot hold is an environment limit, recorded `FAILED` with its numbers (§11.58), never retried into a pass. The reference
 machine also stalls on WAL writes for 5 to 25 s in long runs: a failure that stall makes outside an experiment's window fails that
 experiment, and the record says so.

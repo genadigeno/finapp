@@ -30329,7 +30329,7 @@ on none:
   run in containers and by the contract test, not on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks
   and tests"): E01 on the final bytes is owed under `POSTPONED_ISSUES.md` PI-025.
 
-**P16-TSK-020 — Instance, pod and node failures at load** — `IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-020` from master `fb0e014b`, fast-forwarded to `2e34dd66`, wave F) *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-019`, both `COMPLETE`)" until the design)*
+**P16-TSK-020 — Instance, pod and node failures at load** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-020` from master `fb0e014b`, fast-forwarded to `2e34dd66` before its first commit, wave F; no migration, no application code, no alert rule, no ADR - the reserved ADR-0146 and E78-E80 unused; one new owner item, `THREAT_MODEL.md` §6 item 68; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; marks no task `READY` - the coordinator does) *(read "`IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-020` from master `fb0e014b`, fast-forwarded to `2e34dd66`, wave F)" until the gate)* *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-019`, both `COMPLETE`)" until the design)*
 - **Objective**: E01–E04 and E25 under the sustained profile at ten replicas.
 - **Affected components**: every in-cluster unit.
 - **Dependencies**: `-014`, `-019`.
@@ -30367,6 +30367,50 @@ on none:
   (`experiments_edge_read`) and call `availability_check <row> <from> <to>` over the fault's window from the experiment's own step, and add
   the experiment to the row's **Walked by** cell - `AvailabilityMatrixTest#eachWalkerComparesItsRowAndOnlyItsRow` holds that the walks the
   harness makes are exactly the ones the document declares, so the two change together. E01's own walk of A07 is the same one line.
+- **As built (2026-11-13): built and contract-tested; every run owed under `POSTPONED_ISSUES.md` PI-025** (the owner's word of 2026-11-13,
+  "we dont need long running checks and tests": nothing ran on `kind`). `OPERATIONS_RUNBOOK.md` §11.61 holds the procedure, its record
+  empty; `InstanceFailuresRehearsalContractTest` (ten members) holds the text. No migration, no application code, no alert rule, no ADR:
+  the reserved ADR-0146 and E78-E80 are unused (no architecture was decided here; the decisions this build found are the owner's,
+  `THREAT_MODEL.md` §6 item 68). The harness is `infra/scripts/kind-rehearsal/experiments.sh`'s last section, with small hooks in
+  `kind-rehearsal.sh` and `load.sh`.
+  - *The experiments at ten under the sustained profile*: E01, E02, E03, E04 and E25 join `EXPERIMENTS_AT_A_COUNT`
+    (`REHEARSAL_EXPERIMENTS_REPLICAS=10`) and run under a load profile beside them (`REHEARSAL_EXPERIMENTS_LOAD=sustained`): k6 as the load
+    scope drives it, its model read before the build, the experiments in its last stage (two hours at the target's peak), its census sampled
+    every 30 s through each window (each experiment's census) and taken whole after the load beside the load's own judgement, the shed
+    census (`P16-TSK-016`'s note) and each window read from the generators' own series. The fleet is read by set while it runs, each fault's
+    victims excused while it holds them. E02-E04 and E25 refuse to run without a load, and any other experiment with one. **Runs owed.**
+  - *E01 at ten*: its waits at the run's count; unchanged at three (its run on `a6fee3a1` stands). **Run owed.**
+  - *E02*: half the fleet's JVMs at once, a zone at a time, then an eviction of every replica once the budget reads the kills, each to be
+    refused; its stop sharpened by its own Safety to any reading with no replica ready; failures told apart by the victims' windows, a
+    replica's own `503` apart. **Run owed.**
+  - *E03*: three graceful evictions through the API, one a zone, serialised by the budget, each pod's held payout answered by its own
+    drain; the stop read after each eviction. **Run owed.**
+  - *E04*: the spare zone's worker stopped as a machine stops - a new fault kind, `node-stopped` (`docker kill`, restored by `docker start`
+    at the address it had, `P16-TSK-019`'s note), with `cordoned` and `pdb-removed` beside it, all three in the registry, the exit trap and
+    the crash probes; the scope keeps what the run must not lose off that worker (the primary, the standby, the simulator, the proxy, the
+    archive store, CoreDNS, Prometheus, both edges' controllers) and spreads the brokers one a zone; `InstanceDown` (§11.8's instance down,
+    PI-024's part under C11) and the replacements' fate read. Expected from the documented scheduler rule: replacements `Pending` under the
+    deployed `DoNotSchedule` (`P16-TSK-019`'s note: measured, not relaxed) - `THREAT_MODEL.md` §6 item 68 (a). **Run owed.**
+  - *E25 (item 43 (f)'s last part)*: the public controller the workload does not reach, killed under traffic, the generators split over both
+    controllers' nodes (`kind` has no load balancer before NodePorts of `externalTrafficPolicy: Local`); the survivor's answers and the
+    workload fail none, the lost half only inside its window. **Run owed.**
+  - *Security consideration*: every one of the five sends an unauthenticated transfer through the public edge while its fault is on, which
+    must be refused and leave no idempotency record.
+  - *The probe* (`REHEARSAL_PROBE=pdb-removed`): the budget removed before E02's fault, a fault of the registry; every eviction admitted,
+    the fleet at no replica ready, E02 stopping on its condition. **Owed** as a cluster probe; its hermetic half recorded
+    (`MUTATION_TESTING.md` §2).
+  - *Routed from `P16-TSK-023`*: E01, E03 and E04 walk row A07, E02 row A08 and E25 row A09, each in its own recovery after reading the
+    edge's answers, over its window and a minute past the return; `AVAILABILITY.md`'s **Walked by** cells name them.
+  - *Item 47 (e)*: **measured, not built.** On containers of the pinned proxy (§11.42's measurement, 2026-11-13) the access line keeps three
+    copies of `X-Correlation-Id` under the one name's mode, the caller's text among them, and only a middleware that removes the caller's
+    header from the request too keeps it out (ending ADR-0034's echo on that host). The decision's "the answer's copy alone in the edge's
+    access line" cannot be held by the proxy's configuration, so nothing was changed and the choice is back with the owner (item 68 (b));
+    item 47 (e) carries a dated note, not a close.
+  - **Acceptance criteria**: each experiment's success criteria met and recorded - built, contract-tested, **run owed (PI-025)**, met as
+    such under the owner's word; the probe - built, run owed; §11.8 rehearsed (PI-024's part) - built as E04's observation, run owed.
+  - **Ran instead, 2026-11-13, no cluster**: the new pure functions under `dash` and `mawk` in the JDK image's container (33 checks), the
+    placement and the brokers' spread over a real `kustomize` render of the `kind` overlay parsed as YAML, and the pinned edge proxy for the
+    measurement.
 
 **P16-TSK-021 — Network, DNS, connection and disk faults** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-021` from master `1f70ccad`, wave D; gate `COMPLETE` 2026-11-13; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; no production code, migration, alert rule or new ADR; marks no task `READY` - the coordinator does; marked `READY` by the coordinator at `P16-TSK-019`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-019`, `COMPLETE`) *(read "`READY`", then "`IN_PROGRESS`", until its gate)*
 - **Objective**: E07, E11–E16, E24 under load.
