@@ -1007,6 +1007,13 @@ idempotent processing is preferred over any "exactly once" claim. The retention 
 (`DATA_MIGRATIONS.md` §8) and the outbox relay both fall under this and must say which they are.
 The relay says so above: it takes a lease, per aggregate, for the duration of one transaction.
 
+**A schedule that reaches a provider or the broker from every instance starts at a drawn first tick** (`P16-TSK-018`,
+`docs/architecture/TIMEOUTS_AND_RETRIES.md` section 4). `TickPhase` draws it from one interval to just under two, once per start,
+so instances started together do not ask one recovering dependency in step for as long as they run. Nothing correct rests on it:
+the claims stay the database's. A schedule that acts once per window by a permit, or reaches only the database, keeps its first tick
+at one interval. `OutboundCallsAreBoundedTest` holds which is which against the inventory, and holds that every provider exchange
+goes through `OutboundExchange`'s overall bound.
+
 **Event consumers.** Duplicate-safe by inbox deduplication (`INV-IDEM-04`), and order-independent
 unless an ordering key is stated explicitly. Rebalance, replay and redelivery are normal.
 
