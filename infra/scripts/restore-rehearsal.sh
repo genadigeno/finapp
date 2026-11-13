@@ -315,6 +315,39 @@ command_run() {
     "$JAVA" -Xmx1g "@$ARGS" "com.finapp.app.restore.$class" "$@" > "$out" 2>&1
 }
 
+# The credit evidence key ring the source is seeded under (ADR-0128 decision 5; OPERATIONS_RUNBOOK.md section 11.29): two versions
+# generated for the run, version 2 active, each with its published check value, so the credit evidence the seed writes stands under a
+# version every restore must still hold. Each key reaches a command through its environment, never as an argument, and its check
+# value is computed from a pipe, as section 11.29 says.
+generated_credit_evidence_v1=$(openssl rand -base64 32)
+generated_credit_evidence_v2=$(openssl rand -base64 32)
+check_value() {
+    printf '%s' "$1" | "$JAVA" --source 21 "$(dpath "$ROOT/infra/scripts/KeyCheckValue.java")"
+}
+CREDIT_EVIDENCE_CHECKS="1:$(check_value "${generated_credit_evidence_v1}"),2:$(check_value "${generated_credit_evidence_v2}")"
+case $CREDIT_EVIDENCE_CHECKS in
+    1:????????????????,2:????????????????) ;;
+    *) cannot "the credit evidence ring's check values could not be computed" ;;
+esac
+
+# ringed <whole|without-v2> <command...>: a command with the credit evidence ring in its environment. `whole` is the ring the source
+# was seeded under; `without-v2` is a restore whose key store lost version 2, as a revert of a rotation's listing leaves it (section
+# 11.29): it starts, and every row written under version 2 can no longer be read.
+ringed() {
+    (
+        export FINAPP_CREDIT_EVIDENCE_KEY="${generated_credit_evidence_v1}"
+        if [ "$1" = whole ]; then
+            export FINAPP_CREDIT_EVIDENCE_V2_KEY="${generated_credit_evidence_v2}" FINAPP_CREDIT_EVIDENCE_RING_VERSIONS=1,2 \
+                FINAPP_CREDIT_EVIDENCE_RING_ACTIVEVERSION=2 FINAPP_CREDIT_EVIDENCE_RING_CHECKVALUES="$CREDIT_EVIDENCE_CHECKS"
+        else
+            export FINAPP_CREDIT_EVIDENCE_RING_VERSIONS=1 FINAPP_CREDIT_EVIDENCE_RING_ACTIVEVERSION=1 \
+                FINAPP_CREDIT_EVIDENCE_RING_CHECKVALUES="${CREDIT_EVIDENCE_CHECKS%%,*}"
+        fi
+        shift
+        "$@"
+    )
+}
+
 # ---------------------------------------------------------------------------------------------------
 # The source. Seeded: an aged cluster, migrated, seeded through the platform's own services, and whole by its own checks. Kind: the
 # rehearsal cluster's database, read from inside its pod.
@@ -332,7 +365,8 @@ verify() {
     FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$port/finapp?options=-c%20default_transaction_read_only%3Don" \
         FINAPP_DB_APP_USER="$ADMIN" FINAPP_DB_APP_PASSWORD="${generated_for_admin}" \
         FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="${generated_for_reporting}" \
-        command_run RestoreVerification "$ART/verification-$2.log" "$(dpath "$ART/verification-$2.txt")" || code=$?
+        ringed "${VERIFY_RING:-whole}" command_run RestoreVerification "$ART/verification-$2.log" "$(dpath "$ART/verification-$2.txt")" \
+        || code=$?
     tr -d '\r' < "$ART/verification-$2.txt" 2>/dev/null | tail -1 | grep -q "^EXIT|$code\$" \
         || { tail -60 "$ART/verification-$2.log" >&2; cannot "the verification of $2 ended without its report (exit $code): see verification-$2.log"; }
     [ "$code" != 2 ] || { tail -60 "$ART/verification-$2.log" >&2; cannot "the verification of $2 could not run: see verification-$2.log"; }
@@ -374,7 +408,7 @@ if [ -z "$KIND_NODE" ]; then
     step seed
     if ! FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$SOURCE_PORT/finapp" FINAPP_DB_APP_USER=finapp_app FINAPP_DB_APP_PASSWORD="${generated_for_app}" \
         FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="${generated_for_reporting}" \
-        command_run RestoreRehearsalSeed "$ART/seed.log" "$(dpath "$CHART")"; then
+        ringed whole command_run RestoreRehearsalSeed "$ART/seed.log" "$(dpath "$CHART")"; then
         tail -60 "$ART/seed.log" >&2
         cannot "the seed failed: see seed.log"
     fi
@@ -387,6 +421,11 @@ if [ -z "$KIND_NODE" ]; then
         fail "the source is not whole, so no restore of it can prove anything: $(grep '^FAIL|' "$ART/verdicts-source.txt" | tr '\n' ';' | cut -c1-600)"
     fi
     pass "the source is whole by the platform's own checks: $(cut -d'|' -f2 "$ART/verdicts-source.txt" | paste -sd, -)"
+    # RESTORE_STOP_AFTER=source: the seed and the source's verification alone, a check of the seed that restores nothing.
+    if [ "${RESTORE_STOP_AFTER:-}" = source ]; then
+        log "stopped after the source, as RESTORE_STOP_AFTER asked: nothing was backed up or restored"
+        exit 0
+    fi
 else
     step source
     # The rehearsal's census was green at every step it ran; nothing here reaches the pod's database from the host, so the source is not
