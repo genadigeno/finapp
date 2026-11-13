@@ -1,6 +1,7 @@
 package com.finapp.app.payments;
 
 import com.finapp.app.lifecycle.ScheduleDrain;
+import com.finapp.app.lifecycle.TickPhase;
 import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.app.telemetry.SweepMeters;
 import com.finapp.payments.DisputeResponseResolution;
@@ -58,7 +59,7 @@ public final class DisputeResponseResolutionSchedule implements SmartLifecycle {
                         });
         executor.scheduleWithFixedDelay(
                 this::sweepQuietly,
-                pollInterval.toMillis(),
+                TickPhase.firstDelayMillis(pollInterval),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
         drain.started(executor);

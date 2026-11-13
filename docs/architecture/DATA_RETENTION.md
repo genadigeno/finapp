@@ -23,7 +23,7 @@ A purge built against an invented period is a defect waiting for one (C12).
 | **Operational** | Published outbox rows, `platform.outbox_event` | `finapp.outbox.retention`, default 30 days from publication, refused at start below the inbox's dedupe window. Longer for a row a standing parked record names | Diagnosis, an audited replay reading across that window, and a release republishing a parked record's event | The sweep, past the bound, published rows only | Built |
 | **Operational** | Dedupe records, `platform.inbox_message` | `finapp.inbox.retention`, default 14 days from processing, and never less than the record's own written expiry | Every redelivery window (`DATA_MIGRATIONS.md` §9); it must exceed every topic's retention | The sweep, past both bounds | Built |
 | **Operational** | Idempotency records, `platform.idempotency_record` | Kept: not swept | Debt row #61, ruled not settled: `journal_entry.idempotency_scope` is not `UNIQUE`, so the record is posting once-ness's second rank | A later sweep lands that uniqueness first; both Phase 16 | Not swept |
-| **Operational** | Session rows, `identity.session` | Kept: not swept | ADR-0030 named a sweep, with the caution that an early expiry logs a user out; no real volume exists to size it | A sweep, Phase 16 | Not swept |
+| **Operational** | Session rows, `identity.session` | A dead session's row: `finapp.identity.session.sweep.grace`, default 30 days past its idle bound, refused under a minute; a live session is never selected | Diagnosis of a reported takeover (which device, how strongly a person signed in), as the outbox's 30 days serve a replay; the logins' audit records are never swept. ADR-0030's caution, an early expiry logging a user out, cannot arise: the bound is the row's own idle bound on the database's clock, which a live session has not passed. Sized from the target's 240,000 sign-ins a day (`CAPACITY_MODEL.md` §3.1; carried at 2.81 a second in `P16-TSK-007`'s E30 step 3): a row lives from its sign-in to its idle bound (30 minutes to 12 hours later) and the grace, so about 7.3 million rows at the default, and one more for each step-up's rotation; a tick's twenty batches of 500 every five minutes deleting up to 2.9 million a day per instance | The session sweep (`RetentionSweepSchedule`, identity `V027`), `P16-TSK-010` | Built *(read "Kept: not swept … A sweep, Phase 16" until 2026-11-13)* |
 | **Operational** | Parked records and discard decisions, `platform.inbox_parked_record` and `platform.dead_letter_discard` | Kept: never swept | A parked record is a message nobody has handled, and a discard is a recorded four-eyes decision | Nothing ends them | Kept for ever |
 | **Operational** | Callback hints, `payments.callback_hint` | Kept: not swept | Operational state, never financial truth. A concluded row is safe to delete, and no volume yet asks for it | A sweep of concluded rows, when volume does | Not swept |
 | **Operational** | The source-join census's records, `accounting.source_census_head`, `accounting.source_census_finding` | Kept: not swept | A finding is the record of an entry the census could not explain, `CONFIDENTIAL` by `DATA_CLASSIFICATION.md`, and the investigation may need it long after the page ends | Nothing ends it: a reviewed change would give it a period | Built |
@@ -34,7 +34,7 @@ A purge built against an invented period is a defect waiting for one (C12).
 | **Evidence** | Provider statements and files: `payments.provider_evidence`, `payments.dispute_evidence`, `merchant.payout_evidence`, `fx.fx_provider_evidence`, `kyc.verification_evidence`, `settlement.file` and its chunks | `OPEN` | A real jurisdiction and each provider's contract | Purge not built; re-dated to that choice | Kept for ever |
 | **Evidence** | Credit evidence: `credit.credit_evidence`, `retain_until` stored per row from the product's retention | `OPEN` beyond the stored date, and the scope is open too: whether a purge reaches the normalised attributes (`credit_record_attribute`) and each snapshot's canonical text, and how a purged decision then explains | A real jurisdiction | Purge not built; re-dated to that choice. Nothing deletes past `retain_until` today, and a trigger refuses `DELETE` for every role | Kept for ever |
 | **Evidence** | Agreement and acceptance evidence: `lending.loan_agreement`, `lending.loan_acceptance`, `bnpl.bnpl_agreement`, `bnpl.bnpl_acceptance`, and a dispute's merchant statement | `OPEN` | A real jurisdiction | Purge not built; re-dated to that choice | Kept for ever |
-| **Audit** | `platform.audit_record` | Never deleted. How long a copy must stay in the archive is `OPEN` | ADR-0010: archival must preserve auditability, so deletion is not an option. `INV-HIST-03` | Nothing ends it. Archived by copy (§3) | Designed; the build is Phase 16's |
+| **Audit** | `platform.audit_record`, and its archive's own record: `platform.audit_archive_segment`, `platform.audit_archive_member`, `platform.audit_archive_pending`, `platform.audit_archive_head` | Never deleted. How long a copy must stay in the archive is `OPEN` | ADR-0010: archival must preserve auditability, so deletion is not an option. `INV-HIST-03` | Nothing ends it. Archived by copy (§3) | Archival built (`P16-TSK-010`, 2026-11-13), running where a store is named, which no committed environment does yet; deletion never *(read "Designed; the build is Phase 16's" until then)* |
 | **Regulatory** | Regulatory reports: `risk.regulatory_report`, `risk.regulatory_report_event` | `OPEN` | A real reporting jurisdiction's record-keeping rule | Destruction schedule and legal hold re-dated to that choice | Kept for ever |
 
 **`OPEN`** means: no value is set, nothing depends on one, and no code path deletes against one. To close a period, name the
@@ -58,7 +58,9 @@ throttle's counters, are that process's state, and retention is not what bounds 
   below the oldest record the broker can redeliver (8 days and 5 minutes today), and the sweep's function refuses such a bound
   too. The sweep also waits for the row's `expires_at`, which a replay order extends, so a row a replay depends on stays.
 - **Deletion has one path.** The application role holds no `DELETE` on either table. Two `SECURITY DEFINER` functions (platform
-  `V012`) are the only way, and each deletes only what its predicate selects. A holder of the application's credential still holds
+  `V012`) are the only way, and each deletes only what its predicate selects. *(2026-11-13: so for the window counter, platform
+  `V014`, and the session table, identity `V027`, whose function selects only `ACTIVE` or `REVOKED` rows past their idle bound by the
+  grace and stops at a column it was not reviewed against.)* A holder of the application's credential still holds
   `UPDATE` on the outbox, so it can back-date `published_at` and reach a published row. It cannot change an inbox record's
   `processed_at`, so a dedupe record younger than the floor stays out of its reach.
 - **Batched and leaderless.** `FOR UPDATE SKIP LOCKED` in one short transaction per batch, so N instances delete disjoint
@@ -68,32 +70,52 @@ throttle's counters, are that process's state, and retention is not what bounds 
 
 ---
 
-## 3. Audit archival — the design
+## 3. Audit archival — as built
 
-The archive bucket's write-once lock is configured (`infra/terraform/modules/object-storage`, never applied), with Object Lock on from creation and its mode and period required inputs with no default, because the period below is `OPEN`. Building what follows is re-dated to Phase 16's partitioning and archival of high-volume tables
-(ADR-0010's read-note). Nothing here is built.
+The archive bucket's write-once lock is configured (`infra/terraform/modules/object-storage`, never applied), with Object Lock on
+from creation and its mode and period required inputs with no default, because the period below is `OPEN`. The archival itself
+was built in Phase 16 (`P16-TSK-010`, 2026-11-13; ADR-0135; platform `V015`). It runs on an instance whose
+`finapp.audit.archive.endpoint` names a store, and no committed environment names one yet: no real bucket exists, and the
+test-only store is the `kind` experiments scope's alone (`OPERATIONS_RUNBOOK.md` §11.50). Until a store is named the archive's
+queue only grows, and its gauges say how far. *(Until 2026-11-13 this section was the design, "Nothing here is built", and its
+first step was "Partition first": partitioning is a separate decision, by measurement and an ADR, and the archival is built
+without it, as the steps below say.)*
 
 **No audit record is ever deleted.** Archival is a **copy** to write-once storage, verified before anything relies on it. The
 operational table keeps every row; relieving its size is the partitioning's question and never a `DELETE`.
 
-1. **Partition first.** Phase 16 range-partitions `platform.audit_record` by a closed period, such as a month. A partition is
-   only ever archived after its period has closed and no writer can reach it.
-2. **Export a closed partition** in key order, to a canonical line format that carries every column, including the actor,
-   target, reason, correlation and outcome (`INV-AUD-*`), so the copy needs nothing from the live schema to be read.
-3. **Claim leaderlessly.** Each partition's export is claimed with `SKIP LOCKED` on a row recording it. A second instance
-   finds it claimed, a crash lets the claim lapse, and the object's name is deterministic so a second write of the same bytes
-   is harmless.
-4. **Seal.** A manifest records the partition, the row count and a digest of each file, chained to the previous manifest's
-   digest. An altered or missing archive is then detectable, not merely forbidden.
-5. **Write once.** Files and manifests go to the bucket under its Object Lock, with a separate key from the database's and
-   no application delete permission. The lock's period is the `OPEN` period above.
-6. **Verify, then record.** Read the object back, recompute the row count and the digests, compare them with the partition, and
-   only then record the archive as complete.
-7. **Keep it queryable** (ADR-0010). The manifest indexes the files by period, and a read path restores a period to a scratch
-   schema for a question. Queries that span periods remain the operational table's while it holds them.
+1. **Queue every row, by the database.** A trigger on `platform.audit_record` puts each new row's id on the archive's queue,
+   `platform.audit_archive_pending`, in the transaction that writes the row; the rows written before it were queued by the
+   migration. No cursor over ids or times: an id minted on an instance's clock, or a transaction that commits late, would let
+   a cursor pass a row for good with no signal.
+2. **Cut a segment.** A segment is up to `finapp.audit.archive.batch-size` queued rows, moved from the queue into
+   `platform.audit_archive_member` in one transaction. A committed audit row never changes, so it is closed the moment it
+   commits: no period has to end first. The member table's key puts each row in one segment, ever.
+3. **Claim leaderlessly.** Every instance ticks; the claim takes the archive's head row with `SKIP LOCKED`, so one claims at a
+   time and a contender does nothing. One segment is in flight at a time, under a lease on the database's clock: a crash lets
+   the lease lapse, and any instance takes the segment over with a new holder token. Its objects' names are deterministic, so
+   the second holder writes the same bytes again or finds them there.
+4. **Export and seal, by the database.** The segment's file is the database's own text, one line per row in id order, a JSON
+   array of every column in the table's order (the actor, target, reason, correlation and outcome among them, `INV-AUD-*`),
+   timestamps in UTC to the microsecond, so the copy needs nothing from the live schema to be read. Its manifest records the
+   segment, its row count, its id and time range and the file's digest, chained to the previous manifest's digest. An altered
+   or missing archive is then detectable, not merely forbidden. A column added to the table stops the archive until a
+   migration reviews it.
+5. **Write once.** The file and the manifest go to the store with a write that succeeds only where no object is, and on the
+   real bucket under its Object Lock, a separate key from the database's and no application delete permission. The lock's period
+   is the `OPEN` period above. The application deletes nothing from the store, and holds no key of the archive's: encryption at
+   rest is the bucket's.
+6. **Verify, then record.** Read both objects back and compare them byte for byte with the database's text; only then mark the
+   segment archived, with the digests of what was read back, which the database recomputes from the rows and refuses otherwise.
+   A store that is down leaves the segment claimed and nothing lost; a copy that differs is never marked and stops the chain.
+7. **Keep it queryable** (ADR-0010). The segment table indexes the files by id and time range, and the read path restores a
+   segment to a scratch schema for a question: its objects checked against the recorded digests and the chain, each line read
+   back into a row by `platform.audit_archive_record` (`OPERATIONS_RUNBOOK.md` §11.50). Queries remain the operational table's
+   while it holds every row.
 
-**What this leaves open:** the archive's retention (`OPEN`); the read path's access control and its own audit record, which
-must be built with the read path; the partition interval, by measurement.
+**What this leaves open:** the archive's retention (`OPEN`, `THREAT_MODEL.md` §6 item 23 (b)); the real bucket's request signing
+and credential, and the read path's access control and its own audit record (item 57); the partition interval, by measurement
+(`P16-TSK-012`). The archival's runs on `kind` are owed (`POSTPONED_ISSUES.md` PI-025).
 
 ---
 

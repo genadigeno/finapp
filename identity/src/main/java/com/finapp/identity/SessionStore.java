@@ -136,7 +136,7 @@ public interface SessionStore<T> {
      * that is wrong — {@code P0-TSK-029}'s reasoning for the outbox gauges, unchanged.
      *
      * <p><strong>Live, not {@code ACTIVE}.</strong> ADR-0030 and {@code P1-TSK-013} decided there
-     * is no {@code EXPIRED} status and no sweep, so {@code status = 'ACTIVE'} counts sessions
+     * is no {@code EXPIRED} status and no sweep that marks one, so {@code status = 'ACTIVE'} counts sessions
      * <em>nobody can use</em> — and it would be wrong in the reassuring direction, reporting live
      * customers indefinitely. The predicate is {@link #findLive}'s, so the gauge and the lookup
      * cannot disagree about what a session is. Judged at the database's {@code now()}, every

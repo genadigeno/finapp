@@ -29617,7 +29617,7 @@ on none:
   every arbiter's lock transaction-scoped, now guarded; the autoscaler's metric read per pod by the API server); the counted run at ten
   is E41's and E26's, owed.
 
-**P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
+**P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `COMPLETE` (2026-11-13; its completion gate on branch `P16-TSK-010` from master `1fbdf71c`, masters `6f23a4a1`, `ac5aa4a3`, `9ec48bdc`, `ac8f2d81` and `d7081fa9` merged in; the runs on `kind` owed under `POSTPONED_ISSUES.md` PI-025 and its database cases to the database pass, by the owner's word of 2026-11-13; read `READY`, marked by the coordinator at `P16-TSK-007`'s merge, until then)
 - **Objective**: as decided 2026-11-09, scheduled into Phase 16's archival:
   - the audit archival designed in `DATA_RETENTION.md` §3 is built;
   - expired session rows are swept, sized by the volume `-007` measured.
@@ -29652,6 +29652,39 @@ on none:
 - **Definition of done**: `DOD-KERNEL`, `DOD-SEC`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.15 widened.
 - **Risk**: Medium. **Cx**: L.
+- **As built (2026-11-13; ADR-0135, `Proposed`; design corrections: no partition first, since partitioning is `-012`'s ADR; a
+  segment of committed rows is the unit, because a committed audit row never changes; "item 21 (b)" read as item 23 (b); `-007`
+  measured no audit-row rate, so none is claimed):**
+  - **The audit archive** (platform `V015`): every audit row queued by an `AFTER INSERT` trigger in its own transaction
+    (`platform.audit_archive_pending`), the rows before the migration queued under the trigger's lock; segments cut from the queue
+    into `platform.audit_archive_member`, one segment per row by its key; one claimer at a time (the head row `FOR UPDATE SKIP
+    LOCKED`) and one `CLAIMED` segment (a partial unique index) under a lease on the database's clock; the segment's file and manifest
+    the database's own text (format 1, every column in order, UTC microseconds), chained by digest; `complete_audit_archive_segment`
+    marks once, by the holder (`AAHLD` otherwise), with digests it recomputes from the rows (`AADGS` otherwise); a column added stops
+    it (`55000`), a queued id with no row stops it (`XX001`); `platform.audit_archive_record` decodes a line. The engine
+    (`AuditArchival`) writes both objects once, reads both back and compares them byte for byte, and only then marks: a store down
+    leaves the segment to its lease, a copy that differs is never marked. The store is a port; `HttpAuditArchiveStore` speaks S3's
+    `PUT If-None-Match: *` and `GET`, https off loopback, each exchange bounded in time and size, unsigned (item 57 (a)). The
+    `AuditArchiveSchedule` runs only where `finapp.audit.archive.endpoint` names a store, which no committed overlay does. No audit
+    row is deleted or altered; the application role gains no write on any audit or archive table.
+  - **The session sweep** (identity `V027`, `SessionRetention`, a fourth `RetentionSweepSchedule` bean): `ACTIVE` or `REVOKED` rows
+    whose idle bound passed more than `finapp.identity.session.sweep.grace` (30 days, at least a minute) ago, on the database's
+    clock, so never a live session; an unreviewed column stops it. `RetentionSweep.ofModuleFunction` runs a module's own sweep
+    function.
+  - **Meters and alerts**: `finapp.audit.archive.segments{outcome}`, `.rows`, `.pending`, `.pending.oldest`, `.enabled`; the session
+    sweep on `finapp.retention.swept{type="session"}`; `AuditArchiveCopyDiffers` (page) and `AuditArchiveBehind` (ticket) in
+    `platform.yml`, the backlog gauge in `PlatformGaugesUnreadable`, with promtool cases.
+  - **On `kind`, built and not run**: the test-only write-once store (`ArchiveStore.java`, `experiments/archive-store.yaml`), the
+    experiments scope's settings and endpoint check, the `store-hold` fault, E44 (the store stopped mid-run), E45 (a holder killed
+    between copy and mark, at three and owed at ten) and E46 (the session table over a soak), with the archive census; held by
+    `ExperimentsRehearsalContractTest`.
+  - **Acceptance, under the owner's word of 2026-11-13**: archival and the sweep at ten instances, each row once - built, the claim
+    protocol held hermetically and by the migration's text, the ten-way database cases written and owed (PI-023's kind), **E45 at ten
+    owed (PI-025)**; an unavailable store loses nothing - **met hermetically** (`AuditArchivalTest#anUnavailableStoreLosesNothing`),
+    **E44 owed (PI-025)**; the sessions table bounded over the soak - built, **E46 owed (PI-025)**; item 18's readiness and
+    threat-model rows re-ruled - met (T10's archival row and T37's session row `EXISTS`, the rest `GAP` naming PI-023, PI-025, owner
+    items 18, 23 and 57). A short container check ran both migrations' functions on PostgreSQL 18.6 and the test-only store on the
+    JDK image; nothing ran on a cluster.
 
 **P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
 - **Objective**: as decided:
@@ -29685,6 +29718,11 @@ on none:
 - **Definition of done**: `DOD-FIN`, `DOD-KERNEL`.
 - **Operational documentation**: `DATA_RETENTION.md`; `OPERATIONS_RUNBOOK.md` §11.15.
 - **Risk**: High (the posting path). **Cx**: L.
+- *Routed from `P16-TSK-010` (2026-11-13):* item 18's other two parts are built and its third is this entry's. A module's own sweep
+  function runs as a platform retention sweep through `RetentionSweep.ofModuleFunction` (identity `V027`'s session sweep is the
+  first), which suits an idempotency sweep run as the role that keeps `DELETE` or a definer function. `THREAT_MODEL.md` T37's
+  idempotency row is the `GAP` this entry closes (item 18's note says so), and `DATA_RETENTION.md` §1's idempotency row still reads
+  "Not swept". `ShutdownOrderTest` counts forty-one lifecycle components and thirty-eight schedules since: a new schedule moves both.
 
 **P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
 - **Objective**: decide, from the soak's growth rates extrapolated to the production target, whether any high-volume table needs
@@ -29714,6 +29752,11 @@ on none:
 - **Definition of done**: `DOD-ARCH`, `DOD-FIN`.
 - **Operational documentation**: `DATA_ARCHITECTURE.md`'s growth section.
 - **Risk**: Low. **Cx**: M.
+- *Routed from `P16-TSK-010` (2026-11-13):* the audit archive is built without partitions (ADR-0135): every audit row is queued in its
+  own transaction and cut into segments, so partitioning `platform.audit_record` is not needed for the archive. If a partition is
+  ever detached, it may go only once every row in it is in an `ARCHIVED` segment and `THREAT_MODEL.md` §6 item 23 (b)'s period has
+  run; the archive's queue (`platform.audit_archive_pending`) grows with the table while no environment names a store, which the
+  growth figures should count.
 
 **P16-TSK-013 — The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: `PHASE_16_PLAN.md` §7 at the engineering workload on a test-only three-broker KRaft cluster on `kind`, with
@@ -29802,6 +29845,11 @@ on none:
   those ready, which a roll makes differ for a scrape interval; and the release's `rollout`, `assert_reporting_open` and `ready_three`
   assume three. Memory: thirteen 1 GiB pods at a roll's worst moment beside the data tier, on the reference machine's 15.6 GiB VM.
   E41 (`P16-TSK-009`'s, owed under PI-025) is the budget's run at ten, without a roll.
+- *Routed from `P16-TSK-010` (2026-11-13):* E45, the audit archive's holder killed between its copy and its mark, is owed at ten
+  replicas (`RESILIENCE_EXPERIMENTS.md`, the entry's acceptance: archival and the session sweep at ten instances, each row once).
+  It runs in the experiments scope (`REHEARSAL_EXPERIMENTS=E45`). `kind`'s overlay admits ten since ADR-0134, but `fleet_patch`
+  holds every scope but `load` at three: a count for the experiments scope is what it needs from this entry. Owed under
+  `POSTPONED_ISSUES.md` PI-025.
 
 **P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `PLANNED`
 - **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection
@@ -29879,6 +29927,12 @@ on none:
   sampler, which never passes blind, stopped the run (E30, sample 35, 0.49 of the target's peak). A per-class bound that keeps the
   correctness monitors reading under load, and a create that cannot answer `500` after its effect, are this task's (with `P16-TSK-009`
   for the pool's size).
+- *Routed from `P16-TSK-018` (2026-11-13):* `CallbackInquiryBulkhead`'s refusals are counted by no meter: a refused hinted inquiry is
+  one `INFO` line ("Too many hinted inquiries are running on this instance; this one is left to the sweep") and the delivery is then
+  counted `finapp.payments.webhook{outcome=PROCESSED}`, so a slow provider filling the bulkhead is visible only in the replicas' lines.
+  E21 counts the lines meanwhile (`kind-rehearsal/experiments.sh` `provider_bulkhead_refusals`); a bulkhead per class of work, with its
+  refusals counted, is this task's. Every provider exchange now has a bound on its body (`OutboundExchange`,
+  `docs/architecture/TIMEOUTS_AND_RETRIES.md` section 2), so each call is bounded in time; how many wait at once is the bulkheads'.
 
 **P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-017` from master `c9c07831`, wave B beside `-006`; payments `V040`, merchant `V016`, reconciliation `V025`, no ADR; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, ...)" until the gate)
 - **Objective**: as decided 2026-11-12. A sweep's failed tick is metered and paged (item 42 (i) (i)), and each listing skips and
@@ -29919,7 +29973,7 @@ on none:
   owner (`THREAT_MODEL.md` §6 item 51). Hermetic tests for every sweep's skip, count, backoff and exclusion; the entry's probe
   and ten more Java and harness probes, and seven rule probes, performed (`MUTATION_TESTING.md` §2); database cases written and owed (PI-023). **E28** (runbook §11.39 (a); PI-024's poisoned-row step under C11) `PASSED` on `kind` at 3 replicas, commit `e9cdbb3a`, 2026-11-13 02:22-02:34Z, development mode (the `incidents` prefix, `platform-prepare`, `platform-poisoned-rows`): `PaymentSweepRowUnreadable` fired 95 s after the plant and reached `placeholder-page`, the record held 2 failures, the row stayed `CAPTURE_DISPATCHED`, no replica's tick failed whole, census green, the cluster deleted and the lock released. A first run at `82bab047` passed the same assertions and read `COULD NOT RUN`: the harness's development mode left `wanted`'s refusal of the scope's last unnamed step as the sourced file's status under `set -e`; `platform.sh` now ends its sequences in a zero status (`PlatformRehearsalContractTest#theSequenceEndsInAZeroStatus`, its probe performed).
 
-**P16-TSK-018 — Timeouts and retries classified; provider outages and slow providers (C12)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)
+**P16-TSK-018 — Timeouts and retries classified; provider outages and slow providers (C12)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-018` from master `1fbdf71c`, wave D; no migration; no ADR - C12's waits on a measurement, so the reserved ADR-0138 is unused; one new owner item, `THREAT_MODEL.md` section 6 item 60; its cluster runs owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until its gate)
 - **Objective**: one inventory of every outbound call's connect, request and overall bound and of every retry, each retry classified
   safe; the provider-outage experiments E17–E21 run; automatic rail availability decided from measured failure rates.
 - **Affected components**: every provider adapter (`payments`, `merchant`, `fx`, `kyc`, `credit`, `paymentmethods`, `settlement`),
@@ -29961,6 +30015,35 @@ on none:
   deployment. Once that exists the load profiles' three `"generator": "none"` operations can be driven: the setup is the platform scope's
   activations and a customer's decision request, application, offer and agreement through their doors. `LoadRehearsalContractTest` names
   this task as their driver while it is live.
+  *(Closed 2026-11-13 by the owner's decision on unresolved question 13, "accept recommendation": no test-only bureau is built for
+  `kind` in Phase 16, so BNPL, lending repayments and loan credit decisions stay undriven there until the question is answered, and
+  E20 rests on the recorded fail-safe. The load profiles' three reasons now name that decision, and `LoadRehearsalContractTest` accepts
+  the owner's dated decision beside a live task.)*
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-018` from master `1fbdf71c`):* **The inventory**
+  (`docs/architecture/TIMEOUTS_AND_RETRIES.md`): the 13 classes that build an HTTP client with their three bounds, the JDK client's own
+  retries, the other outbound calls, the 35 schedules and 10 other retries, each classified (a), (b) or (c) by `PHASE_16_PLAN.md`
+  section 8's rule, held both ways by `OutboundCallsAreBoundedTest` (7 members). **What the inventory found**: every request already
+  had its timeout, but the JDK 21 client's request timeout ends at the response's headers, so no exchange bounded its body, and the
+  reference rate source read its body from a stream with no bound at all. **The body's bound**: `platform`'s
+  `OutboundExchange.send` (the body bounded from the headers, failed as an `HttpTimeoutException` and its connection closed past the
+  bound; the JDK's handling before the headers untouched, so a refused connection, which the JDK retries once, is still a
+  `ConnectException`), used by every one of the 13 adapters' 18 exchanges; `limitedBytes` for the reference source;
+  `OutboundExchangeTest` (7) shows the JDK's own send still waiting on a stalled body where the bound cuts it. Its first form, a bound
+  from the call, cut the JDK's retry of a refused connection and turned it into a timeout, which `SimulatedInstantSchemeAdapterTest`
+  caught in the gate's run; the bound now starts at the headers. **Jitter**:
+  `TickPhase`, a first tick drawn from one interval to just under two, on the 15 schedules that reach a provider or the broker from
+  every instance; the relay's per-row backoff kept unjittered (its herd bounded by construction; E09 measures it), the Kafka clients
+  jittering their own. **The experiments**: the simulator's degradation controls (`/tmp/degrade-<rail>-unavailable|silent`, no effect
+  taken, every request logged), E17, E18 and E21 in the experiments scope with their stop conditions and measurements, E19 and E20
+  refused with their reasons, the FX provider and reference named in the scope; `ProviderExperimentsContractTest` (7);
+  `OPERATIONS_RUNBOOK.md` section 11.53. **Criteria**: the inventory complete - met (guarded); every retry classified - met (guarded);
+  E17-E21 recorded with zero postings without an answer - E17, E18 and E21 built, contract-tested, runs owed (PI-025); E19 cannot be
+  driven (item 60); E20 on the recorded fail-safe by the owner's decision; failure rates per rail - the measurement built into each
+  run, owed; C12's decision written (`DECISIONS.md` section Deliberately Deferred, `TIMEOUTS_AND_RETRIES.md` section 5): not built,
+  no rate measured, availability stays an operator's recorded act. **Found and put to the owner**: no production path runs a KYC
+  case's checks (`VerificationRunService.runChecks` has test callers only), `THREAT_MODEL.md` section 6 item 60. **Routed**:
+  `P16-TSK-016` - `CallbackInquiryBulkhead`'s refusals are counted by no meter (a log line only). **Owed under PI-025**: E17, E18 and
+  E21 at three replicas, with their failure rates per rail. **Tests**: one run of named classes after the last merge (2026-11-13 14:43Z on), 69 classes in eight modules - the changed classes' tests, every guard reading a changed file, the always-run four - 729 tests and the 22 ArchUnit rules of 7 suites the filter pulls in, 0 failed; an earlier run of the same set found the helper's first form (above); not run: `AlertRulesResolveTest` (database tier), `RiskAlertRulesTest` and `BnplAlertRulesTest` (slow), and the database and Kafka cases of the changed schedules' and adapters' callers, owed to PI-023's kind of pass **Probes**: twenty-two hermetic plants in four rounds, each caught by the member aimed at it, two of them on the helper's first form and planted again on its second (`MUTATION_TESTING.md` section 2); none on a cluster
 
 **P16-TSK-019 — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `COMPLETE` (2026-11-13; branch `P16-TSK-019` from master `0a09a273`; gate `COMPLETE` 2026-11-13; marked `READY` by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)
 - **Objective**: build the `experiments` scope:
@@ -30125,8 +30208,12 @@ on none:
   - **Threat model**: a T29 `EXISTS` row (the new faults reach only what the run made); `GAP | PI-025` rows on T14 (slots held, volume
     full, the black-holed connection), T16 (the cut on a commit), T23 and T25 (the hops black-holed); item 42 (h) a dated note.
   - **Not used**: E35-E37, runbook numbers beyond §11.47, `THREAT_MODEL.md` §6 item 54, ADR-0132. No owner item.
+- *Routed from `P16-TSK-010` (2026-11-13):* E11's hypothesis reads "The application uses none" of object storage. Since
+  `P16-TSK-010` the audit archive writes to a store when one is named (ADR-0135); no committed environment names one yet, and on
+  `kind` the experiments scope names a test-only store in `finapp-rehearsal`. That store's own outage is E44's; E11 keeps the
+  infrastructure stores (the restore's archive, the Terraform state), and its row may want a dated note saying so.
 
-**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-022` from master `1fbdf71c`, wave D, master merged in four times (`ac5aa4a3`, `9ec48bdc`, `ac8f2d81`, `d7081fa9`); no migration; ADR-0139; every cluster run owed under PI-025; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until the design, then "`IN_PROGRESS`" until its gate)*
+**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-022` from master `1fbdf71c`, wave D, master merged in five times (`ac5aa4a3`, `9ec48bdc`, `ac8f2d81`, `d7081fa9`, `215deb70`); no migration; ADR-0139; every cluster run owed under PI-025; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until the design, then "`IN_PROGRESS`" until its gate)*
 - **Objective**: as decided:
   - E05, a database primary failover under load on the test-only synchronous standby pair;
   - its interruption measured;
@@ -30191,7 +30278,7 @@ on none:
   (`kind-rehearsal.sh`'s `fleet_patch`): 60 at three, the count the experiments scope runs at. `experiments/standby.yaml` keeps
   `max_connections=60`, which still equals the run's primary at three. A hot standby refuses to start below its primary's setting, so a
   failover drill at more than three replicas needs the standby's value taken from the run's copy, not the file.
-- *As built (2026-11-13, the gate's record; branch `P16-TSK-022` from master `1fbdf71c`, master merged in four times (`ac5aa4a3`, `9ec48bdc`, `ac8f2d81`, `d7081fa9`); no migration; ADR-0139;
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-022` from master `1fbdf71c`, master merged in five times (`ac5aa4a3`, `9ec48bdc`, `ac8f2d81`, `d7081fa9`, `215deb70`); no migration; ADR-0139;
   `OPERATIONS_RUNBOOK.md` §11.54 the drill's procedure and empty record, §11.40 corrected; `RESILIENCE_EXPERIMENTS.md` E05, E06, E56
   and E57; under the owner's word of 2026-11-13, "we dont need long running checks and tests", **nothing ran on a cluster: every run is
   owed under `POSTPONED_ISSUES.md` PI-025**):* **The socket timeout**: `socketTimeout: 300` on the writer's driver properties, which the

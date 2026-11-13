@@ -767,6 +767,8 @@ if [ -n "$AUDITED" ]; then
     # both, and only these scopes name them, so the release's and the rotations' runs keep their measured shape.
     EXTRA_PROVIDER_NAMES="$EXTRA_PROVIDER_NAMES FINAPP_FX_REFERENCE_URL FINAPP_FX_PROVIDER_URL"
 fi
+# The experiments scope names them too (P16-TSK-018): E18 takes the FX provider and the reference rates away, and needs both to begin with.
+[ "$SCOPE" != experiments ] || EXTRA_PROVIDER_NAMES="$EXTRA_PROVIDER_NAMES FINAPP_FX_REFERENCE_URL FINAPP_FX_PROVIDER_URL"
 # The application's database URL, the same in every scope: the experiments scope's boundary holds the delivered Secret to it (P16-TSK-019).
 DB_URL="jdbc:postgresql://$PG_HOST:5432/finapp?sslmode=verify-full&sslrootcert=/etc/finapp-local-ca/ca.crt"
 PATH="$WORK/bin:$PATH" KIND_SECRETS_LEDGER="$WORK/ledger" \
