@@ -29879,6 +29879,12 @@ on none:
   sampler, which never passes blind, stopped the run (E30, sample 35, 0.49 of the target's peak). A per-class bound that keeps the
   correctness monitors reading under load, and a create that cannot answer `500` after its effect, are this task's (with `P16-TSK-009`
   for the pool's size).
+- *Routed from `P16-TSK-018` (2026-11-13):* `CallbackInquiryBulkhead`'s refusals are counted by no meter: a refused hinted inquiry is
+  one `INFO` line ("Too many hinted inquiries are running on this instance; this one is left to the sweep") and the delivery is then
+  counted `finapp.payments.webhook{outcome=PROCESSED}`, so a slow provider filling the bulkhead is visible only in the replicas' lines.
+  E21 counts the lines meanwhile (`kind-rehearsal/experiments.sh` `provider_bulkhead_refusals`); a bulkhead per class of work, with its
+  refusals counted, is this task's. Every provider exchange now has a bound on its body (`OutboundExchange`,
+  `docs/architecture/TIMEOUTS_AND_RETRIES.md` section 2), so each call is bounded in time; how many wait at once is the bulkheads'.
 
 **P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-017` from master `c9c07831`, wave B beside `-006`; payments `V040`, merchant `V016`, reconciliation `V025`, no ADR; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, ...)" until the gate)
 - **Objective**: as decided 2026-11-12. A sweep's failed tick is metered and paged (item 42 (i) (i)), and each listing skips and
