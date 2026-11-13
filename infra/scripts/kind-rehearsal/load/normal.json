@@ -1,0 +1,24 @@
+{
+  "name": "normal",
+  "workload": "PHASE_16_PLAN.md section 5.1's normal profile: the target's average rate for 30 minutes (0.4167 of its peak, 36,000 / 86,400 s: CAPACITY_MODEL.md section 3.1's average column)",
+  "duration": "30m",
+  "stages": [[1800, 0.4167]],
+  "retryShare": 0.05,
+  "transferAmount": "0.01",
+  "topUpAmount": "5.00",
+  "topUpMinor": 500,
+  "checkoutMinor": 200,
+  "operations": [
+    {"name": "transfer", "generator": "k6", "exec": "transfer", "rate": 2778, "per": "1000s", "perSecond": 2.778, "preAllocatedVUs": 70, "maxVUs": 70, "money": true, "errorTarget": 0.001, "from": "the target's peak: 100,000 transfers a day over 36,000 s (W1 x W3)"},
+    {"name": "checkout", "generator": "k6", "exec": "checkout", "rate": 5556, "per": "1000s", "perSecond": 5.556, "preAllocatedVUs": 140, "maxVUs": 140, "money": true, "errorTarget": 0.001, "from": "the target's peak: 200,000 card or checkout payments a day over 36,000 s (W1 x W3)"},
+    {"name": "topup", "generator": "k6", "exec": "topup", "rate": 1111, "per": "1000s", "perSecond": 1.111, "preAllocatedVUs": 30, "maxVUs": 30, "money": true, "errorTarget": 0.001, "from": "the target's peak: 40,000 top-ups and withdrawals a day over 36,000 s, the withdrawals folded into card top-ups (R2)"},
+    {"name": "read", "generator": "k6", "exec": "read", "rate": 55556, "per": "1000s", "perSecond": 55.556, "preAllocatedVUs": 90, "maxVUs": 90, "money": false, "errorTarget": 0.001, "from": "the target's peak: 2,000,000 balance reads a day over 36,000 s (W1 x W3)"},
+    {"name": "signin", "generator": "k6", "exec": "signin", "rate": 6667, "per": "1000s", "perSecond": 6.667, "preAllocatedVUs": 30, "maxVUs": 30, "money": false, "errorTarget": 0.001, "from": "the target's peak: 240,000 sign-ins a day over 36,000 s (W1 x W3)"},
+    {"name": "merchant", "generator": "k6", "exec": "merchant", "rate": 11111, "per": "1000s", "perSecond": 11.111, "preAllocatedVUs": 60, "maxVUs": 60, "money": false, "errorTarget": 0.001, "from": "the target's peak: 400,000 merchant API reads a day over 36,000 s (W4)"},
+    {"name": "callbacks", "generator": "callbacks", "money": false, "errorTarget": 0.0005, "from": "two per captured card payment (W4), sent by Rehearsal.java load-callbacks, provider-driven"},
+    {"name": "settlement", "generator": "harness", "money": false, "from": "one PSP settlement file of the run's captures at mid-run, uploaded and attested through the operator edge, reconciled during the load (W5 at this scale)"},
+    {"name": "bnpl", "generator": "none", "money": true, "reason": "a BNPL purchase rests on a credit approval, and on kind none is possible, automatic or by a person: every credit policy's exposure rule reads the bureau's total balance, no kind deployment can configure a bureau (the application refuses one until CURRENT_STATE's unresolved question 13 is answered), so the exposure is unassessed and the policy's fallback declines or refers (INV-CRD-10), and a person's approval of a referral is refused while it is (credit.ExposureUnassessable, INV-CRD-09); a simulated bureau on kind is an application change, routed to P16-TSK-018 (E20's simulated bureau); its instalments need its agreements"},
+    {"name": "lending", "generator": "none", "money": true, "reason": "a repayment needs a disbursed loan, and a loan rests on a credit approval, and on kind none is possible, automatic or by a person: every credit policy's exposure rule reads the bureau's total balance, no kind deployment can configure a bureau (the application refuses one until CURRENT_STATE's unresolved question 13 is answered), so the exposure is unassessed and the policy's fallback declines or refers (INV-CRD-10), and a person's approval of a referral is refused while it is (credit.ExposureUnassessable, INV-CRD-09); a simulated bureau on kind is an application change, routed to P16-TSK-018 (E20's simulated bureau)"},
+    {"name": "credit", "generator": "none", "money": false, "reason": "a decision reads the bureau and financial data, neither configurable on kind (the application refuses either until CURRENT_STATE's unresolved questions 13 and 14 are answered), so every decision there is the fail-safe path, waiting its 30-minute collection window and referring (INV-CRD-10), which is E20's subject and not the target's decision; a decision with data needs a simulated bureau on kind, an application change, routed to P16-TSK-018"}
+  ]
+}
