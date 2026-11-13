@@ -30438,6 +30438,15 @@ on none:
 - **Definition of done**: `DOD-TEST`.
 - **Operational documentation**: the records.
 - **Risk**: Medium. **Cx**: M.
+- **Routed from `P16-TSK-016` (2026-11-13): E30's standing `FAILED` result is held here.** E30 (the stress profile at three replicas,
+  `RESILIENCE_EXPERIMENTS.md`) stopped at its 35th sample on two causes: the source-join census starved of the pool and a checkout's
+  creating answer lost after its commit, both remediated by `P16-TSK-016` (`OPERATIONS_RUNBOOK.md` §11.52), and the merchant payable
+  read's whole-history fold, measured by `P16-TSK-008` and bounded by ADR-0133 decision 3 once the owner places it
+  (`THREAT_MODEL.md` §6 item 55). Both remediating tasks are `COMPLETE`, so the register's guard needs a live task to hold the result
+  until a run replaces it: this one. The run is the stress profile at three replicas on the final tree, which is E30 run again and E52
+  (E30's criteria, and E52's: every sample read past E30's stop, no checkout abandoned), owed under `POSTPONED_ISSUES.md` PI-025; its
+  result is appended to both rows (`RESILIENCE_EXPERIMENTS.md` §1.2). If the payable read is still unbounded then, and E30 fails on
+  it again, E30's new result names the task that builds item 55's choice.
 
 **P16-DOC-001 — The Phase 16 exit review** — `PLANNED`
 - **Objective**: rule every criterion of `PHASE_GATES.md` §5 Phase 16 and the universal exit gate with evidence. Accept or correct
