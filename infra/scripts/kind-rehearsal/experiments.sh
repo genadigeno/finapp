@@ -59,7 +59,10 @@
 #   E23  the relay's own lock held on a few aggregates for 10 minutes as their rows appear: their records arrive after every other
 #        aggregate's, each applied once and, per consumer and aggregate, in order;
 #   E49  the run's day replayed through the audited operator door, every handled type in windows under its bound: every record absorbed,
-#        an audit record per order, the replay's rate recorded.
+#        an audit record per order, the replay's rate recorded;
+#   E68  a burst of six records that are no event on finapp.payments: every group that reads it parks each one after its budget while
+#        its other partitions keep applying, no member evicted, InboxDeadLetterParked the only page; a release refused, each park
+#        discarded by two persons, the page cleared.
 #
 # THE PROBES (REHEARSAL_PROBE), each a deliberate break that must turn the run red:
 #   guard-off          the refusals answer "pass" without reading anything: every plant of experiments_boundary goes unrefused;
@@ -1561,10 +1564,10 @@ E01_recover() {
 }
 
 # ---------------------------------------------------------------------------------------------------
-# The event pipeline (P16-TSK-013; PHASE_16_PLAN.md section 7; OPERATIONS_RUNBOOK.md section 11.51): E08, E09, E22, E23 and E49, on the
-# scope's three brokers. What every one of them counts is PostgreSQL's, never the broker's: every outbox row published, every published
+# The event pipeline (P16-TSK-013; PHASE_16_PLAN.md section 7; OPERATIONS_RUNBOOK.md section 11.51): E08, E09, E22, E23, E49 and E68, on
+# the scope's three brokers. What every one of them counts is PostgreSQL's, never the broker's: every outbox row published, every published
 # record a catalogued handler names found in its consumer's inbox (lost_events, in the census), no inbox row added for a record a
-# consumer had already applied, no record parked, and the census green.
+# consumer had already applied, no record parked but E68's own, and the census green.
 # ---------------------------------------------------------------------------------------------------
 
 # experiments_pages_check <experiment>: a correctness page firing stops the experiment (ADR-0127 decision 6); 1 when it did.
@@ -2160,6 +2163,165 @@ E49_observe() {
 }
 
 E49_recover() {
+    experiments_topology_check
+}
+
+# E68: a burst of poison records. Six records that are no event, each with a key of its own so the burst spreads over finapp.payments'
+# partitions, written by the brokers' administrator while the workload runs. Every group that reads the topic must park each one after
+# its budget (five failures and two minutes, both: EventingBeans), a park of its own per group, while its other partitions keep applying,
+# no member is evicted and no correctness page but the parked one fires; a release of one is refused (a record that was never an event
+# cannot be released), and each is discarded by two persons. A record written is instant and is logged, not registered: its undo is the
+# discard, which takes two persons, and the recovery does it.
+E68_RECORDS=6
+
+# e68_pages_tick: experiments_pages_tick's read with the page this experiment exists to raise left out. InboxDeadLetterParked is its
+# positive control, its first firing kept in E68_PAGED; any other correctness page, or a Prometheus that did not answer, stops it.
+e68_pages_tick() {
+    now=$(date +%s)
+    [ $((now - ${EXP_PAGES_AT:-0})) -ge 15 ] || return 0
+    EXP_PAGES_AT=$now
+    firing=$(experiments_pages_firing)
+    case " $firing " in *" InboxDeadLetterParked "*) E68_PAGED=${E68_PAGED:-$now} ;; esac
+    others=$(printf '%s\n' $firing | grep -vx InboxDeadLetterParked | paste -sd' ' -)
+    if [ -n "$others" ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a correctness page during the experiment: $others"
+        log "E68 STOP: $EXP_STOPPED"
+        return 1
+    fi
+    printf '%s\t%s\n' "$(date -u +%H:%M:%S)" "${firing:-none}" >> "$EXP_DIR/pages.tsv"
+    return 0
+}
+
+# e68_rows <state>: the burst's records in that state, every group's: unreadable records of finapp.payments first failed since the burst.
+e68_rows() {
+    psql_query -c "SELECT count(*) FROM platform.inbox_parked_record WHERE state = '$1' AND topic = 'finapp.payments'
+        AND dedupe_key LIKE 'malformed:%' AND first_failed_at >= to_timestamp($E68_BURST_AT - 5)" | tr -d '[:space:]'
+}
+
+# e68_applied: inbox rows of the groups that read finapp.payments, for events first written after the burst.
+e68_applied() {
+    psql_query -c "SELECT count(*) FROM platform.inbox_message i JOIN platform.outbox_event e ON i.dedupe_key = e.event_id::text
+        WHERE e.occurred_at >= to_timestamp($E68_BURST_AT) AND 'finapp.' || split_part(i.consumer, '.', 1) IN ($E68_GROUP_LIST)" | tr -d '[:space:]'
+}
+
+E68_steady() {
+    brokers_check
+    lag_settled e68-before || fail "E68: the groups were not settled before the burst"
+    E68_GROUPS=$(awk '$1 ~ /^finapp\./ && $2 == "finapp.payments" {print $1}' "$ART/consumer-groups-e68-before.txt" | sort -u | paste -sd' ' -)
+    [ -n "$E68_GROUPS" ] || cannot "E68: no consumer group reads finapp.payments: see consumer-groups-e68-before.txt"
+    E68_GROUP_LIST=$(printf '%s\n' $E68_GROUPS | sed "s/.*/'&'/" | paste -sd, -)
+    [ "$(psql_query -c "SELECT count(*) FROM platform.inbox_parked_record WHERE state IN ('FAILING', 'PARKED')" | tr -d '[:space:]')" = 0 ] \
+        || fail "E68: a record was failing or parked before the burst"
+    # The discard's second person: the controller, given the event operator's role from SQL as the load scope seeds its operators (this
+    # scope runs no grant door). The operator, the first person, holds it from the seed.
+    psql_query <<SQL >> "$EXP_DIR/seed.log" 2>&1 || cannot "E68: the discard's second person could not be seeded"
+INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at)
+ SELECT uuidv7(), i.id, 'EVENT_OPERATOR', i.id, now() FROM identity.identity i
+  WHERE i.login_identifier = '$(sed -n 's/^controller.login=//p' "$CLIENT/state.properties")'
+  AND NOT EXISTS (SELECT 1 FROM identity.role_assignment r WHERE r.identity_id = i.id AND r.role_name = 'EVENT_OPERATOR' AND r.revoked_at IS NULL);
+SQL
+    start_workload e68 retry
+    sleep 30
+    E68_EVICTIONS_BEFORE=$(experiments_prom_value 'sum(finapp_inbox_consumer_evictions_total) or vector(0)')
+    case $E68_EVICTIONS_BEFORE in '') cannot "E68: Prometheus did not answer for the consumers' evictions" ;; esac
+    experiments_record groups "finapp.payments read by $E68_GROUPS; ${E68_EVICTIONS_BEFORE%%.*} evictions before the burst"
+}
+
+E68_fault() {
+    E68_TAG=$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
+    E68_BURST_AT=$(db_epoch)
+    i=1
+    while [ "$i" -le "$E68_RECORDS" ]; do
+        printf 'e68-%s-%s:this is not an event\n' "$E68_TAG" "$i"
+        i=$((i + 1))
+    done | kafka_admin kafka-console-producer.sh --topic finapp.payments --command-property acks=all \
+        --reader-property parse.key=true --reader-property key.separator=: > "$EXP_DIR/burst.log" 2>&1 \
+        || cannot "E68: the burst could not be written: see experiments/E68/burst.log"
+    log "E68: $E68_RECORDS poison records written to finapp.payments, not registered: their undo is the discard, in the recovery"
+    experiments_record fault "$E68_RECORDS records that are no event written to finapp.payments at $(date -u -d "@$E68_BURST_AT" +%H:%M:%SZ), keyed e68-$E68_TAG-1 to e68-$E68_TAG-$E68_RECORDS"
+}
+
+E68_observe() {
+    groups=$(printf '%s\n' $E68_GROUPS | grep -c .)
+    E68_EXPECTED=$((E68_RECORDS * groups))
+    E68_PAGED=""
+    # Each record holds its partition for its budget, so the bound is every record on one partition, three minutes each, and five more.
+    deadline=$(( $(date +%s) + E68_RECORDS * 180 + 300 ))
+    printf 'time\tfailing\tparked\tapplied since the burst\n' > "$EXP_DIR/parking.tsv"
+    while :; do
+        e68_pages_tick || return 0
+        failing=$(e68_rows FAILING)
+        parked=$(e68_rows PARKED)
+        printf '%s\t%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$failing" "$parked" "$(e68_applied)" >> "$EXP_DIR/parking.tsv"
+        [ "$parked" = "$E68_EXPECTED" ] && break
+        [ "$(date +%s)" -lt "$deadline" ] || { EXP_STOPPED="$parked of the burst's $E68_EXPECTED parks within $((E68_RECORDS * 180 + 300)) s"; return 0; }
+        sleep 10
+    done
+    E68_PARKED_AT=$(date +%s)
+    applied=$(e68_applied)
+    # The page fires on the parked gauge, which each replica reads at most a minute late.
+    deadline=$((E68_PARKED_AT + 300))
+    until [ -n "$E68_PAGED" ]; do
+        EXP_PAGES_AT=0
+        e68_pages_tick || return 0
+        [ -n "$E68_PAGED" ] && break
+        [ "$(date +%s)" -lt "$deadline" ] || { EXP_STOPPED="InboxDeadLetterParked did not fire within 300 s of the last park"; return 0; }
+        sleep 15
+    done
+    lag_settled e68 || { EXP_STOPPED="the groups did not move past the burst once it was parked"; return 0; }
+    evictions=$(experiments_prom_value 'sum(finapp_inbox_consumer_evictions_total) or vector(0)')
+    case $evictions in '') fail "E68: Prometheus did not answer for the consumers' evictions" ;; esac
+    evicted=$(( ${evictions%%.*} - ${E68_EVICTIONS_BEFORE%%.*} ))
+    psql_query -F "$(printf '\t')" -c "SELECT consumer_group, count(*), count(DISTINCT partition_number || ':' || record_offset), count(DISTINCT partition_number)
+        FROM platform.inbox_parked_record WHERE state = 'PARKED' AND topic = 'finapp.payments' AND dedupe_key LIKE 'malformed:%'
+         AND first_failed_at >= to_timestamp($E68_BURST_AT - 5) GROUP BY consumer_group ORDER BY 1" > "$EXP_DIR/parks-by-group.tsv"
+    short=$(awk -F'\t' -v n="$E68_RECORDS" '$2 != n || $3 != n' "$EXP_DIR/parks-by-group.tsv" | grep -c . || true)
+    listed=$(grep -c . "$EXP_DIR/parks-by-group.tsv" || true)
+    others=$(( $(experiments_parked "$E68_BURST_AT") - E68_EXPECTED ))
+    experiments_record parked "$E68_EXPECTED parks ($E68_RECORDS records for each of $groups groups, over $(cut -f4 "$EXP_DIR/parks-by-group.tsv" | sort -n | tail -1) partitions at most) $((E68_PARKED_AT - E68_BURST_AT)) s after the burst; InboxDeadLetterParked firing $((E68_PAGED - E68_BURST_AT)) s after it; $applied records written after the burst applied by these groups meanwhile; $evicted members evicted; $others other records parked"
+    [ "$listed" = "$groups" ] && [ "$short" = 0 ] || fail "E68: not every group parked each record once: see experiments/E68/parks-by-group.tsv"
+    [ "$applied" -ge 1 ] || EXP_STOPPED="the groups applied nothing written after the burst while it was parking, so the burst stopped them"
+    [ "$evicted" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$evicted members evicted past their poll budget during the burst"
+    [ "$others" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$others records parked beside the burst"
+    [ -n "$EXP_STOPPED" ] || pass "E68: $E68_RECORDS poison records parked by each of $groups groups, its page fired, the groups kept applying and moved past them, no member evicted"
+}
+
+E68_recover() {
+    experiments_workload_end e68
+    # Every record of the burst parked before any is discarded: one still failing would park after the discards.
+    deadline=$(( $(date +%s) + E68_RECORDS * 180 + 300 ))
+    until [ "$(e68_rows FAILING)" = 0 ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || fail "E68: a record of the burst still failing $((E68_RECORDS * 180 + 300)) s into the recovery"
+        sleep 10
+    done
+    parked=$(e68_rows PARKED)
+    client dead-letters parked > "$EXP_DIR/client.log" 2>&1 < /dev/null || fail "E68: the dead-letter queue could not be read"
+    sed -n 's/^platform dead-letters parked kind=INBOX_RECORD id=malformed:finapp\.payments:[^ ]* .*park=\([^ ]*\).*/\1/p' "$EXP_DIR/client.log" \
+        | grep -vx -- - > "$EXP_DIR/parks.txt" || true
+    parks=$(grep -c . "$EXP_DIR/parks.txt" || true)
+    [ "$parks" = "$parked" ] || fail "E68: the queue lists $parks of the burst's $parked parks: see experiments/E68/client.log"
+    [ "$parks" -ge 1 ] || fail "E68: nothing of the burst to discard"
+    client release-parked "$(head -1 "$EXP_DIR/parks.txt")" >> "$EXP_DIR/client.log" 2>&1 < /dev/null || true
+    grep -q '^platform release-parked status=4.. code=deadletter.NotReleasable' "$EXP_DIR/client.log" \
+        || fail "E68: a record that was never an event was not refused release: $(grep '^platform release-parked' "$EXP_DIR/client.log")"
+    # Each park discarded by two persons: proposed by the operator, refused to the operator, approved by the controller.
+    while read -r park; do
+        client discard INBOX_RECORD "$park" > "$EXP_DIR/discard.out" 2>&1 < /dev/null || fail "E68: the discard of $park could not run"
+        cat "$EXP_DIR/discard.out" >> "$EXP_DIR/client.log"
+        grep -q '^platform discard self status=403' "$EXP_DIR/discard.out" && grep -q '^platform discard approved status=200' "$EXP_DIR/discard.out" \
+            || fail "E68: the discard of $park was not two persons' act: see experiments/E68/client.log"
+    done < "$EXP_DIR/parks.txt"
+    discarded=$(psql_query -c "SELECT count(*) FROM platform.dead_letter_discard d JOIN platform.inbox_parked_record p ON d.subject_id = p.park_id
+        WHERE d.subject_kind = 'INBOX_RECORD' AND d.status = 'APPROVED' AND d.decided_by <> d.proposed_by AND p.state = 'DISCARDED'
+          AND p.topic = 'finapp.payments' AND p.dedupe_key LIKE 'malformed:%' AND p.first_failed_at >= to_timestamp($E68_BURST_AT - 5)" | tr -d '[:space:]')
+    [ "$discarded" = "$parks" ] || fail "E68: $discarded approved two-person discards for the burst's $parks parks"
+    deadline=$(( $(date +%s) + 600 ))
+    while experiments_alert_firing InboxDeadLetterParked; do
+        [ "$(date +%s)" -lt "$deadline" ] || fail "E68: InboxDeadLetterParked still firing 600 s after the discards"
+        sleep 15
+    done
+    [ "$(e68_rows FAILING)|$(e68_rows PARKED)" = "0|0" ] || fail "E68: a record of the burst is failing or parked after the discards"
+    experiments_record discarded "a release refused (deadletter.NotReleasable); $parks parks discarded, each proposed by one person and approved by another; InboxDeadLetterParked cleared"
     experiments_topology_check
 }
 
@@ -2868,6 +3030,14 @@ E15_steady() {
 E15_fault() {
     experiments_fault_on toxic kafka e15-broker-down timeout timeout=0
     experiments_fault_on toxic kafka e15-broker-up timeout timeout=0 stream=upstream
+    # At three brokers (P16-TSK-013) a client reaches each broker through that broker's own proxy once the bootstrap has answered: the
+    # broker's hop is the four proxies, and a cut on the bootstrap's alone would leave every established link to a broker open.
+    i=0
+    while [ "$i" -lt "$KAFKA_BROKERS" ]; do
+        experiments_fault_on toxic "kafka-$i" "e15-broker-$i-down" timeout timeout=0
+        experiments_fault_on toxic "kafka-$i" "e15-broker-$i-up" timeout timeout=0 stream=upstream
+        i=$((i + 1))
+    done
     E15_BROKER_AT=$(date +%s)
     printf 'time\tunpublished\toldest_seconds\n' > "$EXP_DIR/outbox.tsv"
     experiments_record fault "the broker's hop black-holed both ways for every replica at $(date -u -d "@$E15_BROKER_AT" +%H:%M:%SZ)"
@@ -2897,6 +3067,12 @@ E15_observe() {
     experiments_edge_answers "$E15_BROKER_AT" "$EXP_DIR/edge-broker.tsv"
     served=$(awk -F'\t' '$2 >= 200 && $2 < 300 && $3 != 0' "$EXP_DIR/edge-broker.tsv" | grep -c . || true)
     [ "$served" -ge 10 ] || fail "E15: the platform served $served answers while the broker was cut off: money must still move"
+    i=0
+    while [ "$i" -lt "$KAFKA_BROKERS" ]; do
+        experiments_fault_off toxic "kafka-$i" "e15-broker-$i-up" timeout timeout=0 stream=upstream
+        experiments_fault_off toxic "kafka-$i" "e15-broker-$i-down" timeout timeout=0
+        i=$((i + 1))
+    done
     experiments_fault_off toxic kafka e15-broker-up timeout timeout=0 stream=upstream
     experiments_fault_off toxic kafka e15-broker-down timeout timeout=0
     back_at=$(date +%s)
