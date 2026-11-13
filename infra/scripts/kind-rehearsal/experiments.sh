@@ -2607,7 +2607,7 @@ E44_recover() {
 
 # ---------------------------------------------------------------------------------------------------
 # E45: a holder killed between the copy and the mark, its segment taken over and marked once; each row in one segment. At three replicas
-# here; at ten once the ten-replica topology exists (owed under PI-025).
+# here, where fleet_patch holds the fleet; at ten once this scope runs at ten, which kind's overlay admits (owed under PI-025).
 # ---------------------------------------------------------------------------------------------------
 
 E45_steady() {

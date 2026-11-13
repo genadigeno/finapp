@@ -1000,6 +1000,25 @@ the pool sets the connection up and before it is handed out, on every instance f
 instance's next connection. A refusal is a connection that failed, the same path as a role that cannot connect; it shares
 no state between instances and adds no connection to the budget.
 
+**Ten replicas** (`P16-TSK-009`, 2026-11-13, owner decision C3, ADR-0134). Ten replicas are 10 + 2 × 1 + 1 = 13 instances and
+13 × 8 = 104 connections, more than production's 88. Measured at three replicas (`CAPACITY_MODEL.md` §3.4), the pools saturated only
+when the database's CPU did, so the answer is a larger server, never a larger pool. `kind`'s test-only server states the formula for
+ten exactly: `maxReplicas` 10, `FINAPP_DB_INSTANCES` 13, `max_connections` 116. A rehearsal run holds its fleet at its own count in its
+own rendered copy, with the formula at that count. Staging is unchanged. Production keeps seven until the ten-instance runs (owed under
+`POSTPONED_ISSUES.md` PI-025) and its calibration; ten there is a larger declared `max_connections` first, in §11.14's order.
+
+**Why connection reuse is safe, and a transaction-mode pooler is not yet.** A pooled connection outlives the transaction that borrowed
+it, so a lock or setting scoped to the session would outlive it too: held by the next borrower, or deciding what the next borrower's
+statements do. Every advisory lock the arbiters take is transaction-scoped (`pg_advisory_xact_lock` and its forms), and every setting is
+`set_config(..., true)` or `SET TRANSACTION` inside the transaction. Hikari's reuse within one instance is therefore safe, and so is the
+SQL these statements send through any pooler. `TransactionScopedDatabaseStateTest` refuses a session-scoped lock, setting, listener,
+held cursor, temporary table or SQL `PREPARE` in any production source. **The driver is the exception.** PgJDBC's
+`Connection.setTransactionIsolation` sends `SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL ...` outside the transaction, and
+twelve classes ask for `REPEATABLE READ` that way, directly or through a transaction template. Within one Hikari pool the session is the
+borrower's until it is returned and reset. Under a transaction-mode pooler it would not be: the census, the proofs and the snapshot reads
+could run at `READ COMMITTED`, and another client could inherit `REPEATABLE READ`. ADR-0134 therefore keeps a pooler out until isolation
+is set inside each transaction.
+
 ## 5. Standing rules for future work
 
 **Scheduled jobs.** Every instance runs the scheduler. A job is either idempotent under
