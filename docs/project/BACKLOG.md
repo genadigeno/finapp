@@ -29759,7 +29759,8 @@ on none:
   not measured. At E30's step 3 (27.3 events a second) publication stayed within 4 s. Measure the relay's ceiling in aggregates and
   events a second at three and seven replicas, and whether more relays add drain; `event_freshness` (60 s) is at stake well below
   the target's 89.3 events a second at peak.
- - *As built (2026-11-13, the gate's record; branch `P16-TSK-013` from master `1fbdf71c`, master `6f23a4a1` merged in once at the end; no
+ - *As built (2026-11-13, the gate's record; branch `P16-TSK-013` from master `1fbdf71c`, masters `6f23a4a1`, `9ec48bdc`, `d7081fa9` and
+   `4dcce65d` merged in (the last three after the gate, at the coordinator's word); no
    migration; ADR-0136 `Proposed`; `OPERATIONS_RUNBOOK.md` §11.51 is the procedure and the record, `RESILIENCE_EXPERIMENTS.md` E08, E09,
    E22, E23 and E47–E49 the rows; under the owner's word of 2026-11-13, "we dont need long running checks and tests", **no cluster run
    was made: every acceptance criterion below that needs one is built, contract-tested and its run owed under `POSTPONED_ISSUES.md`
