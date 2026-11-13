@@ -5518,9 +5518,21 @@ alone, §11.15. A grace below a day is refused at start and by the function.
 
 **The record.** None. Not run, owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13, "we dont need long running
 checks and tests"): E62 at three replicas on this tree and its control E38 at three on `ac5aa4a3`, E63 at three, and E64 inside E39's
-soak at three. The migrations, the census's statement, the sweep's function and the duplicate's refusal were not applied to any server
-by this task beyond what this section's record of its container check says. `PostingScopeRehearsalContractTest` holds what the runs
-would assert, and `PostingScopeUniquenessDatabaseTest` (written, owed to the database pass) what PostgreSQL does with the statements.
+soak at three. `PostingScopeRehearsalContractTest` holds what the runs would assert, and `PostingScopeUniquenessDatabaseTest` (written,
+owed to the database pass) what PostgreSQL does with the statements through the application's code.
+
+**The container check** (2026-11-13, a throwaway `postgres:18.6` with no application and no `kind`; ledger `V001`-`V037` and platform
+`V001`-`V016` applied by `psql`, each file in its own transaction with its schema first on the path, as the superuser rather than the
+migrator, the three roles created bare). On an empty journal the census wrote one row of zeros and `V037` built a valid, immediate unique
+index; the census refused an edit and a truncation. An entry and its two lines committed; a second entry under its scope `ON CONFLICT
+DO NOTHING` inserted nothing, and a plain one was refused naming the index. As `finapp_app` the sweep took the `COMPLETED` and the
+`FAILED` record two days past their expiry and left the one 12 hours past it and the `IN_PROGRESS` one three days past it (2 swept); it
+refused a grace of a day less a millisecond and a batch of 1,001 (`22023`); the role's own `DELETE` was refused, and a role without the
+grant could not execute the function; with the unique index dropped, or replaced by a partial twin, and with a column added to the
+table, the function refused (`55000`). On a second database holding two committed entries under one scope (ledger `V001`-`V035`), `V036`
+recorded 2 entries, 1 scope, 1 held twice, 1 surplus; `V037` then failed at `posting_scope_census_found_no_duplicate`, leaving the census
+row, both entries and no index. Not proven by it: the migrator's own run (Flyway, its role, its lock timeout), the application's code
+on PostgreSQL, ten writers or sweepers at once, and anything under load.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

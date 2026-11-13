@@ -82,7 +82,7 @@ class PostingAfterTheSweepTest {
 
         assertThat(result.entryId()).isEqualTo(recorded);
         assertThat(result.replayed()).isTrue();
-        assertThat(journal.appends).isZero();
+        assertThat(journal.attempts).as("answered by the lookup, before any insert is tried: no cutoff read, no index met").isZero();
         assertThat(written).as("no audit, event or projection: no second effect").isEmpty();
         assertThat(completed).as("the fresh claim completes with the first execution's response").containsExactly(recorded.value().toString());
         assertThat(outcomes).containsExactly(PostingObserver.Outcome.REPLAYED);
@@ -259,6 +259,8 @@ class PostingAfterTheSweepTest {
         private final Map<String, PostedEntry> byScope = new HashMap<>();
         private final Map<JournalEntryId, PostedEntry> byId = new HashMap<>();
         private int appends;
+        /** Every call of append, refused or not: a retry the journal answers never reaches the insert. */
+        private int attempts;
         private int boundReads;
         /** When set, a writer that claimed nothing commits this scope just before our insert reaches the index. */
         private Runnable rival;
@@ -277,6 +279,7 @@ class PostingAfterTheSweepTest {
 
         @Override
         public void append(Connection unitOfWork, JournalEntry entry, PostingAttribution attribution) {
+            attempts++;
             if (rival != null) {
                 Runnable now = rival;
                 rival = null;

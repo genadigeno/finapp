@@ -170,7 +170,7 @@ class IdempotencySweepMigrationTest {
         while (column.find()) {
             columns.add(column.group(1));
         }
-        try (var files = Files.list(RepositoryPaths.locate(DIRECTORY))) {
+        try (var files = Files.list(RepositoryPaths.locate(DIRECTORY + "/V002__create_idempotency_record.sql").getParent())) {
             for (Path file : files.sorted().toList()) {
                 Matcher added = Pattern.compile("ALTER TABLE platform\\.idempotency_record\\s+ADD COLUMN ([a-z_]+)",
                         Pattern.CASE_INSENSITIVE).matcher(withoutComments(read(file)));
