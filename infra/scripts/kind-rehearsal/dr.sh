@@ -589,14 +589,15 @@ dr_restore() {
     step dr-compare
     dr_compare
 
-    # 5. The platform's own verification (section 11.35's checks, the evidence held by the key rings among them), and E89's second line.
+    # 5. The platform's own verification (section 11.35's checks, the evidence held by the key rings among them), and then E89's second
+    #    line, over a path the verification has just shown works, so a refusal there is the plant's and no other fault's.
     step dr-verify
     if [ "$PROBE" = skip-verification ]; then
         log "probe skip-verification: the verification is not run"
     else
         dr_tunnel
-        dr_verify planted
         dr_verify recovered
+        dr_verify planted
     fi
 
     # 6. The window: on kind no provider file survives the disaster - the simulator's memory was the cluster's - so nothing is delivered
@@ -749,6 +750,9 @@ dr_verify() {
     dr_args=$(dpath "$ROOT/app/build/restore-rehearsal/classpath.args")
     dr_admin=$(kube -n finapp get secret finapp-kind-postgres -o jsonpath='{.data.password}' | base64 -d)
     [ -n "$dr_admin" ] || cannot "the administrator's password could not be read from the run's own Secret"
+    # The reporting pool must name a role other than the application's; it is lazy and no check generates a report, so it never connects
+    # (as the restore rehearsal's verification): a value generated here, which nothing reads.
+    dr_unused=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
     dr_ca=$(dpath "$CA_DIR/ca.crt" | sed 's/:/%3A/g')
     rm -f "$ART/dr-verification-$1.txt"
     dr_code=0
@@ -765,8 +769,8 @@ dr_verify() {
             eval "export $DR_PLANTED_RING=\$(head -c 32 /dev/urandom | base64 | tr -d '\\n')"
         fi
         FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$DR_TUNNEL_PORT/finapp?sslmode=verify-ca&sslrootcert=$dr_ca&options=-c%20default_transaction_read_only%3Don" \
-            FINAPP_DB_APP_USER=finapp FINAPP_DB_APP_PASSWORD="$dr_admin" \
-            FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
+            FINAPP_DB_APP_USER=finapp FINAPP_DB_APP_PASSWORD="${dr_admin}" \
+            FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="${dr_unused}" \
             exec "$dr_java" -Xmx1g "@$dr_args" com.finapp.app.restore.RestoreVerification "$(dpath "$ART/dr-verification-$1.txt")" \
             < /dev/null > "$ART/dr-verification-$1.log" 2>&1
     ) || dr_code=$?

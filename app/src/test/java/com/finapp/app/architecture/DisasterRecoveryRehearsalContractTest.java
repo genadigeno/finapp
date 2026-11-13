@@ -172,8 +172,8 @@ class DisasterRecoveryRehearsalContractTest {
         String restore = function(dr, "dr_restore");
         inOrder(restore, "ALTER ROLE finapp_app NOLOGIN; ALTER ROLE finapp_migrator NOLOGIN; ALTER ROLE finapp_reporting NOLOGIN",
                 "dr_role_refused \"$dr_role\" || fail", "pg_restore -U finapp -d finapp --single-transaction --exit-on-error", "dr_epoch ",
-                "dr_role_refused \"$dr_role\" || fail \"$dr_role can log in after the server's restart", "dr_compare", "dr_verify planted",
-                "dr_verify recovered", "step dr-window", "if ! dr_releasable; then", "\n    dr_release\n");
+                "dr_role_refused \"$dr_role\" || fail \"$dr_role can log in after the server's restart", "dr_compare", "dr_verify recovered",
+                "dr_verify planted", "step dr-window", "if ! dr_releasable; then", "\n    dr_release\n");
         assertThat(function(dr, "dr_role_refused")).contains("grep -q 'is not permitted to log in' \"$WORK/dr-login.out\"");
         inOrder(harness, "wait_job finapp finapp-role-bootstrap 300 role-bootstrap", "[ \"$DR_PHASE\" != rebuild ] || dr_restore",
                 "\nstep migrator-nminus1\n", "\nstep app-nminus1\n", "\nstep edge\n");

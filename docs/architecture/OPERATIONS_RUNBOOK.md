@@ -4362,7 +4362,7 @@ The targets are ADR-0128's (owner decision C9), each from the record's criticali
 | The image set | Every image the release needs | Exported from the lost node's store, with each name's digest | A registry in the recovery account (item 71 (b)) | No registry is assumed reachable |
 | The configuration fingerprint | Each replica's `finapp_config_fingerprint` | `fingerprint.txt` | The metrics store's copy, or the release's record | Drift is found, never carried |
 
-The vault never holds a credential, and nothing in it is plaintext but the image set and the fingerprint, which hold none. The exercise's vault lives in the first run's own work directory, outside the repository and the artefacts, and is removed when that run ends.
+The vault never holds a credential. The backup, its manifest, the client's memory of its participants and the escrow are ciphertext, each refused by its digest before it is read (a digest finds a damaged file, not a deliberate one: the integrity `THREAT_MODEL.md` §6 item 62 (c) weighs for a local drill); the rest is the image set and metadata (digests, check values, the release record, counts and instants) - and the two keys. Locally both keys sit in the vault's one directory, so the separation is of keys and not of places; in a real environment the escrow's key lives apart from the backup's (item 71 (a)). The exercise's vault lives in the first run's own work directory, outside the repository and the artefacts, and is removed when that run ends.
 
 #### Credentials regenerated, key rings recovered
 
@@ -4382,7 +4382,7 @@ Each step is a step of the exercise, timed into its `timings.tsv`.
 5. **Credentials generated, rings recovered** (above).
 6. **The data tier and the broker** from code: the database empty; the topics from `infra/kafka/topics.yaml`, empty.
 7. **The bootstrap step** (section 11.1b), which makes the platform's roles.
-8. **The roles held**: `ALTER ROLE ... NOLOGIN` for `finapp_app`, `finapp_migrator` and `finapp_reporting`, each confirmed refused with `is not permitted to log in`, before anything is restored. Nothing has connected: no fleet and no migrator exist yet.
+8. **The roles held**: `ALTER ROLE ... NOLOGIN` for `finapp_app`, `finapp_migrator` and `finapp_reporting`, each confirmed refused with `is not permitted to log in`, before anything is restored. No platform role has connected: the bootstrap connected as the master user, and no fleet and no migrator exist yet.
 9. **The restore**: the backup's digest checked, then `pg_restore --single-transaction --exit-on-error` from a pipe; nothing plaintext at rest.
 10. **The counter** (section 11.35 step 4): past every restored `xid8`. On `kind` the server is scaled to zero so it stops cleanly, `pg_resetwal -e` runs on its own volume from a pod of the same image under the restricted profile, and it is scaled back; the roles are confirmed still held.
 11. **The comparison** with the manifest the backup's own session read: every table's count, every sequence at or past, each schema history's head.

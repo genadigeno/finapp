@@ -30671,7 +30671,7 @@ on none:
   - **Owner item**: `THREAT_MODEL.md` §6 item 62 (the release's record in the database's trail, the window on a managed instance, the archive's integrity).
   - **The routed note from `P16-TSK-021` (E11)**: the WAL archive built here is a Docker volume of the restore rehearsal's own run, in containers: not an object store, and nothing of it deployed on `kind`. So E11's store half has no local subject from it, which a dated note in E11's row now says; its run stays owed under PI-025.
 
-**P16-TSK-025 — The disaster-recovery plan and exercise; RTO and RPO measured (C9; ADR-0128; T42)** — `IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-025` from master `2e34dd66`, wave F) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-023`'s merge, under the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-023` and `P16-TSK-024`, both `COMPLETE`)" until the design)*
+**P16-TSK-025 — The disaster-recovery plan and exercise; RTO and RPO measured (C9; ADR-0128; T42)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-025` from master `2e34dd66`, wave F; no migration, no application code; ADR-0149 `Proposed`; one new owner item, `THREAT_MODEL.md` §6 item 71; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; marks no task `READY` - the coordinator does) *(read "`IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-025` from master `2e34dd66`, wave F)" until the gate)* *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-023`'s merge, under the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-023` and `P16-TSK-024`, both `COMPLETE`)" until the design)*
 - **Objective**: write the DR plan, and exercise it locally end to end: the `kind` cluster and its data destroyed, then the platform
   rebuilt from the repository, a backup and regenerated secrets, ending in the post-recovery gate and timed per step.
 - **Affected components**: a DR section of the runbook (§11.41, new), the harness (a `dr` scope), `deploy/`, the backup procedure.
@@ -30696,8 +30696,41 @@ on none:
 - **Measurable acceptance criteria**: the plan written; the exercise timed per step; tier 1–3 evidence recorded against ADR-0128;
   T42's answer recorded.
 - **Definition of done**: `DOD-DOC`, `DOD-TEST`, `DOD-SEC`.
-- **Operational documentation**: runbook §11.41.
+- **Operational documentation**: runbook §11.41. *(As built: §11.64, the number the coordinator reserved: §11.41 is the migrator's
+  section, `P16-TSK-003`.)*
 - **Risk**: Medium. **Cx**: L.
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-025` from master `2e34dd66`; no migration, no application code; ADR-0149;
+  under the owner's word of 2026-11-13, "we dont need long running checks and tests", **nothing ran on a cluster: the exercise is
+  built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**):* **The plan** is `OPERATIONS_RUNBOOK.md` §11.64 and
+  ADR-0149: each tier's objective from ADR-0128 beside what shows the procedure locally, the run that confirms it and where it stands
+  (tier 1 E05, tier 2 E59-E61, tier 3 E87 with E88 and E89, tier 4 designed only, Kafka E09 and E87's broker step, every run owed);
+  ownership, frequency and retention; **what must exist outside the environment before a disaster** (the repository at the release's
+  commit, the backup and its manifest, an escrow of every key ring's versions under a key apart from the backup's, the release
+  record, the image set, the configuration fingerprint); **every credential generated again and never restored, the rings recovered
+  and never generated**, their check values published so another value refuses to start; the recovery in eighteen ordered steps;
+  configuration drift found by the fingerprint, never carried; the released digests redeployed, never rebuilt; what a recovery loses
+  and how it is found; the exercise, its refusals and its record. **The exercise** is the kind rehearsal's new `dr` scope
+  (`infra/scripts/kind-rehearsal/dr.sh`, its hooks in `kind-rehearsal.sh`): release N at three replicas under a workload, the vault,
+  a minute of money moved after the backup, the cluster deleted with its data; then a run of its own rebuilds on a new cluster from
+  the repository and the vault with every node's registry cut, restores with the roles `NOLOGIN`, moves the counter, compares with the
+  manifest, verifies through the API server's port-forward as the administrator, records the release by the person
+  `REHEARSAL_DR_RELEASED_BY` names, starts the fleet at three, replays the window before T, moves money, compares each replica's
+  fingerprint and scales to seven; every step timed into `dr-record.tsv`. `kind-secrets.sh` gained a ring mode
+  (`KIND_SECRETS_RINGS=stdin`): the rings from the escrow, any other name refused, a missing version refused before any object is
+  written. Held by `DisasterRecoveryRehearsalContractTest` (15). **The entry's failure scenarios**: the registry unreachable (E88), a
+  key version missing (E89: refused by the generator, and by its published check value in the verification), configuration drift
+  (the fingerprint, and the probe `config-drift`); **its probe**, the verification skipped, is `REHEARSAL_PROBE=skip-verification`:
+  the release refuses and the database refuses the fleet deployed anyway. **Acceptance**: the plan written - met; the exercise timed
+  per step - **built, contract-tested, run owed (PI-025)**; tier 1-3 evidence recorded against ADR-0128 - met as each tier's evidence
+  and owed run named in §11.64, **every run owed (PI-025)**, no recovery time or loss window claimed; T42's answer recorded - met on
+  `kind` (E88, built, run owed) and designed for a real environment (a registry in the recovery account, item 71 (b)). **Not met by
+  this exercise, and why**: the reconciliation of the window on `kind`, because the provider simulator's records are lost with the
+  cluster (the window's delivery is E61's seeded drill; E87 asserts the window's loss itself); the database size after the soak (the
+  restore's term at that size is E59's second size). **The finding put to the owner** (item 71): the reference design copies the
+  database across the account boundary but keeps the key rings only in the production account, so tier 3 as designed would restore
+  the books and lose the evidence written under the rings; and a rebuilt cluster's nodes need a registry in the recovery account.
+  **Owed under PI-025**: E87, E88, E89 and the probes `skip-verification` and `config-drift`. **Guards and probes**: see
+  `CURRENT_STATE.md` §Just completed and `MUTATION_TESTING.md` §2.
 
 **P16-TSK-026 — The multi-region assessment and Terraform variants (C10; ADR-0129; `THREAT_MODEL.md` §6 item 21 (a))** — `PLANNED`
 - **Objective**: write `PHASE_16_PLAN.md` §12's assessment as the architecture's own section. Add a recovery-region Terraform root
