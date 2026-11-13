@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test;
  *   <li>E05's sign-in counts across the failover are recorded as read, never a verdict;
  *   <li>E81 counts exactly the door's own limit across every replica, inside one window;
  *   <li>E82 replaces every replica and asks each new one with the held sessions;
+ *   <li>the probe's own pod is kept off the worker E04 stops, or E04 could never be observed;
  *   <li>the client prints no held credential.
  * </ol>
  *
@@ -229,6 +230,23 @@ class SecurityUnderFailureContractTest {
         inOrder(observe, List.of("rollout status deployment/finapp-app", "ready_fleet 400", "security_look \"$EXP_DIR\" rolled",
                 "off=$(security_expected rolled)", "case \" $E82_BEFORE \" in"));
         assertThat(observe).as("every replica new").contains("[ -z \"$kept\" ] && [ \"$replaced\" = \"$FLEET_REPLICAS\" ]");
+    }
+
+    @Test
+    @DisplayName("the probe's own pod is kept off E04's worker: made again off it while it is cordoned, and read back among what must not be lost with it")
+    void theProbePodIsKeptOffE04sWorker() {
+        assertThat(harness).as("the manifest made again is the one the network-policy step wrote for the probe pod")
+                .contains("probe_pod \"$WORK/pod-edge.yaml\" finapp-edge np-edge");
+        String spare = function("experiments_spare");
+        assertThat(spare).as("a bare Pod, so made again rather than restarted, only when it runs on the worker")
+                .contains("[ \"$(kube -n finapp-edge get pod np-edge -o jsonpath='{.spec.nodeName}' 2>/dev/null)\" = \"$EXPERIMENTS_SPARE_NODE\" ]")
+                .contains("|| fail \"E04: the edge's probe pod did not start again off $EXPERIMENTS_SPARE_NODE\"");
+        inOrder(spare, List.of("experiments_fault_on cordoned \"$EXPERIMENTS_SPARE_NODE\"", "kube -n finapp-edge delete pod np-edge",
+                "kube apply -f - < \"$WORK/pod-edge.yaml\"", "experiments_fault_off cordoned \"$EXPERIMENTS_SPARE_NODE\"",
+                "left=$(experiments_spare_left \"$EXP_ART/spare-pods.txt\" \"$EXPERIMENTS_SPARE_NODE\")"));
+        assertThat(function("experiments_spare_left")).as("read back among what must not be lost with the worker, by its exact name")
+                .contains("|finapp-edge\\/np-edge$)/");
+        assertThat(function("E04_steady")).as("and read again before E04's fault").contains("experiments_spare_left \"$EXP_DIR/pods-before.txt\" \"$E04_NODE\"");
     }
 
     @Test

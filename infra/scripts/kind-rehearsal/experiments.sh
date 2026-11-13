@@ -171,8 +171,46 @@
 #        concluded within twice the payout sweep's dispatched age and five minutes, none left UNKNOWN twice, no blind resend; the attach
 #        refused with nothing stored, and attached once after.
 # Built and not run: owed under POSTPONED_ISSUES.md PI-025.
+#
+# INSTANCES, PODS, A NODE AND AN EDGE CONTROLLER LOST UNDER LOAD (P16-TSK-020; OPERATIONS_RUNBOOK.md section 11.61), at the end of this file,
+# each written for the run's count (EXPERIMENTS_AT_A_COUNT: ten with REHEARSAL_EXPERIMENTS_REPLICAS=10) and run under a load profile beside
+# them (REHEARSAL_EXPERIMENTS_LOAD=sustained): k6 through the public edge as the load scope drives it, started once the scope's checks have
+# passed, the experiments taking their windows in its last stage, its census sampled every 30 s through each of them and taken whole after
+# it. Each sends an unauthenticated transfer through the public edge while its fault is on, which must stay refused, and walks the
+# availability matrix's row it checks:
+#   E01  at the run's count, as at three (above), under the load (row A07);
+#   E02  half the fleet's JVMs killed at once, one zone after another, then - once the disruption budget reads the kills - an eviction asked
+#        for every replica, each refused by the budget; the rest carry the load or shed it before any effect; never no replica ready (row A08).
+#        Its probe, REHEARSAL_PROBE=pdb-removed, takes the budget away first: every eviction is admitted, the fleet reads zero ready, and E02
+#        stops on its condition;
+#   E03  three graceful evictions through the API, one a zone, each admitted only when the budget allows and each with a payout held in flight
+#        on its pod, which the pod's own drain answers; no request failed on a graceful path (row A07);
+#   E04  the spare zone's worker stopped abruptly (node-stopped: docker kill, its address recorded, started again at the same address): its
+#        replicas out of the Service, InstanceDown for each, their replacements read scheduled or Pending with the scheduler's reason, the node
+#        back, every replica ready; capacity not restored while it was lost is FAILED (row A07). Named, it keeps what the run must not lose
+#        with that worker off it (experiments_place, experiments_spare);
+#   E25  the public edge's controller on the node the rehearsal's workload does not reach, killed with SIGKILL from its node; the generators
+#        split over the two controllers' nodes, as kind has no load balancer before NodePorts of externalTrafficPolicy Local; the surviving
+#        half served throughout, the lost half's failures inside its window, judged from the generators' own series after the load (row A09).
+# Built and not run: owed under POSTPONED_ISSUES.md PI-025.
 
 EXPERIMENTS=${REHEARSAL_EXPERIMENTS:-E01}
+# P16-TSK-020: a load profile run beside the experiments (OPERATIONS_RUNBOOK.md section 11.61): the sustained one for the instance, node and
+# edge failures at ten; none by default, and every other experiment runs without one.
+EXPERIMENTS_LOAD=${REHEARSAL_EXPERIMENTS_LOAD:-}
+# The experiments written to run under that load: their census is the load's samples through their window, and the full one after the load.
+EXPERIMENTS_UNDER_LOAD="E01 E02 E03 E04 E25"
+# And those that run only under it.
+EXPERIMENTS_NEED_LOAD="E02 E03 E04 E25"
+# The zone E04 takes away (experiments/kind-cluster.yaml's third worker).
+EXPERIMENTS_SPARE_ZONE=zone-c
+# Set while the load runs beside the experiments; the generators' edge addresses; whether the mid-run settlement file was delivered.
+EXPERIMENTS_LOAD_ON=""
+EXPERIMENTS_EDGE_NODES=""
+EXPERIMENTS_LOAD_SETTLED=""
+# How far past a lost replica's or controller's return these experiments walk the availability matrix: a window as short as a restart (18 s
+# at three) may hold only the answers of a key retried while its claim held, for an operation the workload sends a few times a minute.
+EXPERIMENTS_WALK_MARGIN=60
 # Every degradation flag the simulator reads (Simulator.java): the clearing removes each, whatever was registered.
 EXPERIMENTS_DEGRADATIONS="degrade-card-unavailable degrade-card-silent degrade-tokenisation-unavailable degrade-tokenisation-silent degrade-payout-unavailable degrade-payout-silent degrade-fx-unavailable degrade-fx-silent degrade-reference-unavailable degrade-reference-silent"
 TOXIPROXY_IMAGE="$TOXIPROXY_REPOSITORY@$TOXIPROXY_DIGEST"
@@ -284,6 +322,8 @@ experiments_render() {
     log "the experiments' copy: the zone constraint DoNotSchedule, the hba's replication line, the quota grown by the standby ($(tr '\n' ' ' < "$quota" | sed 's/.*hard: *//'))"
     # E24 (P16-TSK-021): the primary on a filesystem of its claim's own size, only when E24 is named; every other run as before.
     case " $EXPERIMENTS " in *" E24 "*) experiments_limited_volume ;; esac
+    # E04 (P16-TSK-020): the primary kept off the spare zone and the brokers spread one a zone, only when E04 is named.
+    case " $EXPERIMENTS " in *" E04 "*) experiments_spare_render ;; esac
     experiments_archive_settings
 }
 
@@ -352,7 +392,7 @@ experiments_archive_store() {
         printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: finapp-archive-store-source\n  namespace: finapp-rehearsal\ndata:\n  ArchiveStore.java: |\n'
         sed 's/^/    /' "$DIR/ArchiveStore.java"
     } | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the archive store's source"
-    sed "s#JDK_IMAGE#$JDK_IMAGE#" "$DIR/experiments/archive-store.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the archive store"
+    sed "s#JDK_IMAGE#$JDK_IMAGE#" "$DIR/experiments/archive-store.yaml" | experiments_place | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the archive store"
     kube -n finapp-rehearsal rollout status deployment/finapp-archive-store --timeout=180s >> "$ART/apply.log" 2>&1 \
         || fail "the archive store did not become ready"
 }
@@ -364,7 +404,7 @@ experiments_store() {
 # Once the test-only PostgreSQL and the broker are ready: the proxy, then the standby, then the application's way to the proxy.
 experiments_data_tier() {
     experiments_paths
-    sed "s#TOXIPROXY_IMAGE#$TOXIPROXY_IMAGE#" "$DIR/experiments/toxiproxy.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 \
+    sed "s#TOXIPROXY_IMAGE#$TOXIPROXY_IMAGE#" "$DIR/experiments/toxiproxy.yaml" | experiments_place | kube apply -f - >> "$ART/apply.log" 2>&1 \
         || cannot "the fault proxy could not be applied"
     kube -n finapp-experiments rollout status deployment/finapp-toxiproxy --timeout=180s >> "$ART/apply.log" 2>&1 || fail "the fault proxy did not become ready"
     PROXY_IP=$(kube -n finapp-experiments get service finapp-toxiproxy -o jsonpath='{.spec.clusterIP}')
@@ -417,7 +457,7 @@ SQL
     primary_max=$(sed -n 's/^ *- max_connections=\([0-9]*\)$/\1/p' "$A/StatefulSet.finapp-postgres.yaml" | head -1)
     case $primary_max in '' | *[!0-9]*) cannot "the run's primary's max_connections could not be read from its rendered copy" ;; esac
     sed "s#POSTGRES_IMAGE#$image#; s#^\( *- \)max_connections=[0-9]*\$#\1max_connections=$primary_max#" "$DIR/experiments/standby.yaml" \
-        | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "the standby could not be applied"
+        | experiments_place | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "the standby could not be applied"
     kube -n finapp rollout status statefulset/finapp-postgres-standby --timeout=420s >> "$ART/apply.log" 2>&1 || {
         kube -n finapp logs finapp-postgres-standby-0 -c base-backup >> "$ART/experiments/standby.log" 2>&1 || true
         fail "the standby did not become ready: see experiments/standby.log"
@@ -748,6 +788,7 @@ experiments_simulator() {
 #   node-paused <node container>   scaled <namespace> <deployment> <replicas> <replicas to restore>
 #   setting <variable> <value>   (P16-TSK-022: a variable set on the application's Deployment, a rolling update; its value one word)
 #   blackhole <pod> <address> <port>   held <seconds>   locked <table> <seconds>   filled <node container>   (P16-TSK-021)
+#   node-stopped <worker container> <its kind address>   cordoned <worker>   pdb-removed   (P16-TSK-020)
 experiments_fault_on() {
     experiments_guard
     printf '%s\n' "$*" >> "$FAULTS"
@@ -793,6 +834,21 @@ experiments_fault_on() {
         brokers-stopped) kube -n finapp scale statefulset/finapp-kafka --replicas="${1:-0}" >> "$EXP_ART/faults.log" 2>&1 ;;
         relay-held) experiments_relay_hold "$1" "$2" ;;
         min-isr) experiments_min_isr_on "$1" "$3" >> "$EXP_ART/faults.log" 2>&1 ;;
+        # P16-TSK-020's three: a worker stopped as a machine stops, abruptly (docker kill: a docker stop is an orderly shutdown, the kubelet
+        # stopping its containers first); a worker cordoned; the application's disruption budget deleted (the entry's probe, with E02).
+        node-stopped)
+            [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}|{{index .Config.Labels "io.x-k8s.kind.role"}}' "$1" 2>/dev/null)" = "$CLUSTER|worker" ] \
+                || fail "the safety boundary refused to stop $1: it is not a worker of $CLUSTER"
+            [ "$(dock inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "$1" 2>/dev/null)" = "$2" ] \
+                || cannot "the worker $1 is not at the address $2 recorded for its restore"
+            dock kill "$1" >> "$EXP_ART/faults.log" 2>&1 ;;
+        cordoned)
+            [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$1" 2>/dev/null)" = "$CLUSTER" ] \
+                || fail "the safety boundary refused to cordon $1: it is not a node of $CLUSTER"
+            kube cordon "$1" >> "$EXP_ART/faults.log" 2>&1 ;;
+        pdb-removed)
+            [ -s "$A/PodDisruptionBudget.finapp-app.yaml" ] || cannot "the run's rendered disruption budget, which restores it, could not be found"
+            kube -n finapp delete poddisruptionbudget finapp-app >> "$EXP_ART/faults.log" 2>&1 ;;
         *) cannot "no fault of the kind $kind" ;;
     esac || cannot "the fault $kind $* could not be put on"
 }
@@ -821,6 +877,10 @@ experiments_undo() {
         held) experiments_holder_stop ;;
         locked) experiments_sessions_ended "$EXPERIMENTS_LOCKER" ;;
         filled) dock exec "$1" rm -f "$EXPERIMENTS_LIMITED/$EXPERIMENTS_BALLAST" ;;
+        # P16-TSK-020's: the worker started again and held to the address it had, the cordon lifted, the budget applied from the run's copy.
+        node-stopped) experiments_node_start "$1" "$2" ;;
+        cordoned) kube uncordon "$1" ;;
+        pdb-removed) kube apply -f - < "$A/PodDisruptionBudget.finapp-app.yaml" ;;
         *) return 1 ;;
     esac
 }
@@ -857,6 +917,12 @@ experiments_fault_off() {
 # first, and alone if there is one: an exec into a pod on a paused node would wait on its kubelet.
 experiments_faults_left() {
     [ -f "$FAULTS.cleared" ] || : > "$FAULTS.cleared"
+    # A stopped node (P16-TSK-020) likewise, and alone: its kubelet answers nothing.
+    stopped=$(dock ps -a --filter "label=io.x-k8s.kind.cluster=$CLUSTER" --filter status=exited --format '{{.Names}}' 2>/dev/null)
+    if [ -n "$stopped" ]; then
+        printf 'stopped node %s\n' $stopped
+        return 0
+    fi
     paused=$(dock ps --filter "label=io.x-k8s.kind.cluster=$CLUSTER" --filter status=paused --format '{{.Names}}' 2>/dev/null)
     if [ -n "$paused" ]; then
         printf 'paused node %s\n' $paused
@@ -899,6 +965,10 @@ experiments_faults_left() {
         ! kafka_admin kafka-topics.sh --list 2>/dev/null | grep -qx 'probe.min-isr' || echo "the probe's topic probe.min-isr is still there"
     fi
     experiments_faults_left_021
+    # P16-TSK-020's: a node still cordoned, the disruption budget absent.
+    cordoned=$(kube get nodes -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.unschedulable}{"\n"}{end}' 2>/dev/null | awk -F'|' '$2 == "true" {print $1}' | tr '\n' ' ')
+    [ -z "$cordoned" ] || echo "nodes still cordoned: $cordoned"
+    kube -n finapp get poddisruptionbudget finapp-app -o name >/dev/null 2>&1 || echo "the application's disruption budget is absent"
     return 0
 }
 
@@ -929,6 +999,10 @@ experiments_clear_faults() {
     [ -n "$EXPERIMENTS_ARMED" ] || return 0
     log "clearing every fault the experiments put on ($(cat "$FAULTS" 2>/dev/null | grep -c . || true) registered)"
     cp "$FAULTS" "$FAULTS.cleared" 2>/dev/null || : > "$FAULTS.cleared"
+    # A stopped node first (P16-TSK-020), started again; its address is held to the one recorded when its registered fault is undone below.
+    for node in $(dock ps -a --filter "label=io.x-k8s.kind.cluster=$CLUSTER" --filter status=exited --format '{{.Names}}' 2>/dev/null); do
+        dock start "$node" >> "$EXP_ART/faults.log" 2>&1 && printf '%s\tcleared\tnode-stopped %s\n' "$(date -u +%H:%M:%S)" "$node" >> "$EXP_ART/faults.log"
+    done
     # A paused node before anything else: every exec below reaches a pod through its node's kubelet.
     for node in $(dock ps --filter "label=io.x-k8s.kind.cluster=$CLUSTER" --filter status=paused --format '{{.Names}}' 2>/dev/null); do
         dock unpause "$node" >> "$EXP_ART/faults.log" 2>&1 && printf '%s\tcleared\tnode-paused %s\n' "$(date -u +%H:%M:%S)" "$node" >> "$EXP_ART/faults.log"
@@ -981,6 +1055,13 @@ experiments_clear_faults() {
     for node in $(experiments_nodes); do
         dock exec "$node" rm -f "$EXPERIMENTS_LIMITED/$EXPERIMENTS_BALLAST" >> "$EXP_ART/faults.log" 2>&1
     done
+    # P16-TSK-020's kinds: every cordoned node uncordoned, and the disruption budget applied from the run's copy when it is absent.
+    for node in $(kube get nodes -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.unschedulable}{"\n"}{end}' 2>/dev/null | awk -F'|' '$2 == "true" {print $1}'); do
+        kube uncordon "$node" >> "$EXP_ART/faults.log" 2>&1
+    done
+    if ! kube -n finapp get poddisruptionbudget finapp-app -o name >/dev/null 2>&1 && [ -s "${A:-}/PodDisruptionBudget.finapp-app.yaml" ]; then
+        kube apply -f - < "$A/PodDisruptionBudget.finapp-app.yaml" >> "$EXP_ART/faults.log" 2>&1
+    fi
     left=$(experiments_faults_left)
     {
         printf 'cleared at %s; registered: %s\n' "$(date -u +%H:%M:%SZ)" "$(tr '\n' ';' < "$FAULTS.cleared")"
@@ -990,7 +1071,7 @@ experiments_clear_faults() {
         log "!! a fault is still on after the exit trap: $(printf '%s' "$left" | tr '\n' ';')"
         [ "$FAILED" != 0 ] || FAILED=1
     else
-        log "every fault removed and none left on: the proxies enabled with no toxic, no hold flag, no fault policy, no paused node, every scaled Deployment back, no black-hole rule, no held or locking session, no ballast, the brokers at their count, no relay hold, every topic at its posture and no probe topic"
+        log "every fault removed and none left on: the proxies enabled with no toxic, no hold flag, no fault policy, no paused node, every scaled Deployment back, no black-hole rule, no held or locking session, no ballast, the brokers at their count, no relay hold, every topic at its posture and no probe topic, no stopped or cordoned node, the disruption budget in place"
     fi
 }
 
@@ -1414,12 +1495,23 @@ experiments_scope() {
         case " $EXPERIMENTS " in *" E06 "*) ;; *) cannot "PROBE matrix-mismatch plants row A01, which E06 walks: name E06 in REHEARSAL_EXPERIMENTS" ;; esac
         availability_plant
     fi
+    # E04 (P16-TSK-020): the spare zone's worker cleared of what the cluster's own manifests placed there and the run must not lose with it.
+    case " $EXPERIMENTS " in *" E04 "*) step experiments-spare; experiments_spare ;; esac
+    # The load beside the experiments (P16-TSK-020): started once every check above has passed, the experiments in its last stage.
+    if [ -n "$EXPERIMENTS_LOAD" ]; then
+        step experiments-load
+        experiments_load_begin
+        experiments_load_peak
+    fi
     for id in $EXPERIMENTS; do
         if wanted "$id"; then
             command -v "${id}_fault" >/dev/null 2>&1 || cannot "no experiment $id in this toolkit"
             experiment_run "$id"
         fi
     done
+    # The load run to its end, then judged whole, its shed requests censused, each experiment's window read from the generators' own
+    # series, and the full census taken with every count.
+    [ -z "$EXPERIMENTS_LOAD_ON" ] || experiments_load_end
     [ "$PROBE" != guard-off ] || fail "PROBE guard-off: no plant was refused, and the run went on"
     pass "the experiments ran behind $EXPERIMENTS_GUARDS passes of the whole safety boundary - at each steady state and before each fault put on - and its context read again before each kill"
 }
@@ -1428,6 +1520,7 @@ experiment_run() {
     EXP_ID=$1
     EXP_DIR="$EXP_ART/$1"
     EXP_STOPPED=""
+    EXP_STARTED_AT=$(date +%s)
     mkdir -p "$EXP_DIR"
     : > "$EXP_DIR/record.tsv"
     experiments_record experiment "$1"
@@ -1455,7 +1548,12 @@ experiment_run() {
     "${1}_recover"
     security_after "$1"
     step "$1-census"
-    census "$1"
+    # Under the load beside the experiments (P16-TSK-020) the census is the load's through the window, and the full one after the load.
+    if [ -n "$EXPERIMENTS_LOAD_ON" ]; then
+        experiments_window_census "$1"
+    else
+        census "$1"
+    fi
     firing=$(experiments_pages_firing)
     experiments_record "pages after" "${firing:-none}"
     [ -z "$firing" ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a correctness page after the experiment: $firing"
@@ -1475,6 +1573,7 @@ experiments_record() {
 
 # The steady state every experiment starts from.
 experiments_steady() {
+    [ -z "$EXPERIMENTS_LOAD_ON" ] || experiments_load_steady
     [ ! -s "$FAULTS" ] || fail "$EXP_ID steady state: a fault is still registered: $(tr '\n' ';' < "$FAULTS")"
     left=$(experiments_faults_left 2>/dev/null)
     [ -z "$left" ] || fail "$EXP_ID steady state: a fault is on: $left"
@@ -1547,6 +1646,19 @@ YAML
     experiments_fault_on relay-held 600 8
     experiments_fault_on brokers-stopped 0
     crash_kinds="$crash_kinds, the topics at one copy in sync with the probe topic written, a relay hold, every broker stopped"
+    # P16-TSK-020's three: the disruption budget deleted, the worker to pause cordoned first, and a second worker free of the proxy and the
+    # primary stopped when there is one (the record says when there is none).
+    experiments_fault_on pdb-removed
+    experiments_fault_on cordoned "$victim_node"
+    crash_kinds="$crash_kinds, the disruption budget deleted, $victim_node cordoned"
+    stop_node=$(kube get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
+        | while read -r worker; do case "$busy $victim_node " in *" $worker "*) ;; *) echo "$worker" ;; esac; done | head -1)
+    if [ -n "$stop_node" ]; then
+        experiments_fault_on node-stopped "$stop_node" "$(dock inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "$stop_node")"
+        crash_kinds="$crash_kinds, $stop_node stopped"
+    else
+        crash_kinds="$crash_kinds (no second worker free of the proxy and the primary, so no node stopped)"
+    fi
     experiments_faults_left > "$EXP_ART/faults-before-crash.txt" 2>&1 || true
     experiments_fault_on node-paused "$victim_node"
     echo "paused node $victim_node" >> "$EXP_ART/faults-before-crash.txt"
@@ -1614,10 +1726,14 @@ E01_fault() {
     E01_ENDPOINTS=$!
     BACKGROUND="$BACKGROUND $E01_ENDPOINTS"
     sleep 1
+    # Under the load beside the experiments (P16-TSK-020) its sampler excuses the replica this experiment takes away.
+    experiments_victims pod "$E01_VICTIM"
     experiments_kill_jvm "$E01_VICTIM"
     E01_KILLED_AT=$KILLED_EPOCH
     experiments_record fault "kill -9 of $E01_VICTIM's JVM ($KILLED) at $(date -u -d "@$E01_KILLED_AT" +%H:%M:%SZ), its payout's claim IN_PROGRESS and held at the provider"
     log "E01: $E01_VICTIM's JVM killed with SIGKILL ($KILLED), its payout under a claim IN_PROGRESS"
+    # P16-TSK-020's negative probe: an unauthenticated request through the public edge while the replica is down stays refused.
+    experiments_unauthenticated
 }
 
 E01_observe() {
@@ -1695,7 +1811,8 @@ EOF
 }
 
 E01_recover() {
-    ready_three 400 || fail "E01: the fleet did not return to three ready replicas"
+    # At the run's count (P16-TSK-020): three by default, ten with REHEARSAL_EXPERIMENTS_REPLICAS=10.
+    ready_fleet 400 || fail "E01: the fleet did not return to its $FLEET_REPLICAS ready replicas"
     sleep 20
     touch "$EXP_DIR/sampler-stop"
     wait "$E01_SAMPLER" 2>/dev/null || true
@@ -1738,6 +1855,10 @@ E01_recover() {
     [ "$failed_requests" -le "$failed_inside" ] \
         || fail "E01: $failed_requests of the workload's requests failed where the edge failed $failed_inside in the killed replica's window: a request failed that was not on it"
     pass "E01: the failed requests were those on the killed replica - its held payout and $failed_requests of the workload's, each a failure at the edge in its window, none outside it; $served answers served; none unresolved"
+    # The availability matrix's row A07 (P16-TSK-023's routed note, P16-TSK-020): from the kill to a minute after the replica's endpoint was
+    # ready again (EXPERIMENTS_WALK_MARGIN), a window a rarely sent operation can show a success in beside a key retried while its claim held.
+    experiments_edge_read "$EXP_DIR" $((E01_KILLED_AT - 60))
+    availability_check A07 "$E01_KILLED_AT" $((E01_KILLED_AT + E01_BACK + EXPERIMENTS_WALK_MARGIN))
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -5707,4 +5828,1149 @@ E73_recover() {
     experiments_edge_read "$EXP_DIR" $((E73_FAULT_AT - 60))
     availability_check A11 "$E73_FAULT_AT" "${E73_FAULT_END:-$(date +%s)}"
     pass "E73: 0 payouts concluded without the provider's effect, every payout concluded once within $E73_RESOLVE_SECONDS s of the rail's return, no blind resend ($degraded degraded requests); the refused attach stored nothing and the retried one stored one"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# P16-TSK-020 (OPERATIONS_RUNBOOK.md section 11.61): instances, pods, a node and an edge controller lost under load. What the experiments
+# share first - the refusals before the build, the spare zone, the load beside them, the reads - then E02, E03, E04 and E25. E01 is above,
+# read at the run's count.
+# ---------------------------------------------------------------------------------------------------
+
+# experiments_load_resolve: before anything is built, what does not go together refused - an experiment written for the load named without
+# one; one not written for it named with one (its census is the full one, which a load still in flight cannot pass); E01 at a count other than
+# three without one; the budget's probe without E02; and an experiment that sends straight to a replica through the edge's probe pod named
+# after E04, whose worker may carry that bare pod away.
+experiments_load_resolve() {
+    lr_after=""
+    for lr_id in $EXPERIMENTS; do
+        case " $EXPERIMENTS_NEED_LOAD " in
+            *" $lr_id "*) [ -n "$EXPERIMENTS_LOAD" ] || { echo "?? $lr_id runs under a load profile: name one in REHEARSAL_EXPERIMENTS_LOAD (sustained; OPERATIONS_RUNBOOK.md section 11.61)" >&2; exit 2; } ;;
+        esac
+        if [ -n "$EXPERIMENTS_LOAD" ]; then
+            case " $EXPERIMENTS_UNDER_LOAD " in
+                *" $lr_id "*) ;;
+                *) echo "?? $lr_id is not written to run under a load: its census is the full one, which a load in flight cannot pass; REHEARSAL_EXPERIMENTS_LOAD runs $EXPERIMENTS_UNDER_LOAD" >&2; exit 2 ;;
+            esac
+        fi
+        case $lr_after:$lr_id in
+            E04:E01 | E04:E03) echo "?? $lr_id sends straight to a replica through the edge's probe pod, which E04 may stop with its worker: name it before E04" >&2; exit 2 ;;
+        esac
+        [ "$lr_id" != E04 ] || lr_after=E04
+    done
+    if [ "$FLEET_REPLICAS" != 3 ] && [ -z "$EXPERIMENTS_LOAD" ]; then
+        case " $EXPERIMENTS " in *" E01 "*) echo "?? E01 at $FLEET_REPLICAS replicas runs under a load profile: name one in REHEARSAL_EXPERIMENTS_LOAD" >&2; exit 2 ;; esac
+    fi
+    if [ "$PROBE" = pdb-removed ]; then
+        case " $EXPERIMENTS " in *" E02 "*) ;; *) echo "?? REHEARSAL_PROBE=pdb-removed takes the disruption budget away before E02's evictions: name E02 in REHEARSAL_EXPERIMENTS" >&2; exit 2 ;; esac
+    fi
+    return 0
+}
+
+# experiments_load_preflight: the load's model read from what k6 will run, before anything is built (load.sh's load_preflight, for the profile
+# REHEARSAL_EXPERIMENTS_LOAD names, at the run's count). A profile that lets the autoscaler decide, or asks the database for the contention's or
+# the soak's readings, is the load scope's own; one with no stages gives the experiments no last stage to take their windows in.
+experiments_load_preflight() {
+    LOAD_PROFILE_NAME=$EXPERIMENTS_LOAD
+    LOAD_REPLICAS=$FLEET_REPLICAS
+    load_preflight
+    [ "$LOAD_AUTOSCALE" != true ] || cannot "the experiments hold their fleet at its count: the autoscale profile is the load scope's (E70)"
+    [ "$LOAD_CONTENTION_ON" != true ] && [ "$LOAD_SOAK" != true ] || cannot "the $LOAD_PROFILE_NAME profile asks the database for its own readings, which are the load scope's"
+    [ -n "$(load_stages)" ] || cannot "the $LOAD_PROFILE_NAME profile has no stages: the experiments take their windows in a profile's last stage"
+}
+
+# experiments_place: a manifest on stdin, out with a node affinity keeping its pod off the spare zone when E04 is named in this scope -
+# inserted into the pod's affinity when it has one (the standby's, beside its anti-affinity to the primary's zone), before the pod's
+# securityContext otherwise; every other run's manifest passes unchanged. What must not be lost with E04's worker: the primary and the
+# standby (a synchronous primary whose one standby is gone commits nothing), the simulator (its counts are the census's), the fault proxy (every
+# hop goes through it) and the archive store (its objects on a claim of its own, which one node holds). experiments_spare reads where each runs.
+experiments_place() {
+    case "$SCOPE: $EXPERIMENTS " in
+        experiments:*" E04 "*) ;;
+        *) cat; return 0 ;;
+    esac
+    awk -v zone="$EXPERIMENTS_SPARE_ZONE" '
+        function terms(pad) {
+            print pad "nodeAffinity:"
+            print pad "  requiredDuringSchedulingIgnoredDuringExecution:"
+            print pad "    nodeSelectorTerms:"
+            print pad "      - matchExpressions:"
+            print pad "          - key: topology.kubernetes.io/zone"
+            print pad "            operator: NotIn"
+            print pad "            values: [" zone "]"
+        }
+        /^      affinity:$/ && !done { print; terms("        "); done = 1; next }
+        /^      securityContext:$/ && !done { print "      affinity:"; terms("        "); done = 1 }
+        { print }'
+}
+
+# experiments_spare_render: in the run's own rendered copy when E04 is named - the primary kept off the spare zone as the manifests above are,
+# and the three brokers spread one a zone (DoNotSchedule), so that the worker E04 stops takes one broker of three with it, which the topics'
+# min.insync.replicas of two outlive (E08's posture), and never two.
+experiments_spare_render() {
+    experiments_place < "$A/StatefulSet.finapp-postgres.yaml" > "$WORK/statefulset.tmp" && mv "$WORK/statefulset.tmp" "$A/StatefulSet.finapp-postgres.yaml"
+    grep -q "values: \[$EXPERIMENTS_SPARE_ZONE\]" "$A/StatefulSet.finapp-postgres.yaml" || cannot "E04: the primary could not be kept off the spare zone in the run's copy"
+    awk '/^      securityContext:$/ && !done {
+            print "      topologySpreadConstraints:"
+            print "        - maxSkew: 1"
+            print "          topologyKey: topology.kubernetes.io/zone"
+            print "          whenUnsatisfiable: DoNotSchedule"
+            print "          labelSelector:"
+            print "            matchLabels:"
+            print "              app.kubernetes.io/name: finapp-kafka"
+            done = 1 }
+        { print }' "$A/StatefulSet.finapp-kafka.yaml" > "$WORK/statefulset.tmp" && mv "$WORK/statefulset.tmp" "$A/StatefulSet.finapp-kafka.yaml"
+    grep -q '^              app.kubernetes.io/name: finapp-kafka$' "$A/StatefulSet.finapp-kafka.yaml" || cannot "E04: the brokers could not be spread over the zones in the run's copy"
+    log "E04: the run's copy keeps the primary off $EXPERIMENTS_SPARE_ZONE and spreads the brokers one a zone"
+}
+
+# experiments_spare_left <pods file> <node>: what the run must not lose with E04's worker and still runs on it (a listing of
+# namespace/name|node|deletion), names on one line, nothing when none. The edge's probe pod among them (P16-TSK-028): every experiment's
+# security probe asks the replicas from it, so on the stopped worker it would answer nothing while E04's fault is on.
+experiments_spare_left() {
+    awk -F'|' -v node="$2" '$2 == node && $3 == "" && $1 ~ /^(kube-system\/coredns-|finapp-observability\/finapp-prometheus-|finapp-edge\/finapp-edge-|finapp\/finapp-postgres-|finapp-rehearsal\/finapp-simulator-|finapp-rehearsal\/finapp-archive-store-|finapp-experiments\/finapp-toxiproxy-|finapp-edge\/np-edge$)/ {print $1}' "$1" | tr '\n' ' '
+}
+
+# experiments_spare: E04's worker - the spare zone's - cleared before any load of what the cluster's own manifests placed there and the run must
+# not lose with it: CoreDNS, the cluster's Prometheus (the run's eyes) and both edges' controllers (the generators' and the operators' way in),
+# and the edge's probe pod, from which every experiment's security probe asks the replicas (P16-TSK-028, OPERATIONS_RUNBOOK.md section 11.62).
+# The worker is cordoned (a fault of the registry, so every way out lifts it), each of those Deployments with a pod there restarted and waited
+# for, the probe pod - a bare Pod of the network-policy step - made again from the run's own manifest, then uncordoned; the application's
+# replicas stay where the zone rule put them. Then everything that must not be lost is read back off it.
+experiments_spare() {
+    EXPERIMENTS_SPARE_NODE=$(kube get nodes -l "topology.kubernetes.io/zone=$EXPERIMENTS_SPARE_ZONE" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | head -1)
+    [ -n "$EXPERIMENTS_SPARE_NODE" ] || cannot "E04: no worker in the spare zone $EXPERIMENTS_SPARE_ZONE"
+    experiments_fault_on cordoned "$EXPERIMENTS_SPARE_NODE"
+    moved=""
+    for target in kube-system/coredns finapp-observability/finapp-prometheus finapp-edge/finapp-edge-public finapp-edge/finapp-edge-operator; do
+        namespace=${target%%/*}
+        name=${target#*/}
+        there=$(kube -n "$namespace" get pods -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.nodeName}{"\n"}{end}' 2>/dev/null \
+            | awk -F'|' -v n="$name" -v node="$EXPERIMENTS_SPARE_NODE" '$2 == node && $1 ~ ("^" n "-[a-z0-9]+-[a-z0-9]+$")' | grep -c . || true)
+        [ "$there" != 0 ] || continue
+        kube -n "$namespace" rollout restart "deployment/$name" >> "$EXP_ART/spare.log" 2>&1 || cannot "E04: $target could not be restarted off $EXPERIMENTS_SPARE_NODE"
+        kube -n "$namespace" rollout status "deployment/$name" --timeout=300s >> "$EXP_ART/spare.log" 2>&1 || fail "E04: $target did not return off $EXPERIMENTS_SPARE_NODE"
+        moved="$moved $target"
+    done
+    # The edge's probe pod (P16-TSK-028): a bare Pod, so it is made again rather than restarted, while the worker is cordoned so that it lands
+    # off it; on the stopped worker it would leave E04's security probe nothing to answer, and E04 would fail as unobserved.
+    if [ "$(kube -n finapp-edge get pod np-edge -o jsonpath='{.spec.nodeName}' 2>/dev/null)" = "$EXPERIMENTS_SPARE_NODE" ]; then
+        kube -n finapp-edge delete pod np-edge --wait=true --timeout=120s >> "$EXP_ART/spare.log" 2>&1 \
+            || cannot "E04: the edge's probe pod could not be taken off $EXPERIMENTS_SPARE_NODE"
+        kube apply -f - < "$WORK/pod-edge.yaml" >> "$EXP_ART/spare.log" 2>&1 || cannot "E04: the edge's probe pod could not be made again"
+        kube -n finapp-edge wait --for=jsonpath='{.status.containerStatuses[0].state.running}' pod/np-edge --timeout=120s >> "$EXP_ART/spare.log" 2>&1 \
+            || fail "E04: the edge's probe pod did not start again off $EXPERIMENTS_SPARE_NODE"
+        moved="$moved finapp-edge/np-edge"
+    fi
+    experiments_fault_off cordoned "$EXPERIMENTS_SPARE_NODE"
+    kube get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}|{.spec.nodeName}|{.metadata.deletionTimestamp}{"\n"}{end}' \
+        > "$EXP_ART/spare-pods.txt" 2>&1 || cannot "E04: the pods could not be listed"
+    left=$(experiments_spare_left "$EXP_ART/spare-pods.txt" "$EXPERIMENTS_SPARE_NODE")
+    [ -z "$left" ] || fail "E04: what the run must not lose with the spare worker still runs on $EXPERIMENTS_SPARE_NODE: $left"
+    # The clients' ways in, read again: the edges' controllers may have moved.
+    experiments_edge_addresses
+    # Prometheus, restarted, scrapes every replica again before anything reads it.
+    deadline=$(( $(date +%s) + 180 ))
+    until [ "$(experiments_value 'count(up{job="finapp"} == 1)')" = "$FLEET_REPLICAS" ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || fail "E04: Prometheus did not scrape $FLEET_REPLICAS replicas within 180 s of the spare worker's clearing"
+        sleep 5
+    done
+    replicas=$(awk -F'|' -v node="$EXPERIMENTS_SPARE_NODE" '$2 == node && $3 == "" && $1 ~ /^finapp\/finapp-app-/' "$EXP_ART/spare-pods.txt" | grep -c . || true)
+    brokers=$(awk -F'|' -v node="$EXPERIMENTS_SPARE_NODE" '$2 == node && $3 == "" && $1 ~ /^finapp\/finapp-kafka-[0-9]+$/' "$EXP_ART/spare-pods.txt" | grep -c . || true)
+    printf 'node\t%s\nzone\t%s\nmoved\t%s\napplication replicas\t%s\nbrokers\t%s\n' "$EXPERIMENTS_SPARE_NODE" "$EXPERIMENTS_SPARE_ZONE" "${moved:- none}" \
+        "$replicas" "$brokers" > "$EXP_ART/spare.txt"
+    pass "E04's worker $EXPERIMENTS_SPARE_NODE ($EXPERIMENTS_SPARE_ZONE) runs none of the primary, the standby, the simulator, the fault proxy, the archive store, CoreDNS, Prometheus, an edge controller or the edge's probe pod (moved:${moved:- none}); it runs $replicas application replicas and $brokers broker of three"
+}
+
+# experiments_node_start <worker> <address>: a stopped worker started again, then held to the address it had: kind's network may give a
+# container started again another address, and a node at another address than its peers' routes and its kubelet's registration name is not the
+# cluster it was (P16-TSK-019's routed note). Never fails the run itself: finish() undoes it too.
+experiments_node_start() {
+    dock start "$1" || return 1
+    waited=0
+    address=""
+    while [ "$waited" -lt 60 ]; do
+        address=$(dock inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "$1" 2>/dev/null)
+        [ -z "$address" ] || break
+        sleep 2
+        waited=$((waited + 2))
+    done
+    [ "$address" = "$2" ] || { echo "the worker $1 came back at '$address', not at $2, the address recorded when it was stopped"; return 1; }
+}
+
+# experiments_kill_container <namespace> <pod> <container>: SIGKILL to that container's process from its node, as experiments_kill_jvm sends it to
+# the application's (here an edge controller's). Sets KILLED_EPOCH and KILLED; never called inside $( ).
+experiments_kill_container() {
+    node=$(kube -n "$1" get pod "$2" -o jsonpath='{.spec.nodeName}')
+    container=$(kube -n "$1" get pod "$2" -o jsonpath="{.status.containerStatuses[?(@.name==\"$3\")].containerID}" | sed 's#^containerd://##')
+    [ -n "$node" ] && [ -n "$container" ] || cannot "the pod $1/$2 has no node or no running $3 to kill"
+    [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$node" 2>/dev/null)" = "$CLUSTER" ] \
+        || fail "the safety boundary refused to kill on $node: it is not a node of $CLUSTER"
+    pid=$(dock exec "$node" crictl inspect --output go-template --template '{{.info.pid}}' "$container" 2>/dev/null)
+    case $pid in '' | *[!0-9]*) cannot "the process of $1/$2's $3 could not be found on $node" ;; esac
+    KILLED_EPOCH=$(date +%s)
+    dock exec "$node" kill -9 "$pid" || cannot "SIGKILL could not be sent to $1/$2's $3 on $node"
+    printf '%s\tkill -9\t%s/%s %s on %s, pid %s\n' "$(date -u +%H:%M:%S)" "$1" "$2" "$3" "$node" "$pid" >> "$EXP_ART/faults.log"
+    KILLED="$node $container $pid"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The load beside the experiments.
+# ---------------------------------------------------------------------------------------------------
+
+# experiments_edge_split: the generators' addresses. With E25 named, the two workers each running a ready controller of the public edge, the
+# workload's (NODE_IP's) first: kind has no load balancer before the NodePorts, whose externalTrafficPolicy is Local, so a client reaches only
+# the controllers of the node it is given, and the generators are split over the two as a layer-4 balancer spreads its clients. None moves to
+# the other when one is lost: a real balancer's health check would move it (THREAT_MODEL.md section 6 item 32 (b)). Without E25, every
+# generator on NODE_IP's node.
+experiments_edge_split() {
+    EXPERIMENTS_EDGE_NODES=$NODE_IP
+    case " $EXPERIMENTS " in *" E25 "*) ;; *) return 0 ;; esac
+    for node in $(kube -n finapp-edge get pods -l app.kubernetes.io/name=finapp-edge-public \
+        -o jsonpath='{range .items[*]}{.spec.containers[0].name}|{.status.conditions[?(@.type=="Ready")].status}|{.spec.nodeName}|{.metadata.deletionTimestamp}{"\n"}{end}' \
+        | awk -F'|' '$1 == "edge" && $2 == "True" && $4 == "" {print $3}' | sort -u); do
+        address=$(dock inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "$node")
+        [ -n "$address" ] || cannot "the node $node has no address on the kind network"
+        [ "$address" = "$NODE_IP" ] || EXPERIMENTS_EDGE_NODES="$EXPERIMENTS_EDGE_NODES $address"
+    done
+    [ "$(printf '%s\n' $EXPERIMENTS_EDGE_NODES | sort -u | grep -c .)" = 2 ] \
+        || cannot "E25: the public edge's two controllers do not run on two nodes, so one's loss could not be told from the other's service"
+}
+
+# experiments_generator_address <i>: the address generator i is given - the split's addresses in turn.
+experiments_generator_address() {
+    printf '%s\n' $EXPERIMENTS_EDGE_NODES | awk -v i="$1" '{a[NR - 1] = $0} END {print a[i % NR]}'
+}
+
+# experiments_load_begin: the profile started beside the experiments as load.sh's load_run starts it - its customers, fixture and sampler
+# (load_setup), PostgreSQL's statistics, the census every 30 s, the callbacks' feed and senders, the generators - with two differences: the
+# generators may be split over two edge nodes (experiments_edge_split), and nothing waits for the load here. The fleet is read by set
+# (load_fleet_moves), each experiment's victims excused while it holds them (experiments_victims).
+experiments_load_begin() {
+    EXPERIMENTS_LOAD_ON=1
+    load_paths
+    : > "$WORK/experiments-victims"
+    experiments_edge_split
+    load_setup
+    LOAD_RUN_TAG=$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
+    pg_admin -c "SELECT pg_stat_statements_reset()" >> "$LOAD_ART/postgres.log" 2>&1 || true
+    : > "$CLIENT/callbacks-feed-load.txt"
+    LOAD_FROM=$(db_epoch)
+    load_clock start
+    LOAD_STARTED=$(date +%s)
+    load_statistics &
+    BACKGROUND="$BACKGROUND $!"
+    load_sampler &
+    BACKGROUND="$BACKGROUND $!"
+    load_feeder &
+    LOAD_FEEDER=$!
+    BACKGROUND="$BACKGROUND $LOAD_FEEDER"
+    s=0
+    while [ "$s" -lt "$LOAD_GENERATORS" ]; do
+        dock run -d --name "$CLUSTER-load-callbacks-$s" --network kind --add-host "public.finapp.test:$NODE_IP" \
+            -v "$(dpath "$CLIENT"):/work" -v "$(dpath "$DIR"):/src:ro" "$JDK_IMAGE" java --source 21 /src/Rehearsal.java /work load-callbacks load \
+            "$s" "$LOAD_GENERATORS" >/dev/null || cannot "the callback sender $s could not start"
+        CONTAINERS="$CONTAINERS $CLUSTER-load-callbacks-$s"
+        s=$((s + 1))
+    done
+    sequence=$(awk -v n="$LOAD_GENERATORS" 'BEGIN {s = "0"; for (i = 1; i <= n; i++) s = s "," i "/" n; print s}')
+    printf 'generator\taddress\n' > "$LOAD_ART/generators.tsv"
+    i=0
+    while [ "$i" -lt "$LOAD_GENERATORS" ]; do
+        address=$(experiments_generator_address "$i")
+        mkdir -p "$LOAD_ART/k6/$i"
+        chmod 0777 "$LOAD_ART/k6/$i"
+        dock run -d --name "$CLUSTER-load-k6-$i" --network kind --cpus 1 --add-host "public.finapp.test:$address" \
+            -e SSL_CERT_FILE=/generator/edge-ca.crt -e "LOAD_PROFILE=/load/$LOAD_PROFILE_NAME.json" -e LOAD_FIXTURE=/generator/load-fixture.json \
+            -e "LOAD_RUN=$LOAD_RUN_TAG" -e "LOAD_DURATION=$LOAD_DURATION" -e "LOAD_RESOLVE_SECONDS=$LOAD_RESOLVE_SECONDS" \
+            -v "$(dpath "$LOAD_GEN"):/generator:ro" -v "$(dpath "$LOAD_SRC"):/load:ro" -v "$(dpath "$LOAD_ART/k6/$i"):/out" \
+            "$K6_IMAGE" run --quiet --no-color --execution-segment "$i/$LOAD_GENERATORS:$((i + 1))/$LOAD_GENERATORS" \
+            --execution-segment-sequence "$sequence" --out csv=/out/k6-series.csv.gz /load/scenarios.js >/dev/null || cannot "k6 could not start"
+        CONTAINERS="$CONTAINERS $CLUSTER-load-k6-$i"
+        printf '%s\t%s\n' "$i" "$address" >> "$LOAD_ART/generators.tsv"
+        i=$((i + 1))
+    done
+    log "load $LOAD_PROFILE_NAME beside the experiments for $LOAD_DURATION ($(load_total_seconds) s), run $LOAD_RUN_TAG, $LOAD_CUSTOMERS customers, $LOAD_GENERATORS generators over $(printf '%s\n' $EXPERIMENTS_EDGE_NODES | grep -c .) edge node(s)"
+}
+
+# experiments_load_peak: the experiments start in the profile's last stage (the sustained profile's two hours at the target's peak, after its
+# half hour at the average): until then the load runs alone and its samples are read.
+experiments_load_peak() {
+    peak=$(load_stages | awk '{t[NR] = $1} END {s = 0; for (i = 1; i < NR; i++) s += t[i]; print s + 0}')
+    log "the load runs alone until its last stage, $peak s in; the experiments take their windows inside it"
+    while [ $(( $(date +%s) - LOAD_STARTED )) -lt "$peak" ]; do
+        load_generating || cannot "the load ended before its last stage began"
+        [ ! -s "$WORK/load-sample-failed" ] || fail "a sample failed under the load before the experiments: $(tr '\n' ' ' < "$WORK/load-sample-failed" | cut -c1-600)see load/samples.tsv"
+        sleep 5
+    done
+    pass "the load reached its last stage, $peak s in, every sample until then PASS"
+}
+
+# experiments_load_tick: the load's one settlement file at mid-run, or at its first card capture after it, as load_run delivers it; called
+# before each experiment and while the load runs to its end.
+experiments_load_tick() {
+    [ -z "$EXPERIMENTS_LOAD_SETTLED" ] || return 0
+    [ $(( $(date +%s) - LOAD_STARTED )) -ge $(( $(load_total_seconds) / 2 )) ] || return 0
+    load_captured || return 0
+    load_settlement
+    EXPERIMENTS_LOAD_SETTLED=1
+}
+
+# experiments_load_steady: under the load, an experiment starts only while every generator still runs and every sample so far passed; its
+# victims' list starts empty.
+experiments_load_steady() {
+    load_generating || cannot "$EXP_ID: the load ended before the experiment: the $LOAD_PROFILE_NAME profile is shorter than the experiments named"
+    [ ! -s "$WORK/load-sample-failed" ] || fail "$EXP_ID steady state: a sample failed under the load: $(tr '\n' ' ' < "$WORK/load-sample-failed" | cut -c1-600)"
+    experiments_load_tick
+    : > "$WORK/experiments-victims"
+    experiments_record load "$LOAD_PROFILE_NAME, $(( $(date +%s) - LOAD_STARTED )) s into its $(load_total_seconds) s, $LOAD_GENERATORS generators over $(printf '%s\n' $EXPERIMENTS_EDGE_NODES | grep -c .) edge node(s)"
+}
+
+# experiments_load_check: 1, with EXP_STOPPED set, once a sample of the load's census failed while the experiment ran (ADR-0127 decision 6).
+experiments_load_check() {
+    [ -n "$EXPERIMENTS_LOAD_ON" ] && [ -s "$WORK/load-sample-failed" ] || return 0
+    EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a sample of the census failed under the load: $(tr '\n' ' ' < "$WORK/load-sample-failed" | cut -c1-400)"
+    log "$EXP_ID STOP: $EXP_STOPPED"
+    return 1
+}
+
+# experiments_victims <pod|node|after> <value>...: what the load's sampler excuses while an experiment holds it away (load.sh's load_scraped):
+# a pod it took, a node it stopped, and every pod created at or after an epoch (the replacements of what it took). Emptied at each steady state
+# and at each census.
+experiments_victims() {
+    v_kind=$1
+    shift
+    for v in "$@"; do
+        printf '%s %s\n' "$v_kind" "$v" >> "$WORK/experiments-victims"
+    done
+}
+
+# experiments_excused <pod> <node> <created>: 0 when the running experiment took that pod or its node away, or made it.
+experiments_excused() {
+    [ -s "$WORK/experiments-victims" ] || return 1
+    e_born=$(date -u -d "$3" +%s 2>/dev/null || echo 0)
+    awk -v pod="$1" -v node="$2" -v born="$e_born" '($1 == "pod" && $2 == pod) || ($1 == "node" && $2 == node) || ($1 == "after" && born >= $2) {found = 1}
+        END {exit !found}' "$WORK/experiments-victims"
+}
+
+# experiments_window_census <id>: under the load, an experiment's census is the load's through its window - every sample taken from its start to
+# now PASS, the first within 45 s of its start and none 45 s from the next - and one more taken now, after its recovery. The full census, every
+# count with it, runs once the load has ended (experiments_load_census): one here would count movements still in flight.
+experiments_window_census() {
+    experiments_load_check || true
+    : > "$WORK/experiments-victims"
+    now=$(date +%s)
+    load_sample "$1-end"
+    covered=$(awk -F'\t' -v from="$EXP_STARTED_AT" -v to="$now" 'NR > 1 && $2 >= from && $2 <= to + 60 {
+            n++; if ($4 != "PASS") bad++; if (first == "") first = $2; if (last != "" && $2 - last > gap) gap = $2 - last; last = $2 }
+        END { if (n == 0) { print "no sample"; exit }
+              if (first - from > 45) print "the first sample " first - from " s into the experiment"
+              else if (gap > 45) print "a gap of " gap " s between samples"
+              else if (bad > 0) print bad " samples not PASS"
+              else print "ok " n }' "$LOAD_ART/samples.tsv")
+    case $covered in
+        ok*)
+            experiments_record census "the load's census sampled ${covered#ok } times through the experiment, every sample PASS and none 45 s from the next; the full census after the load"
+            pass "census $1 under the load: ${covered#ok } samples through the experiment, every one PASS" ;;
+        *)
+            EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the load's census through the experiment: $covered: see load/samples.tsv"
+            experiments_record census "$covered" ;;
+    esac
+}
+
+# experiments_window <id> <from> <to> <rule> [<address>]: a window the generators' own series are read over once the load has ended
+# (experiments_load_windows): rule record (their failures recorded by generator and status), none (no request of theirs failed), or half
+# (failures only from the generators given <address>, the lost controller's node).
+experiments_window() {
+    printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "${5:--}" >> "$EXP_ART/windows.tsv"
+}
+
+# experiments_load_end: the profile run to its end, then judged as load.sh judges a load (correctness only; its errors and latency recorded),
+# its shed requests censused (load_shed: no claim and no transfer under a shed-once probe's key), each experiment's window read from the
+# generators' own series, and the full census taken with every count.
+experiments_load_end() {
+    step experiments-load-end
+    while load_generating; do
+        experiments_load_tick
+        if [ -s "$WORK/load-sample-failed" ]; then
+            touch "$WORK/load-stop" "$WORK/load-feed-stop" "$CLIENT/stop-callbacks-load"
+            load_generators stop
+            load_stopped
+            fail "a sample failed under the load after the experiments, which stopped it: $(tr '\n' ' ' < "$WORK/load-sample-failed" | cut -c1-600)see load/samples.tsv"
+        fi
+        sleep 5
+    done
+    LOAD_ENDED=$(date +%s)
+    experiments_load_tick
+    [ -n "$EXPERIMENTS_LOAD_SETTLED" ] || fail "settlement: the load captured no card payment to settle"
+    load_clock end
+    k6_status=$(load_generators status)
+    load_generators logs
+    # The last captures fed, then the senders drained; one sample after the load's end, so the samples cover all of it.
+    sleep 15
+    load_keep_senders
+    deadline=$((LOAD_ENDED + 60))
+    while [ "$(awk -F'\t' -v end="$LOAD_ENDED" 'NR > 1 && $2 >= end {n++} END {print n + 0}' "$LOAD_ART/samples.tsv")" = 0 ] \
+        && [ "$(date +%s)" -lt "$deadline" ]; do
+        sleep 2
+    done
+    touch "$WORK/load-stop"
+    sleep 12
+    [ ! -s "$WORK/load-sample-failed" ] || fail "a sample failed under the load: $(tr '\n' ' ' < "$WORK/load-sample-failed" | cut -c1-600)see load/samples.tsv"
+    [ "$k6_status" = 0 ] || cannot "a generator ended with status $k6_status: see load/k6-*.log"
+    load_report
+    log "the load ran $((LOAD_ENDED - LOAD_STARTED)) s beside the experiments"
+    step load-judge
+    load_judge
+    step load-shed
+    load_shed
+    step experiments-load-windows
+    experiments_load_windows
+    step load-census
+    experiments_load_census
+}
+
+# experiments_load_windows: each experiment's window read from the generators' own series, complete once the load has ended. k6 stamps a
+# request's samples at its end, so a window runs from a second before its start to the generator's own request timeout (read from
+# scenarios.js) and five seconds past its end. Per window, every request that failed (no answer, or 500 and more; a 503 counted apart, the
+# platform's refusal before any effect) by generator, its address and status into experiments/<id>/generators.tsv, judged by the window's rule.
+# A rule broken fails the run and appends that experiment's verdict FAILED to its record, its standing verdict.
+experiments_load_windows() {
+    [ -s "$EXP_ART/windows.tsv" ] || return 0
+    timeout=$(sed -n "s/.*timeout: '\([0-9]*\)s'.*/\1/p" "$LOAD_SRC/scenarios.js" | head -1)
+    case $timeout in '' | *[!0-9]*) cannot "the generator's request timeout could not be read from scenarios.js" ;; esac
+    : > "$WORK/k6-failed.tsv"
+    i=0
+    while [ "$i" -lt "$LOAD_GENERATORS" ]; do
+        gzip -dc "$LOAD_ART/k6/$i/k6-series.csv.gz" | awk -F, -v g="$i" '$1 == "metric_name" {for (f = 1; f <= NF; f++) c[$f] = f; next}
+            $1 == "http_reqs" && ($c["status"] == "" || $c["status"] == 0 || $c["status"] >= 500) {print g "\t" $2 "\t" ($c["status"] == "" ? 0 : $c["status"])}' \
+            >> "$WORK/k6-failed.tsv" || cannot "the generator $i's series could not be read"
+        i=$((i + 1))
+    done
+    broken=""
+    for line in $(tr '\t' '|' < "$EXP_ART/windows.tsv"); do
+        IFS='|' read -r id from to rule address <<EOF
+$line
+EOF
+        dir="$EXP_ART/$id"
+        mkdir -p "$dir"
+        awk -F'\t' -v from="$((from - 1))" -v to="$((to + timeout + 5))" 'FNR == NR {if (FNR > 1) a[$1] = $2; next}
+            $2 >= from && $2 <= to {n[$1 "\t" a[$1] "\t" $3]++} END {for (k in n) print k "\t" n[k]}' \
+            "$LOAD_ART/generators.tsv" "$WORK/k6-failed.tsv" | sort > "$dir/generators-$from.tsv"
+        case $rule in
+            record) problem="" ;;
+            none) problem=$(awk -F'\t' '$3 != 503 {n += $4} END {if (n > 0) print n " requests of the generators failed through the window"}' "$dir/generators-$from.tsv") ;;
+            half) problem=$(awk -F'\t' -v lost="$address" '$2 != lost && $3 != 503 {n += $4} END {if (n > 0) print n " requests of the generators given the surviving controller'"'"'s node failed through the window"}' "$dir/generators-$from.tsv") ;;
+            *) cannot "no window rule $rule" ;;
+        esac
+        felt=$(awk -F'\t' '$3 != 503 {n += $4} END {print n + 0}' "$dir/generators-$from.tsv")
+        if [ -n "$problem" ]; then
+            printf 'verdict\tFAILED\nafter the load\t%s (%s)\n' "$problem" "$(tr '\t\n' ' ;' < "$dir/generators-$from.tsv")" >> "$dir/record.tsv"
+            broken="$broken $id: $problem;"
+        else
+            printf 'after the load\tthe window from %s held its rule (%s): %s requests of the generators failed in it (%s)\n' "$(iso "$from")" "$rule" "$felt" \
+                "$(tr '\t\n' ' ;' < "$dir/generators-$from.tsv")" >> "$dir/record.tsv"
+        fi
+    done
+    [ -z "$broken" ] || fail "the generators' own series broke an experiment's window:$broken see experiments/<id>/generators-*.tsv"
+    pass "the generators' own series held every experiment's window ($(cut -f1,4 "$EXP_ART/windows.tsv" | tr '\t\n' ' ;'))"
+}
+
+# experiments_load_census: the full census once the load has ended, with every count - the generator's movements as it was told they
+# succeeded, the funding, every workload's and E01's and E03's payouts - then a last sample. load.sh's load_census also judges the per-pod
+# resources, which it reads on the one node of the load scope's cluster: here they are recorded, never judged, as is the saturation.
+experiments_load_census() {
+    report="$LOAD_ART/k6/report.tsv"
+    topup_minor=$(load_profile_value topUpMinor)
+    LOAD_TRANSFERS=$(awk -F'\t' '$1 == "transfer" {print $4}' "$report")
+    LOAD_CHECKOUTS=$(awk -F'\t' '$1 == "checkout" {print $4}' "$report")
+    topups=$(awk -F'\t' '$1 == "topup" {print $4}' "$report")
+    LOAD_TOPUPS=$((LOAD_FUNDED + ${topups:-0}))
+    LOAD_WALLET_MINOR=$((LOAD_FUNDED_MINOR + ${topups:-0} * topup_minor))
+    census load
+    : > "$WORK/load-sample-failed"
+    load_sample final
+    [ ! -s "$WORK/load-sample-failed" ] || fail "the sample after the load failed: $(cat "$WORK/load-sample-failed")"
+    load_saturation >> "$LOAD_ART/stopped.log" 2>&1 || log "recorded: saturation signals absent from Prometheus over the run:$LOAD_MISSING"
+    {
+        printf 'profile\t%s, beside the experiments %s\n' "$LOAD_PROFILE_NAME" "$EXPERIMENTS"
+        printf 'duration\t%s\n' "$LOAD_DURATION"
+        printf 'replicas\t%s\n' "$FLEET_REPLICAS"
+        printf 'commit\t%s\n' "$(git -C "$(dpath "$ROOT")" rev-parse HEAD)"
+        printf 'machine\t%s\n' "$(dock info --format '{{.NCPU}} CPUs, {{.MemTotal}} bytes, {{.OperatingSystem}}, {{.KernelVersion}}' 2>/dev/null)"
+        printf 'generator\tk6 %s %s, %s instances over %s\n' "$K6_VERSION" "$K6_DIGEST" "$LOAD_GENERATORS" "$(printf '%s\n' $EXPERIMENTS_EDGE_NODES | grep -c .) edge node(s)"
+    } > "$LOAD_ART/workload.txt"
+    pass "the load's census after the experiments green, and its last sample PASS"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# What E02, E03, E04 and E25 read.
+# ---------------------------------------------------------------------------------------------------
+
+# experiments_live_replicas: "<pod> <address> <node> <zone>" of every ready replica not terminating, by name.
+experiments_live_replicas() {
+    for lr_line in $(experiments_fleet | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == "" {print $1 "|" $5 "|" $4}' | sort); do
+        lr_node=${lr_line##*|}
+        printf '%s %s\n' "$(printf '%s' "$lr_line" | tr '|' ' ')" "$(kube get node "$lr_node" -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}')"
+    done
+}
+
+# experiments_endpoints_sampler <dir> <address>...: each address's readiness in the application's EndpointSlices every second, into
+# <dir>/endpoints.tsv (epoch, address, true, false or absent), until <dir>/endpoints-stop exists: experiments_endpoint_sampler for several.
+experiments_endpoints_sampler() {
+    set +e
+    es_dir=$1
+    shift
+    printf 'epoch\taddress\tready\n' > "$es_dir/endpoints.tsv"
+    while [ ! -f "$es_dir/endpoints-stop" ]; do
+        epoch=$(date +%s)
+        kube -n finapp get endpointslices -l kubernetes.io/service-name=finapp-app \
+            -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]}|{.conditions.ready}{"\n"}{end}' > "$es_dir/endpoints.now" 2>/dev/null
+        for address in "$@"; do
+            state=$(awk -F'|' -v a="$address" '$1 == a {print $2}' "$es_dir/endpoints.now" | head -1)
+            printf '%s\t%s\t%s\n' "$epoch" "$address" "${state:-absent}" >> "$es_dir/endpoints.tsv"
+        done
+        sleep 1
+    done
+}
+
+# experiments_left_service <dir> <address> <from>: the seconds after <from> at which that address was first read out of the Service (not
+# ready, or absent), or "-" when it never was; experiments_endpoints_sampler's readings, every second.
+experiments_left_service() {
+    awk -F'\t' -v a="$2" -v k="$3" 'NR > 1 && $2 == a && $1 >= k && $3 != "true" {print $1 - k; found = 1; exit} END {if (!found) print "-"}' "$1/endpoints.tsv"
+}
+
+# experiments_evict <pod>: one eviction asked through the API, as a drain asks it, one line - epoch, pod, admitted, refused or error, the
+# answer. A refusal is the disruption budget's own (its message names it); anything else is an error, never read as a refusal. Instant and
+# logged, never registered: an admitted eviction is not undone; the ReplicaSet replaces the pod.
+experiments_evict() {
+    if ev_out=$(printf '{"apiVersion":"policy/v1","kind":"Eviction","metadata":{"name":"%s","namespace":"finapp"}}' "$1" \
+        | kube create --raw "/api/v1/namespaces/finapp/pods/$1/eviction" -f - 2>&1); then
+        ev_outcome=admitted
+    else
+        case $ev_out in *"disruption budget"*) ev_outcome=refused ;; *) ev_outcome=error ;; esac
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "$ev_outcome" "$(printf '%s' "$ev_out" | tr '\t\n' '  ' | cut -c1-200)"
+    printf '%s\tevict\t%s %s\n' "$(date -u +%H:%M:%S)" "$1" "$ev_outcome" >> "$EXP_ART/faults.log"
+}
+
+# experiments_pdb_reading: the application's disruption budget as its controller last read the fleet: allowed|healthy|desired|expected.
+experiments_pdb_reading() {
+    kube -n finapp get poddisruptionbudget finapp-app \
+        -o jsonpath='{.status.disruptionsAllowed}|{.status.currentHealthy}|{.status.desiredHealthy}|{.status.expectedPods}' 2>/dev/null
+}
+
+# experiments_unauthenticated: the entry's security consideration, in each of these experiments - a transfer with no session sent through the
+# public edge while the fault is on, by the workload's way in (never a node the fault took), must stay refused: answered 401 or 403 by a replica,
+# asked again while nothing answers it (no answer, a 5xx), and no idempotency record under its key afterwards. A success is FAILED.
+experiments_unauthenticated() {
+    ua_key="$(printf '%s' "$EXP_ID" | tr 'A-Z' 'a-z')-unauthenticated-$(experiments_rand)"
+    ua_status=""
+    ua_tries=0
+    while [ "$ua_tries" -lt 10 ]; do
+        ua_tries=$((ua_tries + 1))
+        ua_status=$(dock run --rm --network kind --add-host "public.finapp.test:$NODE_IP" -v "$(dpath "$CLIENT"):/work:ro" "$CURL_IMAGE" \
+            -s -o /dev/null -w '%{http_code}' --max-time 20 --cacert /work/edge-ca.crt -X POST -H 'Content-Type: application/json' \
+            -H "Idempotency-Key: $ua_key" \
+            -d "{\"sourceAccountId\":\"00000000-0000-7000-8000-000000000001\",\"destinationAccountId\":\"00000000-0000-7000-8000-000000000002\",\"amount\":\"0.01\",\"currency\":\"EUR\",\"reference\":\"$ua_key\"}" \
+            "https://public.finapp.test:30443/v1/transfers" 2>/dev/null || true)
+        case $ua_status in 2[0-9][0-9] | 401 | 403) break ;; esac
+        sleep 3
+    done
+    printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$ua_key" "$ua_tries" "${ua_status:-none}" >> "$EXP_DIR/unauthenticated.tsv"
+    case $ua_status in
+        401 | 403) ;;
+        2[0-9][0-9])
+            EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a transfer with no session was answered $ua_status while the fault was on"
+            log "$EXP_ID STOP: $EXP_STOPPED"
+            return 0 ;;
+        *) cannot "$EXP_ID: no replica answered the unauthenticated transfer in $ua_tries tries (last ${ua_status:-none}), so its refusal was not shown" ;;
+    esac
+    ua_claims=$(psql_query -c "SELECT count(*) FROM platform.idempotency_record WHERE idempotency_key = '$ua_key'" | tr -d '[:space:]')
+    if [ "$ua_claims" != 0 ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a refused transfer with no session left ${ua_claims:-an unread number of} idempotency records under its key"
+        log "$EXP_ID STOP: $EXP_STOPPED"
+        return 0
+    fi
+    experiments_record unauthenticated "a transfer with no session through the public edge while the fault was on: answered $ua_status on try $ua_tries, no idempotency record under its key"
+}
+
+# experiments_failures_windows <dir> <windows>: the edge's failed answers (edge-answers.tsv, 500 and more) each by the second it ended, against
+# windows ("<from> <to>" a line, inclusive), into FAILED_INSIDE and FAILED_OUTSIDE; and REFUSED_BY_REPLICA, the 503s the application itself
+# answered (a request shed, or a provider it could not ask): a refusal before any effect, counted apart and never a failure.
+experiments_failures_windows() {
+    [ -s "$2" ] || cannot "$EXP_ID: no window to judge the edge's failures by ($2 is empty)"
+    read -r FAILED_INSIDE FAILED_OUTSIDE REFUSED_BY_REPLICA <<EOF
+$(awk 'FNR == NR {n++; f[n] = $1; t[n] = $2; next}
+    $4 >= 500 { if ($4 == 503 && $5 == 503) { refused++; next }
+                inside = 0; for (i = 1; i <= n; i++) if ($1 >= f[i] && $1 <= t[i]) inside = 1
+                if (inside) a++; else b++ }
+    END {print a + 0, b + 0, refused + 0}' FS=' ' "$2" FS='\t' "$1/edge-answers.tsv")
+EOF
+}
+
+# experiments_failed_requests <label>: the workload's requests that failed, each counted once however often its key was tried again (a key the
+# client minted is one request; a register, a sign-in or a checkout session's attempt one each), a shed answer left out: it was asked again
+# by its key, and the census counts it once.
+experiments_failed_requests() {
+    awk -F'\t' '$NF ~ /^ATTEMPT-FAILED/ && $NF !~ /answered 503: .*api\.Overloaded/ { if ($2 ~ /^wl-/) keys[$1 "|" $2] = 1; else n++ }
+        END { for (k in keys) n++; print n + 0 }' "$CLIENT/workload-$1.tsv"
+}
+
+# experiments_edge_wait: how long the public edge waits on a replica's answer (its responseHeaderTimeout, read from the committed edge): a
+# request in flight on a replica that vanished with its node ends that long after it started.
+experiments_edge_wait() {
+    EXP_EDGE_WAIT=$(sed -n 's/^ *responseHeaderTimeout: \([0-9]*\)s$/\1/p' "$ROOT/deploy/edge/base/public-edge.yaml" | head -1)
+    case $EXP_EDGE_WAIT in '' | *[!0-9]*) cannot "the public edge's responseHeaderTimeout could not be read from public-edge.yaml" ;; esac
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E02: half the fleet lost at once, an eviction asked for every replica meanwhile (AVAILABILITY.md row A08).
+# ---------------------------------------------------------------------------------------------------
+
+# e02_target <pod>: the node an application pod runs on and its process there, into TARGET_NODE and TARGET_PID, refused off this cluster's
+# nodes (experiments_kill_jvm's lookups, apart from its signal, so that several are found before any is sent). Never called inside $( ).
+e02_target() {
+    TARGET_NODE=$(kube -n finapp get pod "$1" -o jsonpath='{.spec.nodeName}')
+    container=$(kube -n finapp get pod "$1" -o jsonpath='{.status.containerStatuses[?(@.name=="app")].containerID}' | sed 's#^containerd://##')
+    [ -n "$TARGET_NODE" ] && [ -n "$container" ] || cannot "the pod $1 has no node or no running container to kill"
+    [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$TARGET_NODE" 2>/dev/null)" = "$CLUSTER" ] \
+        || fail "the safety boundary refused to kill on $TARGET_NODE: it is not a node of $CLUSTER"
+    TARGET_PID=$(dock exec "$TARGET_NODE" crictl inspect --output go-template --template '{{.info.pid}}' "$container" 2>/dev/null)
+    case $TARGET_PID in '' | *[!0-9]*) cannot "the application process of $1 could not be found on $TARGET_NODE" ;; esac
+}
+
+E02_steady() {
+    start_workload e02 retry
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E02_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E02_SAMPLER"
+    experiments_live_replicas > "$EXP_DIR/live.txt"
+    live=$(grep -c . "$EXP_DIR/live.txt" || true)
+    [ "$live" = "$FLEET_REPLICAS" ] || cannot "E02: $live replicas ready where the run holds $FLEET_REPLICAS"
+    E02_HALF=$((live / 2))
+    # Half the fleet, one zone after another and the first by name in each, so no zone is emptied while another is untouched.
+    awk '{n[$4]++; print n[$4], $4, $1, $2}' "$EXP_DIR/live.txt" | sort -k1,1n -k2,2 | head -"$E02_HALF" | awk '{print $3, $4}' > "$EXP_DIR/victims.txt"
+    awk '{print $1}' "$EXP_DIR/victims.txt" > "$EXP_DIR/victims-names.txt"
+    [ "$E02_HALF" -ge 1 ] && [ "$(grep -c . "$EXP_DIR/victims-names.txt")" = "$E02_HALF" ] || cannot "E02: no half of the fleet to take"
+    experiments_fleet | awk -F'|' 'FNR == NR {v[$0] = 1; next} ($1 in v) {print $1 "|" $3}' "$EXP_DIR/victims-names.txt" - > "$EXP_DIR/restarts-before.txt"
+    E02_SHED_BEFORE=$(e51_shed)
+    reading=$(experiments_pdb_reading)
+    [ -n "$reading" ] || cannot "E02: the application's disruption budget could not be read"
+    experiments_record victims "$E02_HALF of $live replicas, a zone at a time: $(tr '\n' ' ' < "$EXP_DIR/victims-names.txt")"
+    experiments_record "budget before" "$reading (allowed|healthy|desired|expected)"
+}
+
+E02_fault() {
+    # The entry's probe: the disruption budget taken away first, a fault of the registry put back at the stop and on every way out.
+    [ "$PROBE" != pdb-removed ] || experiments_fault_on pdb-removed
+    experiments_endpoints_sampler "$EXP_DIR" $(awk '{print $2}' "$EXP_DIR/victims.txt") &
+    E02_ENDPOINTS=$!
+    BACKGROUND="$BACKGROUND $E02_ENDPOINTS"
+    sleep 1
+    if [ "$PROBE" != guard-off ]; then
+        experiments_context_check || fail "the safety boundary refused before the kills: $EXP_REASON"
+    fi
+    # At once: every victim's process found on its node first, then the signals sent back to back.
+    : > "$EXP_DIR/targets.txt"
+    for pod in $(cat "$EXP_DIR/victims-names.txt"); do
+        e02_target "$pod"
+        printf '%s|%s|%s\n' "$pod" "$TARGET_NODE" "$TARGET_PID" >> "$EXP_DIR/targets.txt"
+        experiments_victims pod "$pod"
+    done
+    E02_KILLED_AT=""
+    : > "$EXP_DIR/kills.tsv"
+    for target in $(cat "$EXP_DIR/targets.txt"); do
+        pod=${target%%|*}
+        rest=${target#*|}
+        KILLED_EPOCH=$(date +%s)
+        dock exec "${rest%%|*}" kill -9 "${rest#*|}" || cannot "SIGKILL could not be sent to $pod's process on ${rest%%|*}"
+        printf '%s\tkill -9\t%s on %s, pid %s\n' "$(date -u +%H:%M:%S)" "$pod" "${rest%%|*}" "${rest#*|}" >> "$EXP_ART/faults.log"
+        [ -n "$E02_KILLED_AT" ] || E02_KILLED_AT=$KILLED_EPOCH
+        printf '%s\t%s\n' "$pod" "$KILLED_EPOCH" >> "$EXP_DIR/kills.tsv"
+    done
+    experiments_victims after "$E02_KILLED_AT"
+    experiments_record fault "kill -9 of $E02_HALF replicas' JVMs from their nodes, $(iso "$E02_KILLED_AT") to $(iso "$KILLED_EPOCH")"
+    log "E02: $E02_HALF replicas' JVMs killed with SIGKILL"
+    # A drain arriving mid-incident, once the budget reads the kills (its controller reads the fleet a moment after them): an eviction asked
+    # for every replica. Each must be refused while half the fleet is down; under the probe there is no budget, and each is admitted.
+    if [ "$PROBE" != pdb-removed ]; then
+        deadline=$((E02_KILLED_AT + 30))
+        reading=""
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            reading=$(experiments_pdb_reading)
+            case $reading in 0\|*) break ;; esac
+            sleep 1
+        done
+        case $reading in 0\|*) ;; *) cannot "E02: the disruption budget did not read the kills within 30 s ($reading), so its refusals would show nothing" ;; esac
+        experiments_record "budget at the kills" "$reading (allowed|healthy|desired|expected)"
+    fi
+    : > "$EXP_DIR/evictions.tsv"
+    for pod in $(experiments_fleet | awk -F'|' 'NF >= 5 && $6 == "" {print $1}' | sort); do
+        experiments_evict "$pod" >> "$EXP_DIR/evictions.tsv"
+    done
+    E02_ADMITTED=$(awk -F'\t' '$3 == "admitted"' "$EXP_DIR/evictions.tsv" | grep -c . || true)
+    E02_REFUSED=$(awk -F'\t' '$3 == "refused"' "$EXP_DIR/evictions.tsv" | grep -c . || true)
+    errors=$(awk -F'\t' '$3 == "error" {print $2 ": " $4}' "$EXP_DIR/evictions.tsv" | tr '\n' ';')
+    [ -z "$errors" ] || cannot "E02: evictions answered neither admitted nor refused by the budget: $errors"
+    experiments_record evictions "$E02_REFUSED refused by the disruption budget and $E02_ADMITTED admitted, of $(grep -c . "$EXP_DIR/evictions.tsv") asked; the budget then $(experiments_pdb_reading)"
+    experiments_unauthenticated
+}
+
+E02_observe() {
+    PAGES_AT=0
+    deadline=$((E02_KILLED_AT + 600))
+    E02_BACK_AT=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        experiments_watch_pages || return 0
+        experiments_load_check || return 0
+        fleet=$(experiments_fleet)
+        ready=$(printf '%s\n' "$fleet" | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == ""' | grep -c . || true)
+        # The stop, sharpened from the register's 60 s by its own Safety ("at least one replica always ready"): any reading with none ready.
+        if [ "$ready" = 0 ]; then
+            EXP_STOPPED="no replica ready $(( $(date +%s) - E02_KILLED_AT )) s after the kills: the fleet's ready count reached zero"
+            log "E02 STOP: $EXP_STOPPED"
+            return 0
+        fi
+        back=$(printf '%s\n' "$fleet" | awk -F'|' 'FNR == NR {before[$1] = $2; next} NF >= 5 && ($1 in before) && $2 == "True" && $6 == "" && $3 > before[$1] {n++}
+            END {print n + 0}' "$EXP_DIR/restarts-before.txt" -)
+        if [ "$back" = "$E02_HALF" ]; then
+            E02_BACK_AT=$(date +%s)
+            break
+        fi
+        sleep 2
+    done
+    [ -n "$E02_BACK_AT" ] || { EXP_STOPPED="the killed replicas were not all ready again within 600 s of the kills"; return 0; }
+    : > "$EXP_DIR/windows.txt"
+    for pod in $(cat "$EXP_DIR/victims-names.txt"); do
+        code=$(kube -n finapp get pod "$pod" -o jsonpath='{.status.containerStatuses[0].lastState.terminated.exitCode}')
+        [ "$code" = 137 ] || fail "E02: $pod's container ended with $code, not 137: it was not a SIGKILL"
+        ip=$(awk -v p="$pod" '$1 == p {print $2}' "$EXP_DIR/victims.txt")
+        killed=$(awk -F'\t' -v p="$pod" '$1 == p {print $2}' "$EXP_DIR/kills.tsv")
+        out=$(experiments_left_service "$EXP_DIR" "$ip" "$killed")
+        [ "$out" != - ] || fail "E02: the sampler never read $pod's endpoint leave the Service after its kill: see experiments/E02/endpoints.tsv"
+        # A failure on it ends from a second before its kill to five seconds after its endpoint was read out (a second for the read, kube-proxy after it).
+        printf '%s %s\n' "$((killed - 1))" "$((killed + out + 5))" >> "$EXP_DIR/windows.txt"
+    done
+    if [ "$PROBE" != pdb-removed ]; then
+        [ "$E02_ADMITTED" = 0 ] || fail "E02: the disruption budget admitted $E02_ADMITTED evictions while half the fleet was down"
+        [ "$E02_REFUSED" -ge 1 ] || cannot "E02: no eviction was asked, so the budget's refusal was not shown"
+    fi
+    shed_now=$(e51_shed)
+    if [ -n "$shed_now" ] && [ -n "$E02_SHED_BEFORE" ]; then E02_SHED=$((shed_now - E02_SHED_BEFORE)); else E02_SHED=unread; fi
+    experiments_record back "every one of the $E02_HALF killed replicas ready again in its pod (exit 137) $((E02_BACK_AT - E02_KILLED_AT)) s after the first kill; never no replica ready (read every 2 s); $E02_SHED requests shed by the fleet meanwhile"
+    pass "E02: half the fleet killed at once and back in $((E02_BACK_AT - E02_KILLED_AT)) s; every one of $E02_REFUSED evictions refused by the budget meanwhile; at least one replica ready throughout; $E02_SHED shed"
+}
+
+E02_recover() {
+    ready_fleet 600 || fail "E02: the fleet did not return to its $FLEET_REPLICAS ready replicas"
+    sleep 20
+    touch "$EXP_DIR/sampler-stop" "$EXP_DIR/endpoints-stop"
+    wait "$E02_SAMPLER" 2>/dev/null || true
+    wait "$E02_ENDPOINTS" 2>/dev/null || true
+    experiments_workload_end e02
+    # Stopped (the probe's zero ready among the ways): the failures are not told apart, and the census still runs; the verdict is FAILED.
+    if [ -n "$EXP_STOPPED" ]; then
+        experiments_record "failed at the edge" "not told apart: the experiment stopped ($EXP_STOPPED)"
+        return 0
+    fi
+    experiments_edge_read "$EXP_DIR" $((E02_KILLED_AT - 60))
+    experiments_failures_windows "$EXP_DIR" "$EXP_DIR/windows.txt"
+    failed_requests=$(experiments_failed_requests e02)
+    shed_answers=$(grep -c 'ATTEMPT-FAILED .*answered 503: .*api\.Overloaded' "$CLIENT/workload-e02.tsv" || true)
+    experiments_record "failed at the edge" "$FAILED_INSIDE failed answers ended in the windows a killed replica could still be picked in, $FAILED_OUTSIDE outside them; $REFUSED_BY_REPLICA answered 503 by a replica (refused before any effect); $EDGE_SERVED served"
+    experiments_record "in flight and failed" "$failed_requests of the workload's requests failed, each a key; $shed_answers of its attempts shed and asked again by their keys; none unresolved"
+    [ "$FAILED_OUTSIDE" = 0 ] || fail "E02: the edge failed $FAILED_OUTSIDE answers outside the windows a killed replica could be picked in: a surviving replica failed them"
+    [ "$failed_requests" -le "$FAILED_INSIDE" ] \
+        || fail "E02: $failed_requests of the workload's requests failed where the edge failed $FAILED_INSIDE in the killed replicas' windows: a request failed that was not on them"
+    # Shed requests left no record: the workload's were asked again by their keys and the census counts each once; the generators' shed-once
+    # probes are censused after the load (load_shed: no claim and no transfer under their keys).
+    experiments_window E02 "$E02_KILLED_AT" "$E02_BACK_AT" record
+    availability_check A08 "$E02_KILLED_AT" $((E02_BACK_AT + EXPERIMENTS_WALK_MARGIN))
+    pass "E02: every failed answer was on a killed replica ($FAILED_INSIDE in their windows, none outside), $REFUSED_BY_REPLICA refused by the survivors before any effect; none unresolved"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E03: three graceful evictions through the API under load, one a zone, each with a payout held in flight on its pod (row A07).
+# ---------------------------------------------------------------------------------------------------
+
+E03_EVICTIONS=3
+
+E03_steady() {
+    start_workload e03 retry
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E03_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E03_SAMPLER"
+    experiments_participants
+    experiments_live_replicas > "$EXP_DIR/live.txt"
+    # One a zone, the first by name in each.
+    awk '!seen[$4]++ {print $1, $2, $4}' "$EXP_DIR/live.txt" | head -"$E03_EVICTIONS" > "$EXP_DIR/victims.txt"
+    [ "$(grep -c . "$EXP_DIR/victims.txt")" = "$E03_EVICTIONS" ] || cannot "E03: the replicas are not in $E03_EVICTIONS zones to evict one from each"
+    : > "$EXP_DIR/windows.txt"
+    : > "$EXP_DIR/evictions.tsv"
+    printf 'pod\tevicted\tgone\tanswered\tkey\n' > "$EXP_DIR/drained.tsv"
+    experiments_record victims "$(awk '{print $1 " in " $3}' "$EXP_DIR/victims.txt" | tr '\n' ' ')"
+}
+
+# e03_resolve <key> <n>: a held payout its own pod's drain did not answer, asked again by its key on another replica until it is answered, so
+# the census still counts it once.
+e03_resolve() {
+    other=$(experiments_a_ready_replica | cut -d' ' -f2)
+    deadline=$(( $(date +%s) + 600 ))
+    tries=0
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        tries=$((tries + 1))
+        experiments_payout "$other" "$1" "retry-$2-$tries" || true
+        case $(experiments_status "$EXP_DIR/payout-retry-$2-$tries.txt") in
+            200 | 201) EXPERIMENTS_PAYOUTS=$((EXPERIMENTS_PAYOUTS + 1)); return 0 ;;
+        esac
+        sleep 5
+    done
+    fail "E03: the payout under $1 was not answered by another replica within 600 s"
+}
+
+E03_fault() {
+    E03_FIRST_AT=""
+    E03_LAST_AT=""
+    n=0
+    for pod in $(awk '{print $1}' "$EXP_DIR/victims.txt"); do
+        n=$((n + 1))
+        ip=$(kube -n finapp get pod "$pod" -o jsonpath='{.status.podIP}')
+        # Its work in flight: a payout held at the provider after its effect, its claim IN_PROGRESS on this pod.
+        key="e03-$(experiments_rand)"
+        experiments_fault_on hold hold-payouts
+        experiments_payout "$ip" "$key" "held-$n" &
+        held=$!
+        deadline=$(( $(date +%s) + 60 ))
+        claim=""
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            claim=$(psql_query -c "SELECT state FROM platform.idempotency_record WHERE idempotency_key = '$key'" | tr -d '[:space:]')
+            [ "$claim" = IN_PROGRESS ] && break
+            sleep 1
+        done
+        [ "$claim" = IN_PROGRESS ] || cannot "E03: the payout sent to $pod never held a claim IN_PROGRESS, so its eviction would find nothing in flight"
+        # Admitted only when the budget allows: a refusal is the budget serialising the evictions, and the eviction is asked again every 3 s.
+        deadline=$(( $(date +%s) + 600 ))
+        outcome=""
+        line=""
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            line=$(experiments_evict "$pod")
+            printf '%s\n' "$line" >> "$EXP_DIR/evictions.tsv"
+            outcome=$(printf '%s' "$line" | cut -f3)
+            [ "$outcome" = refused ] || break
+            sleep 3
+        done
+        [ "$outcome" = admitted ] || cannot "E03: the eviction of $pod was not admitted within 600 s ($outcome): see experiments/E03/evictions.tsv"
+        evicted=$(printf '%s' "$line" | cut -f1)
+        [ -n "$E03_FIRST_AT" ] || E03_FIRST_AT=$evicted
+        experiments_victims pod "$pod"
+        experiments_victims after "$evicted"
+        [ "$n" != 1 ] || experiments_unauthenticated
+        # The hold lifted inside the pod's drain (its preStop pause, then the HTTP drain: 10 s and 30 s), so its own answer completes the payout.
+        sleep 10
+        experiments_fault_off hold hold-payouts
+        wait "$held" 2>/dev/null || true
+        status=$(experiments_status "$EXP_DIR/payout-held-$n.txt")
+        # The pod gone and its replacement ready before the next: the budget would refuse the next until then anyway.
+        deadline=$(( $(date +%s) + 300 ))
+        while kube -n finapp get pod "$pod" -o name >/dev/null 2>&1; do
+            [ "$(date +%s)" -lt "$deadline" ] || fail "E03: the evicted $pod was still there 300 s after its eviction"
+            sleep 2
+        done
+        gone=$(date +%s)
+        E03_LAST_AT=$gone
+        ready_fleet 400 || fail "E03: the fleet did not return to its $FLEET_REPLICAS ready replicas after $pod's eviction"
+        printf '%s %s\n' "$((evicted - 1))" "$((gone + 5))" >> "$EXP_DIR/windows.txt"
+        experiments_window E03 "$evicted" "$gone" none
+        printf '%s\t%s\t%s\t%s\t%s\n' "$pod" "$evicted" "$gone" "${status:-none}" "$key" >> "$EXP_DIR/drained.tsv"
+        case $status in
+            200 | 201) EXPERIMENTS_PAYOUTS=$((EXPERIMENTS_PAYOUTS + 1)) ;;
+            *)
+                e03_resolve "$key" "$n"
+                EXP_STOPPED="the payout in flight on $pod was answered ${status:-nothing} through its eviction: a request failed on a graceful path"
+                log "E03 STOP: $EXP_STOPPED"
+                return 0 ;;
+        esac
+        # The stop condition, read after each eviction and before the next is asked: a failed answer at the edge through it.
+        experiments_edge_read "$EXP_DIR" $((E03_FIRST_AT - 60))
+        experiments_failures_windows "$EXP_DIR" "$EXP_DIR/windows.txt"
+        if [ "$FAILED_INSIDE" != 0 ]; then
+            EXP_STOPPED="$FAILED_INSIDE answers failed at the edge through the evictions so far, the last of $pod: a request failed on a graceful path"
+            log "E03 STOP: $EXP_STOPPED"
+            return 0
+        fi
+        refusals=$(awk -F'\t' -v p="$pod" '$2 == p && $3 == "refused"' "$EXP_DIR/evictions.tsv" | grep -c . || true)
+        experiments_record "eviction $n" "$pod admitted at $(iso "$evicted") after $refusals refusals by the budget, gone $((gone - evicted)) s later; its held payout answered $status by its own drain; no failed answer at the edge through it"
+    done
+    experiments_record fault "$n graceful evictions through the API, one a zone, each with a payout held in flight on its pod"
+}
+
+E03_observe() {
+    [ -z "$EXP_STOPPED" ] || return 0
+    PAGES_AT=0
+    experiments_watch_pages || return 0
+    experiments_load_check || return 0
+    drained=$(awk -F'\t' 'NR > 1 && ($4 == 200 || $4 == 201)' "$EXP_DIR/drained.tsv" | grep -c . || true)
+    [ "$drained" = "$E03_EVICTIONS" ] || fail "E03: $drained of $E03_EVICTIONS held payouts were answered by their own pod's drain: see experiments/E03/drained.tsv"
+    pass "E03: $E03_EVICTIONS graceful evictions, each admitted by the budget in turn, each pod's held payout answered by its own drain, no failed answer at the edge through any"
+}
+
+E03_recover() {
+    ready_fleet 400 || fail "E03: the fleet did not return to its $FLEET_REPLICAS ready replicas"
+    sleep 20
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E03_SAMPLER" 2>/dev/null || true
+    experiments_workload_end e03
+    failed_requests=$(experiments_failed_requests e03)
+    experiments_record "failed requests" "$failed_requests of the workload's requests failed across the evictions"
+    if [ "$failed_requests" != 0 ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$failed_requests of the workload's requests failed across graceful evictions: a request failed on a graceful path"
+        log "E03 STOP: $EXP_STOPPED"
+    fi
+    experiments_edge_read "$EXP_DIR" $((E03_FIRST_AT - 60))
+    availability_check A07 "$E03_FIRST_AT" $((${E03_LAST_AT:-$(date +%s)} + EXPERIMENTS_WALK_MARGIN))
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E04: the spare zone's worker stopped as a machine stops, under load (row A07; OPERATIONS_RUNBOOK.md section 11.8's instance down).
+# ---------------------------------------------------------------------------------------------------
+
+# How long E04 holds the worker away once its replicas are marked for deletion (their toleration of an unreachable node, read from a lost
+# replica): for the replacements to be scheduled and ready, or read Pending with the scheduler's reason.
+E04_PENDING_HOLD=300
+
+E04_steady() {
+    start_workload e04 retry
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E04_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E04_SAMPLER"
+    E04_NODE=$(kube get nodes -l "topology.kubernetes.io/zone=$EXPERIMENTS_SPARE_ZONE" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | head -1)
+    [ -n "$E04_NODE" ] && [ "$E04_NODE" = "${EXPERIMENTS_SPARE_NODE:-}" ] || cannot "E04: the spare zone's worker ($E04_NODE) is not the one the scope cleared"
+    E04_ADDRESS=$(dock inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "$E04_NODE")
+    [ -n "$E04_ADDRESS" ] || cannot "E04: $E04_NODE has no address on the kind network"
+    for way in $NODE_IP $OPERATOR_IP $EXPERIMENTS_EDGE_NODES; do
+        [ "$way" != "$E04_ADDRESS" ] || cannot "E04: a client reaches an edge on $E04_NODE, which the experiment would stop"
+    done
+    kube get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}|{.spec.nodeName}|{.metadata.deletionTimestamp}{"\n"}{end}' \
+        > "$EXP_DIR/pods-before.txt" 2>&1 || cannot "E04: the pods could not be listed"
+    left=$(experiments_spare_left "$EXP_DIR/pods-before.txt" "$E04_NODE")
+    [ -z "$left" ] || cannot "E04: $E04_NODE runs $left, which the run must not lose with it"
+    E04_PODS=$(experiments_fleet | awk -F'|' -v n="$E04_NODE" 'NF >= 5 && $4 == n && $6 == "" {print $1}' | sort | tr '\n' ' ')
+    E04_IPS=$(experiments_fleet | awk -F'|' -v n="$E04_NODE" 'NF >= 5 && $4 == n && $6 == "" {print $5}' | tr '\n' ' ')
+    [ -n "$E04_PODS" ] || cannot "E04: no application replica runs on $E04_NODE, so its loss would take none"
+    experiments_edge_wait
+    experiments_record victims "$E04_NODE in $EXPERIMENTS_SPARE_ZONE: the replicas $E04_PODS; with them $(awk -F'|' -v n="$E04_NODE" '$2 == n && $3 == ""' "$EXP_DIR/pods-before.txt" | grep -c .) pods in all"
+}
+
+E04_fault() {
+    experiments_endpoints_sampler "$EXP_DIR" $E04_IPS &
+    E04_ENDPOINTS=$!
+    BACKGROUND="$BACKGROUND $E04_ENDPOINTS"
+    sleep 1
+    experiments_victims node "$E04_NODE"
+    E04_STOPPED_AT=$(date +%s)
+    experiments_victims after "$E04_STOPPED_AT"
+    experiments_fault_on node-stopped "$E04_NODE" "$E04_ADDRESS"
+    experiments_record fault "$E04_NODE ($EXPERIMENTS_SPARE_ZONE) stopped as a machine stops (docker kill) at $(iso "$E04_STOPPED_AT"); its replicas $E04_PODS and everything else it ran lost with it"
+    log "E04: $E04_NODE stopped, its replicas $E04_PODS with it"
+    experiments_unauthenticated
+}
+
+E04_observe() {
+    PAGES_AT=0
+    toleration=$(kube -n finapp get pod "${E04_PODS%% *}" -o jsonpath='{.spec.tolerations[?(@.key=="node.kubernetes.io/unreachable")].tolerationSeconds}')
+    case $toleration in '' | *[!0-9]*) cannot "E04: a lost replica's toleration of an unreachable node could not be read" ;; esac
+    E04_NOT_READY=""
+    E04_DOWN_FIRED=""
+    E04_EVICTED=""
+    E04_RESTORED=""
+    printf 'epoch\tready\tpending\n' > "$EXP_DIR/pending.tsv"
+    misses=0
+    deadline=$((E04_STOPPED_AT + toleration + 120 + E04_PENDING_HOLD))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        now=$(date +%s)
+        # The stop: the control plane unreachable, three reads in a row.
+        if ! nodes=$(kube get nodes -o jsonpath='{range .items[*]}{.metadata.name}|{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null); then
+            misses=$((misses + 1))
+            if [ "$misses" -ge 3 ]; then
+                EXP_STOPPED="the control plane did not answer three reads in a row"
+                log "E04 STOP: $EXP_STOPPED"
+                return 0
+            fi
+            sleep 5
+            continue
+        fi
+        misses=0
+        experiments_watch_pages || return 0
+        experiments_load_check || return 0
+        [ -n "$E04_NOT_READY" ] || [ "$(printf '%s\n' "$nodes" | awk -F'|' -v n="$E04_NODE" '$1 == n {print $2}')" = True ] || E04_NOT_READY=$now
+        # Section 11.8's InstanceDown, for an instance of the lost worker: the expected signal, recorded and never a stop.
+        if [ -z "$E04_DOWN_FIRED" ]; then
+            down=$(experiments_value 'count(ALERTS{alertname="InstanceDown",alertstate="firing"})')
+            [ -z "$down" ] || [ "${down%%.*}" = 0 ] || E04_DOWN_FIRED=$now
+        fi
+        fleet=$(experiments_fleet)
+        ready=$(printf '%s\n' "$fleet" | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == ""' | grep -c . || true)
+        terminating=$(printf '%s\n' "$fleet" | awk -F'|' -v n="$E04_NODE" 'NF >= 5 && $4 == n && $6 != ""' | grep -c . || true)
+        [ -n "$E04_EVICTED" ] || [ "$terminating" = 0 ] || E04_EVICTED=$now
+        if [ -n "$E04_EVICTED" ]; then
+            if [ "$ready" -ge "$FLEET_REPLICAS" ]; then
+                E04_RESTORED=$now
+                break
+            fi
+            pending=$(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app --field-selector=status.phase=Pending -o name 2>/dev/null | grep -c . || true)
+            printf '%s\t%s\t%s\n' "$now" "$ready" "$pending" >> "$EXP_DIR/pending.tsv"
+            [ $((now - E04_EVICTED)) -lt "$E04_PENDING_HOLD" ] || break
+        fi
+        sleep 5
+    done
+    kube -n finapp get events --field-selector reason=FailedScheduling \
+        -o jsonpath='{range .items[*]}{.lastTimestamp}|{.involvedObject.name}|{.message}{"\n"}{end}' > "$EXP_DIR/failed-scheduling.txt" 2>&1 || true
+    experiments_record observed "the worker NotReady $(experiments_since "$E04_NOT_READY" "$E04_STOPPED_AT") after the stop; InstanceDown firing $(experiments_since "$E04_DOWN_FIRED" "$E04_STOPPED_AT") after it; the lost replicas marked for deletion $(experiments_since "$E04_EVICTED" "$E04_STOPPED_AT") after it (their toleration $toleration s); every replica ready again $(experiments_since "$E04_RESTORED" "$E04_STOPPED_AT") after it"
+    [ -n "$E04_NOT_READY" ] || fail "E04: $E04_NODE was never read NotReady while stopped"
+    [ -n "$E04_EVICTED" ] || fail "E04: the lost replicas were not marked for deletion within their toleration and 120 s"
+    if [ -z "$E04_DOWN_FIRED" ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }InstanceDown never fired for an instance of the lost worker (OPERATIONS_RUNBOOK.md section 11.8)"
+        log "E04 STOP: $EXP_STOPPED"
+    fi
+    if [ -z "$E04_RESTORED" ]; then
+        reason=$(tail -1 "$EXP_DIR/failed-scheduling.txt" | cut -d'|' -f3 | cut -c1-300)
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }ready capacity not restored while the worker was lost: $(tail -1 "$EXP_DIR/pending.tsv" | cut -f3) replicas Pending $E04_PENDING_HOLD s after the lost ones were marked for deletion (${reason:-no scheduling event read})"
+        log "E04 STOP: $EXP_STOPPED"
+        return 0
+    fi
+    pass "E04: with $E04_NODE stopped, InstanceDown fired for its instances and every replica was ready again on the other workers $((E04_RESTORED - E04_STOPPED_AT)) s after the stop"
+}
+
+E04_recover() {
+    # The worker back (its fault removed at the stop, at the address it had): Ready, its stranded pods gone, every replica ready.
+    deadline=$(( $(date +%s) + 300 ))
+    until [ "$(kube get node "$E04_NODE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || fail "E04: $E04_NODE was not Ready within 300 s of its start"
+        sleep 5
+    done
+    E04_BACK_AT=$(date +%s)
+    ready_fleet 600 || fail "E04: the fleet did not return to its $FLEET_REPLICAS ready replicas after the worker's return"
+    deadline=$(( $(date +%s) + 600 ))
+    until [ -z "$(experiments_value 'count(ALERTS{alertname="InstanceDown",alertstate="firing"})')" ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || fail "E04: InstanceDown still fired 600 s after the worker's return and the fleet's"
+        sleep 10
+    done
+    experiments_record "back" "$E04_NODE Ready $((E04_BACK_AT - E04_STOPPED_AT)) s after its stop, at its address; every replica ready and InstanceDown cleared $(( $(date +%s) - E04_BACK_AT )) s after its return"
+    sleep 20
+    touch "$EXP_DIR/sampler-stop" "$EXP_DIR/endpoints-stop"
+    wait "$E04_SAMPLER" 2>/dev/null || true
+    wait "$E04_ENDPOINTS" 2>/dev/null || true
+    experiments_workload_end e04
+    experiments_edge_read "$EXP_DIR" $((E04_STOPPED_AT - 60))
+    # A request in flight on a lost replica ends at the edge's own wait for an answer, and one sent to it before its endpoint left the Service too.
+    : > "$EXP_DIR/windows.txt"
+    for ip in $E04_IPS; do
+        out=$(experiments_left_service "$EXP_DIR" "$ip" "$E04_STOPPED_AT")
+        [ "$out" != - ] || fail "E04: the sampler never read the lost replica at $ip leave the Service: see experiments/E04/endpoints.tsv"
+        printf '%s %s\n' "$((E04_STOPPED_AT - 1))" "$((E04_STOPPED_AT + out + EXP_EDGE_WAIT + 5))" >> "$EXP_DIR/windows.txt"
+    done
+    experiments_failures_windows "$EXP_DIR" "$EXP_DIR/windows.txt"
+    failed_requests=$(experiments_failed_requests e04)
+    experiments_record "failed at the edge" "$FAILED_INSIDE failed answers ended in the windows a lost replica could still be picked in (to the edge's own $EXP_EDGE_WAIT s wait past its leaving), $FAILED_OUTSIDE outside them; $REFUSED_BY_REPLICA answered 503 by a replica; $failed_requests of the workload's requests failed, none unresolved"
+    [ "$FAILED_OUTSIDE" = 0 ] || fail "E04: the edge failed $FAILED_OUTSIDE answers outside the windows a lost replica could be picked in: a surviving replica failed them"
+    [ "$failed_requests" -le "$FAILED_INSIDE" ] \
+        || fail "E04: $failed_requests of the workload's requests failed where the edge failed $FAILED_INSIDE in the lost replicas' windows"
+    experiments_window E04 "$E04_STOPPED_AT" "$E04_BACK_AT" record
+    availability_check A07 "$E04_STOPPED_AT" $((E04_BACK_AT + EXPERIMENTS_WALK_MARGIN))
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E25: an edge controller lost under traffic (THREAT_MODEL.md section 6 item 43 (f); row A09).
+# ---------------------------------------------------------------------------------------------------
+
+# e25_controllers: one line per public edge controller - name|node|ready|restarts|terminating.
+e25_controllers() {
+    kube -n finapp-edge get pods -l app.kubernetes.io/name=finapp-edge-public \
+        -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.nodeName}|{.status.conditions[?(@.type=="Ready")].status}|{.status.containerStatuses[0].restartCount}|{.metadata.deletionTimestamp}{"\n"}{end}'
+}
+
+E25_steady() {
+    start_workload e25 retry
+    sleep 8
+    [ "$(printf '%s\n' $EXPERIMENTS_EDGE_NODES | sort -u | grep -c .)" = 2 ] || cannot "E25: the generators are not split over the two controllers' nodes"
+    E25_LOST_ADDRESS=$(printf '%s\n' $EXPERIMENTS_EDGE_NODES | grep -vxF "$NODE_IP" | head -1)
+    E25_VICTIM=""
+    E25_SURVIVOR=""
+    for line in $(e25_controllers); do
+        name=${line%%|*}
+        rest=${line#*|}
+        address=$(dock inspect -f '{{.NetworkSettings.Networks.kind.IPAddress}}' "${rest%%|*}")
+        if [ "$address" = "$E25_LOST_ADDRESS" ]; then E25_VICTIM=$name; else E25_SURVIVOR=$name; fi
+    done
+    [ -n "$E25_VICTIM" ] && [ -n "$E25_SURVIVOR" ] || cannot "E25: no controller on each of the generators' two nodes"
+    E25_RESTARTS=$(e25_controllers | awk -F'|' -v v="$E25_VICTIM" '$1 == v {print $4}')
+    experiments_edge_wait
+    experiments_record victims "the public edge's $E25_VICTIM, on the node half the generators reach; $E25_SURVIVOR serves the other half and the workload"
+}
+
+E25_fault() {
+    if [ "$PROBE" != guard-off ]; then
+        experiments_context_check || fail "the safety boundary refused before the kill: $EXP_REASON"
+    fi
+    experiments_kill_container finapp-edge "$E25_VICTIM" edge
+    E25_KILLED_AT=$KILLED_EPOCH
+    experiments_record fault "kill -9 of $E25_VICTIM's proxy ($KILLED) at $(iso "$E25_KILLED_AT")"
+    log "E25: the public edge's $E25_VICTIM killed with SIGKILL ($KILLED)"
+    experiments_unauthenticated
+}
+
+E25_observe() {
+    PAGES_AT=0
+    deadline=$((E25_KILLED_AT + 600))
+    E25_BACK_AT=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        experiments_watch_pages || return 0
+        experiments_load_check || return 0
+        controllers=$(e25_controllers)
+        if [ "$(printf '%s\n' "$controllers" | awk -F'|' '$3 == "True" && $5 == ""' | grep -c . || true)" = 0 ]; then
+            EXP_STOPPED="both controllers of the public edge unready $(( $(date +%s) - E25_KILLED_AT )) s after the kill"
+            log "E25 STOP: $EXP_STOPPED"
+            return 0
+        fi
+        if printf '%s\n' "$controllers" | awk -F'|' -v v="$E25_VICTIM" -v r="$E25_RESTARTS" '$1 == v && $3 == "True" && $4 > r {found = 1} END {exit !found}'; then
+            E25_BACK_AT=$(date +%s)
+            break
+        fi
+        sleep 1
+    done
+    [ -n "$E25_BACK_AT" ] || { EXP_STOPPED="the lost controller was not replaced in 10 min"; return 0; }
+    code=$(kube -n finapp-edge get pod "$E25_VICTIM" -o jsonpath='{.status.containerStatuses[0].lastState.terminated.exitCode}')
+    [ "$code" = 137 ] || fail "E25: the controller's proxy ended with $code, not 137: it was not a SIGKILL"
+    experiments_record back "$E25_VICTIM ready again in its pod (exit 137) $((E25_BACK_AT - E25_KILLED_AT)) s after the kill; $E25_SURVIVOR ready throughout"
+    pass "E25: the public edge's $E25_VICTIM killed and back in its pod in $((E25_BACK_AT - E25_KILLED_AT)) s, $E25_SURVIVOR ready throughout"
+}
+
+E25_recover() {
+    E25_BACK_AT=${E25_BACK_AT:-$(date +%s)}
+    sleep 20
+    experiments_workload_end e25
+    # The workload reaches the surviving controller's node, where the NodePort's Local policy sends nothing to the lost one: none of its
+    # requests may fail.
+    failed_requests=$(experiments_failed_requests e25)
+    [ "$failed_requests" = 0 ] || fail "E25: $failed_requests of the workload's requests failed, and it reaches the surviving controller"
+    # The survivor's own lines: no answer of it failed from the kill to the edge's own wait past the lost one's return.
+    since=$(date -u -d "@$((E25_KILLED_AT - 60))" +%Y-%m-%dT%H:%M:%SZ)
+    kube -n finapp-edge logs "$E25_SURVIVOR" -c edge --since-time="$since" 2>/dev/null \
+        | sed -n 's/.*"DownstreamStatus":\([0-9]*\).*"Duration":\([0-9]*\).*"OriginStatus":\([0-9]*\).*"StartUTC":"\([^"]*\)".*/\4\t\1\t\3\t\2/p' > "$EXP_DIR/survivor-lines.tsv"
+    served=$(awk -F'\t' '$2 < 500 && $3 != 0' "$EXP_DIR/survivor-lines.tsv" | grep -c . || true)
+    [ "$served" -ge 10 ] || fail "E25: the surviving controller's lines held $served served answers, too few to show they were read"
+    failed=0
+    for started in $(awk -F'\t' '$2 >= 500 && !($2 == 503 && $3 == 503) {print $1 "|" $4}' "$EXP_DIR/survivor-lines.tsv"); do
+        ended=$(( $(date -u -d "${started%%|*}" +%s) + (${started##*|} + 999999999) / 1000000000 ))
+        [ "$ended" -lt "$((E25_KILLED_AT - 1))" ] || [ "$ended" -gt "$((E25_BACK_AT + EXP_EDGE_WAIT + 5))" ] || failed=$((failed + 1))
+    done
+    experiments_record "survivor" "$E25_SURVIVOR answered $served requests since the minute before the kill, $failed of them failed from the kill to $((EXP_EDGE_WAIT + 5)) s after the lost one's return; the workload, through it, failed none"
+    [ "$failed" = 0 ] || fail "E25: the surviving controller failed $failed answers while the other was lost"
+    # The generators given the lost controller's node: judged from their own series once the load has ended (experiments_load_windows).
+    experiments_window E25 "$E25_KILLED_AT" "$E25_BACK_AT" half "$E25_LOST_ADDRESS"
+    experiments_edge_read "$EXP_DIR" $((E25_KILLED_AT - 60))
+    availability_check A09 "$E25_KILLED_AT" $((E25_BACK_AT + EXPERIMENTS_WALK_MARGIN))
 }

@@ -764,6 +764,28 @@ commit and the date; do not delete the entry.
     on a cluster; what ran instead, outside one: the walk's shell functions over a fabricated edge-answers file (every verdict both ways,
     an empty window, the planted copy) and the objectives' reading with Prometheus stubbed, both with the machine's own `bash` and `awk`,
     and the client compiled with the JDK.
+  - **`P16-TSK-015`** (the capacity calibration, `OPERATIONS_RUNBOOK.md` §11.60, whose record is empty; `CAPACITY_MODEL.md` §4a; ADR-0145):
+    **E75**, the burst profile with the calibrated autoscaler left free between three and seven (`REHEARSAL_SCOPE=load
+    REHEARSAL_LOAD_PROFILE=burst REHEARSAL_LOAD_REPLICAS=7`): the bursts read above the autoscaler's target, the count never moving, no
+    sign-in answered 429, each stage's latency and errors recorded for `P16-TSK-029`'s judgement; **E76**, the entry's probe on it
+    (`REHEARSAL_PROBE=abuse-below-need`), which must go red at the door assertion with the refusals counted, its `MUTATION_TESTING.md` §2
+    row with it; **E77**, the role split's reading at three replicas (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=background`),
+    `load/role-split.tsv` read against ADR-0145 decision 9. Also owed by the same change: the cluster watcher's `k8s_hpa_*` series and the
+    autoscaler's events captured during the first autoscaled run (E70 or E75), which `THREAT_MODEL.md` §6 item 67 (b)'s signal waits on.
+    Nothing ran on a cluster. What ran instead, on 2026-11-13: the named test classes, and the manifest policy's scale-down rule over a
+    planted window under the grace in a container (§11.60's record).
+  - **`P16-TSK-020`** (instances, pods, a worker and an edge controller lost at load; `OPERATIONS_RUNBOOK.md` §11.61, whose record is
+    empty; `RESILIENCE_EXPERIMENTS.md` E01-E04 and E25; `AVAILABILITY.md` rows A07-A09): one run in the `experiments` scope at ten replicas
+    under the sustained profile, `REHEARSAL_EXPERIMENTS="E01 E02 E03 E25 E04" REHEARSAL_EXPERIMENTS_REPLICAS=10
+    REHEARSAL_EXPERIMENTS_LOAD=sustained` - **E01 at ten** (its run at three on `a6fee3a1` stands), **E02**, **E03**, **E04** (with
+    §11.8's `InstanceDown` for a lost instance, the part of PI-024 owner decision C11 gives these experiments, and the zone rule's answer
+    `THREAT_MODEL.md` §6 item 68 (a) waits on) and **E25**, each with its unauthenticated probe and its walk of rows A07, A08 or A09, the
+    load judged whole after them with its shed census; then **the entry's probe**, the same run with `REHEARSAL_PROBE=pdb-removed`, E02
+    seen stopping on no replica ready, with its `MUTATION_TESTING.md` §2 row; and the `crash-with-faults` and `term-with-faults` probes
+    once more over the three new kinds of fault (a stopped worker, a cordon, the disruption budget removed). Nothing of the task ran on a
+    cluster. What ran instead, on 2026-11-13, outside one: the new pure functions extracted from the committed `experiments.sh` under `dash`
+    and `mawk` in a container of the JDK image (33 checks), the placement and the brokers' spread over a real `kustomize` render of the
+    `kind` overlay, and the pinned edge proxy in containers for item 47 (e)'s measurement (§11.42).
   - **`P16-TSK-028`** (security under scale and failure, `OPERATIONS_RUNBOOK.md` §11.62, whose record is empty; ADR-0147): the **security
     probe** in the experiments it rides, first in **E01** and **E05** at three replicas (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E01
     E05"`): no protected request answered without its check while each fault is on, the sessions held from before each fault served after

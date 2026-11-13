@@ -260,7 +260,7 @@ class KubernetesManifestsTest {
     }
 
     @Test
-    @DisplayName("scale-down is one pod per period no shorter than the grace, and the disruption budget allows one")
+    @DisplayName("scale-down is one pod per period no shorter than the grace, after a window no shorter than the grace, and the disruption budget allows one")
     void scaleDownCannotStackTerminatingPods() {
         Map<String, Object> hpa = document("deploy/base/horizontalpodautoscaler.yaml");
         List<?> policies = (List<?>) value(hpa, "spec", "behavior", "scaleDown", "policies");
@@ -269,7 +269,32 @@ class KubernetesManifestsTest {
         assertThat(value(hpa, "spec", "behavior", "scaleDown", "policies", 0, "value")).isEqualTo(1);
         assertThat(number(hpa, "spec", "behavior", "scaleDown", "policies", 0, "periodSeconds"))
                 .isGreaterThanOrEqualTo(number(podSpec, "terminationGracePeriodSeconds"));
+        // P16-TSK-015 (ADR-0145): each step read after the last one's pod has gone, so the window is at least one grace as well.
+        assertThat(number(hpa, "spec", "behavior", "scaleDown", "stabilizationWindowSeconds"))
+                .as("the scale-down window: at least one grace").isGreaterThanOrEqualTo(number(podSpec, "terminationGracePeriodSeconds"));
         assertThat(value(document("deploy/base/poddisruptionbudget.yaml"), "spec", "maxUnavailable")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the autoscaler scales on the pods' CPU alone, and a burst of W2's length cannot scale it up: its window is twice the burst,"
+            + " read from the capacity model (P16-TSK-015, ADR-0145)")
+    void aBurstTheFleetCarriesNeverScalesIt() {
+        Map<String, Object> hpa = document("deploy/base/horizontalpodautoscaler.yaml");
+        List<?> metrics = (List<?>) value(hpa, "spec", "metrics");
+        assertThat(metrics).as("one metric: what a replica adds, never what rises when the single writer is the limit").hasSize(1);
+        assertThat(value(hpa, "spec", "metrics", 0, "type")).isEqualTo("Resource");
+        assertThat(value(hpa, "spec", "metrics", 0, "resource", "name")).isEqualTo("cpu");
+        assertThat(value(hpa, "spec", "metrics", 0, "resource", "target", "type")).isEqualTo("Utilization");
+        // W2, read: "A **burst** is three times the busiest hour's rate for 60 seconds".
+        Matcher burst = Pattern.compile("A \\*\\*burst\\*\\* is (\\w+) times the busiest hour's rate for (\\d+) seconds")
+                .matcher(EvidenceCitations.read(root.resolve("docs/architecture/CAPACITY_MODEL.md")));
+        assertThat(burst.find()).as("W2's burst, read from the capacity model").isTrue();
+        int burstSeconds = Integer.parseInt(burst.group(2));
+        assertThat(number(hpa, "spec", "behavior", "scaleUp", "stabilizationWindowSeconds"))
+                .as("the scale-up window: twice W2's burst of %d s, so the lowest count in it is always one computed outside a burst", burstSeconds)
+                .isGreaterThanOrEqualTo(2 * burstSeconds);
+        assertThat(value(hpa, "spec", "behavior", "scaleUp", "policies", 0, "type")).isEqualTo("Pods");
+        assertThat(value(hpa, "spec", "behavior", "scaleUp", "policies", 0, "value")).as("one pool and one rebalance a step").isEqualTo(1);
     }
 
     @Test

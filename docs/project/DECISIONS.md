@@ -1451,6 +1451,15 @@ exactly one; every failure row is checked by registered experiments or designed-
 edge and fail on a mismatch. No automatic refusal on a correctness signal: the freeze stays a person's act, proposed to the owner
 (`THREAT_MODEL.md` §6 item 66) and decided so on 2026-11-14, the rails no simulator serves accepted as designed-only for the phase. Every run owed (PI-025). → [ADR-0144](../adr/ADR-0144-the-financial-operation-availability-matrix.md)
 
+**Capacity calibration: the autoscaler on CPU alone, a burst never scaled, the limits kept by derivation, no role split (proposed).**
+The autoscaler scales on the pods' CPU and nothing that rises when the single writer is the limit; its 70% target is derived from the
+measured per-operation costs at the target's peak (four replicas); its scale-up window is twice W2's burst (120 s), so a burst the
+standing fleet carries never adds a pod; its scale-down window at least a grace. The per-source limits and the edge's tiers keep their
+numbers, now derived against one person's need and a shared address of R6's 1,000 active customers, held by a guard; the front door is
+designed only. No `api`/`worker` split: the first limit is the writer, which a split does not relieve, and fewer relays would drain less;
+E77 would reopen it. The confirming runs (E75-E77) are owed under `POSTPONED_ISSUES.md` PI-025; the shared address's fate and the
+autoscaler's signals are `THREAT_MODEL.md` §6 item 67. → [ADR-0145](../adr/ADR-0145-capacity-calibration-and-no-role-split.md)
+
 **Security under scale and failure (proposed).** Every check a request meets before its handler reads PostgreSQL and fails closed when
 it cannot (a failure, never a pass and never a refusal nobody decided), held without a database. Every experiment carries a security
 probe: every replica asked directly while the fault is on, a protected request answered without its check failing the experiment, held

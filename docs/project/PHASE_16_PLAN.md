@@ -814,7 +814,7 @@ violation of the multi-instance rule, it raises a remediation task and the exit 
 | Item 42 (h): the socket timeout | 2026-11-12, "Phase 16's failover drill" | `P16-TSK-022` |
 | Item 42 (i): a sweep's failed tick metered and paged, and (ii) the listing that skips and counts | 2026-11-12, Phase 16 | `P16-TSK-017` |
 | Item 18: audit archival, the idempotency sweep (after the posting-scope uniqueness), the session sweep, the unused `DELETE` revoked | 2026-11-09, "Phase 16's partitioning and archival" | `P16-TSK-010`, `P16-TSK-011` |
-| Item 32 (b): a connection limit or WAF in front of the edge, sized by the load model | 2026-11-09 | `P16-TSK-015` (the number, designed-only for the product) |
+| Item 32 (b): a connection limit or WAF in front of the edge, sized by the load model *(erratum, 2026-11-13, the capacity calibration: `THREAT_MODEL.md` §6 item 22 (b), the spool; item 32 (b) is credit's key ring. Read "item 22 (b)" wherever this plan says "item 32 (b)")* | 2026-11-09 | `P16-TSK-015` (the number, designed-only for the product) |
 | Item 33 (b): the abuse limits calibrated from a load model | 2026-11-11 | `P16-TSK-015` |
 | Item 1 (T42): registry availability for a starting replica, accepted until 2027-06-30, re-owned to Phase 16's DR | 2026-11-08 | `P16-TSK-025` |
 | Item 21 (a): cross-region backup replication "is Phase 16's multi-region work" | 2026-11-09 | `P16-TSK-026` (designed-only) |

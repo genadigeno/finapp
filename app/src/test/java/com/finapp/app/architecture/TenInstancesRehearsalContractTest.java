@@ -75,7 +75,7 @@ class TenInstancesRehearsalContractTest {
                 .contains("FLEET_REPLICAS=3\n[ \"$SCOPE\" != load ] || FLEET_REPLICAS=$LOAD_REPLICAS\n")
                 .contains("[ \"$SCOPE\" != release ] || FLEET_REPLICAS=${REHEARSAL_RELEASE_REPLICAS:-3}")
                 .contains("[ \"$SCOPE\" != experiments ] || FLEET_REPLICAS=${REHEARSAL_EXPERIMENTS_REPLICAS:-3}")
-                .contains("FLEET_START=$FLEET_REPLICAS").contains("EXPERIMENTS_AT_A_COUNT=\"E45\"");
+                .contains("FLEET_START=$FLEET_REPLICAS").contains("EXPERIMENTS_AT_A_COUNT=\"E45 E01 E02 E03 E04 E25\"");
         String resolve = function(harness, "fleet_resolve");
         assertThat(resolve).as("three to the ceiling the overlay states, read from it")
                 .contains("path: \\/spec\\/maxReplicas$/{n;s/^        value: \\([0-9]*\\)$/\\1/p;}")
@@ -266,12 +266,13 @@ class TenInstancesRehearsalContractTest {
     }
 
     @Test
-    @DisplayName("the experiments scope runs at its count only what is written for a count (E45 at ten), its topology and its recovery at it")
+    @DisplayName("the experiments scope runs at its count only what is written for a count (E45 at ten; E01-E04 and E25 since P16-TSK-020),"
+            + " its topology and its recovery at it")
     void theExperimentsScopeRunsAtItsCountOnlyWhatIsWrittenForIt() {
         String experiments = read(EXPERIMENTS);
         assertThat(function(experiments, "experiments_topology_check")).contains("[ \"$ready\" = \"$FLEET_REPLICAS\" ] || fail");
         assertThat(function(experiments, "E45_recover")).contains("ready_fleet 400 || fail").doesNotContain("ready_three");
-        assertThat(harness).contains("EXPERIMENTS_AT_A_COUNT=\"E45\"");
+        assertThat(harness).contains("EXPERIMENTS_AT_A_COUNT=\"E45 E01 E02 E03 E04 E25\"");
     }
 
     @Test

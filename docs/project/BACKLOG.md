@@ -30048,7 +30048,7 @@ on none:
     `kustomize` render of the `kind` overlay and stubbed cluster answers (31 checks, 0 failed); the pinned k6 2.3.0's `inspect` of the
     `autoscale` profile; the harness's refusals of a count past the ceiling, a release probe at ten and an experiment written for three.
 
-**P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its one dependency, `P16-TSK-014`, `COMPLETE`)
+**P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-015` from master `fb0e014b`, wave F; ADR-0145 `Proposed`; no migration, no application code, no alert rule; **the calibration derived and recorded, its runs built, contract-tested and owed under `POSTPONED_ISSUES.md` PI-025**; marks no task `READY` - the coordinator does) *(read "`IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-015` from master `fb0e014b`, wave F)" until the gate)* *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its one dependency, `P16-TSK-014`, `COMPLETE`)" until the design)*
 - **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection
   limit (item 32 (b)) from measurement. Decide the `api`/`worker` role split that Phase 15's C5 left to this measurement.
 - **Affected components**: `deploy/base/`, the edge's middleware, `application.yaml`'s abuse limits, `CAPACITY_MODEL.md`.
@@ -30083,6 +30083,64 @@ on none:
   `P16-TSK-016`'s per-class bound, not a larger pool. No alert says the autoscaler sits at its maximum or cannot read its metric: the cluster
   watcher publishes the autoscaler's replica counts (`k8s.hpa.*`) but not its conditions, so a signal there is this task's to decide with
   the targets.
+- **As built (2026-11-13): the calibration derived and recorded; every run that would confirm it built, contract-tested and owed under
+  `POSTPONED_ISSUES.md` PI-025** (the owner's word of 2026-11-13, "we dont need long running checks and tests": nothing ran on `kind`).
+  ADR-0145 `Proposed`; `CAPACITY_MODEL.md` §2 (a new reading, **R6**: at most 1,000 active customers behind one public IPv4 address, the
+  owner's to change) and §4a (every value with its derivation and its confirming run); `OPERATIONS_RUNBOOK.md` §11.60, with dated notes in
+  §11.14, §11.26 and §11.30; `THREAT_MODEL.md` §6 item 67. No migration, no application code, no alert rule. Calibrating from what master
+  records means three inputs: the target's rates (§3.1), the per-operation costs measured at three replicas (§3.4) and the code's bounds.
+  - *The HPA*: the metric stays the pods' CPU alone, never latency, the pool's queue or the request rate, which rise when the single writer,
+    the first limit measured, is saturated; the **target stays 70%**, derived (1.37 cores on the replicas at the target's peak, four
+    replicas; W2's burst at about half a pod's 2-core limit; the day's average leaves the floor of three); the **scale-up window 60 → 120 s**,
+    twice W2's burst, so a burst the standing fleet carries never adds a pod (the oscillation the entry names); the **scale-down window
+    stays 300 s and is now held at the grace** (the manifest policy's `[hpa-scale-down]`, raised from a minute, with its plant
+    `hpa-stabilisation-grace`, and `KubernetesManifestsTest`); both policies kept. *The namespace quotas*: unchanged, since they follow the pods'
+    resources, which stay (the request a pod's share at the peak; production's 2 GiB until E39's soak reads memory over hours).
+  - *The abuse limits (item 33 (b))*: re-derived from W1–W3 and R6, **every number kept**: each door at least one person's need (sign-in the
+    lockout's ten failures and a success, read from `LockoutPolicy`; every other door three), sign-in carrying R6's thousand at the busiest
+    hour with W2's burst and a retry each (1,470 at most). **The carrier-NAT finding answered**: the volume is carried; the fate-sharing, one
+    device spending a shared address's budget, is no number's, and is put to the owner as item 67 (a). `PerSourceLimitsAreCalibratedTest`
+    holds both, every input read, over the shipped file and every overlay.
+  - *The edge's bound (item 22 (b); the plan's "item 32 (b)", corrected by a dated erratum in `PHASE_16_PLAN.md` §17.1)*: the edge's per-source
+    tiers re-derived and kept, each times the two public controllers against its sources at W2's spike (held by the same test: door,
+    session, callback); the front door **designed only**: 120 requests a second sustained and 130 in flight per source, merchants and
+    providers by their own paths, no provider's rule relied on. Item 22 (b)'s acceptance stands.
+  - *The role split*: **not split** (ADR-0145 decision 9): the first limit is the writer, which a split does not relieve; the relay's drain
+    falls with fewer relays (ADR-0136); the census's starvation was a pool's (ADR-0137); every objective held at the engineering workload
+    with every role on every replica (§3.4). Reopened by an ADR if E77, E52, or E69 and E70 show otherwise.
+  - *The autoscaler's signal* (routed from `P16-TSK-009`): decided, a ticket at the ceiling for 30 minutes and the failed metric reads from the
+    watcher's events; **not built**, since the platform's rules read only series captured from the pinned images and these never were (item
+    67 (b)); their capture is owed with PI-025's first autoscaled run.
+  - *The runs* (`RESILIENCE_EXPERIMENTS.md`): **E75**, the burst profile (`load/burst.json`: W2's shape at the scale `kind` carries, sign-ins at
+    three times their peak in each burst) with the autoscaler free between three and seven, judged by `load_burst_judge` (a reading above the
+    target in a burst first, then the floor held, then no sign-in answered 429); **E76**, the entry's probe (`REHEARSAL_PROBE=abuse-below-need`,
+    the sign-in limit at the lockout's threshold on the run's own Deployment after the setup); **E77**, the role split's reading
+    (`load/background.json`: the engineering workload in three stages, the run's own events replayed through the audited door at the second,
+    `load/role-split.tsv` by column name, never a verdict). `CapacityCalibrationRehearsalContractTest` (five members) holds them.
+  - **Acceptance criteria**: each value with its derivation in the capacity model - **met** (§4a); the burst run within its SLOs - **built
+    (E75), run owed (PI-025)**, the judgement of the objectives under load being `P16-TSK-029`'s by the standing ruling; the role split decided
+    with its evidence - **met** (ADR-0145, the evidence measured on master), its confirming run E77 owed. **Probe**: its hermetic half
+    performed and recorded (`MUTATION_TESTING.md` §2), its cluster half E76 owed. **DoD** `DOD-BUILD`, `DOD-SEC`: met on these terms.
+  - **Corrected before the gate**: the probe's plant was first written at the render, where the setup's one client, signing in every customer of the
+    run from one address, would have met the lowered limit and failed the setup rather than the doors; it now sets the run's own Deployment
+    after the setup, one rolling update, before the fleet is settled at its floor for the load.
+  - **Ran instead, 2026-11-13, no cluster**: the new shell functions sourced from the committed `load.sh` under `sh` against stubbed answers
+    (17 checks, 0 failed: the burst judge's pass, could-not-measure, scaled, refused and both probe outcomes; the plant set, rolled and read
+    back; the tick once at the second stage; the reading by column name; a short or empty replay); the pinned k6's `inspect` of both profiles
+    (six ramping-arrival-rate scenarios each, sign-ins at 868 and 20,001 per 1,000 s in the burst profile); the manifest policy's new rule in the
+    pinned Kustomize and conftest images (the committed production and staging streams clear of it, a planted 116-s window refused, the same
+    plant passed with the rule taken out).
+  - **Tests**: one fresh `:app:test` run of named classes after the last change (2026-11-13 20:38-20:45Z, every XML newer than its start):
+    57 named classes, 694 tests, and the 7 ArchUnit suites the filter pulls in, 20 tests; 0 failed. The named: the new
+    `PerSourceLimitsAreCalibratedTest` and `CapacityCalibrationRehearsalContractTest`, `KubernetesManifestsTest`, every guard that reads a
+    changed file (the manifests, the policy and its check, the harness and the load scope, `application.yaml`, the documents and the ADR
+    index), the discoverers, and the four always run. No production class changed. **Owed** to PI-023's kind: none (no database case
+    written). **Probes**: eleven hermetic plants performed in two rounds and caught (`MUTATION_TESTING.md` §2), and the policy's rule probed
+    in containers; E76, the entry's probe on a cluster, owed.
+  - **Ten instances**: `PASS` on design - nothing here adds state, a lock or a per-instance decision; the per-source counts stay one row per
+    bucket and window across every replica (`WindowCounter`); the autoscaler is the count's one writer, its scale-down one pod per period at
+    least the grace and its window at least the grace, so terminating pods never stack past the budget's one; no role split, so every
+    schedule keeps N leaderless competitors. The counted runs are E75 and E77 (and E70's at ten), owed.
 
 **P16-TSK-016 — Load shedding before the financial effect, and bulkheads** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-016` from master `1fbdf71c`, wave D; no migration; ADR-0137; its runs owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)" until the gate)
 - **Objective**: when the platform cannot finish a money-moving command in time, refuse it with `503` and `Retry-After` before its
@@ -30333,7 +30391,7 @@ on none:
   run in containers and by the contract test, not on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks
   and tests"): E01 on the final bytes is owed under `POSTPONED_ISSUES.md` PI-025.
 
-**P16-TSK-020 — Instance, pod and node failures at load** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-019`, both `COMPLETE`)
+**P16-TSK-020 — Instance, pod and node failures at load** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-020` from master `fb0e014b`, fast-forwarded to `2e34dd66` before its first commit, wave F; no migration, no application code, no alert rule, no ADR - the reserved ADR-0146 and E78-E80 unused; one new owner item, `THREAT_MODEL.md` §6 item 68; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; marks no task `READY` - the coordinator does) *(read "`IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-020` from master `fb0e014b`, fast-forwarded to `2e34dd66`, wave F)" until the gate)* *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-019`, both `COMPLETE`)" until the design)*
 - **Objective**: E01–E04 and E25 under the sustained profile at ten replicas.
 - **Affected components**: every in-cluster unit.
 - **Dependencies**: `-014`, `-019`.
@@ -30359,6 +30417,9 @@ on none:
   every application pod from the edge's probe pod (`np-edge`) every 5 s while the fault is on, and fails an experiment whose fault left it
   no answer at all. E04's stopped node must therefore not be the one `np-edge` runs on (or the probe must be moved off it first), or E04
   fails as unobserved; the sessions the probe holds must be served by every replica that replaces a lost one in E01-E04 and E25 at ten.
+  *(2026-11-14: this task merged before the note was answered, so `P16-TSK-028` applied it: `experiments_spare` makes the probe pod again
+  off the spare worker while it is cordoned, and `experiments_spare_left` reads it back among what must not be lost with the worker, held by
+  `SecurityUnderFailureContractTest#theProbePodIsKeptOffE04sWorker`.)*
 - **Risk**: Medium. **Cx**: M.
 - *Routed from `P16-TSK-019` (2026-11-13):* E01 at three replicas is recorded (`OPERATIONS_RUNBOOK.md` §11.46); its ten-replica run is
   this task's. Four things the toolkit leaves to it. **A node stopped (E04)**: the registry holds `node-paused` (`docker pause`, its
@@ -30375,6 +30436,50 @@ on none:
   (`experiments_edge_read`) and call `availability_check <row> <from> <to>` over the fault's window from the experiment's own step, and add
   the experiment to the row's **Walked by** cell - `AvailabilityMatrixTest#eachWalkerComparesItsRowAndOnlyItsRow` holds that the walks the
   harness makes are exactly the ones the document declares, so the two change together. E01's own walk of A07 is the same one line.
+- **As built (2026-11-13): built and contract-tested; every run owed under `POSTPONED_ISSUES.md` PI-025** (the owner's word of 2026-11-13,
+  "we dont need long running checks and tests": nothing ran on `kind`). `OPERATIONS_RUNBOOK.md` §11.61 holds the procedure, its record
+  empty; `InstanceFailuresRehearsalContractTest` (ten members) holds the text. No migration, no application code, no alert rule, no ADR:
+  the reserved ADR-0146 and E78-E80 are unused (no architecture was decided here; the decisions this build found are the owner's,
+  `THREAT_MODEL.md` §6 item 68). The harness is `infra/scripts/kind-rehearsal/experiments.sh`'s last section, with small hooks in
+  `kind-rehearsal.sh` and `load.sh`.
+  - *The experiments at ten under the sustained profile*: E01, E02, E03, E04 and E25 join `EXPERIMENTS_AT_A_COUNT`
+    (`REHEARSAL_EXPERIMENTS_REPLICAS=10`) and run under a load profile beside them (`REHEARSAL_EXPERIMENTS_LOAD=sustained`): k6 as the load
+    scope drives it, its model read before the build, the experiments in its last stage (two hours at the target's peak), its census sampled
+    every 30 s through each window (each experiment's census) and taken whole after the load beside the load's own judgement, the shed
+    census (`P16-TSK-016`'s note) and each window read from the generators' own series. The fleet is read by set while it runs, each fault's
+    victims excused while it holds them. E02-E04 and E25 refuse to run without a load, and any other experiment with one. **Runs owed.**
+  - *E01 at ten*: its waits at the run's count; unchanged at three (its run on `a6fee3a1` stands). **Run owed.**
+  - *E02*: half the fleet's JVMs at once, a zone at a time, then an eviction of every replica once the budget reads the kills, each to be
+    refused; its stop sharpened by its own Safety to any reading with no replica ready; failures told apart by the victims' windows, a
+    replica's own `503` apart. **Run owed.**
+  - *E03*: three graceful evictions through the API, one a zone, serialised by the budget, each pod's held payout answered by its own
+    drain; the stop read after each eviction. **Run owed.**
+  - *E04*: the spare zone's worker stopped as a machine stops - a new fault kind, `node-stopped` (`docker kill`, restored by `docker start`
+    at the address it had, `P16-TSK-019`'s note), with `cordoned` and `pdb-removed` beside it, all three in the registry, the exit trap and
+    the crash probes; the scope keeps what the run must not lose off that worker (the primary, the standby, the simulator, the proxy, the
+    archive store, CoreDNS, Prometheus, both edges' controllers) and spreads the brokers one a zone; `InstanceDown` (§11.8's instance down,
+    PI-024's part under C11) and the replacements' fate read. Expected from the documented scheduler rule: replacements `Pending` under the
+    deployed `DoNotSchedule` (`P16-TSK-019`'s note: measured, not relaxed) - `THREAT_MODEL.md` §6 item 68 (a). **Run owed.**
+  - *E25 (item 43 (f)'s last part)*: the public controller the workload does not reach, killed under traffic, the generators split over both
+    controllers' nodes (`kind` has no load balancer before NodePorts of `externalTrafficPolicy: Local`); the survivor's answers and the
+    workload fail none, the lost half only inside its window. **Run owed.**
+  - *Security consideration*: every one of the five sends an unauthenticated transfer through the public edge while its fault is on, which
+    must be refused and leave no idempotency record.
+  - *The probe* (`REHEARSAL_PROBE=pdb-removed`): the budget removed before E02's fault, a fault of the registry; every eviction admitted,
+    the fleet at no replica ready, E02 stopping on its condition. **Owed** as a cluster probe; its hermetic half recorded
+    (`MUTATION_TESTING.md` §2).
+  - *Routed from `P16-TSK-023`*: E01, E03 and E04 walk row A07, E02 row A08 and E25 row A09, each in its own recovery after reading the
+    edge's answers, over its window and a minute past the return; `AVAILABILITY.md`'s **Walked by** cells name them.
+  - *Item 47 (e)*: **measured, not built.** On containers of the pinned proxy (§11.42's measurement, 2026-11-13) the access line keeps three
+    copies of `X-Correlation-Id` under the one name's mode, the caller's text among them, and only a middleware that removes the caller's
+    header from the request too keeps it out (ending ADR-0034's echo on that host). The decision's "the answer's copy alone in the edge's
+    access line" cannot be held by the proxy's configuration, so nothing was changed and the choice is back with the owner (item 68 (b));
+    item 47 (e) carries a dated note, not a close.
+  - **Acceptance criteria**: each experiment's success criteria met and recorded - built, contract-tested, **run owed (PI-025)**, met as
+    such under the owner's word; the probe - built, run owed; §11.8 rehearsed (PI-024's part) - built as E04's observation, run owed.
+  - **Ran instead, 2026-11-13, no cluster**: the new pure functions under `dash` and `mawk` in the JDK image's container (33 checks), the
+    placement and the brokers' spread over a real `kustomize` render of the `kind` overlay parsed as YAML, and the pinned edge proxy for the
+    measurement.
 
 **P16-TSK-021 — Network, DNS, connection and disk faults** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-021` from master `1f70ccad`, wave D; gate `COMPLETE` 2026-11-13; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; no production code, migration, alert rule or new ADR; marks no task `READY` - the coordinator does; marked `READY` by the coordinator at `P16-TSK-019`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-019`, `COMPLETE`) *(read "`READY`", then "`IN_PROGRESS`", until its gate)*
 - **Objective**: E07, E11–E16, E24 under load.
@@ -30819,8 +30924,11 @@ on none:
     after it live again) - `THREAT_MODEL.md` §6 item 69, recommendation (i), a security window in the post-recovery gate built with
     `P16-TSK-025`; the interim in §11.55's security note. And in the harness, by its own first test run: a forged merchant key of UUID
     version 4 is refused as malformed before the store, so the probe's forged key is version 7.
-  - *Probes* (hermetic, performed; `MUTATION_TESTING.md` §2): P1-P10, each red on its aimed member. The cluster half owed.
-  - *Routed*: `P16-TSK-025` (secrets during DR; item 69's window if decided (i)); `P16-TSK-020` (E04's node must not be the probe pod's).
+  - *Probes* (hermetic, performed; `MUTATION_TESTING.md` §2): P1-P12, each red on its aimed member. The cluster half owed.
+  - *Routed*: `P16-TSK-025` (secrets during DR; item 69's window if decided (i)). The note to `P16-TSK-020` (E04's worker must not run
+    the probe pod) was applied here after that task merged (2026-11-14, at the coordinator's word): `experiments_spare` makes the probe
+    pod again off the worker while it is cordoned and `experiments_spare_left` reads it back, held by
+    `SecurityUnderFailureContractTest#theProbePodIsKeptOffE04sWorker`, probes P11 and P12.
 
 **P16-TSK-029 — SLOs and error budgets validated under load; break-age counts (`THREAT_MODEL.md` §6 item 42 (a))** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-003` and `P16-TSK-014`, both `COMPLETE`)
 - **Objective**: `PHASE_16_PLAN.md` §15:

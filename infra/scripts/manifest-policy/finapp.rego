@@ -691,6 +691,14 @@ deny contains msg if {
 	msg := "[hpa-scale-down] the scale-down stabilisation window is under a minute: every step is a consumer rebalance"
 }
 
+# At least one grace as well (the calibration, ADR-0145; CAPACITY_MODEL.md section 4a): a scale-down step read inside the grace of the last
+# one's pod reads a fleet that has not settled, its load still moving to the others. The minute above stays, for a stream with no Deployment.
+deny contains msg if {
+	autoscaler
+	object.get(scale_down, "stabilizationWindowSeconds", 0) < app_spec.terminationGracePeriodSeconds
+	msg := sprintf("[hpa-scale-down] the scale-down stabilisation window %d is under one grace (%d s): a step would be read before the last one's pod had gone", [object.get(scale_down, "stabilizationWindowSeconds", 0), app_spec.terminationGracePeriodSeconds])
+}
+
 # ------------------------------------------------------------------------------------- the rest of the shape
 
 deny contains msg if {

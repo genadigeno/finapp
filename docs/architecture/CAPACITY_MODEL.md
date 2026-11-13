@@ -74,6 +74,11 @@ nothing else.
   A line that matches nothing settles none.
 - **R5 (W4)**: W4 states no merchant payout frequency, so merchant payouts are not in the model. A daily payout per merchant
   would add about 2,000 payouts a day, small beside the rest. It is the owner's to add.
+- **R6 (W1, W3)** *(2026-11-13, the calibration of §4a)*: at most **1,000** of the platform's active customers share one public IPv4
+  address at once (a carrier's NAT pool address, a campus, an office). W1–W8 say nothing of addresses, and the per-source limits are
+  counted per address, so their numbers need one. It is a deliberately high reading: 0.5% of a day's 200,000 active customers behind one
+  address. An IPv6 client is its own /64. It is the owner's to change, as R2–R4 are; `PerSourceLimitsAreCalibratedTest` reads this
+  number, so a change re-checks every limit that rests on it.
 
 **The owner's decision (2026-11-13, "accept recommendations, start wave B"):** W7 as read from the code's event writers (§3.2: about 7.3 events per money
 movement, about 3.2 million a day) replaces the plan's estimate of 4; R1 stands (W6's 5,000 are loan decisions, each BNPL
@@ -462,7 +467,158 @@ admitted at it and with the fleet held at 104 (E41); the peak during a rollout a
 `P16-TSK-014`: E26 built, beside the autoscaler's own scale from three to ten and back under load (E70) and the sustained profile at
 ten (E69), every one owed under PI-025; `OPERATIONS_RUNBOOK.md` §11.58. The autoscaler's target of 70% would not act at the engineering
 workload (derived from §3.4: the replicas near a third of their request there), so E70 moves the metric with a surge of sign-ins; its calibration
-is `P16-TSK-015`'s.)*
+is `P16-TSK-015`'s.)* *(2026-11-13: calibrated, §4a.)*
+
+---
+
+## 4a. The calibration: the autoscaler, the per-source limits, the edge and the role split
+
+*Written 2026-11-13 by `P16-TSK-015` (ADR-0145, `Proposed`), on master `fb0e014b`. Every value below is **derived** from §2 and §3.1,
+**read** from the code, or computed from §3.4's **measured** costs at three replicas, and says which; none is measured at its own value. Each
+names the run that would confirm or overturn it, and every such run is owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of
+2026-11-13). Where the derivation gives the value already committed, the value stays and its derivation is what this section adds.*
+
+### 4a.1 The autoscaler
+
+**The metric: the pods' CPU against their request, and nothing else** (`deploy/base/horizontalpodautoscaler.yaml`). The first limit
+measured is the single writer's CPU (§3.4), not the replicas'. Latency, the pool's queue and the request rate all rise when the writer is the
+limit, and an autoscaler on any of them would add replicas there: more load and more connections on the resource that is already
+saturated, and the budget of §4 spent for nothing. A replica's CPU rises only when the replicas are the limit, which is exactly when another
+replica helps. Memory is not a metric: a JVM's heap does not shrink when its load does. A custom-metrics adapter is therefore not needed.
+
+**The target: 70% of the 500m request, kept.** *Derived*, from §3.1's peak rates and §3.4's measured cost on the replicas of each
+operation alone (the isolation run):
+
+| Step | Reading | Kind |
+|---|---|---|
+| The replicas' CPU at the target's peak | Σ rate × cost: transfers 2.78 × 29 ms, payments 5.56 × 86 (their callbacks inside), top-ups 1.11 × 76, reads 55.6 × 3.7, sign-ins 6.67 × 68, merchant reads 11.1 × 6 = **1.37 cores** across the fleet. Cross-check: E30's step 3 measured 0.52 cores at 0.42 of the peak, 1.24 scaled. The larger is used | derived from measured costs |
+| The fleet at that peak | 1.37 / (0.70 × 0.5) = 3.9: **four replicas**, each at 0.34 of a core, 68% of its request. Three would read 91% and add the fourth | derived |
+| W2's burst on that fleet | 3 × 1.37 / 4 = 1.03 cores a pod for 60 s: **51% of its 2-core limit**. The autoscaler cannot answer 60 s anyway (its window, then a JVM's start), so the burst is carried by the standing fleet's headroom between request and limit | derived |
+| The day's average | 1.37 / 2.4 = 0.57 cores: 38% of three pods' requests, so the floor of three holds off the busiest hour | derived |
+| Production's ceiling of seven | 7 × 0.35 = 2.45 cores at the target, 1.8 times the peak's need. W2's burst held for good (it is not: 60 s) would want 12 pods; at seven they would run at 0.59 of a core, inside their limit. The single writer's CPU meets either first (§4) | derived |
+
+A lower target buys headroom the limit already gives, and pays a pool of eight connections, a rebalance in every group and more schedule
+competitors per replica (§5.1). A higher one changes nothing at the peak (three pods would still read above it) and less headroom between
+the pods' share and the burst. 70% stays.
+
+**The behaviour.**
+
+| Field | Was | Now | Derivation |
+|---|---|---|---|
+| Scale-up window (`stabilizationWindowSeconds`) | 60 s | **120 s** | Twice W2's 60 s burst (§2). The autoscaler scales up to the lowest count it computed in the window, and with twice the burst's length that count is always one computed outside a burst, so a burst the standing fleet carries never adds a pod that arrives after it, two rebalances and a pool opened and closed (the oscillation the entry names). Held by `KubernetesManifestsTest#aBurstTheFleetCarriesNeverScalesIt`, which reads W2 here. A real rise costs one more minute, which shedding (ADR-0137) covers |
+| Scale-up policy | one pod per 60 s | kept | Each step is a pool and a rebalance; three to seven in four minutes after the window |
+| Scale-down window | 300 s | kept | At least one grace (117 s): a step read inside the last one's grace reads a fleet whose load is still moving. Now held by the manifest policy at the grace, where it was held at a minute (`[hpa-scale-down]`, its plant `hpa-stabilisation-grace`), and by `KubernetesManifestsTest#scaleDownCannotStackTerminatingPods`. Five of W2's bursts |
+| Scale-down policy | one pod per 120 s | kept | At least the grace (held since Phase 15): one terminating pod at a time, the budget's (§4) |
+
+**The pods and the quotas, kept.** The CPU request (500m) is a pod's share of the target's peak at four replicas (0.34 of a core) with the
+target's margin; the limit (2) is its headroom through W2's burst (1.03). Production's memory (2 GiB) stays: `kind`'s 1 GiB pods carried E30's
+first three steps at no more than 57% of their limits (§3.4), but over 277 s, and nothing has read a replica's memory over hours; a smaller
+production pod waits on E39's soak (eight hours). Each overlay's quota is the formula times the pods (§4, the manifest policy), so it moves
+only with them.
+
+### 4a.2 The per-source limits (`THREAT_MODEL.md` §6 item 33 (b))
+
+Each door's limit is set against two needs and one bound: **one person's need** in a window (the floor below which the limit refuses
+somebody doing nothing wrong); **a shared address's need** at R6 (§2) in the busiest hour, with a W2 burst inside the window; and **what one
+source gets** (the attacker's bound). *Derived*, every number kept (`app/src/main/resources/application.yaml`):
+
+| Door | Limit per source, window | One person's need | A shared address at R6 | What one source gets |
+|---|---|---|---|---|
+| Sign-in | 100 per 15 min (1,000 per /48) | **11**: the identity lockout's ten failures and a success (read, `LockoutPolicy.current()`); beyond it the person is locked anyway | W3's 1.2 sign-ins a day, 10% in the busiest hour: 0.030 per active customer per window, 0.034 with a burst inside it; at R6 **34**, **68** if every sign-in is retried once. 100 carries 1,470 active customers behind one address at that; the /48's 1,000 carries 14,700 | 100 guesses per 15 min, 9,600 a day, each identity still locked at ten |
+| Registration | 10 per hour (100 per /48) | **3**: one registration and two same-key retries (a retry counts, `OPERATIONS_RUNBOOK.md` §11.30) | W1–W8 state no acquisition rate. A base of W1's million built in a year is 2,740 a day, 274 in the busiest hour, 0.5% of it behind an R6 address: 1.4 an hour, 2.7 with a retry each | 10 identifiers tested an hour (T47) |
+| Recovery request | 10 per hour (100 per /48) | **3**: a request and two retries | W1–W8 state no recovery rate; 10 an hour is 1% of an R6 address's customers every hour | 10 messages an hour (none is sent today: nothing delivers one) |
+| Recovery completion | 20 per hour | **3** | as above | 20 tokens tried an hour |
+| Channel verification | 20 per hour | **3** | as above | 20 codes tried an hour |
+
+**The carrier-NAT finding, answered** (item 33 (b): "one device retrying spends the budget in seconds and everyone there is refused").
+Two different things. **Volume**: legitimate traffic from a shared address is not refused at these numbers. Sign-in, the binding door,
+carries R6's thousand active customers at the busiest hour's burst with every sign-in retried once and a margin of 1.47; the other doors'
+needs at R6 are a few an hour. **Fate-sharing**: one device at that address can still spend the budget for everyone there for the rest of the
+window, at most 15 minutes for sign-in. No number answers that: a limit one device can reach is reached for all, and a limit no device can
+reach bounds no attacker. It needs a different key (a device-bound bucket, or failures counted rather than attempts), which is new behaviour
+on the authentication path: `THREAT_MODEL.md` §6 item 67 (a), the owner's.
+
+**Held by** `PerSourceLimitsAreCalibratedTest` (`app/src/test/java/com/finapp/app/abuse/`): every door's limit, in `application.yaml` and in every
+overlay that sets one, is at least one person's need; sign-in's is at least R6's need with a retry each, every input (W2, W3, R6) read from
+this page and the threshold from the code.
+
+### 4a.3 The edge's per-source tiers, and the front door (`THREAT_MODEL.md` §6 item 22 (b))
+
+**The edge's tiers** (`deploy/edge/base/public-edge.yaml`), each per source **per controller**: the public edge runs two
+(`deploy/edge/base/controllers.yaml`), so a source's ceiling is twice each number. *Derived*, every number kept:
+
+| Tier | Rate (burst), in flight | × 2 controllers | Its sources' need | Margin |
+|---|---|---|---|---|
+| Door | 10/s (20), 5 | 20/s, 10 | an R6 address's door requests at W2's **spike**: 1.2 sign-ins a day × 10% / 3,600 × 1,000 × 10 = **0.33/s** | 60 times |
+| Session | 50/s (100), 20 | 100/s, 40 | an R6 address's customer requests at the spike: (0.5 + 1 + 0.2 + 10) a day × 10% / 3,600 × 1,000 × 10 = **3.25/s**; in flight at the slowest target (2 s), 6.5 | 30 times; 6 in flight |
+| Machine | 200/s (400), 20 | 400/s, 40 | the platform's whole merchant traffic at the spike (W4's 11.1 reads and the 5.56 checkouts' creation a second at peak, × 10) = **167/s**; in flight at the 1 s target: 40 carries a merchant with up to 80% of it at W2's burst and 24% at its spike | 2.4 times on rate |
+| Callback | 500/s (1000), 20 | 1,000/s, 40 | every callback at the spike (W4: two a payment, 11.1 a second at peak, × 10) = **111/s**; in flight at the callbacks' measured p99 (278 ms, §3.4): **31** | 9 times on rate; 1.3 in flight |
+
+The holds' sum per source (5 + 20 + 20 + 20 at the 2 MiB cap, 130 MiB) stays under the 256 MiB spool, which `EdgeAllowListTest` holds.
+`PerSourceLimitsAreCalibratedTest` holds the door's and session's rates against an R6 address at the spike and the callback tier's rate and
+hold against W4's spike, every input read.
+
+**The front door, designed only** (`PHASE_16_PLAN.md` §1.1: a real environment's; the plan's "item 32 (b)" is `THREAT_MODEL.md` §6 item 22
+(b), the spool). In front of the edge a real environment gives each source address:
+
+- **a request-rate rule** at the edge's door and session tiers across both controllers, **120 requests a second sustained** (36,000 in five
+  minutes), bursts to 240: 33 times an R6 address's need at W2's spike, so a carrier's NAT of thirty times R6 would still pass, while one
+  host's flood is dropped before it reaches a controller. Merchants' servers and providers are scoped by their own paths (the machine and
+  callback routes) at those tiers' ceilings, 400 and 1,000 a second;
+- **a cap on requests in flight** of **130** per address (the edge's holds, 65 per controller), which bounds one source's share of the
+  spools at the body cap.
+
+What it does not do: several sources together can still fill a controller's spool, as item 22 (b) says, and only the provider's
+volumetric protection answers a crowd. Nothing here relies on a provider's rule: production's load balancer is layer 4 (the `ip`-target
+network load balancer of `deploy/edge/overlays/production`, the client's address preserved), and a layer-7 rule in front of it would move
+where TLS ends and whose address the edge believes (T40). The provider's own documentation is read when an environment chooses it: its
+window, its smallest limit, and whether its rule can stand in front of a layer-4 balancer at all.
+
+### 4a.4 The role split: not split (ADR-0145)
+
+`PHASE_15_PLAN.md` C5 left an `api`/`worker` split to this measurement. **Decided: one Deployment, every replica every role.** The evidence,
+all on this page:
+
+- **Measured** (§3.4): at the engineering workload (E30's steps 1–3) every objective held with all 37 schedules, every consumer and the
+  relay running on each of the three replicas; the replicas used 0.50–0.52 of their 6 cores, were throttled in under 0.1% of their CPU
+  periods, and kept 324–326 live threads. Nothing on a replica was near a limit for the background roles to take from requests.
+- **Measured**: the first limit is the single writer's CPU (E30's step 4). A split moves no work off it: the background roles' statements
+  run on the same database whichever pod sends them.
+- **Measured and read**: the relay fell behind at the target's checkout peak with no resource near its limit, because its drain is bounded
+  by aggregates per relay (§3.4, ADR-0136). A worker role of fewer replicas would hold fewer relays and drain less.
+- **Measured**: the census starved at the break was a shared **pool**, not CPU, and its answer is the shedding door (ADR-0137), whose
+  follow-up, if E52 still starves it, is a reserved monitor connection before any split.
+
+A split would also cost two Deployments, two budgets in §4's formula, and every schedule's competitors cut to the worker count (which must
+stay at least two and leaderless). **What would overturn it**: E77 (below) showing the background roles raising request latency on the
+replicas' own resources (their CPU throttled, their threads exhausted) while the database is below its limit; or E52 showing the monitors
+starved with the door in place; or E69 and E70 showing claim contention at ten harming requests. Any of them reopens the split by an ADR.
+
+### 4a.5 What the autoscaler does not tell anyone
+
+No alert says the autoscaler sits at its ceiling or cannot read its metric (routed here from `P16-TSK-009`). **Decided**: a ticket when the
+count has stood at the ceiling for 30 minutes, from the cluster watcher's `k8s_hpa_current_replicas` and `k8s_hpa_max_replicas`, and the
+autoscaler's own `FailedGetResourceMetric` events kept by the watcher's event stream for the second. **Not built here**: the platform's
+rules read only series captured from the pinned images (`infra/prometheus/platform-components-series.txt`,
+`PlatformComponentAlertRulesTest`), and those two were never captured; capturing them takes a cluster. `THREAT_MODEL.md` §6 item 67 (b).
+
+### 4a.6 The runs that confirm it
+
+Every one built and owed under `POSTPONED_ISSUES.md` PI-025 (`RESILIENCE_EXPERIMENTS.md`, `OPERATIONS_RUNBOOK.md` §11.60):
+
+- **E75**, the burst profile with the calibrated autoscaler (`REHEARSAL_LOAD_PROFILE=burst`, the autoscaler free between three and seven):
+  W2's shape at the scale `kind` carries (the mix at 0.13 of the target's peak, each burst at 0.39, E30's step 3), with sign-ins at three times
+  their target peak in every burst. *Derived*: the bursts take three pods to about 114% of their request (1.72 cores), above the target, and
+  the count must not move; no door may refuse a request; the census green at every sample; latency and errors per stage recorded for
+  `P16-TSK-029`'s judgement.
+- **E76**, the entry's probe: E75 with the sign-in limit set to the lockout's threshold, below one person's need, on the run's own Deployment
+  after its setup: the
+  refusals of legitimate sign-ins counted and shown, and the run red.
+- **E77**, the role split's reading (`REHEARSAL_LOAD_PROFILE=background`, three replicas): the engineering workload held 35 minutes, the
+  run's day replayed through the audited operator door at the second stage's start, so every consumer and the relay work while the rate holds;
+  each stage's latency and resources side by side (`load/role-split.tsv`), read against §4a.4's rule.
+- The autoscaler's own scale under load is E70's, the peak at ten E69's (`P16-TSK-014`); the memory over hours E39's (`P16-TSK-008`); the
+  monitors at the break E52's (`P16-TSK-016`).
 
 ---
 
@@ -475,10 +631,10 @@ rather than the infrastructure becomes an ADR before any change (ADR-0126 decisi
 
 | Class | Strategy | Limit to measure | Note |
 |---|---|---|---|
-| Stateless APIs | Horizontal (HPA on CPU, calibrated by `P16-TSK-015`) | The connection budget (§4), then the primary | Adding replicas also adds schedule and consumer competitors |
+| Stateless APIs | Horizontal (HPA on CPU, calibrated by `P16-TSK-015`: §4a.1) | The connection budget (§4), then the primary | Adding replicas also adds schedule and consumer competitors |
 | Payment orchestration | Horizontal; provider-bound | Provider latency × concurrency; the bulkhead | Never a retry of an ambiguous dispatch |
 | Ledger operations | **Vertical** for the writer; hot rows by sub-accounts if measured (`PHASE_16_PLAN.md` §6.4) | Postings a second on the hottest row | No write scale-out without an ADR |
-| Background workers (the 37 schedules of `DISTRIBUTED_EXECUTION.md` §3) | Leaderless on every replica, `SKIP LOCKED` claims; batch sizes | Claim contention at ten; batch throughput per tick | Phase 15's C5 left a role split (`api`/`worker`) to this measurement (`P16-TSK-015`) |
+| Background workers (the 37 schedules of `DISTRIBUTED_EXECUTION.md` §3) | Leaderless on every replica, `SKIP LOCKED` claims; batch sizes | Claim contention at ten; batch throughput per tick | Phase 15's C5 left a role split (`api`/`worker`) to this measurement (`P16-TSK-015`); *(2026-11-13: not split, §4a.4, ADR-0145)* |
 | Kafka consumers | Horizontal to the partition count (12) | Lag per group (§3.3) | More partitions means a new topic, never a resize in place (`PHASE_16_PLAN.md` §7) |
 | Reconciliation workers | Chunked, resumable, any instance | Chunks a minute; per-source serialisation | |
 | Report generation | Its own pool (`finapp_reporting`), read-only | The primary's read load; a replica only for this pool (`PHASE_16_PLAN.md` §6.6) | |
@@ -493,7 +649,7 @@ rather than the infrastructure becomes an ADR before any change (ADR-0126 decisi
 - **Vertical** for the PostgreSQL primary.
 - **Partitioning** of Kafka topics (fixed at 12) and, if `P16-TSK-012` decides it by an ADR, of high-volume tables. *(2026-11-13: ADR-0142
   decides no table is partitioned at the target, §3.6, and names what would overturn it.)*
-- **Workload isolation** by pools and bulkheads, and by a role split only if measured (`P16-TSK-015`).
+- **Workload isolation** by pools and bulkheads, and by a role split only if measured (`P16-TSK-015`). *(2026-11-13: no split, §4a.4.)*
 - **Read scaling** only for the reporting pool (`PHASE_16_PLAN.md` §6.6). *(2026-11-13: ADR-0142 routes no replica; one primary serves
   every door, held by a guard, §3.6.)*
 - **Write limitations**, stated: writes do not scale out. One primary holds the journal, and every arbiter is a row or a
@@ -539,3 +695,6 @@ Each one confirmed becomes an ADR before any change.
 - A change to the code that adds or removes an event on a flow changes §3.2. The counts were read on master `6981c167`.
 - A change to the pool, the replicas, the surge or the server changes §4. `ConnectionPoolSizingGuard` holds the live arithmetic,
   and this page holds its reading.
+- `P16-TSK-015` writes §4a's calibration from §2, §3.1 and §3.4. A changed W2, W3 or R6, a changed per-operation cost or a run of E75–E77
+  changes the row that cites it, by a dated note; `PerSourceLimitsAreCalibratedTest` and `KubernetesManifestsTest` read W2, W3 and R6 here,
+  so a changed assumption turns them red until the limits or the windows are derived again.
