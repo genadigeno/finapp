@@ -1389,12 +1389,12 @@ alone. → [ADR-0129](../adr/ADR-0129-availability-and-the-multi-region-stance.m
 mechanism (sub-accounts, a shorter hold, an exception, the capital row's tranches) before a run names a row past its objective at the
 target, the runs (E38–E40) built and owed under `POSTPONED_ISSUES.md` PI-025; the merchant payable read, which folds the account's
 whole history on every call and was E30's first limit, bounded by a checkpoint below the journal's commit-order watermark, its build
-the owner's to place (`THREAT_MODEL.md` §6 item 55). → [ADR-0133](../adr/ADR-0133-contention-measured-before-any-mechanism-and-the-whole-history-folds.md)
+placed by the owner on 2026-11-13 in `P16-REM-001` (`THREAT_MODEL.md` §6 item 55 (i); read "the owner's to place" until then). → [ADR-0133](../adr/ADR-0133-contention-measured-before-any-mechanism-and-the-whole-history-folds.md)
 
 **The connection budget at ten replicas: a larger server, no smaller pool, no transaction-mode pooler yet** (owner decision C3,
 2026-11-13). `kind`'s test-only server is raised to the formula for ten (13 instances, 116 connections), each rehearsal run holding its
 fleet at its own count; staging unchanged; production's ceiling stays seven, ten taking a larger declared `max_connections` first once
-the ten-instance runs are made (`THREAT_MODEL.md` §6 item 56). A transaction-mode pooler is refused for now: the driver sets isolation
+the ten-instance runs are made (`THREAT_MODEL.md` §6 item 56, decided so by the owner on 2026-11-13). A transaction-mode pooler is refused for now: the driver sets isolation
 per session, outside the transaction. → [ADR-0134](../adr/ADR-0134-the-connection-budget-at-ten-replicas.md)
 
 **The database's socket timeout, and the failover drill's rules** *(added 2026-11-13, `P16-TSK-022`)*. Five minutes on the data
@@ -1432,7 +1432,8 @@ to an instant from an encrypted WAL archive, held before its server first starts
 A census of the journal's duplicated scopes, kept as a row, then a unique index the census must allow (a duplicate stops the release,
 never deleted); a posting or reversal retried after its record is gone answered by the recorded entry, a different request the
 conflict; then a sweep of terminal records past their expiry and a grace (30 days, never under a day) that refuses while the
-uniqueness is absent, and the application's `DELETE` revoked. What the sweep leaves to commands with no second arbiter is item 63. →
+uniqueness is absent, and the application's `DELETE` revoked. What the sweep leaves to commands with no second arbiter is item 63
+(decided 2026-11-13: the grace kept, a second arbiter for transfers and card checkouts after the phases, PI-027). →
 [ADR-0141](../adr/ADR-0141-one-journal-entry-per-posting-scope-then-the-idempotency-sweep.md)
 
 **No table partitioned and no read replica routed at the target (proposed).** Partitioning would split the once-ness arbiters (the
@@ -1441,7 +1442,14 @@ account over its whole history, which no time key prunes; the swept tables' swee
 primary serves every door, held by a guard in layers (who reads an address, who builds a connection, no `DataSource` bean, only report
 generation on the reporting pool, that pool on the writer's address, the driver refusing to pick a standby); report generation is the
 only read ever eligible for a replica, under stated conditions. Each decision's overturning reading, E65, is built and owed under
-`POSTPONED_ISSUES.md` PI-025; report generation's from-inception fold is `THREAT_MODEL.md` §6 item 64. → [ADR-0142](../adr/ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md)
+`POSTPONED_ISSUES.md` PI-025; report generation's from-inception fold is `THREAT_MODEL.md` §6 item 64, decided by the owner on
+2026-11-13: an opening checkpoint for each locked month, `P16-REM-003`. → [ADR-0142](../adr/ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md)
+**The financial-operation availability matrix** (`P16-TSK-023`, 2026-11-13, `Proposed`). Every operation, under every failure, is
+refused (no record), queued (its record written, its effects waiting), degraded or available; no request is answered while its record
+cannot be written, and none is refused for the broker's sake. The operations are classes of both edges' served routes, every route in
+exactly one; every failure row is checked by registered experiments or designed-only; E05, E06, E09, E72 and E73 walk their rows at the
+edge and fail on a mismatch. No automatic refusal on a correctness signal: the freeze stays a person's act, proposed to the owner
+(`THREAT_MODEL.md` §6 item 66) and decided so on 2026-11-14, the rails no simulator serves accepted as designed-only for the phase. Every run owed (PI-025). → [ADR-0144](../adr/ADR-0144-the-financial-operation-availability-matrix.md)
 
 **Capacity calibration: the autoscaler on CPU alone, a burst never scaled, the limits kept by derivation, no role split (proposed).**
 The autoscaler scales on the pods' CPU and nothing that rises when the single writer is the limit; its 70% target is derived from the
