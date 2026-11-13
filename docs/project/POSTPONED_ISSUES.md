@@ -741,3 +741,14 @@ commit and the date; do not delete the entry.
     above, runs with. Nothing ran on a cluster. What ran instead, on 2026-11-13: the new shell functions under `dash` against a real
     `kustomize` render of the `kind` overlay and stubbed cluster answers, the pinned k6's `inspect` of the `autoscale` profile, and the
     harness's refusals before any build (§11.58's record).
+  - **`P16-TSK-028`** (security under scale and failure, `OPERATIONS_RUNBOOK.md` §11.62, whose record is empty; ADR-0147): the **security
+    probe** in the experiments it rides, first in **E01** and **E05** at three replicas (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E01
+    E05"`): no protected request answered without its check while each fault is on, the sessions held from before each fault served after
+    it, the four-eyes plant's proposer refused while no primary serves and on the promoted one with each refusal recorded, the audit trail
+    whole across the failover, and E05's sign-in counts read across the promotion (the entry's probe: an unauthenticated request during
+    E05, refused); then **E81**, one source's burst at the sign-in door at ten replicas (`REHEARSAL_EXPERIMENTS=E81
+    REHEARSAL_EXPERIMENTS_REPLICAS=10`), exactly the door's limit admitted; and **E82**, a rolling restart of the whole fleet at ten replicas
+    (`REHEARSAL_EXPERIMENTS=E82 REHEARSAL_EXPERIMENTS_REPLICAS=10`), every new replica serving the held sessions. Every other experiment's
+    run under this list carries the probe from this task's tree on. Nothing ran on a cluster. What ran instead, on 2026-11-13:
+    `DegradedStorageFailsClosedTest` (the application's checks with the database away) and `SecurityUnderFailureContractTest`, `sh -n` and
+    ShellCheck 0.10.0 over the changed scripts, and `javac` over the rehearsal's client.

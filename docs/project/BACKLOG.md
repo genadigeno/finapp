@@ -30351,6 +30351,10 @@ on none:
   collector's platform pipeline (the request's copy is the caller's text and stays dropped), so a 5xx the edge counted under a
   pod's or the edge controller's loss is joined to the replica's records by its flow; `edge-check.sh` and the collector's scrub keep
   refusing every other header. Item 47 (e) is closed by a dated note that cites no finished task.
+- **Routed from `P16-TSK-028` (2026-11-13)**: every experiment now carries the security probe (`OPERATIONS_RUNBOOK.md` §11.62), which asks
+  every application pod from the edge's probe pod (`np-edge`) every 5 s while the fault is on, and fails an experiment whose fault left it
+  no answer at all. E04's stopped node must therefore not be the one `np-edge` runs on (or the probe must be moved off it first), or E04
+  fails as unobserved; the sessions the probe holds must be served by every replica that replaces a lost one in E01-E04 and E25 at ten.
 - **Risk**: Medium. **Cx**: M.
 - *Routed from `P16-TSK-019` (2026-11-13):* E01 at three replicas is recorded (`OPERATIONS_RUNBOOK.md` §11.46); its ten-replica run is
   this task's. Four things the toolkit leaves to it. **A node stopped (E04)**: the registry holds `node-paused` (`docker pause`, its
@@ -30659,6 +30663,14 @@ on none:
   T42's answer recorded.
 - **Definition of done**: `DOD-DOC`, `DOD-TEST`, `DOD-SEC`.
 - **Operational documentation**: runbook §11.41.
+- **Routed from `P16-TSK-028` (2026-11-13)**: two rows of `PHASE_16_PLAN.md` §18 are this exercise's. *Secrets during DR*: the exercise
+  regenerates every credential and rotates nothing it should not - the restored database's roles keep their grants, their credentials are
+  new - and shows both. *The security record after a restore's point* (`THREAT_MODEL.md` §6 item 69, awaiting the owner): a restore
+  brings back sessions, roles, suspensions, passwords and merchant keys as they were at its point; if the owner decides item 69's (i), the
+  post-recovery gate's security window is built here, where the rebuild from a backup shows it; until decided, the exercise's release
+  record lists the identity and key acts after the restore's point, as `OPERATIONS_RUNBOOK.md` §11.55's security note says. The
+  experiments' security probe (§11.62) asks every replica while a fault is on; the exercise's rebuilt fleet is not an experiment, so its
+  release step reads the same four protected requests refused on every replica before money moves.
 - **Risk**: Medium. **Cx**: L.
 
 **P16-TSK-026 — The multi-region assessment and Terraform variants (C10; ADR-0129; `THREAT_MODEL.md` §6 item 21 (a))** — `PLANNED`

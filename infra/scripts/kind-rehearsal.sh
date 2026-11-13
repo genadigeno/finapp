@@ -53,13 +53,15 @@
 # P16-TSK-021 added the network, DNS, connection and disk faults (E07, E11-E16, E24; OPERATIONS_RUNBOOK.md section 11.47): E24 must be
 # named when the run makes its data tier, which then puts the primary on a size-limited filesystem of its own, and E11 needs
 # REHEARSAL_E11_STORE naming a store. It runs three brokers (P16-TSK-013, kind-rehearsal/brokers.sh), each behind a proxy of its own,
-# for the event pipeline's experiments E08, E09, E22, E23, E49 and E68 (OPERATIONS_RUNBOOK.md section 11.51).
+# for the event pipeline's experiments E08, E09, E22, E23, E49 and E68 (OPERATIONS_RUNBOOK.md section 11.51). Every experiment carries
+# P16-TSK-028's security probe (OPERATIONS_RUNBOOK.md section 11.62): no protected request answered without its check while a fault is on,
+# no held session lost, four eyes and the audit trail unchanged; its E81 and E82 run at REHEARSAL_EXPERIMENTS_REPLICAS.
 #
 # THE COUNT (P16-TSK-009, P16-TSK-014; OPERATIONS_RUNBOOK.md sections 11.49 and 11.58). Every run holds its fleet at its own count in its own
 # rendered copy, the connection budget's formula at that count (fleet_patch): three by default; REHEARSAL_LOAD_REPLICAS in the load scope;
 # REHEARSAL_RELEASE_REPLICAS, to ten, carries the release's whole walk (E26: N - 1 to N, the kill, the rollback with its eviction and the
 # re-roll at ten, every wait and assertion at the run's count, the rollout's bound that many of the Deployment's own steps);
-# REHEARSAL_EXPERIMENTS_REPLICAS runs the experiments written for a count (E45). The load scope's autoscale profile (E70) leaves the
+# REHEARSAL_EXPERIMENTS_REPLICAS runs the experiments written for a count (E45; E81, E82). The load scope's autoscale profile (E70) leaves the
 # autoscaler to decide between its floor and the run's count, and every connection sample records the count the Deployment was asked for.
 #
 # A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
@@ -128,7 +130,7 @@ case $SCOPE in signals | incidents) AUDITED=1 ;; esac
 FLEET_REPLICAS=3
 [ "$SCOPE" != load ] || FLEET_REPLICAS=$LOAD_REPLICAS
 # The release's and the experiments scope's own counts (P16-TSK-014, OPERATIONS_RUNBOOK.md section 11.58): REHEARSAL_RELEASE_REPLICAS carries
-# the release's walk to ten (E26), REHEARSAL_EXPERIMENTS_REPLICAS the experiments written for a count (E45 at ten); three by default, and every
+# the release's walk to ten (E26), REHEARSAL_EXPERIMENTS_REPLICAS the experiments written for a count (E45 at ten, and E81, E82); three by default, and every
 # wait, floor and figure of those steps reads the run's count. FLEET_START is what the fleet starts at: the count, or the autoscaler's floor
 # in a run that lets the metric decide between that floor and the count (the load scope's autoscale profile, E70: load_preflight sets
 # FLEET_AUTOSCALE, and fleet_patch keeps the floor).
@@ -138,6 +140,9 @@ FLEET_AUTOSCALE=""
 FLEET_START=$FLEET_REPLICAS
 # The experiments that read the run's count rather than three: the others are refused at any other count.
 EXPERIMENTS_AT_A_COUNT="E45"
+# P16-TSK-028's two (OPERATIONS_RUNBOOK.md section 11.62), each read at the run's count: the sign-in door's limit held across the fleet (E81)
+# and the sessions held through a rolling restart of every replica (E82).
+EXPERIMENTS_AT_A_COUNT="$EXPERIMENTS_AT_A_COUNT E81 E82"
 # fleet_resolve (P16-TSK-014): the run's count refused before anything is built unless it is three to the kind overlay's ceiling, read from the
 # overlay, and a count other than three refused wherever the steps are written for three: the release's probes (their quota and timings are
 # three's), every experiment but those of EXPERIMENTS_AT_A_COUNT, and every other scope. The load scope's count is load_preflight's too.

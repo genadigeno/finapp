@@ -1443,6 +1443,14 @@ generation on the reporting pool, that pool on the writer's address, the driver 
 only read ever eligible for a replica, under stated conditions. Each decision's overturning reading, E65, is built and owed under
 `POSTPONED_ISSUES.md` PI-025; report generation's from-inception fold is `THREAT_MODEL.md` §6 item 64. → [ADR-0142](../adr/ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md)
 
+**Security under scale and failure (proposed).** Every check a request meets before its handler reads PostgreSQL and fails closed when
+it cannot (a failure, never a pass and never a refusal nobody decided), held without a database. Every experiment carries a security
+probe: every replica asked directly while the fault is on, a protected request answered without its check failing the experiment, held
+sessions never refused, a four-eyes act's proposer never approved, and the audit trail compared by digest across the fault. E81 holds the
+sign-in door's limit exactly over ten replicas; E82 holds the sessions through a rolling restart. A restore's undoing of the security
+record after its point is `THREAT_MODEL.md` §6 item 69. The runs are owed under `POSTPONED_ISSUES.md` PI-025. →
+[ADR-0147](../adr/ADR-0147-security-under-scale-and-failure.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

@@ -3261,6 +3261,7 @@ latest; the run, as its record names it.
 | §11.56 | `ledger`, `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | §11.57 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.58 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
+| §11.62 | `platform`, `identity` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3449,6 +3450,11 @@ promoted) is not this section: it is §11.35's restore, decided as §11.12 says.
   that pod frees it" until 2026-11-13.)*
 - **The abuse counters start again**: `platform.window_counter` is unlogged, so a failover empties it, every source with a fresh
   window (§11.30).
+- **No security control relaxes** *(2026-11-13, `P16-TSK-028`, ADR-0147)*: while no primary serves, every session, role and key lookup
+  fails, and each request that needs one is answered `5xx`, never served and never told its session is dead; a request with no credential
+  is refused `401` without the database. Sessions, roles, four-eyes proposals and the audit trail are rows on the synchronous standby, so
+  after the promotion every session is served again, a proposer is still refused its own approval, and no audit record is lost. E05's run
+  shows each (§11.62), owed under `POSTPONED_ISSUES.md` PI-025.
 
 **What a person does.**
 
@@ -3957,7 +3963,7 @@ suspect issuer is no fix.
 
 **Rotating `FINAPP_ABUSE_BUCKET_KEY`.** Change the store, sync, roll (`SECRET_MANAGEMENT.md` §5.1). The buckets reshuffle: each source starts a fresh window in a new bucket, and while a rollout has both keys on the fleet a source can count once per key. Nothing is signed or encrypted with it, so the cost is at most one window's budget. Keep the key secret: it is what stops an attacker computing an address of their own that shares a named victim's bucket.
 
-**After a failover.** The table is unlogged, so a crash or failover empties it: every source has a fresh window, once per crash or failover. That is the cost of a counter that puts no row in the WAL. Nothing needs doing.
+**After a failover.** The table is unlogged, so a crash or failover empties it: every source has a fresh window, once per crash or failover. That is the cost of a counter that puts no row in the WAL. Nothing needs doing. *(2026-11-13, `P16-TSK-028`: E05 reads the sign-in door's counts in one window before the fault and after the promotion, and E81 counts the door's limit held exactly by one source over ten replicas; both owed under `POSTPONED_ISSUES.md` PI-025, §11.62.)*
 
 **Size.** At most 65,537 rows per count per window, measured at about 14 MB per count-window including both indexes; a door counted per /48 as well has two counts. `finapp.retention.sweep.failed{type="window_counter"}` rising means ended windows are not leaving; the doors keep working and the table grows by at most that bound each window. See §11.15 for a failing sweep.
 
@@ -4301,6 +4307,14 @@ For every restore, logical or to an instant (ADR-0128 decision 3, ADR-0140). The
 5. **Then the broker and the fleet**, section 11.35 steps 6 and 7: the groups to the end with the fleet stopped, the fleet started, the audited replay of the window from the restored outbox, the relay. The window's own re-delivered files reach the broker through the outbox like any other fact.
 
 **What a window cannot find.** A provider's action the restored books have no trace of and the provider sends no file for: a capture or a payout the platform asked for after T. The resolution sweeps ask the providers about every operation the books hold as unresolved; an operation the books never held is found only by the provider's next statement, as a break.
+
+**Security: what the window does not reconcile** *(2026-11-13, `P16-TSK-028`, ADR-0147)*. The restore brings back the security record as it
+was at T, too: a session revoked, a role revoked, an identity suspended, a password replaced, a factor removed or a merchant key revoked
+after T is live again on the restored database, and nothing in the gate reconciles them. Most restored sessions are past their 30-minute
+idle bound by the time of the release, but a role, a password and a merchant key have no such bound. `THREAT_MODEL.md` §6 item 69 puts the
+fix to the owner. Until it is decided, the incident record lists every identity and key act recorded after T - from the audit archive's
+copy where one is configured, or from the damaged database while it still exists - and each is repeated through its own door as soon as
+the release lets the doors serve.
 
 #### When the recovery refuses
 
@@ -5975,7 +5989,9 @@ there is nothing to reconcile, reverse or look for, and the client's retry under
 replica: the writer pool's queue (`finapp.shedding.pool-waiters` threads already waiting: every public request shed), the command
 permits (`finapp.shedding.command-permits` commands in flight: the next command shed), and the deadline (a command whose session or
 key lookups left it less than one pool wait of `finapp.shedding.deadline`). The operator surface and the provider callbacks are never
-shed, so this section's steps work on a shedding platform.
+shed, so this section's steps work on a shedding platform. *(Security, 2026-11-13, `P16-TSK-028`: the door only refuses; what it admits
+meets the session's, the key's and the per-source checks unchanged, and a shed request is told `503`, never served. Every experiment's
+security probe asks a shedding fleet too, §11.62.)*
 
 **The signals.**
 - `finapp_shedding_requests_total{type,outcome}` per replica: `type` is `command` or `read`, `outcome` is `admitted`, `pool`, `permits`
@@ -6209,6 +6225,100 @@ autoscaled run at the floor refused; the step's bound read from the render; the 
 `pipeline_preflight`'s counts to ten), the pinned k6's `inspect` of the `autoscale` profile (sign-ins at 60,003 iterations per 1,000 s in
 the surge, every other operation at its quarter), and the harness's refusals of a count past the ceiling, a release probe at ten and an
 experiment written for three. `TenInstancesRehearsalContractTest` holds what the runs would assert.
+
+### 11.62 Security under scale and failure: the probe in every experiment, a session through a replacement, four eyes through a failover, the door's limit at ten (`P16-TSK-028`, ADR-0147)
+
+*(Written by `P16-TSK-028`, 2026-11-13, from `infra/scripts/kind-rehearsal/experiments.sh`'s security functions, E81 and E82, and the
+client's three commands in `infra/scripts/kind-rehearsal/Rehearsal.java`. Not run: by the owner's word of 2026-11-13 ("we dont need long
+running checks and tests") every run here is owed (`POSTPONED_ISSUES.md` PI-025), and no result, count or verdict of theirs is claimed.
+`SecurityUnderFailureContractTest` holds what the runs would assert; `DegradedStorageFailsClosedTest` holds the application's half without
+a cluster. `PHASE_16_PLAN.md` §18 is the list this section answers, row by row, in ADR-0147.)*
+
+**What it is for.** A control that holds when the platform is well can still be skipped when it is not: a session lookup that fails read
+as "no session needed", a role read that fails read as "no roles needed", a refusal answered without its record, a four-eyes rule relaxed
+by a promoted server, a held session lost with a replica, an audit record lost with a primary. Every check a request meets before its
+handler is the application's (the edge authenticates nothing), reads PostgreSQL, and fails closed when it cannot read: the failure is
+answered as a failure, never as a pass and never as a refusal nobody decided (`DegradedStorageFailsClosedTest`). The experiments show it
+on a cluster while each fault is on.
+
+#### The security probe, in every experiment
+
+`experiment_run` carries it for every experiment, around the experiment's own steps and never inside them. After the experiment's steady
+state the client signs a customer in on the public host and elevates the operator on the operator host (`client security-tokens`, the two
+tokens written to a file the harness reads and removes at once, never printed), and the merchant's key is read from the client's state.
+**The control**: one look at every ready replica must show each held credential served `200` and each of the four protected requests -
+`GET /v1/me` with no credential and with a forged one, `GET /v1/operator/events/dead-letters` and `GET /v1/merchant/me` each with a forged
+one - refused `401`; otherwise the run cannot go on, because a refusal could then be a route that does not exist. From just before the
+fault to the end of the recovery, every 5 s, the edge's probe pod asks every application pod directly (a replica failing open alone behind
+the Service would be one answer in N), every request in parallel, the held credentials on stdin. `security.tsv` in the experiment's
+artefacts has every answer: its second, its phase (`control`, `fault`, `recover`, `after`, E82's `rolled`), the pod's address, the case and
+the status (`000`: no answer).
+
+**How it is judged**, after the recovery, and each finding fails the experiment (the register's §1.1 Stop):
+
+- a protected request answered `2xx` or `3xx` in any phase but the control: **a fail-open observation**;
+- a held credential answered `401` or `403`: a session lost (while a part is away a held session is answered `5xx` or not at all, never
+  told it is dead);
+- no protected request answered at all while the fault was on: nothing was observed, so nothing is ruled out;
+- after the recovery, any ready replica not serving a held credential `200` or not refusing a protected request `401`.
+
+The record's `security` line counts the protected requests refused `401`/`403`, answered another `4xx` or a `5xx` (a door shed `503`, a
+database away `5xx`), unanswered, and answered without their check.
+
+#### Four eyes through any fault, and the audit trail across it
+
+Once a run the controller, who holds `FINANCIAL_CONTROLLER`, is given `ACCOUNTANT` as well on the run's own server (as the rehearsal's
+`prepare` grants roles) and proposes a GL mapping version taking effect next month (`client four-eyes-plant`): one identity holding both
+halves, so that four eyes alone - not a missing permission - refuses its own activation. It is never activated. In every experiment the
+proposer's own activation is tried just after the fault is put on (`client four-eyes-self <id>-during`, in the background) and again after
+the recovery: never a `2xx`; after the recovery `403 accounting.SelfApprovalRefused`; every `403` answered has its
+`accounting.SelfApprovalRefused` record in the trail (counted before and after); the plant still `PROPOSED`. In E05 the first try meets no
+primary at all, and the second meets the promoted one. Just before the fault every audit record's id and the digest of its row are read;
+after the recovery every one of them must be present and unchanged (`audit-before.tsv`, `audit-after.tsv`).
+
+#### E05: the unlogged counter across a failover
+
+`platform.window_counter` is unlogged by design (platform `V014`): a promoted standby never held its rows, so every source may spend a
+window's budget again, once per failover. Just before E05's fault the probe pod's source signs in three times at a replica and the sign-in
+door's counts in the window are read; once the fleet is ready on the promoted server they are read again in the same window. The record's
+`fresh budgets` line says how many sources were counted before and how many of them are lower or gone after. It is a measurement and never
+a verdict; a window that ended between the two reads measured nothing and says so.
+
+#### E81: the sign-in door's limit at ten
+
+`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E81 REHEARSAL_EXPERIMENTS_REPLICAS=10 infra/scripts/kind-rehearsal.sh`. The `kind`
+overlay raises the doors' limits to a million so that no rehearsal trips them; E81 sets the sign-in door back to `application.yaml`'s own
+limit on the fleet (a registered setting, a rolling update, removed at stop and on every way out), waits for a window with at least three
+minutes left, then sends three times the limit of sign-ins with logins nobody holds from the edge's probe pod to every replica, two to each
+at a time. **Read** `burst.txt` (each answer by replica), `burst-by-replica.tsv` (sent and admitted per replica) and `counts-after.tsv` (the
+window's rows). Exactly the limit admitted - answered neither `429` nor `5xx` - from at least two replicas, every replica reached, the
+counter's row at the limit and none above it. A count the door could not take answers `503` and admits nothing, so it never adds to the
+admitted. A burst crossing its window's end could not run.
+
+#### E82: a session through a rolling replacement at ten
+
+`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E82 REHEARSAL_EXPERIMENTS_REPLICAS=10 infra/scripts/kind-rehearsal.sh`. A
+`kubectl rollout restart` of the fleet while the workload runs and the probe asks every pod, old and new. **Read** `security.tsv`'s
+`rolled` look: every replica of the run's count is new and serves the three held credentials `200`; no held credential was refused during
+the roll (pods starting or terminating answer nothing or `5xx`).
+
+#### The rows of `PHASE_16_PLAN.md` §18 this does not run
+
+Key availability, backup confidentiality and the audit rows across a restore are §11.35's and §11.55's drills (E59-E61): the key ring with
+a missing version refused, no plaintext at rest, every table's row count equal. Secrets regenerated in a disaster recovery are
+`P16-TSK-025`'s exercise. A WAF or DDoS service is designed-only, sized by `P16-TSK-015`. **A restore undoes the security record after its
+point** - sessions revoked, roles revoked, identities suspended, passwords replaced and merchant keys revoked since then are live again on
+the restored database, and the post-recovery gate's window reconciles provider files, not these: `THREAT_MODEL.md` §6 item 69, until the
+owner decides. Until then the restore's incident record (§11.12, "A restore, decided") lists the identity and key acts recorded since the
+restore's point - from the audit archive's copy where one is configured, or from the damaged database while it still exists - and each is
+repeated through its own door as soon as the release lets the doors serve (§11.55's security note).
+
+**Failure and rollback.** Every run is a throwaway cluster of its own name. E81's setting is a registered fault, removed at stop and by the
+blanket reset; the four-eyes plant and the controller's second role are rows on the run's own server, gone with it.
+
+**The record.** None. Not run, owed under `POSTPONED_ISSUES.md` PI-025: the probe in every experiment it rides (E01 and E05 at three
+replicas first), E81 and E82 at ten. What ran instead, on 2026-11-13, without a cluster: `DegradedStorageFailsClosedTest` and
+`SecurityUnderFailureContractTest`, `sh -n` and ShellCheck 0.10.0 (`-s sh -S warning`) over the changed scripts, and `javac` over the client.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

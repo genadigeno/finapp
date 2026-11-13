@@ -861,6 +861,15 @@ Every `P14-REM-*` still open, the owner items whose part is "with the first real
 | Confidentiality of backup and restore | Encrypted dump, key made for it (§11.35) | Unchanged; the PITR archive encrypted the same way; no plaintext on disk (asserted by the drill) |
 | Fail-open under degradation | Authorization is the application's; readiness down on database loss | No route answers a protected request without its check under any experiment: a negative probe per experiment (a request without a session must stay refused while the fault is on) |
 
+*(Dated note, 2026-11-13, `P16-TSK-028`, ADR-0147: built as a security probe every experiment carries, every replica asked directly while
+the fault is on, with held sessions, a four-eyes plant and the audit trail compared across the fault; the rate limit at ten as E81 and the
+session through a replacement at ten as a rolling restart, E82, in the experiments scope rather than under E26's release walk; the spike
+for abuse as one source's burst rather than the load scope's spike profile, whose sources the edge forwards from the generators; the
+unlogged counter's fresh windows read across E05's promotion. Every run is owed under `POSTPONED_ISSUES.md` PI-025. Key availability,
+backup confidentiality and the restore's row counts are the restore drills', secrets during DR `P16-TSK-025`'s, DDoS designed-only. The
+work found one gap the table did not name: a restore undoes the security record after its point, put to the owner as `THREAT_MODEL.md`
+§6 item 69. `OPERATIONS_RUNBOOK.md` §11.62.)*
+
 ---
 
 ## 19. The testing strategy (Part 25)
