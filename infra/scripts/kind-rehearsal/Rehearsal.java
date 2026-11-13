@@ -138,6 +138,7 @@ public final class Rehearsal {
             case "sign-in-flood" -> rehearsal.signInFlood(args[2], Integer.parseInt(args[3]));
             case "surface-unmarked" -> rehearsal.surfaceUnmarked(args[2]);
             case "payout-held" -> rehearsal.payoutHeld(args[2]);
+            case "attach-card" -> rehearsal.attachCard(args[2]);
             // The load harness (P16-TSK-006): the load's customers, their sessions, and the provider's signed callbacks. The load itself is k6's.
             case "load-customers" -> rehearsal.loadCustomers(Integer.parseInt(args[2]));
             case "load-fixture" -> rehearsal.loadFixture(args[2]);
@@ -2228,6 +2229,35 @@ public final class Rehearsal {
         } catch (IOException unanswered) {
             System.out.println("four-eyes-self " + label + " status=-1 code=- stage=activation");
         }
+    }
+
+    /**
+     * One card attached for the rehearsal's first customer under the client token given, the customer's live methods counted before and
+     * after (P16-TSK-023, E73; docs/architecture/AVAILABILITY.md row A11): while card tokenisation is away the attach must be refused with
+     * nothing stored, and once it is back the same token attaches one. Prints {@code before=}, {@code status=} and {@code after=}, one a
+     * line; a refused or unanswered attach is printed, never thrown, so the harness reads what happened.
+     */
+    private void attachCard(String clientToken) throws Exception {
+        String token = customerToken(0);
+        System.out.println("before=" + methodsOf(token));
+        int status;
+        try {
+            status = post(publicBase, "/v1/me/payment-methods", "{\"clientToken\":\"" + clientToken + "\"}", token, null).status();
+        } catch (IOException unanswered) {
+            status = -1;
+        }
+        System.out.println("status=" + status);
+        System.out.println("after=" + methodsOf(token));
+    }
+
+    /** The customer's live payment methods, counted by their ids in the list the application answers. */
+    private int methodsOf(String token) throws IOException, InterruptedException {
+        Matcher ids = Pattern.compile("\"id\"\\s*:\\s*\"").matcher(expect("payment methods", get(publicBase, "/v1/me/payment-methods", token), 200).body());
+        int count = 0;
+        while (ids.find()) {
+            count++;
+        }
+        return count;
     }
 
     // ------------------------------------------------------------------ the bodies, each from the application's own fixtures

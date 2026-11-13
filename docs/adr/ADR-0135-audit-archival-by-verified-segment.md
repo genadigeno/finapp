@@ -48,7 +48,8 @@ Three facts shape the build:
    needs, https off loopback, every exchange bounded in time and in size. The archive runs where `finapp.audit.archive.endpoint`
    names a store; no committed overlay names one, and on `kind` the experiments scope names a test-only write-once store
    (`ArchiveStore.java`). Request signing and the pod role's credential for a real bucket are not built (`THREAT_MODEL.md` §6
-   item 57 (a)).
+   item 57 (a)). *(2026-11-13: decided by the owner at 57 (a) (ii): the AWS SDK's S3 and STS clients, added with the first real
+   environment, `POSTPONED_ISSUES.md` PI-026.)*
 8. **Encryption at rest is the bucket's.** SSE-KMS under the archive's own key, a key separate from the database's (Terraform,
    `THREAT_MODEL.md` T10). The application holds no archive key, so no rotation of an application key can strand an archived copy.
 9. **The session sweep is identity's own function run as a retention sweep.** `identity.sweep_expired_sessions` (SECURITY DEFINER,
@@ -101,6 +102,8 @@ ADR-0030, ADR-0036 (re-read: the archive is the application's first object store
 
 ## Follow-up
 
-The real bucket's signing and credential, and the read path's door and its own audit record (`THREAT_MODEL.md` §6 item 57); the
+The real bucket's signing and credential, and the read path's door and its own audit record (`THREAT_MODEL.md` §6 item 57, decided
+by the owner on 2026-11-13: the SDK's clients with the first real environment, the door before any row may leave the table, a copy
+that differs re-keyed by a reviewed change with a second approver; `POSTPONED_ISSUES.md` PI-026); the
 archive's lock period and mode (item 23 (b)); partitioning and whether archived partitions may ever be detached (`P16-TSK-012`, and
 item 23 (b)'s period before any deletion); the runs on `kind` (E44–E46, PI-025).
