@@ -48,7 +48,10 @@ import org.junit.jupiter.api.Test;
  *   <li>every experiment states the replica count it runs at, never fewer than three, today's minimum ({@code minReplicas});
  *   <li>every experiment of the plan's section 9.2 and every scenario of its section 13 is in the register, so none is
  *       dropped silently;
- *   <li>an experiment not yet run names a live task that runs it, so a task cannot finish leaving its row empty;
+ *   <li>an experiment not yet run names a live task that runs it, so a task cannot finish leaving its row empty - or, since the
+ *       owner's word of 2026-11-13 postponing Phase 16's cluster runs ({@code POSTPONED_ISSUES.md} PI-025, {@code P16-TSK-021}), it
+ *       names the postponed issue its run is owed under ({@code owed under PI-NNN}), admitted only while that issue's row in the
+ *       postponed-issues register still reads {@code POSTPONED}: once the item is closed the row needs its run or a live runner again;
  *   <li>what the scenario table says already proves part of a scenario is a test that exists, declared as a test, in the
  *       tier the register says (a database test is never called hermetic);
  *   <li>a designed-only row names its local analogue, every experiment it names is registered, and until the owner accepts
@@ -69,6 +72,13 @@ class ResilienceExperimentsAreRegisteredTest {
     private static final String REGISTER = "docs/architecture/RESILIENCE_EXPERIMENTS.md";
     private static final String PLAN = "docs/project/PHASE_16_PLAN.md";
     private static final String BACKLOG = "docs/project/BACKLOG.md";
+    private static final String POSTPONED_ISSUES = "docs/project/POSTPONED_ISSUES.md";
+
+    /** A run owed to a postponed issue, as an unrun experiment's Runs in cell says it (P16-TSK-021; PI-025). */
+    private static final Pattern OWED = Pattern.compile("\\bowed under (PI-\\d{3})\\b");
+
+    /** A postponed issue the register still holds postponed: its row in the register's table. */
+    private static final Pattern STILL_POSTPONED = Pattern.compile("(?m)^\\| (PI-\\d{3}) \\| `POSTPONED` \\|");
 
     /** The day the register was written: no run recorded in it can be older. */
     private static final LocalDate REGISTER_WRITTEN = LocalDate.of(2026, 11, 12);
@@ -182,12 +192,14 @@ class ResilienceExperimentsAreRegisteredTest {
     private static List<String> unparseable;
     private static Set<String> planExperiments;
     private static Set<String> planScenarios;
+    private static Set<String> postponed;
 
     @BeforeAll
     static void readTheRegister() {
         root = EvidenceCitations.repositoryRoot();
         register = EvidenceCitations.read(root.resolve(REGISTER)).replace("\r\n", "\n");
         statuses = EvidenceCitations.backlogStatuses(root.resolve(BACKLOG));
+        postponed = idsIn(EvidenceCitations.read(root.resolve(POSTPONED_ISSUES)).replace("\r\n", "\n"), STILL_POSTPONED);
         String plan = EvidenceCitations.read(root.resolve(PLAN)).replace("\r\n", "\n");
         planExperiments = idsIn(section(plan, "### 9.2 "), PLAN_EXPERIMENT);
         planScenarios = idsIn(section(plan, "## 13. "), PLAN_SCENARIO);
@@ -381,7 +393,7 @@ class ResilienceExperimentsAreRegisteredTest {
     }
 
     @Test
-    @DisplayName("an experiment not yet run names a live task that runs it, and every task named is an entry")
+    @DisplayName("an experiment not yet run names a live task that runs it, or a postponed issue still holding its run, and every task named is an entry")
     void anUnrunExperimentNamesALiveRunner() {
         Map<String, String> problems = new LinkedHashMap<>();
         for (Row row : experiments()) {
@@ -397,8 +409,15 @@ class ResilienceExperimentsAreRegisteredTest {
             if (tasks.isEmpty()) {
                 rowProblems.add("names no task that runs it");
             } else if (row.cell(RESULT).equals(EMPTY) && tasks.stream().noneMatch(ResilienceExperimentsAreRegisteredTest::live)) {
-                rowProblems.add("has no result and no task it names is still live (" + describe(tasks)
-                        + "): a task finished and left its row empty");
+                // The owner's postponement holds an unrun row only while the register still holds the issue postponed (PI-025).
+                Matcher owed = OWED.matcher(runsIn);
+                if (!owed.find()) {
+                    rowProblems.add("has no result and no task it names is still live (" + describe(tasks)
+                            + "): a task finished and left its row empty");
+                } else if (!postponed.contains(owed.group(1))) {
+                    rowProblems.add("has no result, no task it names is still live (" + describe(tasks) + "), and the run it says is owed under "
+                            + owed.group(1) + " is not held POSTPONED by " + POSTPONED_ISSUES + ": run it, or name who runs it");
+                }
             }
             if (!rowProblems.isEmpty()) {
                 problems.put(row.where(), String.join("; ", rowProblems));

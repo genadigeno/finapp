@@ -29956,6 +29956,18 @@ on none:
   `synchronous_standby_names` is the drill's to decide; the harness's `psql_query` and census read `finapp-postgres-0` through its pod,
   so after a promotion they must read the promoted one; and the scope's steady state refuses to start an experiment unless the standby
   is synchronous.
+- *Routed from `P16-TSK-021` (2026-11-13):* the black-holed connection's measurement is built as E14 (`RESILIENCE_EXPERIMENTS.md`,
+  `OPERATIONS_RUNBOOK.md` §11.47): one replica cut from the database by a DROP each way inside its own network namespace (a
+  NetworkPolicy cannot cut a held connection), its sockets to the hop read every 5 s with `ss` in that namespace, a running
+  retransmission timer read as a held connection, and per held connection the seconds until the kernel freed it or that it outlived the
+  cut (`E14/held.tsv`), beside `net.ipv4.tcp_retries2` read in the namespace (the kernel's default, 15, is about fifteen minutes,
+  near the experiment's own 15-minute end). Its run without a socket timeout is owed under PI-025; the run with the decided timeout is
+  this drill's. To carry: the step sets no `socketTimeout` itself, so a run with one puts the property in the run's own rendered
+  configuration; a held connection may resume once the cut is removed, so "freed" is read only while the cut is on; the cut replica
+  leaves the Service by the pool's 2 s validation and 5 s connect timeout, not by its held threads. Don't black-hole the database hop
+  with the proxy's `timeout` toxic: it drops what it holds and closes the link only at its removal, so with no socket timeout a thread
+  would wait with no bound at all (a container check of 2026-11-13). The probe's cut on a commit (E13) found that a reset toxic added
+  while an answer is held lets the answer through first; the proxy disabled loses it.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
 - **Objective**: as decided:
@@ -30020,6 +30032,13 @@ on none:
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.35.
 - **Risk**: Medium. **Cx**: L.
+- *Routed from `P16-TSK-021` (2026-11-13):* E11, object storage unavailable (`RESILIENCE_EXPERIMENTS.md`, `OPERATIONS_RUNBOOK.md`
+  §11.47), needs the store the WAL archive writes to: the application uses none, which the step reads on the cluster. Its step scales
+  the Deployment `REHEARSAL_E11_STORE=<namespace>/<deployment>` names (in `finapp`, `finapp-rehearsal` or `finapp-experiments`) to zero
+  for 5 minutes. It expects the primary's `archive_mode` on, its archiver failing meanwhile (`pg_stat_archiver.failed_count`) and
+  catching up after; it closes a WAL segment each minute so there is something to send. Without a store named it reads could-not-run.
+  If the archive here is a local directory rather than an object store, E11's store half has no local subject: say so in E11's row at
+  this task's gate (a dated note, or `N/A:` with the reason). Its run is owed under PI-025 either way.
 
 **P16-TSK-025 — The disaster-recovery plan and exercise; RTO and RPO measured (C9; ADR-0128; T42)** — `PLANNED`
 - **Objective**: write the DR plan, and exercise it locally end to end: the `kind` cluster and its data destroyed, then the platform

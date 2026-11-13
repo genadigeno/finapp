@@ -50,6 +50,22 @@
 #   crash-with-faults  every kind of fault put on, then an unguarded failure: the exit trap must leave none on (read on a kept cluster);
 #   term-with-faults   the same, then SIGTERM to the harness itself, the signal path of the same trap.
 # REHEARSAL_EXPERIMENTS names the experiments to run (E01 by default; the catalogue is P16-TSK-020...-023's and P16-TSK-027's).
+#
+# THE NETWORK, DNS, CONNECTION AND DISK FAULTS (P16-TSK-021; OPERATIONS_RUNBOOK.md section 11.47): E07, E11, E12, E13, E14, E15, E16 and
+# E24, at the end of this file. Four kinds of fault came with them, each registered and cleared like the others:
+#   blackhole <pod> <address> <port>   a DROP rule both ways in that one replica's own network namespace, set from its node with the
+#                                      node's nsenter and iptables, marked finapp-experiment-fault: a true black hole, no reset and no
+#                                      answer. A NetworkPolicy cannot do it: policies only add what a pod may reach, the application's own
+#                                      already admit every hop, and the policy engine admits an established connection before any policy;
+#   held <seconds>                     a holder on the test-only server's own socket, as a role with no superuser attribute, taking every
+#                                      slot an ordinary role may still take (E07);
+#   locked <table> <seconds>           a session of the run's superuser holding an EXCLUSIVE lock on one table (E13's cut before a commit);
+#   filled <node>                      a ballast filling the size-limited filesystem the primary runs on, from its node, outside the data
+#                                      directory (E24, which brings that filesystem: kind's volume claims have no size of their own).
+# A toxic also takes stream=upstream and toxicity=<p>, the CLI's flags. A proxy disabled may be armed (the boundary and the registration
+# now) and fired at a measured moment (E13's cut on a commit). A stop condition that is a harm (a second replica unready, a page, a p99
+# past its bound) is FAILED; one that is a duration ends the observation and is FAILED only when the experiment's own signal never came.
+# A fault whose own positive control does not show (nothing held, nothing failed) is a run that could not measure: exit 2, never a pass.
 
 EXPERIMENTS=${REHEARSAL_EXPERIMENTS:-E01}
 TOXIPROXY_IMAGE="$TOXIPROXY_REPOSITORY@$TOXIPROXY_DIGEST"
@@ -58,6 +74,17 @@ EXPERIMENTS_CONFIG="$DIR/experiments/kind-cluster.yaml"
 EXPERIMENTS_COLLECTOR=http://finapp-collector.finapp-observability.svc.cluster.local:4318/
 # The census's expected payouts take this: E01's own payout, zero in every other scope.
 EXPERIMENTS_PAYOUTS=0
+# And its expected transfers this: E13's two cut transfers (P16-TSK-021), zero in every other scope.
+EXPERIMENTS_TRANSFERS=0
+# P16-TSK-021's marks: the comment on a black hole's rules, the application names of the holder's and the lock's sessions, the limited
+# filesystem's mount point on each worker, and the ballast's name on it.
+EXPERIMENTS_FAULT_COMMENT=finapp-experiment-fault
+EXPERIMENTS_HOLDER=finapp-experiment-holder
+EXPERIMENTS_LOCKER=finapp-experiment-lock
+EXPERIMENTS_LIMITED=/mnt/finapp-experiments-pgdata
+EXPERIMENTS_BALLAST=finapp-experiment-ballast
+EXPERIMENTS_HOLDER_PID=""
+EXPERIMENTS_ARMED_AT=0
 # Set once the scope's faults can exist; finish() then empties the registry and resets the proxy.
 EXPERIMENTS_ARMED=""
 EXPERIMENTS_GUARDS=0
@@ -142,6 +169,41 @@ experiments_render() {
         sed -i "s/^    $field: \"\{0,1\}$value\"\{0,1\}$/    $field: \"$grown\"/" "$quota"
     done
     log "the experiments' copy: the zone constraint DoNotSchedule, the hba's replication line, the quota grown by the standby ($(tr '\n' ' ' < "$quota" | sed 's/.*hard: *//'))"
+    # E24 (P16-TSK-021): the primary on a filesystem of its claim's own size, only when E24 is named; every other run as before.
+    case " $EXPERIMENTS " in *" E24 "*) experiments_limited_volume ;; esac
+}
+
+# E24's volume. kind's provisioner (local-path) backs a claim with a directory on the node, so a claim has no size of its own and filling it
+# would fill the machine's disk. Each worker gets a 2 GiB ext4 filesystem in a file inside its node container, loop-mounted at
+# $EXPERIMENTS_LIMITED (made afresh on every run, so a reused cluster's old data never comes back), offered as a local PersistentVolume of
+# the test-only StorageClass finapp-experiments-limited (experiments/limited-volume.yaml); the scope's rendered copy of the primary's claim
+# names that class, so the scheduler places the primary on a worker with one. The ballast goes there and nowhere else. A node is the
+# run's own container, removed with the cluster with its file and its loop device.
+experiments_limited_volume() {
+    kube delete persistentvolume -l finapp/experiment-volume=true --ignore-not-found >> "$ART/apply.log" 2>&1 || cannot "E24's old volumes could not be removed"
+    for node in $(kube get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'); do
+        [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$node" 2>/dev/null)" = "$CLUSTER" ] \
+            || fail "the safety boundary refused to make a volume on $node: it is not a node of $CLUSTER"
+        dock exec "$node" sh -c '
+            set -e
+            if grep -qs " $1 " /proc/mounts; then umount "$1"; fi
+            mkdir -p /var/lib/finapp-experiments "$1"
+            rm -f /var/lib/finapp-experiments/pgdata.img
+            truncate -s 2G /var/lib/finapp-experiments/pgdata.img
+            mkfs.ext4 -q -F -m 0 /var/lib/finapp-experiments/pgdata.img
+            mount -o loop /var/lib/finapp-experiments/pgdata.img "$1"
+            chown 999:999 "$1"
+            chmod 0700 "$1"
+            df -PB1 "$1" | awk "NR == 2 {print \"free \" \$4}"' limited "$EXPERIMENTS_LIMITED" >> "$ART/experiments-volume.log" 2>&1 \
+            || cannot "E24's size-limited filesystem could not be made on $node: see experiments-volume.log"
+        sed "s#NODE_NAME#$node#g" "$DIR/experiments/limited-volume.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 \
+            || cannot "E24's volume on $node could not be applied"
+    done
+    awk '/^ *volumeClaimTemplates:$/ {claims = 1} claims && /^ *accessModes:$/ && !done {indent = $0; sub(/accessModes:$/, "", indent); print indent "storageClassName: finapp-experiments-limited"; done = 1} {print}' \
+        "$A/StatefulSet.finapp-postgres.yaml" > "$WORK/statefulset.tmp" && mv "$WORK/statefulset.tmp" "$A/StatefulSet.finapp-postgres.yaml"
+    grep -q '^ *storageClassName: finapp-experiments-limited$' "$A/StatefulSet.finapp-postgres.yaml" \
+        || cannot "the primary's claim could not be given E24's class"
+    log "E24: a 2 GiB filesystem on every worker, the primary's claim of class finapp-experiments-limited"
 }
 
 # Once the test-only PostgreSQL and the broker are ready: the proxy, then the standby, then the application's way to the proxy.
@@ -491,6 +553,7 @@ experiments_simulator() {
 # experiments_fault_on <kind> <arguments>:
 #   toxic <proxy> <name> <type> <attribute=value>...   proxy-down <proxy>   hold <flag file>   partition <namespace> <name> <file>
 #   node-paused <node container>   scaled <namespace> <deployment> <replicas> <replicas to restore>
+#   blackhole <pod> <address> <port>   held <seconds>   locked <table> <seconds>   filled <node container>   (P16-TSK-021)
 experiments_fault_on() {
     experiments_guard
     printf '%s\n' "$*" >> "$FAULTS"
@@ -501,8 +564,25 @@ experiments_fault_on() {
         toxic)
             proxy=$1 name=$2 type=$3
             shift 3
-            set -- toxic add -t "$type" -n "$name" $(for attribute in "$@"; do printf -- '-a %s ' "$attribute"; done) "$proxy"
+            # stream=upstream and toxicity=<p> are the CLI's own flags, not attributes of the toxic (P16-TSK-021).
+            set -- toxic add -t "$type" -n "$name" $(for attribute in "$@"; do
+                case $attribute in
+                    stream=upstream) printf -- '-u ' ;;
+                    stream=downstream) printf -- '-d ' ;;
+                    toxicity=*) printf -- '--tox %s ' "${attribute#toxicity=}" ;;
+                    *) printf -- '-a %s ' "$attribute" ;;
+                esac
+            done) "$proxy"
             experiments_toxiproxy "$@" >> "$EXP_ART/faults.log" 2>&1 ;;
+        blackhole)
+            experiments_netns "$1" || fail "the safety boundary refused to cut $1: $EXP_REASON"
+            experiments_blackhole_rules -I "$2" "$3" >> "$EXP_ART/faults.log" 2>&1 ;;
+        held) experiments_holder_start "$1" ;;
+        locked) experiments_lock_start "$1" "$2" ;;
+        filled)
+            [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$1" 2>/dev/null)" = "$CLUSTER" ] \
+                || fail "the safety boundary refused to fill a volume on $1: it is not a node of $CLUSTER"
+            experiments_ballast "$1" >> "$EXP_ART/faults.log" 2>&1 ;;
         proxy-down)
             experiments_toxiproxy list | awk -F'\t' -v p="$1" '$1 == p && $4 == "enabled" {found = 1} END {exit !found}' \
                 && experiments_toxiproxy toggle "$1" >> "$EXP_ART/faults.log" 2>&1 ;;
@@ -531,8 +611,33 @@ experiments_undo() {
         partition) kube -n "$1" delete networkpolicy "$2" --ignore-not-found ;;
         node-paused) dock unpause "$1" ;;
         scaled) kube -n "$1" scale "deployment/$2" --replicas="$4" ;;
+        # A replica that has gone took its namespace and its rules with it.
+        blackhole) if experiments_netns "$1"; then experiments_blackhole_clear; fi ;;
+        held) experiments_holder_stop ;;
+        locked) experiments_sessions_ended "$EXPERIMENTS_LOCKER" ;;
+        filled) dock exec "$1" rm -f "$EXPERIMENTS_LIMITED/$EXPERIMENTS_BALLAST" ;;
         *) return 1 ;;
     esac
+}
+
+# A fault whose moment is a measurement's (E13's cut on a commit, P16-TSK-021): the whole boundary and the registration now, the injection
+# at the moment, with nothing slower than the injection between them. Only a proxy disabled is armed so, from an enabled one; it stays
+# registered, and is removed like any other, whether it was fired or not.
+experiments_fault_armed() {
+    [ "$1" = proxy-down ] || cannot "only a proxy disabled is armed, not $1"
+    experiments_toxiproxy list | awk -F'\t' -v p="$2" '$1 == p && $4 == "enabled" {found = 1} END {exit !found}' \
+        || cannot "the proxy $2 is not enabled, so it cannot be armed"
+    experiments_guard
+    printf '%s\n' "$*" >> "$FAULTS"
+    EXPERIMENTS_ARMED_AT=$(date +%s)
+    printf '%s\tarmed\t%s\n' "$(date -u +%H:%M:%S)" "$*" >> "$EXP_ART/faults.log"
+}
+
+experiments_fault_fire() {
+    grep -qxF "$*" "$FAULTS" || fail "the fault $* was fired without being armed: the boundary had not passed for it"
+    [ $(( $(date +%s) - EXPERIMENTS_ARMED_AT )) -le 300 ] || cannot "the fault $* was armed more than 300 s before its moment"
+    experiments_toxiproxy toggle "$2" >> "$EXP_ART/faults.log" 2>&1 || cannot "the fault $* could not be put on"
+    printf '%s\ton\t%s\n' "$(date -u +%H:%M:%S)" "$*" >> "$EXP_ART/faults.log"
 }
 
 # experiments_fault_off <kind> <arguments>: as put on.
@@ -565,6 +670,29 @@ experiments_faults_left() {
         now=$(kube -n "$namespace" get "deployment/$deployment" -o jsonpath='{.spec.replicas}' 2>/dev/null)
         [ "$now" = "$restore" ] || echo "$namespace/$deployment at $now replicas, not $restore"
     done < "$FAULTS.cleared"
+    experiments_faults_left_021
+    return 0
+}
+
+# What is left of P16-TSK-021's kinds, read the same way: a marked rule in any replica's namespace, a holder's or a lock's session, a
+# ballast on any node. The database unreadable is a fault left on only when a holder or a lock was put on: a database the experiment
+# itself took away (E24) is read again at the steady state that follows.
+experiments_faults_left_021() {
+    for pod in $(experiments_fleet | awk -F'|' 'NF >= 5 && $6 == "" {print $1}'); do
+        experiments_netns "$pod" || continue
+        rules=$(experiments_in_netns iptables -S 2>/dev/null | grep -c -- "--comment $EXPERIMENTS_FAULT_COMMENT" || true)
+        [ "${rules:-0}" = 0 ] || echo "$rules black-hole rules in $pod's namespace"
+    done
+    sessions=$(psql_query -c "SELECT count(*) FILTER (WHERE application_name = '$EXPERIMENTS_HOLDER') || '|' || count(*) FILTER (WHERE application_name = '$EXPERIMENTS_LOCKER') FROM pg_stat_activity" 2>/dev/null | tr -d '[:space:]')
+    case $sessions in
+        *'|'*)
+            [ "${sessions%|*}" = 0 ] || echo "${sessions%|*} holder sessions on the database"
+            [ "${sessions#*|}" = 0 ] || echo "${sessions#*|} locking sessions on the database" ;;
+        *) if grep -q '^\(held\|locked\) ' "$FAULTS.cleared" 2>/dev/null; then echo "the database could not be read for the holder's or the lock's sessions"; fi ;;
+    esac
+    for node in $(experiments_nodes); do
+        if dock exec "$node" test -e "$EXPERIMENTS_LIMITED/$EXPERIMENTS_BALLAST" 2>/dev/null; then echo "a ballast on $node"; fi
+    done
     return 0
 }
 
@@ -598,6 +726,16 @@ experiments_clear_faults() {
     for namespace in finapp finapp-experiments finapp-rehearsal; do
         kube -n "$namespace" delete networkpolicy -l finapp/experiment-fault=true --ignore-not-found >> "$EXP_ART/faults.log" 2>&1
     done
+    # P16-TSK-021's kinds: every marked rule in every replica's namespace, the holder told to stop and every held or locking session ended,
+    # every ballast removed.
+    for pod in $(experiments_fleet | awk -F'|' 'NF >= 5 && $6 == "" {print $1}'); do
+        if experiments_netns "$pod"; then experiments_blackhole_clear >> "$EXP_ART/faults.log" 2>&1; fi
+    done
+    experiments_holder_stop >> "$EXP_ART/faults.log" 2>&1
+    experiments_sessions_ended "$EXPERIMENTS_LOCKER" >> "$EXP_ART/faults.log" 2>&1
+    for node in $(experiments_nodes); do
+        dock exec "$node" rm -f "$EXPERIMENTS_LIMITED/$EXPERIMENTS_BALLAST" >> "$EXP_ART/faults.log" 2>&1
+    done
     left=$(experiments_faults_left)
     {
         printf 'cleared at %s; registered: %s\n' "$(date -u +%H:%M:%SZ)" "$(tr '\n' ';' < "$FAULTS.cleared")"
@@ -607,7 +745,7 @@ experiments_clear_faults() {
         log "!! a fault is still on after the exit trap: $(printf '%s' "$left" | tr '\n' ';')"
         [ "$FAILED" != 0 ] || FAILED=1
     else
-        log "every fault removed and none left on: the proxies enabled with no toxic, no hold flag, no fault policy, no paused node, every scaled Deployment back"
+        log "every fault removed and none left on: the proxies enabled with no toxic, no hold flag, no fault policy, no paused node, every scaled Deployment back, no black-hole rule, no held or locking session, no ballast"
     fi
 }
 
@@ -627,6 +765,265 @@ experiments_kill_jvm() {
     dock exec "$node" kill -9 "$pid" || cannot "SIGKILL could not be sent to $1's process on $node"
     printf '%s\tkill -9\t%s on %s, pid %s\n' "$(date -u +%H:%M:%S)" "$1" "$node" "$pid" >> "$EXP_ART/faults.log"
     KILLED="$node $container $pid"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# P16-TSK-021's faults: a replica's own network namespace, the database's slots, a table's lock, a full volume.
+# ---------------------------------------------------------------------------------------------------
+
+# experiments_netns <pod>: the node a replica runs on and its application container's process, whose network namespace is the pod's.
+# Sets NS_NODE and NS_PID; 1 with EXP_REASON when the pod has none, or its node is not one of this cluster's (the check E01's kill makes).
+experiments_netns() {
+    NS_NODE=$(kube -n finapp get pod "$1" -o jsonpath='{.spec.nodeName}' 2>/dev/null || true)
+    ns_container=$(kube -n finapp get pod "$1" -o jsonpath='{.status.containerStatuses[?(@.name=="app")].containerID}' 2>/dev/null | sed 's#^containerd://##')
+    [ -n "$NS_NODE" ] && [ -n "$ns_container" ] || { EXP_REASON="the pod $1 has no node or no running container"; return 1; }
+    [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$NS_NODE" 2>/dev/null)" = "$CLUSTER" ] \
+        || { EXP_REASON="$NS_NODE is not a node of $CLUSTER"; return 1; }
+    NS_PID=$(dock exec "$NS_NODE" crictl inspect --output go-template --template '{{.info.pid}}' "$ns_container" 2>/dev/null)
+    case $NS_PID in '' | 0 | *[!0-9]*) EXP_REASON="the application process of $1 could not be found on $NS_NODE"; return 1 ;; esac
+    return 0
+}
+
+# experiments_in_netns <command>...: one of the node's own commands, in the namespace experiments_netns found.
+experiments_in_netns() {
+    dock exec "$NS_NODE" nsenter -t "$NS_PID" -n "$@"
+}
+
+# experiments_blackhole_rules <-I|-C> <address> <port>: the black hole's two DROP rules, what the replica sends to the hop and what the hop
+# sends back, each marked so that what is left can be read and removed without a record. Nothing is refused or reset: it is dropped.
+experiments_blackhole_rules() {
+    experiments_in_netns iptables "$1" OUTPUT -p tcp -d "$2" --dport "$3" -m comment --comment "$EXPERIMENTS_FAULT_COMMENT" -j DROP \
+        && experiments_in_netns iptables "$1" INPUT -p tcp -s "$2" --sport "$3" -m comment --comment "$EXPERIMENTS_FAULT_COMMENT" -j DROP
+}
+
+# Every marked rule of the namespace experiments_netns found, removed: the registry's entry and the blanket reset both come here.
+experiments_blackhole_clear() {
+    experiments_in_netns iptables -S 2>/dev/null | grep -- "--comment $EXPERIMENTS_FAULT_COMMENT" | sed 's/^-A /-D /' | while read -r rule; do
+        # shellcheck disable=SC2086
+        experiments_in_netns iptables $rule
+    done
+    [ "$(experiments_in_netns iptables -S 2>/dev/null | grep -c -- "--comment $EXPERIMENTS_FAULT_COMMENT" || true)" = 0 ]
+}
+
+# The holder (E07). Over the test-only server's own socket (trust there), as a role with no superuser attribute, to the maintenance
+# database, every half second it opens a session for each slot an ordinary role may still take, each sleeping to the holder's bound, until
+# its stop file or that bound. PostgreSQL's superuser-reserved slots stay free: they are what an operator's break-glass connection takes.
+# Every session is a child of the exec's own shell, which waits for them: the postmaster is the container's first process, and a process
+# the run left behind would be reaped by it.
+experiments_holder_start() {
+    psql_query -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'finapp_experiment_holder') THEN CREATE ROLE finapp_experiment_holder LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION; END IF; END \$\$" \
+        >> "$EXP_ART/holder.log" 2>&1 || return 1
+    kube -n finapp exec finapp-postgres-0 -c postgres -- rm -f /tmp/finapp-experiment-holder.stop >> "$EXP_ART/holder.log" 2>&1 || return 1
+    kube -n finapp exec finapp-postgres-0 -c postgres -- sh -c '
+        end=$(( $(date +%s) + $1 ))
+        while [ ! -f /tmp/finapp-experiment-holder.stop ] && [ "$(date +%s)" -lt "$end" ]; do
+            free=$(psql -q -X -A -t -U finapp -d postgres -c "SELECT current_setting('\''max_connections'\'')::int - current_setting('\''superuser_reserved_connections'\'')::int - current_setting('\''reserved_connections'\'')::int - count(*) FROM pg_stat_activity WHERE backend_type = '\''client backend'\'' AND pid <> pg_backend_pid()" 2>/dev/null)
+            case $free in "" | *[!0-9]*) free=0 ;; esac
+            while [ "$free" -gt 0 ]; do
+                PGAPPNAME=finapp-experiment-holder psql -q -X -A -t -U finapp_experiment_holder -d postgres -c "SELECT pg_sleep($(( end - $(date +%s) )))" >/dev/null 2>&1 &
+                free=$((free - 1))
+            done
+            sleep 0.5
+        done
+        wait' finapp-experiment-holder "$1" >> "$EXP_ART/holder.log" 2>&1 &
+    EXPERIMENTS_HOLDER_PID=$!
+    BACKGROUND="$BACKGROUND $EXPERIMENTS_HOLDER_PID"
+}
+
+# The holder stopped: its stop file first, so it opens nothing more, then every session it holds ended, read until none is left.
+experiments_holder_stop() {
+    kube -n finapp exec finapp-postgres-0 -c postgres -- touch /tmp/finapp-experiment-holder.stop
+    [ -z "$EXPERIMENTS_HOLDER_PID" ] || kill "$EXPERIMENTS_HOLDER_PID" 2>/dev/null
+    experiments_sessions_ended "$EXPERIMENTS_HOLDER"
+}
+
+# experiments_sessions_ended <application name>: every session of that name ended, read again until none is left (15 s at most).
+experiments_sessions_ended() {
+    tries=0
+    while [ "$tries" -lt 15 ]; do
+        ended=$(psql_query -c "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name = '$1' AND pid <> pg_backend_pid()" 2>/dev/null | tr -d '[:space:]')
+        [ "$ended" = 0 ] && return 0
+        tries=$((tries + 1))
+        sleep 1
+    done
+    return 1
+}
+
+# experiments_lock_start <table> <seconds>: the run's superuser holds an EXCLUSIVE lock on the table for at most that long, in a session of
+# its own named for the lock, a child of the exec's shell; 0 once the lock is read granted.
+experiments_lock_start() {
+    kube -n finapp exec finapp-postgres-0 -c postgres -- sh -c \
+        'PGAPPNAME=finapp-experiment-lock exec psql -q -X -A -t -U finapp -d finapp -v ON_ERROR_STOP=1 -c "BEGIN" -c "LOCK TABLE $1 IN EXCLUSIVE MODE" -c "SELECT pg_sleep($2)" -c "ROLLBACK"' \
+        finapp-experiment-lock "$1" "$2" >> "$EXP_ART/lock.log" 2>&1 &
+    BACKGROUND="$BACKGROUND $!"
+    tries=0
+    while [ "$tries" -lt 30 ]; do
+        granted=$(psql_query -c "SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.application_name = '$EXPERIMENTS_LOCKER' AND l.locktype = 'relation' AND l.relation = '$1'::regclass AND l.mode = 'ExclusiveLock' AND l.granted" 2>/dev/null | tr -d '[:space:]')
+        [ "$granted" = 1 ] && return 0
+        tries=$((tries + 1))
+        sleep 1
+    done
+    return 1
+}
+
+# experiments_ballast <node>: the limited filesystem on that node filled - all but a MiB at once, then the rest by writing until the
+# filesystem refuses - by a file at its root, beside the data directory and never in it. Prints what is left free.
+experiments_ballast() {
+    dock exec "$1" sh -c '
+        grep -qs " $1 " /proc/mounts || { echo "$1 is not a mounted filesystem on this node"; exit 1; }
+        avail=$(df -PB1 "$1" | awk "NR == 2 {print \$4}")
+        size=$(( avail - 1048576 ))
+        [ "$size" -gt 0 ] || { echo "only $avail bytes free on $1"; exit 1; }
+        fallocate -l "$size" "$1/$2" || exit 1
+        dd if=/dev/zero bs=4096 count=1048576 >> "$1/$2" 2>/dev/null
+        sync
+        df -PB1 "$1" | awk "NR == 2 {print \"free \" \$4}"' ballast "$EXPERIMENTS_LIMITED" "$EXPERIMENTS_BALLAST"
+}
+
+experiments_rand() {
+    od -An -N8 -tx1 /dev/urandom | tr -d ' \n'
+}
+
+# The correctness pages every 15 s while a fault is on: a page sets the experiment's stop (ADR-0127 decision 6). 1 once one fired.
+experiments_pages_tick() {
+    now=$(date +%s)
+    [ $((now - ${EXP_PAGES_AT:-0})) -ge 15 ] || return 0
+    EXP_PAGES_AT=$now
+    firing=$(experiments_pages_firing)
+    if [ -n "$firing" ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a correctness page during the experiment: $firing"
+        log "$EXP_ID STOP: $EXP_STOPPED"
+        return 1
+    fi
+    printf '%s\tnone\t%s\n' "$(date -u +%H:%M:%S)" "$(experiments_alerts_firing)" >> "$EXP_DIR/pages.tsv"
+    return 0
+}
+
+# Every alert the cluster's Prometheus reads firing, its names, or UNREADABLE: what told, recorded beside the pages.
+experiments_alerts_firing() {
+    answer=$(experiments_prometheus "/api/v1/query?query=$(urlencode 'ALERTS{alertstate="firing"}')" 2>/dev/null || true)
+    case $answer in *'"status":"success"'*) ;; *) echo UNREADABLE; return 0 ;; esac
+    printf '%s' "$answer" | grep -o '"alertname":"[^"]*"' | sed 's/.*:"\(.*\)"/\1/' | sort -u | tr '\n' ' '
+}
+
+# experiments_value <query>: the value of an instant query's first sample, or nothing.
+experiments_value() {
+    experiments_prometheus "/api/v1/query?query=$(urlencode "$1")" 2>/dev/null | sed -n 's/.*"value":\[[0-9.e+]*,"\([^"]*\)"\].*/\1/p' | head -1
+}
+
+# experiments_edge_answers <since epoch> <file>: every answer of the public edge since then, one line each: when it started (the edge's
+# own UTC, which sorts as text), its status, the application's (0: none), and how long it took in nanoseconds.
+experiments_edge_answers() {
+    since=$(date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ)
+    : > "$2"
+    for pod in $(kube -n finapp-edge get pods -l app.kubernetes.io/name=finapp-edge-public -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.containers[0].name}{"\n"}{end}' | awk -F'|' '$2 == "edge" {print $1}'); do
+        kube -n finapp-edge logs "$pod" -c edge --since-time="$since" 2>/dev/null \
+            | sed -n 's/.*"DownstreamStatus":\([0-9]*\).*"Duration":\([0-9]*\).*"OriginStatus":\([0-9]*\).*"StartUTC":"\([^"]*\)".*/\4\t\1\t\3\t\2/p' >> "$2"
+    done
+}
+
+# experiments_percentiles <answers file> <from epoch> <to epoch>: "answers p50 p99 failed" over the answers that started in [from, to),
+# the times in milliseconds, a failure an answer of 500 or more.
+experiments_percentiles() {
+    from=$(date -u -d "@$2" +%Y-%m-%dT%H:%M:%S)
+    to=$(date -u -d "@$3" +%Y-%m-%dT%H:%M:%S)
+    awk -F'\t' -v from="$from" -v to="$to" '$1 >= from && $1 < to {print int($4 / 1000000), ($2 >= 500 ? 1 : 0)}' "$1" | sort -n | awk '
+        {d[NR] = $1; f += $2}
+        END {
+            if (NR == 0) { print "0 - - 0"; exit }
+            i50 = int(NR * 0.50 + 0.5); if (i50 < 1) i50 = 1
+            i99 = int(NR * 0.99); if (i99 < NR * 0.99) i99++; if (i99 > NR) i99 = NR; if (i99 < 1) i99 = 1
+            print NR, d[i50], d[i99], f + 0
+        }'
+}
+
+# experiments_socket_sampler <dir> <node> <pid> <address> <port>: every 5 s, the established TCP sockets of that namespace to the hop,
+# into <dir>/sockets.tsv - each with its local address, its unacknowledged bytes, and whether its retransmission timer runs (a send
+# nobody answered: a thread waiting on the black hole) - and each reading's time into <dir>/sockets-read.tsv, until <dir>/sockets-stop.
+experiments_socket_sampler() {
+    set +e
+    printf 'epoch\tlocal\tsend_q\ttimer\n' > "$1/sockets.tsv"
+    printf 'epoch\tread\n' > "$1/sockets-read.tsv"
+    while [ ! -f "$1/sockets-stop" ]; do
+        epoch=$(date +%s)
+        if listing=$(dock exec "$2" nsenter -t "$3" -n ss -tnoH state established dst "$4:$5" 2>/dev/null); then
+            printf '%s\n' "$listing" | awk -v e="$epoch" 'NF >= 4 {t = ($0 ~ /timer:\(on,/) ? "on" : "off"; print e "\t" $3 "\t" $2 "\t" t}' >> "$1/sockets.tsv"
+            printf '%s\tok\n' "$epoch" >> "$1/sockets-read.tsv"
+        else
+            printf '%s\tunreadable\n' "$epoch" >> "$1/sockets-read.tsv"
+        fi
+        sleep 5
+    done
+}
+
+# experiments_transfer <address> <key> <reference> <label>: 0.01 EUR from the rehearsal's first customer to its second, sent straight to
+# one replica from the edge's probe pod, as E01's payout is; the bearer on stdin, never a command line; the status and body kept.
+experiments_transfer() {
+    printf '%s\n' "$EXP_CUSTOMER" | kube -n finapp-edge exec -i np-edge -c probe -- /bin/sh -c '
+        IFS= read -r bearer
+        curl -s -w "\nstatus=%{http_code}\n" --max-time 240 -X POST -H "Authorization: Bearer $bearer" -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $1" -d "{\"sourceAccountId\":\"$3\",\"destinationAccountId\":\"$4\",\"amount\":\"0.01\",\"currency\":\"EUR\",\"reference\":\"$2\"}" \
+            "http://$5:8080/v1/transfers"
+        echo "curl=$?"' probe "$2" "$3" "$EXP_FROM" "$EXP_TO" "$1" > "$EXP_DIR/transfer-$4.txt" 2>&1
+}
+
+# experiments_payout <address> <key> <label>: the merchant's payout of 0.10 EUR under that key, sent straight to one replica (E01's, with
+# its key and label its caller's).
+experiments_payout() {
+    printf '%s\n' "$EXP_MERCHANT" | kube -n finapp-edge exec -i np-edge -c probe -- /bin/sh -c '
+        IFS= read -r bearer
+        curl -s -w "\nstatus=%{http_code}\n" --max-time 90 -X POST -H "Authorization: Bearer $bearer" -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $1" -d "{\"amount\":\"0.10\",\"currency\":\"EUR\"}" "http://$2:8080/v1/merchant/payouts"
+        echo "curl=$?"' probe "$2" "$1" > "$EXP_DIR/payout-$3.txt" 2>&1
+}
+
+# experiments_status <file>: the HTTP status a request's file holds, or none.
+experiments_status() {
+    sed -n 's/^status=//p' "$1" 2>/dev/null | tail -1
+}
+
+# experiments_state <name>: one entry of the client's own state, by its name, its value unescaped as java.util.Properties writes it (a
+# backslash before =, :, # or !, and a doubled backslash).
+experiments_state() {
+    awk -F= -v name="$1" '$1 == name {sub(/^[^=]*=/, ""); gsub(/\\\\/, "\001"); gsub(/\\/, ""); gsub(/\001/, "\\"); print; exit}' "$CLIENT/state.properties"
+}
+
+# experiments_participants: the rehearsal's first two customers' accounts, the first's session and the merchant's key, from the client's
+# own state; they stay in the harness's variables and travel on stdin, never on a command line.
+experiments_participants() {
+    EXP_FROM=$(experiments_state customer.0.account)
+    EXP_TO=$(experiments_state customer.1.account)
+    EXP_CUSTOMER=$(experiments_state customer.0.token)
+    EXP_MERCHANT=$(experiments_state merchant.key)
+    [ -n "$EXP_FROM" ] && [ -n "$EXP_TO" ] && [ -n "$EXP_CUSTOMER" ] && [ -n "$EXP_MERCHANT" ] \
+        || cannot "$EXP_ID: the client's state names no two customers' accounts, no customer's session or no merchant key"
+}
+
+# experiments_a_ready_replica [<pod to leave out>]: "<pod> <address>" of a ready, running replica, the first by name.
+experiments_a_ready_replica() {
+    experiments_fleet | awk -F'|' -v out="${1:-}" 'NF >= 5 && $2 == "True" && $6 == "" && $1 != out {print $1, $5}' | sort | head -1
+}
+
+# experiments_unready_others <victim> <since epoch>: the first reading of the fleet sampler since then in which a replica other than the
+# victim was not ready, "<pod>@<time>", or nothing.
+experiments_unready_others() {
+    awk -F'\t' -v v="$1" -v at="$2" 'NR > 1 && $1 >= at && $3 != v && $4 != "True" {print $3 "@" $2; exit}' "$EXP_DIR/fleet.tsv" 2>/dev/null
+}
+
+# The workload's end for an experiment: stopped, nothing unresolved, every flow seen completing work, its summary recorded.
+experiments_workload_end() {
+    stop_workload "$1"
+    [ "$(workload_unresolved "$1")" = 0 ] || fail "$EXP_ID: $(workload_unresolved "$1") requests stayed unresolved: see workload-$1.tsv"
+    assert_flows_ran "$1"
+    experiments_record workload "$(cat "$CLIENT/workload-$1.summary")"
+}
+
+# experiments_start_workload <label> <retry window seconds>: the rehearsal's workload, retrying by key, its window widened for a fault that
+# keeps every replica from the database for minutes (a payment caught mid-call waits the sweep's dispatched age).
+experiments_start_workload() {
+    WORKLOAD_RETRY_SECONDS=$2
+    start_workload "$1" retry
+    unset WORKLOAD_RETRY_SECONDS
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -863,10 +1260,24 @@ YAML
     experiments_fault_on hold hold-payouts
     experiments_fault_on partition finapp experiments-crash-partition "$WORK/fault-policy.yaml"
     experiments_fault_on scaled finapp-rehearsal finapp-simulator 0 1
+    # P16-TSK-021's kinds too: a replica black-holed from the database, the holder, a lock, and a ballast where E24's volume is mounted.
+    crash_replica=$(experiments_a_ready_replica)
+    [ -n "$crash_replica" ] || cannot "PROBE $PROBE: no ready replica to black-hole"
+    experiments_fault_on blackhole "${crash_replica%% *}" "$(kube -n finapp-experiments get service finapp-toxiproxy -o jsonpath='{.spec.clusterIP}')" 5432
+    experiments_fault_on held 300
+    experiments_fault_on locked transfers.transfer 300
+    crash_kinds="a black hole, the holder, a lock"
+    for node in $(experiments_nodes); do
+        if dock exec "$node" grep -qs " $EXPERIMENTS_LIMITED " /proc/mounts; then
+            experiments_fault_on filled "$node"
+            crash_kinds="$crash_kinds, a ballast on $node"
+            break
+        fi
+    done
     experiments_faults_left > "$EXP_ART/faults-before-crash.txt" 2>&1 || true
     experiments_fault_on node-paused "$victim_node"
     echo "paused node $victim_node" >> "$EXP_ART/faults-before-crash.txt"
-    log "PROBE $PROBE: six faults on - a toxic, a proxy down, a hold, a partition, a scale to zero, a paused node ($victim_node) - and now the harness dies"
+    log "PROBE $PROBE: every kind of fault on - a toxic, a proxy down, a hold, a partition, a scale to zero, $crash_kinds, a paused node ($victim_node) - and now the harness dies"
     if [ "$PROBE" = term-with-faults ]; then
         kill -TERM $$
         sleep 30
@@ -1054,4 +1465,814 @@ E01_recover() {
     [ "$failed_requests" -le "$failed_inside" ] \
         || fail "E01: $failed_requests of the workload's requests failed where the edge failed $failed_inside in the killed replica's window: a request failed that was not on it"
     pass "E01: the failed requests were those on the killed replica - its held payout and $failed_requests of the workload's, each a failure at the edge in its window, none outside it; $served answers served; none unresolved"
+}
+
+# ===================================================================================================
+# P16-TSK-021: the network, DNS, connection and disk faults (OPERATIONS_RUNBOOK.md section 11.47). Each at three replicas under the
+# rehearsal's workload, retrying by key; each ends in the census like every experiment.
+# ===================================================================================================
+
+experiments_alert_firing() {
+    case " $(experiments_alerts_firing) " in *" $1 "*) return 0 ;; esac
+    return 1
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E07: the database's connections exhausted - other clients hold the reserve and the pool's share.
+# ---------------------------------------------------------------------------------------------------
+
+E07_steady() {
+    experiments_start_workload e07 900
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E07_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E07_SAMPLER"
+    E07_RESTARTS=$(experiments_fleet | awk -F'|' 'NF >= 5 {print $1 "=" $3}' | sort | tr '\n' ' ')
+    experiments_record slots "max_connections|superuser-reserved|reserved|the fleet's sessions: $(psql_query -c "SELECT current_setting('max_connections') || '|' || current_setting('superuser_reserved_connections') || '|' || current_setting('reserved_connections') || '|' || count(*) FILTER (WHERE application_name = 'finapp') FROM pg_stat_activity" | tr -d '[:space:]')"
+}
+
+# "<the fleet's sessions>|<the holder's>|<slots an ordinary role may still take>", read by the server's superuser on its own socket.
+e07_slots() {
+    psql_query -c "SELECT count(*) FILTER (WHERE application_name = 'finapp') || '|' || count(*) FILTER (WHERE application_name = '$EXPERIMENTS_HOLDER') || '|' || (current_setting('max_connections')::int - current_setting('superuser_reserved_connections')::int - current_setting('reserved_connections')::int - count(*) FILTER (WHERE backend_type = 'client backend' AND pid <> pg_backend_pid())) FROM pg_stat_activity" | tr -d '[:space:]'
+}
+
+E07_fault() {
+    # The holder takes every slot an ordinary role may take. The database's proxy down, the fleet's sessions close and its pools cannot
+    # race the holder for what they free; once nothing is left for them, the proxy comes back and the pools ask a full server.
+    experiments_fault_on held 720
+    experiments_fault_on proxy-down postgres
+    deadline=$(( $(date +%s) + 90 ))
+    taken=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        taken=$(e07_slots)
+        case $taken in 0'|'*'|'0 | 0'|'*'|'-*) break ;; esac
+        sleep 2
+    done
+    case $taken in
+        0'|'*'|'0 | 0'|'*'|'-*) ;;
+        *) cannot "E07: the holder did not take every ordinary slot with the fleet's sessions closed (the fleet's|the holder's|still free: $taken)" ;;
+    esac
+    experiments_fault_off proxy-down postgres
+    E07_TAKEN_AT=$(date +%s)
+    experiments_record fault "every ordinary slot held by $(printf '%s' "$taken" | cut -d'|' -f2) sessions of a role with no superuser attribute; the fleet's sessions closed by the database's proxy taken down, and the proxy back at $(date -u -d "@$E07_TAKEN_AT" +%H:%M:%SZ)"
+}
+
+E07_observe() {
+    # The control: an ordinary role is refused now, so no slot it may take is free.
+    refused=$(kube -n finapp exec finapp-postgres-0 -c postgres -- psql -q -X -A -t -U finapp_experiment_holder -d postgres -c 'SELECT 1' 2>&1 || true)
+    case $refused in *reserved*) ;; *) cannot "E07: an ordinary role was not refused, so a slot was still free: $(printf '%s' "$refused" | tr '\n' ' ' | cut -c1-200)" ;; esac
+    experiments_record "ordinary role" "refused: $(printf '%s' "$refused" | tr '\n' ' ' | cut -c1-200)"
+    # The criterion: an operator's TLS session as the server's superuser, on a reserved slot; its password read inside the pod from the
+    # container's own environment, never crossing to the harness.
+    operator=$(kube -n finapp exec finapp-postgres-0 -c postgres -- sh -c 'PGPASSWORD=${POSTGRES_PASSWORD} exec psql "host=127.0.0.1 dbname=finapp user=finapp sslmode=require" -q -X -A -t -c "SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()"' 2>&1 || true)
+    [ "$(printf '%s' "$operator" | tr -d '[:space:]')" = t ] \
+        || fail "E07: an operator's TLS session as the superuser was not admitted while the slots were held: $(printf '%s' "$operator" | tr '\n' ' ' | cut -c1-200)"
+    experiments_record operator "a TLS session as the server's superuser admitted on a reserved slot while every ordinary slot was held"
+    # Until ConnectionPoolStarved fires (bound: the register's ten minutes), the pages watched.
+    fired=""
+    while [ "$(date +%s)" -lt $((E07_TAKEN_AT + 600)) ]; do
+        experiments_pages_tick || break
+        if experiments_alert_firing ConnectionPoolStarved; then
+            fired=$(( $(date +%s) - E07_TAKEN_AT ))
+            break
+        fi
+        sleep 5
+    done
+    [ -z "$EXP_STOPPED" ] || return 0
+    if [ -z "$fired" ]; then
+        EXP_STOPPED="ConnectionPoolStarved did not fire within 600 s of the take: the starved pools went unseen"
+        log "E07 STOP: $EXP_STOPPED"
+        return 0
+    fi
+    sleep 30
+    experiments_record starved "ConnectionPoolStarved firing $fired s after the take"
+    experiments_record "refused at the pool" "$(experiments_value 'sum(increase(hikaricp_connections_timeout_total{pool!="finapp-reporting"}[10m]))') borrows timed out at the pool's 5 s across the fleet in the last ten minutes"
+    experiments_record readiness "replicas read unready after the take: $(awk -F'\t' -v at="$E07_TAKEN_AT" 'NR > 1 && $1 >= at && $4 != "True" {print $3}' "$EXP_DIR/fleet.tsv" | sort -u | tr '\n' ' ')"
+    pass "E07: every ordinary slot held, an operator's superuser session admitted, ConnectionPoolStarved firing $fired s after the take"
+}
+
+E07_recover() {
+    ready_three 600 || fail "E07: the fleet did not return to three ready replicas once the slots were free"
+    restarts=$(experiments_fleet | awk -F'|' 'NF >= 5 {print $1 "=" $3}' | sort | tr '\n' ' ')
+    [ "$restarts" = "$E07_RESTARTS" ] || fail "E07: a replica restarted or was replaced while the database refused it ($E07_RESTARTS before, $restarts now): liveness must not read the database"
+    psql_query -c "DROP ROLE IF EXISTS finapp_experiment_holder" >> "$EXP_ART/holder.log" 2>&1 || true
+    sleep 10
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E07_SAMPLER" 2>/dev/null || true
+    experiments_workload_end e07
+    pass "E07: the fleet ready again with no replica restarted, nothing unresolved"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E11: object storage unavailable. The application uses none; the store is the WAL archive's (P16-TSK-024's), named by the run.
+# ---------------------------------------------------------------------------------------------------
+
+# "<archived>|<failed>|<the last archive after the last failure: t or f>", from the primary's archiver.
+e11_archiver() {
+    psql_query -c "SELECT archived_count || '|' || failed_count || '|' || (coalesce(last_archived_time, 'epoch') > coalesce(last_failed_time, 'epoch')) FROM pg_stat_archiver" | tr -d '[:space:]'
+}
+
+E11_steady() {
+    # The application's half, read from the cluster: no key of its environment names an object store (keys only, never a value).
+    rendered=$(sed -n 's/^ *name: \(finapp-app-config-[a-z0-9]*\)$/\1/p' "$A/Deployment.finapp-app.yaml" | head -1)
+    keys=$( { kube -n finapp get configmap "$rendered" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'
+              kube -n finapp get secret finapp-app-secrets -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'; } 2>/dev/null)
+    [ "$(printf '%s\n' "$keys" | grep -c .)" -ge 20 ] || cannot "E11: the application's settings could not be read"
+    stores=$(printf '%s\n' "$keys" | grep -iE 'S3|BUCKET|MINIO|OBJECT_?STORE' | tr '\n' ' ')
+    [ -z "$stores" ] || fail "E11: the application's environment names an object store: $stores"
+    experiments_record application "none of its $(printf '%s\n' "$keys" | grep -c .) settings names an object store"
+    # The infrastructure's half needs the store itself.
+    [ -n "${REHEARSAL_E11_STORE:-}" ] || cannot "E11: no local object store is named (REHEARSAL_E11_STORE=<namespace>/<deployment>): the run's cluster holds none until the WAL archive's store exists"
+    E11_NS=${REHEARSAL_E11_STORE%%/*}
+    E11_DEPLOYMENT=${REHEARSAL_E11_STORE#*/}
+    case $E11_NS in finapp | finapp-rehearsal | finapp-experiments) ;; *) fail "the safety boundary refused E11's store in $E11_NS: only the run's own namespaces" ;; esac
+    E11_REPLICAS=$(kube -n "$E11_NS" get deployment "$E11_DEPLOYMENT" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)
+    [ "${E11_REPLICAS:-0}" -ge 1 ] || cannot "E11: the store $REHEARSAL_E11_STORE has no replica to stop"
+    [ "$(psql_query -c 'SHOW archive_mode' | tr -d '[:space:]')" = on ] || cannot "E11: the primary archives nothing (archive_mode off), so the store's loss could not be felt"
+    experiments_start_workload e11 240
+    sleep 8
+    E11_BEFORE=$(e11_archiver)
+    experiments_record "archiver before" "archived|failed|last archive after last failure: $E11_BEFORE"
+}
+
+E11_fault() {
+    experiments_fault_on scaled "$E11_NS" "$E11_DEPLOYMENT" 0 "$E11_REPLICAS"
+    E11_AT=$(date +%s)
+    experiments_record fault "the object store $REHEARSAL_E11_STORE scaled to zero at $(date -u -d "@$E11_AT" +%H:%M:%SZ)"
+}
+
+E11_observe() {
+    switched=0
+    printf 'time\tarchived|failed|caught up\n' > "$EXP_DIR/archiver.tsv"
+    while [ "$(date +%s)" -lt $((E11_AT + ${E11_SECONDS:-300})) ]; do
+        experiments_pages_tick || return 0
+        # A segment closed each minute, so the archiver has something to send while the store is away.
+        if [ $(( $(date +%s) - switched )) -ge 60 ]; then
+            psql_query -c "SELECT pg_switch_wal()" >/dev/null 2>&1 || true
+            switched=$(date +%s)
+        fi
+        printf '%s\t%s\n' "$(date -u +%H:%M:%S)" "$(e11_archiver)" >> "$EXP_DIR/archiver.tsv"
+        sleep 5
+    done
+    E11_DURING=$(e11_archiver)
+    failed_before=$(printf '%s' "$E11_BEFORE" | cut -d'|' -f2)
+    failed_during=$(printf '%s' "$E11_DURING" | cut -d'|' -f2)
+    [ "${failed_during:-0}" -gt "${failed_before:-0}" ] || cannot "E11: the archiver never failed while the store was away, so its loss was not felt"
+    experiments_record "archiver while away" "failures $failed_before before, $failed_during at the end: the backup step failed and said so"
+    experiments_edge_answers "$E11_AT" "$EXP_DIR/edge-answers.tsv"
+    failed=$(awk -F'\t' '$2 >= 500' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
+    served=$(awk -F'\t' '$2 < 500 && $3 != 0' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
+    [ "$served" -ge 10 ] || fail "E11: the edge served $served answers while the store was away, too few to show its lines were read"
+    [ "$failed" = 0 ] || fail "E11: the application answered $failed failures while only the object store was away"
+    experiments_record application "$served answers served and none failed at the edge while the store was away"
+}
+
+E11_recover() {
+    # The store back at the stop: the archiver retries by itself and catches up.
+    deadline=$(( $(date +%s) + 600 ))
+    caught=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        now_read=$(e11_archiver)
+        if [ "$(printf '%s' "$now_read" | cut -d'|' -f1)" -gt "$(printf '%s' "$E11_DURING" | cut -d'|' -f1)" ] && [ "${now_read##*|}" = t ]; then
+            caught=$now_read
+            break
+        fi
+        psql_query -c "SELECT pg_switch_wal()" >/dev/null 2>&1 || true
+        sleep 10
+    done
+    [ -n "$caught" ] || fail "E11: the archive did not catch up within 600 s of the store's return: $(e11_archiver)"
+    experiments_record "archiver after" "archived|failed|caught up: $caught"
+    experiments_workload_end e11
+    pass "E11: the application untouched while the store was away, the archiver failing and saying so, and catching up on its return"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E12: latency on the database hop - 50, 200 and 1000 ms on every answer.
+# ---------------------------------------------------------------------------------------------------
+
+E12_steady() {
+    experiments_start_workload e12 240
+    sleep 8
+    E12_FROM=$(date +%s)
+    sleep "${E12_BASELINE_SECONDS:-60}"
+    printf 'step\tfrom\tto\n' > "$EXP_DIR/steps.tsv"
+    printf 'base\t%s\t%s\n' "$E12_FROM" "$(date +%s)" >> "$EXP_DIR/steps.tsv"
+    printf 'time\tstep\tpending\tactive\n' > "$EXP_DIR/pool.tsv"
+    E12_CURRENT=""
+}
+
+# e12_latency <ms>: the database hop's answers delayed by that much, in place of the step before.
+e12_latency() {
+    [ -z "$E12_CURRENT" ] || experiments_fault_off toxic postgres "e12-latency-$E12_CURRENT" latency "latency=$E12_CURRENT"
+    experiments_fault_on toxic postgres "e12-latency-$1" latency "latency=$1"
+    E12_CURRENT=$1
+    E12_STEP_AT=$(date +%s)
+    experiments_record fault "+$1 ms on every answer of the database hop from $(date -u -d "@$E12_STEP_AT" +%H:%M:%SZ)"
+}
+
+E12_fault() {
+    e12_latency 50
+}
+
+E12_observe() {
+    for ms in 50 200 1000; do
+        [ "$ms" = "$E12_CURRENT" ] || e12_latency "$ms"
+        while [ "$(date +%s)" -lt $((E12_STEP_AT + ${E12_STEP_SECONDS:-180})) ]; do
+            experiments_pages_tick || return 0
+            printf '%s\t%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$ms" "$(experiments_value 'max(hikaricp_connections_pending{pool!="finapp-reporting"})')" \
+                "$(experiments_value 'max(hikaricp_connections_active{pool!="finapp-reporting"})')" >> "$EXP_DIR/pool.tsv"
+            # The stop: a p99 past 30 s over what the edge has answered of this step so far.
+            experiments_edge_answers "$E12_STEP_AT" "$EXP_DIR/step-answers.tsv"
+            set -- $(experiments_percentiles "$EXP_DIR/step-answers.tsv" "$E12_STEP_AT" "$(date +%s)")
+            if [ "${3:--}" != - ] && [ "$3" -gt 30000 ]; then
+                EXP_STOPPED="the p99 of the edge's answers at +$ms ms passed 30 s ($3 ms over $1 answers)"
+                log "E12 STOP: $EXP_STOPPED"
+                printf '%s\t%s\t%s\n' "$ms" "$E12_STEP_AT" "$(date +%s)" >> "$EXP_DIR/steps.tsv"
+                return 0
+            fi
+            sleep 30
+        done
+        printf '%s\t%s\t%s\n' "$ms" "$E12_STEP_AT" "$(date +%s)" >> "$EXP_DIR/steps.tsv"
+    done
+}
+
+E12_recover() {
+    # The latency removed at the stop; the tail of the last step answered before the edge is read.
+    sleep 40
+    experiments_edge_answers "$E12_FROM" "$EXP_DIR/edge-answers.tsv"
+    base_p50=""
+    while IFS="$(printf '\t')" read -r name from to; do
+        [ "$name" != step ] || continue
+        set -- $(experiments_percentiles "$EXP_DIR/edge-answers.tsv" "$from" "$to")
+        if [ "$name" = base ]; then
+            base_p50=$2
+            experiments_record "latency base" "$1 answers, p50 $2 ms, p99 $3 ms, $4 failed"
+            continue
+        fi
+        pool=$(awk -F'\t' -v s="$name" '$2 == s {if ($3 + 0 > p) p = $3 + 0; if ($4 + 0 > a) a = $4 + 0} END {print p + 0 " pending, " a + 0 " active"}' "$EXP_DIR/pool.tsv")
+        explained="-"
+        case $base_p50$2 in *-*) ;; *) explained="the p50 $(( $2 - base_p50 )) ms above the base, about $(( ($2 - base_p50) / name )) round trips of +$name ms" ;; esac
+        experiments_record "latency +$name ms" "$1 answers, p50 $2 ms, p99 $3 ms, $4 failed; the pools at their most $pool; $explained"
+    done < "$EXP_DIR/steps.tsv"
+    experiments_workload_end e12
+    pass "E12: the latency steps recorded with the pools beside them, no step's p99 past 30 s"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E13: resets on the database hop at 1% and 10% of its links, then the cut on a commit (the entry's probe): whole or absent, never half.
+# ---------------------------------------------------------------------------------------------------
+
+E13_steady() {
+    experiments_start_workload e13 900
+    sleep 8
+    experiments_participants
+    set -- $(experiments_a_ready_replica)
+    E13_TARGET=${1:-}
+    E13_TARGET_IP=${2:-}
+    [ -n "$E13_TARGET_IP" ] || cannot "E13: no ready replica to send the cut transfers to"
+    E13_P=""
+    E13_MADE=0
+}
+
+# e13_resets <toxicity>: a reset on the database hop's links, both ways, each link drawn with that chance when the toxic meets it.
+e13_resets() {
+    experiments_fault_on toxic postgres e13-reset-down reset_peer timeout=0 "toxicity=$1"
+    experiments_fault_on toxic postgres e13-reset-up reset_peer timeout=0 "toxicity=$1" stream=upstream
+    E13_P=$1
+}
+
+e13_resets_off() {
+    experiments_fault_off toxic postgres e13-reset-up reset_peer timeout=0 "toxicity=$E13_P" stream=upstream
+    experiments_fault_off toxic postgres e13-reset-down reset_peer timeout=0 "toxicity=$E13_P"
+}
+
+E13_fault() {
+    e13_resets 0.01
+    experiments_record fault "reset_peer on the database hop both ways at toxicity 0.01 from $(date -u +%H:%M:%SZ)"
+}
+
+E13_observe() {
+    for p in 0.01 0.10; do
+        if [ "$p" != "$E13_P" ]; then
+            e13_resets_off
+            e13_resets "$p"
+            experiments_record fault "reset_peer on the database hop both ways at toxicity $p from $(date -u +%H:%M:%SZ)"
+        fi
+        step_at=$(date +%s)
+        made_before=$(experiments_value 'sum(hikaricp_connections_creation_seconds_count{pool!="finapp-reporting"})')
+        while [ "$(date +%s)" -lt $((step_at + ${E13_STEP_SECONDS:-600})) ]; do
+            experiments_pages_tick || return 0
+            sleep 30
+            # A link is drawn once, when the toxic meets it: the toxics put on again every 30 s, so every held link is drawn afresh.
+            e13_resets_off
+            e13_resets "$p"
+        done
+        made_after=$(experiments_value 'sum(hikaricp_connections_creation_seconds_count{pool!="finapp-reporting"})')
+        made=$(awk -v a="${made_after:-0}" -v b="${made_before:-0}" 'BEGIN {print int(a - b)}')
+        E13_MADE=$((E13_MADE + made))
+        experiments_record "resets at $p" "$made connections made anew across the fleet's pools in $(( $(date +%s) - step_at )) s"
+    done
+    e13_resets_off
+    [ "$E13_MADE" -ge 1 ] || cannot "E13: no connection was reset and made anew at either step, so the resets were never felt"
+    experiments_workload_end e13
+    ready_three 300 || fail "E13: the fleet did not return to three ready replicas after the resets"
+    e13_cut_before
+    e13_cut_on_commit
+}
+
+E13_recover() {
+    ready_three 300 || fail "E13: the fleet did not return to three ready replicas after the cuts"
+    pass "E13: the resets counted, a transfer cut inside its transaction left nothing, a transfer cut on its commit was whole, each retried by its key to one effect"
+}
+
+# e13_effect <reference> <key>: "<transfers>|<their journal entries>|<the key's claim>" as the database holds them, read on its own socket.
+e13_effect() {
+    psql_query -c "SELECT (SELECT count(*) FROM transfers.transfer WHERE reference = '$1') || '|' || (SELECT count(*) FROM ledger.journal_entry j JOIN transfers.transfer t ON t.journal_entry_id = j.id WHERE t.reference = '$1') || '|' || coalesce((SELECT string_agg(state, ',') FROM platform.idempotency_record WHERE scope = 'transfer.execute' AND idempotency_key = '$2'), 'none')" | tr -d '[:space:]'
+}
+
+# e13_retry <key> <reference> <label>: the same request sent again under its key until it is answered 200 or 201 (300 s at most); the
+# transfer's id it answered in E13_RETRIED_ID.
+e13_retry() {
+    deadline=$(( $(date +%s) + 300 ))
+    tries=0
+    E13_RETRIED_ID=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        tries=$((tries + 1))
+        experiments_transfer "$E13_TARGET_IP" "$1" "$2" "$3-retry-$tries" || true
+        status=$(experiments_status "$EXP_DIR/transfer-$3-retry-$tries.txt")
+        printf '%s\t%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$3" "$tries" "${status:-none}" >> "$EXP_DIR/retries.tsv"
+        case $status in
+            200 | 201)
+                E13_RETRIED_ID=$(grep -o '"id":"[^"]*"' "$EXP_DIR/transfer-$3-retry-$tries.txt" | head -1 | sed 's/.*:"\(.*\)"/\1/')
+                return 0 ;;
+        esac
+        sleep 5
+    done
+    return 1
+}
+
+# The cut inside a transaction: the transfer, once it has written (an xid of its own, its claim among what it wrote), waits on a lock the
+# run holds on its table; the database's proxy is cut then, and the lock released into a closed connection. Nothing of it may be left.
+e13_cut_before() {
+    key="e13-before-$(experiments_rand)"
+    ref="wl-e13-before-$(experiments_rand)"
+    experiments_fault_on locked transfers.transfer 300
+    experiments_fault_armed proxy-down postgres
+    experiments_transfer "$E13_TARGET_IP" "$key" "$ref" before &
+    sender=$!
+    deadline=$(( $(date +%s) + 120 ))
+    waiting=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        waiting=$(psql_query -c "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'finapp' AND wait_event_type = 'Lock' AND backend_xid IS NOT NULL AND query ILIKE '%transfers.transfer%'" | tr -d '[:space:]')
+        [ "$waiting" = 1 ] && break
+        sleep 1
+    done
+    [ "$waiting" = 1 ] || cannot "E13: the transfer sent to $E13_TARGET never waited inside its transaction on the run's lock (read ${waiting:-nothing}), so a cut would find nothing in flight"
+    experiments_fault_fire proxy-down postgres
+    cut_at=$(date -u +%H:%M:%SZ)
+    experiments_fault_off locked transfers.transfer 300
+    wait "$sender" 2>/dev/null || true
+    status=$(experiments_status "$EXP_DIR/transfer-before.txt")
+    case $status in 200 | 201) cannot "E13: the transfer cut inside its transaction was answered $status, so the cut did not land inside it" ;; esac
+    deadline=$(( $(date +%s) + 60 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        [ "$(psql_query -c "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'finapp' AND wait_event_type = 'Lock'" | tr -d '[:space:]')" = 0 ] && break
+        sleep 1
+    done
+    effect=$(e13_effect "$ref" "$key")
+    [ "$effect" = "0|0|none" ] || fail "E13: a transfer cut inside its transaction left part of itself: $effect (transfers|entries|claim) - half"
+    experiments_record "cut inside the transaction" "the transfer waited on the run's lock with its transaction written, the database's proxy cut at $cut_at and the lock released: the client read ${status:-no answer} ($(grep -h '^curl=' "$EXP_DIR/transfer-before.txt")); absent: $effect"
+    experiments_fault_off proxy-down postgres
+    ready_three 300 || fail "E13: the fleet did not return to three ready replicas after the cut inside a transaction"
+    e13_retry "$key" "$ref" before || fail "E13: the transfer cut inside its transaction was not answered by its key within 300 s"
+    effect=$(e13_effect "$ref" "$key")
+    [ "$effect" = "1|1|COMPLETED" ] || fail "E13: the transfer cut inside its transaction, retried by its key, did not take exactly one effect: $effect"
+    EXPERIMENTS_TRANSFERS=$((EXPERIMENTS_TRANSFERS + 1))
+    pass "E13: a transfer cut inside its transaction left nothing, and its retry by key took one effect"
+}
+
+# e13_watch <reference> <file>: on the database's own socket, never through the proxy, "committed" written the moment a transfer of that
+# reference can be read - which, the transfer being one transaction, is the moment it committed - or "never" after about five minutes.
+e13_watch() {
+    kube -n finapp exec finapp-postgres-0 -c postgres -- sh -c '
+        i=0
+        while [ "$i" -lt 2400 ]; do
+            if [ "$(psql -q -X -A -t -U finapp -d finapp -c "SELECT count(*) FROM transfers.transfer WHERE reference = '\''$1'\''")" = 1 ]; then
+                echo committed
+                exit 0
+            fi
+            i=$((i + 1))
+            sleep 0.1
+        done
+        echo never' e13-watch "$1" > "$2" 2>&1
+}
+
+# The cut on a commit (the entry's probe). Every answer of the database hop held 1500 ms (under the pool's 2 s validation, so the pools
+# keep their connections); the transfer's row read committed on the server's socket while its answer is still held; the database's proxy
+# disabled at that moment, which closes every link and delivers nothing held (a reset toxic added then lets the held answer through
+# first). The client must have failed and the transfer be whole: its row, its journal entry and its claim COMPLETED; its retry by key
+# answers the stored result. An attempt whose answer escaped the cut is resolved by its key and counted, and another made: three at most.
+e13_cut_on_commit() {
+    attempt=0
+    while [ "$attempt" -lt 3 ]; do
+        attempt=$((attempt + 1))
+        key="e13-commit-$(experiments_rand)"
+        ref="wl-e13-commit-$(experiments_rand)"
+        experiments_fault_on toxic postgres e13-hold latency latency=1500
+        experiments_fault_armed proxy-down postgres
+        : > "$EXP_DIR/commit-$attempt.watch"
+        e13_watch "$ref" "$EXP_DIR/commit-$attempt.watch" &
+        watcher=$!
+        BACKGROUND="$BACKGROUND $watcher"
+        experiments_transfer "$E13_TARGET_IP" "$key" "$ref" "commit-$attempt" &
+        sender=$!
+        deadline=$(( $(date +%s) + 240 ))
+        seen=""
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            if grep -q '^committed$' "$EXP_DIR/commit-$attempt.watch"; then
+                seen=1
+                break
+            fi
+            grep -q '^never$' "$EXP_DIR/commit-$attempt.watch" && break
+            kill -0 "$sender" 2>/dev/null || break
+            sleep 0.05
+        done
+        cut_at=""
+        if [ -n "$seen" ]; then
+            experiments_fault_fire proxy-down postgres
+            cut_at=$(date -u +%H:%M:%SZ)
+        fi
+        wait "$sender" 2>/dev/null || true
+        kill "$watcher" 2>/dev/null
+        effect=$(e13_effect "$ref" "$key")
+        status=$(experiments_status "$EXP_DIR/transfer-commit-$attempt.txt")
+        experiments_fault_off proxy-down postgres
+        experiments_fault_off toxic postgres e13-hold latency latency=1500
+        ready_three 300 || fail "E13: the fleet did not return to three ready replicas after the cut on a commit"
+        e13_retry "$key" "$ref" "commit-$attempt" || fail "E13: attempt $attempt's transfer was not answered by its key within 300 s"
+        after=$(e13_effect "$ref" "$key")
+        [ "$after" = "1|1|COMPLETED" ] || fail "E13: attempt $attempt's transfer, retried by its key, did not take exactly one effect: $after"
+        EXPERIMENTS_TRANSFERS=$((EXPERIMENTS_TRANSFERS + 1))
+        case $status in
+            200 | 201) ;;
+            *)
+                if [ -n "$seen" ]; then
+                    [ "$effect" = "1|1|COMPLETED" ] || fail "E13: a transfer read committed and cut on its answer is not whole: $effect (transfers|entries|claim) - half"
+                    committed=$(psql_query -c "SELECT id FROM transfers.transfer WHERE reference = '$ref'" | tr -d '[:space:]')
+                    [ -n "$committed" ] && [ "$E13_RETRIED_ID" = "$committed" ] \
+                        || fail "E13: the retry of a committed transfer answered '$E13_RETRIED_ID', not the committed '$committed': its stored result was not replayed"
+                    experiments_record "cut on the commit" "attempt $attempt: its row read committed while its answer was held, the database's proxy cut at $cut_at; the client read ${status:-no answer} ($(grep -h '^curl=' "$EXP_DIR/transfer-commit-$attempt.txt")); whole: $effect; its retry by key answered the committed transfer"
+                    pass "E13: a transfer cut on its commit was whole - its row, its entry, its claim COMPLETED - and its retry by key answered the stored result"
+                    return 0
+                fi ;;
+        esac
+        experiments_record "cut on the commit, attempt $attempt" "missed: ${seen:+its commit was read, but }the client read ${status:-no answer}; resolved by its key to one effect"
+    done
+    cannot "E13: in three attempts the cut never landed between a commit and its answer"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E14: one replica black-holed from the database while the others serve; its held connections measured (THREAT_MODEL.md section 6 item
+# 42 (h), the input to P16-TSK-022's socket timeout).
+# ---------------------------------------------------------------------------------------------------
+
+E14_steady() {
+    experiments_start_workload e14 240
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E14_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E14_SAMPLER"
+    set -- $(experiments_a_ready_replica)
+    E14_VICTIM=${1:-}
+    E14_VICTIM_IP=${2:-}
+    [ -n "$E14_VICTIM_IP" ] || cannot "E14: no ready replica to cut"
+    E14_PROXY=$(kube -n finapp-experiments get service finapp-toxiproxy -o jsonpath='{.spec.clusterIP}')
+    case $E14_PROXY in *.*.*.*) ;; *) cannot "E14: the fault proxy's Service has no address" ;; esac
+    E14_RESTARTS=$(kube -n finapp get pod "$E14_VICTIM" -o jsonpath='{.status.containerStatuses[0].restartCount}')
+    experiments_netns "$E14_VICTIM" || cannot "E14: $EXP_REASON"
+    E14_NODE=$NS_NODE
+    E14_PID=$NS_PID
+    E14_RETRIES2=$(experiments_in_netns sysctl -n net.ipv4.tcp_retries2 2>/dev/null | tr -d '[:space:]')
+    experiments_record victim "$E14_VICTIM on $E14_NODE in $(experiments_zone_of_pod finapp "$E14_VICTIM"), $E14_RESTARTS restarts before; net.ipv4.tcp_retries2 ${E14_RETRIES2:-unread} in its namespace; the data source sets no socket timeout"
+}
+
+E14_fault() {
+    experiments_socket_sampler "$EXP_DIR" "$E14_NODE" "$E14_PID" "$E14_PROXY" 5432 &
+    E14_SOCKETS=$!
+    BACKGROUND="$BACKGROUND $E14_SOCKETS"
+    experiments_endpoint_sampler "$EXP_DIR" "$E14_VICTIM_IP" &
+    E14_ENDPOINTS=$!
+    BACKGROUND="$BACKGROUND $E14_ENDPOINTS"
+    sleep 6
+    experiments_fault_on blackhole "$E14_VICTIM" "$E14_PROXY" 5432
+    E14_CUT_AT=$(date +%s)
+    experiments_record fault "$E14_VICTIM black-holed from the database hop at $(date -u -d "@$E14_CUT_AT" +%H:%M:%SZ): every packet to and from it on that hop dropped in its own namespace"
+}
+
+E14_observe() {
+    seen=""
+    while [ "$(date +%s)" -lt $((E14_CUT_AT + ${E14_SECONDS:-900})) ]; do
+        other=$(experiments_unready_others "$E14_VICTIM" "$E14_CUT_AT")
+        if [ -n "$other" ]; then
+            EXP_STOPPED="a second replica unready while one was cut: $other"
+            log "E14 STOP: $EXP_STOPPED"
+            break
+        fi
+        experiments_pages_tick || break
+        last=$(awk -F'\t' 'NR > 1 && $2 == "ok" {e = $1} END {print e + 0}' "$EXP_DIR/sockets-read.tsv")
+        held=$(awk -F'\t' -v e="$last" -v at="$E14_CUT_AT" 'NR > 1 && $1 == e && e > at && $4 == "on"' "$EXP_DIR/sockets.tsv" | grep -c . || true)
+        [ "$held" = 0 ] || seen=1
+        if [ -z "$seen" ] && [ $(( $(date +%s) - E14_CUT_AT )) -ge 60 ]; then
+            cannot "E14: no connection of the cut replica was held by the black hole within 60 s of the cut, so nothing was measured"
+        fi
+        # Every held connection freed by the kernel: the measurement is complete before the partition's bound.
+        if [ -n "$seen" ] && [ "$held" = 0 ] && [ "$last" -gt "$E14_CUT_AT" ]; then
+            break
+        fi
+        sleep 5
+    done
+    E14_ENDED_AT=$(date +%s)
+    [ -z "$EXP_STOPPED" ] || return 0
+    # Per held connection (its local address): seconds from the cut until it was first read held, and until the first reading without
+    # it - the kernel giving it up and its thread released - or "-" when it outlived the cut.
+    awk -F'\t' -v at="$E14_CUT_AT" '
+        NR == FNR { if (FNR > 1 && $2 == "ok") reads[++n] = $1; next }
+        FNR > 1 && $1 > at { last[$2] = $1; if ($4 == "on" && !($2 in first)) first[$2] = $1 }
+        END { for (s in first) { freed = "-"; for (i = 1; i <= n; i++) if (reads[i] > last[s]) { freed = reads[i] - at; break }
+              print s "\t" first[s] - at "\t" freed } }' "$EXP_DIR/sockets-read.tsv" "$EXP_DIR/sockets.tsv" | sort > "$EXP_DIR/held.tsv"
+    held_count=$(grep -c . "$EXP_DIR/held.tsv" || true)
+    freed=$(awk -F'\t' '$3 != "-"' "$EXP_DIR/held.tsv" | grep -c . || true)
+    longest=$(awk -F'\t' '$3 != "-" && $3 + 0 > m {m = $3 + 0} END {print m + 0}' "$EXP_DIR/held.tsv")
+    experiments_record held "$held_count connections of the cut replica held by the black hole (sent, retransmitting, unanswered); $freed freed by the kernel, the last $longest s after the cut; $((held_count - freed)) still held when the cut ended $((E14_ENDED_AT - E14_CUT_AT)) s after it (net.ipv4.tcp_retries2 ${E14_RETRIES2:-unread}, no socket timeout): the measurement the socket timeout is decided from"
+    out=$(awk -F'\t' -v k="$E14_CUT_AT" 'NR > 1 && $1 >= k && $2 != "true" {print $1 - k; exit}' "$EXP_DIR/endpoint.tsv")
+    [ -n "$out" ] || fail "E14: the cut replica's endpoint never left the Service: its readiness did not tell"
+    experiments_record "routed around" "the cut replica's endpoint read not ready $out s after the cut"
+    experiments_edge_answers "$((E14_CUT_AT + out))" "$EXP_DIR/edge-answers.tsv"
+    served=$(awk -F'\t' '$2 < 500 && $3 != 0' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
+    [ "$served" -ge 10 ] || fail "E14: the others served $served answers once the cut replica was out: they did not carry the work"
+    restarts=$(kube -n finapp get pod "$E14_VICTIM" -o jsonpath='{.status.containerStatuses[0].restartCount}')
+    [ "$restarts" = "$E14_RESTARTS" ] || fail "E14: the cut replica restarted ($E14_RESTARTS before, $restarts now): liveness must not read the database"
+    pass "E14: the cut replica out of the Service $out s after the cut and not restarted, the others serving ($served answers); $held_count connections held, $freed freed by the kernel"
+}
+
+E14_recover() {
+    # The black hole removed at the stop: the replica ready again, and what became of the connections still held.
+    deadline=$(( $(date +%s) + 600 ))
+    back=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if [ "$(experiments_fleet | awk -F'|' -v v="$E14_VICTIM" '$1 == v {print $2}')" = True ]; then
+            back=$(( $(date +%s) - E14_ENDED_AT ))
+            break
+        fi
+        sleep 2
+    done
+    [ -n "$back" ] || fail "E14: the cut replica was not ready again within 600 s of the cut's removal"
+    sleep 30
+    touch "$EXP_DIR/sockets-stop" "$EXP_DIR/endpoint-stop"
+    wait "$E14_SOCKETS" 2>/dev/null || true
+    wait "$E14_ENDPOINTS" 2>/dev/null || true
+    still=$(awk -F'\t' 'NR == FNR {held[$1] = 1; next} FNR > 1 {last = $1} FNR > 1 && ($2 in held) {seen[$2] = $1} END {n = 0; for (s in seen) if (seen[s] == last) n++; print n + 0}' \
+        "$EXP_DIR/held.tsv" "$EXP_DIR/sockets.tsv")
+    experiments_record returned "ready again $back s after the cut's removal; $still of the held connections still established at the last reading, 30 s after it"
+    ready_three 300 || fail "E14: the fleet did not return to three ready replicas"
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E14_SAMPLER" 2>/dev/null || true
+    experiments_workload_end e14
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E15: the broker's hop, then the provider's, black-holed for every replica (Toxiproxy's timeout toxic at 0, both ways: every byte
+# dropped while it is on, held links silent, new ones accepted and silent; its removal closes every link it held).
+# ---------------------------------------------------------------------------------------------------
+
+E15_steady() {
+    experiments_start_workload e15 1200
+    sleep 8
+    E15_PENDING_BEFORE=$(pending_events)
+    experiments_record "outbox before" "${E15_PENDING_BEFORE:-unread} rows unpublished"
+}
+
+E15_fault() {
+    experiments_fault_on toxic kafka e15-broker-down timeout timeout=0
+    experiments_fault_on toxic kafka e15-broker-up timeout timeout=0 stream=upstream
+    E15_BROKER_AT=$(date +%s)
+    printf 'time\tunpublished\toldest_seconds\n' > "$EXP_DIR/outbox.tsv"
+    experiments_record fault "the broker's hop black-holed both ways for every replica at $(date -u -d "@$E15_BROKER_AT" +%H:%M:%SZ)"
+}
+
+E15_observe() {
+    stalled=""
+    most=0
+    while [ "$(date +%s)" -lt $((E15_BROKER_AT + ${E15_BROKER_SECONDS:-1800})) ]; do
+        experiments_pages_tick || return 0
+        pending=$(pending_events)
+        case $pending in '' | *[!0-9]*) pending=0 ;; esac
+        printf '%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$pending" "$(experiments_value 'max(finapp_outbox_oldest_publishable_seconds)')" >> "$EXP_DIR/outbox.tsv"
+        [ "$pending" -le "$most" ] || most=$pending
+        if experiments_alert_firing OutboxPublicationStalled; then
+            stalled=$(( $(date +%s) - E15_BROKER_AT ))
+            break
+        fi
+        sleep 15
+    done
+    [ "$most" -gt "${E15_PENDING_BEFORE:-0}" ] || cannot "E15: the outbox held nothing back while the broker's hop was black-holed, so the cut was not felt"
+    if [ -z "$stalled" ]; then
+        EXP_STOPPED="OutboxPublicationStalled did not fire within the broker hop's bound"
+        log "E15 STOP: $EXP_STOPPED"
+        return 0
+    fi
+    experiments_edge_answers "$E15_BROKER_AT" "$EXP_DIR/edge-broker.tsv"
+    served=$(awk -F'\t' '$2 >= 200 && $2 < 300 && $3 != 0' "$EXP_DIR/edge-broker.tsv" | grep -c . || true)
+    [ "$served" -ge 10 ] || fail "E15: the platform served $served answers while the broker was cut off: money must still move"
+    experiments_fault_off toxic kafka e15-broker-up timeout timeout=0 stream=upstream
+    experiments_fault_off toxic kafka e15-broker-down timeout timeout=0
+    back_at=$(date +%s)
+    drained 900 || fail "E15: the outbox did not drain within 900 s of the broker's return: $(pending_events) rows unpublished"
+    experiments_record broker "the outbox held up to $most rows; OutboxPublicationStalled firing $stalled s after the cut; $served answers served meanwhile; drained $(( $(date +%s) - back_at )) s after the hop returned"
+    # The provider's hop.
+    experiments_fault_on toxic simulator e15-provider-down timeout timeout=0
+    experiments_fault_on toxic simulator e15-provider-up timeout timeout=0 stream=upstream
+    E15_PROVIDER_AT=$(date +%s)
+    experiments_record fault "the provider's hop black-holed both ways for every replica at $(date -u -d "@$E15_PROVIDER_AT" +%H:%M:%SZ)"
+    unknown=0
+    printf 'time\tpayments unknown age\tpayouts unknown age\n' > "$EXP_DIR/unknown.tsv"
+    while [ "$(date +%s)" -lt $((E15_PROVIDER_AT + ${E15_PROVIDER_SECONDS:-300})) ]; do
+        experiments_pages_tick || return 0
+        payments=$(experiments_value 'max(finapp_payments_unknown_age)')
+        payouts=$(experiments_value 'max(finapp_merchant_payout_unknown_age)')
+        printf '%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$payments" "$payouts" >> "$EXP_DIR/unknown.tsv"
+        case ${payments:-0}${payouts:-0} in *[1-9]*) unknown=1 ;; esac
+        sleep 15
+    done
+    experiments_edge_answers "$E15_PROVIDER_AT" "$EXP_DIR/edge-provider.tsv"
+    refused=$(awk -F'\t' '$3 == 503' "$EXP_DIR/edge-provider.tsv" | grep -c . || true)
+    [ "$refused" -ge 1 ] || [ "$unknown" = 1 ] || cannot "E15: no provider call ended 503 or unknown while the provider's hop was black-holed, so the cut was not felt"
+    experiments_record provider "while the provider's hop was black-holed: $refused answers 503 from the application; an unknown outcome on the gauges: $unknown"
+}
+
+E15_recover() {
+    # Every unknown concluded once: the workload's own requests resolve by their keys, then the sweeps ask the provider again (a call
+    # caught mid-flight waits the sweep's dispatched age, ten minutes).
+    experiments_workload_end e15
+    deadline=$(( $(date +%s) + 1200 ))
+    open=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        open=$(psql_query -c "SELECT (SELECT count(*) FROM payments.payment_intent WHERE status IN ('REQUIRES_CONFIRMATION', 'PROCESSING')) || '|' || (SELECT count(*) FROM merchant.merchant_payout WHERE status NOT IN ('COMPLETED', 'FAILED'))" | tr -d '[:space:]')
+        [ "$open" = "0|0" ] && break
+        sleep 15
+    done
+    [ "$open" = "0|0" ] || fail "E15: payments and payouts still open 1200 s after the provider's hop returned (intents|payouts: $open)"
+    experiments_record resolved "every payment intent and payout concluded after the provider's return"
+    pass "E15: the outbox held and drained, money moved while the broker was away, the provider's calls refused or unknown and every one concluded once"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E16: the cluster's resolver lost - CoreDNS scaled to zero for two minutes.
+# ---------------------------------------------------------------------------------------------------
+
+# The cluster resolver's ready endpoints, counted, or "unread" when the API did not answer: an unread list is never an empty one.
+e16_resolver_ready() {
+    slices=$(kube -n kube-system get endpointslices -l kubernetes.io/service-name=kube-dns -o jsonpath='{range .items[*].endpoints[*]}{.conditions.ready}{"\n"}{end}' 2>/dev/null) \
+        || { echo unread; return 0; }
+    printf '%s\n' "$slices" | grep -c '^true$' || true
+}
+
+E16_steady() {
+    experiments_start_workload e16 240
+    sleep 8
+    experiments_participants
+    E16_DNS=$(kube -n kube-system get deployment coredns -o jsonpath='{.spec.replicas}' 2>/dev/null || true)
+    [ "${E16_DNS:-0}" -ge 1 ] || cannot "E16: the run's CoreDNS has no replica to stop"
+    case $(e16_resolver_ready) in '' | 0 | unread | *[!0-9]*) cannot "E16: the cluster's resolver has no ready endpoint to take away" ;; esac
+    experiments_record resolver "CoreDNS at $E16_DNS replicas; the application's three hops resolve by hostAliases to the proxy, which resolves its upstreams per connection through CoreDNS"
+}
+
+E16_fault() {
+    experiments_fault_on scaled kube-system coredns 0 "$E16_DNS"
+    E16_OUT_AT=$(date +%s)
+    while [ "$(e16_resolver_ready)" != 0 ] && [ "$(date +%s)" -lt $((E16_OUT_AT + 60)) ]; do
+        sleep 2
+    done
+    [ "$(e16_resolver_ready)" = 0 ] || cannot "E16: the cluster's resolver still had a ready endpoint 60 s after it was scaled to zero"
+    experiments_record fault "CoreDNS scaled to zero at $(date -u -d "@$E16_OUT_AT" +%H:%M:%SZ), no ready endpoint $(( $(date +%s) - E16_OUT_AT )) s after"
+}
+
+E16_observe() {
+    sleep 20
+    # Held links carry on, and a new one is needed to meet the outage: the provider hop's links closed once, so its next calls open new
+    # ones, each of which the proxy must resolve.
+    experiments_fault_on proxy-down simulator
+    sleep 2
+    experiments_fault_off proxy-down simulator
+    E16_STIMULUS_AT=$(date +%s)
+    while [ "$(date +%s)" -lt $((E16_OUT_AT + ${E16_SECONDS:-120})) ]; do
+        experiments_pages_tick || return 0
+        sleep 5
+    done
+    kube -n finapp-experiments logs deploy/finapp-toxiproxy -c toxiproxy --since-time="$(date -u -d "@$E16_STIMULUS_AT" +%Y-%m-%dT%H:%M:%SZ)" > "$EXP_DIR/toxiproxy.log" 2>&1 || true
+    lookups=$(grep '"message":"Unable to open connection to upstream"' "$EXP_DIR/toxiproxy.log" | grep -c '"error":"dial tcp: lookup' || true)
+    [ "$lookups" -ge 1 ] || cannot "E16: no new connection met the resolver's outage (the proxy logged no failed lookup), so new connections were not shown failing"
+    experiments_edge_answers "$E16_OUT_AT" "$EXP_DIR/edge-outage.tsv"
+    served=$(awk -F'\t' '$2 < 500 && $3 != 0' "$EXP_DIR/edge-outage.tsv" | grep -c . || true)
+    failed=$(awk -F'\t' '$2 >= 500' "$EXP_DIR/edge-outage.tsv" | grep -c . || true)
+    experiments_record outage "$lookups new connections refused at the proxy for want of a lookup; $served answers served and $failed failed at the edge while the resolver was away; replicas unready at its end: $(experiments_fleet | awk -F'|' 'NF >= 5 && $2 != "True" {print $1}' | tr '\n' ' ')"
+    experiments_fault_off scaled kube-system coredns 0 "$E16_DNS"
+    E16_BACK_AT=$(date +%s)
+    # Recovery: a provider call answered again - the merchant's payout under one key, sent until it is answered.
+    key="e16-$(experiments_rand)"
+    tries=0
+    answered=""
+    while [ "$(date +%s)" -lt $((E16_OUT_AT + 600)) ]; do
+        tries=$((tries + 1))
+        set -- $(experiments_a_ready_replica)
+        [ -z "${2:-}" ] || experiments_payout "$2" "$key" "recovery-$tries" || true
+        case $(experiments_status "$EXP_DIR/payout-recovery-$tries.txt") in
+            200 | 201) answered=$(( $(date +%s) - E16_BACK_AT )); break ;;
+        esac
+        sleep 5
+    done
+    if [ -z "$answered" ]; then
+        EXP_STOPPED="not recovered: no provider call answered within ten minutes of the outage's start"
+        log "E16 STOP: $EXP_STOPPED"
+        return 0
+    fi
+    EXPERIMENTS_PAYOUTS=$((EXPERIMENTS_PAYOUTS + 1))
+    experiments_record recovered "CoreDNS back at $(date -u -d "@$E16_BACK_AT" +%H:%M:%SZ); a provider call answered $answered s after, on try $tries"
+    pass "E16: held connections carried on, new ones failed at the proxy's lookup, a provider call answered $answered s after the resolver's return"
+}
+
+E16_recover() {
+    ready_three 300 || fail "E16: the fleet did not return to three ready replicas"
+    experiments_workload_end e16
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E24: the database's volume full - the primary's own 2 GiB filesystem filled from its node.
+# ---------------------------------------------------------------------------------------------------
+
+# e24_server_lines <since epoch>: the server's lines since then, its container's and, after a restart, its previous container's.
+e24_server_lines() {
+    since=$(date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ)
+    { kube -n finapp logs finapp-postgres-0 -c postgres --since-time="$since"; kube -n finapp logs finapp-postgres-0 -c postgres --previous --since-time="$since"; } 2>/dev/null
+}
+
+E24_steady() {
+    class=$(kube -n finapp get pvc data-finapp-postgres-0 -o jsonpath='{.spec.storageClassName}' 2>/dev/null || true)
+    [ "$class" = finapp-experiments-limited ] || cannot "E24: the primary's claim is of class '$class', not E24's size-limited one: E24 must be named when the run makes its data tier"
+    E24_NODE=$(kube -n finapp get pod finapp-postgres-0 -o jsonpath='{.spec.nodeName}')
+    dock exec "$E24_NODE" grep -qs " $EXPERIMENTS_LIMITED " /proc/mounts || cannot "E24: no size-limited filesystem is mounted on the primary's node $E24_NODE"
+    E24_SERVER_RESTARTS=$(kube -n finapp get pod finapp-postgres-0 -o jsonpath='{.status.containerStatuses[0].restartCount}')
+    experiments_start_workload e24 900
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E24_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E24_SAMPLER"
+    experiments_record volume "the primary on $E24_NODE, its filesystem $(dock exec "$E24_NODE" df -PB1 "$EXPERIMENTS_LIMITED" | awk 'NR == 2 {print $2 " bytes, " $4 " free"}')"
+}
+
+E24_fault() {
+    experiments_fault_on filled "$E24_NODE"
+    E24_FULL_AT=$(date +%s)
+    free=$(dock exec "$E24_NODE" df -PB1 "$EXPERIMENTS_LIMITED" | awk 'NR == 2 {print $4}')
+    [ "${free:-65537}" -le 65536 ] || cannot "E24: $free bytes still free after the ballast, so the volume was not filled"
+    experiments_record fault "the primary's filesystem filled at $(date -u -d "@$E24_FULL_AT" +%H:%M:%SZ), $free bytes left"
+}
+
+E24_observe() {
+    first=""
+    # The stop's bound, the volume full five minutes: the first write it refuses is looked for until then.
+    while [ "$(date +%s)" -lt $((E24_FULL_AT + 300)) ]; do
+        experiments_pages_tick || return 0
+        if [ "$(e24_server_lines "$E24_FULL_AT" | grep -c 'No space left on device' || true)" -ge 1 ]; then
+            first=$(( $(date +%s) - E24_FULL_AT ))
+            break
+        fi
+        sleep 5
+    done
+    [ -n "$first" ] || cannot "E24: nothing the database wrote met the full volume within 300 s, so the fault was not felt"
+    hold_end=$(( $(date +%s) + ${E24_HOLD_SECONDS:-60} ))
+    while [ "$(date +%s)" -lt "$hold_end" ]; do
+        experiments_pages_tick || return 0
+        sleep 5
+    done
+    e24_server_lines "$E24_FULL_AT" | grep -E 'No space left on device|PANIC|terminated by signal|database system is' > "$EXP_DIR/server-lines.txt" || true
+    experiments_record refused "the first write refused for want of space $first s after the volume was full, held ${E24_HOLD_SECONDS:-60} s more; $(grep -c 'No space left on device' "$EXP_DIR/server-lines.txt" || true) such lines, $(grep -c PANIC "$EXP_DIR/server-lines.txt" || true) PANIC lines"
+    experiments_record told "replicas read unready while it was full: $(awk -F'\t' -v at="$E24_FULL_AT" 'NR > 1 && $1 >= at && $4 != "True" {print $3}' "$EXP_DIR/fleet.tsv" | sort -u | tr '\n' ' '); alerts firing: $(cut -f3 "$EXP_DIR/pages.tsv" 2>/dev/null | tr ' ' '\n' | grep . | sort -u | tr '\n' ' ')"
+}
+
+E24_recover() {
+    # The ballast removed at the stop: the server back on its own (a crash recovery if it stopped), then the fleet.
+    deadline=$(( $(date +%s) + 600 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        kube -n finapp exec finapp-postgres-0 -c postgres -- pg_isready -q -h 127.0.0.1 -U finapp -d finapp 2>/dev/null && break
+        sleep 5
+    done
+    kube -n finapp exec finapp-postgres-0 -c postgres -- pg_isready -q -h 127.0.0.1 -U finapp -d finapp 2>/dev/null \
+        || fail "E24: the database did not accept connections within 600 s of the space's return"
+    ready_three 900 || fail "E24: the fleet did not return to three ready replicas once the space was back"
+    experiments_record returned "the server's container restarted $(( $(kube -n finapp get pod finapp-postgres-0 -o jsonpath='{.status.containerStatuses[0].restartCount}') - E24_SERVER_RESTARTS )) times; $(dock exec "$E24_NODE" df -PB1 "$EXPERIMENTS_LIMITED" | awk 'NR == 2 {print $4}') bytes free after"
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E24_SAMPLER" 2>/dev/null || true
+    experiments_workload_end e24
+    pass "E24: writes refused for want of space, the server and the fleet back once it returned, nothing unresolved"
 }
