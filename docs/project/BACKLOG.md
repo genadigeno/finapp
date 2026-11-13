@@ -30210,6 +30210,12 @@ on none:
   (`externalTrafficPolicy: Local`): the harness gives the client such a worker per host, which a lost node may be. **The edge names no
   replica** (it reaches them through their Service): E01 tells a failed answer apart by when it ended; at ten replicas and under
   E02-E04 that window is per fault. Item 47 (e)'s correlation id, once kept, would join each failed answer to its replica.
+- *Routed from `P16-TSK-023` (2026-11-13):* the financial-operation availability matrix (`docs/architecture/AVAILABILITY.md`, ADR-0144)
+  names this task's experiments as the checks of its rows A07 (E01, E03, E04: every operation `AVAILABLE`), A08 (E02: every operation
+  `DEGRADED`) and A09 (E25: every operation `AVAILABLE`). When E02-E04 and E25 are built, walk each row: read the edge's answers
+  (`experiments_edge_read`) and call `availability_check <row> <from> <to>` over the fault's window from the experiment's own step, and add
+  the experiment to the row's **Walked by** cell - `AvailabilityMatrixTest#eachWalkerComparesItsRowAndOnlyItsRow` holds that the walks the
+  harness makes are exactly the ones the document declares, so the two change together. E01's own walk of A07 is the same one line.
 
 **P16-TSK-021 — Network, DNS, connection and disk faults** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-021` from master `1f70ccad`, wave D; gate `COMPLETE` 2026-11-13; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; no production code, migration, alert rule or new ADR; marks no task `READY` - the coordinator does; marked `READY` by the coordinator at `P16-TSK-019`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-019`, `COMPLETE`) *(read "`READY`", then "`IN_PROGRESS`", until its gate)*
 - **Objective**: E07, E11–E16, E24 under load.
@@ -30391,7 +30397,7 @@ on none:
   step on the `toxic` primitive, where the two meet), `P16-TSK-023` (the drill's rules for the matrix), `P16-TST-001` (the failover in
   the soak). **Owed under PI-025**: E06, E57 and E05 at three replicas, E56, and E29's longest statement. **Guards**: `DatabaseSocketTimeoutTest` (6) and `ExperimentsRehearsalContractTest` (19: seven members new, one strengthened) hold the work; sixteen hermetic probes in five rounds, each caught (`MUTATION_TESTING.md` §2). The third merge brought `P16-TSK-009`'s routed note: the `kind` primary's `max_connections` is now set per run at the budget's count, and a hot standby refuses to start below it, so the standby now takes the run's primary's value from its rendered copy (`experiments_standby`; contract member and probe, round five). The merges kept both sides throughout; the second brought `P16-TSK-021`'s E14, whose record and pin said the data source set no socket timeout: E14 now reads and records the timeout it runs under (its pin re-stated, round four), and its row, runbook §11.47's sentence, its T14 row and its PI-025 bullet carry dated notes; the guards the resolutions touched ran after each merge, green but for `OutboundCallsAreBoundedTest`'s three after the fifth, red on master's inventory too (a control run: the audit archive's HTTP client and schedule missing from it, master's, not this task's); after the sixth (`16581447`, `P16-TSK-013`'s: the fault kind `setting` beside `brokers-stopped`, `relay-held` and `min-isr`, the database's experiments beside the event pipeline's, the probe `async-standby` beside `min-isr-one`, item 61 after item 58), the 19 classes it touched, 246 tests, and the 8 ArchUnit suites the filter pulls in, 24 tests, 0 failed. The final run (14:10Z), 71 named `app` classes and the ArchUnit suites the filter pulls in (8, 24 tests): 656 tests, 5 failed, the five red on master's bytes too (a control run, 14:34Z, with the six classes this branch edits put back to master's): `OwnershipIsScopedTest` (`JdbcMerchantPayoutStore.recordSweepFailure` unclassified), `CashAtBankHasOnePosterTest`, `CounterpartyClearingIsNamedByDeclarationsTest` and `FxBooksHaveOnePosterTest` (the source census's `SettlementJournalSources` and `FxJournalSources` naming those books), and `RequestDecimalsAreBoundedTest` (a `StackOverflowError` in its pattern) - none of them this task's, reported to the coordinator; `MigratorMatchesTheBuildTest` (4) and `AdvisoryNamespaceIsPinnedTest` (1) green. Not run: `AlertRulesResolveTest` (database tier) and `RiskAlertRulesTest` (slow), each reading `risk.yml`, whose comment alone changed.
 
-**P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-022`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its dependencies, `P16-TSK-005`, `P16-TSK-013` and `P16-TSK-022`, all `COMPLETE`)
+**P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-023` from master `ce1abd2e`, wave E; no migration; ADR-0144; every cluster run owed under PI-025; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-022`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its dependencies, `P16-TSK-005`, `P16-TSK-013` and `P16-TSK-022`, all `COMPLETE`)" until the gate)*
 - **Objective**: as decided:
   - the data tier's availability shown on `kind` across the database pair, three brokers and the edge;
   - every single point of failure of `PHASE_16_PLAN.md` §10.1 registered with its answer;
@@ -30425,6 +30431,38 @@ on none:
   the old primary is fenced for good. The answer a client gets while the database is away is `500` today, put to the owner as
   `THREAT_MODEL.md` §6 item 61 (recommended `503` with `Retry-After`). None of E05, E06, E56 or E57 has run (PI-025), so the
   matrix's database rows rest on runs owed.
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-023` from master `ce1abd2e`; no migration; ADR-0144; under the owner's word
+  of 2026-11-13, "we dont need long running checks and tests", **nothing ran on a cluster: every run is owed under
+  `POSTPONED_ISSUES.md` PI-025**):* **The register and the matrix** are `docs/architecture/AVAILABILITY.md` (the entry's "a new
+  availability section"). §2 registers every component of `PHASE_16_PLAN.md` §10.1 by its own name and three more the reading found
+  (the audit archive's store, the WAL archive's store, the cluster watcher), each with its state on `kind` and in the reference, whether
+  it is a single point for money, its answer and its check. §3 classes the routes both edges serve into nineteen operations (seventeen
+  routed, the scheduled work and the events without a route). §4 is the matrix: twenty failures, each placing every operation once as
+  `REFUSED` (no record), `QUEUED` (the record written, effects waiting), `DEGRADED` or `AVAILABLE`, with what the client and the money
+  see, checked by registered experiments or designed-only (A13 the rails no simulator serves, A17 a zone, A18 a region); every one of
+  §10.3's examples is a row. **The rule**, held by `AvailabilityMatrixTest`: no request answered while its record cannot be written, none
+  refused for the broker's sake, a row's kind read from the experiments that check it. **Checked by the experiments**: E05 and E06 (row
+  A01) and E09 (row A06) now walk their row (`availability_check`: every edge answer in the fault's window taken to its operation by the
+  most specific pattern, no success where refused, a success where queued or available, a row claiming service that exercised nothing
+  failing); and two gaps the register found are closed by experiments of the task's own: **E72**, the telemetry back ends lost
+  (Prometheus and Alertmanager scaled to zero through the registry - a single point for detection on `kind`, whose history goes with
+  it), and **E73**, the payout rail and card tokenisation lost (the simulator's existing flags, which no experiment used: no payout
+  completed without the provider's effect, each unknown once, no blind resend, a card attach refused storing nothing - the client's new
+  `attach-card`). **The availability SLOs at the sustained profile**: every `load` run now reads each availability objective of
+  `SLOS.md` §2 over its window from `slo-recording.yml`'s own rules (`load/slo-availability.tsv`), and E74 is that reading at the
+  sustained profile; judged by `P16-TSK-029` under the ruling that a load run fails on correctness only (its entry carries the routed
+  note). **§10.3's question**: put to the owner as `THREAT_MODEL.md` §6 item 66 (a), recommended (i) - the freeze stays a person's act;
+  item 66 (b) puts the rails no simulator serves (recommended: designed-only for this phase). **The entry corrected** (a design may
+  correct its entry): its probe names E09, where no operation refuses (only the outbox relay publishes), so the run-time probe plants
+  the mismatch where every operation does refuse: `REHEARSAL_PROBE=matrix-mismatch` with E06, the run's own copy claiming transfers
+  available while the database is away; the hermetic half is the guard's rule, which refuses that claim in the repository's copy.
+  **Acceptance**: the register and the matrix complete - met (held by the guard over §10.1's table and both edges' route lists); every row
+  checked by an experiment or marked designed-only - met in the document and its guard, **the runs built, contract-tested and owed
+  (PI-025)**; the matrix referenced from §11.12 - met (§11.12's dated note, §11.59); the availability SLOs at the sustained profile - the
+  reading built, its run owed (PI-025), the judgement `P16-TSK-029`'s. No flow was found answering wrongly by reading, so no code changed
+  but the harness's. **Routed**: `P16-TSK-020` (E01-E04 and E25 walk rows A07-A09 when built), `P16-TSK-029` (E74's reading to judge).
+  **Owed under PI-025**: E72, E73 and E74 at three replicas, the walks in E05, E06 and E09 with their own runs, and the probe.
+  **Guards and probes**: see `CURRENT_STATE.md` §Just completed and `MUTATION_TESTING.md` §2.
 
 **P16-TSK-024 — Restore and point-in-time recovery with the post-recovery verification (`THREAT_MODEL.md` §6 item 44 (a); ADR-0128)** — `COMPLETE` (2026-11-13; built and contract-tested, its drills owed under PI-025; marked `READY` by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: as decided:
@@ -30601,6 +30639,13 @@ on none:
   (`PHASE_16_PLAN.md` §5.3). At the demonstration rate on the reference machine, sign-ins, balance reads and the merchant API went
   past what 99.9% explains in runs whose disk stalled (`OPERATIONS_RUNBOOK.md` §11.43's record), which is this task's to judge
   against the objectives, as the edge's `429`s under a stall are (`k6/statuses.tsv`).
+- *Routed from `P16-TSK-023` (2026-11-13):* `PHASE_GATES.md` §5 Phase 16's High availability criterion ("the availability SLOs are met at
+  the sustained profile on `kind`, or recalibrated with a reason") names both tasks. `P16-TSK-023` built the reading and leaves the
+  judgement here, by the ruling that a load run fails on correctness only: every `load` run now writes `load/slo-availability.tsv`
+  (`load_availability_objectives`), each availability objective of `SLOS.md` §2 over the run's window from `slo-recording.yml`'s own
+  rules - requests, errors, error ratio and the burn rate beside the target - and at the sustained profile that reading is
+  `RESILIENCE_EXPERIMENTS.md` E74, owed under PI-025 with `P16-TSK-007`'s E29. Judge each objective against it, or recalibrate it with
+  its reason.
 - **Risk**: Low. **Cx**: M.
 
 **P16-TSK-030 — The service-extraction evaluation (ADR-0001's revisit)** — `PLANNED`
