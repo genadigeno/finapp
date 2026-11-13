@@ -47,6 +47,11 @@ class AuditArchiveBeans {
             @Value("${finapp.audit.archive.lease:PT2M}") Duration lease,
             @Value("${finapp.audit.archive.interval:PT1M}") Duration interval,
             @Value("${finapp.audit.archive.batch-size:1000}") int batchSize) {
+        if (endpoint.isBlank()) {
+            // Present but empty matches the condition above, and would send every request to no host: refused rather than guessed.
+            throw new IllegalStateException("Refusing to start: finapp.audit.archive.endpoint is set but blank; name the store or remove the"
+                    + " setting (OPERATIONS_RUNBOOK.md section 11.50)");
+        }
         if (lease.compareTo(timeout.multipliedBy(4).plusSeconds(10)) <= 0) {
             throw new IllegalStateException("Refusing to start: finapp.audit.archive.lease (" + lease + ") must exceed four store calls at"
                     + " finapp.audit.archive.timeout (" + timeout + ") and ten seconds for the database's, or a live holder is taken"

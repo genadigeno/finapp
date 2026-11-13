@@ -115,6 +115,30 @@ class AuditArchiveScheduleTest {
         assertThatIllegalArgumentException().isThrownBy(() -> new AuditArchiveSchedule(archival, Duration.ZERO, meters));
     }
 
+    @Test
+    @DisplayName("the wiring refuses a blank store, plain http off loopback, and a lease that four store calls at their timeout could outlast")
+    void theWiringRefusesWhatCannotWork() {
+        Fake fake = new Fake(0);
+        AuditArchiveMeters meters = new AuditArchiveMeters(new SimpleMeterRegistry(), fake, true);
+        AuditArchiveBeans beans = new AuditArchiveBeans();
+        Duration timeout = Duration.ofSeconds(5);
+
+        org.assertj.core.api.Assertions.assertThatIllegalStateException()
+                .isThrownBy(() -> beans.auditArchiveSchedule(fake, meters, " ", "finapp-audit-archive", timeout, Duration.ofMinutes(2),
+                        Duration.ofMinutes(1), 10))
+                .withMessageContaining("blank");
+        org.assertj.core.api.Assertions.assertThatIllegalStateException()
+                .isThrownBy(() -> beans.auditArchiveSchedule(fake, meters, "https://archive.example", "finapp-audit-archive", timeout,
+                        Duration.ofSeconds(30), Duration.ofMinutes(1), 10))
+                .withMessageContaining("finapp.audit.archive.lease");
+        org.assertj.core.api.Assertions.assertThatIllegalStateException()
+                .isThrownBy(() -> beans.auditArchiveSchedule(fake, meters, "http://archive.example", "finapp-audit-archive", timeout,
+                        Duration.ofMinutes(2), Duration.ofMinutes(1), 10))
+                .withMessageContaining("finapp.audit.archive.endpoint");
+        assertThat(beans.auditArchiveSchedule(fake, meters, "https://archive.example", "finapp-audit-archive", timeout,
+                Duration.ofSeconds(31), Duration.ofMinutes(1), 10)).isNotNull();
+    }
+
     // ------------------------------------------------------------------------------------------------------------------
 
     private static AuditArchiveSchedule schedule(AuditArchiveSegments segments, AuditArchiveStore store, MeterRegistry registry) {
