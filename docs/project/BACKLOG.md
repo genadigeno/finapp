@@ -29714,6 +29714,16 @@ on none:
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.28's record at ten; `P15-REM-007` closed.
 - **Risk**: High (the machine may not hold ten; the record says so). **Cx**: L.
+- **Routed from `P16-TSK-009` (2026-11-13): what the run at ten starts from.** The `kind` overlay admits ten (13 instances, 116 connections,
+  a quota of 16 pods; ADR-0134). Every run holds its fleet at its count in its own copy, `REHEARSAL_LOAD_REPLICAS` up to 10 in the load
+  scope, the autoscaler held there (minimum and maximum). A run that lets the metric decide between three and ten is this task's: leave
+  the copy's autoscaler at the overlay's 3 and 10 (for example a count of its own that `fleet_patch` passes through). The load scope installs
+  metrics-server and waits for the autoscaler's metric (`OPERATIONS_RUNBOOK.md` §11.49). It samples the fleet's connections every two
+  seconds through the load and judges the peak and an operator after it (`load_budget`), and holds the fleet at its budget. The peak during
+  a rollout at ten is E26's. Two interactions to settle there: the load scope's correctness sampler compares the replicas scraped with
+  those ready, which a roll makes differ for a scrape interval; and the release's `rollout`, `assert_reporting_open` and `ready_three`
+  assume three. Memory: thirteen 1 GiB pods at a roll's worst moment beside the data tier, on the reference machine's 15.6 GiB VM.
+  E41 (`P16-TSK-009`'s, owed under PI-025) is the budget's run at ten, without a roll.
 
 **P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `PLANNED`
 - **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection
@@ -29743,6 +29753,12 @@ on none:
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.30 and §11.14.
 - **Risk**: Medium. **Cx**: M.
+- **Routed from `P16-TSK-009` (2026-11-13): production's ceiling, the pool's size, and the autoscaler at its ceiling.** ADR-0134 keeps
+  production at seven until the ten-instance runs and this calibration (`THREAT_MODEL.md` §6 item 56); ten there is a larger declared
+  `max_connections` (116) first, in `OPERATIONS_RUNBOOK.md` §11.14's order. The pool stays 7 + 1: the census starved of it at the break is
+  `P16-TSK-016`'s per-class bound, not a larger pool. No alert says the autoscaler sits at its maximum or cannot read its metric: the cluster
+  watcher publishes the autoscaler's replica counts (`k8s.hpa.*`) but not its conditions, so a signal there is this task's to decide with
+  the targets.
 
 **P16-TSK-016 — Load shedding before the financial effect, and bulkheads** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: when the platform cannot finish a money-moving command in time, refuse it with `503` and `Retry-After` before its
@@ -30027,6 +30043,11 @@ on none:
   `synchronous_standby_names` is the drill's to decide; the harness's `psql_query` and census read `finapp-postgres-0` through its pod,
   so after a promotion they must read the promoted one; and the scope's steady state refuses to start an experiment unless the standby
   is synchronous.
+- **Routed from `P16-TSK-009` (2026-11-13): the standby's `max_connections` and the primary's.** The `kind` overlay's test-only primary now
+  states `max_connections=116`, the budget for ten replicas, and every rehearsal run sets its own copy back to the formula at its count
+  (`kind-rehearsal.sh`'s `fleet_patch`): 60 at three, the count the experiments scope runs at. `experiments/standby.yaml` keeps
+  `max_connections=60`, which still equals the run's primary at three. A hot standby refuses to start below its primary's setting, so a
+  failover drill at more than three replicas needs the standby's value taken from the run's copy, not the file.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
 - **Objective**: as decided:

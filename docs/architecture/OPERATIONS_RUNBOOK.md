@@ -3243,6 +3243,7 @@ latest; the run, as its record names it.
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | §11.45 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `89b8fc60`, `f021383f` | `§11.45's record: E30 at three replicas and the isolation run` | — |
 | §11.46 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `a6fee3a1` | `§11.46's record: E01's run and the probes` | — |
+| §11.49 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3691,7 +3692,7 @@ the quota and the `LimitRange`.
 
 | Overlay | For | `maxReplicas` | `FINAPP_DB_INSTANCES` | Difference from the base |
 |---|---|---|---|---|
-| `kind` | The rehearsal, test-only | 3 | 6, the formula exactly | Single-node PostgreSQL and Kafka, gone with their cluster (their data on volume claims since 2026-11-12, so a roll keeps it), labelled `finapp/test-only`; 1 GiB; the zone spread relaxed, since `kind`'s nodes carry no zone label; NetworkPolicies selecting those copies; a quota of 9 pods |
+| `kind` | The rehearsal, test-only | 10 | 13, the formula exactly, on a test-only server of 116 connections (owner decision C3, ADR-0134) | Single-node PostgreSQL and Kafka, gone with their cluster (their data on volume claims since 2026-11-12, so a roll keeps it), labelled `finapp/test-only`; 1 GiB; the zone spread relaxed, since `kind`'s nodes carry no zone label; NetworkPolicies selecting those copies; a quota of 16 pods. A rehearsal run holds its fleet at its own count in its own copy, the formula at that count: three, 6 instances and 60 connections, unless the load scope asks for more (§11.49) *(read "3, 6, a quota of 9 pods" until 2026-11-13)* |
 | `staging` | Reference values | 4 | 7 | The maximum, its budget and a quota of 8 pods; placeholder data-tier and provider addresses |
 | `production` | Reference values | 7 | 10 | Its own statement of the same numbers; the base's quota of 11 pods; placeholder data-tier and provider addresses |
 
@@ -3730,7 +3731,12 @@ When a carried finding stops occurring (compare the printed findings with the fi
 
 - **More replicas**: `FINAPP_DB_INSTANCES` must reach `maxReplicas + 2 × maxSurge + 1`, and
   `FINAPP_DB_INSTANCES × (7 + 1)` must fit `FINAPP_DB_SERVER_MAX_CONNECTIONS` less `FINAPP_DB_RESERVED_CONNECTIONS`. The
-  pool sizes are read from `application.yaml`; an overlay does not set them.
+  pool sizes are read from `application.yaml`; an overlay does not set them. *(2026-11-13, ADR-0134:)* production past seven is
+  the owner's (`THREAT_MODEL.md` §6 item 56), and ten there is `maxReplicas` 10, `FINAPP_DB_INSTANCES` 13 and
+  `FINAPP_DB_SERVER_MAX_CONNECTIONS` 116, the last raised first, applied and rebooted (below), then the other two in one commit with
+  the quota (13 application pods and the migrator: 14 pods, 6750m, 27136Mi, 27 cores and 27136Mi on the base's pods; the policy
+  refuses any other sum). Never a smaller pool to
+  make it fit, and never a transaction-mode pooler without its own ADR: ADR-0134 says why.
 - **A stop bound in the code**: `KubernetesManifestsTest` goes red until `manifest-policy/shutdown-budget.yaml` agrees. Then
   raise `terminationGracePeriodSeconds`, `minReadySeconds` with it, and the autoscaler's scale-down `periodSeconds` if the
   grace passes it.
@@ -4843,6 +4849,10 @@ connections and 12 reserved, so 10 instances and 92 connections at seven; `FINAP
 reads and the test-only server's `max_connections`), holds the HorizontalPodAutoscaler at N, sizes the quota to match and waits for N ready
 replicas before the load. Ten is `P16-TSK-014`'s, on owner decision C3's larger server. `REHEARSAL_LOAD_DURATION` shortens every stage in
 proportion, and the run is then not the profile's workload. `REHEARSAL_PROBE=slow-statement` is the entry's probe (below).
+*(2026-11-13, `P16-TSK-009`: the committed `kind` overlay now states the formula for ten, and `REHEARSAL_LOAD_REPLICAS` runs 3 to 10. The
+patch is the harness's `fleet_patch`, every scope's, which takes the run's own copy down to the formula at its count; at three and at seven
+the copy is what this section describes. Every load run also reads the autoscaler's metric before the load and judges the budget after
+it: §11.49.)*
 
 **What the profiles do not drive, and why.** BNPL purchases and instalments, lending repayments and loan credit decisions, as §11.43 says:
 each rests on a credit approval that no `kind` deployment can give. Found on a kept development cluster on 2026-11-13: the platform scope's
@@ -5089,6 +5099,69 @@ words that discoverer reads as credentials, and the boundary's cadence is worded
 on the same pinned image (a base backup at `verify-full` through the slot, streaming, `FIRST 1` synchronous, a commit held while the
 standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"), it is owed under
 `POSTPONED_ISSUES.md` PI-025 with E01's run on the final bytes.
+
+### 11.49 The connection budget at ten replicas, the autoscaler's metric on `kind`, and a pooler refused (`P16-TSK-009`, ADR-0134)
+
+**What it is.** Owner decision C3 decided by ADR-0134. The `kind` overlay states the connection budget for ten replicas exactly
+(10 + 2 × 1 + 1 = 13 instances, 13 × 8 + 12 = 116 connections on the test-only server, a quota of 16 pods), and every rehearsal run
+holds its fleet at its own count in its own rendered copy with the formula at that count (`kind-rehearsal.sh`'s `fleet_patch`): three in
+every scope, `REHEARSAL_LOAD_REPLICAS` (3 to 10) in the `load` scope. Staging is unchanged. Production keeps `maxReplicas` 7 until the owner
+decides `THREAT_MODEL.md` §6 item 56; §11.14 says how ten would be set there. The HPA's metric on `kind` is metrics-server, the checked
+render of `infra/scripts/controller-check.sh` (§11.36), installed by the `load` scope.
+
+**Running it** (E41, `RESILIENCE_EXPERIMENTS.md`). One full cluster at a time, as §11.43, on a machine that can hold thirteen 1 GiB
+application pods at a rollout's worst moment beside the data tier (the reference machine's VM has 15.6 GiB; `P16-TSK-014`'s risk):
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=normal REHEARSAL_LOAD_REPLICAS=10 infra/scripts/kind-rehearsal.sh
+```
+
+The `normal` profile holds 0.4167 of the target's peak for 30 minutes, at or just above the engineering workload (`CAPACITY_MODEL.md`
+§3.4: E30's third step, 0.39 as written).
+
+**What it adds to §11.43's and §11.45's run**, in every load run at any count:
+- `load-metrics-source`, before anything is measured. `controller-check.sh render` (network for the three pinned release files,
+  Docker for its pinned images) and metrics-server's image pulled into each node by its digest. Then the render applied, its
+  `v1beta1.metrics.k8s.io` API `Available` within three minutes, and the autoscaler reading its CPU utilisation with `ScalingActive`
+  true within five. The run holds the autoscaler at its count (minimum and maximum), so it reads the metric and never acts on it:
+  scaling on the metric is `P16-TSK-014`'s. `load/hpa.txt` keeps its description.
+- `load-run`: the release's connection sampler through the load, every two seconds. Each sample records the ready, terminating and
+  total pods, the fleet's `pg_stat_activity` and all client connections, and an operator connection (as `finapp_reporting`, over TLS)
+  tried at each sample that reaches the peak so far (`samples-load.tsv`).
+- `load-budget`, after the census:
+  - the samples are at least one per 30 s of the load;
+  - the peak is within instances × pool (`BUDGET`, the run's copy's: 104 at ten);
+  - no sample holds more than eight for each pod it had;
+  - an operator was admitted at the peak, and none was refused;
+  - each replica's pools over the load's own seconds are written to `load/pools-per-replica.tsv`: per instance and pool, the
+    samples, the active connections' mean and most, the pending most and the longest acquisition. At least as many writer pools as
+    replicas must be read;
+  - the fleet is held at its budget by sessions named as the fleet's, and an operator is admitted while they stand (the release's
+    `budget_ceiling`).
+
+**Reading it.** The pool utilisation per replica at ten, against `CAPACITY_MODEL.md` §3.4's at three: `pools-per-replica.tsv` beside
+`stages-resources.tsv`'s fleet sums. A pool whose `active_most` reaches 7 with `pending_most` above 0 waited. Read that with the
+database's CPU in the same stage, as §11.45 reads the first limit: a pool held by a saturated database is the database's limit. The
+peak and the operator are in `samples-load.tsv` and `assertions.tsv`.
+
+**The pooler.** Not deployed, and refused by ADR-0134 until isolation is set inside each transaction. If one is ever proposed, its ADR
+first takes: the driver's `setTransactionIsolation` replaced and refused by a guard; prepared statements measured through it
+(`max_prepared_statements`, or `prepareThreshold=0`); the budget's guard and policy counting its server pool; `verify-full` on both hops;
+an experiment in containers with the arbiters' database cases through it. `TransactionScopedDatabaseStateTest` keeps the platform's own
+statements transaction-scoped meanwhile. Read it red as a lock, setting, listener, cursor or temporary table that would outlive its
+transaction on a reused connection, and make it transaction-scoped. Never relax the test.
+
+**Failure and rollback.** A run that cannot render or pull metrics-server stops as `COULD NOT RUN`. A run whose metric never arrives
+fails. The ten-replica copy exists only in the run's directory, and metrics-server goes with the cluster. To undo the overlay, revert
+the commit: the policy and `KubernetesManifestsTest` hold whichever numbers it leaves.
+
+**The record.** None. Not run, owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13, "we dont need long running
+checks and tests"): E41 at ten replicas. The `load` scope's new steps have never run at any count, and `fleet_patch` has never run on a
+cluster. It was run once by itself over a real `kustomize` render of this overlay (no cluster): at three it gave the copy master's
+three-replica overlay renders, byte for byte except the generated ConfigMap's name; at seven, 10 instances and 92 connections; at ten,
+the overlay unchanged but the autoscaler's minimum. The manifest policies passed on the three overlays, kubeconform passed on `kind`,
+and the budget's plants were refused in containers (§11.14's check, its budget plants only, 2026-11-13). `LoadRehearsalContractTest`
+and `KindRehearsalContractTest` hold what the run would assert.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

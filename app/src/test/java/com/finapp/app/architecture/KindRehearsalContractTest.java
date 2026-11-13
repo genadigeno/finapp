@@ -94,7 +94,48 @@ class KindRehearsalContractTest {
         String postgres = read(OVERLAY + "postgres.yaml");
         assertThat(postgres).contains("ssl=on").contains("ssl_cert_file=/etc/finapp-postgres-tls/tls.crt")
                 .contains("hostssl all all all scram-sha-256").doesNotContain("\n    host ")
-                .contains("max_connections=60");
+                // 60 until P16-TSK-009: the server is the formula for the overlay's ten replicas now, and a run at three sets its own copy
+                // back to 60 (eachRunHoldsItsFleetAtTheFormulaForItsCount), so the rehearsal at three still measures the rule.
+                .contains("max_connections=116");
+    }
+
+    @Test
+    @DisplayName("each run holds its fleet at its own count, three unless the load scope asks, the budget at the formula for that count in its own copy, read from the render (P16-TSK-009)")
+    void eachRunHoldsItsFleetAtTheFormulaForItsCount() {
+        assertThat(harness).as("three, every scope's own count; the load scope's REHEARSAL_LOAD_REPLICAS")
+                .contains("FLEET_REPLICAS=3\n[ \"$SCOPE\" != load ] || FLEET_REPLICAS=$LOAD_REPLICAS");
+        assertThat(harness.indexOf("\nfleet_patch \"$A\"\n")).as("every scope's copy, patched before anything of it is applied")
+                .isPositive().isLessThan(harness.indexOf("apply_files \"$file\""));
+        String patch = function("fleet_patch");
+        assertThat(patch).as("the overlay's numbers read from the render and refused unless they are the formula at its maximum")
+                .contains("FINAPP_DB_INSTANCES: \"\\([0-9]*\\)\"").contains("[ \"$fp_instances\" = $((fp_ceiling + 3)) ]")
+                .contains("$((fp_instances * (fp_writer + fp_reporting) + fp_reserved))")
+                .contains("|| cannot \"the kind overlay's budget is not the formula at its maximum");
+        assertThat(patch).as("the count's formula: the autoscaler held there, instances, the server and the test-only server's max_connections")
+                .contains("fp_drop=$((fp_ceiling - FLEET_REPLICAS))").contains("fp_new_instances=$((fp_instances - fp_drop))")
+                .contains("fp_new_server=$((fp_new_instances * (fp_writer + fp_reporting) + fp_reserved))")
+                .contains("minReplicas: $FLEET_REPLICAS").contains("maxReplicas: $FLEET_REPLICAS").contains("max_connections=$fp_new_server");
+        assertThat(patch).as("the quota less the pods it does not hold, each pod's share read from the rendered Deployment, never copied")
+                .contains("fp_new_pods=$((fp_pods - fp_drop))").contains("fp_drop * $(fp_milli \"$fp_pod_req_cpu\")")
+                .contains("fp_drop * $(fp_mib \"$fp_pod_lim_mem\")").contains("fp_pod_req_cpu=$(fp_share requests cpu)");
+        assertThat(patch).as("every value set is found in the split files and in all.yaml, or the run cannot run")
+                .contains("grep -q -F -x -e \"$fp_line\" \"$WORK/fleet-patched.yaml\" && grep -q -F -x -e \"$fp_line\" \"$fp_all\"")
+                .contains("|| cannot \"the rendered kind overlay could not be set to $FLEET_REPLICAS replicas");
+        assertThat(harness).as("the budget the run measures is the formula at its count")
+                .contains("WANT_INSTANCES=$((FLEET_REPLICAS + 3))").doesNotContain("WANT_INSTANCES=6");
+        assertThat(function("budget_ceiling")).as("the ceiling's hold, one function the release and the load scope call")
+                .contains("ceiling_need=$((BUDGET - ceiling_have))").contains("PGAPPNAME=finapp psql")
+                .contains("an operator is admitted with the fleet held at its budget");
+        assertThat(harness).as("the release still tries its ceiling").contains("step budget-ceiling\nbudget_ceiling\n");
+    }
+
+    /** The body of one shell function of the harness, so an assertion cannot be satisfied by another function's text. */
+    private static String function(String name) {
+        Matcher start = Pattern.compile("(?m)^" + Pattern.quote(name) + "\\(\\) \\{$").matcher(harness);
+        assertThat(start.find()).as("the harness defines %s", name).isTrue();
+        Matcher end = Pattern.compile("(?m)^}$").matcher(harness);
+        assertThat(end.find(start.end())).as("%s ends", name).isTrue();
+        return harness.substring(start.end(), end.start());
     }
 
     @Test

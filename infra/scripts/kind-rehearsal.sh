@@ -102,6 +102,10 @@ case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
 # The platform scopes' API audit log (Q12): only they write one.
 AUDITED=""
 case $SCOPE in signals | incidents) AUDITED=1 ;; esac
+# The fleet a run holds (P16-TSK-009, ADR-0134): three, the count every scope's walk and procedures were written for; the load scope's
+# REHEARSAL_LOAD_REPLICAS. The kind overlay states the budget for ten, and fleet_patch sets the run's own copy to the formula at this count.
+FLEET_REPLICAS=3
+[ "$SCOPE" != load ] || FLEET_REPLICAS=$LOAD_REPLICAS
 
 # The development mode (Q11): never in CI, never against a cluster the run will delete.
 STEPS=${REHEARSAL_STEPS:-}
@@ -445,6 +449,105 @@ apply_files() {
     done
 }
 
+# fleet_patch <rendered overlay directory> (P16-TSK-009, ADR-0134): the fleet at FLEET_REPLICAS in the run's own rendered copy, never the
+# committed one, with the connection budget's formula at that count. The kind overlay states the formula for its maximum, ten (owner
+# decision C3's larger test-only server). A run holds the HorizontalPodAutoscaler at its own count and takes the rest down by the replicas
+# it does not run, each number read from the render: FINAPP_DB_INSTANCES less that many, the server's figure the guard reads and the
+# test-only server's max_connections to instances x (writer + reporting) + reserved, and the quota less that many application pods, a pod's
+# share read from the rendered Deployment. So a run at three measures the rule, not the margin ten would leave it (the min-ready probe
+# needs the quota and the budget at the formula), and a run at the maximum changes only the autoscaler's minimum. Held at its count, the
+# fleet never moves on the autoscaler's metric where a run counts it: a run that lets the metric decide is P16-TSK-014's.
+fleet_patch() {
+    fp_hpa="$1/HorizontalPodAutoscaler.finapp-app.yaml"
+    fp_quota="$1/ResourceQuota.finapp.yaml"
+    fp_postgres="$1/StatefulSet.finapp-postgres.yaml"
+    fp_app="$1/Deployment.finapp-app.yaml"
+    fp_all="$1/all.yaml"
+    fp_floor=$(sed -n 's/^  minReplicas: \([0-9]*\)$/\1/p' "$fp_hpa")
+    fp_ceiling=$(sed -n 's/^  maxReplicas: \([0-9]*\)$/\1/p' "$fp_hpa")
+    [ -n "$fp_floor" ] && [ -n "$fp_ceiling" ] || cannot "the rendered autoscaler states no minReplicas or maxReplicas"
+    [ "$FLEET_REPLICAS" -ge "$fp_floor" ] && [ "$FLEET_REPLICAS" -le "$fp_ceiling" ] \
+        || cannot "a fleet of $FLEET_REPLICAS replicas is outside the kind overlay's $fp_floor to $fp_ceiling"
+    fp_drop=$((fp_ceiling - FLEET_REPLICAS))
+    fp_config=$(ls "$1"/ConfigMap.finapp-app-config*.yaml)
+    fp_instances=$(sed -n 's/^  FINAPP_DB_INSTANCES: "\([0-9]*\)"$/\1/p' "$fp_config")
+    fp_server=$(sed -n 's/^  FINAPP_DB_SERVER_MAX_CONNECTIONS: "\([0-9]*\)"$/\1/p' "$fp_config")
+    fp_reserved=$(sed -n 's/^  FINAPP_DB_RESERVED_CONNECTIONS: "\([0-9]*\)"$/\1/p' "$fp_config")
+    fp_writer=$(sed -n 's/^ *maximum-pool-size: *\([0-9]*\).*/\1/p' "$ROOT/app/src/main/resources/application.yaml" | head -1)
+    fp_reporting=$(sed -n 's/^ *pool-size: *\${FINAPP_DB_REPORTING_POOL_SIZE:\([0-9]*\)}.*/\1/p' "$ROOT/app/src/main/resources/application.yaml" | head -1)
+    [ -n "$fp_instances" ] && [ -n "$fp_server" ] && [ -n "$fp_reserved" ] && [ -n "$fp_writer" ] && [ -n "$fp_reporting" ] \
+        || cannot "the budget's numbers could not be read from the rendered ConfigMap and application.yaml"
+    [ "$fp_instances" = $((fp_ceiling + 3)) ] && [ "$fp_server" = $((fp_instances * (fp_writer + fp_reporting) + fp_reserved)) ] \
+        || cannot "the kind overlay's budget is not the formula at its maximum of $fp_ceiling: $fp_instances instances, $fp_server connections"
+    fp_pods=$(fp_quoted pods)
+    fp_req_cpu=$(fp_quoted requests.cpu)
+    fp_lim_cpu=$(fp_quoted limits.cpu)
+    fp_req_mem=$(fp_quoted requests.memory)
+    fp_lim_mem=$(fp_quoted limits.memory)
+    # What the quota loses with each application pod the run does not hold: that pod's one container's requests and limits.
+    fp_pod_req_cpu=$(fp_share requests cpu)
+    fp_pod_lim_cpu=$(fp_share limits cpu)
+    fp_pod_req_mem=$(fp_share requests memory)
+    fp_pod_lim_mem=$(fp_share limits memory)
+    # Only the forms this patch reads: anything else is refused here, never guessed at.
+    printf '%s\n' "$fp_pods" | grep -Eqx '[0-9]+' || cannot "the quota's pods ('$fp_pods') could not be read from the render"
+    for fp_value in "$fp_req_cpu" "$fp_lim_cpu" "$fp_pod_req_cpu" "$fp_pod_lim_cpu"; do
+        printf '%s\n' "$fp_value" | grep -Eqx '[0-9]+m?' || cannot "'$fp_value' is not a CPU quantity fleet_patch reads (the quota's, or an application pod's)"
+    done
+    for fp_value in "$fp_req_mem" "$fp_lim_mem" "$fp_pod_req_mem" "$fp_pod_lim_mem"; do
+        printf '%s\n' "$fp_value" | grep -Eqx '[0-9]+(Mi|Gi)' || cannot "'$fp_value' is not a memory quantity fleet_patch reads (the quota's, or an application pod's)"
+    done
+    fp_less_req_cpu=$(($(fp_milli "$fp_req_cpu") - fp_drop * $(fp_milli "$fp_pod_req_cpu")))
+    fp_less_lim_cpu=$(($(fp_milli "$fp_lim_cpu") - fp_drop * $(fp_milli "$fp_pod_lim_cpu")))
+    fp_less_req_mem=$(($(fp_mib "$fp_req_mem") - fp_drop * $(fp_mib "$fp_pod_req_mem")))
+    fp_less_lim_mem=$(($(fp_mib "$fp_lim_mem") - fp_drop * $(fp_mib "$fp_pod_lim_mem")))
+    fp_new_instances=$((fp_instances - fp_drop))
+    fp_new_server=$((fp_new_instances * (fp_writer + fp_reporting) + fp_reserved))
+    fp_new_pods=$((fp_pods - fp_drop))
+    fp_new_lim_cpu=$(fp_cores "$fp_less_lim_cpu")
+    sed -i "s/^\(  \)minReplicas: $fp_floor$/\1minReplicas: $FLEET_REPLICAS/; s/^\(  \)maxReplicas: $fp_ceiling$/\1maxReplicas: $FLEET_REPLICAS/" \
+        "$fp_hpa" "$fp_all"
+    sed -i "s/^\(  FINAPP_DB_INSTANCES: \)\"$fp_instances\"$/\1\"$fp_new_instances\"/; s/^\(  FINAPP_DB_SERVER_MAX_CONNECTIONS: \)\"$fp_server\"$/\1\"$fp_new_server\"/" \
+        "$fp_config" "$fp_all"
+    sed -i "s/^\( *- \)max_connections=$fp_server$/\1max_connections=$fp_new_server/" "$fp_postgres" "$fp_all"
+    sed -i "s/^\(    pods: \)\"$fp_pods\"$/\1\"$fp_new_pods\"/; s/^\(    requests.cpu: \)$fp_req_cpu$/\1${fp_less_req_cpu}m/
+        s/^\(    requests.memory: \)$fp_req_mem$/\1${fp_less_req_mem}Mi/; s/^\(    limits.cpu: \)\"\{0,1\}$fp_lim_cpu\"\{0,1\}$/\1$fp_new_lim_cpu/
+        s/^\(    limits.memory: \)$fp_lim_mem$/\1${fp_less_lim_mem}Mi/" "$fp_quota" "$fp_all"
+    # Every value it set, in the split files the run applies and in all.yaml, which the harness reads the budget from.
+    cat "$fp_hpa" "$fp_config" "$fp_postgres" "$fp_quota" > "$WORK/fleet-patched.yaml"
+    for fp_line in "  minReplicas: $FLEET_REPLICAS" "  maxReplicas: $FLEET_REPLICAS" "  FINAPP_DB_INSTANCES: \"$fp_new_instances\"" \
+        "  FINAPP_DB_SERVER_MAX_CONNECTIONS: \"$fp_new_server\"" "        - max_connections=$fp_new_server" "    pods: \"$fp_new_pods\"" \
+        "    requests.cpu: ${fp_less_req_cpu}m" "    requests.memory: ${fp_less_req_mem}Mi" "    limits.cpu: $fp_new_lim_cpu" \
+        "    limits.memory: ${fp_less_lim_mem}Mi"; do
+        grep -q -F -x -e "$fp_line" "$WORK/fleet-patched.yaml" && grep -q -F -x -e "$fp_line" "$fp_all" \
+            || cannot "the rendered kind overlay could not be set to $FLEET_REPLICAS replicas: '$fp_line' is not in the run's copy, a value it patches has moved"
+    done
+    log "the fleet at $FLEET_REPLICAS replicas of the overlay's $fp_ceiling: $fp_new_instances instances in the budget, the test-only server at $fp_new_server connections, the quota $fp_new_pods pods (the run's own copy)"
+}
+
+# fp_quoted <key>: a key of the rendered quota, its quotes taken off.
+fp_quoted() { sed -n "s/^    $1: \"\{0,1\}\([0-9a-zA-Z]*\)\"\{0,1\}$/\1/p" "$fp_quota"; }
+
+# fp_share <requests|limits> <cpu|memory>: the application pod's one container's value, from the rendered Deployment.
+fp_share() {
+    awk -v bound="$1" -v key="$2" '/^        resources:$/ {r = 1; next}
+        r && /^          [a-z]+:$/ {b = $1; sub(/:$/, "", b); next}
+        r && /^            [a-z]+: / {k = $1; sub(/:$/, "", k); if (b == bound && k == key) {v = $2; gsub(/"/, "", v); print v; exit}}
+        r && /^        [a-zA-Z]/ {r = 0}' "$fp_app"
+}
+
+# fp_milli <quantity>: CPU in millicores; fp_mib <quantity>: memory in MiB; fp_cores <millicores>: as the overlay writes a CPU limit. Each
+# is given only a form fleet_patch has checked, and none calls cannot: a command substitution is a subshell, and its finish would be its own.
+fp_milli() {
+    case $1 in *m) printf '%s' "${1%m}" ;; *) printf '%s' "$(($1 * 1000))" ;; esac
+}
+fp_mib() {
+    case $1 in *Gi) printf '%s' "$((${1%Gi} * 1024))" ;; *) printf '%s' "${1%Mi}" ;; esac
+}
+fp_cores() {
+    if [ $(($1 % 1000)) = 0 ]; then printf '"%s"' "$(($1 / 1000))"; else printf '%sm' "$1"; fi
+}
+
 wait_job() {
     # wait_job <namespace> <name> <seconds> <artefact name>: complete, or the step fails with the Job's log kept. A Job that has failed fails the step at once.
     deadline=$(( $(date +%s) + $3 ))
@@ -684,8 +787,9 @@ step data-tier
 render_overlay app overlays/kind
 A="$WORK/render/app"
 sed -i "s#finapp-app@sha256:0\{64\}#$IMAGE_APP_NM1#; s#finapp-migrator@sha256:0\{64\}#$IMAGE_MIGRATOR_NM1#" "$A/all.yaml" "$A/Deployment.finapp-app.yaml" "$A/Job.finapp-migrator.yaml"
-# The load scope's fleet at REHEARSAL_LOAD_REPLICAS (P16-TSK-007): the run's own rendered copy, the budget's formula at that count.
-[ "$SCOPE" != load ] || load_replicas_patch "$A"
+# The run's fleet at its count (P16-TSK-009; the load scope's REHEARSAL_LOAD_REPLICAS since P16-TSK-007), in the run's own rendered copy, the
+# budget's formula at that count. Every scope, the delivery's data tier among them: before anything is applied.
+fleet_patch "$A"
 # Only under kube-router, which programs a new pod asynchronously (see kube-router.yaml): a Job pod's first connection, a JVM's start after it is created, can be
 # refused before its policy exists, and the migrator is built to fail fast on that and leave retries to its Job. A wait in front of it keeps that failure out of this
 # run's record; the Job itself is the base's, unchanged, and kindnetd needs none of this.
@@ -1316,9 +1420,8 @@ WRITER_POOL=$(sed -n 's/^ *maximum-pool-size: *\([0-9]*\).*/\1/p' "$ROOT/app/src
 REPORTING_POOL=$(sed -n 's/^ *pool-size: *\${FINAPP_DB_REPORTING_POOL_SIZE:\([0-9]*\)}.*/\1/p' "$ROOT/app/src/main/resources/application.yaml" | head -1)
 BUDGET=$((FLEET_INSTANCES * (WRITER_POOL + REPORTING_POOL)))
 log "the budget's arithmetic: $FLEET_INSTANCES instances x ($WRITER_POOL + $REPORTING_POOL) = $BUDGET"
-# The load scope at REHEARSAL_LOAD_REPLICAS (P16-TSK-007) patched its rendered copy to the formula at that count: (N + 3) x (7 + 1).
-WANT_INSTANCES=6
-[ "$SCOPE" != load ] || WANT_INSTANCES=$((LOAD_REPLICAS + 3))
+# fleet_patch (P16-TSK-009) set the run's rendered copy to the formula at the run's count: (N + 3) x (7 + 1), N three but in the load scope.
+WANT_INSTANCES=$((FLEET_REPLICAS + 3))
 [ "$BUDGET" = $((WANT_INSTANCES * 8)) ] || fail "the overlay's budget is $BUDGET, and this rehearsal measures $WANT_INSTANCES x (7 + 1) = $((WANT_INSTANCES * 8))"
 
 REPORTING_LOGIN=$(kube -n finapp get secret finapp-app-secrets -o jsonpath='{.data.FINAPP_DB_REPORTING_PASSWORD}' | base64 -d)
@@ -1374,6 +1477,27 @@ assert_within_pods() {
     over=$(awk -F'\t' -v pool="$((WRITER_POOL + REPORTING_POOL))" 'NR>1 && $5+0 > $4*pool {n++} END {print n+0}' "$ART/samples-$1.tsv")
     [ "$over" = 0 ] || fail "$1: $over samples held more than $((WRITER_POOL + REPORTING_POOL)) connections for each pod: see samples-$1.tsv"
     pass "$1: no sample held more than $((WRITER_POOL + REPORTING_POOL)) connections for each pod it had"
+}
+
+# budget_ceiling: the release's step after its rollouts, and the load scope's after its census (P16-TSK-009, at the run's own count, ten
+# included). A peak is what one rollout or one load reached. Whether an operator is admitted with the fleet at its budget is a question about
+# the ceiling, so the connections are held there: sessions named as the fleet's, up to the budget exactly, and one operator tried while they stand.
+budget_ceiling() {
+    ceiling_have=$(fleet_connections)
+    ceiling_need=$((BUDGET - ceiling_have))
+    [ "$ceiling_need" -gt 0 ] || cannot "the fleet already holds $ceiling_have connections, and the ceiling is $BUDGET"
+    kube -n finapp exec -i finapp-postgres-0 -c postgres -- /bin/sh -c "i=0; while [ \$i -lt $ceiling_need ]; do PGAPPNAME=finapp psql -q -X -U finapp -d finapp -c 'SELECT pg_sleep(30)' >/dev/null 2>&1 & i=\$((i + 1)); done; wait" >> "$ART/apply.log" 2>&1 &
+    ceiling_holder=$!
+    ceiling_deadline=$(( $(date +%s) + 25 ))
+    while [ "$(date +%s)" -lt "$ceiling_deadline" ] && [ "$(fleet_connections)" -lt "$BUDGET" ]; do
+        sleep 1
+    done
+    ceiling_at=$(fleet_connections)
+    [ "$ceiling_at" = "$BUDGET" ] || cannot "the fleet could not be held at its budget: $ceiling_at of $BUDGET"
+    ceiling_total=$(psql_query -c "SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend'" | tr -d '[:space:]')
+    [ "$(operator_connect || true)" = 1 ] || fail "an operator was refused with the fleet at its budget of $BUDGET connections, $ceiling_total client connections open"
+    pass "an operator is admitted with the fleet held at its budget: $ceiling_at of $BUDGET, $ceiling_total client connections of the server's $(psql_query -c 'SHOW max_connections' | tr -d '[:space:]')"
+    wait "$ceiling_holder" 2>/dev/null || true
 }
 
 assert_flows_ran() {
@@ -1839,23 +1963,7 @@ observed=$(forged_counts)
 pass "a second real client lands in a bucket of its own: the key is the connection's address as the controller saw it"
 
 step budget-ceiling
-# The peaks above are what this rollout reached. Whether an operator is admitted with the fleet at its budget is a question about the ceiling, so the connections are held there: sessions
-# named as the fleet's, up to the budget exactly, and one operator tried while they stand.
-ceiling_have=$(fleet_connections)
-ceiling_need=$((BUDGET - ceiling_have))
-[ "$ceiling_need" -gt 0 ] || cannot "the fleet already holds $ceiling_have connections, and the ceiling is $BUDGET"
-kube -n finapp exec -i finapp-postgres-0 -c postgres -- /bin/sh -c "i=0; while [ \$i -lt $ceiling_need ]; do PGAPPNAME=finapp psql -q -X -U finapp -d finapp -c 'SELECT pg_sleep(30)' >/dev/null 2>&1 & i=\$((i + 1)); done; wait" >> "$ART/apply.log" 2>&1 &
-ceiling_holder=$!
-ceiling_deadline=$(( $(date +%s) + 25 ))
-while [ "$(date +%s)" -lt "$ceiling_deadline" ] && [ "$(fleet_connections)" -lt "$BUDGET" ]; do
-    sleep 1
-done
-ceiling_at=$(fleet_connections)
-[ "$ceiling_at" = "$BUDGET" ] || cannot "the fleet could not be held at its budget: $ceiling_at of $BUDGET"
-ceiling_total=$(psql_query -c "SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend'" | tr -d '[:space:]')
-[ "$(operator_connect || true)" = 1 ] || fail "an operator was refused with the fleet at its budget of $BUDGET connections, $ceiling_total client connections open"
-pass "an operator is admitted with the fleet held at its budget: $ceiling_at of $BUDGET, $ceiling_total client connections of the server's $(psql_query -c 'SHOW max_connections' | tr -d '[:space:]')"
-wait "$ceiling_holder" 2>/dev/null || true
+budget_ceiling
 
 step kill
 start_workload kill retry

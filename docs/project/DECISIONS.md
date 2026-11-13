@@ -1385,6 +1385,12 @@ window, and a person releases money movement. → [ADR-0128](../adr/ADR-0128-rec
 financial-operation availability stated apart from service availability; a read replica, if any, serves the reporting pool
 alone. → [ADR-0129](../adr/ADR-0129-availability-and-the-multi-region-stance.md)
 
+**The connection budget at ten replicas: a larger server, no smaller pool, no transaction-mode pooler yet** (owner decision C3,
+2026-11-13). `kind`'s test-only server is raised to the formula for ten (13 instances, 116 connections), each rehearsal run holding its
+fleet at its own count; staging unchanged; production's ceiling stays seven, ten taking a larger declared `max_connections` first once
+the ten-instance runs are made (`THREAT_MODEL.md` §6 item 56). A transaction-mode pooler is refused for now: the driver sets isolation
+per session, outside the transaction. → [ADR-0134](../adr/ADR-0134-the-connection-budget-at-ten-replicas.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

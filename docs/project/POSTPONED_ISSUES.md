@@ -621,3 +621,11 @@ commit and the date; do not delete the entry.
     ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
     commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
     discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
+  - **`P16-TSK-009`** (the connection budget at ten, `OPERATIONS_RUNBOOK.md` §11.49; `CAPACITY_MODEL.md` §4; ADR-0134): **E41**, the `load`
+    scope at ten replicas with the normal profile (`REHEARSAL_LOAD_PROFILE=normal REHEARSAL_LOAD_REPLICAS=10`): the autoscaler reading
+    metrics-server's CPU metric, each replica's pools at the engineering workload (`load/pools-per-replica.tsv`), the fleet's peak
+    within 13 x 8 with an operator admitted at it and with the fleet held at 104; §11.49's record. Also owed by the same change, since it
+    touches every scope's rendered copy: the first cluster run of `kind-rehearsal.sh`'s `fleet_patch` and of the `load` scope's new steps
+    at any count (the release scope at three on these bytes is already PI-024's). The peak during a rollout at ten is E26's
+    (`P16-TSK-014`). Nothing ran on a cluster: `fleet_patch` ran once by itself over a real render, and the manifest policies and the
+    budget's plants in containers (§11.49's record).
