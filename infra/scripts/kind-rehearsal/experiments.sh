@@ -640,10 +640,17 @@ experiments_sampler() {
     done
 }
 
+# experiments_prometheus <path and query>: the cluster's Prometheus asked on its own pod's loopback. On several nodes the API server's proxy
+# reaches a pod on another node from that node's address, which the observability namespace's default-deny need not admit; an exec does not
+# cross the network at all.
+experiments_prometheus() {
+    kube -n finapp-observability exec deploy/finapp-prometheus -c prometheus -- wget -q -T 20 -O - "http://127.0.0.1:9090$1"
+}
+
 # The correctness pages of SLOS.md section 3, every one a rule the cluster's Prometheus loaded, read once: prints the firing ones, or
 # UNREADABLE when Prometheus did not answer. Nothing printed is nothing firing.
 experiments_pages_firing() {
-    answer=$(telemetry_get finapp-prometheus:9090 "/api/v1/query?query=$(urlencode "ALERTS{alertstate=\"firing\",alertname=~\"$EXP_PAGE_REGEX\"}")" 2>/dev/null || true)
+    answer=$(experiments_prometheus "/api/v1/query?query=$(urlencode "ALERTS{alertstate=\"firing\",alertname=~\"$EXP_PAGE_REGEX\"}")" 2>/dev/null || true)
     case $answer in *'"status":"success"'*) ;; *) echo UNREADABLE; return 0 ;; esac
     printf '%s' "$answer" | grep -o '"alertname":"[^"]*"' | sed 's/.*:"\(.*\)"/\1/' | sort -u | tr '\n' ' '
 }
@@ -652,7 +659,7 @@ experiments_pages_setup() {
     EXP_PAGES=$(sed -n '/^## 3\. /,/^## 4\. /s/^| `\([A-Za-z]*\)` |.*/\1/p' "$ROOT/docs/architecture/SLOS.md")
     pages=$(printf '%s\n' "$EXP_PAGES" | grep -c . || true)
     [ "$pages" -ge 20 ] || cannot "only $pages correctness pages were read from SLOS.md section 3"
-    telemetry_get finapp-prometheus:9090 /api/v1/rules > "$EXP_ART/prometheus-rules.json" 2>&1 || cannot "the cluster's Prometheus did not list its rules"
+    experiments_prometheus /api/v1/rules > "$EXP_ART/prometheus-rules.json" 2>&1 || cannot "the cluster's Prometheus did not list its rules"
     for page in $EXP_PAGES; do
         grep -q "\"name\":\"$page\"" "$EXP_ART/prometheus-rules.json" || fail "the correctness page $page is not a rule the cluster's Prometheus loaded"
     done
