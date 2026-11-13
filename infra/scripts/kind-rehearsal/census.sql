@@ -33,8 +33,9 @@ SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'every entry balances
          GROUP BY entry_id, currency
         HAVING sum(CASE direction WHEN 'DEBIT' THEN amount_minor ELSE -amount_minor END) <> 0) unbalanced;
 
--- One effect per key, at the ledger (INV-IDEM-01): a posting's scope is its command's key, and no scope is posted twice. The column is not
--- UNIQUE yet (P16-TSK-011 lands that, after a census of exactly this), so this is the check that reads it, at every step and under load.
+-- One effect per key, at the ledger (INV-IDEM-01): a posting's scope is its command's key, and no scope is posted twice. The column is
+-- UNIQUE since ledger V037 (P16-TSK-011, over a census of exactly this); this still reads it, at every step and under load, so a journal
+-- whose index was dropped or left invalid is seen.
 -- [sampled during load]
 SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'one journal entry per posting scope',
        count(*) || ' scopes posted more than once'
