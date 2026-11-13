@@ -5097,21 +5097,6 @@ on the same pinned image (a base backup at `verify-full` through the slot, strea
 standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"), it is owed under
 `POSTPONED_ISSUES.md` PI-025 with E01's run on the final bytes.
 
-## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
-
-A signed callback no longer concludes anything by itself on the payment, instant, FX or corridor doors. Its evidence and dedupe
-commit, then the door asks the provider, and the delivery is acknowledged after that one inquiry. KYC's callbacks are outside
-this rule. So a callback's outcome now waits on one inquiry, bounded by that provider's timeout.
-
-| You see | It means | Do |
-|---|---|---|
-| A payment stays `*_UNKNOWN` or `AWAITING_PAYER` after its callback arrived | The inquiry failed or had no answer; nothing was adopted | Nothing. The resolution sweep asks again. If it persists, check the provider's inquiry endpoint |
-| `finapp.payments.webhook{outcome="unmappable"}` rising, with WARN lines saying the provider "has denied a signed callback for longer than its bound" | A signed callback the provider's own inquiry still denies, past that kind's `refute-after` bound | Treat as a possible **webhook key compromise** until shown otherwise, then rotate the key under `SECRET_MANAGEMENT.md`. Nothing has moved, and no reversal is needed on this signal alone |
-| The same series rising, with WARN lines saying "we cannot read" | The provider answered and the adapter cannot read it: a wire change. Nothing moves and each question stays open | Fix the adapter. The hints then conclude on their own |
-| WARN "contradicts the row" | The provider's answer disagrees with a concluded payment | A break: the row stands, the answer rests as evidence, and reconciliation will type it from settlement. Investigate with the provider |
-| `payments.callback_hint` rows with `concluded_at IS NULL` growing | Clearing, dispute or parking inquiries are not being answered | Check the provider's inquiry endpoints. The sweep's wait doubles from `finapp.payments.callback-hint.retry-after` (1 min) to `.retry-cap` (6 h). A denial is believed only past `.refute-after` (disputes 2 h, clearing 30 min, executions 15 min) |
-| WARN "never answered within their bound and are abandoned" | A hint passed `finapp.payments.callback-hint.give-up-after` (7 days) | The callback's evidence stands and settlement reconciliation is the backstop; find the notice in `provider_evidence` and reconcile it |
-
 ### 11.51 The event pipeline at load: three brokers, a broker lost, all lost, duplicates, delays, a scaled fleet and a day's replay (`P16-TSK-013`, ADR-0136)
 
 *Written by `P16-TSK-013` (2026-11-13) from what it built. **Nothing here has run on a cluster**: the owner postponed Phase 16's `kind`
@@ -5251,3 +5236,18 @@ Whether the door should take a day in one order is `THREAT_MODEL.md` §6 item 58
   stand-in outbox of two aggregates with waiting rows: both held and printed, and no advisory lock left after its `pg_advisory_unlock_all()`.
 - **Owed under PI-025**: every cluster run of this section - E08 (with the probe), E09, E22, E23 and E49 in the `experiments` scope at
   three replicas; E47 at three and at seven; E48.
+
+## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
+
+A signed callback no longer concludes anything by itself on the payment, instant, FX or corridor doors. Its evidence and dedupe
+commit, then the door asks the provider, and the delivery is acknowledged after that one inquiry. KYC's callbacks are outside
+this rule. So a callback's outcome now waits on one inquiry, bounded by that provider's timeout.
+
+| You see | It means | Do |
+|---|---|---|
+| A payment stays `*_UNKNOWN` or `AWAITING_PAYER` after its callback arrived | The inquiry failed or had no answer; nothing was adopted | Nothing. The resolution sweep asks again. If it persists, check the provider's inquiry endpoint |
+| `finapp.payments.webhook{outcome="unmappable"}` rising, with WARN lines saying the provider "has denied a signed callback for longer than its bound" | A signed callback the provider's own inquiry still denies, past that kind's `refute-after` bound | Treat as a possible **webhook key compromise** until shown otherwise, then rotate the key under `SECRET_MANAGEMENT.md`. Nothing has moved, and no reversal is needed on this signal alone |
+| The same series rising, with WARN lines saying "we cannot read" | The provider answered and the adapter cannot read it: a wire change. Nothing moves and each question stays open | Fix the adapter. The hints then conclude on their own |
+| WARN "contradicts the row" | The provider's answer disagrees with a concluded payment | A break: the row stands, the answer rests as evidence, and reconciliation will type it from settlement. Investigate with the provider |
+| `payments.callback_hint` rows with `concluded_at IS NULL` growing | Clearing, dispute or parking inquiries are not being answered | Check the provider's inquiry endpoints. The sweep's wait doubles from `finapp.payments.callback-hint.retry-after` (1 min) to `.retry-cap` (6 h). A denial is believed only past `.refute-after` (disputes 2 h, clearing 30 min, executions 15 min) |
+| WARN "never answered within their bound and are abandoned" | A hint passed `finapp.payments.callback-hint.give-up-after` (7 days) | The callback's evidence stands and settlement reconciliation is the backstop; find the notice in `provider_evidence` and reconcile it |

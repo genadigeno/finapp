@@ -107,36 +107,9 @@ brokers_replication() {
     printf '%s %s' "$factor" "$in_sync"
 }
 
-# brokers_config: the brokers' server.properties, for the ConfigMap finapp-kind-kafka-config. At one, the lines the harness wrote before
-# this file, unchanged; at three, the catalogued posture whole and the four listeners above, every pod's identity left to its start.
+# brokers_config: the brokers' server.properties at three, for the ConfigMap finapp-kind-kafka-config (the harness writes one broker's
+# lines itself, as before this file): the catalogued posture whole and the four listeners above, every pod's identity left to its start.
 brokers_config() {
-    if [ "$KAFKA_BROKERS" = 1 ]; then
-        # The posture, from the catalogued file, overriding only replication: one node.
-        sed -e '/^#/d' -e '/^$/d' \
-            -e 's/^default.replication.factor=.*/default.replication.factor=1/' \
-            -e 's/^min.insync.replicas=.*/min.insync.replicas=1/' \
-            -e 's/^offsets.topic.replication.factor=.*/offsets.topic.replication.factor=1/' \
-            "$ROOT/infra/kafka/broker.properties"
-        cat <<PROPERTIES
-process.roles=broker,controller
-node.id=1
-controller.quorum.voters=1@localhost:9093
-controller.listener.names=CONTROLLER
-listeners=SASL_SSL://:9092,CONTROLLER://localhost:9093,LOCAL://localhost:9094
-advertised.listeners=SASL_SSL://$KAFKA_HOST:9092,LOCAL://localhost:9094
-inter.broker.listener.name=LOCAL
-listener.security.protocol.map=CONTROLLER:PLAINTEXT,LOCAL:PLAINTEXT,SASL_SSL:SASL_SSL
-listener.name.sasl_ssl.scram-sha-512.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required;
-ssl.keystore.type=PEM
-ssl.keystore.location=/etc/finapp-kind-kafka-tls/keystore.pem
-authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer
-super.users=User:ANONYMOUS
-log.dirs=/var/lib/kafka/data
-transaction.state.log.replication.factor=1
-transaction.state.log.min.isr=1
-PROPERTIES
-        return 0
-    fi
     # The posture, whole: three copies, two in sync, no unclean election.
     sed -e '/^#/d' -e '/^$/d' "$ROOT/infra/kafka/broker.properties"
     voters=""
