@@ -284,8 +284,9 @@ hours at peak by the peak profile's step from 30 minutes at the average, so one 
 approval can be given, automatic or by a person: no bureau can be configured there (unresolved question 13), and without the bureau's
 total balance the exposure is unassessed (`INV-CRD-09`, `INV-CRD-10`). So BNPL purchases and instalments, lending repayments and loan
 credit decisions (§4.3) are not driven by any profile; a simulated bureau on `kind` is an application change, routed to `P16-TSK-018`.
-**(4)** The reference machine's Linux VM keeps a monotonic clock about 8% faster than its wall clock; the generator runs on the first,
-so its rates and latencies are about 8% higher than written in the host's seconds, and each run records the ratio.)*
+**(4)** The reference machine's Linux VM keeps a monotonic clock that can run faster than its wall clock, by 8% in E30's run and by
+0.5% in the isolation run three hours later; the generator runs on the first, so its rates and latencies are that much higher than
+written in the host's seconds, and each run records the ratio.)*
 
 ### 5.2 What is measured
 

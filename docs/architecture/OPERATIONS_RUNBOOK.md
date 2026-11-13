@@ -3241,6 +3241,7 @@ latest; the run, as its record names it.
 | §11.41 | `platform` | 3 | 1 | 4 | kind | 2026-11-13 | `722365ad`, `d8f907c4`, `7231d298` | `§11.41's runs 1 and 2; §11.43's tenth run` | — |
 | §11.42 | `platform` | 4 | 0 | 4 | containers, kind | 2026-11-13 | `d8f907c4`, `7231d298` | `§11.42's record; §11.43's tenth run` | — |
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
+| §11.45 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `89b8fc60`, `f021383f` | `§11.45's record: E30 at three replicas and the isolation run` | — |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -4884,11 +4885,12 @@ throttling), its locks (sessions waiting on locks, deadlocks), its I/O (sessions
 (its CPU, the outbox's age, the consumers' lag). A resource that saturates only because a later one does (a pool held by commits waiting on
 WAL) is named with the one that holds it, and the record says so.
 
-**The clocks of the reference machine.** Docker Desktop's Linux VM on WSL2 keeps a monotonic clock that runs faster than its wall clock,
-which follows the host's: on 2026-11-13 a JVM in a container counted 90.001 s on `System.nanoTime` while `currentTimeMillis` advanced
-83.074 s, and the node's uptime 489.7 s while the host's clock advanced 452.1 s (1.083 either way). k6 schedules its arrivals and times
-each request on the monotonic clock, so on this machine a profile's rates are carried about 8% faster than written in the host's seconds,
-and each latency reads about 8% longer than the host would measure it. The JVMs' own timers run on the same clock. Every run records the
+**The clocks of the reference machine.** Docker Desktop's Linux VM on WSL2 keeps a monotonic clock that can run faster than its wall
+clock, which follows the host's: on the morning of 2026-11-13 a JVM in a container counted 90.001 s on `System.nanoTime` while
+`currentTimeMillis` advanced 83.074 s, and the node's uptime 489.7 s while the host's clock advanced 452.1 s (1.083 either way); in the
+isolation run that afternoon the ratio was 1.005. k6 schedules its arrivals and times each request on the monotonic clock, so a profile's
+rates are carried that much faster than written in the host's seconds, and each latency reads that much longer than the host would
+measure it. The JVMs' own timers run on the same clock. Every run records the
 ratio (`clock.tsv`), cuts its stages by it, and states rates a host second; latencies are recorded as the client saw them. E27's
 demonstration run carried its "10 minutes" in 557 s of the host's time for that reason (its `k6-series.csv.gz`, read again by
 `P16-TSK-007`).
@@ -4900,6 +4902,24 @@ it, before the census. Run with the stress profile, the reading names the databa
 
 **Failure and rollback.** As §11.43. The seven-replica overlay exists only in the run's directory; the probe's index exists again before
 the census and goes with the cluster.
+
+**The record** (2026-11-13, the reference machine, one cluster at a time beside `P16-TSK-019`). The development runs ran on the
+working tree over the head named; their logs stayed in the task's scratch folder. The two measured runs keep their artefacts under
+`build/rehearsal/experiments`, and `CAPACITY_MODEL.md` §3.4 reads them.
+
+| Run | Date, UTC | Head | Profile, replicas | Reached | Result |
+|---|---|---|---|---|---|
+| dev1 | 07:36-07:44 | `0a09a273` | the demonstration for 2 minutes, 3, with a first setup of the credit flows | the setup's onboarding | RED, the harness's: its client edited while the run read it |
+| dev2 | 08:01-08:07 | `0a09a273` | as dev1 | the data tier | stopped by hand, a step of the run's secrets hung; nothing judged |
+| dev3 | 08:07-08:17 | `0a09a273` | as dev1 | the loans' setup | RED: every referral's approval refused `422 credit.ExposureUnassessable`, the finding that took the credit flows out of the profiles (above) |
+| dev4 | 08:28-09:02 | `737b86f1` | the stress profile shortened to 4 minutes, 3 | the load and its judge | RED: 13 checkouts unresolved, their creating answer a `500` after the session committed and the token lost; a lost token is now recorded abandoned, and the defect is routed to `P16-TSK-016` |
+| E30 at 3 | 09:06-09:32, the load 09:15-09:32 | `89b8fc60` | stress, 3 | step 4 of 9 | RED: the 35th sample could not read a correctness gauge (the source-join census's batches starved of the pool) and stopped the load; the first limit read from its tables, the database's CPU (`CAPACITY_MODEL.md` §3.4) |
+| isolation at 3 | 11:24-12:07, the load 11:36-12:02 | `f021383f` | isolation, 3 | the end | GREEN: 57 samples, every one `PASS`; every movement resolved by its key; the settlement file taken whole; the census green; the platform's own signals rehearsed |
+
+Not run, owed under `POSTPONED_ISSUES.md` PI-025 (the owner postponed Phase 16's `kind` runs on 2026-11-13): the normal, peak and
+sustained profiles at three and seven replicas (E29), the stress profile at seven (E30), the planted slow statement (E31) and the
+demonstration on this section's tree. So the replica patch has never run a fleet at seven, and the probe has never been seen to name
+the database. `LoadRehearsalContractTest` holds both as written.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

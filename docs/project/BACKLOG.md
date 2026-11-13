@@ -29367,7 +29367,7 @@ on none:
   (`P16-TSK-029`); one machine. **Tests**: one Gradle run of 39 named guard classes (the two touched, the guards reading the
   changed files, the migrator's three), 531 tests, 0 failed; no module, ArchUnit or database tier owed by this task.
 
-**P16-TSK-007 — The workload baseline: the demonstration run and the engineering workload measured** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)
+**P16-TSK-007 — The workload baseline: the demonstration run and the engineering workload measured** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-007` from master `0a09a273`, wave C beside `-019`, master `be669bd2` merged in; no migration, no application code, no ADR; its remaining cluster runs owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)" until its gate)
 - **Objective**: measure the engineering test workload and name the platform's first limit on the reference machine, with the
   evidence.
 - **Affected components**: `CAPACITY_MODEL.md` (filled); the register; no code.
@@ -29411,6 +29411,34 @@ on none:
   card flows' latency only from runs whose simulator answers the card rail's inquiry: before it did (the seventh and eighth
   runs) card and checkout confirmations ran at a p50 of about 8 s, with it (the ninth) at 73 ms and 126 ms, the platform
   inquiring the provider about twice per card payment (once per signed callback); what held the confirmations was not measured.
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-007` from master `0a09a273`, master `be669bd2` merged in once; no
+  migration, no application code, no ADR; `OPERATIONS_RUNBOOK.md` §11.45 is the procedure and the record, `CAPACITY_MODEL.md` §3.4 the
+  measurement, `RESILIENCE_EXPERIMENTS.md` E29–E31 the rows; the owner's word mid-task, "we dont need long running checks and tests",
+  ended the cluster runs, and the rest is owed under `POSTPONED_ISSUES.md` PI-025):* **The harness**: the normal, peak, sustained,
+  stress and isolation profiles (`infra/scripts/kind-rehearsal/load/*.json`), every operation named at the target's peak and scaled per
+  stage, run by `ramping-arrival-rate` (still an open model, `model.js`) and judged on the sum over the stages; only the stress profile
+  runs past the break, recording the iterations it drops; `REHEARSAL_LOAD_REPLICAS` 3 to 7 patches the run's own rendered overlay to the
+  connection budget's formula and waits for the fleet; every run cuts its measures by stage in the host's seconds (`k6/stages.tsv`,
+  `stages-resources.tsv`: every pod's cgroup CPU, throttling and memory, the fleet's JVM and pool sums, the database's time), records
+  the VM's clock against the host's, and writes what it wrote per minute (events, entries, settlement files and batches); a run a
+  sample stops keeps what it measured and stays red; a checkout whose creating answer was lost is recorded abandoned, two sessions
+  under one key still unresolved; the settlement file waits past mid-run for the load's first card capture; `REHEARSAL_PROBE=slow-statement`
+  drops the relay's index on the run's own server and recreates it as `V006` defines it. **Not driven**: BNPL, lending repayments and
+  loan credit decisions. The setup and scenarios this entry's routed note asked for were built and run on a development cluster,
+  where every approval was refused `422 credit.ExposureUnassessable`: no `kind` deployment can configure a bureau (unresolved question 13),
+  so no credit approval exists there (`INV-CRD-09`, `INV-CRD-10`). The setup and scenarios were removed, and each profile says why,
+  routed to `P16-TSK-018`. **Runs**: E30 at three replicas (commit `89b8fc60`) carried its third step (0.39 of the target's peak as
+  written, 0.42 in host seconds) within every objective and broke at its fourth, where a sample could not read and stopped the load:
+  **the first limit is the database's CPU**, four fifths of its statement time the merchant API's payable read folding the account's
+  whole history. The isolation profile at three (commit `f021383f`) was green, each operation alone carried at the target's peak.
+  The ratio of the target to the engineering workload is about 2.4 (2.6 counting the movements not driven). The machine's WAL stall
+  (`P16-TSK-006`'s note above) did not recur in either run: no request waited on a pool before E30's fourth step, and none in the
+  isolation run. The card confirmations, with the simulator answering inquiries, ran at a p50 of 97 ms in the mix. **Routed**:
+  `P16-TSK-008` (the payable read), `P16-TSK-016` (a checkout's `500` after its session committed; the census starved of the pool),
+  `P16-TSK-013` (the outbox relay behind checkouts alone at the target's peak), `P16-TSK-018` (a simulated bureau). **Owed under
+  PI-025**: E29 at three and seven, E30 at seven, E31 and the demonstration on this tree. **Guards**: `LoadRehearsalContractTest` holds
+  the profiles, the replica patch, the per-stage cuts, the lost token, the probe's index and the undriven reasons; six probes in two
+  rounds, each caught (`MUTATION_TESTING.md` §2).
 
 **P16-TSK-008 — Hot rows, locks, deadlocks and plans under load** — `PLANNED`
 - **Objective**: measure every known contended financial resource and the database's behaviour under the concurrent-financial and
@@ -29640,6 +29668,15 @@ on none:
 - **Definition of done**: `DOD-EVENT`, `DOD-TEST`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.6 rehearsed (closing that part of PI-024 under C11).
 - **Risk**: Medium (machine load). **Cx**: L.
+- **Routed from `P16-TSK-007` (2026-11-13): the relay's ceiling, met by checkouts alone at the target's peak.** In the isolation run
+  (`CAPACITY_MODEL.md` §3.4; commit `f021383f`, artefacts `build/rehearsal/experiments/isolation/r3`, three replicas, one broker)
+  checkouts alone at 5.5 a second wrote 44.4 events a second, and the delay from write to publication climbed from 6 s to 59 s in four
+  minutes (`load/written-events-per-minute.tsv`) while the database held 0.46 cores and the broker 0.13. Each replica's relay drains
+  at most 8 aggregates a poll, one poll a second after the last (`OutboxRelay`'s default constructor, `finapp.outbox.poll-interval`),
+  and the candidate query hands every relay the same oldest heads, which they then try-lock against each other: read from the code,
+  not measured. At E30's step 3 (27.3 events a second) publication stayed within 4 s. Measure the relay's ceiling in aggregates and
+  events a second at three and seven replicas, and whether more relays add drain; `event_freshness` (60 s) is at stake well below
+  the target's 89.3 events a second at peak.
 
 **P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `PLANNED`
 - **Objective**: the ten-instance answer counted. Ten application replicas carry the engineering workload on `kind`, scale between

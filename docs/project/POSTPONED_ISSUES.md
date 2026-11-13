@@ -608,3 +608,10 @@ commit and the date; do not delete the entry.
 - **Owner of the fix:** the owner, after the project's phases, with PI-004, PI-023 and PI-024; the coordinator reminds the owner
   at each phase exit.
 - **Owed runs, by task:**
+  - **`P16-TSK-007`** (`OPERATIONS_RUNBOOK.md` §11.45, whose record lists what ran; `CAPACITY_MODEL.md` §3.4): **E29**, the normal,
+    peak and sustained profiles at three and at seven replicas (`REHEARSAL_LOAD_PROFILE=sustained`, which holds all three, with
+    `REHEARSAL_LOAD_REPLICAS` 3 and 7); **E30**, the stress profile at seven replicas (`REHEARSAL_LOAD_REPLICAS=7`), the per-replica
+    saturation compared with E30's run at three; **E31**, the entry's probe, the planted slow statement (`REHEARSAL_PROBE=slow-statement`
+    with the stress profile shortened) at three replicas, with its `MUTATION_TESTING.md` §2 row; and **E27's second run**, the
+    demonstration on the task's tree, the entry's acceptance that its invariants hold at every sample. Ran before the word: E30 at three
+    replicas (commit `89b8fc60`, red at its fourth step: the first limit) and the isolation profile at three (commit `f021383f`, green).

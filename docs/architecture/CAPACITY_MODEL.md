@@ -13,14 +13,14 @@ environment, and nothing here calls the platform ready for production.*
   changes.
 - **Measured**: produced by a run on the reference machine's `kind`, named with its workload, its machine, its date, its commit
   and its artefacts. Every measured cell below is `—` until `P16-TSK-007` fills it, and nothing is measured on this page yet.
-  *(2026-11-13, `P16-TSK-007`: §3.4 and §3.5 hold the measured cells, each naming its run; an operation no `kind` deployment can run
-  keeps `—` with its reason.)*
+  *(2026-11-13, `P16-TSK-007`: §3.4 holds the measured cells, each naming its run; an operation no `kind` deployment can run keeps `—`
+  with its reason, and the runs not made are owed under `POSTPONED_ISSUES.md` PI-025.)*
 
-**The reference machine's two clocks** (`OPERATIONS_RUNBOOK.md` §11.45). Its Linux VM's monotonic clock runs about 8% faster than its
-wall clock, which follows the host's (1.083 measured on 2026-11-13). The load generator schedules arrivals and times requests on the
-monotonic clock, so a rate written in a profile is carried about 8% faster in the host's seconds, and a latency reads about 8% longer
-than the host would measure it. A measured rate here is a host second's; a latency is the client's, as k6 counted it. Each run records
-its own ratio.
+**The reference machine's two clocks** (`OPERATIONS_RUNBOOK.md` §11.45). Its Linux VM's monotonic clock can run faster than its wall
+clock, which follows the host's: 1.083 times in E30's run on the morning of 2026-11-13, 1.005 times in the isolation run that afternoon.
+The load generator schedules arrivals and times requests on the monotonic clock, so a rate written in a profile is carried that much
+faster in the host's seconds, and a latency reads that much longer than the host would measure it. A measured rate here is a host
+second's; a latency is the client's, as k6 counted it. Each run records its own ratio (`load/clock.tsv`, `load/workload.txt`).
 
 A `kind` number is never presented as production capacity. The production target is never presented as measured (ADR-0126
 decision 1).
@@ -195,28 +195,57 @@ handlers name in the handler catalogue, and applies the ones it handles (`PHASE_
 At peak the busiest topic, `payments`, carries 1,140,000 ÷ 36,000 ≈ 32 records a second over 12 partitions. `P16-TSK-013`
 measures the skew by key.
 
-### 3.4 Resource cost per operation: measured, left for `P16-TSK-007`
+### 3.4 Resource cost per operation: measured (`P16-TSK-007`)
 
-**Measured.** Every cell is `—` until `P16-TSK-007`'s run fills it. A filled row names its workload (the engineering test
-workload unless it says otherwise), the machine, the date, the commit and the artefacts. CPU, memory, GC, threads, pool and
-database time are what `PHASE_16_PLAN.md` §4.3 and §5.2 say is measured, never stated in advance.
+**Measured** by two runs on the reference machine (a Windows host, Docker Desktop's WSL2 VM with 12 cores and 15.6 GiB, one `kind`
+node; each replica limited to 2 cores and 1 GiB, its heap 75% of it, PostgreSQL to 1 core and 1 GiB, the broker to 1 core and 1 GiB:
+`deploy/overlays/kind`; the images built from the branch's tree, whose application code and migrations are master `0a09a273`'s):
 
-| Operation | Throughput carried | p50 | p95 | p99 | Error rate | CPU per operation | Memory | GC | Busy threads | Pool wait and hold | Database time per operation | Workload, machine, run |
+- **E30 at three replicas**, the stress profile, 2026-11-13 09:14–09:32 UTC, commit `89b8fc60`, artefacts
+  `build/rehearsal/experiments/E30/r3`. Its step 3 is the highest it carried within every objective: 0.39 of the target's peak as
+  written, 0.42 in the host's seconds (its clock ratio 1.083), held 277 s. A sample stopped it in step 4 (below).
+- **The isolation profile at three replicas**, 2026-11-13 11:36–12:07 UTC, commit `f021383f`, artefacts
+  `build/rehearsal/experiments/isolation/r3`: four minutes with no load, then each operation alone at the target's peak for four
+  minutes (its clock ratio 1.005). Green: 57 samples, every one `PASS`; every movement resolved by its key; the census green.
+
+A throughput or latency outside brackets is the operation's in E30's step 3, where the whole mix ran; in brackets, alone at the target's
+peak (isolation). Every cost is from the isolation run: the operation's stage less the idle stage, divided by its arrivals a host
+second. CPU is milliseconds of a core per operation: the replicas', the database's and the edge's. Memory is the three replicas' cgroups
+together, against 3 GiB of limits, and their heap. GC is the replicas' collection time per operation. The pools are the fleet's 21
+writer connections: active mean and most, and the longest wait. Database time is the statements' execution time per operation, with
+the statements and commits it took.
+
+| Operation | Throughput carried | p50 (ms) | p95 (ms) | p99 (ms) | Error rate (`5xx`) | CPU per operation (ms) | Memory | GC | Busy threads | Pool wait and hold | Database time per operation | Workload, machine, run |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Internal transfer | — | — | — | — | — | — | — | — | — | — | — | — |
-| Card or checkout payment | — | — | — | — | — | — | — | — | — | — | — | — |
-| Wallet top-up or withdrawal | — | — | — | — | — | — | — | — | — | — | — | — |
-| Account or balance read | — | — | — | — | — | — | — | — | — | — | — | — |
-| Sign-in | — | — | — | — | — | — | — | — | — | — | — | — |
-| Provider callbacks | — | — | — | — | — | — | — | — | — | — | — | — |
-| Merchant API | — | — | — | — | — | — | — | — | — | — | — | — |
-| Settlement ingestion | — | — | — | — | — | — | — | — | — | — | — | — |
-| Reconciliation | — | — | — | — | — | — | — | — | — | — | — | — |
-| Credit decision | — | — | — | — | — | — | — | — | — | — | — | — |
-| Lending repayment | — | — | — | — | — | — | — | — | — | — | — | — |
-| BNPL purchase or instalment | — | — | — | — | — | — | — | — | — | — | — | — |
-| Events written and consumed | — | — | — | — | — | — | — | — | — | — | — | — |
-| Ledger journal entries | — | — | — | — | — | — | — | — | — | — | — | — |
+| Internal transfer | 1.18 a second (2.76, the target's peak 2.78) | 48 (38) | 184 (58) | 347 (87) | 0 of 341 attempts (0 of 691) | replicas 29, database 26, edge 5 | 1,686 MiB; heap 508 MB | 2.4 ms | not exported | 2.0 active (3 at most), wait ≤ 23 ms, none pending | 6.8 ms; 138 statements, 8.8 commits | E30 step 3; isolation stage 5 |
+| Card or checkout payment | 2.35 a second (5.49, peak 5.56) | 97 (99) | 349 (444) | 601 (1,348) | 0 of 1,362 (0 of 2,750) | replicas 86, database 74, edge 21, broker 18, simulator 5 (its two callbacks inside) | 1,707 MiB; heap 513 MB | 0.4 ms | not exported | 4.5 (14), wait ≤ 119 ms, none pending | 36 ms; 246 statements, 24 commits | E30 step 3; isolation stage 7 |
+| Wallet top-up or withdrawal (top-ups by card) | 0.47 a second (1.10, peak 1.11) | 81 (63) | 308 (123) | 569 (175) | 0 of 401 (0 of 815) | replicas 76, database 50, edge 23, broker 15, simulator 8 (the stage's settlement file inside) | 1,695 MiB; heap 507 MB | under 0.1 ms | not exported | 2.1 (3), wait ≤ 23 ms, none pending | 13 ms; 186 statements, 26 commits | E30 step 3; isolation stage 6 |
+| Account or balance read | 23.5 a second (55.4, peak 55.6) | 11 (11) | 67 (23) | 137 (37) | 0 of 6,494 (0 of 13,232) | replicas 3.7, database 1.5, edge 3.7 | 1,522 MiB; heap 435 MB | under 0.1 ms | not exported | 2.4 (5), wait ≤ 4 ms, none pending | 0.3 ms; 9 statements, 2 commits | E30 step 3; isolation stage 3 |
+| Sign-in | 2.81 a second (6.63, peak 6.67) | 65 (58) | 208 (207) | 296 (254) | 0 of 779 (0 of 1,582) | replicas 68 (the credential hash), database 4, edge 4 | 1,636 MiB; heap 440 MB | 12 ms, 0.36 pauses | not exported | 2.3 (7), wait ≤ 5 ms, none pending | 0.9 ms; 15 statements, 3 commits | E30 step 3; isolation stage 4 |
+| Provider callbacks | two per card capture: 3,349 deliveries over the isolation run, 157 of them redeliveries, about 11 a second in its checkout stage | 20 (the sender's) | 113 | 278 | 0 not accepted of 3,349 | inside the card payment's and the top-up's | — | — | not exported | — | — | isolation, `load/callbacks-load-*.tsv` |
+| Merchant API | 4.69 a second (11.05, peak 11.1) | 47 (6) | 474 (13) | 753 (21) | 0 of 1,298 (0 of 2,639) | replicas 6, database 0.9, edge 4.6 (alone, while the merchant's payable history was short) | 1,496 MiB; heap 444 MB | under 0.1 ms | not exported | 2.1 (3), wait ≤ 2 ms, none pending | 0.2 ms alone; the payable read's mean 20 ms at E30's step 1, 74 ms at step 2, 255 ms at step 3 (below) | E30 step 3; isolation stage 2 |
+| Settlement ingestion | one PSP file of 4 captures (8 lines with their fees), accepted 5 s after it arrived | — | — | — | the file taken whole, every line an item | not separable (inside the top-up stage) | — | — | — | — | — | isolation, `load/written-settlement.tsv`, `load/settlement.log` |
+| Reconciliation | that file's batch completed 6 s after the file arrived, every capture allocated to its expectation | — | — | — | none abandoned | not separable | — | — | — | — | — | isolation, as above |
+| Credit decision | — | — | — | — | — | — | — | — | — | — | — | not driven: no `kind` deployment can configure a bureau (unresolved question 13), so no decision there is the target's (`INV-CRD-10`); a simulated bureau is routed to `P16-TSK-018` |
+| Lending repayment | — | — | — | — | — | — | — | — | — | — | — | not driven: no loan can be approved on `kind` (`INV-CRD-09`, `INV-CRD-10`), as above |
+| BNPL purchase or instalment | — | — | — | — | — | — | — | — | — | — | — | not driven: no BNPL agreement can be approved on `kind`, as above |
+| Events written and consumed | 27.3 written a second, published 0.6 to 1.0 s after their write on average, 4.0 s at most; 44.4 a second alone in the checkout stage, published 6 s after their write in its first minute and 59 s in its last (the relay behind, below) | — | — | — | no dead letter | — | — | — | — | — | — | E30 step 3 and isolation stage 7, `load/written-events-per-minute.tsv` |
+| Ledger journal entries | 3.97 a second, 12.6 lines (5.55 and 22.2 alone in the checkout stage) | — | — | — | 0 refused | inside each movement's | — | — | — | — | — | E30 step 3 and isolation stage 7, `load/written-entries-per-minute.tsv` |
+
+Busy request threads are not exported: `tomcat_threads_busy_threads` has no series, because Tomcat's MBean registry is off. The live
+threads stayed between 310 and 327 through the isolation run, 325 in E30's first three steps. Memory and heap grew by stage, not by
+operation, so each figure is the fleet's at that stage, and never above 57% of the replicas' limits. The settlement file and its
+reconciliation were too little work to separate from the top-ups' stage. The posting's share of a movement's latency (§3.1's last row)
+was not separated from its command's.
+
+**The outbox relay behind at the target's checkout peak** (isolation stage 7, `load/written-events-per-minute.tsv`,
+`load/stages-resources.tsv`). Checkouts alone at the target's peak wrote 44.4 events a second, and the delay from write to publication
+climbed from 6 s to 59 s over the stage's four minutes (the outbox's oldest pending row 48 s at its last sample) while no resource was
+near its limit (the database at 0.46 cores, the broker at 0.13). Each replica's relay drains at most 8 aggregates a poll, one poll a second
+after the last (`OutboxRelay`'s default, `finapp.outbox.poll-interval` `PT1S`), and the three relays read the same oldest heads and
+compete for them (read from the code, not measured), so the fleet's drain is bounded by aggregates, not by events or CPU.
+`event_freshness` (published within 60 s) would be breached within minutes of the target's checkout peak, and the target writes twice
+this (§3.1: 89.3 a second). Routed to `P16-TSK-013`.
 
 **The first limit of the stress profile** (`PHASE_16_PLAN.md` §5.4, read in the fixed order generator, edge, application CPU,
 threads, pool, database CPU, locks, I/O, broker): **the database's CPU**, at three replicas. E30's run (2026-11-13 09:14–09:32 UTC,
@@ -231,7 +260,7 @@ correctness gauge and stopped the load there, the stage's 277 s complete. Read i
 | The generator | 0 dropped | 0 dropped | 0 dropped | 0 dropped | Its busiest container at 31% of its one core; the callback senders at most 6% |
 | The edge | 0.13 cores | 0.15 | 0.19 | 0.26 | Never held by its limit; its `429`s at step 4 are requests piling up behind slow replicas (the per-source in-flight bound) |
 | The replicas' CPU | 0.52 cores of 6 | 0.50 | 0.52 | 0.60 | Three replicas at 2 cores each, held back in under 0.1% of their CPU periods |
-| Their threads | 325 live | 324 | 326 | 559 (656 at most) | Climbing only at step 4, requests waiting; busy request threads are not exported (`tomcat.threads.busy` is absent) |
+| Their threads | 325 live | 324 | 326 | 559 (656 at most) | Climbing only at step 4, requests waiting; busy request threads are not exported |
 | The pools | 2.7 active (6 at most) | 3.3 (8) | 5.0 (9) | 16.3 (21: all) | At step 4 every connection held, up to 313 waiting, the wait at its 5 s bound: held by statements the database ran slowly |
 | **The database's CPU** | 0.23 cores of 1 | 0.35 | 0.60 | **1.10** | Held back by its limit in 1%, 5%, 34% and **100%** of its CPU periods; its statements' time 0.08, 0.20, 0.70 and 8.4 s a second |
 | Its locks | 0 waiting | 0 | 0 | 1.2 (4 at most) | No deadlock |
@@ -247,7 +276,21 @@ defects, routed to `P16-TSK-016`: twelve checkouts at step 4 whose creating answ
 (`CheckoutService.create` reads the session back in a second transaction, which the pool's 5 s bound refused), and the source-join
 census starved of the pool, which is what stopped the sampler.
 
-**The ratio of the production target to the engineering test workload**: **—**, left for `P16-TSK-007`.
+The isolation run says the limit is the mix's, not any one operation's: each operation alone at the target's peak was carried within its
+objective with no `5xx`, the database at most 0.46 cores (checkouts), and the merchant API alone cost 0.9 ms of the database's CPU a
+read while the merchant's history was short. In the mix every checkout lengthens the history every merchant read folds, so the read's
+cost climbs with the run's age as well as its rate.
+
+**Not measured**, owed under `POSTPONED_ISSUES.md` PI-025 (the owner, 2026-11-13, postponing Phase 16's `kind` runs until after the
+project's phases): the stress profile at seven replicas (E30), so the per-replica saturation at seven against three is not compared; the
+normal, peak and sustained profiles at three and seven (E29), so nothing here says how long the step-3 mix holds; the planted slow
+statement (E31). The first limit is named at three replicas only.
+
+**The ratio of the production target to the engineering test workload: about 2.4**, and 2.6 counting the money movements no `kind`
+deployment can drive. The engineering workload is E30's step 3, every driven operation at 0.42 of the target's peak in the host's
+seconds (0.39 as written, times its clock ratio 1.083), so the target is 1 / 0.42 ≈ 2.4 times it; its money movements were 3.99 a
+second against the target's 10.5 (§3.1), 2.6 times. The step held 277 s; no longer hold was run (E29, owed above), and because the
+merchant read's cost grows with the history, a longer hold may carry less.
 
 ---
 
@@ -323,13 +366,21 @@ These are candidates, each confirmed or struck by measurement:
 - risk's whole-day proofs, and the rescreening census counting each version whole;
 - the single writer itself, at a volume far above the production target.
 
+*(2026-11-13, `P16-TSK-007`, measured on `kind` at three replicas, §3.4.)* Two more, found by the runs: **the merchant API's payable
+read**, a whole-history read that folds the merchant payable account's every line on each call, the database's CPU in E30's break
+(routed to `P16-TSK-008`); and **the outbox relay's drain**, at most 8 aggregates a poll per replica each second, behind the target's
+checkout peak with no resource near its limit (routed to `P16-TSK-013`). Neither is confirmed at the production target's shape (2,000
+merchants, ten replicas), and neither has been changed.
+
 Each one confirmed becomes an ADR before any change.
 
 ---
 
 ## 6. Keeping this model true
 
-- `P16-TSK-007` fills §3.4 and names the first limit. A later run replaces a cell only with its own named run.
+- `P16-TSK-007` fills §3.4 and names the first limit. A later run replaces a cell only with its own named run. *(2026-11-13: filled
+  from two runs at three replicas; the runs at seven, the normal, peak and sustained profiles and the planted slow statement are owed
+  under `POSTPONED_ISSUES.md` PI-025.)*
 - A change to W1–W8 is the owner's. It changes the derived cells that cite it, by a dated note.
 - A change to the code that adds or removes an event on a flow changes §3.2. The counts were read on master `6981c167`.
 - A change to the pool, the replicas, the surge or the server changes §4. `ConnectionPoolSizingGuard` holds the live arithmetic,
