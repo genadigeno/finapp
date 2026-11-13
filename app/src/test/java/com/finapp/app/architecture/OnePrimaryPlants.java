@@ -1,7 +1,9 @@
 package com.finapp.app.architecture;
 
 import com.finapp.app.database.ReportingConnections;
+import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.HikariPoolMXBean;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -49,6 +51,52 @@ final class OnePrimaryPlants {
     static class PlantedSecondPool {
         HikariDataSource pool() {
             return new HikariDataSource();
+        }
+    }
+
+    /** A second pool built by a constructor reference, which no constructor call shows. */
+    static class PlantedPoolByReference {
+        java.util.function.Supplier<HikariDataSource> pools() {
+            return HikariDataSource::new;
+        }
+    }
+
+    /** A pool's configuration, pointed at another server and built. */
+    static class PlantedPoolConfig {
+        HikariDataSource toReplica(String url) {
+            HikariConfig config = new HikariConfig();
+            config.setJdbcUrl(url);
+            return new HikariDataSource(config);
+        }
+    }
+
+    /** A connection borrowed from the writer pool held by its own type, around the writer's {@code DataSource}. */
+    static class PlantedConnectionFromThePool {
+        Connection borrow(HikariDataSource writer) throws SQLException {
+            return writer.getConnection();
+        }
+    }
+
+    /** The driver's own source taken out of the writer pool, to connect beside it. */
+    static class PlantedDriverSourceFromThePool {
+        Connection beside(HikariDataSource writer) throws SQLException {
+            return writer.unwrap(DataSource.class).getConnection();
+        }
+    }
+
+    /** The writer pool closed by a class that only holds it. */
+    static class PlantedPoolClosed {
+        void stop(HikariDataSource writer) {
+            writer.close();
+        }
+    }
+
+    /** The writer pool's statistics read, as the shedding door reads its queue: holding the pool's type is no second server. */
+    static class PlantedPoolReader {
+        int waiting(DataSource writer) throws SQLException {
+            HikariDataSource pool = writer.unwrap(HikariDataSource.class);
+            HikariPoolMXBean started = pool.getHikariPoolMXBean();
+            return started == null ? pool.getMaximumPoolSize() : started.getThreadsAwaitingConnection() + (int) pool.getConnectionTimeout();
         }
     }
 

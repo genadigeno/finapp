@@ -42,13 +42,39 @@
 # `CommittedConfigurationHoldsNoSecretTest`, which is default-deny over configuration files
 # it discovers rather than lists. The two mechanisms are blind in different directions and
 # neither substitutes for the other. See docs/architecture/SECRET_MANAGEMENT.md.
+#
+# THE SECOND ROUND (2026-11-13)
+#
+# The scan over master's whole history (1584 commits) found 85 findings, all `generic-api-key`, all under */src/test/, and seven
+# distinct values, first committed between 2026-09-06 and 2026-10-27: fixture passwords (`a-perfectly-fine-pw-7` in 71 test files,
+# `-8` for a changed password), two patterned fixture keys (`0123...` and its reverse), a marker a test asserts is never emitted, a
+# fixture payout token, and one assertion string that is no credential at all (`hoursAgo=NEVER`). Each value was checked to occur in
+# no production source or configuration. Each is allowlisted below as its exact, anchored literal, under the same reasoning as the
+# first: the rule stays on everywhere, no file or path is exempt, and a different value under the same name still fails. They went
+# unnoticed because nothing in this repository's working routine reads CI's result or runs this scan locally: the job has been red
+# on every push since the first of them. Running infra/scripts/secret-scan.sh at each phase exit is the remedy that costs nothing;
+# a new fixture should reuse an allowlisted value rather than invent another.
 
 [extend]
 # Keep every default rule. This file adds an allowlist; it never removes detection.
 useDefault = true
 
 [allowlist]
-description = "Fixture idempotency key (P0-TSK-017). Not a credential - see ADR-0019."
+description = "Test fixtures, each the exact literal: an idempotency key (P0-TSK-017) and the fixture passwords, keys and markers of 2026-11-13. None is a credential - see the header and ADR-0019."
 regexes = [
   '''3f6d1a2e-9c47-4b18-8a0f-2b7c5d9e1104''',
+  # PASSWORD: 1 finding in 1 test file, first committed 2026-09-06; never outside src/test.
+  '''^zqx\-sink\-marker\-9c15b8\-never\-emitted$''',
+  # PASSWORD, password: 73 findings in 71 test files, first committed 2026-09-17; never outside src/test.
+  '''^a\-perfectly\-fine\-pw\-7$''',
+  # KEY: 5 findings in 5 test files, first committed 2026-09-20; never outside src/test.
+  '''^0123456789abcdef0123456789abcdef$''',
+  # ANOTHER_KEY, OTHER_KEY: 2 findings in 2 test files, first committed 2026-09-20; never outside src/test.
+  '''^fedcba9876543210fedcba9876543210$''',
+  # token: 1 finding in 1 test file, first committed 2026-09-23; never outside src/test.
+  '''^pdr_4f9ZkQ2mX$''',
+  # credentialChange: 1 finding in 1 test file, first committed 2026-10-25; an assertion string, never outside src/test.
+  '''^hoursAgo=NEVER$''',
+  # NEW_PASSWORD: 2 findings in 1 test file, first committed 2026-10-27; never outside src/test.
+  '''^a\-perfectly\-fine\-pw\-8$''',
 ]

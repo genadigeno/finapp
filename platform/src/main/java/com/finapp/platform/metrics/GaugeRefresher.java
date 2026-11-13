@@ -38,8 +38,9 @@ import lombok.extern.slf4j.Slf4j;
  *       context turns this background reader off as it does every other), so a healthy instance's first scrape
  *       usually holds numbers. A reading tracked while running is asked at once.
  *   <li><strong>A read that hangs holds the one thread</strong>, so every reading of the instance goes to no value once
- *       its ask has waited {@code staleAfter}: that is the signal, nothing is being read. Only a restart frees a read
- *       the network black-holed (the data source sets no {@code socketTimeout}).
+ *       its ask has waited {@code staleAfter}: that is the signal, nothing is being read. A read the network
+ *       black-holed is given up by the data source's {@code socketTimeout}, five minutes (ADR-0139); before that only a
+ *       restart frees it.
  * </ul>
  *
  * <p>Framework-free, as the rest of {@code platform}: {@code app} binds it to Micrometer (every {@code finapp.}

@@ -174,7 +174,10 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
      * @param jdbcUrl the database the writer's pool reaches - the same database, the same transport rules
      * @param transport the writer's driver properties ({@code spring.datasource.hikari.data-source-properties}), applied
      *     first: an {@code sslmode} set there rather than in the URL is what {@code TransportSecurityGuard} judged, and a
-     *     pool that dropped it would reach the same remote database under the driver's default - unencrypted, silently
+     *     pool that dropped it would reach the same remote database under the driver's default - unencrypted, silently. The
+     *     writer's {@code socketTimeout} comes with them (ADR-0139): five minutes, above report generation's four-minute
+     *     budget, so a black-holed generation read is given up rather than held until the pod is replaced
+     *     ({@code DatabaseSocketTimeoutTest#theReportingPoolCarriesIt})
      * @param size connections this instance holds, at least one
      * @param registry the application's meter registry, which the pool's {@code hikaricp.connections.*} join once it starts
      */

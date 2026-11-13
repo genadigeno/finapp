@@ -142,10 +142,15 @@ SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'no event dead-letter
   FROM platform.outbox_event
  WHERE dead_lettered_at IS NOT NULL;
 
--- Nothing a consumer could not apply: a parked record is a stopped partition until a person releases it.
+-- Nothing a consumer could not apply: a parked record is a stopped partition until a person releases it. A record two persons
+-- discarded through the door (an approved discard of it, whose approver is not its proposer) is decided, not stopped, and its row
+-- stays as evidence, never swept: E68's poison records end so (P16-TSK-013). Every other row counts, a handled one included.
 -- [sampled during load]
 SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'nothing parked', count(*) || ' parked records'
-  FROM platform.inbox_parked_record;
+  FROM platform.inbox_parked_record p
+ WHERE NOT (p.state = 'DISCARDED'
+            AND EXISTS (SELECT 1 FROM platform.dead_letter_discard d
+                         WHERE d.subject_kind = 'INBOX_RECORD' AND d.subject_id = p.park_id AND d.status = 'APPROVED'));
 
 -- No orphaned lease: a claim whose holder has gone and whose lease has run out, unreclaimed. A running claim's lease is short; one past its expiry
 -- after the workload has stopped was held by a pod that died and has been left behind.

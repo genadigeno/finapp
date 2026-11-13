@@ -7,7 +7,12 @@ import com.finapp.app.architecture.OnePrimaryPlants.*;
 import com.finapp.app.database.ReportingConnections;
 import com.finapp.app.database.ReportingPool;
 import com.finapp.app.security.DatabaseEndpoint;
+import com.finapp.app.shedding.HikariPoolQueue;
 import com.tngtech.archunit.core.domain.Dependency;
+import com.tngtech.archunit.core.domain.JavaAccess;
+import com.tngtech.archunit.core.domain.JavaConstructorCall;
+import com.tngtech.archunit.core.domain.JavaConstructorReference;
+import com.tngtech.archunit.core.domain.JavaFieldAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaMethod;
@@ -189,17 +194,31 @@ class OnePrimaryServesEveryDoorTest {
                 .anyMatch(found -> found.startsWith(ReportingPool.class.getName() + " -> " + HikariDataSource.class.getName()));
         assertThat(imported.stream().map(ProductionModules::of).filter(module -> module != null).distinct().sorted().toList())
                 .as("every production module was imported").containsExactlyElementsOf(ProductionModules.onClasspathWithProductionClasses());
+        // The shedding door reads the writer pool's queue (ADR-0137): the rule is seen judging those reads, and passing them.
+        JavaClass queue = imported.get(HikariPoolQueue.class);
+        assertThat(poolAccesses(queue)).as("the shedding door's reads of the writer pool, judged")
+                .contains("HikariDataSource.getHikariPoolMXBean", "HikariPoolMXBean.getThreadsAwaitingConnection",
+                        "HikariDataSource.getMaximumPoolSize", "HikariDataSource.getConnectionTimeout");
+        assertThat(connectionBuilders(imported, candidate -> candidate.equals(queue))).as("reading the writer pool builds nothing").isEmpty();
     }
 
     @Test
-    @DisplayName("a class building a HikariCP pool, or a connection through DriverManager, is refused")
+    @DisplayName("a class building, configuring or borrowing from a pool, or connecting through DriverManager, is refused; one reading the"
+            + " writer pool's statistics is not")
     void theConnectionRuleHasTeeth() {
-        JavaClasses planted = new ClassFileImporter().importClasses(PlantedSecondPool.class, PlantedDriverConnection.class,
-                PlantedDoorOnTheWriter.class);
-        assertThat(connectionBuilders(planted, candidate -> true))
-                .anyMatch(found -> found.startsWith(PlantedSecondPool.class.getName() + " -> " + HikariDataSource.class.getName()))
-                .anyMatch(found -> found.startsWith(PlantedDriverConnection.class.getName() + " -> " + DRIVER_MANAGER))
-                .noneMatch(found -> found.startsWith(PlantedDoorOnTheWriter.class.getName()));
+        JavaClasses planted = new ClassFileImporter().importClasses(PlantedSecondPool.class, PlantedPoolByReference.class,
+                PlantedPoolConfig.class, PlantedConnectionFromThePool.class, PlantedDriverSourceFromThePool.class,
+                PlantedPoolClosed.class, PlantedDriverConnection.class, PlantedDoorOnTheWriter.class, PlantedPoolReader.class);
+        List<String> found = connectionBuilders(planted, candidate -> true);
+        for (Class<?> refused : List.of(PlantedSecondPool.class, PlantedPoolByReference.class, PlantedPoolConfig.class,
+                PlantedConnectionFromThePool.class, PlantedDriverSourceFromThePool.class, PlantedPoolClosed.class)) {
+            assertThat(found).as("%s refused", refused.getSimpleName())
+                    .anyMatch(line -> line.startsWith(refused.getName() + " -> " + POOL));
+        }
+        assertThat(found)
+                .anyMatch(line -> line.startsWith(PlantedDriverConnection.class.getName() + " -> " + DRIVER_MANAGER))
+                .as("the writer's DataSource used as every door uses it").noneMatch(line -> line.startsWith(PlantedDoorOnTheWriter.class.getName()))
+                .as("the writer pool's statistics read, as the shedding door reads them").noneMatch(line -> line.startsWith(PlantedPoolReader.class.getName()));
     }
 
     // ------------------------------------------------------------------ 3. a second pool declared
@@ -265,13 +284,40 @@ class OnePrimaryServesEveryDoorTest {
         return false;
     }
 
-    /** What turns an address into a connection: a target of this name is a way to a server of one's own. */
+    /**
+     * What turns an address into a connection, whatever is done with it: the driver's own types (a driver connection unwrapped
+     * included), the JDK's driver manager and driver, a {@code javax.sql} source other than {@link DataSource} itself, Spring Boot's
+     * builders and Spring's driver-backed data sources. Any reference to one is a way to a server of one's own.
+     */
     static boolean buildsAConnection(String target) {
-        return target.startsWith("com.zaxxer.hikari.") || target.startsWith("org.postgresql.")
+        return target.startsWith("org.postgresql.")
                 || target.equals(DRIVER_MANAGER) || target.equals("java.sql.Driver")
                 || (target.startsWith("javax.sql.") && !target.equals(DATA_SOURCE))
                 || target.startsWith("org.springframework.boot.jdbc.") || target.startsWith("org.springframework.boot.autoconfigure.jdbc.")
                 || (target.startsWith("org.springframework.jdbc.datasource.") && target.endsWith("DataSource"));
+    }
+
+    /** The pool's own types (HikariCP): a class may hold one and read it, never build, configure, borrow from or change one. */
+    static final String POOL = "com.zaxxer.hikari.";
+
+    /**
+     * The pool's reads a class other than the reporting pool may make (`P16-TSK-016`'s shedding reads the writer pool's queue this way,
+     * ADR-0137): its statistics, through its MXBean and what that counts, and its fixed settings. A list that admits, so a new read is a
+     * reviewed addition and anything else is refused: a constructor, a constructor reference, {@code HikariConfig}'s and the pool's
+     * setters, {@code getConnection}, {@code getDataSource} and {@code unwrap} (a driver's own source or connection), the pool's
+     * properties (a live, mutable map), {@code close}, an eviction, a suspension.
+     */
+    static final Set<String> POOL_READS = Set.of("getHikariPoolMXBean", "getHikariConfigMXBean", "getThreadsAwaitingConnection",
+            "getActiveConnections", "getIdleConnections", "getTotalConnections", "getMaximumPoolSize", "getMinimumIdle",
+            "getConnectionTimeout", "getValidationTimeout", "getIdleTimeout", "getMaxLifetime", "getLeakDetectionThreshold",
+            "getPoolName", "isRunning", "isClosed", "isReadOnly", "isAutoCommit");
+
+    /** Whether one access to a pool's type only reads the pool, as {@link #POOL_READS} lists. */
+    static boolean onlyReadsThePool(JavaAccess<?> access) {
+        if (access instanceof JavaConstructorCall || access instanceof JavaConstructorReference) {
+            return false;
+        }
+        return access instanceof JavaFieldAccess || POOL_READS.contains(access.getName());
     }
 
     private static List<String> connectionBuilders(JavaClasses classes, Predicate<JavaClass> judged) {
@@ -286,8 +332,20 @@ class OnePrimaryServesEveryDoorTest {
                     found.add(candidate.getName() + " -> " + target + ": " + dependency.getDescription());
                 }
             }
+            for (JavaAccess<?> access : candidate.getAccessesFromSelf()) {
+                String owner = access.getTargetOwner().getName();
+                if (owner.startsWith(POOL) && !onlyReadsThePool(access)) {
+                    found.add(candidate.getName() + " -> " + owner + ": " + access.getDescription());
+                }
+            }
         }
         return found;
+    }
+
+    /** Every access a class makes to a pool's type, whatever it is: the census's view of a class the rule must judge. */
+    private static List<String> poolAccesses(JavaClass candidate) {
+        return candidate.getAccessesFromSelf().stream().filter(access -> access.getTargetOwner().getName().startsWith(POOL))
+                .map(access -> access.getTargetOwner().getSimpleName() + "." + access.getName()).toList();
     }
 
     private static List<String> dataSourceBeans(JavaClasses classes) {

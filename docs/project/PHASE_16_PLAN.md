@@ -173,7 +173,7 @@ recorded result; **Planned** means written and never applied; **Absent** means n
 | Telemetry | Rehearsed | Two collectors (`deploy/observability/base/collector-workload.yaml`); Prometheus, Alertmanager, Tempo, Loki one each in the `kind` overlay (`deploy/observability/overlays/kind/backends.yaml`); 13 rule files (`infra/prometheus/rules/`); SLOs (`docs/architecture/SLOS.md`); the edge, the migrator and the stack's own lines unshipped and unalerted (item 43 (b)) | `-003`; saturation signals for load (`-006`) |
 | Resilience mechanisms | Implemented, hand-built | **No resilience library** (no Resilience4j in `gradle/libs.versions.toml`). Per-adapter `HttpClient` connect timeouts (`PspWireClient`, `SchemeWireClient`, the credit, FX, KYC and payout adapters); unknown outcomes swept by inquiry (`PaymentSweeperDatabaseTest#indeterminateMarksUnknownOnceAndNeverFails`); outbox retry with the relay's own backoff (`OutboxRelaySchedule`); inbox failure backoff (`InboxConsumers`); a per-instance bulkhead on hinted inquiries (`CallbackInquiryBulkhead`); risk's read budget with a recorded fail-safe (`EvaluationBudget`, ADR-0108); cluster-wide abuse limits in PostgreSQL (`WindowCounter`, `P15-TSK-022`); the request size bound (`RequestSizeLimitFilter`, 1 MiB) | Inventoried and validated (§8); load shedding added (`-016`) |
 | Backup and restore | Rehearsed (logical, containers) | `infra/scripts/restore-rehearsal.sh`, `RestoreVerification`, `RestoreRehearsalScriptTest`; the first rule (no money before verification) enforced by role logins (`OPERATIONS_RUNBOOK.md` §11.35); its lending and BNPL proofs judged no subject (item 44 (a)); no WAL archiving or point-in-time restore anywhere local | `-024` |
-| Database failover | Procedure only | `OPERATIONS_RUNBOOK.md` §11.40: "the failover drill is Phase 16's"; no socket timeout on the data source (`application.yaml`, item 42 (h)) | `-022` |
+| Database failover | Procedure only | `OPERATIONS_RUNBOOK.md` §11.40: "the failover drill is Phase 16's"; no socket timeout on the data source (`application.yaml`, item 42 (h)) *(2026-11-13: five minutes, ADR-0139; the drill built as E05 and E06, its runs owed under PI-025)* | `-022` |
 | Load and stress tooling | Absent (HTTP); Implemented (in-process) | No HTTP load tool. In-process storms exist, own-container tier, each with its census: `BnplStormDatabaseTest`, `LendingStormDatabaseTest`, `SettlementReconciliationStormDatabaseTest`, `MultiRailConservationStormDatabaseTest`, `MerchantConservationStormDatabaseTest`, `FxCrossBorderStormDatabaseTest`, `CreditDecisionStormDatabaseTest`, `RiskStormTest`; `SustainedConcurrentPostingDatabaseTest` (`INV-BAL-02` under sustained posting) | k6 (C5, `-006`); the storms stay PI-004's |
 | Fault injection | Absent | Only the rehearsal's own steps (a pod kill, a database restart, a broker scaled to zero — the last two never run, PI-024) | Toxiproxy and primitives (C6, `-019`) |
 | Multi-region | Absent | ADR-0121's follow-up: "Phase 16 adds the multi-AZ and multi-region variants and cross-region backup" | `-026`, designed-only |
@@ -327,7 +327,7 @@ production target, becomes an ADR before any change.
 
 ### 6.1 Connection pooling and transaction duration
 
-Hikari per instance, fixed-size (7 + 1 reporting), `connectTimeout` 5 s, no `socketTimeout` (`application.yaml`). `-009`
+Hikari per instance, fixed-size (7 + 1 reporting), `connectTimeout` 5 s, no `socketTimeout` (`application.yaml`; five minutes since 2026-11-13, ADR-0139). `-009`
 measures, at the sustained and burst profiles: pending connections and wait per instance, the share of time a connection is
 in a transaction, transaction duration percentiles per top statement, idle-in-transaction time. Transaction duration is a
 correctness concern here as well as a capacity one, since several arbiters hold a row lock for a transaction's length
@@ -441,6 +441,14 @@ restore term is a measured rate rather than a guess (§11.2).
 | Retention and replication | Retention below the dedupe window; RF 3, min ISR 2 in the reference; RF 1 on `kind` | A test-only three-broker KRaft on `kind` with the reference settings |
 | Broker failure | Outbox holds rows (`OutboxRelayTest#brokerUnavailabilityRetriesAndLosesNothing`); the `incidents` broker step never ran (PI-024) | One of three brokers killed at peak (no outage: ISR 2 holds); all three stopped for 10 minutes (outage: rows wait, readiness holds, `event_freshness` burns, nothing lost); recovery and drain measured |
 
+*(Erratum, 2026-11-13, `P16-TSK-013`, `OPERATIONS_RUNBOOK.md` §11.51, ADR-0136. **(1)** The three-broker cluster runs where the
+experiments and the pipeline's load runs run, from the run's own rendered copy of the `kind` overlay, whose broker is three-capable and
+committed at one: the other scopes' own steps assume one broker, and moving them is `THREAT_MODEL.md` §6 item 58 (a). **(2)** "Scale 3 →
+10 → 3" is built as 3 → 7 → 3 (E48), today's ceiling; ten is `P16-TSK-014`'s, on C3's larger budget. **(3)** E23's delay is held at the
+relay, by its own advisory lock on a few aggregates, so the records reach the consumers late and out of order across aggregates. **(4)**
+The relay's ceiling was read from the code and changed by ADR-0136 before it was measured at three and seven replicas: E47 measures it.
+None of these has run: owed under `POSTPONED_ISSUES.md` PI-025.)*
+
 **Scaling consumers must not violate domain ordering or create a duplicate financial effect.** It cannot by construction —
 a record's effect is one inbox transaction keyed by `(consumer, dedupe_key)` — and `-013` proves it at load with the census,
 since a construction is a claim until it is counted. **Exactly-once is not claimed** because Kafka offers a mode; the
@@ -459,7 +467,7 @@ resolve by inquiry); it never becomes a resend.
 
 | Pattern | Exists | Validation and Phase 16 work |
 |---|---|---|
-| Timeouts | Connect timeouts per adapter; the pool's 5 s wait; `statement_timeout` armed on long reads; risk's 250 ms read budget; **no socket timeout** on the main data source (item 42 (h)) | `-018` inventories every outbound call's connect, request and overall bound into one table; `-022` decides the socket timeout from the measured longest statement and the failover's interruption |
+| Timeouts | Connect timeouts per adapter; the pool's 5 s wait; `statement_timeout` armed on long reads; risk's 250 ms read budget; **no socket timeout** on the main data source (item 42 (h); five minutes since 2026-11-13, from the code's armed bounds, its measurement owed under PI-025: ADR-0139) | `-018` inventories every outbound call's connect, request and overall bound into one table; `-022` decides the socket timeout from the measured longest statement and the failover's interruption |
 | Retries, exponential backoff, jitter | Outbox and inbox retry with backoff; screening retry; sweeps re-attempt on their tick; no command is retried by the platform itself | `-018`: every retry classified (a)/(b)/(c) above, and jitter where several instances retry the same dependency at once |
 | Circuit breakers | None as a library; the provider rails' availability is an operator's audited fact (ADR-0060 §4) | `-018` measures whether a provider outage wastes threads; a breaker, if added, only short-circuits calls whose failure is already safe (an inquiry, a read), and an automatic rail availability is C12's |
 | Bulkheads | `CallbackInquiryBulkhead`; the reporting pool separate from the main pool; abuse counts bounded per instance (`max-concurrent-counts` 3) | `-016`: a bounded slot for each class of work that can starve another (operator reports, provider inquiries, money-moving commands) |

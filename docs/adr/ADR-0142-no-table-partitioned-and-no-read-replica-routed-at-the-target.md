@@ -99,8 +99,10 @@ standby. So a deployment's URL alone could put either pool on a copy.
      the target's peak leaves free (E29 and E30 at seven replicas, owed by `P16-TSK-007`).
 3. **The guard, criterion 6's first branch.** One primary data source serves every door, held in layers:
    - no production class but `DatabaseEndpoint` names a database's address, in any module's bytes;
-   - no production class but `ReportingPool` builds a pool or a connection (HikariCP, the driver, `DriverManager`, a `javax.sql` source
-     other than `DataSource`, Spring's builders and driver-backed sources);
+   - no production class but `ReportingPool` builds a pool or a connection (the driver, `DriverManager`, a `javax.sql` source other
+     than `DataSource`, Spring's builders and driver-backed sources, and HikariCP's constructors, its configuration, a connection
+     borrowed from it, its driver source unwrapped, its setters and its close). A class may hold the writer pool's own type to read
+     its statistics and fixed settings, as the load-shedding door reads its queue (ADR-0137), and nothing else of it;
    - no production `@Bean` declares a `DataSource`, so the writer is Spring Boot's one auto-configured pool;
    - only report generation's wiring reaches the reporting pool (its own package, and `AccountingBeans`' two methods that hand it to the
      run generator), with the entry's probe planted: a money-moving door wired to that pool goes red (`OnePrimaryServesEveryDoorTest`);

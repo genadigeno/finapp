@@ -179,7 +179,7 @@ final class CallbackHintWorld implements AutoCloseable {
     final ProviderEvidenceStore<Connection> evidenceStore = stores(ProviderEvidenceStore.class, new EvidenceWrites());
     final CallbackHintStore<Connection> hintStore = new Hints();
     final InboxConsumer<Connection> inbox = new InboxConsumer<>(new InboxRecords(), CLOCK, Duration.ofDays(1));
-    final CallbackInquiryBulkhead bulkhead = new CallbackInquiryBulkhead(1);
+    final CallbackInquiryBulkhead bulkhead = new CallbackInquiryBulkhead(1, registry);
     final CallbackAppliers appliers = new RecordingAppliers();
     final PaymentProvider psp = new ScriptedPsp();
     final PushRail scheme = new ScriptedScheme();

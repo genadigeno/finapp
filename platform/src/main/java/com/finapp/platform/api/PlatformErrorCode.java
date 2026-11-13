@@ -109,6 +109,15 @@ public enum PlatformErrorCode implements ErrorCode {
     TEMPORARILY_UNAVAILABLE("api.TemporarilyUnavailable", 503, "Temporarily unavailable; try again shortly."),
 
     /**
+     * The instance shed the request before serving it (`P16-TSK-016`, ADR-0137): its connections were queued, its command permits
+     * held, or the request had already waited too long to finish its command. Decided before the handler was entered, so nothing was
+     * done - no idempotency claim, no row, no posting - and the same request under the same key is a first attempt when it comes back.
+     * {@code Retry-After} says when, jittered so that a crowd shed together does not return together. Not a statement about the
+     * request, and the same answer for every caller and route.
+     */
+    OVERLOADED("api.Overloaded", 503, "Busy; nothing was done. Retry the same request after the time given."),
+
+    /**
      * Something failed that the client cannot do anything about.
      *
      * <p>The catch-all, and the one that matters most for {@code INV-AUD-02}: its title says

@@ -591,6 +591,34 @@ class OutboxRelayTest {
     }
 
     @Test
+    @DisplayName("a candidate another instance drained after this one read its list takes no slot of the batch (P16-TSK-013, ADR-0136)")
+    void aDrainedCandidateTakesNoSlot() throws Exception {
+        // Written by P16-TSK-013 and owed to the database pass (POSTPONED_ISSUES.md PI-023); OutboxRelaySlotTest holds the counting
+        // hermetically. The late instance reads its candidates, then - before it locks any - the first drains the three oldest. The late
+        // one must fill its batch of three from the rest, not spend it on aggregates already published.
+        for (int i = 0; i < 6; i++) {
+            writeEvent(IDS.next());
+        }
+        RecordingPublisher first = new RecordingPublisher();
+        RecordingPublisher late = new RecordingPublisher();
+        AtomicInteger opened = new AtomicInteger();
+        OutboxRelay lateRelay = new OutboxRelay(() -> {
+            if (opened.incrementAndGet() == 2) {
+                new OutboxRelay(DatabaseRoles::bootstrap, first, IMPATIENT, 3, 100, OutboxRelay.Abandonments.NOT_RECORDED).pollOnce();
+            }
+            return DatabaseRoles.bootstrap();
+        }, late, IMPATIENT, 3, 100, OutboxRelay.Abandonments.NOT_RECORDED);
+
+        RelayPollResult result = lateRelay.pollOnce();
+
+        assertThat(first.deliveryCount()).as("the first instance drained the three oldest").isEqualTo(3);
+        assertThat(result.published()).as("the late one's batch filled from the other three").isEqualTo(3);
+        assertThat(result.aggregatesDrained()).isEqualTo(3);
+        assertThat(result.batchFull()).isTrue();
+        assertThat(late.deliveryCount() + first.deliveryCount()).as("every event once between them").isEqualTo(6);
+    }
+
+    @Test
     @DisplayName("eight instances polling one backlog publish every event exactly once between them")
     void concurrentInstancesPublishEachEventOnce() throws Exception {
         int aggregates = 12;
