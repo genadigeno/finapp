@@ -217,6 +217,12 @@ class StampOrderedReadsAreJudgedTest {
                 GAUGE);
         read("platform.OutboxBacklog|MIN_MAX|min(coalesce(replay_ordered_at, occurred_at))", 2, Judgement.DISPLAYS,
                 GAUGE);
+        // P16-TSK-010 (platform V015): the claimed segment's recorded time range. The rows are the queue's, every queued row taken in
+        // turn under the head row's lock; these two only describe the period the manifest indexes.
+        read("platform.claim_audit_archive_segment|MIN_MAX|max(a.occurred_at)", 1, Judgement.DISPLAYS,
+                "the segment's last_occurred_at, recorded beside its rows for the manifest's index: nothing branches on it, and the rows are chosen by the queue, never by a stamp");
+        read("platform.claim_audit_archive_segment|MIN_MAX|min(a.occurred_at)", 1, Judgement.DISPLAYS,
+                "the segment's first_occurred_at, recorded beside its rows for the manifest's index: nothing branches on it, and the rows are chosen by the queue, never by a stamp");
         read("reconciliation.JdbcBreakCaseStore|SINGLE_ROW|id", 1, Judgement.NAMED,
                 "the break's parked item for the resolution template (a proposal and its approval derive one amount from it): the partial uniques on suspense_item admit one live holding of an item, and a break holds one; the id only makes a rare multi-item parking the same answer for both reads, never by a clock");
         read("reconciliation.JdbcBreakReadings|MIN_MAX|min(raised_at)", 1, Judgement.DISPLAYS,
