@@ -1039,3 +1039,7 @@ else
     wanted platform-books && { step platform-books; incidents_books; }
     wanted platform-database-restart && { step platform-database-restart; incidents_database_restart; }
 fi
+# The sequence ended. A development run that names neither scope's last step leaves `wanted`'s refusal of it as this file's status,
+# which the harness sources under `set -e`, so every assertion held and the run still read COULD NOT RUN (P16-TSK-017's first E28
+# run, 2026-11-13). A step that fails has already left through `fail` or `cannot`.
+:

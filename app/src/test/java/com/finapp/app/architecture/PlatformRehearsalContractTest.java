@@ -268,6 +268,16 @@ class PlatformRehearsalContractTest {
     }
 
     @Test
+    @DisplayName("the sourced sequence ends in a zero status, so a development run that names neither scope's last step ends GREEN"
+            + " or RED by its assertions, never COULD NOT RUN by `wanted`'s refusal (P16-TSK-017's first E28 run)")
+    void theSequenceEndsInAZeroStatus() {
+        String tail = platform.replace("\r\n", "\n").stripTrailing();
+        assertThat(tail).endsWith("\n:");
+        assertThat(tail.substring(tail.lastIndexOf("\nfi\n"))).as("the no-op follows the sequences' fi")
+                .doesNotContain("wanted platform-");
+    }
+
+    @Test
     @DisplayName("the raw writes to the books are found by their own pages, triaged read-only, and removed as the plant's teardown,"
             + " never as a procedure; the census is whole after")
     void theRawWritesAreFoundByTheirPagesAndRemovedAsTeardown() {
