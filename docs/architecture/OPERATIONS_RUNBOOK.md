@@ -3241,6 +3241,7 @@ latest; the run, as its record names it.
 | §11.41 | `platform` | 3 | 1 | 4 | kind | 2026-11-13 | `722365ad`, `d8f907c4`, `7231d298` | `§11.41's runs 1 and 2; §11.43's tenth run` | — |
 | §11.42 | `platform` | 4 | 0 | 4 | containers, kind | 2026-11-13 | `d8f907c4`, `7231d298` | `§11.42's record; §11.43's tenth run` | — |
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
+| §11.46 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `a6fee3a1` | `§11.46's record: E01's run and the probes` | — |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -4808,6 +4809,160 @@ times); `unbalanced-entry` on the kept cluster (a 3-minute load), the entry plan
 `FAIL` on the trial balance (EUR net 1 over 1,387 lines), one unbalanced entry and one account its balance no longer explains, the
 load stopped there; `sampler-disabled` on the same cluster (a 2-minute load), refused at the judge (`the samples do not cover the
 load (0 samples)`). The cluster was deleted and the lock released at 01:55Z.
+
+### 11.46 Running a failure experiment and reading its record (`P16-TSK-019`, ADR-0127)
+
+**What it is.** The `kind` rehearsal's `experiments` scope (`infra/scripts/kind-rehearsal.sh`, `kind-rehearsal/experiments.sh`): the
+toolkit every failure experiment of `RESILIENCE_EXPERIMENTS.md` runs on. Release N deployed, smoked and its census green as in every
+scope, on a cluster of its own shape, then each experiment named by `REHEARSAL_EXPERIMENTS` (`E01` by default) in the step shape ADR-0127
+decision 1 fixes: steady state, fault, observation, stop, recovery, census. It runs on the reference machine, not in CI: four nodes and
+two databases are more than a runner holds, and an experiment's numbers are the machine's.
+
+**The cluster it makes** (`kind-rehearsal/experiments/`):
+- one control plane and three workers, each worker labelled `topology.kubernetes.io/zone` (`zone-a`, `zone-b`, `zone-c`); every image is
+  loaded into every node; the control plane keeps kind's `NoSchedule` taint, so every workload runs on the workers. A node is a
+  container on the one machine: a zone here is a label and a kubelet, never a separate failure domain;
+- the application's zone constraint is the base's `DoNotSchedule` again, in this scope's own rendered copy (the `kind` overlay relaxes it
+  for its one node with no zone): three replicas on three nodes in three zones, read at every steady state;
+- **Toxiproxy** (pinned by digest in `infra/scanner-pins.sh`, watched by `check-pinned-images.sh`) in its own namespace
+  `finapp-experiments`, with three proxies: the database, the broker and the provider simulator. The application's pods, and only
+  theirs, resolve the three names they already use to it (`hostAliases` in the scope's copy of the Deployment): their URLs, their
+  bootstrap servers and `verify-full` are the other scopes' bytes, and the proxy passes bytes, so TLS is end to end. The migrator, the
+  bootstrap Job and the harness never pass through it. Its admin API listens on its own pod's loopback and is driven by `kubectl exec`
+  of its own CLI;
+- **a synchronous standby** of the test-only PostgreSQL (owner decision C7), in another zone than the primary: a base backup through the
+  primary's own name at `verify-full`, as `finapp_replicator` through the slot `finapp_standby`, then streaming, then the primary's
+  `synchronous_standby_names` set to `FIRST 1 (finapp_standby)` at run time. From then on a commit returns only once the standby has
+  it. Promoting it and moving the Service are E05's (`P16-TSK-022`).
+
+**The safety boundary** (ADR-0127 decision 5), read from the cluster before every fault, never trusted from the run's own word:
+- **context**: the node the harness execs into is the control plane of the `kind` cluster of `REHEARSAL_CLUSTER` by its container's
+  labels, its own kubeconfig's context and server are that cluster's, the nodes the API lists are exactly that cluster's containers,
+  and the cluster carries the scope's marker (`kube-system/finapp-experiments-marker`, written when the scope made the cluster). A
+  cluster of the name without the marker is neither reused (`REHEARSAL_REUSE_CLUSTER`) nor deleted to make a new one: the harness
+  refuses it before it changes anything in it. The harness holds no kubeconfig;
+- **credential**: every value of every Secret of `finapp`, `finapp-rehearsal` and `finapp-experiments`, endpoints aside, is one the run
+  generated or set: its sha256, taken inside the node, is in the run's ledger, which `kind-secrets.sh` (`KIND_SECRETS_LEDGER`) and the
+  harness's own Secrets write as they make each value;
+- **endpoint**: every value of the application's environment that holds a URL is the simulator, the run's own database URL or its own
+  collector; its bootstrap servers are the run's broker; its `hostAliases` send only the run's three names to the run's proxy; the proxy's
+  three upstreams are the run's three services.
+Every run proves each refusal by a plant beside its control (`experiments-boundary`): the marker removed, the payment webhook key
+replaced by a value the run did not make, the payment provider's URL replaced by one that is not the simulator; each refused by its own
+check with no fault on, put back, and the boundary passing again (`experiments/boundary.tsv`).
+
+**The faults.** Each is registered before it is put on, and removed at the experiment's stop. `finish()` empties the registry on every
+way out - the end, a failure, an unguarded error, `INT` or `TERM` - before the cluster may go, then resets what needs no record (every
+proxy enabled without a toxic, the simulator's hold flags removed, every policy labelled `finapp/experiment-fault` deleted, every paused
+node of the cluster unpaused) and reads that nothing is left on (`experiments/faults-cleared.txt`). The kinds: a Toxiproxy toxic, a
+proxy disabled, a simulator hold, a partition (a NetworkPolicy), a paused node, a Deployment scaled; a kill, a deletion or an eviction
+is instant and logged.
+
+**Running it.** One full cluster at a time on the machine, under its lock. From the repository root, with the rehearsal's own
+prerequisites (§11.28):
+
+```
+REHEARSAL_SCOPE=experiments infra/scripts/kind-rehearsal.sh
+```
+
+`REHEARSAL_EXPERIMENTS` names the experiments (space-separated ids of `experiments.sh`'s functions); `REHEARSAL_PROBE` takes
+`guard-off`, `crash-with-faults` or `term-with-faults`. The usual `REHEARSAL_CLUSTER`, `REHEARSAL_KEEP`, `REHEARSAL_REUSE_CLUSTER`,
+`REHEARSAL_SKIP_BUILD`, `REHEARSAL_STEPS` and `REHEARSAL_ARTEFACTS` apply; record an experiment's run under
+`build/rehearsal/experiments/<id>`. Exit 0 green, 1 an assertion failed or the boundary refused, 2 a step could not run.
+
+**What a green run says, step by step** (each a line of `rehearsal.log` and `assertions.tsv`):
+- `experiments-topology-made`: the proxy ready on the three hops; the standby streaming, then synchronous, in another zone, a committed
+  write replayed on it.
+- the common prefix, as every scope (§11.28): N deployed, smoked, its census, the cluster suites, the telemetry pipeline.
+- `experiments-pages`: every correctness page of `SLOS.md` §3 a rule the cluster's Prometheus loaded.
+- `experiments-topology`: three replicas on three nodes in three zones under `DoNotSchedule`; the standby; every application session in
+  `pg_stat_activity` arriving from the proxy and every one TLS; the consumer groups' members at the proxy's address and none elsewhere;
+  every replica accepted by the database's and the broker's proxies, and at least one by the simulator's (a replica opens a provider
+  connection only when it first calls one).
+- `experiments-boundary`: the control and the three plants.
+- per experiment, `<id>-steady` (no fault on, the topology again, no page firing), `<id>-fault`, `<id>-observe` (its stop condition
+  watched), `<id>-stop` (its faults removed and none left), `<id>-recover`, `<id>-census` (the full census, and no page after). A stop
+  condition met, or a page during or after, is `FAILED`: the recovery and the census still run, so the cluster is left whole.
+
+**E01 at three replicas** (the toolkit's own proof). While the rehearsal's workload runs and retries by key, a payout the harness sends
+straight to one replica is held at the simulated provider after its effect, its claim `IN_PROGRESS` on that replica; the replica's JVM
+is then killed with `SIGKILL` from its node (the PID namespace's parent: a container's init ignores a kill from inside), the container
+restarting in its pod with exit 137. Observed: the victim's endpoint read every second from just before the kill (when it left the
+Service and when it was ready again), whether any other replica went unready meanwhile (the stop condition, the fleet read every 2 s),
+every 15 s whether a page fired; then the same payout key sent to another replica until it is answered (`409` while the dead replica's
+claim holds its one-minute lease), the claim taken over and `COMPLETED`. Failed requests are counted twice. At the edge, which reaches
+the replicas through their Service and so names none of them, every failed answer must have ended in the window in which the Service
+could still pick the killed replica: from a second before the kill to five seconds after its endpoint was read not ready. In the
+workload, each request that failed counts once whatever its retries answered, and there must be no more of them than the edge's
+failures in that window. None may be unresolved. Last, the census, with E01's payout counted.
+
+**Reading the record** (under `$REHEARSAL_ARTEFACTS/experiments`):
+
+| File | What it holds |
+|---|---|
+| `marker.txt` | The cluster and the run id its marker carries |
+| `boundary.tsv` | Each plant, refused or not, and the reason its check gave |
+| `faults.log`, `faults-cleared.txt` | Every fault put on and taken off, with its time; what the exit trap cleared and whether anything was left |
+| `standby.log`, `members.txt`, `toxiproxy.log`, `prometheus-rules.json` | The standby's making, the consumer groups' members, the proxy's accepted clients, the rules loaded |
+| `<id>/record.tsv` | The experiment's own record: commit, start, steady state, fault, observations, stop, replicas, verdict |
+| `E01/endpoint.tsv`, `E01/fleet.tsv`, `E01/pages.tsv` | The victim's endpoint every second, the fleet every 2 s, the pages every 15 s |
+| `E01/edge-answers.tsv`, `E01/edge-failed.tsv` | Every answer of the public edge from the minute before the kill (start, status, the application's status, duration), and the failed ones with the second each ended |
+| `E01/retries.tsv`, `E01/payout-*.txt` | The payout's tries under its key and each answer |
+| `../census-<id>.txt` | The census after the experiment |
+
+**When it is red.** A refusal names its check and its reason: never work around it; find why the cluster, a Secret or an endpoint is
+not the run's own. A stop condition or a page: the experiment found something, and its row in the register is `FAILED` with a
+remediation task (§1.2 of the register). `faults-cleared.txt` naming a fault left on: remove it by hand on the kept cluster (the kinds
+above say how) and find why the trap could not.
+
+**Failure and rollback.** It touches nothing but the run's own cluster, deleted at exit unless kept; a kept cluster is deleted with
+`kind delete cluster`. Nothing of it is in `deploy/`.
+
+**The last record** *(2026-11-13, on `kind`)*. One development machine (Docker Desktop 28.0.1 on WSL2, 12 CPUs, 15.6 GiB to
+Docker), `kind` v0.33.0, node `v1.34.11`, kube-router as the policy engine, Toxiproxy 2.13.0 by its digest, three replicas. One cluster,
+`finapp-p16-019`, made by the first run with its marker and kept (`REHEARSAL_KEEP=1`), every later run reusing it
+(`REHEARSAL_REUSE_CLUSTER=1`, `REHEARSAL_SKIP_BUILD=1`, each deploying release N again on fresh namespaces), in one hold of the machine's
+one-cluster lock, 09:38-11:22Z. Its four nodes held 7.8 GiB at the end (the control plane 1.3, the workers 2.1, 2.1 and 2.4). The
+first run reached the scope's own steps 19 minutes in, the cluster made and every image loaded into four nodes (6 minutes of it); a
+reusing run reached them 10 minutes in and ended 13 minutes in. Three runs went before the fourth, each on what it found:
+
+| Run | Head | Stopped at | What it found, and the correction |
+|---|---|---|---|
+| 1 | `b0aaa7f6` | the boundary's control | Every check of the topology passed - the standby synchronous in another zone, 21 sessions through the proxy over TLS, 12 consumer-group members at its address - and then the boundary refused the run's own cluster: the application's ConfigMap has the generated name `finapp-app-config-<hash>`. The endpoint check now expects the name the run rendered and applied |
+| 2 | `e1098f7a` | E01's recovery | Every plant refused; E01's claim taken over and completed, the replica back with exit 137; the edge's lines read no failure and no answer at all, because the edge reaches the replicas through their Service and names none of them. Failed answers are now told apart by when they ended; the endpoint is read every second from just before the kill (this run's 13 s was the observe loop's own first wait) |
+| 3 | `23302d89` | — (green) | E01 `PASSED`; the kill's time stamped two seconds before the signal, before the lookups, and the workload's 18 failed attempts - one payout in flight on the killed replica answered `502`, then 17 retries under its key answered `409` while the dead replica's claim held - not yet counted as one request and held to the edge's failures. Both corrected |
+| 4 | `a6fee3a1` | — | Green, below |
+
+The fourth run (11:08-11:21Z), green, every one of 60 assertions:
+- **The topology**: the standby streaming and synchronous (`FIRST 1`) in `zone-a` with the primary in `zone-b`, a committed write
+  replayed on it; three replicas on three workers in `zone-a`, `zone-b` and `zone-c` under `DoNotSchedule`; 21 application sessions,
+  every one arriving from the proxy and every one TLS; 12 consumer-group members, every one at the proxy's address; all three replicas
+  accepted by each of the three proxies.
+- **The boundary**: its control passing on 73 values of 10 Secrets, 76 settings and 3 provider endpoints; the three plants each refused by
+  its own check (`context: the cluster carries no marker...`; `credential: finapp/finapp-app-secrets holds under
+  FINAPP_PAYMENTS_WEBHOOK_KEY a value this run did not generate`; `endpoint: FINAPP_PAYMENTS_PROVIDER_URL names an endpoint other than
+  the simulator`) and passing again once put back, with no fault on.
+- **E01**: the victim a replica on `worker2` in `zone-b`; the payout sent to it held at the provider, its claim `IN_PROGRESS`; its JVM
+  killed with `SIGKILL` at 11:19:57Z. The payout in flight on it failed (`curl` 52, an empty reply); its endpoint read not ready 1 s
+  after the kill and ready again 18 s after (the container restarted in its pod, exit 137); no other replica unready meanwhile; no page.
+  Its payout's key sent to another replica answered `409` five times while the dead replica's claim held its lease, then `201` 55 s
+  after the kill, the claim `COMPLETED`. At the edge, 1 failed answer (`502`, a top-up in flight on the killed replica) ended inside the
+  window the killed replica could be picked in and none outside it, of 266 answers; the workload's one failed request was that top-up,
+  retried by its key and resolved, none unresolved (180 succeeded).
+- **The census** after it green: 68 transfers, 73 card intents and 73 capture keys at the provider, 17 payouts with 17 postings and 17
+  payout keys at the provider (E01's own among them), the trial balance zero, 815 events drained, no event lost, no lease orphaned,
+  21 of 21 fleet connections over TLS, GL = ledger. No page after it.
+
+**The probes**, on the same bytes and cluster (`MUTATION_TESTING.md` §2). The entry's own - a context without the marker - on a cluster
+made by hand beside it (08:09-08:10Z, one node, a sentinel object in a `finapp` namespace): the scope pointed at it reused and to be
+replaced was refused at the cluster step, 1 s and 2 s in, before any namespace was touched, any image loaded or any fault put on, and the
+cluster and its sentinel were left as they were. `guard-off` (11:08Z, the topology and the boundary only): red at the first plant
+(`plant unmarked: the safety boundary did not refuse it`), the marker put back. `crash-with-faults` (10:44-10:45Z): a toxic on the database
+proxy, the simulator proxy disabled, the payout hold, a partition policy, the simulator scaled to zero and `worker2` paused, then an
+unguarded error; the exit trap removed all six in 13 s, and the cluster read by hand at 10:45:43Z held no paused node, three proxies
+enabled with no toxic, the simulator at one replica with no hold flag, no fault policy, three replicas ready. `term-with-faults`
+(10:56Z): the same six, then `SIGTERM` to the harness, and the same clean read at 10:56:55Z. The cluster was deleted and the lock released
+at 11:22Z.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

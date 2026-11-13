@@ -29629,6 +29629,10 @@ on none:
 - **Definition of done**: `DOD-EVENT`, `DOD-TEST`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.6 rehearsed (closing that part of PI-024 under C11).
 - **Risk**: Medium (machine load). **Cx**: L.
+- *Routed from `P16-TSK-019` (2026-11-13):* the experiments scope's proxy has one broker proxy, its upstream the `finapp-kafka`
+  Service, and the application's pods resolve that one name to it. With three brokers each advertises a name of its own: each needs its
+  alias and its proxy, or the clients reach the brokers past the proxy (the scope's topology check would then refuse a consumer-group
+  member at another address).
 
 **P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `PLANNED`
 - **Objective**: the ten-instance answer counted. Ten application replicas carry the engineering workload on `kind`, scale between
@@ -29793,7 +29797,7 @@ on none:
 - **Operational documentation**: the provider sections of the runbook.
 - **Risk**: Medium. **Cx**: L.
 
-**P16-TSK-019 — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)
+**P16-TSK-019 — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `COMPLETE` (2026-11-13; branch `P16-TSK-019` from master `0a09a273`; gate `COMPLETE` 2026-11-13; marked `READY` by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)
 - **Objective**: build the `experiments` scope:
   - a multi-node `kind` cluster (one control plane and three workers, each labelled a zone);
   - Toxiproxy pinned by digest on the data-tier and provider hops;
@@ -29817,6 +29821,32 @@ on none:
 - **Definition of done**: `DOD-BUILD`, `DOD-TEST`.
 - **Operational documentation**: a runbook section on running an experiment.
 - **Risk**: Medium. **Cx**: L.
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-019` from master `0a09a273`; no migration, no application code, no new ADR -
+  ADR-0127 carries a dated note; `OPERATIONS_RUNBOOK.md` §11.46 is the procedure and the record; `RESILIENCE_EXPERIMENTS.md` E01 its
+  first result):* **The scope**: `REHEARSAL_SCOPE=experiments` (`infra/scripts/kind-rehearsal/experiments.sh`, functions only, sourced as
+  `load.sh` is), release N alone, on a cluster of one control plane and three workers each labelled a zone
+  (`kind-rehearsal/experiments/kind-cluster.yaml`), every image loaded into every node, the application's zone rule the base's
+  `DoNotSchedule` again in the scope's own rendered copy. **Toxiproxy** 2.13.0 pinned by digest (`infra/scanner-pins.sh`, watched by
+  `check-pinned-images.sh`) in a namespace of its own (`experiments/toxiproxy.yaml`) with three proxies, the application's pods alone
+  resolving the three names they already use to it (`hostAliases` in the rendered copy): the clients' URLs, bootstrap servers and
+  `verify-full` unchanged, every session read arriving from the proxy over TLS; its admin API on its pod's loopback. **The standby**
+  (`experiments/standby.yaml`): PostgreSQL's own streaming replication, a base backup at `verify-full` through a slot, required in
+  another zone, the primary made `FIRST 1` synchronous at run time and checked by a WAL-writing commit replayed on the standby.
+  **The boundary**, read from the cluster before every fault: the context (the node's labels, its own context and server, the API's
+  nodes against the cluster's containers, a marker the scope writes when it makes the cluster - an unmarked cluster of the name is
+  neither reused nor deleted), the credentials (every Secret value of the run's namespaces hashed inside the node against a ledger
+  `kind-secrets.sh` (`KIND_SECRETS_LEDGER`) and the harness's `secret_of` write as they make each value) and the endpoints (every URL
+  of the application's environment the simulator's, the run's database or collector, its aliases and the proxy's upstreams the run's
+  own); each refusal proven in every run by a plant beside its control. **The faults** registered before they go on (a toxic, a proxy
+  down, a simulator hold, a partition, a paused node, a scale), removed at stop and, by `finish()` on every way out, reset and read
+  back. **The step shape** `experiment_run`: steady state, fault, observe (the stop condition and the pages), stop, recover, census.
+  **E01** at three replicas `PASSED` (run 4, commit `a6fee3a1`). **Corrected by the design**: `deploy/overlays/kind/` unchanged - the
+  standby, the proxy and their policies are harness-applied test-only manifests, so the manifest policy's `kind` flows and every
+  other scope stand; E01's criterion "failed requests no more than those in flight on it" counted by when each failed answer ended, the
+  edge reaching the replicas through their Service (the register's dated note). `ExperimentsRehearsalContractTest` (12 members) holds
+  it; the entry's probe (an unmarked context, on a cluster made by hand) and 15 more harness and contract probes performed
+  (`MUTATION_TESTING.md` §2). Not run here: CI (the scope is the reference machine's, as the load scope); `docker stop` of a node, a
+  promotion, three brokers (routed below).
 
 **P16-TSK-020 — Instance, pod and node failures at load** — `PLANNED`
 - **Objective**: E01–E04 and E25 under the sustained profile at ten replicas.
@@ -29841,6 +29871,15 @@ on none:
   pod's or the edge controller's loss is joined to the replica's records by its flow; `edge-check.sh` and the collector's scrub keep
   refusing every other header. Item 47 (e) is closed by a dated note that cites no finished task.
 - **Risk**: Medium. **Cx**: M.
+- *Routed from `P16-TSK-019` (2026-11-13):* E01 at three replicas is recorded (`OPERATIONS_RUNBOOK.md` §11.46); its ten-replica run is
+  this task's. Four things the toolkit leaves to it. **A node stopped (E04)**: the registry holds `node-paused` (`docker pause`, its
+  address kept); `docker stop` is not a registered fault, because a `kind` node started again may take another address on the `kind`
+  network, so add it with its restore and that check. **The zone rule** in the scope's copy is the base's `DoNotSchedule`: with a zone's
+  one worker lost, a replacement replica may stay `Pending` while the lost node still counts as a domain - what the deployed rule does,
+  to be measured, not relaxed. **The edge's NodePorts** answer only on a worker running one of that edge's controllers
+  (`externalTrafficPolicy: Local`): the harness gives the client such a worker per host, which a lost node may be. **The edge names no
+  replica** (it reaches them through their Service): E01 tells a failed answer apart by when it ended; at ten replicas and under
+  E02-E04 that window is per fault. Item 47 (e)'s correlation id, once kept, would join each failed answer to its replica.
 
 **P16-TSK-021 — Network, DNS, connection and disk faults** — `PLANNED`
 - **Objective**: E07, E11–E16, E24 under load.
@@ -29859,6 +29898,12 @@ on none:
 - **Definition of done**: `DOD-TEST`.
 - **Operational documentation**: runbook notes on each fault's signature.
 - **Risk**: Medium. **Cx**: M.
+- *Routed from `P16-TSK-019` (2026-11-13):* the toolkit's faults for these experiments are built and each was put on, read back and
+  cleared on a cluster (`OPERATIONS_RUNBOOK.md` §11.46): `experiments_fault_on toxic <proxy> <name> <type> <attribute=value>...` and
+  `proxy-down <proxy>` on the database, broker and simulator proxies, `partition <namespace> <name> <file>` for a NetworkPolicy labelled
+  `finapp/experiment-fault`, `scaled <namespace> <deployment> <replicas> <replicas to restore>` (E16's CoreDNS would be its first use
+  outside the simulator). Each passes the boundary first and is removed at the experiment's stop and on every
+  way out. On several nodes, read Prometheus through its pod (`experiments_prometheus`), not the API server's proxy.
 
 **P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `PLANNED`
 - **Objective**: as decided:
@@ -29900,6 +29945,14 @@ on none:
   tell a client the refusal is temporary: decide here whether a lost connection answers `503` with `Retry-After`. **A card payment
   caught mid-call** stays `PROCESSING` until the payment sweep's dispatched age (`finapp.payments.sweeper.dispatched-age`, 10 minutes)
   lets it ask the provider, so its client waits that long for a conclusion: measure it at the failover beside the interruption.
+- *Routed from `P16-TSK-019` (2026-11-13):* the pair is built in the experiments scope (`OPERATIONS_RUNBOOK.md` §11.46): the standby
+  `finapp-postgres-standby` in another zone, streaming through the slot `finapp_standby`, the primary made `FIRST 1 (finapp_standby)` at
+  run time. The promotion and the Service's move are this drill's. Five things to carry: the standby presents the primary's certificate
+  (one name, so `verify-full` holds after the move); the proxy resolves its upstream per connection, and its policy and the standby's
+  already admit that path; with the standby lost or promoted, every commit on a primary still naming it waits, so the new primary's
+  `synchronous_standby_names` is the drill's to decide; the harness's `psql_query` and census read `finapp-postgres-0` through its pod,
+  so after a promotion they must read the promoted one; and the scope's steady state refuses to start an experiment unless the standby
+  is synchronous.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
 - **Objective**: as decided:
