@@ -26,12 +26,12 @@
 # A refusal fails the run before any fault. The harness holds no kubeconfig: kube runs inside the node.
 #
 # THE FAULTS. experiments_fault_on <kind> ... registers a fault in $WORK/faults before injecting it, and experiments_fault_off removes it.
-# Kinds: toxic (a Toxiproxy toxic on one proxy), proxy-down (a proxy disabled), hold (one of the simulator's hold flags), partition (a
+# Kinds: toxic (a Toxiproxy toxic on one proxy), proxy-down (a proxy disabled), hold (one of the simulator's hold flags), store-hold (the archive store's read hold, P16-TSK-010), partition (a
 # NetworkPolicy labelled finapp/experiment-fault), node-paused (`docker pause` of a node of this cluster) and scaled (a Deployment scaled,
 # its count to restore recorded). A kill, a deletion or an eviction is instant and is logged, not registered. finish() calls
 # experiments_clear_faults on every way out, the INT and TERM traps and an unguarded failure included: every registered fault undone,
-# newest first, then a blanket reset that needs no record (every proxy enabled with no toxic, both hold flags and every degradation flag
-# removed, every labelled policy deleted, every paused node of this cluster unpaused), then a read that nothing is left
+# newest first, then a blanket reset that needs no record (every proxy enabled with no toxic, the three hold flags and every degradation
+# flag removed, every labelled policy deleted, every paused node of this cluster unpaused), then a read that nothing is left
 # (experiments/faults-cleared.txt).
 #
 # THE STEP SHAPE (ADR-0127 decision 1): experiment_run <id> runs <id>-steady, -fault, -observe, -stop, -recover and -census in that order.
@@ -75,6 +75,15 @@
 # now) and fired at a measured moment (E13's cut on a commit). A stop condition that is a harm (a second replica unready, a page, a p99
 # past its bound) is FAILED; one that is a duration ends the observation and is FAILED only when the experiment's own signal never came.
 # A fault whose own positive control does not show (nothing held, nothing failed) is a run that could not measure: exit 2, never a pass.
+# THE AUDIT ARCHIVE (P16-TSK-010; ADR-0135; OPERATIONS_RUNBOOK.md section 11.50). The scope deploys the archive's test-only store
+# (experiments/archive-store.yaml, ArchiveStore.java: write once, its objects on a claim of their own) and names it to the application in
+# its own rendered ConfigMap alone, with the settings its experiments run at (experiments_archive_settings); the endpoint check admits that
+# one URL under FINAPP_AUDIT_ARCHIVE_ENDPOINT. E44: the store scaled to zero for three minutes mid-run - nothing marked, the queue grows,
+# the failures counted, every replica ready, then the queue drained and the archive census green. E45: every read held at the store, the
+# holder killed between its copy and its mark, its segment taken over at the lease, its file written once and found again, marked once.
+# E46: the session table bounded over a soak, a live session planted kept and forty dead ones swept. archive_census reads every audit row
+# queued or in one segment, every segment's digests and chain recomputed, and every archived object digested in the store. Built and not
+# run: their runs are owed under POSTPONED_ISSUES.md PI-025.
 
 EXPERIMENTS=${REHEARSAL_EXPERIMENTS:-E01}
 # Every degradation flag the simulator reads (Simulator.java): the clearing removes each, whatever was registered.
@@ -83,6 +92,10 @@ TOXIPROXY_IMAGE="$TOXIPROXY_REPOSITORY@$TOXIPROXY_DIGEST"
 EXPERIMENTS_MARKER=finapp-experiments-marker
 EXPERIMENTS_CONFIG="$DIR/experiments/kind-cluster.yaml"
 EXPERIMENTS_COLLECTOR=http://finapp-collector.finapp-observability.svc.cluster.local:4318/
+# The audit archive's test-only store (P16-TSK-010), named to the application in this scope's own copy alone.
+ARCHIVE_HOST=finapp-archive-store.finapp-rehearsal.svc.cluster.local
+ARCHIVE_URL="https://$ARCHIVE_HOST:8443"
+ARCHIVE_OBJECTS=/archive/finapp-audit-archive
 # The census's expected payouts take this: E01's own payout, zero in every other scope.
 EXPERIMENTS_PAYOUTS=0
 # And its expected transfers this: E13's two cut transfers (P16-TSK-021), zero in every other scope.
@@ -182,6 +195,7 @@ experiments_render() {
     log "the experiments' copy: the zone constraint DoNotSchedule, the hba's replication line, the quota grown by the standby ($(tr '\n' ' ' < "$quota" | sed 's/.*hard: *//'))"
     # E24 (P16-TSK-021): the primary on a filesystem of its claim's own size, only when E24 is named; every other run as before.
     case " $EXPERIMENTS " in *" E24 "*) experiments_limited_volume ;; esac
+    experiments_archive_settings
 }
 
 # E24's volume. kind's provisioner (local-path) backs a claim with a directory on the node, so a claim has no size of its own and filling it
@@ -217,6 +231,47 @@ experiments_limited_volume() {
     log "E24: a 2 GiB filesystem on every worker, the primary's claim of class finapp-experiments-limited"
 }
 
+# The audit archive named to the application in this scope's copy alone (P16-TSK-010): its store, and the settings E44-E46 run at - a
+# lease and a tick short enough for a takeover inside an experiment, a session grace of five minutes and the retention sweeps' tick at
+# thirty seconds so E46 sees dead sessions go. Literals of the run's own rendered ConfigMap, never of a committed overlay.
+experiments_archive_settings() {
+    config=$(ls "$A"/ConfigMap.finapp-app-config-*.yaml 2>/dev/null | head -1)
+    [ -n "$config" ] || cannot "the application's rendered ConfigMap could not be found for the archive's settings"
+    cat > "$WORK/archive-settings.yaml" <<YAML
+  FINAPP_AUDIT_ARCHIVE_ENDPOINT: "$ARCHIVE_URL"
+  FINAPP_AUDIT_ARCHIVE_INTERVAL: "PT10S"
+  FINAPP_AUDIT_ARCHIVE_LEASE: "PT30S"
+  FINAPP_AUDIT_ARCHIVE_TIMEOUT: "PT3S"
+  FINAPP_IDENTITY_SESSION_SWEEP_GRACE: "PT5M"
+  FINAPP_RETENTION_SWEEP_INTERVAL: "PT30S"
+YAML
+    awk -v settings="$WORK/archive-settings.yaml" '/^data:$/ && !done {print; while ((getline line < settings) > 0) print line; done = 1; next} {print}' \
+        "$config" > "$WORK/config.tmp" && mv "$WORK/config.tmp" "$config"
+    grep -q "^  FINAPP_AUDIT_ARCHIVE_ENDPOINT: \"$ARCHIVE_URL\"$" "$config" || cannot "the archive's settings could not be added to the application's ConfigMap"
+    log "the experiments' copy: the audit archive named ($ARCHIVE_URL), its lease 30 s and tick 10 s; the session grace 5 min, the sweeps' tick 30 s"
+}
+
+# The archive's test-only store (experiments/archive-store.yaml, ArchiveStore.java), over TLS from the local CA, its objects on a claim of
+# their own so that a scale to zero keeps them. Its keystore's phrase is generated here and written to the ledger by secret_of.
+experiments_archive_store() {
+    issue archive-store "DNS:$ARCHIVE_HOST,DNS:finapp-archive-store,DNS:finapp-archive-store.finapp-rehearsal"
+    od -An -N16 -tx1 /dev/urandom | tr -d ' \n' > "$CA_DIR/archive-store.phrase"
+    (cd "$CA_DIR" && openssl pkcs12 -export -inkey archive-store.key -in archive-store.crt -certfile ca.crt \
+        -passout "file:archive-store.phrase" -out archive-store.p12) >/dev/null 2>&1 || cannot "the archive store's keystore could not be made"
+    secret_of finapp-rehearsal finapp-archive-store-tls "keystore.p12=$CA_DIR/archive-store.p12" "store-phrase=$CA_DIR/archive-store.phrase"
+    {
+        printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: finapp-archive-store-source\n  namespace: finapp-rehearsal\ndata:\n  ArchiveStore.java: |\n'
+        sed 's/^/    /' "$DIR/ArchiveStore.java"
+    } | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the archive store's source"
+    sed "s#JDK_IMAGE#$JDK_IMAGE#" "$DIR/experiments/archive-store.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the archive store"
+    kube -n finapp-rehearsal rollout status deployment/finapp-archive-store --timeout=180s >> "$ART/apply.log" 2>&1 \
+        || fail "the archive store did not become ready"
+}
+
+experiments_store() {
+    kube -n finapp-rehearsal exec deploy/finapp-archive-store -c store -- "$@"
+}
+
 # Once the test-only PostgreSQL and the broker are ready: the proxy, then the standby, then the application's way to the proxy.
 experiments_data_tier() {
     experiments_paths
@@ -238,7 +293,8 @@ YAML
     awk -v aliases="$WORK/host-aliases.yaml" '/^      serviceAccountName: / && !done {while ((getline line < aliases) > 0) print line; done = 1} {print}' \
         "$A/Deployment.finapp-app.yaml" > "$WORK/deployment.tmp" && mv "$WORK/deployment.tmp" "$A/Deployment.finapp-app.yaml"
     grep -q "^        - ip: \"$PROXY_IP\"$" "$A/Deployment.finapp-app.yaml" || cannot "the application's names could not be sent to the proxy"
-    log "the fault proxy on the application's three hops at $PROXY_IP; the standby synchronous"
+    experiments_archive_store
+    log "the fault proxy on the application's three hops at $PROXY_IP; the standby synchronous; the audit archive's store ready"
 }
 
 # The standby (owner decision C7): the role, its password and its slot on the primary, the base backup, streaming, then synchronous.
@@ -450,6 +506,9 @@ NODE
             FINAPP_DB_URL)
                 [ "$value" = "$DB_URL" ] || { EXP_REASON="endpoint: the database URL is not the run's own"; return 1; }
                 continue ;;
+            FINAPP_AUDIT_ARCHIVE_ENDPOINT)
+                [ "$value" = "$ARCHIVE_URL" ] || { EXP_REASON="endpoint: the audit archive's store is not the run's own"; return 1; }
+                continue ;;
         esac
         case $value in
             *://*)
@@ -562,7 +621,7 @@ experiments_simulator() {
 }
 
 # experiments_fault_on <kind> <arguments>:
-#   toxic <proxy> <name> <type> <attribute=value>...   proxy-down <proxy>   hold <flag file>   partition <namespace> <name> <file>
+#   toxic <proxy> <name> <type> <attribute=value>...   proxy-down <proxy>   hold <flag file>   store-hold <flag file>   partition <namespace> <name> <file>
 #   node-paused <node container>   scaled <namespace> <deployment> <replicas> <replicas to restore>
 #   blackhole <pod> <address> <port>   held <seconds>   locked <table> <seconds>   filled <node container>   (P16-TSK-021)
 experiments_fault_on() {
@@ -598,6 +657,7 @@ experiments_fault_on() {
             experiments_toxiproxy list | awk -F'\t' -v p="$1" '$1 == p && $4 == "enabled" {found = 1} END {exit !found}' \
                 && experiments_toxiproxy toggle "$1" >> "$EXP_ART/faults.log" 2>&1 ;;
         hold) experiments_simulator touch "/tmp/$1" >> "$EXP_ART/faults.log" 2>&1 ;;
+        store-hold) experiments_store touch "/tmp/$1" >> "$EXP_ART/faults.log" 2>&1 ;;
         partition) kube -n "$1" apply -f - < "$3" >> "$EXP_ART/faults.log" 2>&1 ;;
         node-paused)
             [ "$(dock inspect -f '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$1" 2>/dev/null)" = "$CLUSTER" ] \
@@ -619,6 +679,7 @@ experiments_undo() {
                 experiments_toxiproxy toggle "$1"
             fi ;;
         hold) experiments_simulator rm -f "/tmp/$1" ;;
+        store-hold) experiments_store rm -f "/tmp/$1" ;;
         partition) kube -n "$1" delete networkpolicy "$2" --ignore-not-found ;;
         node-paused) dock unpause "$1" ;;
         scaled) kube -n "$1" scale "deployment/$2" --replicas="$4" ;;
@@ -674,6 +735,8 @@ experiments_faults_left() {
     files=$(experiments_simulator ls -a /tmp 2>/dev/null) || echo "the simulator could not be read"
     printf '%s\n' "$files" | grep -x 'hold-payouts\|hold-inquiries' | sed "s/^/the simulator's flag /"
     printf '%s\n' "$files" | grep -x 'degrade-[a-z]*-unavailable\|degrade-[a-z]*-silent' | sed "s/^/the simulator's flag /"
+    stored=$(experiments_store ls -a /tmp 2>/dev/null) || echo "the archive store could not be read"
+    printf '%s\n' "$stored" | grep -x 'hold-reads' | sed "s/^/the archive store's flag /"
     for namespace in finapp finapp-experiments finapp-rehearsal; do
         kube -n "$namespace" get networkpolicy -l finapp/experiment-fault=true -o name 2>/dev/null | sed "s#^#$namespace #"
     done
@@ -724,6 +787,7 @@ experiments_clear_faults() {
     : > "$FAULTS"
     # What the undoing restarted, ready before it is read.
     kube -n finapp-rehearsal rollout status deployment/finapp-simulator --timeout=180s >> "$EXP_ART/faults.log" 2>&1
+    kube -n finapp-rehearsal rollout status deployment/finapp-archive-store --timeout=180s >> "$EXP_ART/faults.log" 2>&1
     kube -n finapp-experiments rollout status deployment/finapp-toxiproxy --timeout=120s >> "$EXP_ART/faults.log" 2>&1
     # The blanket reset: what no record is needed for.
     for proxy in $(experiments_toxiproxy list 2>/dev/null | awk -F'\t' 'NF >= 4 {print $1}'); do
@@ -739,6 +803,7 @@ experiments_clear_faults() {
     for flag in $EXPERIMENTS_DEGRADATIONS; do
         experiments_simulator rm -f "/tmp/$flag" >> "$EXP_ART/faults.log" 2>&1
     done
+    experiments_store rm -f /tmp/hold-reads >> "$EXP_ART/faults.log" 2>&1
     for namespace in finapp finapp-experiments finapp-rehearsal; do
         kube -n "$namespace" delete networkpolicy -l finapp/experiment-fault=true --ignore-not-found >> "$EXP_ART/faults.log" 2>&1
     done
@@ -1274,6 +1339,7 @@ YAML
     experiments_fault_on toxic postgres crash-latency latency latency=50
     experiments_fault_on proxy-down simulator
     experiments_fault_on hold hold-payouts
+    experiments_fault_on store-hold hold-reads
     experiments_fault_on partition finapp experiments-crash-partition "$WORK/fault-policy.yaml"
     experiments_fault_on scaled finapp-rehearsal finapp-simulator 0 1
     # P16-TSK-021's kinds too: a replica black-holed from the database, the holder, a lock, and a ballast where E24's volume is mounted.
@@ -1293,7 +1359,7 @@ YAML
     experiments_faults_left > "$EXP_ART/faults-before-crash.txt" 2>&1 || true
     experiments_fault_on node-paused "$victim_node"
     echo "paused node $victim_node" >> "$EXP_ART/faults-before-crash.txt"
-    log "PROBE $PROBE: every kind of fault on - a toxic, a proxy down, a hold, a partition, a scale to zero, $crash_kinds, a paused node ($victim_node) - and now the harness dies"
+    log "PROBE $PROBE: every kind of fault on - a toxic, a proxy down, the simulator's hold and the archive store's, a partition, a scale to zero, $crash_kinds, a paused node ($victim_node) - and now the harness dies"
     if [ "$PROBE" = term-with-faults ]; then
         kill -TERM $$
         sleep 30
@@ -2832,4 +2898,277 @@ E24_recover() {
     wait "$E24_SAMPLER" 2>/dev/null || true
     experiments_workload_end e24
     pass "E24: writes refused for want of space, the server and the fleet back once it returned, nothing unresolved"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The audit archive and the session sweep (P16-TSK-010; ADR-0135; OPERATIONS_RUNBOOK.md section 11.50): E44, E45, E46. Built and not run:
+# by the owner's word of 2026-11-13 their runs are owed under POSTPONED_ISSUES.md PI-025.
+# ---------------------------------------------------------------------------------------------------
+
+# One line: archived segments, queued audit rows, claimed segments.
+archive_state() {
+    psql_query -c "SELECT (SELECT count(*) FROM platform.audit_archive_segment WHERE state = 'ARCHIVED') || E'\t'
+        || (SELECT count(*) FROM platform.audit_archive_pending) || E'\t'
+        || (SELECT count(*) FROM platform.audit_archive_segment WHERE state = 'CLAIMED')" | tr -d '\r'
+}
+
+archive_archived() { archive_state | cut -f1 | tr -d '[:space:]'; }
+
+# archive_wait_archived <segments> <seconds>: 0 once at least that many segments are archived.
+archive_wait_archived() {
+    deadline=$(( $(date +%s) + $2 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        [ "$(archive_archived)" -ge "$1" ] 2>/dev/null && return 0
+        sleep 5
+    done
+    return 1
+}
+
+# archive_drained <seconds>: 0 once nothing is queued and nothing claimed.
+archive_drained() {
+    deadline=$(( $(date +%s) + $1 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        [ "$(archive_state | cut -f2,3 | tr -d '[:space:]')" = "00" ] && return 0
+        sleep 5
+    done
+    return 1
+}
+
+# experiments_series <PromQL>: the first sample's value of an instant query, empty when Prometheus did not answer one.
+experiments_series() {
+    experiments_prometheus "/api/v1/query?query=$(urlencode "$1")" 2>/dev/null | sed -n 's/.*"value":\[[^,]*,"\([^"]*\)"\].*/\1/p' | head -1
+}
+
+# archive_census <id>: the archive against its table and its store, once the queue has drained. Each clause one line of the experiment's
+# archive-census.tsv; any FAIL stops the experiment as failed, and a census that read nothing fails the run.
+archive_census() {
+    out="$EXP_DIR/archive-census.tsv"
+    : > "$out"
+    archive_drained 600 || printf 'FAIL|the archive drained within 600 s|%s archived, queued and claimed\n' "$(archive_state | tr '\t' ' ')" >> "$out"
+    psql_query -f - >> "$out" 2>&1 <<'SQL'
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END || '|every audit row queued or in one segment, never both, never neither|' || count(*) || ' rows not so'
+  FROM platform.audit_record a
+ WHERE EXISTS (SELECT 1 FROM platform.audit_archive_pending p WHERE p.audit_id = a.audit_id)
+     = EXISTS (SELECT 1 FROM platform.audit_archive_member m WHERE m.audit_id = a.audit_id);
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END || '|every segment holds the rows it counted|' || count(*) || ' segments not so'
+  FROM platform.audit_archive_segment s
+ WHERE s.row_count <> (SELECT count(*) FROM platform.audit_archive_member m WHERE m.segment_seq = s.segment_seq);
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END || '|every archived segment''s digests are its rows''|' || count(*) || ' differ'
+  FROM platform.audit_archive_segment s
+ WHERE s.state = 'ARCHIVED'
+   AND (s.content_sha256 <> encode(sha256(convert_to(platform.audit_archive_content(s.segment_seq), 'UTF8')), 'hex')
+        OR s.manifest_sha256 <> encode(sha256(convert_to(platform.audit_archive_manifest(s.segment_seq), 'UTF8')), 'hex'));
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END || '|every archived segment names its predecessor''s manifest|' || count(*) || ' breaks'
+  FROM platform.audit_archive_segment s
+  LEFT JOIN platform.audit_archive_segment p ON p.segment_seq = s.segment_seq - 1
+ WHERE s.state = 'ARCHIVED' AND s.segment_seq > 1 AND s.previous_manifest_sha256 IS DISTINCT FROM p.manifest_sha256;
+SELECT CASE WHEN count(*) > 0 THEN 'PASS' ELSE 'FAIL' END || '|the census had segments to read|' || count(*) || ' archived'
+  FROM platform.audit_archive_segment s WHERE s.state = 'ARCHIVED';
+SQL
+    # The store's copies, digested where they lie, against the digests the database recorded at each mark.
+    psql_query -c "SELECT 'audit/v1/segments/' || lpad(segment_seq::text, 12, '0') || '.ndjson ' || content_sha256 FROM platform.audit_archive_segment
+        WHERE state = 'ARCHIVED' UNION ALL SELECT 'audit/v1/manifests/' || lpad(segment_seq::text, 12, '0') || '.json ' || manifest_sha256
+        FROM platform.audit_archive_segment WHERE state = 'ARCHIVED'" | tr -d '\r' | grep . | sort > "$EXP_DIR/recorded-digests.txt"
+    if experiments_store sh -c "cd $ARCHIVE_OBJECTS && sha256sum audit/v1/segments/* audit/v1/manifests/*" > "$EXP_DIR/store-digests.raw" 2>&1; then
+        awk '{print $2 " " $1}' "$EXP_DIR/store-digests.raw" | sort > "$EXP_DIR/store-digests.txt"
+        missing=$(comm -23 "$EXP_DIR/recorded-digests.txt" "$EXP_DIR/store-digests.txt" | grep -c . || true)
+        recorded=$(grep -c . "$EXP_DIR/recorded-digests.txt" || true)
+        if [ "$missing" = 0 ] && [ "$recorded" -gt 0 ]; then verdict=PASS; else verdict=FAIL; fi
+        printf '%s|every archived object in the store with the digest recorded at its mark|%s of %s missing or different\n' "$verdict" "$missing" "$recorded" >> "$out"
+    else
+        printf 'FAIL|the store objects could be read|see store-digests.raw\n' >> "$out"
+    fi
+    grep -q '^PASS|' "$out" || fail "$1: the archive census printed no verdict: see experiments/$1/archive-census.tsv"
+    if grep -q '^FAIL' "$out"; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the archive census: $(grep '^FAIL' "$out" | tr '\n' ';' | cut -c1-400)"
+    fi
+    experiments_record "archive census" "$(grep -c '^PASS' "$out") clauses PASS, $(grep -c '^FAIL' "$out" || true) FAIL: see archive-census.tsv"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E44: the archive store stopped mid-run, at three replicas.
+# ---------------------------------------------------------------------------------------------------
+
+E44_steady() {
+    start_workload e44 retry
+    archive_wait_archived 1 300 || cannot "E44: no audit segment was archived in 300 s, so a stopped store would interrupt nothing"
+    experiments_record "archive before" "$(archive_state | awk -F'\t' '{print $1 " segments archived, " $2 " rows queued, " $3 " claimed"}')"
+}
+
+E44_fault() {
+    experiments_fault_on scaled finapp-rehearsal finapp-archive-store 0 1
+    E44_AT=$(date +%s)
+    E44_AT_ARCHIVED=$(archive_archived)
+    experiments_record fault "the archive store scaled to zero at $(iso "$E44_AT"), its volume kept, $E44_AT_ARCHIVED segments archived then"
+}
+
+E44_observe() {
+    printf 'epoch\tarchived\tqueued\tclaimed\n' > "$EXP_DIR/archive.tsv"
+    deadline=$((E44_AT + 180))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        printf '%s\t%s\n' "$(date +%s)" "$(archive_state)" >> "$EXP_DIR/archive.tsv"
+        # The archive is not in readiness: a replica unready while only the store is down is the stop condition.
+        unready=$(experiments_fleet | awk -F'|' 'NF >= 5 && $2 != "True" && $6 == "" {print $1}' | head -1)
+        [ -z "$unready" ] || { EXP_STOPPED="a replica unready while the archive store was down: $unready"; return 0; }
+        firing=$(experiments_pages_firing)
+        [ -z "$firing" ] || { EXP_STOPPED="a correctness page during the experiment: $firing"; return 0; }
+        sleep 10
+    done
+    archived=$(archive_archived)
+    # A segment whose copy was read back just before the store went may be marked just after: one, never more.
+    [ "$archived" -le $((E44_AT_ARCHIVED + 1)) ] \
+        || fail "E44: $((archived - E44_AT_ARCHIVED)) segments were marked archived with the store down: a mark without a copy read back"
+    first=$(awk -F'\t' 'NR == 2 {print $3}' "$EXP_DIR/archive.tsv")
+    last=$(awk -F'\t' 'END {print $3}' "$EXP_DIR/archive.tsv")
+    [ "${last:-0}" -gt "${first:-0}" ] || fail "E44: no audit row queued while the store was down ($first then $last), so the fault met no work"
+    unavailable=$(experiments_series 'sum(finapp_audit_archive_segments_total{outcome="store_unavailable"})')
+    [ "${unavailable%%.*}" -ge 1 ] 2>/dev/null || fail "E44: no attempt was counted store_unavailable (read '$unavailable'): the failure was not seen"
+    experiments_record observed "180 s with the store gone: $((archived - E44_AT_ARCHIVED)) segments marked, the queue $first then $last rows, $unavailable attempts counted store_unavailable, every replica ready, no page"
+    pass "E44: with the archive store down nothing was marked and the queue grew; every replica stayed ready and the failures were counted"
+}
+
+E44_recover() {
+    kube -n finapp-rehearsal rollout status deployment/finapp-archive-store --timeout=180s >> "$EXP_ART/faults.log" 2>&1 \
+        || fail "E44: the archive store did not return"
+    stop_workload e44
+    [ "$(workload_unresolved e44)" = 0 ] || fail "E44: $(workload_unresolved e44) requests stayed unresolved: see workload-e44.tsv"
+    assert_flows_ran e44
+    returned=$(date +%s)
+    archive_drained 600 || fail "E44: the archive did not catch up within 600 s of the store's return: $(archive_state | tr '\t' ' ')"
+    experiments_record "caught up" "the queue drained $(( $(date +%s) - returned )) s after the workload stopped, the store back"
+    archive_census E44
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E45: a holder killed between the copy and the mark, its segment taken over and marked once; each row in one segment. At three replicas
+# here, where fleet_patch holds the fleet; at ten once this scope runs at ten, which kind's overlay admits (owed under PI-025).
+# ---------------------------------------------------------------------------------------------------
+
+E45_steady() {
+    start_workload e45 retry
+    archive_wait_archived 1 300 || cannot "E45: no audit segment was archived in 300 s, so no holder would be found"
+    experiments_store sh -c ': > /tmp/held.txt' || cannot "E45: the archive store's held list could not be emptied"
+}
+
+E45_fault() {
+    # Every read held at the store: the next holder writes both objects, then waits on its read-back, its copy made and its mark not.
+    experiments_fault_on store-hold hold-reads
+    deadline=$(( $(date +%s) + 120 ))
+    caller=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        caller=$(experiments_store cat /tmp/held.txt 2>/dev/null | head -1 | cut -f1)
+        [ -n "$caller" ] && break
+        sleep 1
+    done
+    [ -n "$caller" ] || cannot "E45: no archive read reached the store in 120 s, so no holder stood between copy and mark"
+    E45_SEGMENT=$(psql_query -c "SELECT segment_seq FROM platform.audit_archive_segment WHERE state = 'CLAIMED'" | tr -d '[:space:]')
+    [ -n "$E45_SEGMENT" ] || cannot "E45: no segment was claimed while its read was held"
+    E45_KEY=$(printf 'audit/v1/segments/%012d.ndjson' "$E45_SEGMENT")
+    experiments_store test -f "$ARCHIVE_OBJECTS/$E45_KEY" \
+        || cannot "E45: segment $E45_SEGMENT's copy is not in the store, so its holder was not between copy and mark"
+    E45_VICTIM=$(experiments_fleet | awk -F'|' -v ip="$caller" '$5 == ip {print $1}' | head -1)
+    [ -n "$E45_VICTIM" ] || cannot "E45: the held read came from $caller, which no application pod holds"
+    if [ "$PROBE" != guard-off ]; then
+        experiments_context_check || fail "the safety boundary refused before the kill: $EXP_REASON"
+    fi
+    experiments_kill_jvm "$E45_VICTIM"
+    E45_KILLED_AT=$KILLED_EPOCH
+    experiments_fault_off store-hold hold-reads
+    experiments_record fault "kill -9 of $E45_VICTIM's JVM ($KILLED) at $(iso "$E45_KILLED_AT"), holding segment $E45_SEGMENT: its copy in the store, its mark not made"
+}
+
+E45_observe() {
+    deadline=$((E45_KILLED_AT + 300))
+    state=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        state=$(psql_query -c "SELECT state || '|' || reclaims FROM platform.audit_archive_segment WHERE segment_seq = $E45_SEGMENT" | tr -d '[:space:]')
+        [ "${state%%|*}" = ARCHIVED ] && break
+        # The killed replica is unready while it restarts; a second one is the stop condition.
+        unready=$(experiments_fleet | awk -F'|' -v v="$E45_VICTIM" 'NF >= 5 && $1 != v && $2 != "True" && $6 == "" {print $1}' | head -1)
+        [ -z "$unready" ] || { EXP_STOPPED="a second replica unready while the killed holder was replaced: $unready"; return 0; }
+        firing=$(experiments_pages_firing)
+        [ -z "$firing" ] || { EXP_STOPPED="a correctness page during the experiment: $firing"; return 0; }
+        sleep 3
+    done
+    [ "${state%%|*}" = ARCHIVED ] || { EXP_STOPPED="segment $E45_SEGMENT not archived within 300 s of its holder's death ($state)"; return 0; }
+    [ "${state##*|}" -ge 1 ] || fail "E45: segment $E45_SEGMENT was marked without a takeover (reclaims ${state##*|}): the kill missed its holder"
+    experiments_store cat /tmp/requests.tsv > "$EXP_DIR/store-requests.tsv" 2>&1 || fail "E45: the store's request log could not be read"
+    written=$(awk -F'\t' -v k="/finapp-audit-archive/$E45_KEY" '$2 == "PUT" && $3 == k && $4 == 200' "$EXP_DIR/store-requests.tsv" | grep -c . || true)
+    found=$(awk -F'\t' -v k="/finapp-audit-archive/$E45_KEY" '$2 == "PUT" && $3 == k && $4 == 412' "$EXP_DIR/store-requests.tsv" | grep -c . || true)
+    [ "$written" = 1 ] || fail "E45: segment $E45_SEGMENT's file was written $written times, where write once means one"
+    [ "$found" -ge 1 ] || fail "E45: no takeover found segment $E45_SEGMENT's file already there: the copy was not reused"
+    experiments_record "takeover" "segment $E45_SEGMENT archived by another replica after ${state##*|} takeover(s), its file written once and found $found time(s)"
+    pass "E45: the holder killed between copy and mark; its segment taken over, its copy found and read back, marked once"
+}
+
+E45_recover() {
+    ready_three 400 || fail "E45: the fleet did not return to three ready replicas"
+    stop_workload e45
+    [ "$(workload_unresolved e45)" = 0 ] || fail "E45: $(workload_unresolved e45) requests stayed unresolved: see workload-e45.tsv"
+    assert_flows_ran e45
+    archive_census E45
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E46: the session table bounded over a soak, the sweep at a grace of five minutes and a tick of thirty seconds (this scope's settings).
+# ---------------------------------------------------------------------------------------------------
+
+E46_steady() {
+    start_workload e46 retry
+    identity=$(psql_query -c "SELECT id FROM identity.identity ORDER BY created_at LIMIT 1" | tr -d '[:space:]')
+    [ -n "$identity" ] || cannot "E46: no identity exists to plant sessions under"
+    # The plants, by the run's own throwaway superuser, removed at the recovery: a session live for the whole soak, never touched, and
+    # forty dead an hour past their idle bound, the sweep's positive control.
+    E46_LIVE=$(psql_query -c "INSERT INTO identity.session (id, identity_id, token_hash, assurance, status, issued_at, idle_expires_at,
+        absolute_expires_at, device, revoked_at, live_from) VALUES (gen_random_uuid(), '$identity', encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'base64'), 'PASSWORD', 'ACTIVE', now(),
+        now() + interval '2 hours', now() + interval '3 hours', 'e46 plant, live', NULL, now()) RETURNING id" | head -1 | tr -d '[:space:]')
+    [ -n "$E46_LIVE" ] || cannot "E46: the live session could not be planted"
+    psql_query -c "INSERT INTO identity.session (id, identity_id, token_hash, assurance, status, issued_at, idle_expires_at, absolute_expires_at,
+        device, revoked_at, live_from) SELECT gen_random_uuid(), '$identity', encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'base64'), 'PASSWORD', 'ACTIVE', now() - interval '2 hours',
+        now() - interval '1 hour', now() - interval '1 hour', 'e46 plant, dead', NULL, now() - interval '2 hours' FROM generate_series(1, 40) g" >/dev/null \
+        || cannot "E46: the dead sessions could not be planted"
+    experiments_record plants "a session live for three hours ($E46_LIVE) and forty an hour past their idle bound"
+}
+
+E46_fault() {
+    E46_MINUTES=${REHEARSAL_E46_MINUTES:-45}
+    E46_AT=$(date +%s)
+    experiments_record fault "none injected: the workload signs in for $E46_MINUTES minutes while the session sweep runs every 30 s at a grace of 5 minutes"
+}
+
+E46_observe() {
+    printf 'epoch\tsessions\tlive\tpast_bound\tplanted_live\tplanted_dead\n' > "$EXP_DIR/sessions.tsv"
+    deadline=$((E46_AT + E46_MINUTES * 60))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        # Past the bound: an idle bound more than the grace (5 min) and two ticks (2 x 30 s) ago - a row the sweep should have taken.
+        row=$(psql_query -c "SELECT count(*) || E'\t' || count(*) FILTER (WHERE status = 'ACTIVE' AND idle_expires_at > now() AND absolute_expires_at > now())
+            || E'\t' || count(*) FILTER (WHERE idle_expires_at < now() - interval '6 minutes') || E'\t' || count(*) FILTER (WHERE id = '$E46_LIVE')
+            || E'\t' || count(*) FILTER (WHERE device = 'e46 plant, dead') FROM identity.session" | tr -d '\r')
+        now=$(date +%s)
+        printf '%s\t%s\n' "$now" "$row" >> "$EXP_DIR/sessions.tsv"
+        [ "$(printf '%s' "$row" | cut -f4 | tr -d '[:space:]')" = 1 ] || { EXP_STOPPED="the live session planted was deleted"; return 0; }
+        if [ $((now - E46_AT)) -ge 120 ] && [ "$(printf '%s' "$row" | cut -f3 | tr -d '[:space:]')" != 0 ]; then
+            EXP_STOPPED="rows past the grace and two ticks remain $((now - E46_AT)) s in: the table is not bounded ($row)"
+            return 0
+        fi
+        firing=$(experiments_pages_firing)
+        [ -z "$firing" ] || { EXP_STOPPED="a correctness page during the soak: $firing"; return 0; }
+        sleep 30
+    done
+    dead=$(awk -F'\t' 'END {print $6}' "$EXP_DIR/sessions.tsv")
+    [ "$dead" = 0 ] || fail "E46: $dead of the planted dead sessions remain: the sweep took nothing"
+    swept=$(experiments_series 'sum(finapp_retention_swept_total{type="session"})')
+    [ "${swept%%.*}" -ge 40 ] 2>/dev/null || fail "E46: the sweep counted $swept sessions deleted, fewer than the forty planted"
+    most=$(awk -F'\t' 'NR > 1 && $2 > m {m = $2} END {print m + 0}' "$EXP_DIR/sessions.tsv")
+    experiments_record observed "$E46_MINUTES minutes: at most $most session rows, none past the grace and two ticks after the first two minutes, the live plant kept, $swept deleted"
+    pass "E46: the session table bounded over the soak - nothing left past the grace, the live session kept, the planted dead swept"
+}
+
+E46_recover() {
+    stop_workload e46
+    [ "$(workload_unresolved e46)" = 0 ] || fail "E46: $(workload_unresolved e46) requests stayed unresolved: see workload-e46.tsv"
+    assert_flows_ran e46
+    # The plants' teardown, by the superuser that planted them.
+    psql_query -c "DELETE FROM identity.session WHERE device IN ('e46 plant, live', 'e46 plant, dead')" >/dev/null \
+        || fail "E46: the planted sessions could not be removed"
 }

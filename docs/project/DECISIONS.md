@@ -1397,6 +1397,12 @@ fleet at its own count; staging unchanged; production's ceiling stays seven, ten
 the ten-instance runs are made (`THREAT_MODEL.md` §6 item 56). A transaction-mode pooler is refused for now: the driver sets isolation
 per session, outside the transaction. → [ADR-0134](../adr/ADR-0134-the-connection-budget-at-ten-replicas.md)
 
+**The audit trail archived by verified segment; dead sessions swept** (`P16-TSK-010`, 2026-11-13, `Proposed`). A queue written by a
+trigger in each audit row's own transaction, never a cursor; one claimer and one segment in flight under a lease on the database's
+clock; the copy the database's own text, written once, read back and compared, and only then marked with digests the database
+recomputes; a copy that differs stops the chain. No audit record is deleted. Dead sessions' rows go a grace past their idle bound,
+never a live one. → [ADR-0135](../adr/ADR-0135-audit-archival-by-verified-segment.md)
+
 **The post-recovery hold is the role lock, held through the window.** The platform's roles stay `NOLOGIN` from before a restore to
 its release; the window since the restore's point is reconciled by one command acting as the application's role while those roles
 cannot log in; the books are verified again; a person releases, with a record naming the reports it rests on. Locally, a recovery
