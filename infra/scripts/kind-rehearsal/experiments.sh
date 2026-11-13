@@ -4953,8 +4953,10 @@ E51_recover() {
 #                      would be seen; the four-eyes plant, once a run, and its recorded refusals counted;
 #   security_fault     just before the fault: every audit record's digest, E05's sign-in counts read, and the probe started. From
 #                      here to the end of the recovery, every 5 s, every application pod is asked straight from the edge's probe pod:
-#                      the four protected requests with no credential or a forged one, and the three held credentials;
-#   security_during    just after the fault is put on, in the background: the plant's activation by its own proposer;
+#                      the four protected requests with no credential or a forged one, and the three held credentials. Its looks
+#                      are labelled arming until the experiment's fault step has put the fault on, then fault, then recover;
+#   security_during    just after the fault is put on: the looks labelled fault from here, and in the background the plant's
+#                      activation by its own proposer;
 #   security_observed  E05 only: the same window's counts once the fleet is ready on the promoted server;
 #   security_after     after the recovery: the probe stopped and judged - a protected request answered 2xx or 3xx is a fail-open
 #                      observation, a held credential answered 401 or 403 a session lost, a fault with no answered look unproven, each
@@ -5025,7 +5027,7 @@ security_look() {
 security_sampler() {
     set +e
     while [ ! -f "$1/security-stop" ]; do
-        security_look "$1" "$(cat "$1/security-phase" 2>/dev/null || echo fault)"
+        security_look "$1" "$(cat "$1/security-phase" 2>/dev/null || echo arming)"
         sleep 5
     done
 }
@@ -5129,13 +5131,15 @@ security_fault() {
         security_counts "$SEC_WINDOW" > "$EXP_DIR/counts-before.tsv" 2>> "$EXP_DIR/counts.err" || true
     fi
     security_audit_snapshot before
-    echo fault > "$EXP_DIR/security-phase"
+    # Labelled arming until the fault is on: a look taken before it must not count as one taken while it was on.
+    echo arming > "$EXP_DIR/security-phase"
     security_sampler "$EXP_DIR" &
     SEC_SAMPLER=$!
     BACKGROUND="$BACKGROUND $SEC_SAMPLER"
 }
 
 security_during() {
+    echo fault > "$EXP_DIR/security-phase"
     client four-eyes-self "$1-during" > "$EXP_DIR/four-eyes-during.txt" 2>&1 &
     SEC_DURING=$!
     BACKGROUND="$BACKGROUND $SEC_DURING"
@@ -5263,6 +5267,8 @@ E81_fault() {
 }
 
 E81_observe() {
+    # The fault - the fleet at the door's own limit - stays on until the stop: one look of the security probe is let fall inside it.
+    sleep 15
     [ "$(security_window_start)" = "$E81_WINDOW" ] || cannot "E81: the burst crossed the door's window end, so two windows counted it"
     read -r sent admitted refused unavailable unanswered <<BURST
 $(awk 'NF == 2 {n++; if ($2 == 429) r++; else if ($2 == "000") u++; else if ($2 ~ /^5/) v++; else a++} END {print n + 0, a + 0, r + 0, v + 0, u + 0}' "$EXP_DIR/burst.txt")

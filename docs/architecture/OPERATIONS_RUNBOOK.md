@@ -6251,15 +6251,17 @@ tokens written to a file the harness reads and removes at once, never printed), 
 one - refused `401`; otherwise the run cannot go on, because a refusal could then be a route that does not exist. From just before the
 fault to the end of the recovery, every 5 s, the edge's probe pod asks every application pod directly (a replica failing open alone behind
 the Service would be one answer in N), every request in parallel, the held credentials on stdin. `security.tsv` in the experiment's
-artefacts has every answer: its second, its phase (`control`, `fault`, `recover`, `after`, E82's `rolled`), the pod's address, the case and
-the status (`000`: no answer).
+artefacts has every answer: its second, its phase (`control`; `arming` from just before the fault until the experiment's fault step has
+put it on; `fault` from then to the stop; `recover`; `after`; E82's `rolled`), the pod's address, the case and the status (`000`: no
+answer).
 
 **How it is judged**, after the recovery, and each finding fails the experiment (the register's §1.1 Stop):
 
 - a protected request answered `2xx` or `3xx` in any phase but the control: **a fail-open observation**;
 - a held credential answered `401` or `403`: a session lost (while a part is away a held session is answered `5xx` or not at all, never
   told it is dead);
-- no protected request answered at all while the fault was on: nothing was observed, so nothing is ruled out;
+- no protected request answered at all in the `fault` phase: nothing was observed while the fault was on, so nothing is ruled out (an
+  experiment whose fault takes the probe pod's own node away fails so, never passes);
 - after the recovery, any ready replica not serving a held credential `200` or not refusing a protected request `401`.
 
 The record's `security` line counts the protected requests refused `401`/`403`, answered another `4xx` or a `5xx` (a door shed `503`, a

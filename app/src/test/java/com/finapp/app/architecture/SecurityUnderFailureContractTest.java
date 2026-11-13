@@ -88,6 +88,10 @@ class SecurityUnderFailureContractTest {
         assertThat(fault).as("the audit trail read, then the probe started, before the fault")
                 .contains("security_audit_snapshot before").contains("security_sampler \"$EXP_DIR\" &").contains("BACKGROUND=\"$BACKGROUND $SEC_SAMPLER\"");
         assertThat(fault.indexOf("security_audit_snapshot before")).isLessThan(fault.indexOf("security_sampler"));
+        assertThat(fault).as("the looks before the fault is on labelled arming, never fault").contains("echo arming > \"$EXP_DIR/security-phase\"")
+                .doesNotContain("echo fault >");
+        assertThat(function("security_during")).as("labelled fault only once the experiment's fault step has put it on")
+                .contains("echo fault > \"$EXP_DIR/security-phase\"");
         assertThat(function("security_sampler")).as("a look every 5 s in the phase named, until stopped")
                 .contains("while [ ! -f \"$1/security-stop\" ]").contains("security_look \"$1\" \"$(cat \"$1/security-phase\"").contains("sleep 5");
     }

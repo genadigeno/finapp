@@ -14,8 +14,11 @@ import com.finapp.identity.SessionStatus;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.audit.AuditRecord;
+import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.sharedkernel.correlation.Correlation;
+import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.security.Sensitive;
 import java.lang.reflect.Method;
@@ -179,7 +182,9 @@ class DegradedStorageFailsClosedTest {
                 request.addHeader("Authorization", "Bearer a-token-of-any-shape");
             }
             MockHttpServletResponse response = new MockHttpServletResponse();
-            try {
+            // Inside a correlation scope, as every request is: a denial or a refusal would then be written, so a failure misread as
+            // one shows as its record, not as a missing scope.
+            try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
                 handled = interceptor.preHandle(request, response, handler);
                 actorWhileHandled = SecurityContext.current().map(actor -> actor.type()).orElse(null);
                 return handled;
@@ -198,7 +203,7 @@ class DegradedStorageFailsClosedTest {
                 request.addHeader("Authorization", "Bearer " + IDS.next() + ".a-secret-of-any-shape");
             }
             MockHttpServletResponse response = new MockHttpServletResponse();
-            try {
+            try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
                 handled = interceptor.preHandle(request, response, handler);
                 return handled;
             } finally {
