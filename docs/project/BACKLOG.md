@@ -29539,7 +29539,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's budget procedure; `DISTRIBUTED_EXECUTION.md` §4a.
 - **Risk**: Medium. **Cx**: M.
 
-**P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
+**P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `IN_PROGRESS` (2026-11-13: designed on branch `P16-TSK-010` from master `1fbdf71c`; read `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`) until then)
 - **Objective**: as decided 2026-11-09, scheduled into Phase 16's archival:
   - the audit archival designed in `DATA_RETENTION.md` §3 is built;
   - expired session rows are swept, sized by the volume `-007` measured.
