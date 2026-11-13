@@ -455,7 +455,8 @@ load_sampler() {
 
 # load_fleet_moves: whether this run's count moves during the load - E48's scale, held by the harness at each count, or an autoscaled run.
 load_fleet_moves() {
-    [ -n "$PIPELINE_SCALE" ] || [ "$LOAD_AUTOSCALE" = true ]
+    # P16-TSK-020: a load beside the experiments, whose faults take replicas away and make new ones.
+    [ -n "$PIPELINE_SCALE" ] || [ "$LOAD_AUTOSCALE" = true ] || [ -n "${EXPERIMENTS_LOAD_ON:-}" ]
 }
 
 # load_moving_bounds: what load_scraped allows a pod coming or going, each read and never copied. LOAD_SETTLE: a replica ready this long is
@@ -485,13 +486,18 @@ load_scraped() {
     LOAD_UNSCRAPED=""
     load_prom 'up{job="finapp"} == 1' > "$1.targets.json" 2>&1 || true
     grep -q '"status":"success"' "$1.targets.json" || { LOAD_UNSCRAPED=" Prometheus did not list its targets"; return 1; }
-    kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{range .items[*]}{.metadata.name}|{.status.podIP}|{.metadata.deletionTimestamp}|{.status.conditions[?(@.type=="Ready")].status}|{.status.conditions[?(@.type=="Ready")].lastTransitionTime}|{.metadata.creationTimestamp}{"\n"}{end}' \
+    kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{range .items[*]}{.metadata.name}|{.status.podIP}|{.metadata.deletionTimestamp}|{.status.conditions[?(@.type=="Ready")].status}|{.status.conditions[?(@.type=="Ready")].lastTransitionTime}|{.metadata.creationTimestamp}|{.spec.nodeName}{"\n"}{end}' \
         > "$1.fleet.txt" 2>/dev/null || { LOAD_UNSCRAPED=" the pods could not be listed"; return 1; }
     grep -q . "$1.fleet.txt" || { LOAD_UNSCRAPED=" no pod was listed"; return 1; }
     now=$(date +%s)
     grep -o '"instance":"[^"]*"' "$1.targets.json" | sed 's/^"instance":"\(.*\):[0-9]*"$/\1/' | sort -u > "$1.scraped.txt"
-    while IFS='|' read -r name address gone ready since born; do
+    while IFS='|' read -r name address gone ready since born node; do
         [ -n "$name" ] && [ -z "$gone" ] || continue
+        # A pod a running experiment took away, on a node it stopped, or made since (P16-TSK-020, experiments_excused): the fault's own effect,
+        # which the experiment reads itself.
+        if [ -n "${EXPERIMENTS_LOAD_ON:-}" ] && experiments_excused "$name" "$node" "$born"; then
+            continue
+        fi
         if [ "$ready" = True ]; then
             at=$(date -u -d "$since" +%s 2>/dev/null || echo "$now")
             [ $((now - at)) -ge "$LOAD_SETTLE" ] || continue
@@ -1717,6 +1723,9 @@ load_judge() {
     report="$LOAD_ART/k6/report.tsv"
     secs=$(load_total_seconds)
     stress=$(load_profile_value stress)
+    # A load beside the experiments' faults (P16-TSK-020) records the iterations a fault held past the generator's bound as the stress profile's
+    # are, per stage; its latency is not that run's measure, and its money, samples and generator are judged as every run's.
+    [ -z "${EXPERIMENTS_LOAD_ON:-}" ] || stress=true
     # The samples: the run's invariants read throughout, or the run is not a run.
     coverage=$(awk -F'\t' -v start="$LOAD_STARTED" -v end="$LOAD_ENDED" '
         NR > 1 && $1 != 0 { n++; if ($4 != "PASS") bad++; if (first == "" ) first = $2; if (last != "" && $2 - last > gap) gap = $2 - last; last = $2 }
@@ -1820,9 +1829,11 @@ EOF
         load_prom "count(sum by (instance) (increase(http_server_requests_seconds_count{job=\"finapp\",$route}[$window])) != 0)" > "$LOAD_ART/spread.json" 2>&1 || true
         served=$(sed -n 's/.*"value":\[[^,]*,"\([0-9]*\)"\].*/\1/p' "$LOAD_ART/spread.json")
         # A fleet scaled during the load (E48, P16-TSK-013) was served by every replica it had, more than are ready at its end; one the
-        # autoscaler took to the run's count (E70, P16-TSK-014) by at least that many.
+        # autoscaler took to the run's count (E70, P16-TSK-014) by at least that many; one beside the experiments (P16-TSK-020), whose
+        # evictions and lost node made new replicas, by every one ready at its end and the ones it replaced.
         [ -n "$served" ] && { [ "$served" = "$ready" ] || { [ -n "$PIPELINE_SCALE" ] && [ "$served" -ge "$ready" ]; } \
-            || { [ "$LOAD_AUTOSCALE" = true ] && [ "$served" -ge "$LOAD_REPLICAS" ]; }; } \
+            || { [ "$LOAD_AUTOSCALE" = true ] && [ "$served" -ge "$LOAD_REPLICAS" ]; } \
+            || { [ -n "${EXPERIMENTS_LOAD_ON:-}" ] && [ "$served" -ge "$ready" ]; }; } \
             || fail "spread: ${served:-no} of $ready ready replicas served $route during the load"
         printf '%s\t%s\n' "$route" "$served" >> "$LOAD_ART/spread.tsv"
     done
