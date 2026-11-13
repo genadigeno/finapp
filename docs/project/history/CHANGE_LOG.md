@@ -21,6 +21,7 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 | Date | Change |
 |------|--------|
+| 2026-11-13 | The owner's word ("we dont need long running checks and tests"): `POSTPONED_ISSUES.md` PI-025 opened, Phase 16's `kind` runs postponed until after the project's phases; tasks build and contract-test their experiments, load profiles and drills, list the runs they owe there, and run only short named test classes; wave C's two tasks stop their remaining cluster runs. Waves D and E to start as their dependencies merge. |
 | 2026-11-13 | The owner's decision ("accept recommendations"): `THREAT_MODEL.md` §6 item 51 decided (i), risk's two readers and the opening position kept failing closed on a raw writer's id; T15's row stays a `GAP` (no test plants such an id at each of the three); the runbook's pointer (§11.39 (a)) and item 42 (i)'s updated. |
 | 2026-11-13 | Wave C started (the owner: "start next wave"): `P16-TSK-007` and `P16-TSK-019` marked `READY`; `-007` adds the harness's setup for the three undriven operations (its routed note's first option). |
 | 2026-11-13 | `P16-TSK-017` merged (master `f86a25da`, a fast-forward of branch `P16-TSK-017`, which had merged master `5df99667`): Phase 16 at 7 of 34, **M16.6 at 1 of 3**, wave B complete; `P16-TSK-006`'s record archived (TASK_HISTORY 431 → 432); no task newly eligible; item 51 awaits the owner; `kind`'s rules ConfigMap at 216 bytes under its client-side-apply margin, so the next rule splits it first. |
