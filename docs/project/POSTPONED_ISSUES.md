@@ -635,6 +635,25 @@ commit and the date; do not delete the entry.
     the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's
     `/api/v1/rules` listing every group of all thirteen rule files (`OPERATIONS_RUNBOOK.md` §11.34's alerts on `kind`). Proven
     without a cluster only: the stream rendered, `kubeconform -strict` and the pipeline's policies green.
+  - `P16-TSK-021` (network, DNS, connection and disk faults, `OPERATIONS_RUNBOOK.md` §11.47, every record there empty): at three
+    replicas in the `experiments` scope, **none ever run** - E07 (the database's slots held, the operator admitted), E11 (the WAL
+    archive's object store stopped; it also needs that store, which `P16-TSK-024` brings, named by `REHEARSAL_E11_STORE`), E12 (the
+    database hop's latency at 50, 200 and 1000 ms), E13 (resets at 1% and 10% of the links, then **the entry's probe**: a transfer cut
+    inside its transaction left absent, one cut on its commit left whole, each retried by key to one effect), E14 (one replica
+    black-holed from the database: **the black-holed connection's measurement**, without a socket timeout, that `P16-TSK-022` decides
+    the timeout from), E15 (the broker's hop, then the provider's, black-holed), E16 (CoreDNS scaled to zero) and E24 (the primary's
+    own 2 GiB filesystem filled; E24 must be named when the run makes its data tier). Also owed: the `crash-with-faults` and
+    `term-with-faults` probes over the four new kinds of fault (a black hole, the holder, a lock, a ballast), and a first run of the
+    loop-mounted volume and the local PersistentVolume on a cluster. What ran instead: `NetworkFaultExperimentsContractTest`, and short
+    container checks of the node image's tools and of Toxiproxy 2.13.0 with PostgreSQL 18.6 (§11.47's last record).
+  - **`P16-TSK-009`** (the connection budget at ten, `OPERATIONS_RUNBOOK.md` §11.49; `CAPACITY_MODEL.md` §4; ADR-0134): **E41**, the `load`
+    scope at ten replicas with the normal profile (`REHEARSAL_LOAD_PROFILE=normal REHEARSAL_LOAD_REPLICAS=10`): the autoscaler reading
+    metrics-server's CPU metric, each replica's pools at the engineering workload (`load/pools-per-replica.tsv`), the fleet's peak
+    within 13 x 8 with an operator admitted at it and with the fleet held at 104; §11.49's record. Also owed by the same change, since it
+    touches every scope's rendered copy: the first cluster run of `kind-rehearsal.sh`'s `fleet_patch` and of the `load` scope's new steps
+    at any count (the release scope at three on these bytes is already PI-024's). The peak during a rollout at ten is E26's
+    (`P16-TSK-014`). Nothing ran on a cluster: `fleet_patch` ran once by itself over a real render, and the manifest policies and the
+    budget's plants in containers (§11.49's record).
   - `P16-TSK-024` (restore and point-in-time recovery, `OPERATIONS_RUNBOOK.md` §11.35 and §11.55; ADR-0140): **E59**, the whole
     seeded restore rehearsal on the task's tree (`infra/scripts/restore-rehearsal.sh` with its defaults: the widened seed, the
     logical restore and its gate, every plant, `key-version-missing` among them), then the logical restore of a `kind` database after

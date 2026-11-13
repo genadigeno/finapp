@@ -1,0 +1,46 @@
+# E24's size-limited volume (P16-TSK-021, RESILIENCE_EXPERIMENTS.md E24, OPERATIONS_RUNBOOK.md section 11.47). Test-only and never
+# rendered by any overlay: the experiments scope applies this file itself, once per worker, NODE_NAME written in, and only when E24 is
+# named.
+#
+# WHY IT EXISTS. kind's provisioner (local-path) backs a claim with a directory on the node, so the test-only PostgreSQL's 2Gi claim has no
+# size of its own: the machine's whole disk is behind it, and filling it would fill that disk. Here a claim is a filesystem of its own
+# size. experiments.sh's experiments_limited_volume makes, on each worker, a 2 GiB ext4 filesystem in a file inside the node container,
+# loop-mounted at /mnt/finapp-experiments-pgdata, made afresh on every run; this file offers it as a local PersistentVolume of a class no
+# provisioner serves, bound only when the primary's pod is scheduled (the scope's rendered copy of the primary's claim names the class).
+# The ballast that fills it goes at its root, beside the data directory, from the node, and nothing else of the cluster changes.
+#
+# Retain: no provisioner deletes a local volume; the scope deletes these objects itself before it makes the filesystems again.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: finapp-experiments-limited
+  labels:
+    finapp/test-only: "true"
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: finapp-experiments-pgdata-NODE_NAME
+  labels:
+    finapp/test-only: "true"
+    finapp/experiment-volume: "true"
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: finapp-experiments-limited
+  local:
+    path: /mnt/finapp-experiments-pgdata
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - NODE_NAME

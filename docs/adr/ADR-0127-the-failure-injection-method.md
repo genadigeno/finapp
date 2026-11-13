@@ -97,3 +97,15 @@ deleted); every Secret value of the run's namespaces hashed in the node and foun
 endpoint of the application's environment, its aliases and the proxy's upstreams the run's own - each proven in every run by a plant
 beside its control. Faults are registered before they go on and removed at stop; the harness's exit path empties the registry, resets
 what needs no record and reads that nothing is left, on every way out.)*
+
+*(Dated note, 2026-11-13: decision 3's partition corrected while the network, DNS, connection and disk faults were built, decisions
+1, 5 and 6 unchanged. **A NetworkPolicy cannot make a partition here.** Policies only add what a pod may reach, and the application's own
+already admit every hop; and the policy engine admits an established connection before any policy, so a policy would refuse only new
+connections and never black-hole a held one, which is the case `THREAT_MODEL.md` §6 item 42 (h) is about. So one replica is cut by a
+DROP rule each way inside its own network namespace, set from its node with the node's own `nsenter` and `iptables` (the docker primitive
+E01's kill already uses, nothing installed), and a hop is cut for every replica by Toxiproxy's `timeout` toxic at 0, both ways. Three more
+faults joined the registry, each behind the boundary and removed on every way out: the test-only server's ordinary slots held by a role
+with no superuser attribute, a table locked by the run's superuser, and a ballast filling a size-limited filesystem the run makes for
+the primary, since `kind`'s volume claims have no size of their own. A proxy may be armed (the boundary passed and the fault registered)
+and fired at a measured moment, which a cut on a commit needs. None of these experiments has run: their runs are owed under
+`POSTPONED_ISSUES.md` PI-025. `OPERATIONS_RUNBOOK.md` §11.47.)*

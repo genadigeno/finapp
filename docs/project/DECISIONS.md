@@ -1391,6 +1391,12 @@ target, the runs (E38–E40) built and owed under `POSTPONED_ISSUES.md` PI-025; 
 whole history on every call and was E30's first limit, bounded by a checkpoint below the journal's commit-order watermark, its build
 the owner's to place (`THREAT_MODEL.md` §6 item 55). → [ADR-0133](../adr/ADR-0133-contention-measured-before-any-mechanism-and-the-whole-history-folds.md)
 
+**The connection budget at ten replicas: a larger server, no smaller pool, no transaction-mode pooler yet** (owner decision C3,
+2026-11-13). `kind`'s test-only server is raised to the formula for ten (13 instances, 116 connections), each rehearsal run holding its
+fleet at its own count; staging unchanged; production's ceiling stays seven, ten taking a larger declared `max_connections` first once
+the ten-instance runs are made (`THREAT_MODEL.md` §6 item 56). A transaction-mode pooler is refused for now: the driver sets isolation
+per session, outside the transaction. → [ADR-0134](../adr/ADR-0134-the-connection-budget-at-ten-replicas.md)
+
 **The post-recovery hold is the role lock, held through the window.** The platform's roles stay `NOLOGIN` from before a restore to
 its release; the window since the restore's point is reconciled by one command acting as the application's role while those roles
 cannot log in; the books are verified again; a person releases, with a record naming the reports it rests on. Locally, a recovery
