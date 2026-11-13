@@ -72,9 +72,9 @@
 #                        deadlocks.txt, with every serialisation failure; lock-waits.tsv); what explains each is the run's record.
 #   "soak": true         (soak.json, E39: the engineering workload held eight hours, the payable read left out because its cost grows
 #                        with the run's age, ADR-0133). The server logs every autovacuum run and checkpoint; load/soak.sql reads the
-#                        named tables every 60 s; over 94% to 95% of the load auto_explain's window (preloaded by the kind overlay and
+#                        named tables every 60 s; over 80% to 83% of the load auto_explain's window (preloaded by the kind overlay and
 #                        inert until here) logs a twentieth of every statement's plan, and load/plans.awk keeps the slowest plan of each
-#                        of the 25 statements pg_stat_statements ranks highest and counts every sequential scan; at 97% a transactional
+#                        of the 25 statements pg_stat_statements ranks highest and counts every sequential scan; at 86% a transactional
 #                        index build on ledger.journal_line (load/index-build.sql, THREAT_MODEL.md section 6 item 42 (b)) measures the
 #                        write stop a migration's CREATE INDEX makes under the load, and the throwaway index is dropped.
 # The probe of E38 (the lock order removed from the transfer's two account locks) is a throwaway branch's, section 11.48.
@@ -760,17 +760,19 @@ load_soak_sampler() {
     done
 }
 
-# load_soak_tick <elapsed> <seconds>: the plans window over 94% to 95% of the load, then the index build at 97%, each once.
+# load_soak_tick <elapsed> <seconds>: the plans window over 80% to 83% of the load, then the index build at 86%, each once. Counted in the
+# host's seconds, while k6 runs its stages on the VM's monotonic clock, which ran 8% fast in E30 (section 11.45): the load can end at 92% of
+# its written length in the host's seconds, so nothing here waits for a later fraction than that.
 load_soak_tick() {
-    if [ -z "${LOAD_PLANS_OPENED:-}" ] && [ "$1" -ge $(($2 * 94 / 100)) ]; then
+    if [ -z "${LOAD_PLANS_OPENED:-}" ] && [ "$1" -ge $(($2 * 80 / 100)) ]; then
         pg_plans_open "$LOAD_ART" 0.05
         LOAD_PLANS_OPENED=1
     fi
-    if [ -n "${LOAD_PLANS_OPENED:-}" ] && [ -z "${LOAD_PLANS_CLOSED:-}" ] && [ "$1" -ge $(($2 * 95 / 100)) ]; then
+    if [ -n "${LOAD_PLANS_OPENED:-}" ] && [ -z "${LOAD_PLANS_CLOSED:-}" ] && [ "$1" -ge $(($2 * 83 / 100)) ]; then
         pg_plans_close "$LOAD_ART" "true"
         LOAD_PLANS_CLOSED=1
     fi
-    if [ -z "${LOAD_INDEX:-}" ] && [ "$1" -ge $(($2 * 97 / 100)) ]; then
+    if [ -z "${LOAD_INDEX:-}" ] && [ "$1" -ge $(($2 * 86 / 100)) ]; then
         load_index_build &
         LOAD_INDEX=$!
         BACKGROUND="$BACKGROUND $LOAD_INDEX"
@@ -802,6 +804,7 @@ load_index_build() {
 # After the load: the build's write stop, the table's size and rows, and each operation's answers in the build's window and in the ten
 # minutes before it, from the generator's series (load/index-build-latency.tsv).
 load_index_judge() {
+    [ -n "${LOAD_INDEX:-}" ] || fail "the transactional index build never started: the soak ended before 86% of its length in the host's seconds"
     wait "$LOAD_INDEX" 2>/dev/null || true
     # The try that built: its own "before", the last one ahead of the "built" line (a try its lock_timeout refused wrote one too).
     before=$(awk -F'|' '$1 == "before" {b = $2} $1 == "built" {print b; exit}' "$LOAD_ART/index-build.tsv")

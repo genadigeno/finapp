@@ -5161,11 +5161,11 @@ own record alone: the payable read's cost grows with the run's age (ADR-0133) an
   `autovacuum.txt` and `checkpoints.txt` come from the server's log. `wal-per-movement.tsv` holds the WAL's bytes over the money movements.
   Growth per hour, multiplied by the target's ratio to the engineering workload (`CAPACITY_MODEL.md` §3.4), is `P16-TSK-012`'s input for
   partitioning;
-- `plans/`, from auto_explain's window over 94% to 95% of the run (a twentieth of every plan). `top.tsv` holds the 25 statements
+- `plans/`, from auto_explain's window over 80% to 83% of the run (a twentieth of every plan). `top.tsv` holds the 25 statements
   `pg_stat_statements` ranks highest by total time over the run, `<rank>-<queryid>.txt` the slowest plan of each the window caught,
   `not-caught.tsv` the rest, and `seq-scans.tsv` every sequential scan by table and statement. A sequential scan on a table that grows
   (`pg-soak-tables.tsv`) is recorded in the capacity model (§6.5);
-- `index-build.tsv`, `index-build.log` and `index-build-latency.tsv`. At 97% of the run `kind-rehearsal/load/index-build.sql` builds a plain
+- `index-build.tsv`, `index-build.log` and `index-build-latency.tsv`. At 86% of the run `kind-rehearsal/load/index-build.sql` builds a plain
   index on `ledger.journal_line` in one transaction, as a migration would, under the migrator's own `lock_timeout` (read from
   `MigrationPlan.java`) and a 10-minute statement bound. It is tried three times if its lock is refused, then dropped. The write stop is
   the time from its lock request to its commit. Beside it are the table's rows and bytes, and each operation's answers in that window

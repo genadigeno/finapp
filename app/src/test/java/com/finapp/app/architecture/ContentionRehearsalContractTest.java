@@ -201,9 +201,9 @@ class ContentionRehearsalContractTest {
                 .startsWith("\n    pg_server_reset \"$1\" auto_explain.log_min_duration ");
         assertThat(read(DIR + "plans.awk")).as("each top statement's plan found by its Query Identifier, every sequential scan counted")
                 .contains("match(plan, /\\tQuery Identifier: -?[0-9]+/)").contains("Seq Scan on");
-        assertThat(function(load, "load_soak_tick")).as("the soak's window over 94% to 95% of the load, a twentieth of every plan")
-                .contains("[ \"$1\" -ge $(($2 * 94 / 100)) ]").contains("pg_plans_open \"$LOAD_ART\" 0.05")
-                .contains("[ \"$1\" -ge $(($2 * 95 / 100)) ]");
+        assertThat(function(load, "load_soak_tick")).as("the soak's window over 80% to 83% of the load, a twentieth of every plan")
+                .contains("[ \"$1\" -ge $(($2 * 80 / 100)) ]").contains("pg_plans_open \"$LOAD_ART\" 0.05")
+                .contains("[ \"$1\" -ge $(($2 * 83 / 100)) ]");
     }
 
     @Test
