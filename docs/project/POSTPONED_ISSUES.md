@@ -621,6 +621,20 @@ commit and the date; do not delete the entry.
     ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
     commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
     discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
+  - `P16-TSK-008` (hot rows, locks, deadlocks and plans; `OPERATIONS_RUNBOOK.md` §11.48, whose record is empty; `CAPACITY_MODEL.md`
+    §3.5, its measured cells `—`): **E38**, the concurrent-financial profile (`REHEARSAL_LOAD_PROFILE=concurrent`) at seven replicas and
+    at three, with its control wait, its per-row waits, the server's lock log and every deadlock explained in the record; **E38's
+    probe**, the transfer's fixed lock order dropped on a throwaway branch, at seven replicas, with its `MUTATION_TESTING.md` §2 row;
+    **E39**, the eight-hour soak (`REHEARSAL_LOAD_PROFILE=soak`) at three replicas, with its plans window and the transactional index
+    build on the journal that decides `THREAT_MODEL.md` §6 item 42 (b); **E40**, the sweeps' failure storm (`REHEARSAL_SCOPE=experiments
+    REHEARSAL_EXPERIMENTS=E40`) at three replicas. Nothing ran before the word. The new SQL, the `\watch` sampler, the server's log formats
+    and the readers were run in a throwaway container of the pinned PostgreSQL image (no `kind`, no application) on 2026-11-13; on a
+    cluster they are unproven.
+  - The coordinator's rules split (2026-11-13, branch `P16-chore-rules-split`; `docs/project/history/CHANGE_LOG.md`): kind's rules
+    in two ConfigMaps, `finapp-prometheus-rules` and `finapp-prometheus-rules-domain`, projected into `/etc/prometheus-rules`. Owed:
+    the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's
+    `/api/v1/rules` listing every group of all thirteen rule files (`OPERATIONS_RUNBOOK.md` §11.34's alerts on `kind`). Proven
+    without a cluster only: the stream rendered, `kubeconform -strict` and the pipeline's policies green.
   - **`P16-TSK-022`** (the database failover drill and the socket timeout; `OPERATIONS_RUNBOOK.md` §11.54, whose last record is empty,
     and §11.40's record; ADR-0139): **E06**, the primary's unclean stop in place (PI-024's step, under owner decision C11), at three
     replicas; **E57**, the database hop black-holed for the whole fleet with and without the socket timeout, at three replicas; **E05**,

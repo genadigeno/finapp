@@ -29440,7 +29440,7 @@ on none:
   the profiles, the replica patch, the per-stage cuts, the lost token, the probe's index and the undriven reasons; six probes in two
   rounds, each caught (`MUTATION_TESTING.md` §2).
 
-**P16-TSK-008 — Hot rows, locks, deadlocks and plans under load** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
+**P16-TSK-008 — Hot rows, locks, deadlocks and plans under load** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-008` from master `1fbdf71c`, wave D; no migration, no application code; ADR-0133 `Proposed`; every cluster run owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)" until its gate)
 - **Objective**: measure every known contended financial resource and the database's behaviour under the concurrent-financial and
   soak profiles, and decide by measurement whether any needs a mechanism (`PHASE_16_PLAN.md` §6.3–§6.5, §6.7).
 - **Affected components**: `ledger` (the projection's hot rows), `fx` (`FX_POSITION`, `FX_SPREAD_REVENUE`), `lending` and `bnpl`
@@ -29495,6 +29495,45 @@ on none:
   but each merchant's read still grows with its own history, without bound. A plan, a snapshot or a bounded read is this task's to
   decide by measurement (an ADR first where it changes the ledger's reads, `PHASE_16_PLAN.md` §5.4); the hot merchant also serialises
   its `ledger.account_balance` upserts (mean 14 ms in that run).
+- **As built (2026-11-13; branch `P16-TSK-008` from master `1fbdf71c`; no migration, no application code; the runs owed under
+  `POSTPONED_ISSUES.md` PI-025 by the owner's word of 2026-11-13, "we dont need long running checks and tests").** Every acceptance
+  criterion that rests on a run is **built, contract-tested and its run owed**; nothing here was run on `kind`, and no measured figure
+  is claimed.
+  - **E38, the concurrent-financial profile** (`kind-rehearsal/load/concurrent.json`, `REHEARSAL_LOAD_PROFILE=concurrent`): every
+    transfer between one pair of customers one way and back (`transferPair` in `scenarios.js`), every checkout to the one merchant,
+    every top-up through the one clearing, 15 minutes at the engineering workload and two of the target's bursts; reads, sign-ins and
+    the merchant API undriven with their reasons, BNPL and lending undriven because no `kind` deployment can give a credit approval
+    (so the capital row and L6 stay unmeasurable there). Its waits are sampled every 250 ms (`load/contention.sql` under `\watch`)
+    and resolved to their rows (a balance or account row to its account, an advisory lock to its key, a table to its name), turned into
+    each row's waits per stage (`load/contention.awk`); the server's own log of every wait of a second or more, every deadlock and every
+    serialisation failure is read (`log_lock_waits` on the run's own server; `load/locks.awk`). Before the load the sampler is shown a
+    wait it must place, and the log must hold it; every deadlock the server counted must have its record. The load scope's spread check
+    now asks only the routes the profile drives. Criteria met as built, runs owed: every hot row's wait distribution; every deadlock
+    explained (the known paths are `OPERATIONS_RUNBOOK.md` §11.48's).
+  - **The probe** is the transfer's fixed lock order dropped on a throwaway branch (`TransferExecution.lockBothInFixedOrder`), not
+    `lockBalancesInOrder`: no multi-entry caller of it is driven on `kind` (`PHASE_16_PLAN.md` §6.3's erratum). Owed under PI-025.
+  - **E39, the soak** (`kind-rehearsal/load/soak.json`): eight hours at the engineering workload, the payable read left out
+    (`merchantPayable` false); the named tables every 60 s (`load/soak.sql`), every autovacuum run and checkpoint from the server's
+    log, the WAL a movement; auto_explain's window over 80% to 83% of the run (the `kind` overlay's test-only server preloads
+    `auto_explain`, inert until a window; `load/plans.awk` keeps the top statements' plans and every sequential scan); at 86% a
+    transactional index build on `ledger.journal_line` under the migrator's own `lock_timeout` read from `MigrationPlan.java`
+    (`load/index-build.sql`), its write stop measured and the index dropped, for item 42 (b). Owed under PI-025.
+  - **E40, the sweeps' failure storm** (`experiments.sh`, `REHEARSAL_EXPERIMENTS=E40`): a timeout toxic on the simulator's hop through
+    the fault registry, for the dispatched age and fifteen minutes more (both read from the code); the eight listings' plans and
+    statistics with the record tables empty and full, the tables' writes, HOT updates, dead rows and bytes. Owed under PI-025.
+  - **Every debt row ruled** by reading and arithmetic, each naming the run that measures it (`CURRENT_STATE.md`: #52, #53, the source
+    lock, the rescreening census, the whole-day proofs, the capital row, L6; the poisoned row's routed probe); capital tranches not
+    decided (`DECISIONS.md` §Deferred).
+  - **ADR-0133** (`Proposed`): contention measured before any mechanism, and **no hot-row mechanism decided** - "no mechanism needed
+    at the target" is not claimed, it waits on E38's run; the merchant payable read, E30's measured first limit, bounded by a
+    commit-order checkpoint (below `pg_snapshot_xmin` on the journal's `txid`), proposed with its hazards (a column and index on the
+    hottest table, the classification version, a logical restore's counter) and its build the owner's to place,
+    `THREAT_MODEL.md` §6 item 55, recommendation (i). The read is not changed by this task. Read from the code beside it: every
+    balance decision folds the account's whole history under its row lock (`AvailableBalance`), measured by E38's pair.
+  - **Tests**: `ContentionRehearsalContractTest` (new, eight members, each probed) and `LoadRehearsalContractTest`'s staged-profiles
+    member widened to the concurrent and soak profiles (probed); the guards that read the changed files, named in the change log's row.
+    A throwaway container of the pinned PostgreSQL image proved the new SQL, the sampler's `\watch` and its streaming, auto_explain's
+    log format (the `Query Identifier` line, and that `log_parameter_max_length` 0 drops the parameters line) and the three readers.
 
 **P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: make ten replicas possible without breaking the connection budget, decided by measurement, and give the HPA a
@@ -29575,7 +29614,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.15 widened.
 - **Risk**: Medium. **Cx**: L.
 
-**P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `PLANNED`
+**P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
 - **Objective**: as decided:
   - land a uniqueness on the posting scope (`journal_entry.idempotency_scope` is not `UNIQUE`);
   - then sweep expired idempotency records, which today would remove the second rank of posting once-ness;
@@ -29608,7 +29647,7 @@ on none:
 - **Operational documentation**: `DATA_RETENTION.md`; `OPERATIONS_RUNBOOK.md` §11.15.
 - **Risk**: High (the posting path). **Cx**: L.
 
-**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `PLANNED`
+**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
 - **Objective**: decide, from the soak's growth rates extrapolated to the production target, whether any high-volume table needs
   partitioning. Decide whether report generation needs a replica, and hold `PHASE_GATES.md` §5 Phase 16 criterion 6 by a guard
   either way.
@@ -30054,7 +30093,7 @@ on none:
   killed with `SIGKILL` from its node, a payout held at the provider with its claim `IN_PROGRESS`, the old primary fenced and its pod
   gone before anything is promoted, the promotion refused unless the primary named the standby synchronous at its last read and the
   standby holds the last commit the drill saw acknowledged, the standby promoted alone (`synchronous_standby_names` reset: the routed
-  question decided), the Service moved, every harness read following the primary (`PG_POD`), the old primary never back. Each reads the
+  question decided), the Service moved, every harness read following the primary (`PG_POD`), the old primary never back; the standby preloads `auto_explain` as the primary has since the merge of master, so a promoted standby serves as the primary served. Each reads the
   journal with a digest per entry before its fault and compares it after, records each replica's readiness (an outage shorter than
   three failed checks may leave them ready: recorded, never assumed), asserts no money-moving success while the database was away and
   reads the interruption from the edge's answers; E05 also measures the card payments caught mid-call (the routed measurement). The

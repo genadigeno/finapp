@@ -69,6 +69,12 @@
 #   async-standby      E05 with its standby made asynchronous and cut from the primary's WAL before the fault (the entry's probe, register
 #                      E56): the promotion is refused, the probe promotes it anyway, and the journal's comparison must show the commits lost.
 # REHEARSAL_EXPERIMENTS names the experiments to run (E01 by default; the catalogue is P16-TSK-020...-023's and P16-TSK-027's).
+#
+# E40 (P16-TSK-008, at three replicas): the sweeps' failure storm - every call to the provider simulator hangs for the payment sweep's
+# dispatched age and fifteen minutes more, so every candidate of the sweeps fails and is recorded and backed off; the eight listings' plans
+# and statistics read with the record tables empty and with the storm's rows, the tables' writes, dead rows and bytes every 30 s; every
+# candidate resolved once the provider answers; the census green. Its plans come from auto_explain's window on the run's own server
+# (load.sh's pg_plans_open and pg_plans_close).
 
 EXPERIMENTS=${REHEARSAL_EXPERIMENTS:-E01}
 TOXIPROXY_IMAGE="$TOXIPROXY_REPOSITORY@$TOXIPROXY_DIGEST"
@@ -1706,4 +1712,121 @@ E05_recover() {
     experiments_record timeline "the kill at 0 s; a replica first unready $(experiments_since "$FLEET_FIRST_UNREADY" "$E05_FAULT_AT"), none ready $(experiments_since "$FLEET_NONE_READY" "$E05_FAULT_AT"), every replica ready again $(experiments_since "$FLEET_ALL_READY" "$E05_FAULT_AT"); the old primary gone $(experiments_since "$E05_GONE_AT" "$E05_FAULT_AT"); promoted $(experiments_since "${E05_PROMOTED_AT:-}" "$E05_FAULT_AT"); the Service on it $(experiments_since "${E05_MOVED_AT:-}" "$E05_FAULT_AT"); the first money-moving success $(experiments_since "$back" "$E05_FAULT_AT") (the interruption)"
     experiments_record "caught mid-call" "${caught:-no} card payments PROCESSING at the first read after the fault; none left $(experiments_since "$cleared" "$E05_FAULT_AT") (the payment sweep's dispatched age concludes them)"
     experiments_record "at the edge" "$EDGE_FAILED failed answers and $EDGE_SERVED served since the minute before the fault; $away money-moving successes while no primary served"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E40: the sweeps' failure storm (P16-TSK-008; routed by P16-TSK-017; OPERATIONS_RUNBOOK.md section 11.48), at three replicas.
+# ---------------------------------------------------------------------------------------------------
+#
+# Every call to the provider simulator hangs (a Toxiproxy timeout toxic on its hop, through the fault registry), so every card payment the
+# workload sends is dispatched into silence and left for the sweep, and every inquiry the sweeps make fails too: every candidate of the
+# card legs and of the payout leg fails and is recorded in payments.sweep_row_failure or merchant.sweep_row_failure and backed off. The
+# storm lasts the payment sweep's dispatched age (read from the code) and fifteen minutes more, so a quarter of an hour of listings meets a
+# head of backed-off candidates. Read: the eight listings' plans with their NOT EXISTS probe (auto_explain, every plan, for three minutes)
+# with the record tables empty and again with the storm's rows; their calls, time and rows from pg_stat_statements at each; the record
+# tables' rows by leg, writes, HOT updates, dead rows and bytes every 30 s. After the storm every candidate must resolve once the provider
+# answers, within the sweep's ages and the backoff's cap (read from the code), and the census holds.
+
+# e40_tables <label>: the two record tables, by leg, and their statistics, appended to tables.tsv.
+e40_tables() {
+    psql_query -F "$(printf '\t')" -c "SELECT '$1', extract(epoch FROM now())::bigint, t.schemaname || '.' || t.relname, t.n_tup_ins, t.n_tup_upd,
+        t.n_tup_hot_upd, t.n_live_tup, t.n_dead_tup, t.autovacuum_count, pg_total_relation_size(t.relid),
+        (SELECT string_agg(leg || '=' || n, ',' ORDER BY leg) FROM (SELECT leg, count(*) AS n FROM payments.sweep_row_failure GROUP BY leg
+          UNION ALL SELECT leg, count(*) FROM merchant.sweep_row_failure GROUP BY leg) l)
+        FROM pg_stat_user_tables t WHERE t.relname = 'sweep_row_failure' ORDER BY 3" >> "$EXP_DIR/tables.tsv" 2>> "$EXP_DIR/errors.log" || true
+}
+
+# e40_rows: the storm's records, both tables together.
+e40_rows() {
+    psql_query -c "SELECT (SELECT count(*) FROM payments.sweep_row_failure) + (SELECT count(*) FROM merchant.sweep_row_failure)" | tr -d '[:space:]'
+}
+
+# e40_listings <label>: every statement naming a record table (the eight listings and the record's own upsert), as pg_stat_statements has
+# it: calls, time, rows and its parameterised text.
+e40_listings() {
+    pg_admin -F "$(printf '\t')" -c "SELECT '$1', s.queryid, s.calls, round(s.total_exec_time::numeric, 1), round(s.mean_exec_time::numeric, 3), s.rows,
+        s.shared_blks_hit + s.shared_blks_read, left(regexp_replace(s.query, '\s+', ' ', 'g'), 200)
+        FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid WHERE d.datname = 'finapp' AND s.query LIKE '%sweep_row_failure%'
+        ORDER BY s.total_exec_time DESC" >> "$EXP_DIR/listings.tsv" 2>> "$EXP_DIR/errors.log" || true
+}
+
+E40_steady() {
+    age=$(sed -n 's/.*finapp\.payments\.sweeper\.dispatched-age:PT\([0-9]*\)M}.*/\1/p' \
+        "$ROOT/app/src/main/java/com/finapp/app/payments/PaymentSweeperSchedule.java" | head -1)
+    cap=$(sed -n 's/.*Duration CAP = Duration\.ofMinutes(\([0-9]*\));.*/\1/p' "$ROOT/platform/src/main/java/com/finapp/platform/persistence/SweepBackoff.java" | head -1)
+    case $age in '' | *[!0-9]*) cannot "E40: the payment sweep's dispatched age could not be read from PaymentSweeperSchedule.java" ;; esac
+    case $cap in '' | *[!0-9]*) cannot "E40: the sweeps' backoff cap could not be read from SweepBackoff.java" ;; esac
+    E40_STORM=$((age * 60 + 900))
+    E40_RESOLVE=$((2 * age * 60 + cap * 60 + 300))
+    experiments_record "storm" "${E40_STORM} s: the dispatched age (${age} min) and fifteen minutes of listings meeting backed-off candidates; resolution bound ${E40_RESOLVE} s"
+    # The workload's client keeps asking a movement the storm left unknown until the storm and its resolution are over.
+    WORKLOAD_RETRY_SECONDS=$((E40_STORM + E40_RESOLVE + 300))
+    start_workload e40 retry
+    sleep 30
+    : > "$EXP_DIR/tables.tsv"
+    : > "$EXP_DIR/listings.tsv"
+    e40_tables steady
+    [ "$(e40_rows)" = 0 ] || fail "E40 steady state: the record tables hold rows before the storm, so the listings' plans with the tables empty cannot be read: see experiments/E40/tables.tsv"
+    # The statements' statistics, in the server's maintenance database as the load scope keeps them: the finapp database gains no object.
+    pg_admin -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements" >> "$EXP_DIR/server-settings.log" 2>&1 \
+        || cannot "E40: pg_stat_statements could not be created: the kind overlay's server must preload it"
+    pg_admin -c "SELECT pg_stat_statements_reset()" >> "$EXP_DIR/server-settings.log" 2>&1 || cannot "E40: pg_stat_statements could not be reset"
+    mkdir -p "$EXP_DIR/empty" "$EXP_DIR/storm"
+    pg_plans_open "$EXP_DIR/empty" 1
+    sleep 180
+    pg_plans_close "$EXP_DIR/empty" "s.query LIKE '%sweep_row_failure%'"
+    case $PG_PLANS_SUMMARY in *"caught 0 "*) fail "E40: the window with the tables empty caught no listing's plan: see experiments/E40/empty/plans" ;; esac
+    e40_listings empty
+    experiments_record "empty" "the listings' plans with both record tables empty: $PG_PLANS_SUMMARY(experiments/E40/empty/plans)"
+}
+
+E40_fault() {
+    experiments_fault_on toxic simulator e40-storm timeout timeout=0
+    E40_FROM=$(date +%s)
+    experiments_record fault "every call to the provider simulator hangs (a timeout toxic on its hop) from $(date -u -d "@$E40_FROM" +%H:%M:%SZ), for ${E40_STORM} s"
+}
+
+E40_observe() {
+    opened=""
+    while [ "$(date +%s)" -lt $((E40_FROM + E40_STORM)) ]; do
+        e40_tables storm
+        firing=$(experiments_pages_firing)
+        if [ -n "$firing" ]; then
+            EXP_STOPPED="a correctness page during the storm: $firing"
+            log "E40 STOP: $EXP_STOPPED"
+            break
+        fi
+        # The storm's plans over its last four minutes, when the backed-off head is longest.
+        if [ -z "$opened" ] && [ "$(date +%s)" -ge $((E40_FROM + E40_STORM - 240)) ]; then
+            pg_plans_open "$EXP_DIR/storm" 1
+            opened=1
+        fi
+        sleep 30
+    done
+    [ -z "$opened" ] || pg_plans_close "$EXP_DIR/storm" "s.query LIKE '%sweep_row_failure%'"
+    [ -n "$EXP_STOPPED" ] && return 0
+    case $PG_PLANS_SUMMARY in *"caught 0 "*) fail "E40: the storm's window caught no listing's plan: see experiments/E40/storm/plans" ;; esac
+    e40_listings storm
+    rows=$(e40_rows)
+    [ "${rows:-0}" -ge 1 ] || fail "E40: the storm recorded no sweep row's failure, so the fault never reached the sweeps: see experiments/E40/tables.tsv"
+    experiments_record "storm" "$rows rows recorded across both tables ($(tail -1 "$EXP_DIR/tables.tsv" | cut -f11)); the listings' plans with the storm's rows: $PG_PLANS_SUMMARY(experiments/E40/storm/plans); each listing's calls, time and rows in experiments/E40/listings.tsv"
+    pass "E40: the storm failed every sweep it reached, $rows rows recorded and backed off; the listings read with the tables empty and full"
+}
+
+E40_recover() {
+    # The provider answers again (the toxic was removed at stop): every candidate resolves within the ages and the backoff's cap.
+    deadline=$(( $(date +%s) + E40_RESOLVE ))
+    while :; do
+        open=$(psql_query -c "SELECT count(*) FROM payments.payment_attempt WHERE status IN ('AUTH_DISPATCHED', 'CAPTURE_DISPATCHED', 'VOID_DISPATCHED',
+            'AUTH_UNKNOWN', 'CAPTURE_UNKNOWN', 'VOID_UNKNOWN')" | tr -d '[:space:]')
+        [ "$open" = 0 ] && break
+        [ "$(date +%s)" -lt "$deadline" ] || fail "E40: $open payment attempts still unresolved ${E40_RESOLVE} s after the provider answered again"
+        sleep 20
+    done
+    e40_tables recovered
+    stop_workload e40
+    [ "$(workload_unresolved e40)" = 0 ] || fail "E40: $(workload_unresolved e40) requests stayed unresolved: see workload-e40.tsv"
+    assert_flows_ran e40
+    experiments_record workload "$(cat "$CLIENT/workload-e40.summary")"
+    experiments_record "recovered" "every payment attempt resolved after the storm; the record tables: $(tail -1 "$EXP_DIR/tables.tsv" | cut -f3-10 | tr '\t' ' ')"
 }

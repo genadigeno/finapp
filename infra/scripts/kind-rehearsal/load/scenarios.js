@@ -242,7 +242,9 @@ export function transfer() {
     const it = exec.scenario.iterationInTest;
     const started = Date.now();
     metrics[op].iterations.add(1);
-    const all = fixture.customers;
+    // The concurrent-financial profile (P16-TSK-008, transferPair): every transfer between the same two customers, one way and back by
+    // turns, so the pair's two accounts are the hot rows and two opposite transfers race for both. Every other profile spreads them.
+    const all = profile.transferPair ? fixture.customers.slice(0, 2) : fixture.customers;
     const from = all[it % all.length];
     const to = all[(it + 1) % all.length];
     const body = {
@@ -389,7 +391,10 @@ export function signin() {
 }
 
 export function merchant() {
-    const path = exec.scenario.iterationInTest % 2 === 0 ? '/v1/merchant/me' : '/v1/merchant/payable';
+    // The payable read folds the merchant payable account's whole history on every call (ADR-0133), so its cost grows with a run's age:
+    // a profile that holds for hours (the soak, P16-TSK-008) sets merchantPayable false and reads the merchant's own record alone.
+    const payable = profile.merchantPayable !== false && exec.scenario.iterationInTest % 2 === 1;
+    const path = payable ? '/v1/merchant/payable' : '/v1/merchant/me';
     single('merchant', request('merchant', 'GET', path, null, fixture.merchantKey, null, path.substring(4)), 200);
 }
 
