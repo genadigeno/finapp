@@ -6,9 +6,10 @@
 # HOW IT IS MADE. The init container takes a base backup of the primary through the primary's own name, finapp-postgres, as
 # finapp_replicator, at verify-full against the run's local CA, with the slot finapp_standby so that the primary keeps every WAL segment
 # the standby has not received; it writes standby.signal, and does nothing on a later start, when the data directory is already there.
-# The server then streams from the primary under the same conninfo. Its password comes from finapp-kind-postgres-replication, generated
-# per run (experiments.sh), copied by the init container into a file of mode 0600 on the standby's own volume, because libpq reads no
-# password file the group can read. Once the standby streams, the harness sets the primary's synchronous_standby_names to
+# The server then streams from the primary under the same conninfo. Its phrase comes from finapp-kind-postgres-replication, generated
+# per run (experiments.sh), into the init container's environment by reference, as the primary's own comes to it; the init container
+# writes it into a file of mode 0600 on the standby's own volume, because libpq reads no password file the group can read and the
+# streaming server needs it after the init container is gone. Once the standby streams, the harness sets the primary's synchronous_standby_names to
 # 'FIRST 1 (finapp_standby)' at run time (ALTER SYSTEM on the test-only server), so from then on a commit returns only once this
 # standby has it, and the kind overlay's server is unchanged in every other scope.
 #
@@ -83,13 +84,19 @@ spec:
               fi
               umask 077
               mkdir -p /var/lib/postgresql/18
-              printf 'finapp-postgres.finapp.svc.cluster.local:5432:replication:finapp_replicator:%s\n' "$(cat /etc/finapp-replication/password)" \
+              printf 'finapp-postgres.finapp.svc.cluster.local:5432:replication:finapp_replicator:%s\n' "$REPLICATION_PHRASE" \
                   > /var/lib/postgresql/replication.pgpass
               pg_basebackup -D "$data" -X stream -c fast -S finapp_standby -R -d "host=finapp-postgres.finapp.svc.cluster.local port=5432 \
                   user=finapp_replicator application_name=finapp_standby sslmode=verify-full sslrootcert=/etc/finapp-local-ca/ca.crt \
                   passfile=/var/lib/postgresql/replication.pgpass"
               test -f "$data/standby.signal"
               echo "base backup taken"
+          env:
+            - name: REPLICATION_PHRASE
+              valueFrom:
+                secretKeyRef:
+                  name: finapp-kind-postgres-replication
+                  key: phrase
           resources:
             requests:
               cpu: 250m
@@ -113,9 +120,6 @@ spec:
               mountPath: /tmp
             - name: local-ca
               mountPath: /etc/finapp-local-ca
-              readOnly: true
-            - name: replication
-              mountPath: /etc/finapp-replication
               readOnly: true
       containers:
         - name: postgres
@@ -202,10 +206,6 @@ spec:
         - name: local-ca
           secret:
             secretName: finapp-kind-local-ca
-        - name: replication
-          secret:
-            secretName: finapp-kind-postgres-replication
-            defaultMode: 288
   volumeClaimTemplates:
     - metadata:
         name: data

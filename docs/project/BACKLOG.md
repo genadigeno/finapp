@@ -29832,7 +29832,7 @@ on none:
   `verify-full` unchanged, every session read arriving from the proxy over TLS; its admin API on its pod's loopback. **The standby**
   (`experiments/standby.yaml`): PostgreSQL's own streaming replication, a base backup at `verify-full` through a slot, required in
   another zone, the primary made `FIRST 1` synchronous at run time and checked by a WAL-writing commit replayed on the standby.
-  **The boundary**, read from the cluster before every fault: the context (the node's labels, its own context and server, the API's
+  **The boundary**, read from the cluster at each steady state and before each fault put on (its context again just before a kill): the context (the node's labels, its own context and server, the API's
   nodes against the cluster's containers, a marker the scope writes when it makes the cluster - an unmarked cluster of the name is
   neither reused nor deleted), the credentials (every Secret value of the run's namespaces hashed inside the node against a ledger
   `kind-secrets.sh` (`KIND_SECRETS_LEDGER`) and the harness's `secret_of` write as they make each value) and the endpoints (every URL

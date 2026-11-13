@@ -12,7 +12,7 @@
 # (experiments/standby.yaml). The application's zone constraint is the base's DoNotSchedule again (the kind overlay relaxes it only because
 # its one node has no zone). The namespace quota grows by the standby. Nothing here reaches deploy/: no overlay renders any of it.
 #
-# THE SAFETY BOUNDARY (ADR-0127 decision 5), checked by experiments_refuses before every fault - experiments_fault_on calls it first - and
+# THE SAFETY BOUNDARY (ADR-0127 decision 5), checked by experiments_refuses at each steady state and before each fault put on - experiments_fault_on calls it first - and its context again just before a kill, and
 # proven in every run by a plant of each kind beside its control (experiments_boundary):
 #   context     the node the harness execs into is the control plane of the kind cluster $CLUSTER by its container's labels; its own
 #               context is kubernetes-admin@$CLUSTER against https://$NODE:6443; the nodes the API lists are exactly the containers of
@@ -171,16 +171,16 @@ YAML
 # The standby (owner decision C7): the role, its password and its slot on the primary, the base backup, streaming, then synchronous.
 experiments_standby() {
     phrase=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
-    printf '%s' "$phrase" > "$WORK/replication.password"
+    printf '%s' "$phrase" > "$WORK/replication.phrase"
     printf '%s' "$phrase" | sha256sum | cut -c1-64 >> "$LEDGER"
-    secret_of finapp finapp-kind-postgres-replication "password=$WORK/replication.password"
+    secret_of finapp finapp-kind-postgres-replication "phrase=$WORK/replication.phrase"
     # The password travels on the SQL's stdin, never on a command line; the server logs no statement.
     psql_query -f - >> "$ART/experiments/standby.log" 2>&1 <<SQL || cannot "the replication role or its slot could not be made"
 \set ON_ERROR_STOP on
-CREATE ROLE finapp_replicator WITH REPLICATION LOGIN PASSWORD '$phrase';
+CREATE ROLE finapp_replicator WITH REPLICATION LOGIN PASSWORD '${phrase}';
 SELECT pg_create_physical_replication_slot('finapp_standby');
 SQL
-    rm -f "$WORK/replication.password"
+    rm -f "$WORK/replication.phrase"
     image=$(sed -n 's/^ *image: \(postgres:18\.6@sha256:[0-9a-f]*\)$/\1/p' "$ROOT/deploy/overlays/kind/postgres.yaml")
     [ -n "$image" ] || cannot "the test-only PostgreSQL's pinned image could not be read from the kind overlay"
     sed "s#POSTGRES_IMAGE#$image#" "$DIR/experiments/standby.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "the standby could not be applied"
@@ -351,7 +351,7 @@ experiments_endpoints_check() {
     config=$(kube -n finapp get configmap "$rendered" -o go-template='{{range $k, $v := .data}}{{$k}} {{$v}}{{"\n"}}{{end}}' 2>/dev/null) \
         || { EXP_REASON="endpoint: the application's ConfigMap could not be read"; return 1; }
     # The Secret's endpoints, decoded inside the node: a key of an endpoint's name, or any value holding a scheme. No other value comes back.
-    secret=$(dock exec -i "$NODE" sh -s <<'NODE'
+    delivered=$(dock exec -i "$NODE" sh -s <<'NODE'
 listing=$(kubectl --kubeconfig=/etc/kubernetes/admin.conf -n finapp get secret finapp-app-secrets \
     -o go-template='{{range $k, $v := .data}}{{$k}} {{$v}}{{"\n"}}{{end}}') || { echo "UNREADABLE"; exit 0; }
 printf '%s\n' "$listing" | while read -r key value; do
@@ -364,7 +364,7 @@ printf '%s\n' "$listing" | while read -r key value; do
 done
 NODE
     ) || { EXP_REASON="endpoint: the application's Secret could not be read inside the node"; return 1; }
-    [ "$secret" != UNREADABLE ] || { EXP_REASON="endpoint: the application's Secret could not be read"; return 1; }
+    [ "$delivered" != UNREADABLE ] || { EXP_REASON="endpoint: the application's Secret could not be read"; return 1; }
     end_read=0
     end_providers=0
     while read -r key value; do
@@ -387,7 +387,7 @@ NODE
         esac
     done <<EOF
 $config
-$secret
+$delivered
 EOF
     [ "$end_providers" -ge 3 ] || { EXP_REASON="endpoint: only $end_providers provider endpoints were read, where the run names three"; return 1; }
     while read -r kind key value; do

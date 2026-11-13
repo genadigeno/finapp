@@ -177,8 +177,9 @@ class ExperimentsRehearsalContractTest {
         assertThat(standby).as("in another zone than the primary, required")
                 .contains("requiredDuringSchedulingIgnoredDuringExecution:\n            - labelSelector:\n                matchLabels:\n"
                         + "                  app.kubernetes.io/name: finapp-postgres\n              topologyKey: topology.kubernetes.io/zone");
-        assertThat(standby).as("a base backup at verify-full against the run's CA, through the slot, its password in a file of mode 0600")
+        assertThat(standby).as("a base backup at verify-full against the run's CA, through the slot, its phrase by reference and in a file of mode 0600")
                 .contains("pg_basebackup -D \"$data\" -X stream -c fast -S finapp_standby -R")
+                .contains("secretKeyRef:\n                  name: finapp-kind-postgres-replication\n                  key: phrase")
                 .contains("sslmode=verify-full sslrootcert=/etc/finapp-local-ca/ca.crt").contains("umask 077")
                 .contains("application_name=finapp_standby").contains("test -f \"$data/standby.signal\"");
         assertThat(standby).as("the primary's settings, a hot standby and its slot")
@@ -186,7 +187,7 @@ class ExperimentsRehearsalContractTest {
         String made = function("experiments_standby");
         assertThat(made).as("its password generated, in the ledger, on the SQL's stdin; the primary made synchronous only once it streams")
                 .contains("od -An -N32 -tx1 /dev/urandom").contains(">> \"$LEDGER\"").contains("psql_query -f - >>")
-                .contains("CREATE ROLE finapp_replicator WITH REPLICATION LOGIN PASSWORD '$phrase';")
+                .contains("CREATE ROLE finapp_replicator WITH REPLICATION LOGIN PASSWORD '${phrase}';")
                 .contains("pg_create_physical_replication_slot('finapp_standby')")
                 .contains("ALTER SYSTEM SET synchronous_standby_names = 'FIRST 1 (finapp_standby)'");
         assertThat(made.indexOf("\"finapp_standby|streaming|async\"")).as("streaming first, synchronous after")

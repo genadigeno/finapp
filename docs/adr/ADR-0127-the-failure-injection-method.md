@@ -90,7 +90,8 @@ the migrator and the harness never pass through it, and its admin API listens on
 PostgreSQL's own (a base backup at `verify-full` through a slot, then `FIRST 1` set on the primary at run time), in another zone; its
 promotion and the Service's move are E05's. Decision 4's three brokers are the event pipeline's task, not this one's. None of it is in
 `deploy/`: the standby, the proxy and their policies are harness-applied test-only manifests, so the manifest policy's `kind` flows stand.
-Decision 5 as checks read from the cluster before every fault - the node's labels, its own context and server, the API's nodes against
+Decision 5 as checks read from the cluster, whole at each steady state and before each fault put on, the context again just before a
+kill that follows a whole pass by seconds - the node's labels, its own context and server, the API's nodes against
 the cluster's containers and a marker the scope writes when it makes the cluster (an unmarked cluster of the name is neither reused nor
 deleted); every Secret value of the run's namespaces hashed in the node and found in the run's ledger of the values it made; every
 endpoint of the application's environment, its aliases and the proxy's upstreams the run's own - each proven in every run by a plant

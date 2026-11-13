@@ -834,7 +834,7 @@ marks no task `READY` - the coordinator does). **What changed.** The `kind` harn
 zone, every image in every node, the base's `DoNotSchedule` zone rule restored in the scope's own rendered copy; Toxiproxy 2.13.0 pinned
 by digest on the application's database, broker and provider hops (`hostAliases` in that copy alone, the clients' URLs and
 `verify-full` unchanged, its admin API on its pod's loopback); a synchronous standby of the test-only PostgreSQL in another zone (C7);
-the safety boundary read from the cluster before every fault - the context (the node, its own context and server, the API's nodes, a
+the safety boundary read from the cluster at each steady state and before each fault put on (its context again just before a kill) - the context (the node, its own context and server, the API's nodes, a
 marker the scope writes when it makes the cluster), every Secret value hashed against the run's ledger (`kind-secrets.sh`'s new
 `KIND_SECRETS_LEDGER`), every endpoint the run's own - each refusal proven by a plant in every run; a fault registry that `finish()`
 empties, resets and reads back on every way out; the step shape; E01. `deploy/` is untouched (the entry's `deploy/overlays/kind/`

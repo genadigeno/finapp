@@ -4835,7 +4835,9 @@ two databases are more than a runner holds, and an experiment's numbers are the 
   `synchronous_standby_names` set to `FIRST 1 (finapp_standby)` at run time. From then on a commit returns only once the standby has
   it. Promoting it and moving the Service are E05's (`P16-TSK-022`).
 
-**The safety boundary** (ADR-0127 decision 5), read from the cluster before every fault, never trusted from the run's own word:
+**The safety boundary** (ADR-0127 decision 5), read from the cluster, never trusted from the run's own word: the whole of it at each
+steady state and before each fault put on, and its context again just before a kill, which comes seconds after a whole pass (E01's
+provider holds an answer for 20 s at most):
 - **context**: the node the harness execs into is the control plane of the `kind` cluster of `REHEARSAL_CLUSTER` by its container's
   labels, its own kubeconfig's context and server are that cluster's, the nodes the API lists are exactly that cluster's containers,
   and the cluster carries the scope's marker (`kube-system/finapp-experiments-marker`, written when the scope made the cluster). A
@@ -4843,7 +4845,8 @@ two databases are more than a runner holds, and an experiment's numbers are the 
   refuses it before it changes anything in it. The harness holds no kubeconfig;
 - **credential**: every value of every Secret of `finapp`, `finapp-rehearsal` and `finapp-experiments`, endpoints aside, is one the run
   generated or set: its sha256, taken inside the node, is in the run's ledger, which `kind-secrets.sh` (`KIND_SECRETS_LEDGER`) and the
-  harness's own Secrets write as they make each value;
+  harness's own Secrets write as they make each value. These are the namespaces whose credentials the platform and the simulator use;
+  the edge's certificates, issued in the cluster by the run's own cert-manager, and the telemetry stack's namespace are outside it;
 - **endpoint**: every value of the application's environment that holds a URL is the simulator, the run's own database URL or its own
   collector; its bootstrap servers are the run's broker; its `hostAliases` send only the run's three names to the run's proxy; the proxy's
   three upstreams are the run's three services.
@@ -4856,7 +4859,9 @@ way out - the end, a failure, an unguarded error, `INT` or `TERM` - before the c
 proxy enabled without a toxic, the simulator's hold flags removed, every policy labelled `finapp/experiment-fault` deleted, every paused
 node of the cluster unpaused) and reads that nothing is left on (`experiments/faults-cleared.txt`). The kinds: a Toxiproxy toxic, a
 proxy disabled, a simulator hold, a partition (a NetworkPolicy), a paused node, a Deployment scaled; a kill, a deletion or an eviction
-is instant and logged.
+is instant and logged. A harness killed with `SIGKILL`, or a machine that stops, runs no trap: its kept cluster may hold a fault still.
+A reusing run deletes the namespaces that hold all but a paused node and a Deployment scaled outside them, and its steady state refuses
+to start an experiment while any fault reads on - unpause the node (`docker unpause`) or scale the Deployment back by hand.
 
 **Running it.** One full cluster at a time on the machine, under its lock. From the repository root, with the rehearsal's own
 prerequisites (§11.28):
