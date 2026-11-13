@@ -12,7 +12,7 @@
 // load's start and in a five-second stall). The bound is a minute of arrivals for a money flow, so a platform that slows is measured
 // slowing rather than the generator giving up.
 
-export function openModel(operation, duration) {
+export function openModel(operation, duration, gracefulStop) {
     return {
         executor: 'constant-arrival-rate',
         exec: operation.exec,
@@ -21,8 +21,9 @@ export function openModel(operation, duration) {
         duration,
         preAllocatedVUs: operation.preAllocatedVUs,
         maxVUs: operation.maxVUs,
-        // An iteration under way when the duration ends finishes its flow, so no payment is left half-confirmed by the generator.
-        gracefulStop: '120s',
+        // An iteration under way when the duration ends finishes its flow within the bound a movement is resolved in (scenarios.js), so
+        // no payment is left unknown by the generator.
+        gracefulStop,
         tags: { op: operation.name },
     };
 }

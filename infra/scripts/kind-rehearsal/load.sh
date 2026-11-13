@@ -116,6 +116,17 @@ load_preflight() {
     [ -f "$LOAD_PROFILE_FILE" ] || cannot "no load profile $LOAD_PROFILE_NAME.json under kind-rehearsal/load"
     [ -n "$LOAD_DURATION" ] || LOAD_DURATION=$(load_profile_value duration)
     [ "$(load_seconds "$LOAD_DURATION")" -gt 0 ] || cannot "the load's duration '$LOAD_DURATION' is not a number of seconds, minutes or hours"
+    # The bound each movement is resolved within, as a client that lost its answer keeps asking: a provider call whose answer was lost
+    # leaves its payment PROCESSING until the platform's sweep asks the provider, once the dispatch is past its dispatched age, and an
+    # authorization concluded that way is captured by the stranded-authorization leg one age later. Twice the age, read from the code's
+    # default (never copied), and five minutes for the sweep's poll, the claim's lease and the client's pause. The eighth run's client
+    # gave up after 30 s of reads with 6 checkouts and a top-up PROCESSING, their provider calls cut by a stall.
+    age=$(sed -n 's/.*finapp\.payments\.sweeper\.dispatched-age:PT\([0-9]*\)M}.*/\1/p' \
+        "$ROOT/app/src/main/java/com/finapp/app/payments/PaymentSweeperSchedule.java" | head -1)
+    case $age in '' | *[!0-9]*) cannot "the payment sweep's dispatched age could not be read from PaymentSweeperSchedule.java" ;; esac
+    ! grep -Eqr 'SWEEPER_DISPATCHED_?AGE|sweeper\.dispatched-age' "$ROOT/deploy" \
+        || cannot "a deployed overlay sets the payment sweep's dispatched age, which this bound reads from the code's default"
+    LOAD_RESOLVE_SECONDS=$((2 * age * 60 + 300))
     if [ "$PROBE" = closed-model ]; then
         cat > "$LOAD_SRC/model.js" <<'JS'
     // PROBE closed-model (P16-TSK-006): the generator with its open model dropped, a fixed population looping as fast as answers come.
@@ -132,7 +143,8 @@ JS
         > "$WORK/preflight/fixture.json"
     # k6 inspect reads no environment of the container's unless told: the run's variables go as its own -e.
     dock run --rm -v "$(dpath "$LOAD_SRC"):/load:ro" -v "$(dpath "$WORK/preflight"):/fixture:ro" "$K6_IMAGE" inspect \
-        -e "LOAD_PROFILE=/load/$LOAD_PROFILE_NAME.json" -e LOAD_FIXTURE=/fixture/fixture.json -e "LOAD_DURATION=$LOAD_DURATION" /load/scenarios.js \
+        -e "LOAD_PROFILE=/load/$LOAD_PROFILE_NAME.json" -e LOAD_FIXTURE=/fixture/fixture.json -e "LOAD_DURATION=$LOAD_DURATION" \
+        -e "LOAD_RESOLVE_SECONDS=$LOAD_RESOLVE_SECONDS" /load/scenarios.js \
         > "$LOAD_ART/k6-inspect.json" 2> "$LOAD_ART/k6-inspect.log" || cannot "k6 could not read the scenarios: see load/k6-inspect.log"
     executors=$(sed -n 's/^ *"executor": "\([^"]*\)",*$/\1/p' "$LOAD_ART/k6-inspect.json")
     scenarios=$(printf '%s\n' "$executors" | grep -c . || true)
@@ -438,7 +450,7 @@ load_run() {
         chmod 0777 "$LOAD_ART/k6/$i"
         dock run -d --name "$CLUSTER-load-k6-$i" --network kind --cpus 1 --add-host "public.finapp.test:$NODE_IP" \
             -e SSL_CERT_FILE=/generator/edge-ca.crt -e "LOAD_PROFILE=/load/$LOAD_PROFILE_NAME.json" -e LOAD_FIXTURE=/generator/load-fixture.json \
-            -e "LOAD_RUN=$LOAD_RUN_TAG" -e "LOAD_DURATION=$LOAD_DURATION" \
+            -e "LOAD_RUN=$LOAD_RUN_TAG" -e "LOAD_DURATION=$LOAD_DURATION" -e "LOAD_RESOLVE_SECONDS=$LOAD_RESOLVE_SECONDS" \
             -v "$(dpath "$LOAD_GEN"):/generator:ro" -v "$(dpath "$LOAD_SRC"):/load:ro" -v "$(dpath "$LOAD_ART/k6/$i"):/out" \
             "$K6_IMAGE" run --quiet --no-color --execution-segment "$i/$LOAD_GENERATORS:$((i + 1))/$LOAD_GENERATORS" \
             --execution-segment-sequence "$sequence" --out csv=/out/k6-series.csv.gz /load/scenarios.js >/dev/null || cannot "k6 could not start"

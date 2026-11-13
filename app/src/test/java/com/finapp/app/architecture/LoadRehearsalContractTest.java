@@ -235,7 +235,18 @@ class LoadRehearsalContractTest {
                 .as("half beside the first, before any answer; half after it").contains("http.batch([req, req])")
                 .contains("const first = resolve(op, req, accept, null, primary);")
                 .as("an answer that is not definitive is asked again under the same key, bounded, never under a new one")
-                .contains("response = send(op, req, primary);").contains("const RESOLVE_MS = 60000;");
+                .contains("response = send(op, req, primary);").contains("const RESOLVE_MS = RESOLVE_SECONDS * 1000;");
+        assertThat(function("load_preflight")).as("the bound read from the code: twice the payment sweep's dispatched age and five minutes")
+                .contains("finapp\\.payments\\.sweeper\\.dispatched-age:PT\\([0-9]*\\)M}")
+                .contains("app/src/main/java/com/finapp/app/payments/PaymentSweeperSchedule.java")
+                .contains("LOAD_RESOLVE_SECONDS=$((2 * age * 60 + 300))").contains("SWEEPER_DISPATCHED_?AGE");
+        assertThat(generatorCommand()).contains("-e \"LOAD_RESOLVE_SECONDS=$LOAD_RESOLVE_SECONDS\"");
+        assertThat(scenarios).as("a payment in progress read until it concludes, within the bound; an iteration let finish within it")
+                .contains("throw new Error('LOAD_RESOLVE_SECONDS is required").contains("Date.now() - since >= RESOLVE_MS")
+                .contains("const GRACEFUL_STOP = `${RESOLVE_SECONDS + 120}s`;").contains("openModel(operation, DURATION, GRACEFUL_STOP)")
+                .doesNotContain("POLL_SECONDS");
+        assertThat(read("infra/scripts/kind-rehearsal/load/model.js")).contains("openModel(operation, duration, gracefulStop)")
+                .contains("        gracefulStop,\n");
         String judge = function("load_judge");
         assertThat(judge).contains("[ \"$unresolved\" = 0 ] || fail").contains("[ \"$agreed\" = \"$retried\" ] || fail")
                 .contains("[ \"$retried\" -ge 1 ] || fail");

@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -48,6 +49,10 @@ import javax.net.ssl.SSLContext;
  * for a payout it holds UNKNOWN) answers what this provider knows of that reference: the answer its creation got, or
  * {@code {"status":"unrecognised"}} for a reference it never saw. It takes no effect and holds no key.
  *
+ * <p>The card rail's inquiry ({@code GET /operations/{reference}}, SimulatedCardPspAdapter's query, P16-TSK-005) answers the same way for
+ * an authorization, capture, refund or void: the answer the operation got, or {@code unrecognised}. Without it a card payment caught
+ * mid-call - by a database restart, say - could never be concluded by the payment sweep here.
+ *
  * <p>While {@code /tmp/hold-inquiries} exists (P15-TSK-032: the {@code MerchantPayoutUnknownAged} page, runbook 11.22), the rail is a
  * provider that has gone quiet: a payout's creation takes its effect and is then left unanswered for as long as the file exists, at most
  * two minutes, past the application's payout timeout, so the platform holds the payout UNKNOWN; and every inquiry is answered {@code 503},
@@ -75,6 +80,9 @@ public final class Simulator {
     private static final Path HELD = Path.of("/tmp/held.txt");
     private static final Path HOLD_INQUIRIES = Path.of("/tmp/hold-inquiries");
     private static final String PAYOUTS = "/payouts";
+    /** The card rail's inquiry prefix, SimulatedCardPspAdapter's OPERATIONS_PATH; our reference is the next segment (P16-TSK-005). */
+    private static final String OPERATIONS = "/operations/";
+    private static final List<String> CARD_OPERATIONS = List.of("/authorizations", "/captures", "/refunds", "/voids");
 
     private static final String FX_REFERENCE = "/fx/reference/rates";
     private static final String FX_QUOTES = "/fx/quotes";
@@ -157,6 +165,7 @@ public final class Simulator {
                 key -> "{\"status\":\"approved\",\"reference\":\"psp_void-" + UUID.randomUUID() + "\"}"));
         server.createContext("/payouts", exchange -> answer(exchange, "/payouts",
                 key -> "{\"status\":\"paid\",\"reference\":\"po-" + key + "\"}"));
+        server.createContext(OPERATIONS, Simulator::operationInquiry);
         server.createContext(FX_REFERENCE, Simulator::referenceRates);
         server.createContext(FX_QUOTES, Simulator::fxQuote);
         server.createContext(FX_EXECUTIONS, Simulator::fxExecution);
@@ -327,6 +336,27 @@ public final class Simulator {
         String requested = exchange.getRequestURI().getPath();
         String reference = requested.length() > PAYOUTS.length() + 1 ? requested.substring(PAYOUTS.length() + 1) : "";
         String known = reference.isEmpty() ? null : ANSWERED.get(PAYOUTS + "|" + reference);
+        send(exchange, 200, known != null ? known : "{\"status\":\"unrecognised\"}");
+    }
+
+    /**
+     * {@code GET /operations/{reference}} (P16-TSK-005): the card rail's inquiry, which the payment sweep sends for an authorization, capture,
+     * refund or void it holds dispatched past its age or {@code *_UNKNOWN}. It answers what this provider did with that reference, the answer
+     * its operation got, or {@code {"status":"unrecognised"}} for a reference it never saw; it takes no effect and holds no key. A deeper path
+     * (the clearing and dispute inquiries) is not served: no answer, which the adapter reads as indeterminate, as before this inquiry existed.
+     */
+    private static void operationInquiry(HttpExchange exchange) throws IOException {
+        exchange.getRequestBody().readAllBytes();
+        REQUESTS.computeIfAbsent(OPERATIONS, ignored -> new AtomicLong()).incrementAndGet();
+        String reference = exchange.getRequestURI().getPath().substring(OPERATIONS.length());
+        if (!"GET".equals(exchange.getRequestMethod()) || reference.isEmpty() || reference.contains("/")) {
+            send(exchange, 404, "{\"status\":\"not_found\"}");
+            return;
+        }
+        String known = null;
+        for (String operation : CARD_OPERATIONS) {
+            known = known != null ? known : ANSWERED.get(operation + "|" + reference);
+        }
         send(exchange, 200, known != null ? known : "{\"status\":\"unrecognised\"}");
     }
 

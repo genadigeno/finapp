@@ -7,8 +7,10 @@
 //
 // WHAT IT DECIDES. Nothing about money. It sends, counts what came back and writes a report; kind-rehearsal/load.sh judges the run and
 // the census judges the money. Every money-moving iteration is resolved by its key: an answer that is not definitive (no answer, a 5xx,
-// a 409 while another request holds the key) is asked again with the same key and body until it is, for at most 60 s, never with a
-// new key, so the census can count exactly one effect per key the generator was told succeeded.
+// a 409 while another request holds the key) is asked again with the same key and body until it is, never with a new key, and a payment
+// still in progress is read until it concludes, both within LOAD_RESOLVE_SECONDS (kind-rehearsal/load.sh reads it from the code: twice the
+// payment sweep's dispatched age and five minutes, the time the platform takes to conclude a payment whose provider answer was lost), so
+// the census can count exactly one effect per key the generator was told succeeded.
 //
 // SAME-KEY RETRIES (PHASE_16_PLAN.md section 5.1). One money-moving iteration in twenty (retryShare 0.05) sends each of its commands
 // twice under the same key: half of them the second copy beside the first, before either is answered, half of them after the first
@@ -27,13 +29,19 @@ const RUN = __ENV.LOAD_RUN || 'run';
 const DURATION = __ENV.LOAD_DURATION || profile.duration;
 const BASE = fixture.publicBase;
 const RETRY_EVERY = Math.round(1 / profile.retryShare);
-const RESOLVE_MS = 60000;
-const POLL_SECONDS = 30;
+const RESOLVE_SECONDS = Number(__ENV.LOAD_RESOLVE_SECONDS);
+if (!(RESOLVE_SECONDS > 0)) {
+    throw new Error('LOAD_RESOLVE_SECONDS is required: the bound within which every movement is resolved by its key');
+}
+const RESOLVE_MS = RESOLVE_SECONDS * 1000;
 
 const driven = profile.operations.filter((operation) => operation.generator === 'k6');
 
+// An iteration under way when the load's duration ends is let finish within the bound, so no movement is left unknown by the generator.
+const GRACEFUL_STOP = `${RESOLVE_SECONDS + 120}s`;
+
 export const options = {
-    scenarios: Object.fromEntries(driven.map((operation) => [operation.name, openModel(operation, DURATION)])),
+    scenarios: Object.fromEntries(driven.map((operation) => [operation.name, openModel(operation, DURATION, GRACEFUL_STOP)])),
     summaryTrendStats: ['min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max', 'avg', 'count'],
     insecureSkipTLSVerify: false,
     userAgent: `finapp-load/${profile.name}`,
@@ -126,8 +134,14 @@ function retryable(response) {
 const REFUSED = 'refused';
 const UNRESOLVED = 'unresolved';
 
+// Between two asks: a second through the first minute, then five, as a client backs off while the platform concludes.
+function pause(since) {
+    sleep(Date.now() - since < 60000 ? 1 : 5);
+}
+
 function resolve(op, req, accept, first, primary) {
-    const until = Date.now() + RESOLVE_MS;
+    const since = Date.now();
+    const until = since + RESOLVE_MS;
     let response = first || send(op, req, primary);
     for (;;) {
         if (accept(response)) {
@@ -139,7 +153,7 @@ function resolve(op, req, accept, first, primary) {
         if (Date.now() >= until) {
             return UNRESOLVED;
         }
-        sleep(1);
+        pause(since);
         response = send(op, req, primary);
     }
 }
@@ -216,17 +230,19 @@ export function transfer() {
     conclude(op, failedOutcome(answers), started);
 }
 
+// A payment read until it concludes, within the bound: one whose provider answer was lost concludes only when the platform's sweep has
+// asked the provider.
 function pollPayment(op, id, bearer) {
+    const since = Date.now();
     let status;
-    for (let polls = 0; polls <= POLL_SECONDS; polls++) {
+    for (;;) {
         const response = send(op, request(op, 'GET', `/v1/payments/${id}`, null, bearer, null, 'payment-read'), false);
         status = response.status === 200 ? json(response, 'status') : undefined;
-        if (status === 'SUCCEEDED' || status === 'FAILED') {
+        if (status === 'SUCCEEDED' || status === 'FAILED' || Date.now() - since >= RESOLVE_MS) {
             return status;
         }
-        sleep(1);
+        pause(since);
     }
-    return status;
 }
 
 export function topup() {
@@ -265,16 +281,16 @@ export function topup() {
 }
 
 function pollCheckout(op, checkoutId) {
+    const since = Date.now();
     let status;
-    for (let polls = 0; polls <= POLL_SECONDS; polls++) {
+    for (;;) {
         const response = send(op, request(op, 'GET', `/v1/checkout/sessions/${checkoutId}`, null, fixture.merchantKey, null, 'checkout-read'), false);
         status = response.status === 200 ? json(response, 'status') : undefined;
-        if (status === 'COMPLETED' || status === 'FAILED' || status === 'EXPIRED' || status === 'ABANDONED') {
+        if (status === 'COMPLETED' || status === 'FAILED' || status === 'EXPIRED' || status === 'ABANDONED' || Date.now() - since >= RESOLVE_MS) {
             return status;
         }
-        sleep(1);
+        pause(since);
     }
-    return status;
 }
 
 export function checkout() {
