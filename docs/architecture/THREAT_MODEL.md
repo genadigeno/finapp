@@ -640,7 +640,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T14 | What each financial operation does while a dependency is away is written once and held: every route either edge serves belongs to exactly one operation, every failure row places every operation once and names the registered experiments that check it or its designed-only row, and no request is answered available or with its effects waiting while its financial record cannot be written, nor refused for the broker's sake, a row's kind read from the experiments that check it (`docs/architecture/AVAILABILITY.md`) | EXISTS | `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#everyServedRouteBelongsToExactlyOneOperation`; `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#everyFailureRowPlacesEveryOperationOnce`; `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#noRequestIsAnsweredWhileItsRecordCannotBeWritten` |
 | T14 | The experiments that take the database, the brokers, the telemetry back ends and the payout rail away compare every operation the workload sends with their row at the edge - no success where it says refused, a success where it says available or waiting - and fail on a mismatch either way or on a row that exercised nothing; the walks the harness makes are exactly the ones the document declares | EXISTS | `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#theWalkComparesBothWaysAndReadsTheDocument`; `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#eachWalkerComparesItsRowAndOnlyItsRow`; `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#theProbeIsPlantedInTheRunsCopyAlone` |
 | T14 | On a real cluster, the matrix's rows walked: the database away (E05, E06), every broker away (E09), the telemetry back ends away (E72) and the payout rail and card tokenisation away (E73), with the probe's planted row seen failing E06's walk; and the availability objectives read at the sustained profile (E74) for the SLO validation to judge. Built and contract-tested; their runs postponed by the owner with Phase 16's other cluster runs | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
-| T14 | Whether any flow refuses money movement by itself when a correctness signal pages, and an experiment for each rail no simulator on `kind` serves (the instant scheme, the corridors, the KYC provider, a bureau, a settlement report source) | GAP | `owner item 66`; owner: the owner, since 2026-11-13 |
+| T14 | Whether any flow refuses money movement by itself when a correctness signal pages, and an experiment for each rail no simulator on `kind` serves (the instant scheme, the corridors, the KYC provider, a bureau, a settlement report source): decided by the owner on 2026-11-14 (item 66), no flow refuses by itself and the freeze stays a person's recorded act, and those rails are accepted as designed-only for this phase, an experiment each with the first real environment's provider integrations | GAP | `owner item 66`; owner: the owner, since 2026-11-13 |
 | T15 | An unbalanced journal entry is refused at commit, whoever writes it, raw SQL included (`INV-LED-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#aDirectUnbalancedInsertIsRefusedAtCommit` |
 | T15 | The application role holds no `UPDATE`, `DELETE` or `TRUNCATE` on the journal | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theColumnSweep` |
 | T15 | The journal's append-only trigger binds even the migrator (`INV-HIST-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
@@ -1129,9 +1129,11 @@ day under the owner's standing word for waves G and H ("start H after G, accept 
 **Item 42 was added on 2026-11-12 by the runbooks' rehearsal and decided the same day under the same standing word, each part as
 recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.** **Items 55, 56, 57, 58, 60, 61, 62, 63 and
 64 were added on 2026-11-13 by Phase 16's tasks, and the owner decided them the same day, accepting each recommendation** ("Start
-wave F, and accept all nine recommendations"); each item's decision follows its options. *(This paragraph read "**Item 55 was added on 2026-11-13 by the contention measurement and
-awaits the owner.** **Item 63 was added on 2026-11-13 by the idempotency records' sweep and awaits the owner.**" until the owner's
-decision of 2026-11-13.)*
+wave F, and accept all nine recommendations"); each item's decision follows its options. *(This paragraph read "**Item 55 was
+added on 2026-11-13 by the contention measurement and awaits the owner.** **Item 63 was added on 2026-11-13 by the idempotency
+records' sweep and awaits the owner.**" until the owner's decision of 2026-11-13.)* **Item 66 was added on 2026-11-13 by the data
+tier's availability task, and the owner decided it on 2026-11-14, accepting its recommendations** ("yes"); its decision follows its
+options.
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -2713,7 +2715,16 @@ decision of 2026-11-13.)*
     beside E73. *Recommendation*: **(i)** for this phase, since no workload drives those flows on `kind` either; **(ii)** with the first
     real environment's provider integrations.
 
-    Until decided: §4's T14 `GAP` row naming this item. *Awaiting the owner* (2026-11-13).
+    **Decided 2026-11-14** by the owner ("yes"): every part as recommended. (a) **(i)**: no flow refuses money movement by itself when
+    a correctness signal pages; the freeze stays a person's recorded act, the incident lead's with the financial controller (runbook
+    §11.20, §11.12), and (ii) is weighed when PI-025's runs have measured how often the signals fire without a fault. (b) **(i)**: the
+    matrix's row A13, the rails no simulator on `kind` serves (the instant scheme, the corridors, the KYC provider, a credit bureau, a
+    settlement report source), accepted as designed-only for this phase (owner decision C4), the adapters' contracts and
+    `TIMEOUTS_AND_RETRIES.md` §2.1 its evidence; (ii) comes with the first real environment's provider integrations. §4's T14 row
+    naming this item stays a `GAP`: a correctness page is answered by a person, and those rails are taken away under load by no
+    experiment.
+
+    *(Read "Until decided: §4's T14 `GAP` row naming this item. *Awaiting the owner* (2026-11-13)." until the owner's decision of 2026-11-14.)*
 
 ## 7. Decided against
 

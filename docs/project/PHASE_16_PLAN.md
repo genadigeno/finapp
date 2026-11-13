@@ -589,6 +589,7 @@ check (examples; the full matrix per operation and per failure is the task's):
 route the edges serve, are `docs/architecture/AVAILABILITY.md` (ADR-0144), walked by E05, E06, E09, E72 and E73 and held by
 `AvailabilityMatrixTest`; every run owed under `POSTPONED_ISSUES.md` PI-025. The open question above - an automatic refusal on a
 correctness signal - is put to the owner as `THREAT_MODEL.md` §6 item 66 (a), recommended (i): the freeze stays a person's act.)*
+*(2026-11-14: decided by the owner at (i), and item 66 (b)'s rails accepted as designed-only for this phase.)*
 
 ---
 

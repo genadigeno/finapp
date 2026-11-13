@@ -2988,7 +2988,8 @@ other, and never may one person both hold a break-glass session and approve it, 
 *(2026-11-13, `P16-TSK-023`: for a dependency lost or degraded, the financial-operation availability matrix -
 `docs/architecture/AVAILABILITY.md` §4, read as §11.59 says - gives per operation whether it is refused with no record, answered with its
 effects waiting, degraded or untouched, and what the client sees; the record's messages draw on its row. A freeze of money movement on a
-correctness page stays the lead's recorded decision (§11.20; `THREAT_MODEL.md` §6 item 66).)*
+correctness page stays the lead's recorded decision (§11.20; `THREAT_MODEL.md` §6 item 66, decided so by the owner on 2026-11-14:
+no flow refuses by itself).)*
 
 **Communication.** *Inside*: one channel per incident, the record its source of truth; an update at each change of state, and
 at least every 30 minutes at `SEV-1` and every hour at `SEV-2`. *Outside* (customers, merchants, a provider): what is known,
@@ -5756,8 +5757,9 @@ the database away (A01) refuses everything at the edge with `503`, or `500 api.I
 `P16-REM-002` is built; read "(`THREAT_MODEL.md` §6 item 61)" alone until that decision), and a retry under the same key is a first attempt; every broker away (A06) answers every command with its
 record and holds its events in the outbox, so money moves and the events follow; a provider lost (A10 to A13) leaves its rail's movements
 `UNKNOWN` or refused openly, concluded by its sweep's inquiry, never resent. A correctness page (A19) refuses nothing by itself: freezing
-money movement is the incident lead's recorded decision with the financial controller (§11.20), and whether a flow should refuse
-automatically is put to the owner (`THREAT_MODEL.md` §6 item 66 (a)). A row the platform contradicts in an incident is a defect of the
+money movement is the incident lead's recorded decision with the financial controller (§11.20), and no flow refuses automatically,
+by the owner's decision of 2026-11-14 (`THREAT_MODEL.md` §6 item 66 (a) (i)). *(Read "and whether a flow should refuse automatically
+is put to the owner" until that decision.)* A row the platform contradicts in an incident is a defect of the
 platform or of the document: record which, and correct the one that is wrong.
 
 **Running the walks.** One full cluster at a time, under the machine's lock, as §11.46:

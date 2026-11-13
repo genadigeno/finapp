@@ -1449,7 +1449,7 @@ refused (no record), queued (its record written, its effects waiting), degraded 
 cannot be written, and none is refused for the broker's sake. The operations are classes of both edges' served routes, every route in
 exactly one; every failure row is checked by registered experiments or designed-only; E05, E06, E09, E72 and E73 walk their rows at the
 edge and fail on a mismatch. No automatic refusal on a correctness signal: the freeze stays a person's act, proposed to the owner
-(`THREAT_MODEL.md` §6 item 66). Every run owed (PI-025). → [ADR-0144](../adr/ADR-0144-the-financial-operation-availability-matrix.md)
+(`THREAT_MODEL.md` §6 item 66) and decided so on 2026-11-14, the rails no simulator serves accepted as designed-only for the phase. Every run owed (PI-025). → [ADR-0144](../adr/ADR-0144-the-financial-operation-availability-matrix.md)
 
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
