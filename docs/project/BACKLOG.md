@@ -29958,7 +29958,7 @@ on none:
   key left no claim and no transfer and recording the shed rate and each spike's recovery; E51 in `experiments.sh` (a latency toxic on
   the database hop). **Tests**: `LoadSheddingTest`, `ShedBeforeTheClaimTest` (the real executor over an in-memory claim store behind
   the real interceptors and error handler), `CheckoutCreateIsOneTransactionTest`, `SheddingIsWiredTest` (the served routes), and members
-  of `LoadRehearsalContractTest` and `ExperimentsRehearsalContractTest`; the entry's probe and seven more performed
+  of `LoadRehearsalContractTest` and `ExperimentsRehearsalContractTest`; the entry's probe and eight more performed
   (`MUTATION_TESTING.md` §2). **Owed under `POSTPONED_ISSUES.md` PI-025, not run** (the owner's word of 2026-11-13): **E50** (the spike
   profile at three replicas: zero claims, rows or postings for shed requests, the shed rate and its recovery), **E51** (the slowed
   database at three replicas) and **E52** (the stress profile at three replicas, the census reading past E30's stop and no checkout
