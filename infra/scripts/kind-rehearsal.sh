@@ -31,7 +31,8 @@
 # `load` (P16-TSK-006, ADR-0126, OPERATIONS_RUNBOOK.md section 11.43): release N alone, smoked and its census green, then a load profile
 # driven through the real edge by k6 as an open model, the correctness pages and the census's committed-fact clauses sampled every 30 s
 # while it runs, and the full census after it (kind-rehearsal/load.sh, whose probes are closed-model, sampler-disabled and
-# unbalanced-entry). Its pre-flight reads what k6 will run before anything is built. The same run rehearses the platform's own signals
+# unbalanced-entry; slow-statement, P16-TSK-007's; scale-down-unbounded with the autoscale profile, P16-TSK-014's). Its pre-flight reads
+# what k6 will run before anything is built. The same run rehearses the platform's own signals
 # (kind-rehearsal/telemetry.sh's platform_signals_plant and platform_signals; THREAT_MODEL.md section 6 item 47 (c)).
 #
 # `delivery` (P15-TSK-032): the data tier, the simulator and the topics as above, and then nothing of this script's own release: Argo CD,
@@ -55,6 +56,13 @@
 # named when the run makes its data tier, which then puts the primary on a size-limited filesystem of its own, and E11 needs
 # REHEARSAL_E11_STORE naming a store. It runs three brokers (P16-TSK-013, kind-rehearsal/brokers.sh), each behind a proxy of its own,
 # for the event pipeline's experiments E08, E09, E22, E23, E49 and E68 (OPERATIONS_RUNBOOK.md section 11.51).
+#
+# THE COUNT (P16-TSK-009, P16-TSK-014; OPERATIONS_RUNBOOK.md sections 11.49 and 11.58). Every run holds its fleet at its own count in its own
+# rendered copy, the connection budget's formula at that count (fleet_patch): three by default; REHEARSAL_LOAD_REPLICAS in the load scope;
+# REHEARSAL_RELEASE_REPLICAS, to ten, carries the release's whole walk (E26: N - 1 to N, the kill, the rollback with its eviction and the
+# re-roll at ten, every wait and assertion at the run's count, the rollout's bound that many of the Deployment's own steps);
+# REHEARSAL_EXPERIMENTS_REPLICAS runs the experiments written for a count (E45). The load scope's autoscale profile (E70) leaves the
+# autoscaler to decide between its floor and the run's count, and every connection sample records the count the Deployment was asked for.
 #
 # A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
 # common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
@@ -121,6 +129,42 @@ case $SCOPE in signals | incidents) AUDITED=1 ;; esac
 # REHEARSAL_LOAD_REPLICAS. The kind overlay states the budget for ten, and fleet_patch sets the run's own copy to the formula at this count.
 FLEET_REPLICAS=3
 [ "$SCOPE" != load ] || FLEET_REPLICAS=$LOAD_REPLICAS
+# The release's and the experiments scope's own counts (P16-TSK-014, OPERATIONS_RUNBOOK.md section 11.58): REHEARSAL_RELEASE_REPLICAS carries
+# the release's walk to ten (E26), REHEARSAL_EXPERIMENTS_REPLICAS the experiments written for a count (E45 at ten); three by default, and every
+# wait, floor and figure of those steps reads the run's count. FLEET_START is what the fleet starts at: the count, or the autoscaler's floor
+# in a run that lets the metric decide between that floor and the count (the load scope's autoscale profile, E70: load_preflight sets
+# FLEET_AUTOSCALE, and fleet_patch keeps the floor).
+[ "$SCOPE" != release ] || FLEET_REPLICAS=${REHEARSAL_RELEASE_REPLICAS:-3}
+[ "$SCOPE" != experiments ] || FLEET_REPLICAS=${REHEARSAL_EXPERIMENTS_REPLICAS:-3}
+FLEET_AUTOSCALE=""
+FLEET_START=$FLEET_REPLICAS
+# The experiments that read the run's count rather than three: the others are refused at any other count.
+EXPERIMENTS_AT_A_COUNT="E45"
+# fleet_resolve (P16-TSK-014): the run's count refused before anything is built unless it is three to the kind overlay's ceiling, read from the
+# overlay, and a count other than three refused wherever the steps are written for three: the release's probes (their quota and timings are
+# three's), every experiment but those of EXPERIMENTS_AT_A_COUNT, and every other scope. The load scope's count is load_preflight's too.
+fleet_resolve() {
+    fr_ceiling=$(sed -n '/^        path: \/spec\/maxReplicas$/{n;s/^        value: \([0-9]*\)$/\1/p;}' "$ROOT/deploy/overlays/kind/kustomization.yaml")
+    case $fr_ceiling in '' | *[!0-9]*) echo "?? the kind overlay's maxReplicas could not be read" >&2; exit 2 ;; esac
+    case $FLEET_REPLICAS in '' | *[!0-9]*) echo "?? the run's count is a whole number, not '$FLEET_REPLICAS'" >&2; exit 2 ;; esac
+    [ "$FLEET_REPLICAS" -ge 3 ] && [ "$FLEET_REPLICAS" -le "$fr_ceiling" ] \
+        || { echo "?? the run's count is 3 to $fr_ceiling (the minimum to the kind overlay's ceiling), not $FLEET_REPLICAS" >&2; exit 2; }
+    [ "$FLEET_REPLICAS" != 3 ] || return 0
+    case $SCOPE in
+        release)
+            [ -z "$PROBE" ] || { echo "?? the release's probes are written for three replicas: REHEARSAL_PROBE=$PROBE is refused at $FLEET_REPLICAS" >&2; exit 2; } ;;
+        experiments)
+            for fr_id in $EXPERIMENTS; do
+                case " $EXPERIMENTS_AT_A_COUNT " in
+                    *" $fr_id "*) ;;
+                    *) echo "?? $fr_id is written for three replicas: at $FLEET_REPLICAS the experiments scope runs only $EXPERIMENTS_AT_A_COUNT" >&2; exit 2 ;;
+                esac
+            done ;;
+        load) ;;
+        *) echo "?? the $SCOPE scope is written for three replicas, not $FLEET_REPLICAS" >&2; exit 2 ;;
+    esac
+}
+fleet_resolve
 
 # The development mode (Q11): never in CI, never against a cluster the run will delete.
 STEPS=${REHEARSAL_STEPS:-}
@@ -459,6 +503,15 @@ render_overlay() {
     done
 }
 
+# probe_budget <rendered Deployment> <startupProbe|readinessProbe|livenessProbe> (P16-TSK-014): that probe's periodSeconds times its
+# failureThreshold, the longest it lets a pod stand before it acts, read from the block under the probe's own key; 0 when either is absent.
+probe_budget() {
+    awk -v key="$2:" '$1 == key && NF == 1 {s = 1; ind = match($0, /[^ ]/); next}
+        s && NF && match($0, /[^ ]/) <= ind {s = 0}
+        s && $1 == "periodSeconds:" {p = $2} s && $1 == "failureThreshold:" {f = $2}
+        END {print p * f}' "$1"
+}
+
 apply_files() {
     for file in "$@"; do
         kube apply -f - < "$file" >> "$ART/apply.log" 2>&1 || cannot "could not apply $file"
@@ -538,6 +591,17 @@ fleet_patch() {
         grep -q -F -x -e "$fp_line" "$WORK/fleet-patched.yaml" && grep -q -F -x -e "$fp_line" "$fp_all" \
             || cannot "the rendered kind overlay could not be set to $FLEET_REPLICAS replicas: '$fp_line' is not in the run's copy, a value it patches has moved"
     done
+    # A run that lets the autoscaler decide (P16-TSK-014, the load scope's autoscale profile, E70): the minimum given back to the overlay's own
+    # floor, so the metric moves the fleet between that floor and the run's count, and the budget is the count's, the most it may choose.
+    if [ -n "$FLEET_AUTOSCALE" ]; then
+        [ "$FLEET_REPLICAS" -gt "$fp_floor" ] || cannot "an autoscaled run needs room above the autoscaler's floor of $fp_floor, not a count of $FLEET_REPLICAS"
+        sed -i "s/^\(  \)minReplicas: $FLEET_REPLICAS$/\1minReplicas: $fp_floor/" "$fp_hpa" "$fp_all"
+        grep -q -F -x -e "  minReplicas: $fp_floor" "$fp_hpa" && grep -q -F -x -e "  minReplicas: $fp_floor" "$fp_all" \
+            && grep -q -F -x -e "  maxReplicas: $FLEET_REPLICAS" "$fp_hpa" \
+            || cannot "the run's autoscaler could not be left to decide between $fp_floor and $FLEET_REPLICAS: see the run's copy"
+        FLEET_START=$fp_floor
+        log "the autoscaler decides between the overlay's floor of $fp_floor and the run's $FLEET_REPLICAS (the run's own copy)"
+    fi
     log "the fleet at $FLEET_REPLICAS replicas of the overlay's $fp_ceiling: $fp_new_instances instances in the budget, the test-only server at $fp_new_server connections, the quota $fp_new_pods pods (the run's own copy)"
 }
 
@@ -971,6 +1035,8 @@ log "migrator (N-1): $(grep -h 'result=APPLIED' "$ART/migrator-nminus1.log" | ta
 
 step app-nminus1
 apply_files "$A/Deployment.finapp-app.yaml" "$A/HorizontalPodAutoscaler.finapp-app.yaml"
+# Three, for the procedures and experiments written for three (experiments.sh, rolls.sh, rotations.sh, platform.sh): never the run's count,
+# which ready_fleet reads.
 ready_three() {
     deadline=$(( $(date +%s) + $1 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -980,11 +1046,22 @@ ready_three() {
     done
     return 1
 }
-if ! ready_three 900; then
+# The run's count (P16-TSK-014): every wait of the walk reads it, never three - the release at ten (E26) waits for ten, an autoscaled
+# load run (E70) for the floor it starts at, every other run for the three it holds.
+ready_fleet() {
+    deadline=$(( $(date +%s) + $1 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        ready=$(kube -n finapp get deployment finapp-app -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)
+        [ "${ready:-0}" -ge "$FLEET_START" ] && return 0
+        sleep 5
+    done
+    return 1
+}
+if ! ready_fleet 900; then
     kube -n finapp get pods -o wide > "$ART/pods-at-failure.txt" 2>&1 || true
-    fail "three replicas did not become ready: see pods-at-failure.txt"
+    fail "$FLEET_START replicas did not become ready: see pods-at-failure.txt"
 fi
-log "three replicas ready: $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name | tr '\n' ' ')"
+log "$FLEET_START replicas ready: $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name | tr '\n' ' ')"
 kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o wide > "$ART/pods-nminus1.txt" 2>&1 || true
 
 # ---------------------------------------------------------------------------------------------------
@@ -1472,6 +1549,21 @@ log "the budget's arithmetic: $FLEET_INSTANCES instances x ($WRITER_POOL + $REPO
 # fleet_patch (P16-TSK-009) set the run's rendered copy to the formula at the run's count: (N + 3) x (7 + 1), N three but in the load scope.
 WANT_INSTANCES=$((FLEET_REPLICAS + 3))
 [ "$BUDGET" = $((WANT_INSTANCES * 8)) ] || fail "the overlay's budget is $BUDGET, and this rehearsal measures $WANT_INSTANCES x (7 + 1) = $((WANT_INSTANCES * 8))"
+# The formula's margin over the count (P16-TSK-014), read from the run's copy: its instances less the count it holds, 2 x maxSurge + 1, the
+# surge and the terminating pods it counts. assert_within_count holds each sample to the formula at the count the Deployment was asked for then.
+BUDGET_MARGIN=$((FLEET_INSTANCES - FLEET_REPLICAS))
+# A rollout of more than three (P16-TSK-014, the release at ten: E26) takes as many steps as replicas, each bounded by the Deployment's own
+# step - its startup probe's budget and its minReadySeconds, read from the run's copy - so the bound is that many of them. Three keep the bound
+# they were measured under; REHEARSAL_ROLLOUT_TIMEOUT, when given, is the run's.
+if [ -z "${REHEARSAL_ROLLOUT_TIMEOUT:-}" ] && [ "$FLEET_REPLICAS" -gt 3 ]; then
+    ROLL_READY=$(sed -n 's/^  minReadySeconds: \([0-9]*\)$/\1/p' "$A/Deployment.finapp-app.yaml" | head -1)
+    ROLL_START=$(probe_budget "$A/Deployment.finapp-app.yaml" startupProbe)
+    for ROLL_PART in "$ROLL_READY" "$ROLL_START"; do
+        case $ROLL_PART in '' | *[!0-9]* | 0) cannot "a rollout step's bound could not be read from the run's Deployment: minReadySeconds '$ROLL_READY', startup '$ROLL_START'" ;; esac
+    done
+    ROLLOUT_TIMEOUT=$((FLEET_REPLICAS * (ROLL_START + ROLL_READY)))
+    log "a rollout of $FLEET_REPLICAS steps, each at most $ROLL_START s to start and $ROLL_READY s to count as available: bounded at $ROLLOUT_TIMEOUT s"
+fi
 
 REPORTING_LOGIN=$(kube -n finapp get secret finapp-app-secrets -o jsonpath='{.data.FINAPP_DB_REPORTING_PASSWORD}' | base64 -d)
 operator_connect() {
@@ -1489,10 +1581,13 @@ sample_fleet() {
 start_sampler() {
     label=$1
     file="$ART/samples-$label.tsv"
-    printf 'time\tready\tterminating\tpods\tfinapp_connections\ttotal_connections\toperator\n' > "$file"
+    printf 'time\tready\tterminating\tpods\tfinapp_connections\ttotal_connections\toperator\tcount\n' > "$file"
     (
         peak=0
         while [ ! -f "$WORK/sampler-stop-$label" ]; do
+            # The count the Deployment is asked for at this moment (P16-TSK-014), read before its pods, so a pod the sample counts was asked
+            # for by this count or a larger one: the autoscaler's, or the run's own.
+            count=$(kube -n finapp get deployment finapp-app -o jsonpath='{.spec.replicas}' 2>/dev/null || true)
             fleet=$(sample_fleet || true)
             counts=$(printf '%s\n' "$fleet" | awk -F'|' 'NF>=3 && $2=="" && $3=="True" {r++} NF>=3 && $2!="" {t++} NF>=3 {p++} END {print r+0, t+0, p+0}')
             connections=$(psql_query -c "SELECT count(*) FILTER (WHERE application_name = 'finapp'), count(*) FROM pg_stat_activity" 2>/dev/null | tr '|' ' ')
@@ -1502,7 +1597,7 @@ start_sampler() {
                 peak=$4
                 if [ "$(operator_connect || true)" = 1 ]; then operator=ok; else operator=REFUSED; fi
             fi
-            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$1" "$2" "$3" "${4:-}" "${5:-}" "$operator" >> "$file"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%H:%M:%S)" "$1" "$2" "$3" "${4:-}" "${5:-}" "$operator" "$count" >> "$file"
             sleep 2
         done
     ) &
@@ -1526,6 +1621,28 @@ assert_within_pods() {
     over=$(awk -F'\t' -v pool="$((WRITER_POOL + REPORTING_POOL))" 'NR>1 && $5+0 > $4*pool {n++} END {print n+0}' "$ART/samples-$1.tsv")
     [ "$over" = 0 ] || fail "$1: $over samples held more than $((WRITER_POOL + REPORTING_POOL)) connections for each pod: see samples-$1.tsv"
     pass "$1: no sample held more than $((WRITER_POOL + REPORTING_POOL)) connections for each pod it had"
+}
+
+# assert_within_count <label> (P16-TSK-014): each sample held to the budget's formula at the count the Deployment was asked for at that moment,
+# (count + BUDGET_MARGIN) x pool, not only to the budget at the run's largest count. The formula's margin counts one terminating pod outside a
+# rollout, and the autoscaler's scale-down policy, one pod per period no shorter than the grace, is what keeps it to one: a policy that lets
+# several go at once leaves the pods of a larger count holding their pools at a smaller one. Judged where the autoscaler chooses the count (E70);
+# counts-<label>.tsv keeps each count's samples and peak beside its formula. A run whose counts were not read is not a run that held them.
+assert_within_count() {
+    pool=$((WRITER_POOL + REPORTING_POOL))
+    total=$(awk 'NR > 1' "$ART/samples-$1.tsv" | grep -c . || true)
+    counted=$(awk -F'\t' 'NR > 1 && $8 ~ /^[0-9]+$/' "$ART/samples-$1.tsv" | grep -c . || true)
+    [ "$counted" -ge 1 ] && [ "$counted" -ge $((total * 9 / 10)) ] \
+        || fail "$1: the Deployment's count was read in $counted of $total samples, so the connections were not held to it: see samples-$1.tsv"
+    {
+        printf 'count\tsamples\tpeak\tformula\tmost_terminating\n'
+        awk -F'\t' -v pool="$pool" -v m="$BUDGET_MARGIN" 'NR > 1 && $8 ~ /^[0-9]+$/ {c = $8 + 0; n[c]++; if ($5 + 0 > p[c]) p[c] = $5 + 0; if ($3 + 0 > t[c]) t[c] = $3 + 0}
+            END {for (c in n) printf "%d\t%d\t%d\t%d\t%d\n", c, n[c], p[c], (c + m) * pool, t[c]}' "$ART/samples-$1.tsv" | sort -n
+    } > "$ART/counts-$1.tsv"
+    over=$(awk -F'\t' -v pool="$pool" -v m="$BUDGET_MARGIN" 'NR > 1 && $8 ~ /^[0-9]+$/ && $5 + 0 > ($8 + m) * pool {n++} END {print n + 0}' "$ART/samples-$1.tsv")
+    first=$(awk -F'\t' -v pool="$pool" -v m="$BUDGET_MARGIN" 'NR > 1 && $8 ~ /^[0-9]+$/ && $5 + 0 > ($8 + m) * pool {print $1 ": " $5 " connections at a count of " $8 ", " $3 " pods terminating"; exit}' "$ART/samples-$1.tsv")
+    [ "$over" = 0 ] || fail "$1: $over samples held more connections than the formula at the count they were asked for, (count + $BUDGET_MARGIN) x $pool; the first at $first: see counts-$1.tsv"
+    pass "$1: every one of $counted samples within the formula at its own count, (count + $BUDGET_MARGIN) x $pool: see counts-$1.tsv"
 }
 
 # budget_ceiling: the release's step after its rollouts, and the load scope's after its census (P16-TSK-009, at the run's own count, ten
@@ -1612,18 +1729,19 @@ stop_reporter() {
     REPORTER=""
 }
 
-# Three replicas, each having run a report, hold the whole pool: the fleet's own figure, once it has settled.
+# The run's replicas (three, or ten in the release at ten: P16-TSK-014), each having run a report, hold the whole pool: the fleet's own figure,
+# once it has settled.
 assert_reporting_open() {
     reported=$(awk -F'\t' '$3 ~ /^20[01]$/ {n++} END {print n+0}' "$ART/reports-$1.tsv")
-    [ "$reported" -ge 3 ] || fail "$1: only $reported pods generated a report, so the eighth connection was not measured: see reports-$1.tsv"
-    want=$((3 * (WRITER_POOL + REPORTING_POOL)))
+    [ "$reported" -ge "$FLEET_REPLICAS" ] || fail "$1: only $reported pods generated a report, so the eighth connection was not measured: see reports-$1.tsv"
+    want=$((FLEET_REPLICAS * (WRITER_POOL + REPORTING_POOL)))
     settle_deadline=$(( $(date +%s) + 60 ))
     while [ "$(date +%s)" -lt "$settle_deadline" ]; do
         [ "$(fleet_connections)" = "$want" ] && break
         sleep 3
     done
     held=$(fleet_connections)
-    [ "$held" = "$want" ] || fail "$1: the settled fleet holds $held connections where three replicas with their reporting pools open hold $want"
+    [ "$held" = "$want" ] || fail "$1: the settled fleet holds $held connections where $FLEET_REPLICAS replicas with their reporting pools open hold $want"
     pass "$1: $reported pods generated a report, and the settled fleet holds $want connections, every pool open"
 }
 
@@ -1673,7 +1791,7 @@ evict_during_rollout() {
     old=$1
     label=$2
     want_terminating=${3:-1}
-    want_running=${4:-4}
+    want_running=${4:-$((FLEET_REPLICAS + 1))}
     deadline=$(( $(date +%s) + ROLLOUT_TIMEOUT ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
         fleet=$(sample_fleet || true)
@@ -1766,8 +1884,8 @@ rollout() {
 
 assert_floor() {
     floor=$(floor_of "$1")
-    [ "$floor" -ge 3 ] || fail "rollout $1: ready replicas fell to $floor, and maxUnavailable 0 keeps three"
-    pass "rollout $1: ready replicas never below three"
+    [ "$floor" -ge "$FLEET_REPLICAS" ] || fail "rollout $1: ready replicas fell to $floor, and maxUnavailable 0 keeps $FLEET_REPLICAS"
+    pass "rollout $1: ready replicas never below $FLEET_REPLICAS"
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -1900,7 +2018,7 @@ if [ -n "$NM1_REF" ] && [ "$(migrations_between "$NM1_REF")" -gt 0 ]; then
     pass "hold: nothing parked while a pod waited ahead of its Job"
     kube -n finapp rollout undo deployment/finapp-app >> "$ART/apply.log" 2>&1 || fail "the rollout could not be undone"
     kube -n finapp rollout status deployment/finapp-app --timeout="${ROLLOUT_TIMEOUT}s" >> "$ART/apply.log" 2>&1 || fail "the fleet did not return after the hold"
-    ready_three 240 || fail "the fleet did not return to three after the hold"
+    ready_fleet 240 || fail "the fleet did not return to $FLEET_REPLICAS after the hold"
 else
     log "HOLD NOT EXERCISED: N - 1 and N have the same migrations"
     printf 'hold not exercised: N - 1 and N have the same migrations\n' >> "$ART/not-exercised.txt"
@@ -1915,8 +2033,8 @@ log "migrator (N): $(grep -h 'result=APPLIED' "$ART/migrator-n.log" | tail -1 | 
 
 step nminus1-on-n-schema
 sleep 20
-ready_three 120 || fail "a replica of N - 1 did not stay ready on N's schema"
-pass "three replicas of N - 1 are ready on N's schema"
+ready_fleet 120 || fail "a replica of N - 1 did not stay ready on N's schema"
+pass "$FLEET_REPLICAS replicas of N - 1 are ready on N's schema"
 smoke on-n-schema
 census nminus1-on-n-schema
 
@@ -2040,7 +2158,7 @@ kube -n finapp delete pod "$VICTIM" --grace-period=0 --force >> "$ART/apply.log"
 sleep 10
 kube -n finapp-rehearsal exec deploy/finapp-simulator -- rm -f /tmp/hold-payouts >> "$ART/apply.log" 2>&1 || true
 sleep 20
-ready_three 400 || fail "the fleet did not return to three after the kill"
+ready_fleet 400 || fail "the fleet did not return to $FLEET_REPLICAS after the kill"
 sleep 30
 # The retry has to outlast the dead replica's lease, so the workload runs until the held payout's claim has been taken and finished by another replica.
 claim_state() { psql_query -c "SELECT state FROM platform.idempotency_record WHERE idempotency_key = '$KILLED_CLAIM'" | tr -d '[:space:]'; }

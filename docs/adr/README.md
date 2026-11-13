@@ -178,6 +178,8 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0136](ADR-0136-the-event-pipeline-at-load.md) | The event pipeline at load: the relay drains while its batch is full, and three test-only brokers where the experiments run | Proposed | 16 | Platform (the outbox relay, the inbox) · the `kind` rehearsal |
 | [0137](ADR-0137-load-shedding-before-the-financial-effect.md) | Load shedding before the financial effect: a door in front of every borrow, per-class bounds, never after a claim | Proposed | 16 | Platform · the API surface · checkout |
 | [0140](ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md) | The post-recovery hold and point-in-time recovery: the role lock held through the window, the window acting as the application's role, a person's recorded release | Proposed | 16 | Platform · Settlement · Reconciliation |
+| [0141](ADR-0141-one-journal-entry-per-posting-scope-then-the-idempotency-sweep.md) | One journal entry per posting scope, for ever, then the idempotency records swept | Proposed | 16 | Ledger · Platform |
+| [0142](ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md) | No table partitioned and no read replica routed at the target: each decision derived, its overturning measurement built (E65), criterion 6 held by a guard | Proposed | 16 | Platform · Ledger · Accounting (report generation) · every module (the data tier) |
 | [0144](ADR-0144-the-financial-operation-availability-matrix.md) | The financial-operation availability matrix: derived from where the record lives, held to the served routes, walked by the experiments; no automatic refusal on a correctness signal, proposed | Proposed | 16 | Platform · every module that serves a route |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
@@ -261,3 +263,7 @@ task whose measurement justifies it (`PHASE_16_PLAN.md` §6.5, §24; `P16-TSK-01
 objectives and the post-recovery gate) and ADR-0129 (availability and the multi-region stance), all `Proposed`, from
 `PHASE_16_PLAN.md`; the next free number is ADR-0130.)*
 *(`P16-TSK-009`, 2026-11-13, wrote ADR-0134 (the connection budget at ten replicas), `Proposed`, the number the coordinator reserved for it in wave D.)*
+*(`P16-TSK-011`, 2026-11-13, wrote ADR-0141 (one journal entry per posting scope, then the idempotency sweep), `Proposed`, the number the coordinator reserved for it in wave E.)*
+*(2026-11-13: the partitioning half of the Phase 16 row is decided by
+ADR-0142, no table partitioned, the decision derived and its overturning measurement built and owed under `POSTPONED_ISSUES.md`
+PI-025. The row stays for the service-extraction decision.)*

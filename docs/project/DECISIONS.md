@@ -1428,6 +1428,20 @@ cannot log in; the books are verified again; a person releases, with a record na
 to an instant from an encrypted WAL archive, held before its server first starts. →
 [ADR-0140](../adr/ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md)
 
+**One journal entry per posting scope, for ever, then the idempotency records swept** (`THREAT_MODEL.md` §6 item 18, debt row #61).
+A census of the journal's duplicated scopes, kept as a row, then a unique index the census must allow (a duplicate stops the release,
+never deleted); a posting or reversal retried after its record is gone answered by the recorded entry, a different request the
+conflict; then a sweep of terminal records past their expiry and a grace (30 days, never under a day) that refuses while the
+uniqueness is absent, and the application's `DELETE` revoked. What the sweep leaves to commands with no second arbiter is item 63. →
+[ADR-0141](../adr/ADR-0141-one-journal-entry-per-posting-scope-then-the-idempotency-sweep.md)
+
+**No table partitioned and no read replica routed at the target (proposed).** Partitioning would split the once-ness arbiters (the
+idempotency claim, the inbox, the posting scope) and open a drop or detach no history guard sees, and the journal's hot reads are by
+account over its whole history, which no time key prunes; the swept tables' sweeps keep pace at the minimum fleet by derivation. One
+primary serves every door, held by a guard in layers (who reads an address, who builds a connection, no `DataSource` bean, only report
+generation on the reporting pool, that pool on the writer's address, the driver refusing to pick a standby); report generation is the
+only read ever eligible for a replica, under stated conditions. Each decision's overturning reading, E65, is built and owed under
+`POSTPONED_ISSUES.md` PI-025; report generation's from-inception fold is `THREAT_MODEL.md` §6 item 64. → [ADR-0142](../adr/ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md)
 **The financial-operation availability matrix** (`P16-TSK-023`, 2026-11-13, `Proposed`). Every operation, under every failure, is
 refused (no record), queued (its record written, its effects waiting), degraded or available; no request is answered while its record
 cannot be written, and none is refused for the broker's sake. The operations are classes of both edges' served routes, every route in

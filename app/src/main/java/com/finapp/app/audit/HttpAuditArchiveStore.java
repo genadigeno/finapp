@@ -3,25 +3,19 @@ package com.finapp.app.audit;
 import com.finapp.app.security.ProviderTransportGuard;
 import com.finapp.platform.audit.archive.AuditArchiveStore;
 import com.finapp.platform.audit.archive.AuditArchiveStoreException;
-import java.io.ByteArrayOutputStream;
+import com.finapp.platform.outbound.OutboundExchange;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
+import java.net.http.HttpTimeoutException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Base64;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Flow;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
 /**
@@ -34,8 +28,16 @@ import java.util.regex.Pattern;
  * Nothing here deletes.
  *
  * <p><strong>Bounded in time and in size.</strong> Each exchange, its answer's body included, ends within the configured timeout or
- * is cancelled: a store that sends headers and then stalls holds the archive's thread no longer than one that never answers. A read
- * keeps at most one byte past what it expects and cancels the rest. The client is the caller's, built with a connect timeout.
+ * is cancelled: a store that sends headers and then stalls holds the archive's thread no longer than one that never answers. The
+ * timeout is split in two halves, through {@link OutboundExchange#send} as every provider exchange is
+ * ({@code TIMEOUTS_AND_RETRIES.md} section 2.1): the request and its answer's headers within the first (the JDK's request timeout,
+ * per attempt, the connection included), the answer's body within the second, measured from the headers. Their sum is the
+ * timeout, so the lease's arithmetic - four store calls at the timeout ({@code AuditArchiveBeans}) - still holds; the JDK's one
+ * retry of a refused connection, which nothing was sent on, adds only the refusal's own time. The client is this adapter's, built
+ * with a connect timeout. A read keeps at most one byte past what it expects and cancels the rest.
+ *
+ * <p><em>Until 2026-11-13</em> the exchange was awaited for the whole timeout from the call ({@code P16-TSK-010}, written beside
+ * {@code P16-TSK-018}'s helper and merged without it): bounded, but outside the one helper the inventory holds every exchange to.
  *
  * <p><strong>What is not built.</strong> Requests are unsigned: the test-only store on {@code kind} verifies no credential, as the
  * provider simulator verifies none. Signing (SigV4) and the pod role's credential that a real bucket needs are
@@ -50,23 +52,29 @@ public final class HttpAuditArchiveStore implements AuditArchiveStore {
     /** The archive's own keys: segment and manifest paths, nothing a caller could steer. */
     private static final Pattern KEY = Pattern.compile("[a-z0-9]+(?:/[a-z0-9]+)*/[0-9]{12}\\.(?:ndjson|json)");
 
+    /** The shortest timeout taken: each half must be a positive bound in milliseconds. */
+    private static final Duration SHORTEST_TIMEOUT = Duration.ofMillis(2);
+
     private final HttpClient client;
     private final URI bucket;
     private final Duration timeout;
+    private final Duration headersBound;
+    private final Duration bodyBound;
 
     /**
-     * @param client built with a connect timeout; it verifies the store's certificate and host name, as the JDK's client does
+     * Builds the adapter's client with a connect timeout of {@code timeout}; it verifies the store's certificate and host name, as
+     * the JDK's client does.
+     *
      * @param endpoint the store's base URL: {@code https}, or {@code http} to loopback
      * @param bucket the bucket's name
-     * @param timeout each exchange's bound, its answer's body included
+     * @param timeout each exchange's bound, its answer's body included: half to the headers, half to the body
      */
-    public HttpAuditArchiveStore(HttpClient client, String endpoint, String bucket, Duration timeout) {
-        this.client = Objects.requireNonNull(client, "client");
+    public HttpAuditArchiveStore(String endpoint, String bucket, Duration timeout) {
         Objects.requireNonNull(endpoint, "endpoint");
         Objects.requireNonNull(bucket, "bucket");
         this.timeout = Objects.requireNonNull(timeout, "timeout");
-        if (timeout.isNegative() || timeout.isZero()) {
-            throw new IllegalArgumentException("the archive store's timeout must be positive: " + timeout);
+        if (timeout.compareTo(SHORTEST_TIMEOUT) < 0) {
+            throw new IllegalArgumentException("the archive store's timeout must be at least " + SHORTEST_TIMEOUT + ": " + timeout);
         }
         ProviderTransportGuard.verify("finapp.audit.archive.endpoint", Optional.of(endpoint));
         if (!BUCKET.matcher(bucket).matches()) {
@@ -74,12 +82,15 @@ public final class HttpAuditArchiveStore implements AuditArchiveStore {
         }
         String base = endpoint.trim();
         this.bucket = URI.create((base.endsWith("/") ? base : base + "/") + bucket + "/");
+        this.headersBound = timeout.dividedBy(2);
+        this.bodyBound = timeout.minus(headersBound);
+        this.client = HttpClient.newBuilder().connectTimeout(timeout).build();
     }
 
     @Override
     public Put putIfAbsent(String key, byte[] bytes) {
         HttpRequest request = HttpRequest.newBuilder(object(key))
-                .timeout(timeout)
+                .timeout(headersBound)
                 .header("If-None-Match", "*")
                 .header("Content-Type", "application/octet-stream")
                 .header("x-amz-checksum-sha256", Base64.getEncoder().encodeToString(sha256(bytes)))
@@ -95,12 +106,13 @@ public final class HttpAuditArchiveStore implements AuditArchiveStore {
 
     @Override
     public Optional<byte[]> get(String key, int maxBytes) {
-        if (maxBytes < 0) {
-            throw new IllegalArgumentException("maxBytes must not be negative: " + maxBytes);
+        if (maxBytes < 0 || maxBytes == Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("maxBytes must be 0 to " + (Integer.MAX_VALUE - 1) + ": " + maxBytes);
         }
-        HttpRequest request = HttpRequest.newBuilder(object(key)).timeout(timeout).GET().build();
+        HttpRequest request = HttpRequest.newBuilder(object(key)).timeout(headersBound).GET().build();
+        HttpResponse.BodyHandler<byte[]> kept = OutboundExchange.limitedBytes(maxBytes + 1);
         HttpResponse<byte[]> response = exchange(request,
-                answer -> answer.statusCode() == 200 ? new Bounded(maxBytes + 1) : HttpResponse.BodySubscribers.replacing(new byte[0]),
+                answer -> answer.statusCode() == 200 ? kept.apply(answer) : HttpResponse.BodySubscribers.replacing(new byte[0]),
                 "read");
         return switch (response.statusCode()) {
             case 200 -> Optional.of(response.body());
@@ -116,19 +128,20 @@ public final class HttpAuditArchiveStore implements AuditArchiveStore {
         return bucket.resolve(key);
     }
 
+    /**
+     * One exchange through {@link OutboundExchange#send}: the headers within the request's own timeout, the body within
+     * {@link #bodyBound} of them. Every failure of the exchange is the store unavailable to the archival, which marks nothing on
+     * it (the port's contract: an answer or {@link AuditArchiveStoreException}, as the form before this one read every failure of
+     * its future); the message names the failure's class alone, because a client's message names the store's address.
+     */
     private <T> HttpResponse<T> exchange(HttpRequest request, HttpResponse.BodyHandler<T> handler, String what) {
-        CompletableFuture<HttpResponse<T>> exchange = client.sendAsync(request, handler);
         try {
-            return exchange.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException late) {
-            exchange.cancel(true);
+            return OutboundExchange.send(client, request, handler, bodyBound);
+        } catch (HttpTimeoutException late) {
             throw new AuditArchiveStoreException("the archive store did not finish a " + what + " within " + timeout);
-        } catch (ExecutionException failed) {
-            // The class alone: a client's message names the store's address.
-            Throwable cause = failed.getCause() == null ? failed : failed.getCause();
-            throw new AuditArchiveStoreException("the archive store did not answer a " + what + ": " + cause.getClass().getSimpleName());
+        } catch (IOException | RuntimeException failed) {
+            throw new AuditArchiveStoreException("the archive store did not answer a " + what + ": " + failed.getClass().getSimpleName());
         } catch (InterruptedException interrupted) {
-            exchange.cancel(true);
             Thread.currentThread().interrupt();
             throw new AuditArchiveStoreException("a " + what + " to the archive store was interrupted");
         }
@@ -139,58 +152,6 @@ public final class HttpAuditArchiveStore implements AuditArchiveStore {
             return MessageDigest.getInstance("SHA-256").digest(bytes);
         } catch (NoSuchAlgorithmException absent) {
             throw new IllegalStateException("every JDK provides SHA-256", absent);
-        }
-    }
-
-    /** A body kept up to {@code limit} bytes; the rest of the stream is cancelled, never buffered. */
-    private static final class Bounded implements HttpResponse.BodySubscriber<byte[]> {
-
-        private final int limit;
-        private final ByteArrayOutputStream kept = new ByteArrayOutputStream();
-        private final CompletableFuture<byte[]> body = new CompletableFuture<>();
-        private Flow.Subscription subscription;
-
-        Bounded(int limit) {
-            this.limit = limit;
-        }
-
-        @Override
-        public CompletionStage<byte[]> getBody() {
-            return body;
-        }
-
-        @Override
-        public void onSubscribe(Flow.Subscription subscription) {
-            this.subscription = subscription;
-            subscription.request(Long.MAX_VALUE);
-        }
-
-        @Override
-        public void onNext(List<ByteBuffer> buffers) {
-            if (body.isDone()) {
-                return;
-            }
-            for (ByteBuffer buffer : buffers) {
-                int take = Math.min(buffer.remaining(), limit - kept.size());
-                byte[] chunk = new byte[take];
-                buffer.get(chunk);
-                kept.write(chunk, 0, take);
-                if (kept.size() >= limit) {
-                    body.complete(kept.toByteArray());
-                    subscription.cancel();
-                    return;
-                }
-            }
-        }
-
-        @Override
-        public void onError(Throwable failure) {
-            body.completeExceptionally(failure);
-        }
-
-        @Override
-        public void onComplete() {
-            body.complete(kept.toByteArray());
         }
     }
 }

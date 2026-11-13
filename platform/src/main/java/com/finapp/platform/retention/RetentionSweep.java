@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 
 /**
  * Deletes one batch of rows past their retention bound (`P15-TSK-029`, C12; the window counter's, `P15-TSK-022`; a module's own,
- * the session sweep's first, `P16-TSK-010`).
+ * the session sweep's first, `P16-TSK-010`; the idempotency records', `P16-TSK-011`, platform {@code V016}).
  *
  * <p><strong>The predicate is the database's, not this class's.</strong> Each sweep is one call of a {@code SECURITY DEFINER}
  * function (platform {@code V012} and {@code V014}, or the owning module's, identity {@code V027}), the only path by which the
@@ -46,6 +46,14 @@ public final class RetentionSweep {
 
     private static final String SWEEP_WINDOW_COUNTER_SQL = "SELECT platform.sweep_expired_window_counters(?, ?)";
 
+    /**
+     * The least an idempotency record is kept past its own expiry (`P16-TSK-011`, platform {@code V016}): its expiry is written
+     * from an instance's clock, and the instances' clocks are bounded, never equal (ADR-0014). The function refuses a grace below
+     * it too; {@code IdempotencySweepMigrationTest} holds the two equal.
+     */
+    public static final Duration IDEMPOTENCY_GRACE_FLOOR = Duration.ofDays(1);
+
+    private static final String SWEEP_IDEMPOTENCY_SQL = "SELECT platform.sweep_expired_idempotency_records(?, ?)";
     private static final Pattern TABLE_NAME = Pattern.compile("[a-z][a-z0-9_]{0,62}");
 
     private static final Pattern MODULE_FUNCTION = Pattern.compile("[a-z][a-z0-9_]{0,62}\\.sweep_[a-z0-9_]{1,57}");
@@ -109,8 +117,27 @@ public final class RetentionSweep {
     }
 
     /**
+     * The terminal records of {@code platform.idempotency_record} whose own expiry passed more than {@code grace} ago
+     * (`P16-TSK-011`, platform {@code V016}). The function selects {@code COMPLETED} and {@code FAILED} records only, never an
+     * {@code IN_PROGRESS} claim, and refuses every batch while {@code ledger.journal_entry.idempotency_scope} is not uniquely
+     * indexed, so a posting stays once after its record goes.
+     *
+     * @param grace how long past its expiry a record is kept: refused below {@link #IDEMPOTENCY_GRACE_FLOOR}
+     */
+    public static RetentionSweep ofExpiredIdempotencyRecords(RetentionConnectionSource connections, Duration grace, int batchSize) {
+        positive(grace, "grace");
+        if (grace.compareTo(IDEMPOTENCY_GRACE_FLOOR) < 0) {
+            throw new IllegalArgumentException(
+                    "the idempotency records' grace " + grace + " is below " + IDEMPOTENCY_GRACE_FLOOR
+                            + ": a record's expiry is written on an instance's clock, and a record swept that soon after it is one a retry"
+                            + " may still present");
+        }
+        return new RetentionSweep(connections, "idempotency_record", SWEEP_IDEMPOTENCY_SQL, grace, batchSize);
+    }
+
+    /**
      * A sweep a module owns (`P16-TSK-010`): one call of its own schema's {@code SECURITY DEFINER} function, which chooses the rows
-     * as the three above do and takes the bound in milliseconds and the batch size. The module names the function and states the
+     * as the sweeps above do and takes the bound in milliseconds and the batch size. The module names the function and states the
      * floor of its bound; this class keeps the batch's transaction and connection. The name is checked to be a schema-qualified
      * {@code sweep_} function, so it can only ever name one: it is a constant of the owning module, never configuration.
      *

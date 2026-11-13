@@ -975,6 +975,10 @@ class LoanWriteOffsTest {
                         default -> throw new UnsupportedOperationException(method.getName());
                     });
             JournalEntryStore<Connection> journal = (JournalEntryStore<Connection>) fake(JournalEntryStore.class, (proxy, method, args) -> {
+                if (method.getName().equals("findByIdempotencyScope")) {
+                    // Each posting here is a first attempt: the lookup a fresh claim makes first finds nothing (P16-TSK-011).
+                    return java.util.Optional.empty();
+                }
                 JournalEntry entry = (JournalEntry) args[1];
                 attemptedDating.add("AS_STATED");
                 if (cutoffCovers) {

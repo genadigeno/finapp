@@ -127,6 +127,13 @@ also set `sslmode`, and the application cannot read it. It fails in the safe dir
 service file setting a weak mode is still refused, and one setting `verify-full` produces a false
 refusal. The driver reads `sslmode` from no environment variable, so there is no silent override.
 
+**Which server the driver may choose** *(2026-11-13, `P16-TSK-012`, ADR-0142)*. Encryption says nothing about whether the server is
+the primary. pgjdbc takes a list of hosts and, by its default `targetServerType=any`, the first one that answers, primary or standby, so
+a deployment's URL alone could put a pool on a copy behind the primary. `PrimaryOnlyGuard` refuses to start on a `targetServerType`
+other than `primary` (or `master`), in the URL or as a driver property, and on a URL naming more than one host, or a `host` or `service`
+parameter, without `targetServerType=primary` under the driver's own spelling. Both pools connect with that one address, so no read can
+be answered by a replica (`PHASE_GATES.md` §5 Phase 16 criterion 6).
+
 ## Encryption at rest
 
 *(Corrected by `P15-TSK-001`, 2026-11-08, from the code. This section read "**Nothing in this platform is encrypted at

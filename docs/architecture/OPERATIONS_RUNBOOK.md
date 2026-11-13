@@ -3263,6 +3263,9 @@ latest; the run, as its record names it.
 | §11.51 | `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | §11.52 | `platform`, `checkout` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | §11.55 | `platform`, `settlement`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
+| §11.56 | `ledger`, `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
+| §11.57 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
+| §11.58 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
 | §11.59 | `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
@@ -3822,14 +3825,19 @@ No lease and no leader: `FOR UPDATE SKIP LOCKED` means instances delete disjoint
 tagged `type="outbox_event"` or `type="inbox_message"`. *(2026-11-13: and `session-retention-sweep`, on the same interval and batch,
 tagged `type="session"`: a dead session's row once its idle bound passed more than `finapp.identity.session.sweep.grace` ago,
 default 30 days, judged on the database's clock (identity `V027`).)*
+*(Since `P16-TSK-011`, 2026-11-13: and `idempotency-retention-sweep`, on the same interval and batch size, deletes `COMPLETED` and
+`FAILED` idempotency records whose own `expires_at` is more than `finapp.idempotency.sweep.grace` (default 30 days, refused under a
+day) behind the database's clock, through platform `V016`'s function, which refuses every batch while the journal's posting scope is
+not uniquely indexed (§11.56). Its counters are tagged `type="idempotency_record"`. The window counter's sweep is §11.30's.)*
 
 **What is never deleted.** A pending or an abandoned outbox row, and a published one that a parked record not yet settled still
 names. An inbox record younger than either bound, or one a replay order has extended. A live session, ever: the sweep selects a row
 only once its idle bound has passed by the grace, and a live session's has not passed at all; nor a dead one inside the grace.
-`platform.idempotency_record` is not swept at all: it grows, by ruling, until the posting scope is unique (`THREAT_MODEL.md` §6
-item 18). Audit records are never deleted: they are archived by copy, §11.50. Nor are parked records, discard decisions or callback
-hints (`DATA_RETENTION.md`). *(Read "`platform.idempotency_record`, sessions and audit records are not swept at all. They grow, by
-ruling, until Phase 16." until 2026-11-13.)*
+An idempotency record in flight (`IN_PROGRESS`, the lease's to resolve), or one whose expiry is not yet more than the grace behind the
+database's clock. Audit records are never deleted: they are archived by copy, §11.50. Nor are parked records, discard decisions or
+callback hints (`DATA_RETENTION.md`). *(Read "`platform.idempotency_record`, sessions and audit records are not swept at all. They grow,
+by ruling, until Phase 16." until 2026-11-13, and then "`platform.idempotency_record` is not swept at all: it grows, by ruling, until
+the posting scope is unique" until the idempotency sweep the same day.)*
 
 **The session sweep's grace.** A row stays the grace past its idle bound so that a reported takeover can still be read (which device,
 how strongly the person signed in); the login, its rotations and its revocation stay in the audit trail whatever the sweep does. To
@@ -3843,6 +3851,8 @@ expected.
 | SQLState | Means | Do |
 |---|---|---|
 | `55000` | `platform.inbox_message` has a column the sweep was not reviewed against, so the inbox's sweep stops and deletes nothing. It may carry a state *(2026-11-13: on `type="session"`, the same of `identity.session`: a new column may carry a hold)* | Nothing is at risk: a kept record only costs storage. Ship a migration that reviews the column, adds a positive condition for its terminal values and lists it. **Never** add the column to the function's list by hand |
+| `55000` on `idempotency_record` | The same for `platform.idempotency_record`'s columns, or the journal's posting scope is not uniquely indexed (the index missing, invalid or reshaped), so the sweep deletes nothing (§11.56) | Nothing is at risk. For a column, as above. For the index, read the ledger's schema version first; never drop or rebuild it by hand to clear this |
+| `22023` on `idempotency_record` | A grace under a day, or a batch outside 1 to 1000, reached the function: an instance whose start refusal was bypassed | Correct `finapp.idempotency.sweep.grace` or the batch size in the overlay (§11.31) |
 | `08*`, `null`, or an exception class instead of a SQLState | The database was unreachable or the pool was exhausted | The next tick retries. Treat it as the database's or the pool's incident |
 | `42883` or `42501` | The function does not exist, or the role cannot execute it | Platform `V012` (identity `V027` for the session sweep) did not apply as it should: read the schema version before anything else |
 
@@ -3864,6 +3874,9 @@ harmless. Correctness does not depend on them: a row that is not deleted costs s
   5 minutes, the oldest record the broker can redeliver.
 - `finapp.outbox.retention`: an instance refuses to start with it below `finapp.inbox.retention`, because an audited replay
   reads the outbox across that window. Lowering it deletes only what is then past it.
+- `finapp.idempotency.sweep.grace` (`FINANCIAL`, §11.31's path): an instance refuses to start with it under a day, and the function
+  refuses the same. Raising it keeps every record still there at once. Lowering it shortens how long a command whose only arbiter is
+  its record is answered (`THREAT_MODEL.md` §6 item 63): the owner's to decide, never to relieve space.
 
 **Never** delete from these tables by hand to relieve space: a dedupe record removed early makes the next redelivery of that
 message a second effect (`INV-IDEM-04`). The application role cannot, and an operator with the migrator's credential must not.
@@ -4941,7 +4954,9 @@ REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=sustained REHEARSAL_LOAD_REPLICAS=7 
 rendered `kind` overlay, never the committed one, to the connection budget's formula at that count (N + 2 × 1 + 1 instances of 7 + 1
 connections and 12 reserved, so 10 instances and 92 connections at seven; `FINAPP_DB_INSTANCES`, the server's figure the startup guard
 reads and the test-only server's `max_connections`), holds the HorizontalPodAutoscaler at N, sizes the quota to match and waits for N ready
-replicas before the load. Ten is `P16-TSK-014`'s, on owner decision C3's larger server. `REHEARSAL_LOAD_DURATION` shortens every stage in
+replicas before the load. Ten is `P16-TSK-014`'s, on owner decision C3's larger server. *(2026-11-13: the ceiling is ten since
+`P16-TSK-009`, §11.49, and the runs at ten are §11.58's; read "up to 7, today's ceiling" above as up to the `kind` overlay's ten.)*
+`REHEARSAL_LOAD_DURATION` shortens every stage in
 proportion, and the run is then not the profile's workload. `REHEARSAL_PROBE=slow-statement` is the entry's probe (below).
 *(2026-11-13, `P16-TSK-009`: the committed `kind` overlay now states the formula for ten, and `REHEARSAL_LOAD_REPLICAS` runs 3 to 10. The
 patch is the harness's `fleet_patch`, every scope's, which takes the run's own copy down to the formula at its count; at three and at seven
@@ -5516,7 +5531,8 @@ The `normal` profile holds 0.4167 of the target's peak for 30 minutes, at or jus
   Docker for its pinned images) and metrics-server's image pulled into each node by its digest. Then the render applied, its
   `v1beta1.metrics.k8s.io` API `Available` within three minutes, and the autoscaler reading its CPU utilisation with `ScalingActive`
   true within five. The run holds the autoscaler at its count (minimum and maximum), so it reads the metric and never acts on it:
-  scaling on the metric is `P16-TSK-014`'s. `load/hpa.txt` keeps its description.
+  scaling on the metric is `P16-TSK-014`'s *(2026-11-13: built as E70, §11.58, where the `autoscale` profile leaves the autoscaler at its
+  floor and the run's count)*. `load/hpa.txt` keeps its description.
 - `load-run`: the release's connection sampler through the load, every two seconds. Each sample records the ready, terminating and
   total pods, the fleet's `pg_stat_activity` and all client connections, and an operator connection (as `finapp_reporting`, over TLS)
   tried at each sample that reaches the peak so far (`samples-load.tsv`).
@@ -5554,6 +5570,81 @@ three-replica overlay renders, byte for byte except the generated ConfigMap's na
 the overlay unchanged but the autoscaler's minimum. The manifest policies passed on the three overlays, kubeconform passed on `kind`,
 and the budget's plants were refused in containers (§11.14's check, its budget plants only, 2026-11-13). `LoadRehearsalContractTest`
 and `KindRehearsalContractTest` hold what the run would assert.
+
+### 11.56 One journal entry per posting scope, the idempotency records swept, and the runs that measure both (`P16-TSK-011`, ADR-0141)
+
+**What it is.** Ledger `V036` counts, on each database it reaches, the journal's posting scopes held by more than one entry and keeps the
+counts as a row of `ledger.posting_scope_census`. Ledger `V037` refuses to go on unless every census row says zero
+(`posting_scope_census_found_no_duplicate`), then builds `journal_entry_one_per_idempotency_scope`: from then on a posting is once for
+ever, whatever becomes of its idempotency record. Platform `V016` sweeps those records: `COMPLETED` or `FAILED`, past their own expiry by
+more than `finapp.idempotency.sweep.grace` (30 days by default, never under a day), through `platform.sweep_expired_idempotency_records`
+alone. The application's `DELETE` on the table is revoked. The schedule, its counters and pausing it are §11.15's.
+
+**The migration stops at the census** (`MigratorJobFailed`, §11.41; the Job's log names
+`posting_scope_census_found_no_duplicate`). A posting scope is held by more than one journal entry: a command posted twice. **Delete
+nothing, and do not edit the census.** Neither is possible for the application, and the journal refuses it to everyone.
+1. The environment stays on the release before, which never sweeps and is safe; the rollout waits (`schemaVersion`, §11.1c).
+2. Read the census as the migrator: `SELECT * FROM ledger.posting_scope_census ORDER BY taken_at;`.
+3. List the scopes, and nothing else, as the migrator: `SELECT idempotency_scope, count(*), min(created_at), max(created_at) FROM
+   ledger.journal_entry GROUP BY idempotency_scope HAVING count(*) > 1;`. Each is a second financial effect. Treat each as a
+   reconciliation break: find the command (the scope names its key), decide with the owner which entry stands, and correct the other by
+   a reversal (ADR-0141; `INV-REV-01`). A reversal does not remove the duplicate scope.
+4. The way forward is the owner's: the index cannot be built over those rows as `V037` writes it. Raise it as an incident (§11.12), with
+   the list. Never move the migration on by hand.
+
+**The sweep fails** (`finapp.retention.sweep.failed{type="idempotency_record"}`). Read the instance's `Retention sweep of
+idempotency_record failed` line for its SQLState, as §11.15 says. `55000` here is either a column of the table the sweep was not reviewed
+against, or the journal's posting scope not uniquely indexed (the index missing, invalid or of another shape). Nothing is at risk: a kept
+record costs storage. Do not drop or rebuild the index by hand to clear it. Read the ledger's schema version first. An index left invalid
+by a build outside the migration is dropped and built again, valid, by the same name, under a change of its own.
+
+**A retry answered by the journal.** A posting or a reversal whose record was swept answers the recorded entry: the same identifier, the
+posting meter's `REPLAYED`, nothing written. A different request under the key is `INV-IDEM-03`'s conflict. A command whose only arbiter
+is its record (a transfer, a card checkout: each posts under a key derived from a row it creates), retried after its record is swept, is a new command: §6 item 63 of `THREAT_MODEL.md`.
+If a client reports one, find both commands by the key and treat the second as a duplicate the client asked for, a reconciliation break.
+
+**Running E62, E63 and E64** (`RESILIENCE_EXPERIMENTS.md`). One full cluster at a time, as §11.43 and §11.46.
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=concurrent infra/scripts/kind-rehearsal.sh          # E62, on this tree
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E63 infra/scripts/kind-rehearsal.sh            # E63
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak infra/scripts/kind-rehearsal.sh                # E64, inside E39's soak
+```
+
+- **E62** is E38's run with `load-posting-scope` after the judgement: `load/posting-scope.tsv` lists the lookup (`scope_lookup`), the
+  conditional insert (`entry_insert`), the lines, the claim's insert and completion, and both new indexes. Its control is E38 on commit
+  `ac5aa4a3`, the tree before the uniqueness, at the same replica count: there `statements.tsv`'s last snapshot holds the plain insert and no
+  lookup. Read each operation's latency per stage (`k6/stages.tsv`) and each hot row's waits (`contention-rows.tsv`) beside the control's,
+  and write the difference with its cause in the record. A difference is a reading, never a verdict (`PHASE_16_PLAN.md` §5.2).
+- **E63** ages every terminal record two minutes into the workload (`experiments/e63-age.sql`, one transaction) and waits for the
+  replicas' own sweep, up to three of its intervals (read from the code) and five minutes. `experiments/E63/record.tsv` keeps the counts,
+  the counter per replica and the duplicate's refusal (`duplicate.txt`).
+- **E64** runs at 92% of the soak, after E39's journal_line build: `load/scope-build-stops.tsv` holds the census's read and each build's
+  write stop, beside the table's rows and bytes. Read the posting's and the claim's answers in each window from the generator's series as
+  §11.48 reads E39's build. The stop extrapolated to production's journal decides whether `V037` and `V016` are built ahead of their
+  migrations, `CONCURRENTLY` and by their names (each file says how), before the release reaches production.
+
+**Failure and rollback.** `V036`'s census row stays: it is evidence. `V037` and `V016` are not reverted: a release before them runs on
+their schema (each file's contract marker), and a rollback stops the sweep, while the index keeps every posting once. To pause the sweep
+alone, §11.15. A grace below a day is refused at start and by the function.
+
+**The record.** None. Not run, owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13, "we dont need long running
+checks and tests"): E62 at three replicas on this tree and its control E38 at three on `ac5aa4a3`, E63 at three, and E64 inside E39's
+soak at three. `PostingScopeRehearsalContractTest` holds what the runs would assert, and `PostingScopeUniquenessDatabaseTest` (written,
+owed to the database pass) what PostgreSQL does with the statements through the application's code.
+
+**The container check** (2026-11-13, a throwaway `postgres:18.6` with no application and no `kind`; ledger `V001`-`V037` and platform
+`V001`-`V016` applied by `psql`, each file in its own transaction with its schema first on the path, as the superuser rather than the
+migrator, the three roles created bare). On an empty journal the census wrote one row of zeros and `V037` built a valid, immediate unique
+index; the census refused an edit and a truncation. An entry and its two lines committed; a second entry under its scope `ON CONFLICT
+DO NOTHING` inserted nothing, and a plain one was refused naming the index. As `finapp_app` the sweep took the `COMPLETED` and the
+`FAILED` record two days past their expiry and left the one 12 hours past it and the `IN_PROGRESS` one three days past it (2 swept); it
+refused a grace of a day less a millisecond and a batch of 1,001 (`22023`); the role's own `DELETE` was refused, and a role without the
+grant could not execute the function; with the unique index dropped, or replaced by a partial twin, and with a column added to the
+table, the function refused (`55000`). On a second database holding two committed entries under one scope (ledger `V001`-`V035`), `V036`
+recorded 2 entries, 1 scope, 1 held twice, 1 surplus; `V037` then failed at `posting_scope_census_found_no_duplicate`, leaving the census
+row, both entries and no index. Not proven by it: the migrator's own run (Flyway, its role, its lock timeout), the application's code
+on PostgreSQL, ten writers or sweepers at once, and anything under load.
 
 ### 11.54 Running the database failover drill and reading its record (`P16-TSK-022`, ADR-0139)
 
@@ -6032,6 +6123,164 @@ over the real executor), `SheddingIsWiredTest` (the door before every borrow, ev
 `CheckoutCreateIsOneTransactionTest`, and the harness's text by `LoadRehearsalContractTest` and `ExperimentsRehearsalContractTest`;
 the spike profile's six scenarios read by the pinned k6's `inspect` (2026-11-13, a container check: each a ramping-arrival-rate
 executor, the spikes at ten times the peak).
+
+### 11.57 Partitioning and read replicas: the readings that confirm or overturn ADR-0142, and a URL the driver could route (`P16-TSK-012`)
+
+**What it is.** ADR-0142 decides that no table is partitioned and that no read replica is routed, from W1–W8's arithmetic and the code
+(`CAPACITY_MODEL.md` §3.6). E65 is the reading that would confirm or overturn both. It rides the soak (E39, §11.48) on the reference
+machine's own cluster and injects nothing. **It has not run** (`POSTPONED_ISSUES.md` PI-025): what follows is how it runs and how it is
+read, held by `DecisionReadingsRehearsalContractTest`.
+
+**Running E65.** `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak REHEARSAL_LOAD_DECISIONS=1 infra/scripts/kind-rehearsal.sh`, at three
+replicas. The flag is refused on any other profile, and the preflight reads the report generation bound from `AccountingBeans`' default
+before anything is built, refusing a deployed overlay that sets it. At 10%, 20% ... 70% of the load, in the load's own loop, the harness:
+- counts the journal's lines and entries;
+- reads report generation's statements (`load/reports.sql`: `finapp_reporting`'s in the `finapp` database, from `pg_stat_statements`);
+- asks this month's `TRIAL_BALANCE` as the rehearsal's operator through the operator edge (`Rehearsal.java trial-balance-report`, which waits
+  up to 60 s for the run to leave `GENERATING`);
+- reads the statements again, and then the run's own row (status, claim to completion on the database's clock).
+
+Each sample lands under `load/reports/`. After the load, E39's judge runs, and then E65's. The run fails if fewer than seven runs were
+asked, if a run is not `PROVISIONAL`, if two samples read one run, if the role was not on the server, or if a run's statements were not
+seen as the role's. That last check is the reader's control: a blind reader would otherwise report a free report.
+
+**Reading the replica decision** (`load/reports.tsv`, `load/reports-reading.txt`). `load/reports.awk` fits each run's slowest statement
+(the bound is a statement's, `SET LOCAL statement_timeout`) against the journal's lines when it ran. It writes the statement's milliseconds
+a million lines, its fixed part, and the lines at which one statement reaches the bound. Read it against the target's journal: about 0.5
+billion lines a year (`CAPACITY_MODEL.md` §3.6).
+- Lines at the bound below the target's journal after a year: report generation fails `GENERATION_TIMED_OUT` at the target within
+  that year. That is `THREAT_MODEL.md` §6 item 64's to bound, never a replica's.
+- The core-seconds a run costs at the target's journal (the fit at those lines), times the runs a day the owner expects, divided over
+  the busiest hour, against the database's CPU the target's peak leaves free (E29 and E30 at seven replicas, owed under PI-025). Only
+  a share past that headroom, once the fold is bounded, reopens a replica, by a new ADR on ADR-0142 decision 2's conditions.
+
+**Reading the partitioning decision** (`load/growth.tsv`, from E39's `load/pg-soak-tables.tsv`). `load/growth.awk` writes each named
+table's inserted and deleted rows, per hour and per money movement, its dead rows' largest and last share of its live rows, its autovacuum
+runs and its bytes, first and last, per live row and per movement. Multiply a figure per movement by the target's 377,000 movements a day
+(`CAPACITY_MODEL.md` §3.1). Then:
+- **A swept table** (the outbox, the inbox): its rows a day at the target against its sweep's derived capacity at three replicas (8.64
+  million a day, §3.6), and its dead share at the end against its autovacuum trigger (`autovacuum_vacuum_scale_factor` × live rows +
+  `autovacuum_vacuum_threshold`, the server's, or the table's own storage parameters). Rows past the capacity, or dead rows above the trigger
+  and rising through the soak, overturn the decision for that table: change the sweep's cadence and batch first (§11.15), and partition
+  only by a new ADR that keeps the table's arbiter whole.
+- **An append-only table** (the journal, the audit trail, the payment attempts and their history): its autovacuum runs from E39's
+  `autovacuum.txt`. A run whose length grows with the table's whole size rather than with the rows written since the last one
+  overturns the decision for that table, by a new ADR. The journal's index build stop is item 42 (b)'s (§11.48).
+- **Bytes a day at the target**: bytes per movement × 377,000, beside the rows. This fills `CAPACITY_MODEL.md` §3.6's bytes, each cell
+  naming the run.
+
+**A URL the driver could route: the application refuses to start.** `PrimaryOnlyGuard` refuses a `targetServerType` other than
+`primary` (or `master`), in the URL or in `spring.datasource.hikari.data-source-properties`, and a URL naming more than one host, or a
+`host` or `service` parameter, without `targetServerType=primary` under the driver's own spelling. The log names the setting. What to do:
+- For one database endpoint (the managed database's, which moves with a failover), remove the setting or the second host.
+- For a list of hosts, set `spring.datasource.hikari.data-source-properties.targetServerType=primary`, or `?targetServerType=primary` in
+  the URL. An environment variable's form arrives lower-cased, which the driver ignores, so it is refused.
+
+Never point either pool at a replica to relieve the primary. ADR-0142 decision 2 says what must exist first.
+
+**The record.** Empty: E65 has not run. It is owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13), and its first
+run writes its record here with its commit, its artefacts, the fit and each table's reading against ADR-0142.
+
+### 11.58 Ten instances at load: the release's walk at ten, the autoscaler deciding under load, the sustained profile and the pipeline's scale at ten (`P16-TSK-014`)
+
+**What it is.** The runs that count the ten-instance answer: `PHASE_16_PLAN.md` §1.1's "ten application replicas at load on `kind`,
+scaled up and down and rolled during load", §13's scenario 14, the Phase 15 completion gate's deviation B and `P15-REM-007`'s observed
+scaling. Each run holds its fleet in its own rendered copy of the `kind` overlay, at the connection budget's formula for its count (§11.49:
+13 instances and 116 connections at ten, a quota of 16 pods). Nothing here is production capacity (ADR-0126 decision 1), and production's
+`maxReplicas` stays seven (ADR-0134, `THREAT_MODEL.md` §6 item 56). One full cluster at a time, on a machine that can hold thirteen 1 GiB
+application pods at a rollout's worst moment beside the data tier (the reference machine's VM has 15.6 GiB): a pod the machine kills is an
+environment limit, recorded as `FAILED` with its numbers, never retried into a pass.
+
+**Before them, owner decision C11's pre-flight.** The database and Kafka tiers of what the drill exercises, once, on the tree that will run
+at ten. It is a Gradle tier run, PI-023's kind, owed with the runs:
+
+```
+./gradlew :platform:databaseTest :platform:kafkaTest
+./gradlew :app:databaseTest --tests 'com.finapp.app.domain.*' --tests 'com.finapp.app.transfers.*' --tests 'com.finapp.app.payments.*' --tests 'com.finapp.app.accounting.SourceCensusDatabaseTest'
+```
+
+`platform` holds the outbox, the inbox, the idempotency executor and three of the Phase 15 arbiters with their concurrent cases: the
+window counter (`WindowCounterDatabaseTest#exactlyTheLimitIsAdmittedAcrossThreeInstances`, three instances, the case that exists), the
+retention sweeps (`RetentionSweepDatabaseTest#tenSweepersDeleteDisjointBatches`) and the dead-letter doors
+(`DeadLetterDatabaseTest#tenRetriesOneWinner`, `#tenReplaysOneRequeue`). The ledger's, the transfers' and the payments' database cases
+live in `app` under `domain`, `transfers` and `payments`; the source census is accounting's (`SourceCensusDatabaseTest#tenWalkersJudgeEachEntryOnce`).
+A red here is a defect found before the drill, fixed in a task of its own; the drill does not start on a red pre-flight.
+
+**The release's walk at ten** (E26, `RESILIENCE_EXPERIMENTS.md`):
+
+```
+REHEARSAL_SCOPE=release REHEARSAL_RELEASE_REPLICAS=10 infra/scripts/kind-rehearsal.sh
+```
+
+§11.28's whole walk at the run's count: ten replicas of N − 1 ready on N − 1's schema, then on N's, the hold, the rollout to N under the
+workload with its handler window replayed, the forged-address step, the budget's ceiling, the kill of the replica holding a claim, the
+rollback with an eviction mid-way, the re-roll, and the census after each. What reads the count: every wait for the fleet (`ready_fleet`),
+the floor through a rollout (never fewer than ten ready, `assert_floor`), the eviction's moment (one terminating beside the count and its
+surge running), the reporting pools (ten reports, 80 connections settled), the budget (the peak within (10 + 3) × 8 = 104 with an operator
+admitted at it, and again with the fleet held at 104). A rollout of ten is ten steps, each bounded by the Deployment's own startup budget
+and `minReadySeconds` read from the run's copy (180 s and 117 s): its bound is 2,970 s unless `REHEARSAL_ROLLOUT_TIMEOUT` names another. The
+release's probes are written for three and are refused at any other count, as is every scope but the release, the load and the
+experiments.
+
+**The autoscaler deciding under load** (E70):
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=autoscale REHEARSAL_LOAD_REPLICAS=10 infra/scripts/kind-rehearsal.sh
+```
+
+The run's copy holds the budget for ten and leaves the autoscaler at the overlay's floor of three and the run's ten (`fleet_patch` with
+`FLEET_AUTOSCALE`); nothing of the harness writes the count. The `autoscale` profile (`load/autoscale.json`) runs the money mix at a quarter
+of the target's peak throughout (E30's first step, carried within every objective at three) and, for twenty minutes of its fifty-five, sign-
+ins at nine times the target's sign-in peak beside it, from eight generator addresses so that no source meets the edge's door tier. Why a
+surge of sign-ins: at the engineering workload the replicas' CPU is about a third of their 500m request (E30's steps 1 to 3, `CAPACITY_MODEL.md`
+§3.4), so the autoscaler's target of 70% would not act there (derived); a sign-in costs 68 ms of a replica's core (the credential hash, the isolation
+run), and sixty a second are about 4.1 cores, more than ten replicas at their target hold (3.5 cores). *Derived from measured costs, not
+measured at ten.* What the run asserts beyond §11.43's, §11.45's and §11.49's:
+- before the load: the autoscaler read back as 3 to 10, the fleet settled at three, every pod ready (`load_autoscale_floor`);
+- every 10 s, the autoscaler's own reading into `load/autoscale.tsv` (the count asked, ready, desired and current, its CPU reading, why
+  it is limited or able to scale); every two-second connection sample records the count the Deployment was asked for (`samples-load.tsv`'s
+  eighth column);
+- the fleet moving is read by set, not by count (`load_scraped`): every replica ready for 60 s (twice the kind Prometheus's scrape interval
+  and DNS refresh) must be scraped, and no pod may stand unready 210 s after its creation (the startup probe's budget and the readiness
+  window); a held fleet keeps the exact equality of scraped and ready;
+- after the census (`load_autoscale_judge`): the count read at ten with every replica ready, after a reading above the target; back at
+  three with every replica ready within the load, after a reading below it; a census sample `PASS` at ten and again at three; and every
+  sample's connections within the budget's formula at the count asked for then, (count + 3) × 8 (`assert_within_count`, `counts-load.tsv`):
+  the margin's one terminating pod outside a rollout is what the autoscaler's scale-down policy keeps to one;
+- spread: at least ten replicas served each money route during the load.
+
+Its probe, `REHEARSAL_PROBE=scale-down-unbounded`, removes the autoscaler's scale-down policy before the load: Kubernetes' default lets
+every surplus pod go at once after the 300 s window, ten pods then hold their pools at a count of three (80 connections against 48), and
+the run must fail at `assert_within_count`. Its `MUTATION_TESTING.md` §2 row is owed with the run.
+
+**The sustained profile at ten** (E69): `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=sustained REHEARSAL_LOAD_REPLICAS=10`, §11.45's
+profile held at ten. The database's CPU was the first limit at three (E30, at 0.49 of the target's peak), and ten replicas add no
+database CPU, so the run is expected to show where ten stop at the peak; a run a sample stops names its first limit in its record.
+
+**The pipeline's scale at ten** (E71): `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=pipeline REHEARSAL_KAFKA_BROKERS=3
+REHEARSAL_LOAD_SCALE="3 10 3" REHEARSAL_LOAD_REPLICAS=10`, §11.51's E48 at the overlay's ceiling: every group at ten members on twelve
+partitions, none idle, and each count's peak connections within the run's budget. Its scale is the harness's own, several pods at once
+(ten to three is seven terminating), so the formula at each count is E70's measure and not this one's.
+
+**The audit archive at ten** (E45, §11.50): `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E45 REHEARSAL_EXPERIMENTS_REPLICAS=10`. The
+experiments scope runs at a count other than three only the experiments written for one (E45 alone today), its topology read at the run's
+count over the three workers' zones.
+
+**Reading them.** A run's record names its count, its commit and its artefacts. The ten-instance answer is `PASS` on counts only when E26, E41,
+E70 and E69's carried stages are green with the census at every sample; `FAIL` names its remediation task.
+
+**Failure and rollback.** Each run is a throwaway cluster of its own name, deleted at exit; the ten-replica copy and the autoscaler's floor
+exist only in the run's directory. The release at ten and the autoscaled run change no committed file.
+
+**The record.** None. Not run, owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13, "we dont need long running
+checks and tests"): C11's pre-flight, E26, E69, E70 and its probe, E71, and E45 at ten (`P16-TSK-010`'s, run with this section's count).
+What ran instead, on 2026-11-13, without a cluster: the new functions extracted from the committed scripts and run under `dash` against a
+real `kustomize` render of the `kind` overlay and stubbed cluster answers (`fleet_patch` held at three and at ten and autoscaled at ten, an
+autoscaled run at the floor refused; the step's bound read from the render; the four-field stage's arrivals as the shell judges them;
+`assert_within_count` on good, probe-shaped and countless samples; `load_scraped` on settled, unscraped, unready and silent cases;
+`pipeline_preflight`'s counts to ten), the pinned k6's `inspect` of the `autoscale` profile (sign-ins at 60,003 iterations per 1,000 s in
+the surge, every other operation at its quarter), and the harness's refusals of a count past the ceiling, a release probe at ten and an
+experiment written for three. `TenInstancesRehearsalContractTest` holds what the runs would assert.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

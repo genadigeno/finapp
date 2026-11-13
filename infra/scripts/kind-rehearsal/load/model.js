@@ -19,8 +19,14 @@
 // the arrivals are the stage's rate times its seconds to well within the judge's 2%. k6 takes whole iterations per time unit, so a staged
 // profile counts its rates per 1000 s, three significant figures.
 
+// A stage of four fields (P16-TSK-014), [seconds, factor, operation, its factor], runs every operation at the factor and the one named at its
+// own: the autoscale profile's surge of sign-ins over the money mix (E70), which the CPU metric must answer while money still moves.
+//
 // The stage's target for this operation, in iterations per the operation's time unit.
 function stageTarget(operation, stage) {
+    if (stage.length > 3) {
+        return Math.round(operation.rate * (stage[2] === operation.name ? stage[3] : stage[1]));
+    }
     if (stage.length > 2 && stage[2] !== operation.name) {
         return 0;
     }

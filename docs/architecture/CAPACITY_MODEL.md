@@ -348,8 +348,62 @@ write rate and the bloat. Measured: —.
 build, so every insert into the journal, and with it every posting, waits that long. The migrator's `lock_timeout` bounds only the wait for
 the lock. E39 measures the stop on the soak's journal, and the build rate extrapolates it to the target's. Measured: —.
 
+**The posting scope's uniqueness on the hot path** (`P16-TSK-011`, ADR-0141; routed here by this section's task). Read: each posting
+adds one probe of `journal_entry_one_per_idempotency_scope` (the lookup a fresh claim makes) and one entry in it (the conditional insert);
+each claim's completion one entry in `idempotency_record_sweepable`, partial on the terminal states; no row lock and no new hot row.
+**Derived**: about 434,000 entries a day (§3.1), so the index grows by that many entries a day and the idempotency sweep keeps the record
+table at about 31 days of keyed commands. E62 measures the posting's cost against E38's run on the tree before the uniqueness, and E64 the
+census and both builds' write stop on the soak's tables (each build holds `SHARE` on its table for its length, as above). Measured: —.
+
 **The plans and the soak's growth** (`PHASE_16_PLAN.md` §6.5, §6.7). E39 writes the top statements' plans, every sequential scan, the named
 tables' growth and dead rows, autovacuum's runs, the checkpoints and the WAL a money movement. Measured: —.
+
+### 3.6 Growth, partitioning and read replicas (`P16-TSK-012`)
+
+**Nothing in this section is measured by its task.** One ratio is §3.4's measured run's (the journal's lines an entry), and says so. Rows are
+**derived** from W1–W8 and §3.1–§3.3, or **read** from the schema and the code, each
+naming its source. Bytes are not derived: E65, which rides the soak (E39), reads every named table's growth per hour and per money
+movement from the soak's own samples (`load/growth.tsv`), owed under `POSTPONED_ISSUES.md` PI-025. ADR-0142 records the decisions taken
+on these figures, and what would overturn each.
+
+**Growth a day at the target, by table.** A figure per movement from E65, multiplied by the target's 377,000 money movements a day (§3.1),
+gives the measured counterpart of each row's growth.
+
+| Table | Rows a day at the target | From | Kept | Standing at the target | Sweep |
+|---|---|---|---|---|---|
+| `ledger.journal_entry` | ≈ 434,000 | §3.2 | for ever (`INV-HIST-01`) | ≈ 158 million a year, ≈ 475 million in three | none, ever |
+| `ledger.journal_line` | ≈ 1.4 million | §3.2's entries × 3.17 lines an entry, as E30's step 3 wrote them (12.6 lines over 3.97 entries a second, §3.4, measured on `kind`); a transfer writes 2, a card capture with its fee 4 | for ever | ≈ 0.5 billion a year, ≈ 1.5 billion in three | none, ever |
+| `platform.outbox_event` | ≈ 3,213,000 | §3.2 | 30 days after publication (`finapp.outbox.retention`), its dead-lettered, discarded and parked-referenced rows kept as evidence | ≈ 96 million | at most 20 batches of 500 a 5-minute tick on each instance (`RetentionSweepSchedule.MAX_BATCHES`, `finapp.retention.sweep.batch-size`, `.interval`): 2.88 million a day an instance, 8.64 million at the three-replica minimum, 2.7 times the target's writes |
+| `platform.inbox_message` | at most ≈ 2,324,000 | §3.3: one row a record a group's handler applies, of the records the three groups read | 14 days (`finapp.inbox.retention`) | at most ≈ 32.5 million | the same capacity, its own schedule |
+| `platform.idempotency_record` | at least 377,000 | one claim a keyed money movement, operator commands beside | until its sweep exists (`P16-TSK-011`) | ≈ 138 million a year until then | none yet |
+| `platform.audit_record` | ≈ 0.6 to 1.4 million | read from the happy paths' writers: a sign-in 1 (240,000), a transfer 1 (100,000), a top-up or withdrawal 1 (40,000), a card payment 1 to 5 (creation, confirmation, capture and each concluded outcome; 200,000) | kept; archived and kept (`P16-TSK-010`) until a jurisdiction's period (`THREAT_MODEL.md` §6 item 23 (b)) | ≈ 0.2 to 0.5 billion a year | none (archival keeps the rows) |
+| `platform.audit_archive_pending` (ADR-0135) | as many as the audit trail | one queue row a new audit row, by trigger (`V015`); routed by `P16-TSK-010` | until its row's segment is archived; while no environment names a store, for ever | grows with the audit trail until a store is named, then a segment's worth | the archive's own claim, by segment |
+| `identity.session` | ≈ 240,000 | one session a sign-in (W3) | its idle bound plus the sweep's grace (`finapp.identity.session.sweep.grace`, 30 days) | ≈ 7 million | the session sweep, a fourth `RetentionSweepSchedule` (`P16-TSK-010`) |
+| `payments.payment_attempt` and its history | ≈ 220,000 attempts | 200,000 card or checkout payments and 20,000 card top-ups (R2); a history row a transition | kept | ≈ 80 million attempts a year | none |
+| `ledger.account_balance`, `platform.window_counter` | bounded by accounts, and by sources × windows | — | in place; the counter unlogged and swept each minute | by population, not by time | the counter's own |
+
+**The queries a partition key would serve** (read; ADR-0142's Context):
+
+| Table | Read by | A time key | A hash of the account |
+|---|---|---|---|
+| journal lines | an account over its whole history: `JdbcBalanceDerivation` (the available balance, under the account's lock), `JdbcPositionBreakdown` (the merchant payable), `JdbcPurposeBalances`, `ProjectionVerification`, `JdbcProjectionRebuildRows`, the credit exposure reads | prunes nothing: every partition probed | prunes to one |
+| journal lines | an account over a date range: `JdbcStatementDerivation` | prunes, once the entry's date is on the line | prunes to one |
+| journal lines | the ledger over a month: the GL (`LedgerJournalReads`, `LedgerTrialBalanceReads.WITHIN`), `Phase9Reports` | prunes, once the date is on the line | prunes nothing |
+| journal lines | from inception to a date: `LedgerTrialBalanceReads.BEFORE` and `LEDGER`, `LedgerCounterpartyPositionReads`, `LendingFundedAsOfCutoffReads`, `ProductReconciliationDisclosure`, `JdbcBnplReportReads`, `LendingReports` | every partition before the date | prunes nothing |
+| journal lines | by entry: the balance trigger on every insert (`journal_entry_balances`), the census walk, the shapes | crosses partitions unless the entry's date is known | crosses partitions |
+| journal lines | whole: `TrialBalance`, the proofs | whole either way | whole either way |
+| outbox, inbox | the relay's pending heads by aggregate; a claim or a dedupe by key; the sweep by age | serves the sweep alone, and splits the key | — |
+| idempotency records | a claim by `(scope, idempotency_key)` | splits the arbiter | — |
+
+**Read replicas.** Read: both pools connect to one address (`DatabaseEndpoint.url`): the writer's, and report generation's
+(`ReportingPool`, as `finapp_reporting`), so no read reaches a copy today. Report generation is the only read ADR-0142 leaves eligible,
+under its conditions. Its trial-balance-based definitions fold the journal from inception (the trial balance's opening and ledger windows,
+the balance sheet, the GL activity's and the purpose reports' openings), so one statement's cost grows with the journal's lines. W1–W8
+state no report runs a day, so report generation's share of the primary is not derived. **Derived**: one statement reaches the four-minute
+generation bound (`finapp.accounting.report.generation-timeout`) once the journal's lines exceed 240 s × its fold rate. At the target's
+≈ 0.5 billion lines a year, a rate below ≈ 2.1 million lines a second passes it within the first year, and below ≈ 6.3 million within
+three. E65 fits that rate from seven runs over the soak's growing journal (`load/reports-reading.txt`): a statement's milliseconds a million
+lines, and the lines at the bound. Measured: —. The bound is `THREAT_MODEL.md` §6 item 64, the owner's to place.
 
 ---
 
@@ -400,7 +454,11 @@ of pools would only queue more work inside a CPU-bound database. So:
 
 The HPA's metric on `kind` is metrics-server, installed by the `load` scope (`OPERATIONS_RUNBOOK.md` §11.49). **Not measured**, owed
 under `POSTPONED_ISSUES.md` PI-025: each replica's pools at the engineering workload at ten replicas, the peak there, an operator
-admitted at it and with the fleet held at 104 (E41); the peak during a rollout at ten (E26, `P16-TSK-014`).
+admitted at it and with the fleet held at 104 (E41); the peak during a rollout at ten (E26, `P16-TSK-014`). *(2026-11-13,
+`P16-TSK-014`: E26 built, beside the autoscaler's own scale from three to ten and back under load (E70) and the sustained profile at
+ten (E69), every one owed under PI-025; `OPERATIONS_RUNBOOK.md` §11.58. The autoscaler's target of 70% would not act at the engineering
+workload (derived from §3.4: the replicas near a third of their request there), so E70 moves the metric with a surge of sign-ins; its calibration
+is `P16-TSK-015`'s.)*
 
 ---
 
@@ -429,9 +487,11 @@ rather than the infrastructure becomes an ADR before any change (ADR-0126 decisi
 
 - **Horizontal** for the stateless request path and the claim-based workers.
 - **Vertical** for the PostgreSQL primary.
-- **Partitioning** of Kafka topics (fixed at 12) and, if `P16-TSK-012` decides it by an ADR, of high-volume tables.
+- **Partitioning** of Kafka topics (fixed at 12) and, if `P16-TSK-012` decides it by an ADR, of high-volume tables. *(2026-11-13: ADR-0142
+  decides no table is partitioned at the target, §3.6, and names what would overturn it.)*
 - **Workload isolation** by pools and bulkheads, and by a role split only if measured (`P16-TSK-015`).
-- **Read scaling** only for the reporting pool (`PHASE_16_PLAN.md` §6.6).
+- **Read scaling** only for the reporting pool (`PHASE_16_PLAN.md` §6.6). *(2026-11-13: ADR-0142 routes no replica; one primary serves
+  every door, held by a guard, §3.6.)*
 - **Write limitations**, stated: writes do not scale out. One primary holds the journal, and every arbiter is a row or a
   constraint on it.
 - **Backpressure** by the outbox and by explicit shedding (`P16-TSK-016`).
@@ -469,6 +529,8 @@ Each one confirmed becomes an ADR before any change.
   under `POSTPONED_ISSUES.md` PI-025.)*
 - `P16-TSK-008` writes §3.5's readings and leaves its measured cells `—`: E38, E39 and E40 fill them, each cell naming its run, when
   PI-025 is run.
+- `P16-TSK-012` writes §3.6's derived growth and reads, and leaves its measured cells `—`: E65, riding E39's run, fills them, each naming
+  its run, when PI-025 is run.
 - A change to W1–W8 is the owner's. It changes the derived cells that cite it, by a dated note.
 - A change to the code that adds or removes an event on a flow changes §3.2. The counts were read on master `6981c167`.
 - A change to the pool, the replicas, the surge or the server changes §4. `ConnectionPoolSizingGuard` holds the live arithmetic,

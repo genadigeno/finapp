@@ -50,7 +50,11 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
                                     + " (id, posting_date, value_date, entry_type, reference,"
                                     + " reason, reverses_entry_id, actor_id, correlation_id,"
                                     + " causation_id, idempotency_scope, created_at)"
-                                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                    // V037's unique index is the arbiter (P16-TSK-011): a scope that already has an
+                                    // entry writes nothing and aborts nothing, so the caller can read the entry it has.
+                                    // A concurrent inserter of the same scope is waited for, then judged on its commit.
+                                    + " ON CONFLICT (idempotency_scope) DO NOTHING")) {
                 insert.setObject(1, entry.id().value());
                 insert.setObject(2, entry.postingDate());
                 insert.setObject(3, entry.valueDate());
@@ -64,7 +68,12 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
                 insert.setString(10, attribution.correlation().cause().orElseThrow().value());
                 insert.setString(11, attribution.idempotencyScope());
                 insert.setTimestamp(12, Timestamp.from(entry.createdAt()));
-                insert.executeUpdate();
+                if (insert.executeUpdate() == 0) {
+                    // Never the scope in the message: it carries a client's key (INV-AUD-02's discipline).
+                    throw new PostingScopeTakenException(
+                            "journal entry " + entry.id() + " was not appended: the journal already holds an entry"
+                                    + " under its idempotency scope (V037, INV-IDEM-01)");
+                }
             }
             try (PreparedStatement insert =
                     unitOfWork.prepareStatement(

@@ -5,7 +5,6 @@ import com.finapp.platform.audit.archive.AuditArchiveSegments;
 import com.finapp.platform.audit.archive.JdbcAuditArchiveSegments;
 import com.finapp.platform.retention.RetentionConnectionSource;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.net.http.HttpClient;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -34,7 +33,8 @@ class AuditArchiveBeans {
 
     /**
      * The archive's schedule. The lease must outlast the four store calls a segment makes at their timeout, or a live holder would
-     * be taken over in mid-copy: refused at start otherwise.
+     * be taken over in mid-copy: refused at start otherwise. Each call ends within its timeout, half to the headers and half to the
+     * body ({@link HttpAuditArchiveStore}).
      */
     @Bean
     @ConditionalOnProperty(name = "finapp.audit.archive.endpoint")
@@ -57,8 +57,7 @@ class AuditArchiveBeans {
                     + " finapp.audit.archive.timeout (" + timeout + ") and ten seconds for the database's, or a live holder is taken"
                     + " over in mid-copy (OPERATIONS_RUNBOOK.md section 11.50)");
         }
-        HttpClient client = HttpClient.newBuilder().connectTimeout(timeout).build();
-        HttpAuditArchiveStore store = new HttpAuditArchiveStore(client, endpoint, bucket, timeout);
+        HttpAuditArchiveStore store = new HttpAuditArchiveStore(endpoint, bucket, timeout);
         return new AuditArchiveSchedule(new AuditArchival(segments, store, lease, batchSize), interval, meters);
     }
 }

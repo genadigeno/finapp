@@ -128,6 +128,15 @@
 # now) and fired at a measured moment (E13's cut on a commit). A stop condition that is a harm (a second replica unready, a page, a p99
 # past its bound) is FAILED; one that is a duration ends the observation and is FAILED only when the experiment's own signal never came.
 # A fault whose own positive control does not show (nothing held, nothing failed) is a run that could not measure: exit 2, never a pass.
+#
+# E63 (P16-TSK-011; ADR-0141; OPERATIONS_RUNBOOK.md section 11.56), at three replicas: the idempotency records swept under the workload by
+# the replicas' own schedules. The harness ages every terminal record the workload has left, as the run's superuser in one transaction that
+# sets the records' freeze trigger aside and back inside itself (an instant fault, logged and not registered: no state with the trigger off
+# is ever committed or seen); the sweep on every replica then deletes them by its own bound, in disjoint batches. Every aged record gone;
+# none the age left younger and no claim in flight touched; the fleet's swept counter moved; a second entry under an aged posting's scope
+# still refused by the journal's unique index (inserted and rolled back by the superuser); the workload's same-key retries answered alike
+# throughout and nothing unresolved; the census green, its clause "one journal entry per posting scope" among them.
+#
 # THE AUDIT ARCHIVE (P16-TSK-010; ADR-0135; OPERATIONS_RUNBOOK.md section 11.50). The scope deploys the archive's test-only store
 # (experiments/archive-store.yaml, ArchiveStore.java: write once, its objects on a claim of their own) and names it to the application in
 # its own rendered ConfigMap alone, with the settings its experiments run at (experiments_archive_settings); the endpoint check admits that
@@ -1312,24 +1321,25 @@ experiments_pages_setup() {
     EXP_PAGE_COUNT=$pages
 }
 
-# The topology, read: three replicas on three nodes in three zones, the standby synchronous, every application session through the proxy
-# over TLS, every replica accepted by each of the proxy's three proxies, the consumer groups' members at the proxy's address.
+# The topology, read: the run's replicas (three; ten at a count, P16-TSK-014) ready over the three workers' nodes in three zones, the standby
+# synchronous, every application session through the proxy over TLS, every replica accepted by each of the proxy's three proxies, the
+# consumer groups' members at the proxy's address.
 experiments_topology_check() {
     fleet=$(experiments_fleet)
     ready=$(printf '%s\n' "$fleet" | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == ""' | grep -c . || true)
-    [ "$ready" = 3 ] || fail "topology: $ready application replicas ready, where the experiments run at three"
+    [ "$ready" = "$FLEET_REPLICAS" ] || fail "topology: $ready application replicas ready, where the experiments run at $FLEET_REPLICAS"
     nodes=$(printf '%s\n' "$fleet" | awk -F'|' 'NF >= 5 && $6 == "" {print $4}' | sort -u)
-    [ "$(printf '%s\n' "$nodes" | grep -c .)" = 3 ] || fail "topology: the three replicas share nodes ($(printf '%s' "$nodes" | tr '\n' ' '))"
+    [ "$(printf '%s\n' "$nodes" | grep -c .)" = 3 ] || fail "topology: the replicas are not on the three workers' nodes, they share nodes ($(printf '%s' "$nodes" | tr '\n' ' '))"
     zones=""
     for node in $nodes; do
         zones="$zones $(kube get node "$node" -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}')"
     done
-    [ "$(printf '%s\n' $zones | sort -u | grep -c .)" = 3 ] || fail "topology: the three replicas are not in three zones ($zones)"
+    [ "$(printf '%s\n' $zones | sort -u | grep -c .)" = 3 ] || fail "topology: the replicas are not in three zones ($zones)"
     workers=$(kube get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{range .items[*]}{.metadata.labels.topology\.kubernetes\.io/zone}{"\n"}{end}' | sort -u | grep -c . || true)
     [ "$workers" = 3 ] || fail "topology: the workers are in $workers zones, not three"
     rule=$(kube -n finapp get deployment finapp-app -o jsonpath='{range .spec.template.spec.topologySpreadConstraints[*]}{.topologyKey}={.whenUnsatisfiable} {end}')
     case $rule in *"topology.kubernetes.io/zone=DoNotSchedule"*) ;; *) fail "topology: the zone constraint is not DoNotSchedule ($rule)" ;; esac
-    pass "topology: three replicas ready on three nodes in three zones ($(printf '%s' "$zones" | sed 's/^ //')), the zone constraint DoNotSchedule"
+    pass "topology: $FLEET_REPLICAS replicas ready on three nodes in three zones ($(printf '%s' "$zones" | sed 's/^ //')), the zone constraint DoNotSchedule"
     experiments_standby_check
     brokers_check
     proxy_pod=$(kube -n finapp-experiments get pods -l app.kubernetes.io/name=finapp-toxiproxy -o jsonpath='{.items[0].status.podIP}')
@@ -1450,7 +1460,7 @@ experiments_steady() {
     experiments_topology_check
     firing=$(experiments_pages_firing)
     [ -z "$firing" ] || fail "$EXP_ID steady state: correctness pages firing before the fault: $firing"
-    experiments_record "steady state" "3 replicas on 3 nodes in 3 zones; the standby synchronous; every session through the proxy over TLS; $EXP_PAGE_COUNT pages silent"
+    experiments_record "steady state" "$FLEET_REPLICAS replicas on 3 nodes in 3 zones; the standby synchronous; every session through the proxy over TLS; $EXP_PAGE_COUNT pages silent"
 }
 
 # Stop: every fault the experiment put on is removed, and the cluster read to have none left.
@@ -4470,6 +4480,90 @@ E24_recover() {
 }
 
 # ---------------------------------------------------------------------------------------------------
+# E63: the idempotency records swept under the workload (P16-TSK-011; ADR-0141; OPERATIONS_RUNBOOK.md section 11.56), at three replicas.
+# ---------------------------------------------------------------------------------------------------
+#
+# Records age forty days in the fault, past any grace the function admits (a day at least, 30 days by default), so the replicas' own sweep
+# takes them at its next ticks: no setting of the run's is changed and nothing deletes but the function. The aged are told apart by their
+# expiry, now more than 38 days behind the server's clock; the young by their completion inside the age's last 30 s, which the age left.
+
+# e63_count <condition>: terminal records matching it, on the server's clock.
+e63_count() {
+    psql_query -c "SELECT count(*) FROM platform.idempotency_record WHERE state IN ('COMPLETED', 'FAILED') AND ($1)" | tr -d '[:space:]'
+}
+
+# e63_swept: the fleet's idempotency sweep counter, summed over the replicas Prometheus reads.
+e63_swept() {
+    experiments_value 'sum(finapp_retention_swept_total{type="idempotency_record"})'
+}
+
+E63_steady() {
+    # The sweep's interval, read from the code's default, never copied: no overlay of kind's sets it (OPERATIONS_RUNBOOK.md section 11.15).
+    minutes=$(sed -n 's/.*finapp\.retention\.sweep\.interval:PT\([0-9]*\)M}.*/\1/p' "$ROOT/app/src/main/java/com/finapp/app/eventing/EventingBeans.java" | head -1)
+    case $minutes in '' | *[!0-9]*) cannot "E63: the retention sweeps' interval could not be read from EventingBeans.java" ;; esac
+    grep -q 'idempotencyRetentionSweepSchedule' "$ROOT/app/src/main/java/com/finapp/app/eventing/EventingBeans.java" \
+        || cannot "E63: the tree has no idempotency sweep to run (EventingBeans.java)"
+    E63_BOUND=$((3 * minutes * 60 + 300))
+    experiments_start_workload e63 900
+    # Records to age: two minutes of the workload's keyed commands, its same-key retries among them.
+    sleep 120
+    experiments_sampler "$EXP_DIR" &
+    E63_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E63_SAMPLER"
+    E63_SWEPT_BEFORE=$(e63_swept)
+    [ -n "$E63_SWEPT_BEFORE" ] || cannot "E63: the fleet's swept counter for idempotency_record is not in Prometheus: the meter is eager on every replica"
+    experiments_record "steady" "$(e63_count true) terminal records, $(psql_query -c "SELECT count(*) FROM platform.idempotency_record WHERE state = 'IN_PROGRESS'" | tr -d '[:space:]') in flight; the sweep every $minutes min, so ${E63_BOUND} s to take them; the fleet's counter at $E63_SWEPT_BEFORE"
+}
+
+E63_fault() {
+    # The safety boundary before the instant fault, as before every registered one.
+    experiments_refuses || fail "E63: the safety boundary refused before the records were aged: $EXP_REASON"
+    answer=$(psql_query -v ON_ERROR_STOP=1 -f - < "$DIR/experiments/e63-age.sql") || fail "E63: the records could not be aged: see the run's log"
+    E63_AGED=$(printf '%s\n' "$answer" | awk -F'|' '$1 == "aged" {print $2}')
+    E63_AT=$(printf '%s\n' "$answer" | awk -F'|' '$1 == "aged" {print $3}')
+    E63_YOUNG=$(printf '%s\n' "$answer" | awk -F'|' '$1 == "young" {print $2}')
+    [ "$(printf '%s\n' "$answer" | awk -F'|' '$1 == "trigger" {print $2}')" = O ] || fail "E63: the records' freeze trigger is not enabled after the age"
+    [ "${E63_AGED:-0}" -ge 1 ] || cannot "E63: no terminal record was there to age, so the sweep has nothing to take"
+    experiments_record fault "$E63_AGED terminal records aged forty days at $(date -u -d "@$E63_AT" +%H:%M:%SZ) (logged, not registered: one transaction, the freeze trigger enabled again inside it); $E63_YOUNG younger ones left as they were"
+}
+
+E63_observe() {
+    deadline=$((E63_AT + E63_BOUND))
+    left=$E63_AGED
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        experiments_pages_tick || return 0
+        left=$(e63_count "expires_at < now() - interval '38 days'")
+        printf '%s\t%s\n' "$(date +%s)" "$left" >> "$EXP_DIR/aged-left.tsv"
+        [ "$left" = 0 ] && break
+        sleep 15
+    done
+    [ "$left" = 0 ] || fail "E63: $left of $E63_AGED aged records still kept $E63_BOUND s after the age: the sweep did not take them (experiments/E63/aged-left.tsv)"
+    swept=$(e63_swept)
+    by_pod=$(experiments_prometheus "/api/v1/query?query=$(urlencode 'sum by (pod) (finapp_retention_swept_total{type="idempotency_record"})')" 2>/dev/null \
+        | grep -o '"pod":"[^"]*"},"value":\[[0-9.e+]*,"[^"]*"' | sed 's/"pod":"\([^"]*\)"},"value":\[[0-9.e+]*,"\([^"]*\)"/\1=\2/' | tr '\n' ' ')
+    awk -v a="$swept" -v b="$E63_SWEPT_BEFORE" 'BEGIN {exit !(a + 0 > b + 0)}' \
+        || fail "E63: the aged records are gone and the fleet's swept counter did not move ($E63_SWEPT_BEFORE to $swept): something other than the sweep deleted them"
+    experiments_record swept "every aged record gone; the fleet's counter $E63_SWEPT_BEFORE to $swept (per replica: $by_pod)"
+}
+
+E63_recover() {
+    young=$(e63_count "completed_at >= to_timestamp($E63_AT) - interval '30 seconds' AND completed_at <= to_timestamp($E63_AT)")
+    [ "${young:-0}" -ge "$E63_YOUNG" ] || fail "E63: $young of the $E63_YOUNG records the age left younger remain: the sweep took a record inside its bound"
+    # The journal's arbiter on the swept journal: an aged posting's scope, a new entry under it, refused by the unique index; rolled back.
+    refused=$(psql_query -f - < "$DIR/experiments/e63-duplicate.sql" 2>&1 || true)
+    printf '%s\n' "$refused" > "$EXP_DIR/duplicate.txt"
+    case $refused in
+        *'duplicate key value violates unique constraint "journal_entry_one_per_idempotency_scope"'*) ;;
+        *) fail "E63: a second entry under a posting's scope was not refused by the journal's unique index: see experiments/E63/duplicate.txt" ;;
+    esac
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E63_SAMPLER" 2>/dev/null || true
+    experiments_workload_end e63
+    experiments_record recovered "$young records completed in the age's last 30 s still kept; a second entry under a posting's scope refused by journal_entry_one_per_idempotency_scope"
+    pass "E63: every aged record swept by the replicas' own schedules, none younger and none in flight touched, the posting scope still unique on the swept journal, nothing unresolved"
+}
+
+# ---------------------------------------------------------------------------------------------------
 # The audit archive and the session sweep (P16-TSK-010; ADR-0135; OPERATIONS_RUNBOOK.md section 11.50): E44, E45, E46. Built and not run:
 # by the owner's word of 2026-11-13 their runs are owed under POSTPONED_ISSUES.md PI-025.
 # ---------------------------------------------------------------------------------------------------
@@ -4610,7 +4704,8 @@ E44_recover() {
 
 # ---------------------------------------------------------------------------------------------------
 # E45: a holder killed between the copy and the mark, its segment taken over and marked once; each row in one segment. At three replicas
-# here, where fleet_patch holds the fleet; at ten once this scope runs at ten, which kind's overlay admits (owed under PI-025).
+# by default; at ten with REHEARSAL_EXPERIMENTS_REPLICAS=10 (P16-TSK-014), the one experiment of this scope written for a count (owed under
+# PI-025).
 # ---------------------------------------------------------------------------------------------------
 
 E45_steady() {
@@ -4671,7 +4766,7 @@ E45_observe() {
 }
 
 E45_recover() {
-    ready_three 400 || fail "E45: the fleet did not return to three ready replicas"
+    ready_fleet 400 || fail "E45: the fleet did not return to its $FLEET_REPLICAS ready replicas"
     stop_workload e45
     [ "$(workload_unresolved e45)" = 0 ] || fail "E45: $(workload_unresolved e45) requests stayed unresolved: see workload-e45.tsv"
     assert_flows_ran e45

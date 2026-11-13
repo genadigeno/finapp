@@ -709,6 +709,38 @@ commit and the date; do not delete the entry.
     18.6 (the functions by hand: the claim, a lease taken over, both refusals at the mark, the chain, the decoder, the grants, the
     sweep keeping a live session) and of the test-only store on the JDK image (write once, `412`, `405`, a bad checksum `400`). Its
     database cases (`AuditArchivalDatabaseTest`, `SessionSweepDatabaseTest`) are owed to the database pass, PI-023's kind.
+  - `P16-TSK-011` (the posting scope made unique, the idempotency records swept; `OPERATIONS_RUNBOOK.md` §11.56, whose record holds
+    only the container check; ADR-0141): **E62**, the concurrent-financial profile (`REHEARSAL_LOAD_PROFILE=concurrent`) at three
+    replicas on this task's tree, read by `load/posting-scope.sql`, with its control **E38 at three replicas on commit `ac5aa4a3`**, the
+    tree before the uniqueness, the comparison written in §11.56's record; **E63**, the records swept under the workload by the
+    replicas' own schedules (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E63`) at three replicas; **E64**, the census and the two
+    builds timed inside E39's soak (`REHEARSAL_LOAD_PROFILE=soak`) at three replicas, `load/scope-build-stops.tsv` in §11.56's record.
+    Nothing ran on a cluster. Ran instead, 2026-11-13, in a throwaway `postgres:18.6` container: the ledger and platform chains with
+    `V036`, `V037` and `V016`, the census, its stop on a planted duplicate, the conditional insert and the sweep's selection, floors and
+    refusals (§11.56's record). The database cases `PostingScopeUniquenessDatabaseTest` are owed to PI-023's pass.
+  - `P16-TSK-012` (partitioning and read replicas, ADR-0142; `OPERATIONS_RUNBOOK.md` §11.57, whose record is empty; `CAPACITY_MODEL.md`
+    §3.6, its measured cells `—`): **E65**, the decisions' readings, riding E39's eight-hour soak at three replicas in one run
+    (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak REHEARSAL_LOAD_DECISIONS=1`): seven `TRIAL_BALANCE` runs over the growing journal,
+    their slowest statement fitted to its lines against the four-minute bound, and every named table's growth per hour and per money
+    movement read against ADR-0142's thresholds. Nothing ran before the word. `load/reports.awk` and `load/growth.awk` were run on
+    synthetic inputs on the development machine, and `load/reports.sql` with the reader's delta in a throwaway container of the pinned
+    PostgreSQL image (2026-11-13, no `kind`, no application: a `finapp_reporting` role's two statements read by role, the role line
+    present). The report runs through the operator edge, the journal's count, the run's row and the judge are unproven on a cluster.
+    No mutation probe of this task needs a cluster.
+  - **`P16-TSK-014`** (ten instances at load, `OPERATIONS_RUNBOOK.md` §11.58, whose record is empty; the Phase 15 completion gate's
+    deviation B and `P15-REM-007`'s observed scaling, both open until these run): first **owner decision C11's pre-flight**, the
+    `databaseTest` and `kafkaTest` tiers of `platform` and the `app` database cases under `domain`, `transfers`, `payments` and the source
+    census, once, on the tree that will run at ten (§11.58's two commands; PI-023's kind); then **E26**, the release's whole walk at ten
+    replicas (`REHEARSAL_SCOPE=release REHEARSAL_RELEASE_REPLICAS=10`), its record also §11.28's; **E70**, the autoscaler deciding the
+    fleet from three to ten and back under load (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=autoscale REHEARSAL_LOAD_REPLICAS=10`), and
+    **E70's probe**, the same run with `REHEARSAL_PROBE=scale-down-unbounded`, which must fail at the formula at each count (its
+    `MUTATION_TESTING.md` §2 row with it); **E69**, the sustained profile at ten replicas (`REHEARSAL_LOAD_PROFILE=sustained
+    REHEARSAL_LOAD_REPLICAS=10`); and **E71**, the pipeline's scale 3 → 10 → 3 on three brokers (`REHEARSAL_LOAD_PROFILE=pipeline
+    REHEARSAL_KAFKA_BROKERS=3 REHEARSAL_LOAD_SCALE="3 10 3" REHEARSAL_LOAD_REPLICAS=10`). The experiments scope's count built here
+    (`REHEARSAL_EXPERIMENTS_REPLICAS=10`, E45 the one experiment it admits at ten) is what `P16-TSK-010`'s E45 at ten, in the bullet
+    above, runs with. Nothing ran on a cluster. What ran instead, on 2026-11-13: the new shell functions under `dash` against a real
+    `kustomize` render of the `kind` overlay and stubbed cluster answers, the pinned k6's `inspect` of the `autoscale` profile, and the
+    harness's refusals before any build (§11.58's record).
   - **`P16-TSK-023`** (the data tier's availability, `docs/architecture/AVAILABILITY.md`, ADR-0144; `OPERATIONS_RUNBOOK.md` §11.59, whose
     last record is empty): in the `experiments` scope at three replicas, **E72**, the telemetry back ends lost (`REHEARSAL_EXPERIMENTS=E72`),
     and **E73**, the payout rail and card tokenisation lost (`REHEARSAL_EXPERIMENTS=E73`), each walking its row of the matrix; the walks

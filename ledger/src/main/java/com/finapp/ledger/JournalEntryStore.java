@@ -26,6 +26,15 @@ public interface JournalEntryStore<T> {
      * is the idempotency kernel's job (`P3-TSK-006`), never a quiet second write here.
      * Balance is validated by the domain before this is reachable and by the deferred
      * constraint triggers at commit — two enforcement layers, blind in different directions.
+     *
+     * <p><strong>One entry per idempotency scope, for ever</strong> (`P16-TSK-011`, ledger
+     * {@code V037}): when the journal already holds an entry under
+     * {@link PostingAttribution#idempotencyScope()}, nothing is written and
+     * {@link PostingScopeTakenException} is thrown, leaving the caller's transaction usable so
+     * that a command posting under a claimed key can answer the recorded entry. Every
+     * implementation honours this, the in-memory ones included.
+     *
+     * @throws PostingScopeTakenException the scope already has an entry; nothing was appended
      */
     void append(T unitOfWork, JournalEntry entry, PostingAttribution attribution);
 
@@ -58,9 +67,12 @@ public interface JournalEntryStore<T> {
      * {@code "ledger.post:" + postingKey} and derives every fact from the posted rows, never
      * from memory). Lock-free: an entry is immutable.
      *
-     * <p>The column carries no unique index (`V004`), but the idempotency kernel makes one
-     * committed execution per scope-and-key the invariant — so a second row here is a defect,
-     * answered loudly rather than by picking one ({@code INV-IDEM-01}).
+     * <p>The column is uniquely indexed since `V037` (`P16-TSK-011`); before it, the idempotency
+     * kernel alone made one committed execution per scope-and-key the invariant. A second row
+     * here is still answered loudly rather than by picking one ({@code INV-IDEM-01}), for a
+     * database where that index is missing. Since `P16-TSK-011` this is also the posting's
+     * own lookup: the command asks it before posting, and a recorded entry is the answer once
+     * the idempotency record has been swept.
      *
      * @throws LedgerStorageException two entries share the scope — the defect made loud
      */

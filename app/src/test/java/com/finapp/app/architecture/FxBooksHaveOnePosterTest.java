@@ -25,7 +25,8 @@ import org.junit.jupiter.api.Test;
  * two line composers - {@code ConversionLines} and {@code CoverLines} (`P9-TSK-012`) - a second place
  * naming one is a second way value could move on it. Read from the
  * code with comments stripped and from the string literals, the {@code CashAtBankHasOnePosterTest}
- * scanner; planted posters prove the rule bites.
+ * scanner; planted posters prove the rule bites. A census reader ({@link #CENSUS_READERS}, `P15-TSK-035`'s source-join read
+ * port) is permitted by name AND held to {@link CensusReaderForm}, so a resolver planted beside it is still a second poster.
  */
 @DisplayName("the FX books have one poster (P9-TSK-009, INV-FX-01, INV-FX-03, INV-FX-07)")
 class FxBooksHaveOnePosterTest {
@@ -66,6 +67,18 @@ class FxBooksHaveOnePosterTest {
                             + " journal's components by the two purposes' keys, whichever account a version maps them to"
                             + " (the owner's decision: FX_RESULTS.REALISED keeps no total); it posts nothing");
 
+    /**
+     * The census read ports permitted to name an FX book, each held to {@link CensusReaderForm} as well as named: a permit by
+     * file name alone would admit a poster planted beside the reader.
+     */
+    static final Map<String, String> CENSUS_READERS =
+            Map.of(
+                    "FxJournalSources.java",
+                    "CENSUS READER (P15-TSK-035; permitted when the guard was found red on master, 2026-11-13): fx's read port"
+                            + " for the source-join census states a trade's and a cover's figures on the lines whose purpose is the"
+                            + " string FX_POSITION, read from fx.trade and fx.cover_execution by SELECT; the census compares them"
+                            + " with the journal and posts nothing");
+
     /** The FX books: the position, the spread revenue, the rounding residual and the realised results. */
     private static final List<String> BOOKS =
             List.of("FX_POSITION", "FX_SPREAD_REVENUE", "ROUNDING_RESIDUAL", "FX_REALISED_GAINS", "FX_REALISED_LOSSES");
@@ -87,6 +100,7 @@ class FxBooksHaveOnePosterTest {
 
         Map<String, Boolean> seen = new TreeMap<>();
         PERMITTED.keySet().forEach(file -> seen.put(file, false));
+        CENSUS_READERS.keySet().forEach(file -> seen.put(file, false));
         seen.put(DECLARING_FILE, false);
         sources.forEach(
                 (path, text) -> {
@@ -129,6 +143,42 @@ class FxBooksHaveOnePosterTest {
                 .noneMatch(violation -> violation.contains("ConversionLines.java"));
     }
 
+    @Test
+    @DisplayName("a census reader is permitted only in its read-only form: a poster planted in the permitted file, a static"
+            + " import, a raw ledger write and an unpermitted port are caught")
+    void aCensusReaderIsHeldToItsForm() {
+        String port = "public final class FxJournalSources implements JournalSources {\n"
+                + "private static final Set<String> POSITION = Set.of(\"FX_POSITION\");\n";
+        Map<String, String> planted = new LinkedHashMap<>();
+        planted.put(
+                "/reader/fx/src/main/java/com/finapp/fx/FxJournalSources.java",
+                port + "static final String TRADE = \"SELECT id::text AS key_text FROM fx.trade WHERE id = ANY (?)\";\n}");
+        planted.put(
+                "/resolver/fx/src/main/java/com/finapp/fx/FxJournalSources.java",
+                port + "Account spread(Connection uow) { return chart.resolve(uow, AccountPurpose.FX_SPREAD_REVENUE, usd); }\n}");
+        planted.put(
+                "/static/fx/src/main/java/com/finapp/fx/FxJournalSources.java",
+                "import static com.finapp.ledger.AccountPurpose.ROUNDING_RESIDUAL;\n" + port
+                        + "Object residual() { return ROUNDING_RESIDUAL; }\n}");
+        planted.put(
+                "/rawsql/fx/src/main/java/com/finapp/fx/FxJournalSources.java",
+                port + "static final String GAIN = \"UPDATE ledger.ledger_account SET status = 'OPEN'"
+                        + " WHERE purpose = 'FX_REALISED_GAINS'\";\n}");
+        planted.put(
+                "/unpermitted/crossborder/src/main/java/com/finapp/crossborder/CrossBorderJournalSources.java",
+                "public final class CrossBorderJournalSources implements JournalSources {\n"
+                        + "private static final Set<String> POSITION = Set.of(\"FX_POSITION\");\n}");
+
+        assertThat(violations(planted))
+                .as("the reader in its form passes; each other plant is a second way value could move on an FX book")
+                .hasSize(4)
+                .noneMatch(violation -> violation.contains("/reader/"))
+                .anyMatch(violation -> violation.contains("/resolver/"))
+                .anyMatch(violation -> violation.contains("/static/"))
+                .anyMatch(violation -> violation.contains("/rawsql/"))
+                .anyMatch(violation -> violation.contains("/unpermitted/"));
+    }
+
     // -----------------------------------------------------------------
 
     private static List<String> violations(Map<String, String> sources) {
@@ -137,6 +187,13 @@ class FxBooksHaveOnePosterTest {
                 (path, text) -> {
                     String fileName = Paths.get(path).getFileName().toString();
                     if (DECLARING_FILE.equals(fileName) || PERMITTED.containsKey(fileName)) {
+                        return;
+                    }
+                    if (CENSUS_READERS.containsKey(fileName)) {
+                        if (!CensusReaderForm.holds(text, TOKEN)) {
+                            outside.add("an FX book in " + path + ": a census reader's permit, but not in a census reader's"
+                                    + " read-only form (CensusReaderForm)");
+                        }
                         return;
                     }
                     if (mentions(text)) {
