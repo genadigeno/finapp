@@ -29267,7 +29267,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.26's roll procedure and §11.28's record.
 - **Risk**: Medium (machine load). **Cx**: M.
 
-**P16-TSK-006 — The load harness: k6 through the real edge, invariants sampled during load (ADR-0126, C5)** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, "accept recommendations, start wave B"; its one dependency, `P16-TSK-001`, `COMPLETE`)
+**P16-TSK-006 — The load harness: k6 through the real edge, invariants sampled during load (ADR-0126, C5)** — `COMPLETE` (2026-11-13; branch `P16-TSK-006` from master `c9c07831`, master `68108fee` merged in; gate `COMPLETE` 2026-11-13; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations, start wave B"; its one dependency, `P16-TSK-001`, `COMPLETE`) *(read "`READY`" until its gate)*
 - **Objective**: one reproducible way to drive every profile of `PHASE_16_PLAN.md` §5.1 through the deployed platform's real edge,
   with the financial invariants read while the load runs.
 - **Affected components**:
@@ -29312,6 +29312,39 @@ on none:
   §11.41 and §11.42 hold the procedures). §4's T46 row then moves from `GAP` to `EXISTS`, or stays a `GAP` with the reason if a
   step cannot run; item 47 (c) is closed by a dated note that cites no finished task.
 - **Risk**: Medium. **Cx**: L.
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-006` from master `c9c07831`, master `68108fee` merged in once mid-task
+  for the widened entry; no migration, no application code, no new ADR; `OPERATIONS_RUNBOOK.md` §11.43 is the procedure and the
+  record; `RESILIENCE_EXPERIMENTS.md` E27 its row):* **The harness**: `REHEARSAL_SCOPE=load` (`infra/scripts/kind-rehearsal/load.sh`):
+  a pre-flight before any cluster reads what k6 will run (`k6 inspect`) and refuses anything but arrival-rate executors, a request cap
+  or skipped TLS; k6 2.3.0 pinned by digest in `infra/scanner-pins.sh` and watched by `check-pinned-images.sh`; the §4.3 mix as one
+  scenario per operation (`load/demonstration.json`, `scenarios.js`, `model.js`), run as four instances on four addresses (k6's
+  execution segments, one core each), every VU allocated before the load; 5% same-key retries, half beside the first copy and half
+  after its answer; each movement resolved by its key and a payment read until it concludes, within twice the payment sweep's
+  dispatched age and five minutes, read from the code; the provider's signed callbacks (two per captured card payment, one in twenty
+  delivered twice) from four senders (`Rehearsal.java load-callbacks`); one PSP settlement file at mid-run, uploaded and attested
+  through the operator edge and reconciled under the load. **The sampler**, every 30 s: every correctness page of `SLOS.md` §3 (each
+  a rule the cluster's Prometheus loaded), `CorrectnessUnverifiable`'s expression evaluated at once, every replica scraped, and the
+  eight `census.sql` clauses marked `[sampled during load]` (three of them new: one journal entry per posting scope, one transfer per
+  rehearsal reference, one capture posting per captured card attempt) in one `REPEATABLE READ READ ONLY` transaction; a sample that
+  fails or cannot read stops the load. PostgreSQL's statistics and `pg_stat_statements` every 10 s (the `kind` overlay's test-only
+  server preloads it, at 1 GiB). **The judge**: the samples covering the load, the generator's own model and CPU, every movement
+  resolved and every retried key alike, every callback answered, every ready replica serving each money route, the settlement file
+  whole and allocated; errors recorded by status beside the chance their objective explains them, latency recorded, neither a
+  verdict (`PHASE_16_PLAN.md` §5.3). **The platform's own signals** (item 47 (c)): with neither page active first, a migrator Job
+  planted to fail before the load, both pages, Loki and the needle sweep of the platform's four streams read after its census, the
+  release's Job run again and both pages cleared. **Corrections from its ten runs** (§11.43's record): both edges crash-looping since
+  their own log went over OTLP (`KUBERNETES_SERVICE_HOST` emptied on both controllers, `EdgeManifestsTest`); the test-only server at
+  1 GiB after an OOM; a capture whose simulator reference makes a card-number-shaped run left out of the settlement file and
+  counted; the simulator's card inquiry (`Simulator.java`) taken byte for byte from master. **Design corrections**: BNPL, lending
+  repayments and loan credit decisions are not driven (routed to `P16-TSK-007`); errors recorded, not judged (routed to
+  `P16-TSK-029`); the first-limit evidence routed to `P16-TSK-007`.
+  **The demonstration run**: green on its tenth run (2026-11-13, head `7231d298`; E27's result; §11.43's record): 61 samples every
+  one `PASS`, nothing dropped, every movement resolved by its key, the census after green, both migrator pages fired and cleared,
+  no needle in the platform's four streams. **Probes** (`MUTATION_TESTING.md` §2): the closed model refused before any cluster;
+  the unbalanced entry caught by the next sample, which stopped the load; the run with no sampler refused at
+  the judge; the contract test's thirteen plants and `EdgeManifestsTest`'s one, each red on its aimed member. **Not done**: BNPL, lending repayments and credit decisions undriven; the objectives under load unjudged
+  (`P16-TSK-029`); one machine. **Tests**: one Gradle run of 39 named guard classes (the two touched, the guards reading the
+  changed files, the migrator's three), 531 tests, 0 failed; no module, ArchUnit or database tier owed by this task.
 
 **P16-TSK-007 — The workload baseline: the demonstration run and the engineering workload measured** — `PLANNED`
 - **Objective**: measure the engineering test workload and name the platform's first limit on the reference machine, with the
@@ -29346,6 +29379,17 @@ on none:
   an agreement), none of which the rehearsal client has. So the demonstration drives 4.51 of its 5 money movements a second. To fill
   the measured columns for those three, this task first adds their setup and scenarios to the harness, which is code beside its
   "no code", or the owner moves them to another task. `LoadRehearsalContractTest` names this task as their driver while it is live.
+- **Routed from `P16-TSK-006` (2026-11-13): the first limit's evidence at the demonstration rate.** On the reference machine
+  (`OPERATIONS_RUNBOOK.md` §11.43's record) the demonstration workload's runs stalled for 5 to 25 seconds about every few
+  minutes: commits waiting on WAL writes and syncs (in the seventh run in the seconds autovacuum passed over ten of the busiest
+  tables, WAL written at three times its rate), each replica's 7 pooled
+  connections held, up to 74 requests waiting on them, acquisition at its 5 s bound (`ConnectionPoolStarved`'s ground). In a
+  stall the replicas answered `500` after the 5 s, sign-ins `503`, the edge's in-flight bound `429`, and card provider calls
+  were cut, leaving payments `PROCESSING` until the sweep's inquiry ten minutes later and its stranded-authorization leg ten
+  after that. Each is a candidate for the first limit this task names; the samples held `PASS` through every stall. Read the
+  card flows' latency only from runs whose simulator answers the card rail's inquiry: before it did (the seventh and eighth
+  runs) card and checkout confirmations ran at a p50 of about 8 s, with it (the ninth) at 73 ms and 126 ms, the platform
+  inquiring the provider about twice per card payment (once per signed callback); what held the confirmations was not measured.
 
 **P16-TSK-008 — Hot rows, locks, deadlocks and plans under load** — `PLANNED`
 - **Objective**: measure every known contended financial resource and the database's behaviour under the concurrent-financial and
@@ -29998,6 +30042,11 @@ on none:
 - **Measurable acceptance criteria**: each SLO validated or recalibrated with its reason; item 42 (a) built with its promtool cases.
 - **Definition of done**: `DOD-OBS`.
 - **Operational documentation**: `SLOS.md`; runbook §11.11 and §11.23.
+- **Routed from `P16-TSK-006` (2026-11-13)**: the load harness records each operation's `5xx` beside the chance that an operation
+  meeting its objective errs that often (`load_errors_chance`, one-sided), and never judges it: a run fails on correctness
+  (`PHASE_16_PLAN.md` §5.3). At the demonstration rate on the reference machine, sign-ins, balance reads and the merchant API went
+  past what 99.9% explains in runs whose disk stalled (`OPERATIONS_RUNBOOK.md` §11.43's record), which is this task's to judge
+  against the objectives, as the edge's `429`s under a stall are (`k6/statuses.tsv`).
 - **Risk**: Low. **Cx**: M.
 
 **P16-TSK-030 — The service-extraction evaluation (ADR-0001's revisit)** — `PLANNED`

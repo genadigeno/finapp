@@ -132,7 +132,7 @@ class LoadRehearsalContractTest {
     void theModelIsOpenAndReadBeforeAnyCluster() {
         assertThat(read(MODEL)).contains("executor: 'constant-arrival-rate'").doesNotContain("constant-vus");
         assertThat(scenarios).contains("import { openModel } from './model.js';")
-                .contains("scenarios: Object.fromEntries(driven.map((operation) => [operation.name, openModel(operation, DURATION)])),");
+                .contains("scenarios: Object.fromEntries(driven.map((operation) => [operation.name, openModel(operation, DURATION, GRACEFUL_STOP)])),");
         assertThat(harness.indexOf("    load_preflight\n")).as("the pre-flight runs before the images are built")
                 .isPositive().isLessThan(harness.indexOf("step build-images"));
         String preflight = function("load_preflight");

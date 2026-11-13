@@ -3238,8 +3238,9 @@ latest; the run, as its record names it.
 | §11.37 | `identity`, `accounting` | 2 | 4 | 6 | kind | 2026-11-12 | `5078e612`, `ca4c323a` | `dev3 and dev5, the signals scope's development runs` | postponed by the owner (PI-024) |
 | §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.40 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
-| §11.41 | `platform` | 3 | 1 | 4 | kind | 2026-11-12 | `722365ad`, `d8f907c4` | `§11.41's runs 1 and 2` | — |
-| §11.42 | `platform` | 4 | 0 | 4 | containers, kind | 2026-11-12 | `d8f907c4` | `§11.42's record` | — |
+| §11.41 | `platform` | 3 | 1 | 4 | kind | 2026-11-13 | `722365ad`, `d8f907c4`, `7231d298` | `§11.41's runs 1 and 2; §11.43's tenth run` | — |
+| §11.42 | `platform` | 4 | 0 | 4 | containers, kind | 2026-11-13 | `d8f907c4`, `7231d298` | `§11.42's record; §11.43's tenth run` | — |
+| §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3491,6 +3492,11 @@ machine's own store, none pulled).
 - **Run 2** (19:46-19:49Z; the watcher's reduction revised to read an object's kind once). The same planted Job, created 19:46:11 and
   failed by its `FailJob` rule at 19:46:16: **`MigratorJobFailed` pending 19:46:34, firing 19:48:34**. Nine records under the migrator's
   stream (six events, the run's lines three times, scrubbed); the watcher's own log empty; no needle.
+- **On the full cluster, under the demonstration load** (2026-11-13, §11.43's tenth run, the `load` scope's own steps; THREAT_MODEL
+  §6 item 47 (c)). Neither page active at 01:01:13; the planted Job at 01:01:14: **`MigratorJobFailed` pending 01:02:15, firing
+  01:04:15**; **`MigratorJobOverdue` pending 01:02:15, firing 01:19:15**; both held by Alertmanager on `placeholder-page`. Twelve
+  records under the migrator's stream with the exit code, the card number and the amount scrubbed. The release's own Job run again at
+  01:32:58 and both pages cleared by 01:33:15.
 - **Read, not run**: `ClusterWatchBlind`, which reads a deployed fleet's scrape, and that cluster scraped none.
 
 ### 11.42 The edge watched: `EdgeErrorRatioHigh`, `EdgeUnscraped`; the platform's own lines in Loki (`P16-TSK-003`)
@@ -3555,6 +3561,14 @@ under traffic (`P16-TSK-005`, `P16-TSK-020`); the edge's SLO of its own, which `
   slowest in 171, 54, 32 and 95 ms over four runs; the final run (begun 20:23Z) green whole, 146 checks.
 - **The platform's own lines.** `{service_name="finapp-collector"}` held the collectors' warnings on `kind` (§11.41's runs) and on these
   containers, each with its `k8s_pod_name`; the watcher's on `kind`'s first run.
+- **On the full cluster, under the demonstration load** (2026-11-13, §11.43's tenth run, the `load` scope's own steps; THREAT_MODEL
+  §6 item 47 (c)): two requests through the real public edge carrying a card number in a routed path, an unrouted path, a query and a
+  header (answered `401` and `404`); after the load the sweep of 31 needles over the edge's 45,737 records found none in a line or a
+  kept path, the routed request there with its path `[scrubbed]`; the collectors' and the watcher's streams each held a control
+  planted on 4319, scrubbed. `EdgeErrorRatioHigh` and `EdgeUnscraped` were not planted there. The first full cluster after this
+  section's build found both edges crash-looping: the proxy's own OTLP log builds an in-cluster client when `KUBERNETES_SERVICE_HOST`
+  is set and exits 1 without a line, its token never mounted; the variable is emptied on both controllers
+  (`EdgeManifestsTest#theControllersStartWithoutAKubernetesClient`).
 
 ### 11.13 Infrastructure code: running the Terraform checks, and changing a pin
 
@@ -4583,8 +4597,9 @@ and measured them instead of the platform (the first run below). Each instance h
 `k6/<n>/`, and the harness's `k6/report.tsv` adds their counts and takes the percentiles from all their samples together.
 
 **The same run rehearses the platform's own signals** (`THREAT_MODEL.md` §6 item 47 (c); §11.41 and §11.42 hold the procedures).
-Before the load, once neither page is active (the control, so what fires afterwards is the plant's), a migrator Job is planted to fail (the release's own Job, its image a shell printing migrator-shaped lines with a
-card number and an amount, exiting 10) and two requests carrying a card number go through the public edge; after the load's census
+Before the load, once neither page is active (the control, so what fires afterwards is the plant's), a migrator Job is planted to
+fail (the release's own Job, its image a shell printing migrator-shaped lines with a card number and an amount, exiting 10) and two
+requests carrying a card number go through the public edge; after the load's census
 the run reads `MigratorJobFailed` and `MigratorJobOverdue` firing and held by Alertmanager on `placeholder-page`, the failed run's
 lines in Loki under `finapp-migrator` with the exit code and the scrub's mark, and sweeps the edge's, the migrator's, the collectors'
 and the watcher's streams for every needle (in each line, and in the request path the edge's records keep) beside a count of what
@@ -4598,8 +4613,12 @@ card payment, from `Rehearsal.java load-callbacks` run as four senders (four add
 operation the platform minted; and one PSP settlement file of the
 run's captures at mid-run, uploaded and attested through the operator edge and reconciled during the load. One money-moving iteration
 in twenty sends each of its commands twice under one key, half before the first answer and half after it; one callback in twenty is
-delivered twice. **Not driven**: BNPL purchases and instalments, lending repayments and loan credit decisions (0.49 of the 5
-movements a second), each declared in the profile with its reason, routed to `P16-TSK-007`.
+delivered twice. A movement is resolved as a client that lost its answer would resolve it: the same key asked again, and a payment in
+progress read, until it concludes, within twice the payment sweep's dispatched age and five minutes (read from the code's default,
+25 minutes today): a provider call cut by a stall leaves its payment `PROCESSING` until the sweep asks the provider, and the
+generator's graceful stop waits past that bound, so the load can outlast its duration by the slowest movement's conclusion.
+**Not driven**: BNPL purchases and instalments, lending repayments and loan credit decisions (0.49 of the 5 movements a second), each
+declared in the profile with its reason, routed to `P16-TSK-007`.
 
 **Running it.** One full cluster at a time on the machine. From the repository root, with the rehearsal's own prerequisites (§11.28):
 
@@ -4664,7 +4683,75 @@ planted 60 s into the load by the test-only superuser: caught by the next sample
 with `kind delete cluster`. Its only change outside the harness is the `kind` overlay's test-only server preloading
 `pg_stat_statements` (and `track_io_timing`), which no deployed overlay carries.
 
-**The last record.** *(Filled by the run that writes it.)*
+**The last record** *(2026-11-13, on `kind`)*. One development machine (Docker Desktop 28.0.1 on WSL2, 12 CPUs, 15.6 GiB to
+Docker), `kind` v0.33.0, node `v1.34.11`, kube-router as the policy engine, three replicas, the `demonstration` profile for 10
+minutes, 20 customers, four generator addresses, k6 2.3.0 by its digest. Every run on one kept cluster (`REHEARSAL_KEEP=1`, the
+later ones with `REHEARSAL_REUSE_CLUSTER=1` and `REHEARSAL_SKIP_BUILD=1`, each deploying release N − 1 and N again on fresh
+namespaces), in one hold of the machine's one-cluster lock. Nine runs went red before the tenth, each on what it found:
+
+| Run | Head | Stopped at | What it found, and the correction |
+|---|---|---|---|
+| 1 | `f38a2ff4` | sample 10 `UNREADABLE`, 4.5 min into the load | The test-only PostgreSQL killed in its 512 MiB memory cgroup and reinitialised; the sampler read nothing and stopped the run, as it must. Before that one generator address met the edge's per-source tiers (429s from 2 a second to 46). The server given 1 GiB (the quota +512 MiB); the generator four instances on four addresses |
+| 2 | `0e3670cc` | `finapp-edge-public did not become ready` | Both edges crash-looping since the edge's own log went over OTLP: the pinned proxy builds an in-cluster client when `KUBERNETES_SERVICE_HOST` is set and exits 1 without a line, its token never mounted (reproduced on the pinned image). The variable emptied on both controllers (`EdgeManifestsTest#theControllersStartWithoutAKubernetesClient`) |
+| 3 | `ea22f4d0` | the planted Job's command could not be written | Under kube-router the Job's wait init container runs a shell too; the plant counted by its own line |
+| 4 | `7fd991d0` | `settlement.DeliveryRefused` | The door's screen refused the PSP file: a simulator reference holds a UUID whose number groups make a Luhn-valid run across dashes. A capture whose reference holds 13 or more numbers across separators is left out of the file and counted |
+| 5 | `1fd3bef7` | 150 iterations dropped | Invalid by its generator: checkout's VU bound met while the pool starved (Hikari 7 active, 47 waiting, acquisition 5.0 s), and one callback sender's 1,397 of 3,934 deliveries held by the edge. Money flows' VU bound a minute of arrivals, four callback senders, a retried key counted once |
+| 6 | `52654f35` | 111 iterations dropped | Every sample `PASS`, every callback accepted; VUs initialised mid-run at the start and in a 5 s stall. Every VU allocated before the load |
+| 7 | `ba5b4ae6` | transfer's 5 errors of 840 | Every sample `PASS`, nothing dropped, every movement resolved and every retried key alike; red on an error test the fifth run's correction had added: a 25 s stall of the machine's disk (commits waiting on WAL writes, 74 requests waiting on the pools, acquisition at its 5 s bound) answered 5xx to sign-ins (9), reads (12) and the merchant API (2), and the edge's in-flight bound 429 to 147 more. Errors recorded by status, never a verdict (§5.3; `P16-TSK-029` judges the objectives under load); the statistics read with one call (18 s apart, now 10) |
+| 8 | `6219ea77` | 6 checkouts and 1 top-up unresolved | Every sample `PASS`, nothing dropped; a stall cut 7 card provider calls (4 authorizations, 3 captures dispatched) and the payments stayed `PROCESSING`, the client reading for 30 s where the platform concludes such a payment once its sweep asks the provider past the dispatched age; and the simulator then answered no card inquiry. Each movement resolved and read within twice the sweep's dispatched age and five minutes (read from the code), and the simulator's card inquiry taken from master |
+| 9 | `7d112a12` | settlement: 1972 lines of 986 | Every sample `PASS` (60, the load running 1,773 s to its slowest movement), every movement resolved (four authorizations cut by a stall concluded by the sweep's inquiry and captured by its stranded-authorization leg 20 minutes on), callbacks all answered; the census, read by hand on the kept cluster, green. The judge counted the file's records against its lines, where each record is two once taken, its capture and the PSP's fee |
+| 10 | `7231d298` | — | Green, below |
+
+**The tenth run** (2026-11-13 00:52-01:33Z, head `7231d298`, `RESULT: GREEN`, 62 assertions; `RESILIENCE_EXPERIMENTS.md` E27's
+result, its artefacts kept on that machine under `build/rehearsal/experiments/E27`):
+
+- **The load.** From 01:01:27 for 10 minutes, then the generator waiting for its slowest movements until 01:31:09 (1,782 s in all).
+  A stall at 01:09:54-01:10:24 (WAL written at nearly three times its rate, full-page images six times, eight backends waiting on
+  `WALWrite`, up to 111 requests waiting on
+  the replicas' pools of 7, acquisition at its 5 s bound) cut five card provider calls; the sweep's inquiry concluded them about
+  01:20 and its stranded-authorization leg captured the three authorizations about 01:30, the generator reading each until then.
+  No iteration dropped; 52 virtual users at the peak of 580 allocated; each generator instance at most 9.6% of its core; 41,581
+  requests.
+- **The invariants during the load**: 61 samples 30 s apart, every one `PASS`, each with the three replicas scraped and the eight
+  clauses in one snapshot; the sample after the census `PASS`; PostgreSQL's statistics read 180 times.
+- **Per operation** (`k6/report.tsv`, `k6/statuses.tsv`; latency as the client saw it, connection and handshake included; the 5xx's
+  chance is the chance an operation meeting its objective errs that often, recorded):
+
+  | Operation | Arrivals | Resolved | Retried keys alike | 5xx (chance) | Other answers | p50 | p95 | p99 | max |
+  |---|---|---|---|---|---|---|---|---|---|
+  | transfer | 796 | 796 | 39 of 39 | 1 of 844 (0.57) | 429 ×8 | 50 ms | 1.9 s | 4.3 s | 8.2 s |
+  | checkout | 1,594 | 1,594 | 79 of 79 | 18 of 4,653 (0.00) | 429 ×12 | 109 ms | 5.6 s | 11.4 s | 20.3 s |
+  | top-up | 319 | 319 | 15 of 15 | 1 of 991 (0.63) | 409 ×7, 429 ×3 | 68 ms | 5.2 s | 10.2 s | 16.0 s |
+  | balance read | 30,001 | 29,749 | — | 37 (0.12) | 429 ×215 | 13 ms | 995 ms | 3.2 s | 9.5 s |
+  | sign-in | 1,911 | 1,894 | — | 17 (0.00) | none | 72 ms | 1.1 s | 3.3 s | 6.9 s |
+  | merchant API | 3,181 | 3,178 | — | 3 (0.62) | none | 38 ms | 2.1 s | 4.4 s | 8.5 s |
+
+  Checkouts' and sign-ins' 5xx are more than 99.9% explains, all in the stalls (`500` after the pool's 5 s, sign-ins `503`), and the
+  edge's in-flight bound answered `429` to a source whose requests piled up there: recorded for `P16-TSK-029`, and the stall for
+  `P16-TSK-007`, neither a verdict here.
+- **The provider's callbacks**: 1,913 captured card payments fed to four senders; 3,822 first deliveries and 197 redeliveries accepted
+  (`204`); 4 answered `500` in the stall, which the senders do not redeliver, their payments already captured by their confirmations
+  (callbacks are hints, ADR-0083).
+- **Settlement**: one PSP file of 1,001 captures (25 left out, their references shaped like a card number) uploaded and attested at
+  01:06:28, taken whole as 2,002 lines (each capture and its fee), every line a reconciliation item, every capture allocated to its
+  expectation.
+- **Spread**: every ready replica served transfers, payment and checkout confirmations and balance reads.
+- **The census after** (`census-load.txt`): green - 797 transfers for 797 keys, 1,938 captured intents for 343 top-ups and 1,595
+  checkouts, 1,938 capture postings and 1,938 capture keys at the provider, 171,500 minor units in 24 wallets as the client put in,
+  the outbox drained (19,984 events), no event lost, nothing parked, GL = ledger.
+- **The platform's own signals** (§11.41, §11.42): neither page active at 01:01:13; the planted Job at 01:01:14; `MigratorJobFailed`
+  pending 01:02:15, **firing 01:04:15**; `MigratorJobOverdue` pending 01:02:15, **firing 01:19:15**; both held by Alertmanager on
+  `placeholder-page`; 12 records under `finapp-migrator` with the exit code, the card number and the amount scrubbed; the sweep of 31
+  needles over the edge's 45,737 records, the migrator's 12, the collectors' 16 and the watcher's 1 found none, each stack stream's
+  planted control there scrubbed and the edge's planted path there scrubbed; the release's own Job run again at 01:32:58 and both
+  pages cleared by 01:33:15.
+
+**The probes**, each seen red on the tenth run's bytes (head `7231d298`; `MUTATION_TESTING.md` §2): `closed-model` (00:53Z), refused
+by the pre-flight 2 s in, before any image or cluster (`the generator dropped its open model: its scenarios run constant-vus` six
+times); `unbalanced-entry` on the kept cluster (a 3-minute load), the entry planted at 01:42:42 and the next sample, at 01:43:08,
+`FAIL` on the trial balance (EUR net 1 over 1,387 lines), one unbalanced entry and one account its balance no longer explains, the
+load stopped there; `sampler-disabled` on the same cluster (a 2-minute load), refused at the judge (`the samples do not cover the
+load (0 samples)`). The cluster was deleted and the lock released at 01:55Z.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 
