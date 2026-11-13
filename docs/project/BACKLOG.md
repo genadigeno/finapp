@@ -29979,7 +29979,7 @@ on none:
   outside the simulator). Each passes the boundary first and is removed at the experiment's stop and on every
   way out. On several nodes, read Prometheus through its pod (`experiments_prometheus`), not the API server's proxy.
 
-**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)
+**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `IN_PROGRESS` (2026-11-13; branch `P16-TSK-022` from master `1fbdf71c`, designed) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until the design)*
 - **Objective**: as decided:
   - E05, a database primary failover under load on the test-only synchronous standby pair;
   - its interruption measured;
