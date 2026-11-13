@@ -1397,6 +1397,12 @@ fleet at its own count; staging unchanged; production's ceiling stays seven, ten
 the ten-instance runs are made (`THREAT_MODEL.md` §6 item 56). A transaction-mode pooler is refused for now: the driver sets isolation
 per session, outside the transaction. → [ADR-0134](../adr/ADR-0134-the-connection-budget-at-ten-replicas.md)
 
+**The post-recovery hold is the role lock, held through the window.** The platform's roles stay `NOLOGIN` from before a restore to
+its release; the window since the restore's point is reconciled by one command acting as the application's role while those roles
+cannot log in; the books are verified again; a person releases, with a record naming the reports it rests on. Locally, a recovery
+to an instant from an encrypted WAL archive, held before its server first starts. →
+[ADR-0140](../adr/ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

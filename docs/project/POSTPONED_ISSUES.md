@@ -663,3 +663,11 @@ commit and the date; do not delete the entry.
     at any count (the release scope at three on these bytes is already PI-024's). The peak during a rollout at ten is E26's
     (`P16-TSK-014`). Nothing ran on a cluster: `fleet_patch` ran once by itself over a real render, and the manifest policies and the
     budget's plants in containers (§11.49's record).
+  - `P16-TSK-024` (restore and point-in-time recovery, `OPERATIONS_RUNBOOK.md` §11.35 and §11.55; ADR-0140): **E59**, the whole
+    seeded restore rehearsal on the task's tree (`infra/scripts/restore-rehearsal.sh` with its defaults: the widened seed, the
+    logical restore and its gate, every plant, `key-version-missing` among them), then the logical restore of a `kind` database after
+    the soak (`RESTORE_SOURCE=kind:<node>` after `P16-TST-001`'s run with `REHEARSAL_KEEP=1`), its record in §11.35 and the two sizes'
+    lines of `rates.tsv` in §11.55; **E60**, the point-in-time recovery to T and its `wal-gap` and `wal-damaged` plants (the same
+    seeded run), its record in §11.55; **E61**, the post-recovery gate on both restores (the same run), and on `kind` the broker step
+    of §11.35 step 6 for a restored database at three replicas, with **F15**, its record in §11.55. Ran instead, 2026-11-13, in
+    containers: the seed's check (`RESTORE_STOP_AFTER=source`) and the recovery's mechanics over a bare server (§11.55's record).
