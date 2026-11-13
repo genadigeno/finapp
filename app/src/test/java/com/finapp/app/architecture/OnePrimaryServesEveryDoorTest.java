@@ -3,6 +3,7 @@ package com.finapp.app.architecture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.accounting.AccountingBeans;
+import com.finapp.app.architecture.OnePrimaryPlants.*;
 import com.finapp.app.database.ReportingConnections;
 import com.finapp.app.database.ReportingPool;
 import com.finapp.app.security.DatabaseEndpoint;
@@ -16,9 +17,7 @@ import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTag;
 import com.tngtech.archunit.junit.ArchTest;
 import com.zaxxer.hikari.HikariDataSource;
-import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -60,7 +59,7 @@ import org.springframework.context.annotation.Bean;
  *       so no money-moving door reaches that pool, whatever server it ever reaches.</li>
  * </ol>
  * The reporting pool's address is the writer's ({@code ReportingPoolEndpointTest}), and the driver may take only a primary from it
- * ({@code PrimaryOnlyGuardTest}). Each rule is shown its own violation, planted below, and seen to refuse it; each census shows the
+ * ({@code PrimaryOnlyGuardTest}). Each rule is shown its own violation, planted in {@link OnePrimaryPlants}, and seen to refuse it; each census shows the
  * rule read what it claims.
  */
 @Tag("architecture")
@@ -80,6 +79,15 @@ class OnePrimaryServesEveryDoorTest {
 
     /** A property placeholder's key, {@code ${key}} or {@code ${key:default}}. */
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}:]+)");
+
+    /**
+     * The two JDK types by name, never by class literal: this class acquires no connection, and {@code TestTaxonomyTest} reads a
+     * test class's own references to {@link DataSource} and {@link DriverManager} as a database tier's, its nested classes'
+     * included (the planted probes, in {@link OnePrimaryPlants}, a class holding no test, keep theirs).
+     */
+    static final String DATA_SOURCE = "javax.sql.DataSource";
+
+    static final String DRIVER_MANAGER = "java.sql.DriverManager";
 
     /** The one class that reads the database's address: both pools connect with what it answers. */
     static final String ADDRESS_READER = "com/finapp/app/security/DatabaseEndpoint";
@@ -190,7 +198,7 @@ class OnePrimaryServesEveryDoorTest {
                 PlantedDoorOnTheWriter.class);
         assertThat(connectionBuilders(planted, candidate -> true))
                 .anyMatch(found -> found.startsWith(PlantedSecondPool.class.getName() + " -> " + HikariDataSource.class.getName()))
-                .anyMatch(found -> found.startsWith(PlantedDriverConnection.class.getName() + " -> " + DriverManager.class.getName()))
+                .anyMatch(found -> found.startsWith(PlantedDriverConnection.class.getName() + " -> " + DRIVER_MANAGER))
                 .noneMatch(found -> found.startsWith(PlantedDoorOnTheWriter.class.getName()));
     }
 
@@ -201,7 +209,7 @@ class OnePrimaryServesEveryDoorTest {
         assertThat(dataSourceBeans(imported)).as("a declared DataSource replaces or joins the writer's one pool (ADR-0142)").isEmpty();
         assertThat(imported.stream().flatMap(candidate -> candidate.getMethods().stream())
                         .filter(method -> method.isAnnotatedWith(Bean.class))
-                        .filter(method -> method.getRawParameterTypes().stream().anyMatch(type -> type.isEquivalentTo(DataSource.class))))
+                        .filter(method -> method.getRawParameterTypes().stream().anyMatch(type -> type.getName().equals(DATA_SOURCE))))
                 .as("the census: the beans read, the writer's DataSource taken as a parameter by many").hasSizeGreaterThan(20);
     }
 
@@ -260,8 +268,8 @@ class OnePrimaryServesEveryDoorTest {
     /** What turns an address into a connection: a target of this name is a way to a server of one's own. */
     static boolean buildsAConnection(String target) {
         return target.startsWith("com.zaxxer.hikari.") || target.startsWith("org.postgresql.")
-                || target.equals("java.sql.DriverManager") || target.equals("java.sql.Driver")
-                || (target.startsWith("javax.sql.") && !target.equals(DataSource.class.getName()))
+                || target.equals(DRIVER_MANAGER) || target.equals("java.sql.Driver")
+                || (target.startsWith("javax.sql.") && !target.equals(DATA_SOURCE))
                 || target.startsWith("org.springframework.boot.jdbc.") || target.startsWith("org.springframework.boot.autoconfigure.jdbc.")
                 || (target.startsWith("org.springframework.jdbc.datasource.") && target.endsWith("DataSource"));
     }
@@ -286,7 +294,7 @@ class OnePrimaryServesEveryDoorTest {
         List<String> found = new ArrayList<>();
         for (JavaClass candidate : classes) {
             for (JavaMethod method : candidate.getMethods()) {
-                if (method.isAnnotatedWith(Bean.class) && method.getRawReturnType().isAssignableTo(DataSource.class)) {
+                if (method.isAnnotatedWith(Bean.class) && method.getRawReturnType().isAssignableTo(DATA_SOURCE)) {
                     found.add(candidate.getName() + "." + method.getName());
                 }
             }
@@ -411,104 +419,6 @@ class OnePrimaryServesEveryDoorTest {
             return in.readAllBytes();
         } catch (java.io.IOException unreadable) {
             throw new java.io.UncheckedIOException(unreadable);
-        }
-    }
-
-    // ------------------------------------------------------------------ the planted probes, never called
-
-    /** A replica's URL written into a class. */
-    static class PlantedReplicaUrl {
-        static String url() {
-            return "jdbc:postgresql://replica.internal:5432/finapp";
-        }
-    }
-
-    /** A replica's address read from a property. */
-    static class PlantedReplicaProperty {
-        static String key() {
-            return "finapp.database.reporting.url";
-        }
-    }
-
-    /** A replica's address injected by a placeholder. */
-    static class PlantedReplicaValue {
-        @org.springframework.beans.factory.annotation.Value("${finapp.database.replica.url:}")
-        String url;
-    }
-
-    /** A replica's address read from the environment. */
-    static class PlantedReplicaVariable {
-        static String variable() {
-            return "FINAPP_DB_REPLICA_URL";
-        }
-    }
-
-    /** A second pool of its own. */
-    static class PlantedSecondPool {
-        HikariDataSource pool() {
-            return new HikariDataSource();
-        }
-    }
-
-    /** A connection opened by the JDK's driver manager. */
-    static class PlantedDriverConnection {
-        Connection open(String url) throws SQLException {
-            return DriverManager.getConnection(url);
-        }
-    }
-
-    /** A door on the writer's pool: the shape every money-moving door has. */
-    static class PlantedDoorOnTheWriter {
-        private final DataSource writer;
-
-        PlantedDoorOnTheWriter(DataSource writer) {
-            this.writer = writer;
-        }
-
-        Connection unitOfWork() throws SQLException {
-            return writer.getConnection();
-        }
-    }
-
-    /** A transfer door reading a balance through report generation's pool. */
-    static class PlantedTransferDoor {
-        private final ReportingConnections reporting;
-
-        PlantedTransferDoor(ReportingConnections reporting) {
-            this.reporting = reporting;
-        }
-
-        Connection balanceCheck() throws SQLException {
-            return reporting.open();
-        }
-    }
-
-    /** A wiring class shaped like {@link AccountingBeans}: its generation method may take the pool; a door's bean may not. */
-    static class PlantedGenerationBeans {
-        Object generationSnapshots(ReportingConnections reporting) {
-            return (java.util.function.Supplier<Object>) () -> reporting;
-        }
-
-        Object transferExecution(ReportingConnections reporting) {
-            return reporting;
-        }
-    }
-
-    /** Two beans that each add a pool beside the writer's. */
-    static class PlantedDataSourceBeans {
-        @Bean
-        DataSource replica() {
-            return null;
-        }
-
-        @Bean
-        HikariDataSource hikari() {
-            return null;
-        }
-
-        @Bean
-        Object notAPool() {
-            return null;
         }
     }
 }

@@ -29774,8 +29774,9 @@ on none:
     its second branch. Each decision's overturning thresholds are stated.
   - **Criterion 6's guard, its first branch, green and red on the entry's probe.** `OnePrimaryServesEveryDoorTest`: no production class but
     `DatabaseEndpoint` names a database's address; none but `ReportingPool` builds a connection; no `@Bean` declares a `DataSource`; only
-    report generation's wiring reaches the reporting pool. Each rule carries its planted violation and its census, and the build's test
-    fixtures are set aside by a rule that proves none is in a main source set. `ReportingPoolEndpointTest`: the pool connects to the
+    report generation's wiring reaches the reporting pool. Each rule carries its planted violation (in `OnePrimaryPlants`, a test source
+    holding no test, so the guard itself stays in the architecture tier) and its census, and the build's test fixtures are set aside by a
+    rule that proves none is in a main source set. `ReportingPoolEndpointTest`: the pool connects to the
     writer's own address under any name a replica route might take. **`PrimaryOnlyGuard`** (new production code, a startup guard)
     refuses a `targetServerType` admitting a standby, and several hosts without `targetServerType=primary`. pgjdbc's default `any`
     would otherwise let a URL alone put either pool on a standby. The entry's probe (a money-moving door, `TransferBeans`'

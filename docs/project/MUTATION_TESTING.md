@@ -4065,7 +4065,15 @@ bnpl or ledger row from the fold (an `UPDATE` included) → `#aDefaultsCaseChang
 script that saved each file's bytes and sha256 first. Each planted file reaches a different member, so one run attributes each red: one
 Gradle invocation of the four classes (48 tests with the ArchUnit suites the filter pulls in, 9 failed: exactly the nine members above,
 each with its planted file, every other member green). Then every file was restored from its saved bytes and its sha256 compared,
-identical. No probe of this task needs a cluster.*
+identical. No probe of this task needs a cluster.* *Round two (2026-11-13, after the merge with master): the gate's own run found
+`TestTaxonomyTest` reading the guard's planted probes, nested in its class, as a database tier's, so they moved to `OnePrimaryPlants`, a
+test source holding no test, and the guard names the two JDK types by string. The entry's probe was planted again on those final bytes
+(`TransferBeans.java`, sha256 `a6fa089bce5887c5819c12d70bdf5d91d39eda691bbd58bdc95c0f37019960cd`): `#onlyReportGenerationReachesTheReportingPool`
+red, naming `TransferBeans.transferExecution(com.finapp.app.database.ReportingConnections, ...)`, the other eleven members and
+`TestTaxonomyTest` green; restored, sha256 compared, identical. The gate also made E65's judge refuse a run whose row was never
+written, and strengthened `DecisionReadingsRehearsalContractTest#aRunThatDidNotCompleteOrABlindReaderFailsTheRun` with it: that check
+taken out of `kind-rehearsal/load.sh` (sha256 `99cb9e5ff6304408588c8f7a6eb5a4bcd5685d788447d9c4bfa161d72b554bde`) turned the member red,
+the class's other five green; restored, sha256 compared, identical.*
 
 ## 3. What the register does not claim
 

@@ -108,6 +108,7 @@ class DecisionReadingsRehearsalContractTest {
                 .contains("[ \"$LOAD_REPORTS_TAKEN\" = 7 ] || fail")
                 .contains("case $run in '' | -) fail")
                 .contains("grep -q '^role|1$' \"$dir/$n-after.txt\" || fail")
+                .contains("[ -s \"$dir/$n-run.txt\" ] || fail")
                 .contains("[ \"$status\" = PROVISIONAL ] || fail")
                 .contains("[ \"${calls:-0}\" -gt 0 ] || fail")
                 .contains("sort -u | grep -c .)\" = 8 ] || fail");
