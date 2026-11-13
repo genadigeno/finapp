@@ -637,6 +637,8 @@ step data-tier
 render_overlay app overlays/kind
 A="$WORK/render/app"
 sed -i "s#finapp-app@sha256:0\{64\}#$IMAGE_APP_NM1#; s#finapp-migrator@sha256:0\{64\}#$IMAGE_MIGRATOR_NM1#" "$A/all.yaml" "$A/Deployment.finapp-app.yaml" "$A/Job.finapp-migrator.yaml"
+# The load scope's fleet at REHEARSAL_LOAD_REPLICAS (P16-TSK-007): the run's own rendered copy, the budget's formula at that count.
+[ "$SCOPE" != load ] || load_replicas_patch "$A"
 # Only under kube-router, which programs a new pod asynchronously (see kube-router.yaml): a Job pod's first connection, a JVM's start after it is created, can be
 # refused before its policy exists, and the migrator is built to fail fast on that and leave retries to its Job. A wait in front of it keeps that failure out of this
 # run's record; the Job itself is the base's, unchanged, and kindnetd needs none of this.

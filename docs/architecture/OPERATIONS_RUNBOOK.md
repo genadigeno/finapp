@@ -4673,8 +4673,14 @@ delivered twice. A movement is resolved as a client that lost its answer would r
 progress read, until it concludes, within twice the payment sweep's dispatched age and five minutes (read from the code's default,
 25 minutes today): a provider call cut by a stall leaves its payment `PROCESSING` until the sweep asks the provider, and the
 generator's graceful stop waits past that bound, so the load can outlast its duration by the slowest movement's conclusion.
-**Not driven**: BNPL purchases and instalments, lending repayments and loan credit decisions (0.49 of the 5 movements a second), each
-declared in the profile with its reason, routed to `P16-TSK-007`.
+**Lending repayments** (0.025 a second, since `P16-TSK-007`, §11.45): EUR 1.00 from a borrower's wallet to the loan the harness disbursed
+to it before the load, keyed, on the borrower's own `MULTI_FACTOR` session. **Not driven**: BNPL purchases and instalments (0.465 of the 5
+movements a second) and loan credit decisions, each declared in the profile with its reason: on `kind` no credit bureau and no financial-data
+provider can be configured (the application refuses either address until the party facts they need exist, `CURRENT_STATE.md`'s
+unresolved questions 13 and 14), so the exposure figure every credit policy reads is unassessed there and every decision takes its policy's
+fallback (`INV-CRD-10`): a BNPL policy declines, a loan policy refers to a person. A BNPL purchase therefore cannot complete on `kind`, and a
+loan decision there is the fail-safe path, `RESILIENCE_EXPERIMENTS.md` E20's, not the target's; both are routed to `P16-TSK-018` (its
+simulated bureau), which needs that application change.
 
 **Running it.** One full cluster at a time on the machine. From the repository root, with the rehearsal's own prerequisites (§11.28):
 
@@ -4808,6 +4814,82 @@ times); `unbalanced-entry` on the kept cluster (a 3-minute load), the entry plan
 `FAIL` on the trial balance (EUR net 1 over 1,387 lines), one unbalanced entry and one account its balance no longer explains, the
 load stopped there; `sampler-disabled` on the same cluster (a 2-minute load), refused at the judge (`the samples do not cover the
 load (0 samples)`). The cluster was deleted and the lock released at 01:55Z.
+
+### 11.45 The workload baseline: the profiles, seven replicas, the first limit read from a run (`P16-TSK-007`, ADR-0126)
+
+**What it is.** §11.43's `load` scope with the profiles of `PHASE_16_PLAN.md` §5.1 beside the demonstration, each a file under
+`infra/scripts/kind-rehearsal/load/`: `normal` (the target's average, 30 minutes), `peak` (the normal profile, then a step to the target's
+peak held 30 minutes), `sustained` (the same step, the peak held 2 hours: its first hour is the peak profile), `stress` (a quarter of the
+target's peak, up 25% every 5 minutes for twelve steps to 2.9 times it) and `isolation` (each operation alone at the target's peak for
+4 minutes after 4 minutes with none, so each one's cost is read with nothing else driven). Every operation is named at the target's peak
+(`CAPACITY_MODEL.md` §3.1) and each stage scales the lot; k6 runs a staged profile with `ramping-arrival-rate`, still an open model, each
+step a one-second ramp. The same run measures the platform per stage, which is what `CAPACITY_MODEL.md` §3.4 is filled from.
+
+**Running it.** One full cluster at a time, as §11.43. From the repository root:
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=stress infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=sustained REHEARSAL_LOAD_REPLICAS=7 infra/scripts/kind-rehearsal.sh
+```
+
+`REHEARSAL_LOAD_REPLICAS` (3, today's minimum; up to 7, today's ceiling) runs the fleet at that count: the harness patches the run's own
+rendered `kind` overlay, never the committed one, to the connection budget's formula at that count (N + 2 × 1 + 1 instances of 7 + 1
+connections and 12 reserved, so 10 instances and 92 connections at seven; `FINAPP_DB_INSTANCES`, the server's figure the startup guard
+reads and the test-only server's `max_connections`), holds the HorizontalPodAutoscaler at N, sizes the quota to match and waits for N ready
+replicas before the load. Ten is `P16-TSK-014`'s, on owner decision C3's larger server. `REHEARSAL_LOAD_DURATION` shortens every stage in
+proportion, and the run is then not the profile's workload. `REHEARSAL_LOAD_BORROWERS` (10) is how many borrowers the lending repayments
+spread over. `REHEARSAL_PROBE=slow-statement` is the entry's probe (below).
+
+**What it adds to §11.43's run.**
+- `load-setup`, for every profile that drives lending repayments: the platform scope's persons and their roles granted through the
+  administrator's door, credit's seeded scorecard and loan policies and lending's capital and terms each activated under four eyes (the
+  proposer's own approval refused), then `Rehearsal.java load-lending`: a loan policy version reading no source, proposed by one person
+  and activated by another, so a request refers at once (no credit bureau can be configured on `kind`, §11.43); the underwriter's role
+  granted through the door; for each borrower a factor enrolled and the session stepped up, a wallet, a EUR 2,000.00 twelve-month loan
+  application, its referral approved through the review-case door, the offer accepted with its terms hash and the loan disbursed to the
+  wallet. The census counts the disbursements and, after the load, every repayment the generator was told succeeded.
+- `load-run`: every 10 s, besides §11.43's samples, every pod's own cgroup inside the node (`pods.tsv`: CPU, the time its containers were
+  throttled against their CPU limits, memory) and the database's statements together (`pg-statements_total.tsv`); the host's and the node's
+  clocks either side of the load (`clock.tsv`).
+- `load-judge`: each operation's arrivals held to the sum over the stages of its rate times its factor times the stage's seconds. The
+  stress profile runs past the platform's break by design: the iterations the generator drops there (its bound of in-flight iterations
+  outgrown) are recorded per stage and counted as arrivals, never a pass; every other judgement stands, the census included.
+- `load-census`: the per-stage tables, and the fleet's sums from Prometheus.
+
+**Reading the artefacts** (beside §11.43's):
+
+| File | What it holds | Read it for |
+|---|---|---|
+| `k6/stages.tsv` | Per operation and stage: arrivals and their rate a host second, outcomes, attempts, failed attempts, `409`s, the answers `5xx`, `429` and none, iterations dropped, p50, p95, p99 and max as the client saw them | The break: the first stage past a latency objective or an error target |
+| `stages-resources.tsv` | Per stage: each pod group's CPU in cores and its throttled seconds a second (the replicas, PostgreSQL, the broker, the edge, the telemetry stack, the rest) and memory; the fleet's heap, GC time and pauses, threads, busy request threads, the pools' active, pending, held and waited connections; requests a second; the database's statement time a second, statements, commits, rollbacks, deadlocks, rows written, WAL and full-page images, checkpoints' write and sync, sessions active and waiting on WAL, locks and I/O; the outbox's oldest age and the consumers' lag | The first limit, in §5.4's order |
+| `pods.tsv`, `pods-names.tsv`, `pg-*.tsv` | The samples behind the table, each stamped with the host's epoch second | Anything the table does not show |
+| `clock.tsv`, `k6/t0.txt` | The host's clock and the node's monotonic and wall clocks before and after the load; the load's first sample and how many of k6's seconds passed in one of the host's | Reading a k6 duration or rate in the host's seconds |
+
+**Reading the first limit** (`PHASE_16_PLAN.md` §5.4). Take the break's stage from `k6/stages.tsv`, then read `stages-resources.tsv`
+across the stages in the fixed order, and name the first resource that saturated where those before it in the order did not: the
+generator (its instances' CPU in `containers.tsv`, its dropped iterations), the edge (its pods' CPU and throttling, its `429`s), the
+application's CPU (the replicas' cores against their limit of 2 each, their throttling), its threads (busy request threads), its pool
+(active connections at 7 a replica, pending, the wait at its 5 s bound), the database's CPU (its cores against its limit of 1, its
+throttling), its locks (sessions waiting on locks, deadlocks), its I/O (sessions waiting on WAL and I/O, the checkpoints' sync), the broker
+(its CPU, the outbox's age, the consumers' lag). A resource that saturates only because a later one does (a pool held by commits waiting on
+WAL) is named with the one that holds it, and the record says so.
+
+**The clocks of the reference machine.** Docker Desktop's Linux VM on WSL2 keeps a monotonic clock that runs faster than its wall clock,
+which follows the host's: on 2026-11-13 a JVM in a container counted 90.001 s on `System.nanoTime` while `currentTimeMillis` advanced
+83.074 s, and the node's uptime 489.7 s while the host's clock advanced 452.1 s (1.083 either way). k6 schedules its arrivals and times
+each request on the monotonic clock, so on this machine a profile's rates are carried about 8% faster than written in the host's seconds,
+and each latency reads about 8% longer than the host would measure it. The JVMs' own timers run on the same clock. Every run records the
+ratio (`clock.tsv`), cuts its stages by it, and states rates a host second; latencies are recorded as the client saw them. E27's
+demonstration run carried its "10 minutes" in 557 s of the host's time for that reason (its `k6-series.csv.gz`, read again by
+`P16-TSK-007`).
+
+**The probe** (`MUTATION_TESTING.md` §2; `RESILIENCE_EXPERIMENTS.md` E31). `REHEARSAL_PROBE=slow-statement`: before the load the test-only
+superuser drops the outbox relay's index on pending rows (`platform.outbox_event_pending`) on the run's own server, never by a migration,
+so every poll of every replica's relay scans the outbox; after the load the index is recreated exactly as its migration (`V006`) defines
+it, before the census. Run with the stress profile, the reading names the database.
+
+**Failure and rollback.** As §11.43. The seven-replica overlay exists only in the run's directory; the probe's index exists again before
+the census and goes with the cluster.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

@@ -15,3 +15,9 @@ SELECT 'statements', s.queryid, s.calls, round(s.total_exec_time::numeric, 1), r
  WHERE d.datname = 'finapp'
  ORDER BY s.total_exec_time DESC
  LIMIT 25;
+
+-- Every statement of finapp's together (P16-TSK-007): the database's time and calls, cumulative, so a stage's database time is a difference.
+SELECT 'statements_total', coalesce(sum(s.calls), 0), round(coalesce(sum(s.total_exec_time), 0)::numeric, 1)
+  FROM pg_stat_statements s
+  JOIN pg_database d ON d.oid = s.dbid
+ WHERE d.datname = 'finapp';

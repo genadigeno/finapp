@@ -1,0 +1,27 @@
+{
+  "name": "stress",
+  "workload": "PHASE_16_PLAN.md section 5.1's stress profile: the target's mix from a quarter of its peak, stepped up by 25% every 5 minutes, twelve steps to 2.9 times its peak; the break (the first step past a latency objective or an error target) and the first limit are read from the run, which goes on past the break by design",
+  "duration": "60m",
+  "stages": [[300, 0.25], [300, 0.3125], [300, 0.3906], [300, 0.4883], [300, 0.6104], [300, 0.7629], [300, 0.9537], [300, 1.1921], [300, 1.4901], [300, 1.8626], [300, 2.3283], [300, 2.9104]],
+  "stress": true,
+  "retryShare": 0.05,
+  "transferAmount": "0.01",
+  "topUpAmount": "5.00",
+  "topUpMinor": 500,
+  "checkoutMinor": 200,
+  "repaymentAmount": "1.00",
+  "repaymentMinor": 100,
+  "operations": [
+    {"name": "transfer", "generator": "k6", "exec": "transfer", "rate": 2778, "per": "1000s", "perSecond": 2.778, "preAllocatedVUs": 160, "maxVUs": 160, "money": true, "errorTarget": 0.001, "from": "the target's peak: 100,000 transfers a day over 36,000 s (W1 x W3)"},
+    {"name": "checkout", "generator": "k6", "exec": "checkout", "rate": 5556, "per": "1000s", "perSecond": 5.556, "preAllocatedVUs": 320, "maxVUs": 320, "money": true, "errorTarget": 0.001, "from": "the target's peak: 200,000 card or checkout payments a day over 36,000 s (W1 x W3)"},
+    {"name": "topup", "generator": "k6", "exec": "topup", "rate": 1111, "per": "1000s", "perSecond": 1.111, "preAllocatedVUs": 60, "maxVUs": 60, "money": true, "errorTarget": 0.001, "from": "the target's peak: 40,000 top-ups and withdrawals a day over 36,000 s, the withdrawals folded into card top-ups (R2)"},
+    {"name": "read", "generator": "k6", "exec": "read", "rate": 55556, "per": "1000s", "perSecond": 55.556, "preAllocatedVUs": 490, "maxVUs": 490, "money": false, "errorTarget": 0.001, "from": "the target's peak: 2,000,000 balance reads a day over 36,000 s (W1 x W3)"},
+    {"name": "signin", "generator": "k6", "exec": "signin", "rate": 6667, "per": "1000s", "perSecond": 6.667, "preAllocatedVUs": 120, "maxVUs": 120, "money": false, "errorTarget": 0.001, "from": "the target's peak: 240,000 sign-ins a day over 36,000 s (W1 x W3)"},
+    {"name": "merchant", "generator": "k6", "exec": "merchant", "rate": 11111, "per": "1000s", "perSecond": 11.111, "preAllocatedVUs": 190, "maxVUs": 190, "money": false, "errorTarget": 0.001, "from": "the target's peak: 400,000 merchant API reads a day over 36,000 s (W4)"},
+    {"name": "lending", "generator": "k6", "exec": "lending", "rate": 417, "per": "1000s", "perSecond": 0.417, "preAllocatedVUs": 20, "maxVUs": 20, "money": true, "errorTarget": 0.001, "from": "the target's month-start peak: 15,000 lending repayments a day over 36,000 s (W6, R3)"},
+    {"name": "callbacks", "generator": "callbacks", "money": false, "errorTarget": 0.0005, "from": "two per captured card payment (W4), sent by Rehearsal.java load-callbacks, provider-driven"},
+    {"name": "settlement", "generator": "harness", "money": false, "from": "one PSP settlement file of the run's captures at mid-run, uploaded and attested through the operator edge, reconciled during the load (W5 at this scale)"},
+    {"name": "bnpl", "generator": "none", "money": true, "reason": "no BNPL credit decision can approve on kind: its exposure rule reads the bureau's total balance, and no kind deployment can configure a bureau (CreditBeans refuses a URL until unresolved question 13), so the figure is unassessed and a BNPL policy's fallback declines (INV-CRD-10); a bureau on kind is an application change, routed to P16-TSK-018 (E20's simulated bureau)"},
+    {"name": "credit", "generator": "none", "money": false, "reason": "a loan decision reads the bureau and financial data, neither configurable on kind (unresolved questions 13 and 14), so every decision there is the fail-safe path, waiting its 30-minute collection window and referring: E20's subject, not the target's decision; a decision with data needs the same application change, routed to P16-TSK-018"}
+  ]
+}

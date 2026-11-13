@@ -7,6 +7,8 @@
   "topUpAmount": "5.00",
   "topUpMinor": 500,
   "checkoutMinor": 200,
+  "repaymentAmount": "1.00",
+  "repaymentMinor": 100,
   "operations": [
     {"name": "transfer", "generator": "k6", "exec": "transfer", "rate": 53, "per": "40s", "perSecond": 1.325, "preAllocatedVUs": 80, "maxVUs": 80, "money": true, "errorTarget": 0.001, "from": "26.5% of 5 money movements a second"},
     {"name": "checkout", "generator": "k6", "exec": "checkout", "rate": 531, "per": "200s", "perSecond": 2.655, "preAllocatedVUs": 160, "maxVUs": 160, "money": true, "errorTarget": 0.001, "from": "53.1% of 5: card or checkout payments"},
@@ -16,8 +18,8 @@
     {"name": "merchant", "generator": "k6", "exec": "merchant", "rate": 318, "per": "60s", "perSecond": 5.3, "preAllocatedVUs": 60, "maxVUs": 60, "money": false, "errorTarget": 0.001, "from": "11.1 a second at the target's peak, times 5 / 10.47"},
     {"name": "callbacks", "generator": "callbacks", "money": false, "errorTarget": 0.0005, "from": "two per captured card payment (W4), sent by Rehearsal.java load-callbacks, provider-driven"},
     {"name": "settlement", "generator": "harness", "money": false, "from": "one PSP settlement file of the run's captures at mid-run, uploaded and attested through the operator edge, reconciled during the load (W5 at this scale)"},
-    {"name": "bnpl", "generator": "none", "money": true, "reason": "9.3% of the movements: BNPL purchases and instalments need the platform scope's four-eyes activation of credit, lending capital and BNPL terms and a customer's agreement flow, which the rehearsal client does not have; routed to P16-TSK-007"},
-    {"name": "lending", "generator": "none", "money": true, "reason": "0.5% of the movements: a repayment needs a disbursed loan, so the four-eyes lending activation and the decision, application and offer flows; routed to P16-TSK-007"},
-    {"name": "credit", "generator": "none", "money": false, "reason": "loan credit decisions (R1) need the four-eyes credit policy and scorecard activation; routed to P16-TSK-007"}
+    {"name": "lending", "generator": "k6", "exec": "lending", "rate": 1, "per": "40s", "perSecond": 0.025, "preAllocatedVUs": 10, "maxVUs": 10, "money": true, "errorTarget": 0.001, "from": "0.5% of 5: lending repayments of EUR repaymentAmount each, to loans the harness disbursed before the load (Rehearsal.java load-lending: a policy reading no source under four eyes, the referral approved by an underwriter, the offer accepted)"},
+    {"name": "bnpl", "generator": "none", "money": true, "reason": "9.3% of the movements: no BNPL credit decision can approve on kind: its exposure rule reads the bureau's total balance, and no kind deployment can configure a bureau (CreditBeans refuses a URL until unresolved question 13), so the figure is unassessed and a BNPL policy's fallback declines (INV-CRD-10); a bureau on kind is an application change, routed to P16-TSK-018 (E20's simulated bureau)"},
+    {"name": "credit", "generator": "none", "money": false, "reason": "loan credit decisions (R1): a loan decision reads the bureau and financial data, neither configurable on kind (unresolved questions 13 and 14), so every decision there is the fail-safe path, waiting its 30-minute collection window and referring: E20's subject, not the target's decision; a decision with data needs the same application change, routed to P16-TSK-018"}
   ]
 }

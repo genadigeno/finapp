@@ -142,6 +142,9 @@ public final class Rehearsal {
             case "load-customers" -> rehearsal.loadCustomers(Integer.parseInt(args[2]));
             case "load-fixture" -> rehearsal.loadFixture(args[2]);
             case "load-callbacks" -> rehearsal.loadCallbacks(args[2], Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+            // The workload baseline (P16-TSK-007): borrowers, and loans disbursed to them before the load.
+            case "load-borrowers" -> rehearsal.loadBorrowers(Integer.parseInt(args[2]));
+            case "load-lending" -> rehearsal.loadLending(args[2], args[3]);
             default -> throw new IllegalArgumentException("unknown step " + args[1]);
         }
     }
@@ -1132,6 +1135,246 @@ public final class Rehearsal {
             }
         }
         inFlight.decrementAndGet();
+    }
+
+    // ---------------------------------------------------------------------------------------------- the load's borrowers (P16-TSK-007)
+
+    /*
+     * Lending repayments during the load need loans, and a loan is the platform's own, made only through its doors: a credit decision, an
+     * offer, the borrower's acceptance and the disbursement to the borrower's wallet. On kind no credit bureau and no financial-data provider
+     * can be configured (CreditBeans refuses either URL until the party facts they need exist, CURRENT_STATE's unresolved questions 13 and
+     * 14), so no decision can approve automatically: the exposure rule every policy carries reads the bureau's total balance, unassessed
+     * there, and the policy's fallback refers the request to a person (INV-CRD-10). So: a PERSONAL_LOAN policy version reading no source,
+     * proposed by "operator" and activated by "controller" (four eyes, the self-approval refused), so a request is referred at once rather
+     * than after its 30-minute collection window; "operator" given CREDIT_UNDERWRITER through the administrator's grant door; and each
+     * referral approved by that underwriter through the review-case door. Every act is the platform's own, audited; nothing is posted or
+     * decided around a door. stdout carries counts and statuses only; the sessions go to the fixture in the run's directory.
+     */
+
+    private static final String LOAN_AMOUNT = "2000.00";
+
+    /** Registers {@code count} borrowers with the run's password and writes the SQL that makes them ACTIVE (KYC is not a load flow). */
+    private void loadBorrowers(int count) throws Exception {
+        List<String> logins = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            String login = someLogin("lb" + i);
+            expect("register " + login, register(login), 201);
+            state.setProperty("load.borrower." + i + ".login", login);
+            logins.add("'" + login + "'");
+        }
+        state.setProperty("load.borrowers", Integer.toString(count));
+        save();
+        Files.writeString(work.resolve("seed-load-borrowers.sql"), "\\set ON_ERROR_STOP on\n"
+                + "UPDATE party.customer SET status = 'ACTIVE', status_changed_at = GREATEST(now(), opened_at)\n"
+                + " WHERE party_id IN (SELECT party_id FROM identity.identity WHERE login_identifier IN (" + String.join(",", logins) + "));\n");
+        System.out.println("load borrowers registered=" + count);
+    }
+
+    /** One borrower's progress through the loan, and what the fixture needs of it. */
+    private record Borrower(String login, String token, String account, String application) {}
+
+    /**
+     * The policy, the underwriter, a EUR 2,000.00 twelve-month loan per borrower disbursed to the borrower's wallet; then the borrowers
+     * (session, loan, wallet) added to {@code fixtureName}. Prints one "load lending ..." line per act and a closing count line.
+     */
+    private void loadLending(String fixtureName, String why) throws Exception {
+        int count = Integer.parseInt(state.getProperty("load.borrowers", "0"));
+        if (count == 0) {
+            throw new IllegalStateException("no borrowers: run load-borrowers first");
+        }
+        String reason = "the load harness's borrowers, " + why + " (P16-TSK-007)";
+        String operator = fresh("operator");
+        String controller = fresh("controller");
+        // The policy in force, restated with no source and its one exposure rule: the request then passes straight to evaluation, where the
+        // exposure figure, unassessed with no bureau, refers it (the fallback). Proposed by one person, refused to them, activated by another.
+        Map<String, Object> inForce = obj(tryJson(expect("the loan policy in force", get(operatorBase,
+                "/v1/operator/credit/policies?product=PERSONAL_LOAN", operator), 200).body()));
+        Map<String, Object> policy = policyRestated(inForce, reason + ": a version reading no source, so a request refers at once");
+        policy.put("sources", new ArrayList<>());
+        List<Object> exposure = new ArrayList<>();
+        for (Object rule : arr(policy.get("rules"))) {
+            if ("EXPOSURE_HEADROOM".equals(text(obj(rule).get("subject")))) {
+                exposure.add(rule);
+            }
+        }
+        if (exposure.isEmpty()) {
+            throw new IllegalStateException("the loan policy in force has no exposure rule to keep");
+        }
+        policy.put("rules", exposure);
+        FourEyes version = fourEyes("load-lending policy", "self", "", "/v1/operator/credit/policies", toJson(policy), "id", "/approval",
+                reasonBody("reviewed by a second person: " + reason), true, operator, controller);
+        if (version.approved() == null || !ok(version.approved())) {
+            throw new IllegalStateException("the loan policy reading no source was not activated");
+        }
+        // The underwriter: "operator", through the administrator's grant door.
+        Answer granted = grant(fresh("admin"), requireIdentity("load-lending", "operator"), "CREDIT_UNDERWRITER", reason);
+        System.out.println("load lending underwriter grant status=" + granted.status());
+        if (granted.status() != 204 && granted.status() != 200) {
+            throw new IllegalStateException("the underwriter role was not granted: " + granted.status() + " " + codeOf(granted));
+        }
+        // Each borrower: a factor enrolled on the public host and the session stepped up with it (applying for credit is a MULTI_FACTOR
+        // act), a wallet, and the application.
+        List<Borrower> borrowers = java.util.Collections.synchronizedList(new ArrayList<>());
+        List<String> failures = java.util.Collections.synchronizedList(new ArrayList<>());
+        try (var pool = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int i = 0; i < count; i++) {
+                String login = state.getProperty("load.borrower." + i + ".login");
+                pool.submit(() -> {
+                    try {
+                        borrowers.add(borrowerApplies(login));
+                    } catch (Exception failed) {
+                        failures.add(login + ": " + failed.getMessage());
+                    }
+                    return null;
+                });
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new IllegalStateException("borrowers could not apply: " + failures);
+        }
+        System.out.println("load lending applications=" + borrowers.size());
+        // The underwriter approves each referral: the case opened by the request behind each application.
+        java.util.Set<String> requests = new java.util.HashSet<>();
+        for (Borrower borrower : borrowers) {
+            requests.add(awaitDecisionRequest(borrower));
+        }
+        String underwriter = fresh("operator");
+        int approved = 0;
+        long deadline = System.currentTimeMillis() + 300_000;
+        java.util.Set<String> decided = new java.util.HashSet<>();
+        while (decided.size() < requests.size() && System.currentTimeMillis() < deadline) {
+            Answer queue = expect("the review queue", get(operatorBase, "/v1/operator/credit/review-cases?status=OPEN", underwriter), 200);
+            for (Object item : arr(tryJson(queue.body()))) {
+                Map<String, Object> reviewCase = obj(item);
+                String request = text(reviewCase.get("requestId"));
+                String id = text(reviewCase.get("caseId"));
+                if (!requests.contains(request) || decided.contains(request)) {
+                    continue;
+                }
+                Answer taken = post(operatorBase, "/v1/operator/credit/review-cases/" + segment(id) + "/assignment", null, underwriter, key());
+                Answer decision = post(operatorBase, "/v1/operator/credit/review-cases/" + segment(id) + "/decision",
+                        "{\"outcome\":\"APPROVED\",\"approvedAmount\":\"" + LOAN_AMOUNT + "\",\"currency\":\"EUR\",\"reasonCodes\":[],\"reason\":"
+                                + jsonString("approved by the load's underwriter: " + reason) + "}", underwriter, key());
+                System.out.println("load lending review assignment=" + taken.status() + " decision=" + decision.status()
+                        + (ok(decision) ? "" : " code=" + codeOf(decision)));
+                if (ok(decision)) {
+                    decided.add(request);
+                    approved++;
+                }
+            }
+            if (decided.size() < requests.size()) {
+                pause(2000);
+            }
+        }
+        if (approved != requests.size()) {
+            throw new IllegalStateException("the underwriter approved " + approved + " of " + requests.size() + " referrals");
+        }
+        // Each borrower accepts the offer the approval made, and the loan is disbursed to the wallet.
+        List<Object> fixtureBorrowers = java.util.Collections.synchronizedList(new ArrayList<>());
+        AtomicLong disbursedMinor = new AtomicLong();
+        try (var pool = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            for (Borrower borrower : borrowers) {
+                pool.submit(() -> {
+                    try {
+                        Map<String, Object> entry = borrowerAccepts(borrower, disbursedMinor);
+                        fixtureBorrowers.add(entry);
+                    } catch (Exception failed) {
+                        failures.add(borrower.login() + ": " + failed.getMessage());
+                    }
+                    return null;
+                });
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new IllegalStateException("borrowers' loans were not disbursed: " + failures);
+        }
+        Map<String, Object> fixture = obj(tryJson(Files.readString(work.resolve(fixtureName))));
+        fixture.put("borrowers", fixtureBorrowers);
+        Files.writeString(work.resolve(fixtureName), toJson(fixture));
+        System.out.println("load lending borrowers=" + fixtureBorrowers.size() + " disbursed_minor=" + disbursedMinor.get());
+    }
+
+    /** Signs in, enrols a factor and steps up on the public host; opens a wallet; applies for the loan. */
+    private Borrower borrowerApplies(String login) throws Exception {
+        String password = authenticate(login);
+        String secret = secretFrom(expect("mfa enrolment of " + login, post(publicBase, "/v1/me/mfa", null, password, null), 201).body());
+        long step = currentStep();
+        expect("mfa confirmation of " + login, post(publicBase, "/v1/me/mfa/confirmation", "{\"code\":\"" + totp(secret, step - 1) + "\"}",
+                password, null), 204);
+        String token = field(expect("step-up of " + login, post(publicBase, "/v1/authentications/mfa", "{\"code\":\"" + totp(secret, step)
+                + "\"}", password, null), 200).body(), "sessionToken");
+        String account = field(expect("open wallet", post(publicBase, "/v1/me/accounts", "{\"productType\":\"WALLET\",\"currency\":\"EUR\"}",
+                token, key()), 201).body(), "id");
+        Answer applied = expect("loan application of " + login, post(publicBase, "/v1/me/loan-applications",
+                "{\"product\":\"PERSONAL_LOAN\",\"amount\":\"" + LOAN_AMOUNT + "\",\"currency\":\"EUR\",\"termMonths\":12,\"repaymentDay\":5,"
+                        + "\"repaymentMethod\":\"WALLET\",\"payoutPreference\":\"WALLET\",\"declaredMonthlyIncome\":\"6000.00\","
+                        + "\"declaredMonthlyExpenditure\":\"1000.00\"}", token, key()), 200, 201, 202);
+        return new Borrower(login, token, account, field(applied.body(), "applicationId"));
+    }
+
+    /** The decision request behind the application, once the application names it. */
+    private String awaitDecisionRequest(Borrower borrower) throws Exception {
+        for (int polls = 0; polls < 120; polls++) {
+            Answer read = expect("loan application read", get(publicBase, "/v1/me/loan-applications/" + borrower.application(), borrower.token()), 200);
+            String request = field(read.body(), "decisionRequestId");
+            if (request != null) {
+                return request;
+            }
+            pause(1000);
+        }
+        throw new IllegalStateException("the application " + borrower.application() + " named no decision request");
+    }
+
+    /** The offer read and accepted; the loan read until it is disbursed and the wallet holds the amount. The borrower's fixture entry. */
+    private Map<String, Object> borrowerAccepts(Borrower borrower, AtomicLong disbursedMinor) throws Exception {
+        String offer = null;
+        String status = null;
+        for (int polls = 0; polls < 180 && offer == null; polls++) {
+            Answer read = expect("loan application read", get(publicBase, "/v1/me/loan-applications/" + borrower.application(), borrower.token()), 200);
+            offer = field(read.body(), "offerId");
+            status = field(read.body(), "status");
+            if (offer == null) {
+                pause(1000);
+            }
+        }
+        if (offer == null) {
+            throw new IllegalStateException("no offer for " + borrower.application() + " (application " + status + ")");
+        }
+        String hash = field(expect("loan offer read", get(publicBase, "/v1/me/loan-offers/" + offer, borrower.token()), 200).body(), "termsSha256");
+        Answer accepted = expect("loan offer acceptance", post(publicBase, "/v1/me/loan-offers/" + offer + "/acceptance",
+                "{\"termsSha256\":\"" + hash + "\"}", borrower.token(), key()), 200, 201);
+        String loan = field(accepted.body(), "loanId");
+        long balance = 0;
+        String loanStatus = null;
+        for (int polls = 0; polls < 180; polls++) {
+            loanStatus = field(expect("loan read", get(publicBase, "/v1/me/loans/" + loan, borrower.token()), 200).body(), "status");
+            balance = walletMinor(borrower);
+            if (balance >= new BigDecimal(LOAN_AMOUNT).movePointRight(2).longValueExact()) {
+                break;
+            }
+            pause(1000);
+        }
+        if (balance <= 0) {
+            throw new IllegalStateException("the loan " + loan + " (" + loanStatus + ") was not disbursed to the wallet");
+        }
+        disbursedMinor.addAndGet(balance);
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("token", borrower.token());
+        entry.put("loan", loan);
+        entry.put("account", borrower.account());
+        return entry;
+    }
+
+    /** The wallet's settled EUR balance in minor units, as its owner reads it. */
+    private long walletMinor(Borrower borrower) throws Exception {
+        Answer read = expect("wallet balance", get(publicBase, "/v1/me/accounts/" + borrower.account() + "/balance", borrower.token()), 200);
+        for (Object line : arr(obj(tryJson(read.body())).get("balances"))) {
+            Map<String, Object> balance = obj(line);
+            if ("EUR".equals(text(balance.get("currency")))) {
+                return new BigDecimal(text(balance.get("settled"))).movePointRight(2).longValueExact();
+            }
+        }
+        return 0;
     }
 
     /** The certificate the public host serves now, on a connection of its own: its serial and its end, never the key. */

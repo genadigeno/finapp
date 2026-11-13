@@ -35,7 +35,14 @@ import org.junit.jupiter.api.Test;
  *   <li>the demonstration profile is the capacity model's, and every operation it leaves undriven says why and who drives it;
  *   <li>each of the entry's probes is wired to do what it says;
  *   <li>the platform's own signals ({@code THREAT_MODEL.md} section 6 item 47 (c)) are rehearsed in the same run: a migrator Job planted
- *       to fail pages twice and is routed, its lines reach Loki scrubbed, and every platform stream is swept for every needle.
+ *       to fail pages twice and is routed, its lines reach Loki scrubbed, and every platform stream is swept for every needle;
+ *   <li>the staged profiles of {@code PHASE_16_PLAN.md} section 5.1 (normal, peak, sustained, stress, isolation) are the target's mix at
+ *       its peak, scaled per stage, still an open model, and judged on the sum of their stages; only the stress runs past the break;
+ *   <li>the fleet runs at three to seven replicas in the run's own rendered overlay, at the connection budget's formula;
+ *   <li>lending repayments are drawn on loans made through the platform's doors, and the census counts the disbursements and repayments;
+ *   <li>every run cuts its measures by stage in the host's seconds: the client's per operation, the pods' cgroups, the JVMs' and the
+ *       pools' sums, the database's time;
+ *   <li>the slow-statement probe drops the relay's index on the run's own server and puts it back as its migration defines it.
  * </ol>
  *
  * <p>Hermetic: it reads files only.
@@ -132,7 +139,7 @@ class LoadRehearsalContractTest {
     void theModelIsOpenAndReadBeforeAnyCluster() {
         assertThat(read(MODEL)).contains("executor: 'constant-arrival-rate'").doesNotContain("constant-vus");
         assertThat(scenarios).contains("import { openModel } from './model.js';")
-                .contains("scenarios: Object.fromEntries(driven.map((operation) => [operation.name, openModel(operation, DURATION, GRACEFUL_STOP)])),");
+                .contains("scenarios: Object.fromEntries(driven.map((operation) => [operation.name, openModel(operation, DURATION, GRACEFUL_STOP, STAGES)])),");
         assertThat(harness.indexOf("    load_preflight\n")).as("the pre-flight runs before the images are built")
                 .isPositive().isLessThan(harness.indexOf("step build-images"));
         String preflight = function("load_preflight");
@@ -247,9 +254,9 @@ class LoadRehearsalContractTest {
         assertThat(generatorCommand()).contains("-e \"LOAD_RESOLVE_SECONDS=$LOAD_RESOLVE_SECONDS\"");
         assertThat(scenarios).as("a payment in progress read until it concludes, within the bound; an iteration let finish within it")
                 .contains("throw new Error('LOAD_RESOLVE_SECONDS is required").contains("Date.now() - since >= RESOLVE_MS")
-                .contains("const GRACEFUL_STOP = `${RESOLVE_SECONDS + 120}s`;").contains("openModel(operation, DURATION, GRACEFUL_STOP)")
+                .contains("const GRACEFUL_STOP = `${RESOLVE_SECONDS + 120}s`;").contains("openModel(operation, DURATION, GRACEFUL_STOP, STAGES)")
                 .doesNotContain("POLL_SECONDS");
-        assertThat(read("infra/scripts/kind-rehearsal/load/model.js")).contains("openModel(operation, duration, gracefulStop)")
+        assertThat(read("infra/scripts/kind-rehearsal/load/model.js")).contains("openModel(operation, duration, gracefulStop, stages)")
                 .contains("        gracefulStop,\n");
         String judge = function("load_judge");
         assertThat(judge).contains("[ \"$unresolved\" = 0 ] || fail").contains("[ \"$agreed\" = \"$retried\" ] || fail")
@@ -296,9 +303,11 @@ class LoadRehearsalContractTest {
         Matcher share = Pattern.compile("transfers ([0-9.]+)%, card or checkout payments ([0-9.]+)%, top-ups and withdrawals ([0-9.]+)%")
                 .matcher(model);
         assertThat(share.find()).as("the demonstration's split, read from CAPACITY_MODEL.md section 1").isTrue();
+        Matcher lending = Pattern.compile("lending repayments ([0-9.]+)%").matcher(model);
+        assertThat(lending.find()).as("the demonstration's lending share, read from CAPACITY_MODEL.md section 1").isTrue();
         Map<String, Double> perSecond = Map.of("transfer", 5 * Double.parseDouble(share.group(1)) / 100,
                 "checkout", 5 * Double.parseDouble(share.group(2)) / 100, "topup", 5 * Double.parseDouble(share.group(3)) / 100,
-                "read", 50.0);
+                "read", 50.0, "lending", 5 * Double.parseDouble(lending.group(1)) / 100);
         perSecond.forEach((name, wanted) -> assertThat(Double.parseDouble(field(operations.get(name), "perSecond")))
                 .as("%s at the capacity model's rate", name).isCloseTo(wanted, org.assertj.core.data.Offset.offset(0.001)));
         for (Map.Entry<String, String> operation : operations.entrySet()) {
@@ -324,8 +333,152 @@ class LoadRehearsalContractTest {
             assertThat(task.find()).as("%s names the task that drives it", operation.getKey()).isTrue();
             assertThat(statuses.get(task.group())).as("%s's task %s is live", operation.getKey(), task.group())
                     .isIn(EvidenceCitations.LIVE_STATUSES);
+            assertThat(reason).as("%s: the reason is the bureau no kind deployment can configure, which INV-CRD-10 declines or refers on",
+                    operation.getKey()).contains("bureau").contains("unresolved question");
         }
-        assertThat(undriven).as("what this harness leaves undriven, and nothing else").containsExactly("bnpl", "credit", "lending");
+        assertThat(undriven).as("what this harness leaves undriven, and nothing else").containsExactly("bnpl", "credit");
+        assertThat(field(operations.get("lending"), "exec")).as("lending repayments are driven by their own scenario").isEqualTo("lending");
+        assertThat(scenarios).as("each repayment keyed, on the borrower's own loan, its retried key answered alike")
+                .contains("export function lending()").contains("`/v1/me/loans/${who.loan}/repayments`")
+                .contains("`load-${RUN}-lending-${it}`").contains("agreed(op, answers, 'repaymentId');");
+    }
+
+    @Test
+    @DisplayName("the staged profiles are the target's mix at its peak, scaled per stage as PHASE_16_PLAN.md section 5.1 shapes them, and judged on the sum of their stages")
+    void theStagedProfilesAreTheTargetsMixScaledByStage() {
+        Map<String, String> demonstration = operations();
+        for (String name : List.of("normal", "peak", "sustained", "stress", "isolation")) {
+            String profile = read("infra/scripts/kind-rehearsal/load/" + name + ".json");
+            Map<String, String> staged = new LinkedHashMap<>();
+            Matcher operation = OPERATION.matcher(profile);
+            while (operation.find()) {
+                staged.put(operation.group(1), operation.group(0));
+            }
+            assertThat(staged.keySet()).as("%s drives what the demonstration drives", name).isEqualTo(demonstration.keySet());
+            for (Map.Entry<String, String> entry : staged.entrySet()) {
+                String line = entry.getValue();
+                assertThat(field(line, "generator")).as("%s: %s by the same generator", name, entry.getKey())
+                        .isEqualTo(field(demonstration.get(entry.getKey()), "generator"));
+                if (line.contains("\"generator\": \"k6\"")) {
+                    assertThat(field(line, "per")).as("%s: %s counted per 1000 s", name, entry.getKey()).isEqualTo("1000s");
+                    assertThat(Double.parseDouble(field(line, "rate")) / 1000).as("%s: %s's rate and per-second figure", name, entry.getKey())
+                            .isCloseTo(Double.parseDouble(field(line, "perSecond")), org.assertj.core.data.Offset.offset(0.001));
+                    assertThat(field(line, "preAllocatedVUs")).as("%s: %s's users all allocated before the load", name, entry.getKey())
+                            .isEqualTo(field(line, "maxVUs"));
+                }
+            }
+            assertThat(profile).as("%s's stages", name).containsPattern("(?m)^  \"stages\": \\[\\[.*]],$");
+        }
+        // The target's peak, CAPACITY_MODEL.md section 3.1: a day's volume over 36,000 s.
+        Map<String, Double> peak = Map.of("transfer", 100_000 / 36_000.0, "checkout", 200_000 / 36_000.0, "topup", 40_000 / 36_000.0,
+                "read", 2_000_000 / 36_000.0, "signin", 240_000 / 36_000.0, "merchant", 400_000 / 36_000.0, "lending", 15_000 / 36_000.0);
+        Matcher sustained = OPERATION.matcher(read("infra/scripts/kind-rehearsal/load/sustained.json"));
+        while (sustained.find()) {
+            if (peak.containsKey(sustained.group(1))) {
+                assertThat(Double.parseDouble(field(sustained.group(0), "perSecond"))).as("%s at the target's peak", sustained.group(1))
+                        .isCloseTo(peak.get(sustained.group(1)), org.assertj.core.data.Offset.offset(0.001));
+            }
+        }
+        assertThat(read("infra/scripts/kind-rehearsal/load/normal.json")).as("normal: the average, 36,000 / 86,400 of the peak, 30 minutes")
+                .contains("\"stages\": [[1800, 0.4167]],");
+        assertThat(read("infra/scripts/kind-rehearsal/load/peak.json")).as("peak: a step to the peak from the normal profile")
+                .contains("\"stages\": [[1800, 0.4167], [1800, 1.0]],");
+        assertThat(read("infra/scripts/kind-rehearsal/load/sustained.json")).as("sustained: the peak held two hours")
+                .contains("\"stages\": [[1800, 0.4167], [7200, 1.0]],");
+        String stress = read("infra/scripts/kind-rehearsal/load/stress.json");
+        Matcher steps = Pattern.compile("\\[300, ([0-9.]+)]").matcher(stress.substring(stress.indexOf("\"stages\"")));
+        List<Double> factors = new ArrayList<>();
+        while (steps.find()) {
+            factors.add(Double.parseDouble(steps.group(1)));
+        }
+        assertThat(factors).as("stress: twelve 5-minute steps from a quarter of the peak").hasSize(12).first().isEqualTo(0.25);
+        for (int i = 1; i < factors.size(); i++) {
+            assertThat(factors.get(i) / factors.get(i - 1)).as("stress: step %d is 25%% above the one before", i)
+                    .isCloseTo(1.25, org.assertj.core.data.Offset.offset(0.001));
+        }
+        assertThat(stress).contains("  \"stress\": true,");
+        for (String name : List.of("demonstration", "normal", "peak", "sustained", "isolation")) {
+            assertThat(read("infra/scripts/kind-rehearsal/load/" + name + ".json")).as("only the stress profile runs past the break")
+                    .doesNotContain("\"stress\"");
+        }
+        assertThat(read(MODEL)).as("a staged profile is still an open model: ramping arrivals, a one-second step, the rate rounded per time unit")
+                .contains("executor: 'ramping-arrival-rate',").contains("steps.push({ target, duration: '1s' });")
+                .contains("return Math.round(operation.rate * stage[1]);");
+        String judge = function("load_judge");
+        assertThat(judge).as("each operation's arrivals held to the sum over the stages, the stress's dropped iterations counted as arrivals")
+                .contains("want=$(load_expected \"$op\")").contains("[ \"$stress\" != true ] || lost=")
+                .contains("if [ \"$stress\" = true ]; then").contains("fail \"the generator dropped $dropped iterations");
+        assertThat(function("load_expected")).as("as model.js rounds: whole iterations per time unit times the stage's seconds")
+                .contains("int(rate * $2 + 0.5)").contains("n += target * $1 / unit");
+        assertThat(scenarios).as("a shortened run shortens every stage in proportion, as the shell does")
+                .contains("Math.max(2, Math.round(stage[0] * scale))");
+        assertThat(function("load_stages")).contains("t = int(s[i] * scale + 0.5); if (t < 2) t = 2");
+    }
+
+    @Test
+    @DisplayName("the fleet runs at REHEARSAL_LOAD_REPLICAS, three to seven, in the run's own rendered overlay at the connection budget's formula")
+    void theFleetRunsAtTheBudgetsFormulaInTheRunsOwnCopy() {
+        assertThat(function("load_preflight")).as("today's minimum to today's ceiling, nothing else")
+                .contains("case $LOAD_REPLICAS in 3 | 4 | 5 | 6 | 7) ;; *) cannot");
+        String patch = function("load_replicas_patch");
+        assertThat(patch).as("N + 2 x maxSurge + 1 instances, each 7 + 1 connections, 12 reserved")
+                .contains("instances=$((LOAD_REPLICAS + 3))").contains("connections=$((instances * 8 + 12))")
+                .contains("FINAPP_DB_INSTANCES: \\\"$instances\\\"").contains("max_connections=$connections")
+                .contains("minReplicas: $LOAD_REPLICAS").contains("maxReplicas: $LOAD_REPLICAS")
+                .contains("|| cannot \"the rendered kind overlay could not be set");
+        assertThat(harness.indexOf("[ \"$SCOPE\" != load ] || load_replicas_patch \"$A\"")).as("patched before anything is applied")
+                .isPositive().isLessThan(harness.indexOf("apply_files \"$file\""));
+        assertThat(function("load_target")).as("the load waits for the fleet at its count")
+                .contains("= \"$LOAD_REPLICAS\" ]").contains("fail \"the fleet did not reach $LOAD_REPLICAS ready replicas");
+        assertThat(read("deploy/overlays/kind/kustomization.yaml")).as("the committed overlay stays the three-replica rehearsal")
+                .contains("FINAPP_DB_INSTANCES=6").contains("value: 3");
+    }
+
+    @Test
+    @DisplayName("lending repayments are drawn on loans made through the platform's doors: a policy reading no source under four eyes, an underwriter's approval, the offer accepted, the disbursement counted by the census")
+    void lendingRepaymentsAreDrawnOnLoansMadeThroughTheDoors() {
+        String client = read(CLIENT);
+        String lending = client.substring(client.indexOf("private void loadLending("), client.indexOf("private Borrower borrowerApplies("));
+        assertThat(lending).as("the policy reading no source, proposed by one person and activated by another, its self-approval tried")
+                .contains("policy.put(\"sources\", new ArrayList<>());").contains("\"EXPOSURE_HEADROOM\".equals(")
+                .contains("fourEyes(\"load-lending policy\", \"self\"").contains("operator, controller);");
+        assertThat(lending).as("the underwriter's role through the administrator's grant door, never SQL")
+                .contains("grant(fresh(\"admin\"), requireIdentity(\"load-lending\", \"operator\"), \"CREDIT_UNDERWRITER\", reason)")
+                .doesNotContain("INSERT INTO");
+        assertThat(lending).as("each referral approved through the review-case door")
+                .contains("/v1/operator/credit/review-cases?status=OPEN").contains("/assignment").contains("/decision")
+                .contains("\\\"outcome\\\":\\\"APPROVED\\\"");
+        assertThat(client).as("the offer accepted with its own terms hash, and the disbursement read from the wallet")
+                .contains("\"/v1/me/loan-offers/\" + offer + \"/acceptance\"").contains("\"{\\\"termsSha256\\\":\\\"\" + hash + \"\\\"}\"")
+                .contains("disbursedMinor.addAndGet(balance);");
+        String setup = function("load_lending");
+        assertThat(setup).as("the platform scope's persons, roles and activations first, each self-approval refused")
+                .contains("client platform-prepare").contains("client platform-staff").contains("for activation in activate-credit activate-lending; do")
+                .contains("'self-approval status=40[39]'").contains("grep -q '^platform load-lending policy self status=40[39]'")
+                .contains("LOAD_WALLET_MINOR=$((LOAD_WALLET_MINOR + LOAD_DISBURSED_MINOR))");
+        assertThat(function("load_census")).as("the wallets hold what was disbursed less what the generator was told it repaid")
+                .contains("LOAD_DISBURSED_MINOR - $(ok_of lending) * $(load_profile_value repaymentMinor)");
+    }
+
+    @Test
+    @DisplayName("every run cuts its measures by stage, in the host's seconds: the client's per operation, the platform's per signal, the pods' cgroups and the database's time")
+    void everyRunCutsItsMeasuresByStage() {
+        String report = function("load_report");
+        assertThat(report).as("the client's side per operation and stage, from the series, on the clock the samples carry")
+                .contains("-f \"$LOAD_SRC/stages.awk\" > \"$WORK/stage-counts.tsv\"").contains("> \"$LOAD_ART/k6/stages.tsv\"")
+                .contains("-v speed=\"$LOAD_SPEED\"").contains("\"$LOAD_ART/clock.tsv\"");
+        assertThat(function("load_run")).as("the clocks read either side of the load").contains("load_clock start").contains("load_clock end");
+        assertThat(function("load_statistics")).as("every pod's cgroup and the database's time every 10 s")
+                .contains("dock exec \"$NODE\" sh -c \"$LOAD_CGROUPS\"").contains("-v epoch=\"$started\"");
+        assertThat(load).as("the cgroups read: CPU, throttling against the limit, memory")
+                .contains("cpuacct/$r/cpuacct.usage").contains("throttled_time").contains("memory/$r/memory.usage_in_bytes");
+        assertThat(read("infra/scripts/kind-rehearsal/load/statements.sql")).contains("SELECT 'statements_total', coalesce(sum(s.calls), 0)");
+        String resources = function("load_resources");
+        assertThat(resources).as("the platform's side per stage, failing when it holds no replica CPU or no database time")
+                .contains("-f \"$LOAD_SRC/resources.awk\"").contains("cpu_app_cores_per_s").contains("db_statement_seconds_per_s")
+                .contains("fail \"the per-stage resources hold no replica CPU or no database time");
+        assertThat(read("infra/scripts/kind-rehearsal/load/resources.awk")).contains("secs[n] = f[1] / speed");
+        assertThat(read("infra/scripts/kind-rehearsal/load/stages.awk")).contains("upto[n] = upto[n - 1] + f[1] / speed");
     }
 
     @Test
@@ -390,5 +543,19 @@ class LoadRehearsalContractTest {
                 .doesNotContain("'CREDIT'");
         assertThat(function("load_run").indexOf("load_sampler &")).as("the sampler starts unless the probe disables it")
                 .isGreaterThan(function("load_run").indexOf("sampler-disabled"));
+        // P16-TSK-007's: the relay's index dropped on the run's own server before the load and put back, as V006 defines it, before the census.
+        String run = function("load_run");
+        assertThat(run.indexOf("[ \"$PROBE\" != slow-statement ] || load_plant_slow_statement")).as("planted before the load starts")
+                .isPositive().isLessThan(run.indexOf("LOAD_STARTED=$(date +%s)"));
+        assertThat(run.indexOf("[ \"$PROBE\" != slow-statement ] || load_restore_slow_statement")).as("restored once the load has ended")
+                .isGreaterThan(run.indexOf("LOAD_ENDED=$(date +%s)"));
+        assertThat(function("load_plant_slow_statement")).contains("DROP INDEX platform.outbox_event_pending");
+        String v006 = read("platform/src/main/resources/db/migration/platform/V006__outbox_relay_scheduling.sql").replaceAll("\\s+", " ");
+        assertThat(v006).as("the index the probe recreates is V006's").contains(
+                "CREATE INDEX outbox_event_pending ON platform.outbox_event (aggregate_id, event_id) WHERE published_at IS NULL;");
+        assertThat(function("load_restore_slow_statement")).contains(
+                "CREATE INDEX IF NOT EXISTS outbox_event_pending ON platform.outbox_event (aggregate_id, event_id) WHERE published_at IS NULL");
+        assertThat(read("deploy/overlays/kind/postgres.yaml") + read("platform/src/main/resources/db/migration/platform/V006__outbox_relay_scheduling.sql"))
+                .as("never by a migration or an overlay").doesNotContain("slow-statement");
     }
 }
