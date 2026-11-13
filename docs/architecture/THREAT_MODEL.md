@@ -2315,6 +2315,11 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     writer's CPU, which neither more replicas nor a pooler relieves, and (iii) is a correctness change to a dozen readers for a capacity
     the platform has not been shown to need.
 
+    One consequence is already built, whichever option is taken. `ConfigFingerprintDisagrees` (T11) must outlast the longest rollout
+    any overlay allows. `kind`'s ten replicas make that 107 minutes, so its `for` is 110 minutes instead of 80, and production's lasting
+    disagreement pages half an hour later than its seven replicas need. If the owner wants production's 80 kept while it stays at seven,
+    the rule is split by environment: one more rule, its own runbook line and promtool cases.
+
     *Awaiting the owner* (2026-11-13). Until decided: production at seven, and §4's T14 `GAP` row for the runs at ten.
 
 ## 7. Decided against

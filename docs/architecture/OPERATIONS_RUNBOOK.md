@@ -2784,7 +2784,8 @@ A property the code gains is one new row in the register, or the build fails. A 
 
 **During a rollout, a disagreement is expected and is not an incident.** `finapp_config_fingerprint` carries the digest of each replica's effective `FINANCIAL` configuration in its `fingerprint` label, so the fleet's disagreement is visible at once and nothing pages for its length.
 
-**`ConfigFingerprintDisagrees` (page): the fleet has disagreed for longer than any rollout takes.**
+**`ConfigFingerprintDisagrees` (page): the fleet has disagreed for longer than any rollout takes.** *(2026-11-13, ADR-0134: it waits 110
+minutes, 80 until `kind` admitted ten replicas. `ConfigFingerprintAlertTest` derives the bound from the manifests.)*
 
 1. `count by (fingerprint) (finapp_config_fingerprint)` shows the groups, and `finapp_config_fingerprint` the replicas in each. The digest says only that they differ: compare the two replicas' ConfigMaps and the Deployment's revisions to see what.
 2. A rollout that has stopped: `kubectl rollout status deployment/finapp-app` and `kubectl get replicasets`. A replica on the old revision with the new one failing readiness is the usual cause, and §11.1 is the way forward. Rolling back is §11.3.
@@ -5107,7 +5108,8 @@ standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont 
 holds its fleet at its own count in its own rendered copy with the formula at that count (`kind-rehearsal.sh`'s `fleet_patch`): three in
 every scope, `REHEARSAL_LOAD_REPLICAS` (3 to 10) in the `load` scope. Staging is unchanged. Production keeps `maxReplicas` 7 until the owner
 decides `THREAT_MODEL.md` §6 item 56; §11.14 says how ten would be set there. The HPA's metric on `kind` is metrics-server, the checked
-render of `infra/scripts/controller-check.sh` (§11.36), installed by the `load` scope.
+render of `infra/scripts/controller-check.sh` (§11.36), installed by the `load` scope. `ConfigFingerprintDisagrees` waits 110 minutes
+(§11.31): its `for` outlasts the longest rollout any overlay allows, and ten replicas make that 107 minutes.
 
 **Running it** (E41, `RESILIENCE_EXPERIMENTS.md`). One full cluster at a time, as §11.43, on a machine that can hold thirteen 1 GiB
 application pods at a rollout's worst moment beside the data tier (the reference machine's VM has 15.6 GiB; `P16-TSK-014`'s risk):

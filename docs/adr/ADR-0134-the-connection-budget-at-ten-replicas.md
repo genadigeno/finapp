@@ -95,6 +95,11 @@ Cons: no run at ten has been made (PI-025), and nothing measured says the target
 Positive: `kind` admits ten replicas within an exact budget, for `P16-TSK-014`; the HPA has a metric on `kind`; the arbiters' locks
 are held transaction-scoped by a guard.
 Negative: production's ceiling stays seven until the owner decides item 56; a pooler stays unavailable until the isolation is moved.
+`ConfigFingerprintDisagrees` waits 110 minutes instead of 80. Its `for` must outlast the longest rollout any overlay allows, and ten
+replicas of the ten-minute step the deadline allows, the last pod's grace and the five-minute window come to 107 minutes
+(`ConfigFingerprintAlertTest`, which went red at `kind`'s ten). The rule is one for every environment, so production's lasting
+disagreement now pages half an hour later than its own seven replicas need. Keeping production's 80 would take the rule split by
+environment. Item 56 puts that choice to the owner.
 Operational impact: a rehearsal at three is unchanged in what it measures; a load run at ten needs the reference machine's memory for
 13 pods at a rollout's worst moment, which `P16-TSK-014`'s risk names.
 Security impact: none new. metrics-server on `kind` is the checked render the delivery scope already installs, told not to verify kind's
