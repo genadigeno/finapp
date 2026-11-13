@@ -2,6 +2,12 @@
 -- superuser, because it spans schemas no application role may cross. Each statement prints one line: PASS|name|detail or FAIL|name|detail.
 -- The harness keeps the output per step and any FAIL fails the step. Variables: expected_transfers, expected_topups, expected_checkouts,
 -- expected_payouts, expected_wallets, which the harness computes from what the smoke client wrote down that it had been told was done.
+--
+-- SAMPLED DURING LOAD (P16-TSK-006, PHASE_16_PLAN.md section 5.3). A clause whose last comment line is the marker below reads
+-- committed facts only: it needs no count from the client and no quiet platform, so it holds at every committed instant. The load
+-- scope (kind-rehearsal/load.sh) extracts exactly those clauses and runs them every 30 s inside one REPEATABLE READ READ ONLY
+-- transaction, a consistent cut, while the load runs. A clause marked here that could fail mid-flight would fail a healthy run; a
+-- committed-fact clause left unmarked would go unread during load. Every clause, marked or not, still runs after every step.
 \set ON_ERROR_STOP on
 \pset format unaligned
 \pset tuples_only on
@@ -9,6 +15,7 @@
 \pset null ''
 
 -- Trial balance zero per currency (INV-ACC-01). An empty journal is a failure of the rehearsal: a sum over nothing proves nothing.
+-- [sampled during load]
 SELECT CASE WHEN count(*) > 0 AND bool_and(net = 0) THEN 'PASS' ELSE 'FAIL' END,
        'trial balance zero per currency',
        string_agg(currency || ': net ' || net || ' over ' || lines || ' lines', ', ')
@@ -19,11 +26,51 @@ SELECT CASE WHEN count(*) > 0 AND bool_and(net = 0) THEN 'PASS' ELSE 'FAIL' END,
          GROUP BY currency) balance;
 
 -- Every entry's own debits and credits, the same invariant per entry: a compensating error across two entries would pass the sum above.
+-- [sampled during load]
 SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'every entry balances', count(*) || ' unbalanced entries'
   FROM (SELECT entry_id
           FROM ledger.journal_line
          GROUP BY entry_id, currency
         HAVING sum(CASE direction WHEN 'DEBIT' THEN amount_minor ELSE -amount_minor END) <> 0) unbalanced;
+
+-- One effect per key, at the ledger (INV-IDEM-01): a posting's scope is its command's key, and no scope is posted twice. The column is not
+-- UNIQUE yet (P16-TSK-011 lands that, after a census of exactly this), so this is the check that reads it, at every step and under load.
+-- [sampled during load]
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'one journal entry per posting scope',
+       count(*) || ' scopes posted more than once'
+  FROM (SELECT idempotency_scope
+          FROM ledger.journal_entry
+         GROUP BY idempotency_scope
+        HAVING count(*) > 1) twice;
+
+-- One effect per key, transfers, at any instant: the rehearsal writes a fresh reference with each key (smoke-, wl-), and a retry under the
+-- key sends the same one, so a reference on two transfers is one key's second effect. Only the rehearsal's own: a customer's free-text
+-- reference may repeat. The count against the client's is "one transfer per key" below, after the load.
+-- [sampled during load]
+SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'one transfer per rehearsal reference',
+       count(*) || ' references carried by more than one transfer'
+  FROM (SELECT reference
+          FROM transfers.transfer
+         WHERE reference LIKE 'wl-%' OR reference LIKE 'smoke-%'
+         GROUP BY reference
+        HAVING count(*) > 1) twice;
+
+-- One effect per key, card payments, at any instant: a capture's transition, its posting (payment-capture:<attempt>), its intent's
+-- SUCCEEDED and its expectation commit together (PaymentOutcomes.applyCapture, ADR-0048), so every captured card attempt has exactly one
+-- capture posting, and every capture posting names a captured attempt, in any committed snapshot.
+-- [sampled during load]
+SELECT CASE WHEN missing + orphaned = 0 THEN 'PASS' ELSE 'FAIL' END, 'one capture posting per captured card attempt',
+       missing || ' captured card attempts without exactly one capture posting, ' || orphaned || ' capture postings naming no captured attempt'
+  FROM (SELECT count(*) FILTER (WHERE a.card AND coalesce(p.entries, 0) <> 1) AS missing,
+               count(*) FILTER (WHERE a.scope IS NULL) AS orphaned
+          FROM (SELECT 'ledger.post:payment-capture:' || id AS scope, rail = 'card' AS card
+                  FROM payments.payment_attempt
+                 WHERE status = 'CAPTURED') a
+          FULL JOIN (SELECT idempotency_scope AS scope, count(*) AS entries
+                       FROM ledger.journal_entry
+                      WHERE idempotency_scope LIKE 'ledger.post:payment-capture:%'
+                      GROUP BY idempotency_scope) p
+            ON p.scope = a.scope) captures;
 
 -- One effect per idempotency key, transfers: the workload writes its key into the reference. One row per reference and one entry per row.
 SELECT CASE WHEN rows = distinct_references AND rows = distinct_entries AND rows = :expected_transfers AND failed = 0
@@ -90,11 +137,13 @@ SELECT CASE WHEN count(*) FILTER (WHERE published_at IS NULL AND discarded_at IS
            || count(*) FILTER (WHERE dead_lettered_at IS NOT NULL) || ' dead-lettered'
   FROM platform.outbox_event;
 
+-- [sampled during load]
 SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'no event dead-lettered', count(*) || ' dead letters'
   FROM platform.outbox_event
  WHERE dead_lettered_at IS NOT NULL;
 
 -- Nothing a consumer could not apply: a parked record is a stopped partition until a person releases it.
+-- [sampled during load]
 SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'nothing parked', count(*) || ' parked records'
   FROM platform.inbox_parked_record;
 
@@ -107,6 +156,8 @@ SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'no orphaned idempote
    AND lease_expires_at < now();
 
 -- Every balance explainable from the journal: the posted projection against the lines that made it, on the account's own normal side, so a sign flipped is a difference and a line with no balance row is one too.
+-- The projection moves in the posting's own transaction (ADR-0041), so this holds in any committed snapshot as well.
+-- [sampled during load]
 SELECT CASE WHEN count(*) = 0 THEN 'PASS' ELSE 'FAIL' END, 'balances explain the journal', count(*) || ' accounts differ'
   FROM (SELECT ledger_account_id
           FROM ledger.account_balance b

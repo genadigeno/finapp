@@ -306,6 +306,8 @@ check metrics-server "$METRICS_SERVER_REPOSITORY" "$METRICS_SERVER_VERSION" "$ME
 check traefik-roll  "$TRAEFIK_ROLL_REPOSITORY"  "$TRAEFIK_ROLL_VERSION"  "$TRAEFIK_ROLL_DIGEST"  roll-target
 check postgres-roll "$POSTGRES_ROLL_REPOSITORY" "$POSTGRES_ROLL_VERSION" "$POSTGRES_ROLL_DIGEST" roll-target
 check kafka-roll    "$KAFKA_ROLL_REPOSITORY"    "$KAFKA_ROLL_VERSION"    "$KAFKA_ROLL_DIGEST"    roll-target
+# The load generator (P16-TSK-006): k6, for the kind rehearsal's load scope.
+check k6 "$K6_REPOSITORY" "$K6_VERSION" "$K6_DIGEST" list_tags_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

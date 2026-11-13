@@ -225,6 +225,29 @@ class EdgeManifestsTest {
     }
 
     @Test
+    @DisplayName("each controller starts on Kubernetes with no token: while it ships its own log over OTLP, KUBERNETES_SERVICE_HOST is emptied (P16-TSK-006)")
+    @SuppressWarnings("unchecked")
+    void theControllersStartWithoutAKubernetesClient() {
+        // The pinned proxy, its own log shipped over OTLP, builds an in-cluster client when KUBERNETES_SERVICE_HOST is set, and exits 1 at
+        // start without a line when no token is mounted, which no controller here has (measured on kind and on the pinned image).
+        int deployments = 0;
+        for (Map<String, Object> document : controllers) {
+            if (!"Deployment".equals(document.get("kind"))) {
+                continue;
+            }
+            deployments++;
+            for (Map<String, Object> container : (List<Map<String, Object>>) map(map(map(document, "spec"), "template"), "spec").get("containers")) {
+                assertThat((List<Object>) container.get("env")).as("%s: the variable emptied", map(document, "metadata").get("name"))
+                        .contains(Map.of("name", "KUBERNETES_SERVICE_HOST", "value", ""));
+            }
+        }
+        assertThat(deployments).as("the public and the operator controllers").isEqualTo(2);
+        for (String file : List.of(STATIC, OPERATOR_STATIC)) {
+            assertThat(map(yaml(read(file)), "log")).as("%s: why the variable is emptied - its own log over OTLP", file).containsKey("otlp");
+        }
+    }
+
+    @Test
     @DisplayName("the operator edge is internal in a real overlay, and limited to the private ranges at the proxy as well")
     void theOperatorEdgeIsInternal() {
         for (String overlay : List.of("staging", "production")) {

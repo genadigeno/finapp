@@ -28,6 +28,12 @@
 # the activation gates of sections 1-10 and the alerts a plant raises without stopping anything; `incidents` holds the outages, the rolls,
 # break-glass and the incident itself.
 #
+# `load` (P16-TSK-006, ADR-0126, OPERATIONS_RUNBOOK.md section 11.43): release N alone, smoked and its census green, then a load profile
+# driven through the real edge by k6 as an open model, the correctness pages and the census's committed-fact clauses sampled every 30 s
+# while it runs, and the full census after it (kind-rehearsal/load.sh, whose probes are closed-model, sampler-disabled and
+# unbalanced-entry). Its pre-flight reads what k6 will run before anything is built. The same run rehearses the platform's own signals
+# (kind-rehearsal/telemetry.sh's platform_signals_plant and platform_signals; THREAT_MODEL.md section 6 item 47 (c)).
+#
 # `delivery` (P15-TSK-032): the data tier, the simulator and the topics as above, and then nothing of this script's own release: Argo CD,
 # installed from what infra/scripts/controller-check.sh renders, syncs deploy/overlays/staging through a rehearsal root, promote.sh writes
 # each pair and the smoke reads the result (kind-rehearsal/delivery.sh, OPERATIONS_RUNBOOK.md section 11.36).
@@ -53,6 +59,9 @@ DIR="$ROOT/infra/scripts/kind-rehearsal"
 # The telemetry pipeline's steps (P15-TSK-023): telemetry, telemetry-trace, telemetry-outage, telemetry-sweep, telemetry-scrape.
 # shellcheck source=infra/scripts/kind-rehearsal/telemetry.sh
 . "$DIR/telemetry.sh"
+# The load harness (P16-TSK-006): functions only, called under REHEARSAL_SCOPE=load.
+# shellcheck source=infra/scripts/kind-rehearsal/load.sh
+. "$DIR/load.sh"
 
 CLUSTER=${REHEARSAL_CLUSTER:-finapp-rehearsal}
 NODE="$CLUSTER-control-plane"
@@ -69,12 +78,14 @@ ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 # What the run rehearses: `release` (the default, P15-TSK-012's walk from N - 1 to N and back) or `rotations` (P15-TSK-020: release N alone,
 # then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
 SCOPE=${REHEARSAL_SCOPE:-release}
-case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; rolls) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery or rolls, not $SCOPE" >&2; exit 2 ;; esac
+case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; rolls) ;; load) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery, rolls or load, not $SCOPE" >&2; exit 2 ;; esac
 # Every scope but `release` deploys release N alone: the steps below that name N - 1 deploy N.
 N_ONLY=""
 case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
 # The rolls scope (P16-TSK-005) as well.
 [ "$SCOPE" != rolls ] || N_ONLY=1
+# The load scope (P16-TSK-006) loads release N alone too.
+[ "$SCOPE" != load ] || N_ONLY=1
 # The platform scopes' API audit log (Q12): only they write one.
 AUDITED=""
 case $SCOPE in signals | incidents) AUDITED=1 ;; esac
@@ -168,6 +179,8 @@ mkdir -p "$CLIENT" "$WORK/bin" "$WORK/render"
 SAMPLER=""
 REPORTER=""
 CONTAINERS=""
+# Background loops a scope starts (the load's samplers and feeder, P16-TSK-006), stopped on every way out.
+BACKGROUND=""
 FINISHED=""
 
 finish() {
@@ -176,6 +189,9 @@ finish() {
     set +e
     [ -z "$SAMPLER" ] || kill "$SAMPLER" 2>/dev/null
     [ -z "$REPORTER" ] || kill "$REPORTER" 2>/dev/null
+    for pid in $BACKGROUND; do
+        kill "$pid" 2>/dev/null
+    done
     for container in $CONTAINERS; do
         dock rm -f "$container" >/dev/null 2>&1
     done
@@ -422,6 +438,12 @@ wait_job() {
 # ---------------------------------------------------------------------------------------------------
 # The sequence.
 # ---------------------------------------------------------------------------------------------------
+if [ "$SCOPE" = load ]; then
+    # The generator's model, read from what k6 will run, before anything is built (P16-TSK-006): a closed model never reaches a cluster.
+    step load-preflight
+    load_preflight
+fi
+
 step build-images
 if [ -z "${REHEARSAL_SKIP_BUILD:-}" ]; then
     build_tree "$ROOT" n
@@ -869,13 +891,14 @@ census() {
     # census <label>: read it, keep it, and any FAIL line fails the step.
     label=$1
     drained 240 || fail "the outbox did not drain before census $label: $(pending_events) rows pending"
-    expected_transfers=$(( $(transfer_ok_count) + SMOKE_TRANSFERS ))
+    # The load scope's movements (P16-TSK-006), as its generator was told they succeeded, its funding included; zero in every other scope.
+    expected_transfers=$(( $(transfer_ok_count) + SMOKE_TRANSFERS + ${LOAD_TRANSFERS:-0} ))
     # The telemetry steps' one traced top-up, of its own planted amount (P15-TSK-023); zero until it runs.
-    expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS + ${TELEMETRY_TOPUPS:-0} ))
-    expected_checkouts=$(( $(flow_ok_count checkout) + SMOKE_CHECKOUTS ))
+    expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS + ${TELEMETRY_TOPUPS:-0} + ${LOAD_TOPUPS:-0} ))
+    expected_checkouts=$(( $(flow_ok_count checkout) + SMOKE_CHECKOUTS + ${LOAD_CHECKOUTS:-0} ))
     expected_payouts=$(( $(flow_ok_count payout) + SMOKE_PAYOUTS ))
     # Every top-up credits one wallet: 5.00 in a smoke, 0.05 in the workload. Transfers move money between the same wallets and a checkout is paid by card.
-    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} ))
+    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} + ${LOAD_WALLET_MINOR:-0} ))
     if ! lag_settled "$label"; then
         # Each replica's last lines, kept before the cluster goes: a loop stuck on one record says why only in its own log.
         for pod in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name 2>/dev/null); do
@@ -1571,6 +1594,14 @@ fi
 if [ "$SCOPE" = signals ] || [ "$SCOPE" = incidents ]; then
     # shellcheck source=infra/scripts/kind-rehearsal/platform.sh
     . "$DIR/platform.sh"
+    step end
+    finish
+fi
+
+# The load scope (P16-TSK-006) stops it here too: N is deployed, smoked, its census green, the cluster suites passed, the telemetry
+# pipeline up with every committed rule loaded.
+if [ "$SCOPE" = load ]; then
+    load_scope
     step end
     finish
 fi

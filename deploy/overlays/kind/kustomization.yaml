@@ -118,7 +118,8 @@ patches:
       - op: replace
         path: /spec/limits/0/max/memory
         value: 1Gi
-  # The quota follows the maximum: 6 app pods at 1 GiB (3 + 2 x 1 + 1), the migrator, and the two test-only copies.
+  # The quota follows the maximum: 6 app pods at 1 GiB (3 + 2 x 1 + 1), the migrator, and the two test-only copies (the PostgreSQL at
+  # 1 GiB since P16-TSK-006, the broker at 1 GiB).
   - target:
       kind: ResourceQuota
       name: finapp
@@ -131,10 +132,10 @@ patches:
         value: 3750m
       - op: replace
         path: /spec/hard/requests.memory
-        value: 8192Mi
+        value: 8704Mi
       - op: replace
         path: /spec/hard/limits.cpu
         value: "15"
       - op: replace
         path: /spec/hard/limits.memory
-        value: 8192Mi
+        value: 8704Mi

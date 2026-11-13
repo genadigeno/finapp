@@ -138,6 +138,10 @@ public final class Rehearsal {
             case "sign-in-flood" -> rehearsal.signInFlood(args[2], Integer.parseInt(args[3]));
             case "surface-unmarked" -> rehearsal.surfaceUnmarked(args[2]);
             case "payout-held" -> rehearsal.payoutHeld(args[2]);
+            // The load harness (P16-TSK-006): the load's customers, their sessions, and the provider's signed callbacks. The load itself is k6's.
+            case "load-customers" -> rehearsal.loadCustomers(Integer.parseInt(args[2]));
+            case "load-fixture" -> rehearsal.loadFixture(args[2]);
+            case "load-callbacks" -> rehearsal.loadCallbacks(args[2], Integer.parseInt(args[3]), Integer.parseInt(args[4]));
             default -> throw new IllegalArgumentException("unknown step " + args[1]);
         }
     }
@@ -958,6 +962,176 @@ public final class Rehearsal {
         } catch (Exception failed) {
             return -1;
         }
+    }
+
+    // ---------------------------------------------------------------------------------------------- the load harness (P16-TSK-006)
+
+    /*
+     * The load's setup and the provider's half of it (ADR-0126 decision 2: this program stays the flows' setup; the load is k6's). It
+     * registers the load's customers, opens a wallet and a card for each, funds them and signs them in, and writes what k6 needs to a
+     * fixture in the run's directory: the run's own password, sessions and merchant key, nothing else, never under the repository and
+     * never in the artefacts. stdout carries counts only. load-callbacks plays the card provider's callbacks, which the simulator does not
+     * send: two signed deliveries per captured card payment the shell feeds it (W4), each naming the operation the platform minted.
+     */
+
+    private static final String LOAD_FUNDING = "5.00";
+
+    /** Registers {@code count} more customers with the run's password and writes the SQL that makes them ACTIVE (KYC is not a load flow). */
+    private void loadCustomers(int count) throws Exception {
+        List<String> logins = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            String login = someLogin("load" + i);
+            expect("register " + login, register(login), 201);
+            state.setProperty("load.customer." + i + ".login", login);
+            logins.add("'" + login + "'");
+        }
+        state.setProperty("load.customers", Integer.toString(count));
+        save();
+        Files.writeString(work.resolve("seed-load.sql"), "\\set ON_ERROR_STOP on\n"
+                + "UPDATE party.customer SET status = 'ACTIVE', status_changed_at = GREATEST(now(), opened_at)\n"
+                + " WHERE party_id IN (SELECT party_id FROM identity.identity WHERE login_identifier IN (" + String.join(",", logins) + "));\n");
+        System.out.println("load customers registered=" + count);
+    }
+
+    /** A session, a EUR wallet, a card and one funding top-up per load customer; then the fixture k6 reads. */
+    private void loadFixture(String fixtureName) throws Exception {
+        int count = Integer.parseInt(state.getProperty("load.customers", "0"));
+        if (count == 0) {
+            throw new IllegalStateException("no load customers: run load-customers first");
+        }
+        List<Object> customers = new ArrayList<>();
+        long fundedMinor = 0;
+        for (int i = 0; i < count; i++) {
+            String login = state.getProperty("load.customer." + i + ".login");
+            String token = authenticate(login);
+            String account = field(expect("open wallet", post(publicBase, "/v1/me/accounts",
+                    "{\"productType\":\"WALLET\",\"currency\":\"EUR\"}", token, key()), 201).body(), "id");
+            String card = field(expect("attach card", post(publicBase, "/v1/me/payment-methods",
+                    "{\"clientToken\":\"ctok_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12) + "\"}", token, null), 201).body(), "id");
+            topUpWith(token, card, LOAD_FUNDING, key());
+            fundedMinor += new BigDecimal(LOAD_FUNDING).movePointRight(2).longValueExact();
+            Map<String, Object> customer = new LinkedHashMap<>();
+            customer.put("login", login);
+            customer.put("token", token);
+            customer.put("account", account);
+            customer.put("card", card);
+            customers.add(customer);
+        }
+        Map<String, Object> fixture = new LinkedHashMap<>();
+        fixture.put("publicBase", publicBase);
+        fixture.put("password", password());
+        fixture.put("merchantKey", state.getProperty("merchant.key"));
+        fixture.put("customers", customers);
+        Files.writeString(work.resolve(fixtureName), toJson(fixture));
+        System.out.println("load fixture customers=" + count + " funded=" + count + " funded_minor=" + fundedMinor);
+    }
+
+    /** {@link #topUp}'s flow for any session and card: the intent, its confirmation, and its end read back. */
+    private void topUpWith(String token, String card, String amount, String key) throws IOException, InterruptedException {
+        Answer created = expect("top-up create", post(publicBase, "/v1/payments",
+                "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\",\"paymentMethodId\":\"" + card + "\"}", token, key), 200, 201);
+        String id = field(created.body(), "id");
+        Answer confirmed = expect("top-up confirm", post(publicBase, "/v1/payments/" + id + "/confirmation", null, token, null), 200, 409);
+        String status = confirmed.status() == 200 ? field(confirmed.body(), "status") : null;
+        for (int polls = 0; polls < 30 && !"SUCCEEDED".equals(status) && !"FAILED".equals(status); polls++) {
+            pause(1000);
+            status = field(expect("top-up read", get(publicBase, "/v1/payments/" + id, token), 200).body(), "status");
+        }
+        if (!"SUCCEEDED".equals(status)) {
+            throw new IllegalStateException("the funding top-up ended " + status);
+        }
+    }
+
+    /**
+     * The card provider's callbacks during the load. The shell appends one line per captured card attempt to
+     * {@code callbacks-feed-<label>.txt} ({@code attempt authReference authProviderReference captureReference captureProviderReference}),
+     * read from the database as the provider would know them; each line becomes two signed deliveries, the authorization's and the
+     * capture's, spread evenly over the next feed period and sent at their times whatever the earlier ones answered (an open model). One
+     * delivery in twenty is sent again five seconds later under the same event id, as a provider redelivers. Every answer is counted;
+     * nothing here judges, the shell does.
+     *
+     * <p>A provider sends from a few addresses: the shell runs {@code shares} senders, each its own container, and this one takes the
+     * feed's lines whose position is {@code share} modulo {@code shares}.
+     */
+    private void loadCallbacks(String label, int share, int shares) throws Exception {
+        Path feed = work.resolve("callbacks-feed-" + label + ".txt");
+        Path stop = work.resolve("stop-callbacks-" + label);
+        Path results = work.resolve("callbacks-" + label + "-" + share + ".tsv");
+        Files.writeString(results, "at\tevent\tdelivery\tstatus\tms\n");
+        byte[] key = java.util.Base64.getDecoder().decode(Files.readString(work.resolve("provider-key")).strip());
+        long period = 10_000;
+        Map<String, AtomicLong> counts = new java.util.concurrent.ConcurrentSkipListMap<>();
+        AtomicLong inFlight = new AtomicLong();
+        Object lock = new Object();
+        java.util.concurrent.ScheduledExecutorService clock = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        int consumed = 0;
+        long mine = 0;
+        boolean stopping = false;
+        while (!stopping) {
+            // The stop is read before the feed, so the feed read after it is the last one: nothing appended before the stop is left behind.
+            stopping = Files.exists(stop);
+            List<String> lines = Files.exists(feed) ? Files.readAllLines(feed) : List.of();
+            List<String> fresh = new ArrayList<>();
+            for (int position = consumed; position < lines.size(); position++) {
+                if (position % shares == share) {
+                    fresh.add(lines.get(position));
+                }
+            }
+            consumed = Math.max(consumed, lines.size());
+            mine += fresh.size();
+            long gap = fresh.isEmpty() ? 0 : period / (fresh.size() * 2L);
+            long slot = 0;
+            for (String line : fresh) {
+                String[] f = line.strip().split("\\s+");
+                if (f.length != 5) {
+                    counts.computeIfAbsent("malformed", ignored -> new AtomicLong()).incrementAndGet();
+                    continue;
+                }
+                for (String[] operation : new String[][] {{"auth", f[1], f[2]}, {"capture", f[3], f[4]}}) {
+                    String event = "evt-load-" + f[0] + "-" + operation[0];
+                    String body = "{\"eventId\":\"" + event + "\",\"operation\":\"" + operation[1] + "\",\"status\":\"approved\",\"reference\":\""
+                            + operation[2] + "\"}";
+                    long at = slot++ * gap;
+                    inFlight.addAndGet(1);
+                    clock.schedule(() -> Thread.ofVirtual().start(() -> sendCallback(key, event, "first", body, results, counts, inFlight, lock)),
+                            at, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    if (Math.floorMod(event.hashCode(), 20) == 0) {
+                        inFlight.addAndGet(1);
+                        clock.schedule(() -> Thread.ofVirtual().start(() -> sendCallback(key, event, "again", body, results, counts, inFlight, lock)),
+                                at + 5_000, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    }
+                }
+            }
+            if (!stopping) {
+                for (long waited = 0; waited < period && !Files.exists(stop); waited += 250) {
+                    pause(250);
+                }
+            }
+        }
+        // Everything scheduled is sent and answered before the count is written, bounded by the period, the redelivery and the timeout.
+        for (long waited = 0; inFlight.get() > 0 && waited < period + 5_000 + 35_000; waited += 250) {
+            pause(250);
+        }
+        clock.shutdownNow();
+        String line = "callbacks " + label + "-" + share + " fed=" + mine + " unanswered=" + inFlight.get() + " " + counts;
+        System.out.println(line);
+        Files.writeString(work.resolve("callbacks-" + label + "-" + share + ".summary"), line + "\n");
+    }
+
+    private void sendCallback(byte[] key, String event, String delivery, String body, Path results, Map<String, AtomicLong> counts,
+            AtomicLong inFlight, Object lock) {
+        long started = System.nanoTime();
+        int status = deliver(key, body);
+        long millis = (System.nanoTime() - started) / 1_000_000;
+        counts.computeIfAbsent(delivery + "." + status, ignored -> new AtomicLong()).incrementAndGet();
+        synchronized (lock) {
+            try {
+                Files.writeString(results, Instant.now() + "\t" + event + "\t" + delivery + "\t" + status + "\t" + millis + "\n", StandardOpenOption.APPEND);
+            } catch (IOException e) {
+                counts.computeIfAbsent("unrecorded", ignored -> new AtomicLong()).incrementAndGet();
+            }
+        }
+        inFlight.decrementAndGet();
     }
 
     /** The certificate the public host serves now, on a connection of its own: its serial and its end, never the key. */
