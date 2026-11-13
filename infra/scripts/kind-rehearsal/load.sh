@@ -652,14 +652,17 @@ EOF
         printf '%s\t%s\n' "$route" "$served" >> "$LOAD_ART/spread.tsv"
     done
     pass "spread: every one of $ready ready replicas served transfers, payment and checkout confirmations and balance reads through the edge"
-    # Settlement: the file taken, every line an item of the reconciliation, and its lines allocated during and after the load.
+    # Settlement: the file taken, every line an item of the reconciliation, and every capture allocated to its expectation during and
+    # after the load. A record of the file is two lines once taken, its capture and the PSP's fee (the ninth run counted both against
+    # the records and read 1972 of 986); the fee's line is an item reconciled as a fee, never allocated to a capture's expectation.
     if [ -n "${LOAD_SETTLEMENT_FILE:-}" ]; then
         deadline=$(( $(date +%s) + 600 ))
         while :; do
-            counts=$(psql_query -c "SELECT count(DISTINCT l.id) || '|' || count(DISTINCT i.id) || '|' || count(DISTINCT a.external_item_id)
+            counts=$(psql_query -c "SELECT count(DISTINCT l.id) FILTER (WHERE l.line_type = 'CAPTURE') || '|' || count(DISTINCT l.id) || '|' ||
+                count(DISTINCT i.id) || '|' || count(DISTINCT a.external_item_id)
                 FROM settlement.line l LEFT JOIN reconciliation.external_item i ON i.settlement_line_id = l.id
                 LEFT JOIN reconciliation.allocation a ON a.external_item_id = i.id WHERE l.file_id = '$LOAD_SETTLEMENT_FILE'::uuid" | tr -d '[:space:]')
-            IFS='|' read -r lines items allocated <<EOF
+            IFS='|' read -r captures lines items allocated <<EOF
 $counts
 EOF
             [ "${allocated:-0}" = "$LOAD_SETTLEMENT_LINES" ] && break
@@ -667,11 +670,12 @@ EOF
             sleep 10
         done
         psql_query -c "SELECT status FROM settlement.file WHERE id = '$LOAD_SETTLEMENT_FILE'::uuid" > "$LOAD_ART/settlement-status.txt" 2>&1 || true
-        printf 'lines\t%s\nitems\t%s\nallocated\t%s\nin the file\t%s\n' "$lines" "$items" "$allocated" "$LOAD_SETTLEMENT_LINES" >> "$LOAD_ART/settlement.log"
-        [ "${lines:-0}" = "$LOAD_SETTLEMENT_LINES" ] || fail "settlement: ${lines:-0} lines taken of the $LOAD_SETTLEMENT_LINES the file holds"
-        [ "${items:-0}" = "$LOAD_SETTLEMENT_LINES" ] || fail "settlement: ${items:-0} of $LOAD_SETTLEMENT_LINES lines became reconciliation items"
-        [ "${allocated:-0}" -ge 1 ] || fail "settlement: no line was allocated to an expectation"
-        pass "settlement: one PSP file of $LOAD_SETTLEMENT_LINES captures taken whole, every line a reconciliation item, $allocated allocated to their expectations"
+        printf 'capture lines\t%s\nlines\t%s\nitems\t%s\nallocated\t%s\nrecords in the file\t%s\n' "$captures" "$lines" "$items" "$allocated" \
+            "$LOAD_SETTLEMENT_LINES" >> "$LOAD_ART/settlement.log"
+        [ "${captures:-0}" = "$LOAD_SETTLEMENT_LINES" ] || fail "settlement: ${captures:-0} capture lines taken of the $LOAD_SETTLEMENT_LINES records the file holds"
+        [ "${items:-0}" = "${lines:-0}" ] || fail "settlement: ${items:-0} of ${lines:-0} lines became reconciliation items"
+        [ "${allocated:-0}" = "$LOAD_SETTLEMENT_LINES" ] || fail "settlement: ${allocated:-0} of $LOAD_SETTLEMENT_LINES captures allocated to their expectations within 10 min"
+        pass "settlement: one PSP file of $LOAD_SETTLEMENT_LINES captures taken whole ($lines lines with their fees), every line a reconciliation item, every capture allocated to its expectation"
     fi
 }
 

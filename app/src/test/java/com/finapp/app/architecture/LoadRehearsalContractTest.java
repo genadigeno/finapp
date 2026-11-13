@@ -207,6 +207,10 @@ class LoadRehearsalContractTest {
                 .contains("$3 < want * 0.98 || $3 > want * 1.02 + 1").contains("(c < 90)")
                 .as("each operation's 5xx recorded beside the chance its objective explains them, never left unread")
                 .contains("chance=$(load_errors_chance \"$server\" \"$attempts\" \"$target\")").contains("log \"recorded $op: 5xx $server");
+        assertThat(judge).as("the settlement file taken whole: its captures counted by type, every line an item, every capture allocated")
+                .contains("count(DISTINCT l.id) FILTER (WHERE l.line_type = 'CAPTURE')")
+                .contains("[ \"${items:-0}\" = \"${lines:-0}\" ] || fail")
+                .contains("[ \"${allocated:-0}\" = \"$LOAD_SETTLEMENT_LINES\" ] || fail");
         assertThat(function("load_report")).as("every answer that was not a success counted per operation and status")
                 .contains("k6/statuses.tsv").contains("$1 == \"http_reqs\" && $c[\"status\"] !~ /^2/");
         assertThat(generatorCommand()).as("each instance's CPU is bounded, so its saturation can be read").contains("--cpus 1");
