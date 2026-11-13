@@ -214,9 +214,11 @@ experiments_standby_check() {
     standby_zone=$(experiments_zone_of_pod finapp finapp-postgres-standby-0)
     [ -n "$primary_zone" ] && [ -n "$standby_zone" ] && [ "$primary_zone" != "$standby_zone" ] \
         || fail "the standby is not in another zone than the primary ('$standby_zone' and '$primary_zone')"
-    # A committed write is on the standby: synchronous_commit on waits for the standby's flush, and its replay follows.
+    # A committed write is on the standby: a transaction that writes WAL (a transactional message, which no table holds) commits only once
+    # the standby has flushed it (synchronous_commit on), and the standby's replay follows. A transaction that only takes an id writes no
+    # WAL of its own and would not wait, so it would prove nothing here.
     tag=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
-    lsn=$(psql_query -c "SELECT pg_logical_emit_message(false, 'finapp-experiments', '$tag')::text" | tr -d '[:space:]')
+    lsn=$(psql_query -c "SELECT pg_logical_emit_message(true, 'finapp-experiments', '$tag')::text" | tr -d '[:space:]')
     deadline=$(( $(date +%s) + 30 ))
     replayed=""
     while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -692,13 +694,17 @@ EOF
     counted=$(awk -v p="/$proxy_pod" '$1 ~ /^finapp\./ && $3 == p' "$EXP_ART/members.txt" | grep -c . || true)
     [ "$counted" -ge 1 ] && [ "$other" = 0 ] || fail "topology: the consumer groups' members are not all at the proxy's address: $members"
     kube -n finapp-experiments logs deploy/finapp-toxiproxy -c toxiproxy --tail=-1 > "$EXP_ART/toxiproxy.log" 2>&1 || true
+    # Every replica opens its database and broker connections as it starts; a replica opens one to a provider only when it first calls
+    # one, so the provider hop is held to have carried some replica's calls, the run's own names sending every one there.
     for ip in $(printf '%s\n' "$fleet" | awk -F'|' 'NF >= 5 && $6 == "" {print $5}'); do
-        for proxy in postgres kafka simulator; do
+        for proxy in postgres kafka; do
             grep '"message":"Accepted client"' "$EXP_ART/toxiproxy.log" | grep "\"name\":\"$proxy\"" | grep -q "\"client\":\"$ip:" \
                 || fail "topology: the replica at $ip never reached the $proxy hop through the proxy: see experiments/toxiproxy.log"
         done
     done
-    pass "topology: every one of $all application sessions arrives from the proxy over TLS; $counted consumer-group members at its address and none elsewhere; every replica accepted by the database, broker and simulator proxies (the clients' URLs and verify-full unchanged)"
+    callers=$(grep '"message":"Accepted client"' "$EXP_ART/toxiproxy.log" | grep '"name":"simulator"' | sed -n 's/.*"client":"\([0-9.]*\):.*/\1/p' | sort -u | grep -c . || true)
+    [ "$callers" -ge 1 ] || fail "topology: no replica's provider call went through the proxy: see experiments/toxiproxy.log"
+    pass "topology: every one of $all application sessions arrives from the proxy over TLS; $counted consumer-group members at its address and none elsewhere; every replica accepted by the database and broker proxies, $callers by the simulator's (the clients' URLs and verify-full unchanged)"
 }
 
 # ---------------------------------------------------------------------------------------------------

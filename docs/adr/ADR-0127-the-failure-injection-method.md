@@ -81,3 +81,18 @@ each with its local analogue. Every experiment also states its replica count and
 replica count it ran at. `ResilienceExperimentsAreRegisteredTest` holds it: besides decision 2's fields, evidence and live remediation,
 it refuses an unrun experiment whose runners have all finished, a scenario with no registered experiment, a cited test in the wrong
 tier, and an endpoint or a credential in the register.)*
+
+*(Dated note, 2026-11-13: the toolkit as built, decisions 1, 3, 4 and 5 unchanged in substance. The `experiments` scope of the `kind`
+harness (`infra/scripts/kind-rehearsal/experiments.sh`, `OPERATIONS_RUNBOOK.md` §11.46) makes a cluster of one control plane and three
+workers, each worker a zone, and restores the base's `DoNotSchedule` zone rule in its own rendered copy. Toxiproxy (pinned by digest) is
+on the application's three hops by `hostAliases` in that copy alone: the clients' URLs, bootstrap servers and `verify-full` are unchanged,
+the migrator and the harness never pass through it, and its admin API listens on its pod's loopback. The synchronous standby is
+PostgreSQL's own (a base backup at `verify-full` through a slot, then `FIRST 1` set on the primary at run time), in another zone; its
+promotion and the Service's move are E05's. Decision 4's three brokers are the event pipeline's task, not this one's. None of it is in
+`deploy/`: the standby, the proxy and their policies are harness-applied test-only manifests, so the manifest policy's `kind` flows stand.
+Decision 5 as checks read from the cluster before every fault - the node's labels, its own context and server, the API's nodes against
+the cluster's containers and a marker the scope writes when it makes the cluster (an unmarked cluster of the name is neither reused nor
+deleted); every Secret value of the run's namespaces hashed in the node and found in the run's ledger of the values it made; every
+endpoint of the application's environment, its aliases and the proxy's upstreams the run's own - each proven in every run by a plant
+beside its control. Faults are registered before they go on and removed at stop; the harness's exit path empties the registry, resets
+what needs no record and reads that nothing is left, on every way out.)*

@@ -1,7 +1,7 @@
 # The test-only synchronous standby (P16-TSK-019, owner decision C7, ADR-0127 decision 4): PostgreSQL's own streaming replication beside
 # the kind overlay's test-only server, the shape of the reference cloud's Multi-AZ database - one standby, synchronous, in another zone.
-# Never rendered by any overlay and refused in a deployed one: the experiments scope applies this file itself, POSTGRES_IMAGE written in
-# as the kind overlay's own pinned reference, after it has made the replication role, its slot and the Secret below.
+# Test-only and never rendered by any overlay: the experiments scope applies this file itself, POSTGRES_IMAGE written in as the kind
+# overlay's own pinned reference, after it has made the replication role, its slot and the Secret below.
 #
 # HOW IT IS MADE. The init container takes a base backup of the primary through the primary's own name, finapp-postgres, as
 # finapp_replicator, at verify-full against the run's local CA, with the slot finapp_standby so that the primary keeps every WAL segment
