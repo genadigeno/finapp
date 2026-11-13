@@ -21,6 +21,7 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 | Date | Change |
 |------|--------|
+| 2026-11-14 | `P16-TSK-029` merged (merge `2c0f80eb` of `0fc65c1f` into `01bd8ed1`, both sides kept): Phase 16 at 27 of 37, **M16.13 at 1 of 6**, wave F done but `P16-TSK-030`; `P16-TSK-028`'s record archived (TASK_HISTORY 451 → 452); no task newly eligible; item 70 put to the owner. |
 | 2026-11-14 | `P16-TSK-028` merged (merge `1d3b2f69` of `a726c9be` into `49e9ed23`, both sides kept; item 69 reworded to cite no finished task): Phase 16 at 26 of 37, **M16.12 at 1 of 2**; `P16-TSK-025`'s record archived (TASK_HISTORY 450 → 451); no task newly eligible; item 69 put to the owner. |
 | 2026-11-14 | `P16-TSK-025` merged (master `dee66a3c`, a fast-forward of branch `P16-TSK-025`, which had merged master `f71e3f27`): Phase 16 at 25 of 37, **M16.10 closed at 1 of 1**; `P16-TSK-020`'s record archived (TASK_HISTORY 449 → 450); wave G's `P16-TSK-026` eligible beside `-027`, both put to the owner; item 71 put to the owner. |
 | 2026-11-14 | `P16-TSK-028`: master `f71e3f27` merged (`P16-TSK-015`, `P16-TSK-020`; both sides kept), and its note routed to `P16-TSK-020` applied there: E04's spare worker cleared of the edge's probe pod, from which every experiment's security probe asks the replicas, held by `SecurityUnderFailureContractTest#theProbePodIsKeptOffE04sWorker` (probes P11 and P12). |
