@@ -354,6 +354,15 @@ each one's statements from the server log: every deadlock must be explained by a
 converges (the debt row "The idempotency claim row is locked first in Tx1 and last in Tx2", #52, and the advisory namespace
 3 collision, #53, both re-dated here); an unexplained one is a defect, fixed in a task of its own.
 
+*(Erratum, 2026-11-13, `P16-TSK-008`, which built the concurrent-financial profile, the soak and the sweeps' storm; `OPERATIONS_RUNBOOK.md`
+§11.48; the runs owed under `POSTPONED_ISSUES.md` PI-025. **(1)** The probe drops the transfer's fixed lock order
+(`TransferExecution.lockBothInFixedOrder`) rather than `lockBalancesInOrder`. No multi-entry caller of the latter is driven on `kind`
+(BNPL, lending, chargebacks, reconciliation's parks, corridor returns), and the transfer pair's alternating transfers break the same rule
+on a path the profile drives. **(2)** The soak runs at the engineering workload, not the peak, which is past `kind`'s break (E30). It
+leaves the merchant API's payable read out, because that read folds the account's whole history and its cost grows with the run's age.
+ADR-0133 proposes the read's bound. **(3)** Serialisation failures are read from the server's own log, where every one is kept, since
+the server keeps no counter of them.)*
+
 ### 6.4 Hot rows and hot accounts
 
 The platform's known hot rows: a merchant's payable, `FEE_REVENUE`, `FX_POSITION` and `FX_SPREAD_REVENUE` per currency
@@ -465,6 +474,12 @@ name and a marker ConfigMap it wrote), any credential it did not generate, and a
 simulator. Tools (C6): `kubectl` and `docker` primitives, NetworkPolicies, and Toxiproxy pinned by digest on the data-tier
 and provider hops. A multi-node `kind` cluster (one control plane, three workers, each labelled a zone) replaces the
 one-node cluster for the experiments that need nodes or zones.
+
+*(Dated note, 2026-11-13, `P16-TSK-021`: a NetworkPolicy cannot make a partition here. Policies only add what a pod may reach, the
+application's own already admit every hop, and the policy engine admits an established connection before any policy, so a held
+connection could never be cut by one. One replica is cut by a DROP rule each way in its own network namespace, set from its node, and a
+hop for every replica by Toxiproxy's `timeout` toxic; `RESILIENCE_EXPERIMENTS.md` E14 and E15 carry the correction, and ADR-0127 a dated
+note. `kind`'s volume claims have no size of their own either, so E24 brings a size-limited filesystem.)*
 
 **Every result is recorded twice:** in the experiment register `docs/architecture/RESILIENCE_EXPERIMENTS.md` (created by
 `-001`, held by its guard: every experiment carries every field; a result row names its run's date, commit and artefacts; a

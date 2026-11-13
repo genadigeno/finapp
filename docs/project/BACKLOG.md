@@ -29440,7 +29440,7 @@ on none:
   the profiles, the replica patch, the per-stage cuts, the lost token, the probe's index and the undriven reasons; six probes in two
   rounds, each caught (`MUTATION_TESTING.md` §2).
 
-**P16-TSK-008 — Hot rows, locks, deadlocks and plans under load** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
+**P16-TSK-008 — Hot rows, locks, deadlocks and plans under load** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-008` from master `1fbdf71c`, wave D; no migration, no application code; ADR-0133 `Proposed`; every cluster run owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)" until its gate)
 - **Objective**: measure every known contended financial resource and the database's behaviour under the concurrent-financial and
   soak profiles, and decide by measurement whether any needs a mechanism (`PHASE_16_PLAN.md` §6.3–§6.5, §6.7).
 - **Affected components**: `ledger` (the projection's hot rows), `fx` (`FX_POSITION`, `FX_SPREAD_REVENUE`), `lending` and `bnpl`
@@ -29495,6 +29495,45 @@ on none:
   but each merchant's read still grows with its own history, without bound. A plan, a snapshot or a bounded read is this task's to
   decide by measurement (an ADR first where it changes the ledger's reads, `PHASE_16_PLAN.md` §5.4); the hot merchant also serialises
   its `ledger.account_balance` upserts (mean 14 ms in that run).
+- **As built (2026-11-13; branch `P16-TSK-008` from master `1fbdf71c`; no migration, no application code; the runs owed under
+  `POSTPONED_ISSUES.md` PI-025 by the owner's word of 2026-11-13, "we dont need long running checks and tests").** Every acceptance
+  criterion that rests on a run is **built, contract-tested and its run owed**; nothing here was run on `kind`, and no measured figure
+  is claimed.
+  - **E38, the concurrent-financial profile** (`kind-rehearsal/load/concurrent.json`, `REHEARSAL_LOAD_PROFILE=concurrent`): every
+    transfer between one pair of customers one way and back (`transferPair` in `scenarios.js`), every checkout to the one merchant,
+    every top-up through the one clearing, 15 minutes at the engineering workload and two of the target's bursts; reads, sign-ins and
+    the merchant API undriven with their reasons, BNPL and lending undriven because no `kind` deployment can give a credit approval
+    (so the capital row and L6 stay unmeasurable there). Its waits are sampled every 250 ms (`load/contention.sql` under `\watch`)
+    and resolved to their rows (a balance or account row to its account, an advisory lock to its key, a table to its name), turned into
+    each row's waits per stage (`load/contention.awk`); the server's own log of every wait of a second or more, every deadlock and every
+    serialisation failure is read (`log_lock_waits` on the run's own server; `load/locks.awk`). Before the load the sampler is shown a
+    wait it must place, and the log must hold it; every deadlock the server counted must have its record. The load scope's spread check
+    now asks only the routes the profile drives. Criteria met as built, runs owed: every hot row's wait distribution; every deadlock
+    explained (the known paths are `OPERATIONS_RUNBOOK.md` §11.48's).
+  - **The probe** is the transfer's fixed lock order dropped on a throwaway branch (`TransferExecution.lockBothInFixedOrder`), not
+    `lockBalancesInOrder`: no multi-entry caller of it is driven on `kind` (`PHASE_16_PLAN.md` §6.3's erratum). Owed under PI-025.
+  - **E39, the soak** (`kind-rehearsal/load/soak.json`): eight hours at the engineering workload, the payable read left out
+    (`merchantPayable` false); the named tables every 60 s (`load/soak.sql`), every autovacuum run and checkpoint from the server's
+    log, the WAL a movement; auto_explain's window over 80% to 83% of the run (the `kind` overlay's test-only server preloads
+    `auto_explain`, inert until a window; `load/plans.awk` keeps the top statements' plans and every sequential scan); at 86% a
+    transactional index build on `ledger.journal_line` under the migrator's own `lock_timeout` read from `MigrationPlan.java`
+    (`load/index-build.sql`), its write stop measured and the index dropped, for item 42 (b). Owed under PI-025.
+  - **E40, the sweeps' failure storm** (`experiments.sh`, `REHEARSAL_EXPERIMENTS=E40`): a timeout toxic on the simulator's hop through
+    the fault registry, for the dispatched age and fifteen minutes more (both read from the code); the eight listings' plans and
+    statistics with the record tables empty and full, the tables' writes, HOT updates, dead rows and bytes. Owed under PI-025.
+  - **Every debt row ruled** by reading and arithmetic, each naming the run that measures it (`CURRENT_STATE.md`: #52, #53, the source
+    lock, the rescreening census, the whole-day proofs, the capital row, L6; the poisoned row's routed probe); capital tranches not
+    decided (`DECISIONS.md` §Deferred).
+  - **ADR-0133** (`Proposed`): contention measured before any mechanism, and **no hot-row mechanism decided** - "no mechanism needed
+    at the target" is not claimed, it waits on E38's run; the merchant payable read, E30's measured first limit, bounded by a
+    commit-order checkpoint (below `pg_snapshot_xmin` on the journal's `txid`), proposed with its hazards (a column and index on the
+    hottest table, the classification version, a logical restore's counter) and its build the owner's to place,
+    `THREAT_MODEL.md` §6 item 55, recommendation (i). The read is not changed by this task. Read from the code beside it: every
+    balance decision folds the account's whole history under its row lock (`AvailableBalance`), measured by E38's pair.
+  - **Tests**: `ContentionRehearsalContractTest` (new, eight members, each probed) and `LoadRehearsalContractTest`'s staged-profiles
+    member widened to the concurrent and soak profiles (probed); the guards that read the changed files, named in the change log's row.
+    A throwaway container of the pinned PostgreSQL image proved the new SQL, the sampler's `\watch` and its streaming, auto_explain's
+    log format (the `Query Identifier` line, and that `log_parameter_max_length` 0 drops the parameters line) and the three readers.
 
 **P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: make ten replicas possible without breaking the connection budget, decided by measurement, and give the HPA a
@@ -29575,7 +29614,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.15 widened.
 - **Risk**: Medium. **Cx**: L.
 
-**P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `PLANNED`
+**P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
 - **Objective**: as decided:
   - land a uniqueness on the posting scope (`journal_entry.idempotency_scope` is not `UNIQUE`);
   - then sweep expired idempotency records, which today would remove the second rank of posting once-ness;
@@ -29608,7 +29647,7 @@ on none:
 - **Operational documentation**: `DATA_RETENTION.md`; `OPERATIONS_RUNBOOK.md` §11.15.
 - **Risk**: High (the posting path). **Cx**: L.
 
-**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `PLANNED`
+**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
 - **Objective**: decide, from the soak's growth rates extrapolated to the production target, whether any high-volume table needs
   partitioning. Decide whether report generation needs a replica, and hold `PHASE_GATES.md` §5 Phase 16 criterion 6 by a guard
   either way.
@@ -29990,7 +30029,7 @@ on none:
   replica** (it reaches them through their Service): E01 tells a failed answer apart by when it ended; at ten replicas and under
   E02-E04 that window is per fault. Item 47 (e)'s correlation id, once kept, would join each failed answer to its replica.
 
-**P16-TSK-021 — Network, DNS, connection and disk faults** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-019`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-019`, `COMPLETE`)
+**P16-TSK-021 — Network, DNS, connection and disk faults** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-021` from master `1f70ccad`, wave D; gate `COMPLETE` 2026-11-13; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; no production code, migration, alert rule or new ADR; marks no task `READY` - the coordinator does; marked `READY` by the coordinator at `P16-TSK-019`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-019`, `COMPLETE`) *(read "`READY`", then "`IN_PROGRESS`", until its gate)*
 - **Objective**: E07, E11–E16, E24 under load.
 - **Affected components**: every replica; PostgreSQL; Kafka; the simulator; CoreDNS on `kind`.
 - **Dependencies**: `-019`.
@@ -30013,6 +30052,50 @@ on none:
   `finapp/experiment-fault`, `scaled <namespace> <deployment> <replicas> <replicas to restore>` (E16's CoreDNS would be its first use
   outside the simulator). Each passes the boundary first and is removed at the experiment's stop and on every
   way out. On several nodes, read Prometheus through its pod (`experiments_prometheus`), not the API server's proxy.
+- **As built** (2026-11-13). **Nothing of this task has run on a cluster.** By the owner's word of 2026-11-13 ("we dont need long
+  running checks and tests") every experiment, the probe and the measurement are built and held by contract tests, and their runs are
+  owed under `POSTPONED_ISSUES.md` PI-025 (its bullet names each). The acceptance criterion "each experiment's criteria met and
+  recorded" is met as **built, contract-tested, run owed (PI-025)**: every register row's result reads not run (`N/A: not run`, naming PI-025), and §11.47's record says
+  not run.
+  - **The experiments** (`infra/scripts/kind-rehearsal/experiments.sh`, the `experiments` scope; `OPERATIONS_RUNBOOK.md` §11.47 writes
+    each fault's signature and what a person does; `RESILIENCE_EXPERIMENTS.md` rows carry dated notes where building sharpened or
+    corrected a field):
+    - E07: a holder takes every slot of the test-only server an ordinary role may take; the database's proxy goes down so the fleet's
+      sessions close, then comes back. An ordinary role is refused (the control), an operator's TLS session as the superuser is admitted
+      on a reserved slot, and `ConnectionPoolStarved` must fire within 10 min. No replica restarts.
+    - E11: the application's settings name no object store. The store's half needs the WAL archive's store (`P16-TSK-024`, routed);
+      without one named the step cannot run.
+    - E12: 50, 200 and 1000 ms after a baseline, each step's p50 and p99 and the pools recorded; a p99 past 30 s stops it.
+    - E13: resets on 1%, then 10%, of the database hop's links, drawn afresh every 30 s, connections made anew counted; then **the
+      probe**.
+    - E14: one replica black-holed from the database, and **the black-holed connection measured** for `P16-TSK-022` (routed).
+    - E15: the broker's hop, then the provider's, black-holed.
+    - E16: CoreDNS scaled to zero, new connections forced, the proxy's failed lookup the control, recovery timed to a provider call
+      answered.
+    - E24: the primary's own 2 GiB filesystem filled from its node.
+  - **The probe**: two transfers sent straight to one replica. One is cut while it waits inside its transaction on a lock the run holds
+    on its table, after it has written: it must leave nothing. The other has its answers held 1500 ms (under the pool's 2 s validation,
+    read from `application.yaml` by the test); its row is read committed on the server's own socket, and the database's proxy is
+    disabled at that moment. It must be whole - its row, its journal entry and its claim `COMPLETED` - and its retry by key must answer
+    the committed transfer. The census counts both. A cut that misses its moment is never counted as the probe: three attempts, then
+    could-not-run.
+  - **Four new kinds of fault**, each behind the whole boundary and the registry, cleared at the stop and on every way out, read after,
+    and put on by the crash probes: a black hole (a DROP each way in one replica's own network namespace, from its node), the slots'
+    holder, a table lock, a ballast. A toxic takes `stream=upstream` and `toxicity=<p>`. A proxy may be armed (boundary and registry
+    first) and fired at a measured moment.
+  - **Corrections the building found.** (1) A NetworkPolicy cannot make a partition here: policies only add what a pod may reach, and
+    an established connection is admitted before any policy. So the entry's E14 and E15 "NetworkPolicy" became a DROP in the replica's
+    namespace and the proxy's `timeout` toxic; ADR-0127 and `PHASE_16_PLAN.md` §9.1 carry dated notes. (2) `kind`'s claims have no
+    size, so E24 makes its own filesystem (`experiments/limited-volume.yaml`, only when E24 is named). (3) The entry's "Toxiproxy's
+    reset on commit": a reset toxic added while a commit's answer is held lets the answer through first (a short container check on
+    the pinned images), so the cut is the proxy disabled, which loses what it holds.
+  - **The register**: the eight rows read `N/A: not run (2026-11-13)` with the reason and PI-025, Runs in this task (E14 also
+    `P16-TSK-022`), the register's owed form (§1.1, as master states it since `P16-TSK-007`'s merge). A widening of
+    `ResilienceExperimentsAreRegisteredTest` this branch first made for the same purpose was withdrawn at its merge of master; the guard
+    is master's.
+  - **Threat model**: a T29 `EXISTS` row (the new faults reach only what the run made); `GAP | PI-025` rows on T14 (slots held, volume
+    full, the black-holed connection), T16 (the cut on a commit), T23 and T25 (the hops black-holed); item 42 (h) a dated note.
+  - **Not used**: E35-E37, runbook numbers beyond §11.47, `THREAT_MODEL.md` §6 item 54, ADR-0132. No owner item.
 
 **P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)
 - **Objective**: as decided:
@@ -30062,6 +30145,18 @@ on none:
   `synchronous_standby_names` is the drill's to decide; the harness's `psql_query` and census read `finapp-postgres-0` through its pod,
   so after a promotion they must read the promoted one; and the scope's steady state refuses to start an experiment unless the standby
   is synchronous.
+- *Routed from `P16-TSK-021` (2026-11-13):* the black-holed connection's measurement is built as E14 (`RESILIENCE_EXPERIMENTS.md`,
+  `OPERATIONS_RUNBOOK.md` §11.47): one replica cut from the database by a DROP each way inside its own network namespace (a
+  NetworkPolicy cannot cut a held connection), its sockets to the hop read every 5 s with `ss` in that namespace, a running
+  retransmission timer read as a held connection, and per held connection the seconds until the kernel freed it or that it outlived the
+  cut (`E14/held.tsv`), beside `net.ipv4.tcp_retries2` read in the namespace (the kernel's default, 15, is about fifteen minutes,
+  near the experiment's own 15-minute end). Its run without a socket timeout is owed under PI-025; the run with the decided timeout is
+  this drill's. To carry: the step sets no `socketTimeout` itself, so a run with one puts the property in the run's own rendered
+  configuration; a held connection may resume once the cut is removed, so "freed" is read only while the cut is on; the cut replica
+  leaves the Service by the pool's 2 s validation and 5 s connect timeout, not by its held threads. Don't black-hole the database hop
+  with the proxy's `timeout` toxic: it drops what it holds and closes the link only at its removal, so with no socket timeout a thread
+  would wait with no bound at all (a container check of 2026-11-13). The probe's cut on a commit (E13) found that a reset toxic added
+  while an answer is held lets the answer through first; the proxy disabled loses it.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
 - **Objective**: as decided:
@@ -30126,6 +30221,13 @@ on none:
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.35.
 - **Risk**: Medium. **Cx**: L.
+- *Routed from `P16-TSK-021` (2026-11-13):* E11, object storage unavailable (`RESILIENCE_EXPERIMENTS.md`, `OPERATIONS_RUNBOOK.md`
+  §11.47), needs the store the WAL archive writes to: the application uses none, which the step reads on the cluster. Its step scales
+  the Deployment `REHEARSAL_E11_STORE=<namespace>/<deployment>` names (in `finapp`, `finapp-rehearsal` or `finapp-experiments`) to zero
+  for 5 minutes. It expects the primary's `archive_mode` on, its archiver failing meanwhile (`pg_stat_archiver.failed_count`) and
+  catching up after; it closes a WAL segment each minute so there is something to send. Without a store named it reads could-not-run.
+  If the archive here is a local directory rather than an object store, E11's store half has no local subject: say so in E11's row at
+  this task's gate (a dated note, or `N/A:` with the reason). Its run is owed under PI-025 either way.
 
 **P16-TSK-025 — The disaster-recovery plan and exercise; RTO and RPO measured (C9; ADR-0128; T42)** — `PLANNED`
 - **Objective**: write the DR plan, and exercise it locally end to end: the `kind` cluster and its data destroyed, then the platform

@@ -57,6 +57,27 @@
 # match. BNPL purchases and instalments, lending repayments and loan credit decisions stay undriven on kind, their reason in each profile:
 # every one rests on a credit approval, and on kind none is possible, automatic or by a person (no bureau can be configured there, and
 # without the bureau's total balance the exposure is unassessed: INV-CRD-09, INV-CRD-10; OPERATIONS_RUNBOOK.md section 11.43).
+#
+# CONTENTION, THE SOAK AND THE PLANS (P16-TSK-008; PHASE_16_PLAN.md sections 6.3-6.5 and 6.7; OPERATIONS_RUNBOOK.md section 11.48). Two
+# profiles ask the run for more of the database, each by a flag, and every reading below is the run's own server's, set there by ALTER
+# SYSTEM and thrown away with the cluster:
+#   "contention": true   (concurrent.json, E38: many clients on few accounts - every transfer between one pair of customers, one way
+#                        and back by turns, every checkout to the one merchant, at the engineering workload and at the target's burst).
+#                        The server logs each lock wait of a second or more (log_lock_waits); load/contention.sql samples every client
+#                        backend waiting on a lock every 250 ms, each wait resolved to its row (a balance or account row to its
+#                        account's purpose, currency and id, an advisory lock to its namespace and key); load/contention.awk writes each
+#                        row's waits per stage (contention-rows.tsv). Before the load the sampler is shown a wait (one wallet's balance
+#                        row held four seconds while a second session waits on it) and must place it, and the server's log must hold
+#                        it. After the load every deadlock the server counted must have its record in its log (load/locks.awk:
+#                        deadlocks.txt, with every serialisation failure; lock-waits.tsv); what explains each is the run's record.
+#   "soak": true         (soak.json, E39: the engineering workload held eight hours, the payable read left out because its cost grows
+#                        with the run's age, ADR-0133). The server logs every autovacuum run and checkpoint; load/soak.sql reads the
+#                        named tables every 60 s; over 80% to 83% of the load auto_explain's window (preloaded by the kind overlay and
+#                        inert until here) logs a twentieth of every statement's plan, and load/plans.awk keeps the slowest plan of each
+#                        of the 25 statements pg_stat_statements ranks highest and counts every sequential scan; at 86% a transactional
+#                        index build on ledger.journal_line (load/index-build.sql, THREAT_MODEL.md section 6 item 42 (b)) measures the
+#                        write stop a migration's CREATE INDEX makes under the load, and the throwaway index is dropped.
+# The probe of E38 (the lock order removed from the transfer's two account locks) is a throwaway branch's, section 11.48.
 
 LOAD_PROFILE_NAME=${REHEARSAL_LOAD_PROFILE:-demonstration}
 LOAD_CUSTOMERS=${REHEARSAL_LOAD_CUSTOMERS:-20}
@@ -87,6 +108,10 @@ LOAD_TRANSFERS=0
 LOAD_TOPUPS=0
 LOAD_CHECKOUTS=0
 LOAD_WALLET_MINOR=0
+# P16-TSK-008: the profile's "contention" and "soak" flags, read by load_preflight; what the soak's windows have done so far.
+LOAD_CONTENTION_ON=""
+LOAD_SOAK=""
+PG_PLANS_SUMMARY=""
 
 load_paths() {
     LOAD_ART="$ART/load"
@@ -214,6 +239,9 @@ load_preflight() {
     cp "$DIR/load/"*.js "$DIR/load/"*.json "$DIR/load/"*.sql "$DIR/load/"*.awk "$LOAD_SRC/" || cannot "the load's scenarios could not be copied"
     [ -f "$LOAD_PROFILE_FILE" ] || cannot "no load profile $LOAD_PROFILE_NAME.json under kind-rehearsal/load"
     [ -n "$LOAD_DURATION" ] || LOAD_DURATION=$(load_profile_value duration)
+    # P16-TSK-008: the waits sampled and the server's lock log read (E38), the soak's tables, plans and index build (E39).
+    LOAD_CONTENTION_ON=$(load_profile_value contention)
+    LOAD_SOAK=$(load_profile_value soak)
     [ "$(load_seconds "$LOAD_DURATION")" -gt 0 ] || cannot "the load's duration '$LOAD_DURATION' is not a number of seconds, minutes or hours"
     case $LOAD_REPLICAS in 3 | 4 | 5 | 6 | 7) ;; *) cannot "REHEARSAL_LOAD_REPLICAS is 3 to 7 (today's minimum to its ceiling), not '$LOAD_REPLICAS'" ;; esac
     if [ -n "$(load_stages)" ]; then
@@ -549,11 +577,282 @@ load_restore_slow_statement() {
     log "PROBE slow-statement: platform.outbox_event_pending recreated as V006 defines it"
 }
 
+# ---------------------------------------------------------------------------------------------------
+# Contention, the soak and the plans (P16-TSK-008; PHASE_16_PLAN.md sections 6.3-6.5 and 6.7; OPERATIONS_RUNBOOK.md section 11.48).
+# ---------------------------------------------------------------------------------------------------
+
+# pg_server_set <artefacts> <name=value>...: the run's own test-only server set by ALTER SYSTEM and a reload, each setting read back by
+# a new session. Only what the server logs and auto_explain's window: nothing that changes what a statement does. The server is thrown
+# away with the run's cluster. Used by the load scope and by E40 (experiments.sh).
+pg_server_set() {
+    dir=$1
+    shift
+    for setting in "$@"; do
+        pg_admin -c "ALTER SYSTEM SET ${setting%%=*} = '${setting#*=}'" >> "$dir/server-settings.log" 2>&1 \
+            || cannot "the run's server could not be set: ${setting%%=*}"
+    done
+    pg_admin -c "SELECT pg_reload_conf()" >> "$dir/server-settings.log" 2>&1 || cannot "the run's server could not reload its settings"
+    sleep 2
+    for setting in "$@"; do
+        [ "$(pg_admin -c "SHOW ${setting%%=*}" | tr -d '[:space:]')" = "${setting#*=}" ] \
+            || cannot "the run's server does not read ${setting%%=*} as ${setting#*=} after its reload: see server-settings.log"
+    done
+    printf '%s\tset\t%s\n' "$(date -u +%H:%M:%S)" "$*" >> "$dir/server-settings.tsv"
+}
+
+# pg_server_reset <artefacts> <name>...: back to the server's own values, read back as no longer the run's.
+pg_server_reset() {
+    dir=$1
+    shift
+    for name in "$@"; do
+        pg_admin -c "ALTER SYSTEM RESET $name" >> "$dir/server-settings.log" 2>&1 || cannot "the run's server could not reset $name"
+    done
+    pg_admin -c "SELECT pg_reload_conf()" >> "$dir/server-settings.log" 2>&1 || cannot "the run's server could not reload its settings"
+    printf '%s\treset\t%s\n' "$(date -u +%H:%M:%S)" "$*" >> "$dir/server-settings.tsv"
+}
+
+# pg_log_follow <file>: the test-only server's log streamed into <file> from now, in the background; PG_LOG_FOLLOWER is its pid. The
+# kubelet rotates a container's log at 10 MiB and a read of the logs returns only the current file, so a window that logs every plan, or hours of
+# autovacuum and checkpoints, is followed as it is written rather than read once at its end, when its start may have rotated away.
+pg_log_follow() {
+    kube -n finapp logs -f finapp-postgres-0 -c postgres --since-time="$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$1" 2>&1 &
+    PG_LOG_FOLLOWER=$!
+    BACKGROUND="$BACKGROUND $PG_LOG_FOLLOWER"
+}
+
+# pg_log_stop <pid> <file>: the follower stopped once the server has written what came before; the file must hold what it followed.
+pg_log_stop() {
+    sleep 3
+    kill "$1" 2>/dev/null || true
+    wait "$1" 2>/dev/null || true
+    [ -s "$2" ]
+}
+
+# The settings of a plans window: auto_explain, which the kind overlay preloads and leaves inert, logs a share of every statement's plan
+# with ANALYZE and BUFFERS (timing off, its cost), verbose so that each plan ends in its Query Identifier, and never a parameter's value.
+PG_PLANS_SETTINGS="auto_explain.log_analyze=on auto_explain.log_buffers=on auto_explain.log_timing=off auto_explain.log_verbose=on auto_explain.log_parameter_max_length=0 auto_explain.log_min_duration=0"
+
+# pg_plans_open <artefacts> <share of statements>: the window opened, logging that share of every statement's plan (the soak a twentieth, E40
+# every one for its few minutes); the server's log followed into <artefacts>/plans-server.log from just before.
+pg_plans_open() {
+    pg_log_follow "$1/plans-server.log"
+    PG_PLANS_FOLLOWER=$PG_LOG_FOLLOWER
+    # shellcheck disable=SC2086
+    pg_server_set "$1" "auto_explain.sample_rate=$2" $PG_PLANS_SETTINGS
+    log "plans: auto_explain's window opened on the run's own server (a share of $2 of every statement's plan, no parameter value)"
+}
+
+# pg_plans_close <artefacts> <the statements, as a condition on pg_stat_statements s>: the window closed, its threshold reset first; the
+# statements that meet the condition ranked by their total time over the run (at most 25) and the slowest plan of each the window caught
+# written under <artefacts>/plans (load/plans.awk). PG_PLANS_SUMMARY is the reader's summary.
+pg_plans_close() {
+    pg_server_reset "$1" auto_explain.log_min_duration auto_explain.sample_rate auto_explain.log_analyze auto_explain.log_buffers \
+        auto_explain.log_timing auto_explain.log_verbose auto_explain.log_parameter_max_length
+    mkdir -p "$1/plans"
+    pg_admin -F "$(printf '\t')" -c "SELECT row_number() OVER (ORDER BY s.total_exec_time DESC), s.queryid, round(s.total_exec_time::numeric, 1),
+        s.calls FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid WHERE d.datname = 'finapp' AND ($2)
+        ORDER BY s.total_exec_time DESC LIMIT 25" > "$1/plans/top.tsv" 2>> "$1/server-settings.log" \
+        || cannot "plans: the statements could not be ranked from pg_stat_statements"
+    pg_log_stop "$PG_PLANS_FOLLOWER" "$1/plans-server.log" || cannot "plans: the test-only server's log was not followed: see plans-server.log"
+    awk -v top="$1/plans/top.tsv" -v dir="$1/plans" -f "$DIR/load/plans.awk" "$1/plans-server.log" > "$1/plans-summary.txt" \
+        || cannot "plans: the server's log could not be read for its plans"
+    PG_PLANS_SUMMARY=$(tr '\n' ' ' < "$1/plans-summary.txt")
+    log "plans: $PG_PLANS_SUMMARY(plans/, plans/seq-scans.tsv)"
+}
+
+load_deadlocks() {
+    pg_admin -c "SELECT deadlocks FROM pg_stat_database WHERE datname = 'finapp'" | tr -d '[:space:]'
+}
+
+# A profile with "contention": true (concurrent.json, E38). Before the load: the server logs every lock wait of deadlock_timeout (1 s) or
+# more, the 250 ms sampler of load/contention.sql runs under its own application name, and it is shown a wait it must see.
+load_contention_start() {
+    pg_server_set "$LOAD_ART" log_lock_waits=on
+    pg_log_follow "$LOAD_ART/postgres-server.log"
+    LOAD_CONTENTION_LOG=$PG_LOG_FOLLOWER
+    LOAD_DEADLOCKS_FROM=$(load_deadlocks)
+    case $LOAD_DEADLOCKS_FROM in '' | *[!0-9]*) cannot "the server's deadlock counter could not be read" ;; esac
+    # Every 250 ms for the load, its resolution bound and ten minutes more; stopped by name at the load's end.
+    count=$(( ($(load_total_seconds) + LOAD_RESOLVE_SECONDS + 600) * 4 ))
+    kube -n finapp exec -i finapp-postgres-0 -c postgres -- env PGAPPNAME=finapp-contention-sampler psql -q -X -A -t -U finapp -d finapp \
+        -v "count=$count" -f - < "$LOAD_SRC/contention.sql" > "$LOAD_ART/contention-samples.txt" 2> "$LOAD_ART/contention-errors.log" &
+    LOAD_CONTENTION=$!
+    BACKGROUND="$BACKGROUND $LOAD_CONTENTION"
+    load_contention_control
+}
+
+# The control: one wallet's balance row held for four seconds by the test-only superuser while a second session waits on it, before any
+# load. The sampler must place that wait on that row in at least four samples, and the server's log must hold it (load_contention_judge),
+# so a sampler or a log reader that sees nothing cannot pass for a platform with no waits.
+load_contention_control() {
+    account=$(psql_query -c "SELECT b.ledger_account_id FROM ledger.account_balance b JOIN ledger.ledger_account a ON a.id = b.ledger_account_id
+        WHERE a.purpose = 'CUSTOMER_WALLET' ORDER BY b.ledger_account_id LIMIT 1" | tr -d '[:space:]')
+    [ -n "$account" ] || cannot "the contention control: no customer wallet's balance row to wait on"
+    sleep 2
+    psql_query -c "BEGIN; SELECT 1 FROM ledger.account_balance WHERE ledger_account_id = '$account' FOR UPDATE; SELECT pg_sleep(4); COMMIT;" \
+        >> "$LOAD_ART/plants.log" 2>&1 &
+    holder=$!
+    sleep 1
+    psql_query -c "SELECT 1 FROM ledger.account_balance WHERE ledger_account_id = '$account' FOR UPDATE" >> "$LOAD_ART/plants.log" 2>&1 \
+        || cannot "the contention control's waiter could not take the row after its holder"
+    wait "$holder" 2>/dev/null || true
+    sleep 2
+    seen=$(grep -c "^wait|[^|]*|[^|]*|[^|]*|[^|]*|balance:CUSTOMER_WALLET:[A-Z]*:$account|" "$LOAD_ART/contention-samples.txt" || true)
+    [ "$seen" -ge 4 ] || fail "the contention sampler did not see the wait it was shown: $seen samples placed the control's waiter on its wallet's balance row, where it waited about three seconds: see load/contention-samples.txt"
+    pass "the contention sampler saw the wait it was shown: the control's waiter on one wallet's balance row, in $seen samples, resolved to the row"
+}
+
+# After the load (or a stopped one): the sampler stopped, the server's log read and the waits turned into each row's distribution per
+# stage. Returns non-zero, never fails the run: load_stopped calls it too.
+load_contention_read() {
+    pg_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'finapp-contention-sampler'" \
+        >> "$LOAD_ART/server-settings.log" 2>&1 || true
+    wait "$LOAD_CONTENTION" 2>/dev/null || true
+    LOAD_DEADLOCKS_END=$(load_deadlocks)
+    pg_log_stop "$LOAD_CONTENTION_LOG" "$LOAD_ART/postgres-server.log" || return 1
+    LOAD_DEADLOCKS_AFTER=$(load_deadlocks)
+    : > "$LOAD_ART/deadlocks.txt"
+    awk -v dir="$LOAD_ART" -f "$LOAD_SRC/locks.awk" "$LOAD_ART/postgres-server.log" > "$LOAD_ART/locks-summary.txt" || return 1
+    awk -F'|' -v stages="$WORK/stages.txt" -v t0="${LOAD_T0:-0}" -v speed="${LOAD_SPEED:-1}" -f "$LOAD_SRC/contention.awk" \
+        "$LOAD_ART/contention-samples.txt" > "$LOAD_ART/contention-rows.tsv" || return 1
+}
+
+# The judgement: the sampler read the whole load, every deadlock the server counted has its record in the server's log, and the control's
+# wait is in that log too. What explains each deadlock is the run's record (section 11.48); a deadlock no known path explains is a defect.
+load_contention_judge() {
+    load_contention_read || cannot "the contention sampler's or the server's record could not be read: see load/contention-errors.log"
+    read -r _ samples interval gap <<EOF
+$(tail -1 "$LOAD_ART/contention-rows.tsv" | tr '\t' ' ' | sed 's/interval_ms //; s/largest_gap_ms //')
+EOF
+    secs=$(load_total_seconds)
+    [ "${samples:-0}" -ge $((secs * 3)) ] || fail "the contention sampler read $samples samples over a load of $secs s, fewer than three a second: see load/contention-samples.txt"
+    [ "${gap:-99999}" -le 5000 ] || fail "the contention sampler went $gap ms without a sample: no wait could be seen in that time"
+    logged=$(sed -n 's/^deadlocks //p' "$LOAD_ART/locks-summary.txt")
+    serial=$(sed -n 's/^serialisation //p' "$LOAD_ART/locks-summary.txt")
+    counted=$((LOAD_DEADLOCKS_END - LOAD_DEADLOCKS_FROM))
+    most=$((LOAD_DEADLOCKS_AFTER - LOAD_DEADLOCKS_FROM))
+    [ "${logged:-0}" -ge "$counted" ] && [ "${logged:-0}" -le "$most" ] \
+        || fail "the server counted $counted deadlocks over the load and its log holds ${logged:-no} records: a deadlock without its record cannot be explained: see load/deadlocks.txt"
+    awk -F'\t' 'NR > 1 && $4 == "acquired" && $5 == "account_balance" {found = 1} END {exit !found}' \
+        "$LOAD_ART/lock-waits.tsv" || fail "the server's log holds no wait of a second or more on a balance row, not even the control's: log_lock_waits was not read"
+    pass "contention: $samples samples every $interval ms (the longest gap $gap ms), each row's waits per stage in load/contention-rows.tsv; $logged deadlocks and $serial serialisation failures, each with its record in load/deadlocks.txt, the server's own count $counted; the long waits in load/lock-waits.tsv"
+    [ "${logged:-0}" = 0 ] || log "recorded: $logged deadlocks, each to be explained by a known path in the run's record (OPERATIONS_RUNBOOK.md section 11.48): an unexplained one is a defect"
+}
+
+# A profile with "soak": true (soak.json, E39). The server logs every autovacuum run and every checkpoint, and the named tables are read
+# every 60 s (load/soak.sql); near the load's end a plans window, and then a transactional index build on the journal.
+load_soak_start() {
+    pg_server_set "$LOAD_ART" log_autovacuum_min_duration=0 log_checkpoints=on
+    pg_log_follow "$LOAD_ART/postgres-soak.log"
+    LOAD_SOAK_LOG=$PG_LOG_FOLLOWER
+    load_soak_sampler &
+    BACKGROUND="$BACKGROUND $!"
+}
+
+load_soak_sampler() {
+    set +e
+    while [ ! -f "$WORK/load-stop" ]; do
+        started=$(date +%s)
+        at=$(date -u -d "@$started" +%H:%M:%S)
+        psql_query -f - < "$LOAD_SRC/soak.sql" 2>> "$LOAD_ART/statistics-errors.log" | awk -F'|' -v at="$at" -v epoch="$started" -v dir="$LOAD_ART" \
+            'NF > 1 {name = $1; line = at "\t" epoch; for (f = 2; f <= NF; f++) line = line "\t" $f; print line >> (dir "/pg-" name ".tsv")}'
+        while [ "$(date +%s)" -lt $((started + 60)) ] && [ ! -f "$WORK/load-stop" ]; do
+            sleep 1
+        done
+    done
+}
+
+# load_soak_tick <elapsed> <seconds>: the plans window over 80% to 83% of the load, then the index build at 86%, each once. Counted in the
+# host's seconds, while k6 runs its stages on the VM's monotonic clock, which ran 8% fast in E30 (section 11.45): the load can end at 92% of
+# its written length in the host's seconds, so nothing here waits for a later fraction than that.
+load_soak_tick() {
+    if [ -z "${LOAD_PLANS_OPENED:-}" ] && [ "$1" -ge $(($2 * 80 / 100)) ]; then
+        pg_plans_open "$LOAD_ART" 0.05
+        LOAD_PLANS_OPENED=1
+    fi
+    if [ -n "${LOAD_PLANS_OPENED:-}" ] && [ -z "${LOAD_PLANS_CLOSED:-}" ] && [ "$1" -ge $(($2 * 83 / 100)) ]; then
+        pg_plans_close "$LOAD_ART" "true"
+        LOAD_PLANS_CLOSED=1
+    fi
+    if [ -z "${LOAD_INDEX:-}" ] && [ "$1" -ge $(($2 * 86 / 100)) ]; then
+        load_index_build &
+        LOAD_INDEX=$!
+        BACKGROUND="$BACKGROUND $LOAD_INDEX"
+    fi
+}
+
+# The transactional index build on the journal (load/index-build.sql; THREAT_MODEL.md section 6 item 42 (b)), while the load still runs: up
+# to three tries if the migrator's lock_timeout (3 s) refuses its lock, each recorded; a build past ten minutes is cancelled by its own
+# statement_timeout. Runs in the background: its record is load/index-build.tsv, judged after the load.
+load_index_build() {
+    set +e
+    # The migrator's own lock_timeout, read from its code, never copied (MigrationPlan.LOCK_TIMEOUT).
+    seconds=$(sed -n 's/.*Duration LOCK_TIMEOUT = Duration\.ofSeconds(\([0-9]*\));.*/\1/p' \
+        "$ROOT/migrator/src/main/java/com/finapp/migrator/MigrationPlan.java" | head -1)
+    case $seconds in '' | *[!0-9]*) echo "the migrator's lock_timeout could not be read from MigrationPlan.java" >> "$LOAD_ART/index-build.log"; return 1 ;; esac
+    try=1
+    while [ "$try" -le 3 ]; do
+        printf 'try\t%s\t%s\n' "$try" "$(date +%s)" >> "$LOAD_ART/index-build.tsv"
+        if psql_query -v "lock_timeout=${seconds}s" -f - < "$LOAD_SRC/index-build.sql" >> "$LOAD_ART/index-build.tsv" 2>> "$LOAD_ART/index-build.log"; then
+            return 0
+        fi
+        grep -q 'lock timeout' "$LOAD_ART/index-build.log" || return 1
+        try=$((try + 1))
+        sleep 10
+    done
+    return 1
+}
+
+# After the load: the build's write stop, the table's size and rows, and each operation's answers in the build's window and in the ten
+# minutes before it, from the generator's series (load/index-build-latency.tsv).
+load_index_judge() {
+    [ -n "${LOAD_INDEX:-}" ] || fail "the transactional index build never started: the soak ended before 86% of its length in the host's seconds"
+    wait "$LOAD_INDEX" 2>/dev/null || true
+    # The try that built: its own "before", the last one ahead of the "built" line (a try its lock_timeout refused wrote one too).
+    before=$(awk -F'|' '$1 == "before" {b = $2} $1 == "built" {print b; exit}' "$LOAD_ART/index-build.tsv")
+    built=$(awk -F'|' '$1 == "built" {print $2; exit}' "$LOAD_ART/index-build.tsv")
+    dropped=$(awk -F'|' '$1 == "dropped" {print $3; exit}' "$LOAD_ART/index-build.tsv")
+    [ -n "$before" ] && [ -n "$built" ] || fail "the transactional index build did not complete under the load (three tries at the migrator's 3 s lock_timeout, a ten-minute bound on the build): see load/index-build.log"
+    [ "$dropped" = 0 ] || fail "the index build's throwaway index was not dropped: see load/index-build.tsv"
+    for series in "$LOAD_ART"/k6/*/k6-series.csv.gz; do gzip -dc "$series"; done | awk -F, -v from="$before" -v to="$built" '
+        $1 ~ /^latency_/ { t = $2 + 0; op = substr($1, 9)
+            w = (t >= from && t <= to + 30) ? "build" : (t >= from - 600 && t < from) ? "before" : ""
+            if (w == "") next
+            n[op SUBSEP w]++; if ($3 + 0 > mx[op SUBSEP w]) mx[op SUBSEP w] = $3 + 0; s[op SUBSEP w] += $3 }
+        END { print "op\twindow\tanswers\tmean_ms\tmax_ms"
+              for (k in n) { split(k, p, SUBSEP); printf "%s\t%s\t%d\t%.0f\t%.0f\n", p[1], p[2], n[k], s[k] / n[k], mx[k] } }' \
+        > "$LOAD_ART/index-build-latency.tsv"
+    stop=$(awk -v a="$before" -v b="$built" 'BEGIN {printf "%.1f", b - a}')
+    rows=$(awk -F'|' '$1 == "before" {r = $5} $1 == "built" {print r; exit}' "$LOAD_ART/index-build.tsv")
+    bytes=$(awk -F'|' '$1 == "before" {b = $3} $1 == "built" {print b; exit}' "$LOAD_ART/index-build.tsv")
+    pass "the transactional index build on ledger.journal_line ($rows rows, $bytes bytes of heap) stopped its writes for $stop s under the load, from its lock request to its commit; each operation's answers in that window beside the ten minutes before it in load/index-build-latency.tsv"
+}
+
+# After a soak: the server's log over the load for its autovacuum runs and checkpoints; WAL bytes per money movement.
+load_soak_judge() {
+    pg_log_stop "$LOAD_SOAK_LOG" "$LOAD_ART/postgres-soak.log" || cannot "the soak: the test-only server's log was not followed: see load/postgres-soak.log"
+    grep 'automatic vacuum of table\|automatic analyze of table' "$LOAD_ART/postgres-soak.log" > "$LOAD_ART/autovacuum.txt" || true
+    grep -A2 'checkpoint complete' "$LOAD_ART/postgres-soak.log" > "$LOAD_ART/checkpoints.txt" || true
+    samples=$(grep -c . "$LOAD_ART/pg-soak-database.tsv" 2>/dev/null || true)
+    [ "${samples:-0}" -ge $(( $(load_total_seconds) / 60 * 9 / 10 )) ] || fail "the soak's tables were read $samples times, not every 60 s: see load/statistics-errors.log"
+    grep -q 'checkpoint complete' "$LOAD_ART/checkpoints.txt" || fail "the soak's log holds no checkpoint: log_checkpoints was not read"
+    [ -n "${LOAD_PLANS_CLOSED:-}" ] || fail "the soak's plans window never closed"
+    case $PG_PLANS_SUMMARY in *"caught 0 "*) fail "the soak's plans window caught no plan of any top statement: see load/plans-summary.txt" ;; esac
+    wal=$(awk -F'\t' 'NR == 1 {a = $4} {b = $4} END {print b - a}' "$LOAD_ART/pg-soak-database.tsv")
+    moved=$(awk -F'\t' '$1 == "transfer" || $1 == "checkout" || $1 == "topup" {n += $4} END {print n + 0}' "$LOAD_ART/k6/report.tsv")
+    printf 'wal bytes\t%s\nmovements\t%s\nbytes a movement\t%s\n' "$wal" "$moved" "$(awk -v w="$wal" -v m="$moved" 'BEGIN {if (m > 0) printf "%.0f", w / m}')" \
+        > "$LOAD_ART/wal-per-movement.tsv"
+    load_index_judge
+    pass "the soak: the named tables read $samples times (load/pg-soak-tables.tsv), $(grep -c . "$LOAD_ART/autovacuum.txt" || true) autovacuum runs and $(grep -c 'checkpoint complete' "$LOAD_ART/checkpoints.txt" || true) checkpoints from the server's log, $wal WAL bytes over $moved money movements; the top statements' plans: $PG_PLANS_SUMMARY"
+}
+
 load_run() {
     LOAD_RUN_TAG=$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
     pg_admin -c "SELECT pg_stat_statements_reset()" >> "$LOAD_ART/postgres.log" 2>&1 || true
     : > "$CLIENT/callbacks-feed-load.txt"
     [ "$PROBE" != slow-statement ] || load_plant_slow_statement
+    [ "$LOAD_CONTENTION_ON" != true ] || load_contention_start
+    [ "$LOAD_SOAK" != true ] || load_soak_start
     LOAD_FROM=$(db_epoch)
     load_clock start
     LOAD_STARTED=$(date +%s)
@@ -608,6 +907,7 @@ load_run() {
             fail "a sample failed during the load, which stopped it: $(cat "$WORK/load-sample-failed" | tr '\n' ' ' | cut -c1-600)see load/samples.tsv"
         fi
         elapsed=$(( $(date +%s) - LOAD_STARTED ))
+        [ "$LOAD_SOAK" != true ] || load_soak_tick "$elapsed" "$secs"
         if [ "$PROBE" = unbalanced-entry ] && [ -z "$planted" ] && [ "$elapsed" -ge 60 ]; then
             load_plant_unbalanced
             planted=1
@@ -758,6 +1058,7 @@ load_stopped() {
         load_stage_tables || echo "the per-stage tables could not be written"
         load_saturation || echo "saturation signals absent from Prometheus:$LOAD_MISSING"
         load_resources || echo "the per-stage resources could not be written"
+        [ "${LOAD_CONTENTION_ON:-}" != true ] || load_contention_read || echo "the contention record could not be read"
     } >> "$LOAD_ART/stopped.log" 2>&1
     log "the load ran $((LOAD_ENDED - LOAD_STARTED)) s before a sample stopped it; what it measured is in load/k6/stages.tsv and load/stages-resources.tsv"
 }
@@ -868,14 +1169,19 @@ EOF
     # Spread: the generator reaches the replicas through the edge, never one pod.
     ready=$(kube -n finapp get deployment finapp-app -o jsonpath='{.status.readyReplicas}')
     window=$(( ($(date +%s) - LOAD_STARTED) / 60 + 1 ))m
-    for route in 'uri="/v1/transfers",method="POST"' 'uri=~"/v1/payments/.+/confirmation",method="POST"' \
-        'uri="/v1/checkout/sessions/confirmation",method="POST"' 'uri=~"/v1/me/accounts/.+/balance",method="GET"'; do
+    # Each route beside the operation that sends it; a route whose operation the profile does not drive (the concurrent profile drives no
+    # balance read, P16-TSK-008) is recorded as such and not asked of the replicas.
+    driven=" $(load_operations k6 | tr '\n' ' ')"
+    for pair in 'transfer|uri="/v1/transfers",method="POST"' 'topup|uri=~"/v1/payments/.+/confirmation",method="POST"' \
+        'checkout|uri="/v1/checkout/sessions/confirmation",method="POST"' 'read|uri=~"/v1/me/accounts/.+/balance",method="GET"'; do
+        route=${pair#*|}
+        case $driven in *" ${pair%%|*} "*) ;; *) printf '%s\tnot driven\n' "$route" >> "$LOAD_ART/spread.tsv"; continue ;; esac
         load_prom "count(sum by (instance) (increase(http_server_requests_seconds_count{job=\"finapp\",$route}[$window])) != 0)" > "$LOAD_ART/spread.json" 2>&1 || true
         served=$(sed -n 's/.*"value":\[[^,]*,"\([0-9]*\)"\].*/\1/p' "$LOAD_ART/spread.json")
         [ -n "$served" ] && [ "$served" = "$ready" ] || fail "spread: ${served:-no} of $ready ready replicas served $route during the load"
         printf '%s\t%s\n' "$route" "$served" >> "$LOAD_ART/spread.tsv"
     done
-    pass "spread: every one of $ready ready replicas served transfers, payment and checkout confirmations and balance reads through the edge"
+    pass "spread: every one of $ready ready replicas served each driven route of transfers, payment and checkout confirmations and balance reads through the edge"
     # Settlement: the file taken, every line an item of the reconciliation, and every capture allocated to its expectation during and
     # after the load. A record of the file is two lines once taken, its capture and the PSP's fee (the ninth run counted both against
     # the records and read 1972 of 986); the fee's line is an item reconciled as a fee, never allocated to a capture's expectation.
@@ -901,6 +1207,9 @@ EOF
         [ "${allocated:-0}" = "$LOAD_SETTLEMENT_LINES" ] || fail "settlement: ${allocated:-0} of $LOAD_SETTLEMENT_LINES captures allocated to their expectations within 10 min"
         pass "settlement: one PSP file of $LOAD_SETTLEMENT_LINES captures taken whole ($lines lines with their fees), every line a reconciliation item, every capture allocated to its expectation"
     fi
+    # P16-TSK-008: the contended rows' waits and the deadlocks (E38); the soak's tables, log, plans and index build (E39).
+    [ "$LOAD_CONTENTION_ON" != true ] || load_contention_judge
+    [ "$LOAD_SOAK" != true ] || load_soak_judge
 }
 
 # The shed census (P16-TSK-016, ADR-0137; OPERATIONS_RUNBOOK.md section 11.52). A shed request was refused before its handler, so it

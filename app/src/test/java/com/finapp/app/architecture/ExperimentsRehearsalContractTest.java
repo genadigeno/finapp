@@ -409,7 +409,7 @@ class ExperimentsRehearsalContractTest {
         String steady = function("E51_steady");
         assertThat(steady).as("the gauges read and the workload retrying by its keys before the fault, the meter read or the run cannot")
                 .contains("/- alert: CorrectnessUnverifiable$/").contains("a correctness gauge unreadable before the fault")
-                .contains("start_workload e51 retry").contains("[ -n \"$E51_SHED_BEFORE\" ] || cannot");
+                .contains("experiments_start_workload e51 900").contains("[ -n \"$E51_SHED_BEFORE\" ] || cannot");
         assertThat(function("E51_fault")).as("a latency toxic on the application's database hop, through the registry and its guard")
                 .contains("experiments_fault_on toxic postgres e51-latency latency \"latency=$E51_LATENCY_MS\"");
         String observe = function("E51_observe");
