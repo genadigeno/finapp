@@ -72,10 +72,8 @@ class OutboxRelayScheduleTest {
     @DisplayName("once the schedule's stop has begun, the cycle in flight is the last: no further cycle however full it came back")
     void aStopEndsTheDrain() {
         AtomicInteger cycles = new AtomicInteger();
-        OutboxRelaySchedule schedule = new OutboxRelaySchedule(() -> {
-            cycles.incrementAndGet();
-            return FULL;
-        }, Duration.ofHours(1), new SimpleMeterRegistry());
+        OutboxRelaySchedule schedule = new OutboxRelaySchedule(() -> cycles.incrementAndGet() < 50 ? FULL : RelayPollResult.idle(),
+                Duration.ofHours(1), new SimpleMeterRegistry());
         schedule.start();
         schedule.stop();
         assertThat(schedule.drain().stopping()).isTrue();
@@ -89,10 +87,9 @@ class OutboxRelayScheduleTest {
     @DisplayName("while the schedule's hold is on, a full cycle takes no further one")
     void aHoldEndsTheDrain() {
         AtomicInteger cycles = new AtomicInteger();
-        OutboxRelaySchedule schedule = new OutboxRelaySchedule(() -> {
-            cycles.incrementAndGet();
-            return FULL;
-        }, Duration.ofSeconds(1), new SimpleMeterRegistry());
+        // Full fifty times, then idle: a tick that ignored the hold would stop there, not hang the suite.
+        OutboxRelaySchedule schedule = new OutboxRelaySchedule(() -> cycles.incrementAndGet() < 50 ? FULL : RelayPollResult.idle(),
+                Duration.ofSeconds(1), new SimpleMeterRegistry());
         schedule.drain().heldBy(new WorkHold() {
             @Override
             public boolean held() {

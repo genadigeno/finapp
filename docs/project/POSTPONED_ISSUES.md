@@ -621,3 +621,11 @@ commit and the date; do not delete the entry.
     ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
     commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
     discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
+  - `P16-TSK-013` (the event pipeline on three test-only brokers, `OPERATIONS_RUNBOOK.md` §11.51, whose record carries each run): in the
+    `experiments` scope at three replicas, **E08** with the entry's probe **`REHEARSAL_PROBE=min-isr-one`** (its `MUTATION_TESTING.md`
+    §2 row with it), **E09**, **E22**, **E23** and **E49** (`REHEARSAL_EXPERIMENTS="E08 E09 E22 E23 E49"`), with the scope's topology
+    checks over the six proxies on the same run; in the `load` scope on three brokers (`REHEARSAL_KAFKA_BROKERS=3`), **E47**, the
+    pipeline profile, at three and at seven replicas (`REHEARSAL_LOAD_PROFILE=pipeline`, `REHEARSAL_LOAD_REPLICAS` 3 and 7), which
+    measures ADR-0136's relay drain, and **E48**, the fleet scaled 3 → 7 → 3 under it (`REHEARSAL_LOAD_SCALE="3 7 3"`). Not one of
+    them ran; the three-broker configuration and the probe's premise ran only in containers (§11.51's record). §11.6's broker outage,
+    the part of PI-024 that owner decision C11 gives to these experiments, closes only with E09.

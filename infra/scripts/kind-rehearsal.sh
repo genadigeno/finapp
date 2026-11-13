@@ -47,7 +47,9 @@
 # workers, each a zone, with Toxiproxy on the application's three hops and a synchronous standby of the test-only PostgreSQL, then the
 # failure experiments of kind-rehearsal/experiments.sh (REHEARSAL_EXPERIMENTS, E01 by default), each steady state, fault, observation,
 # stop, recovery and census, behind the safety boundary's refusals and their plants. Its probes are guard-off, crash-with-faults and
-# term-with-faults. It refuses a cluster of its name it did not make and mark, before it changes anything in it.
+# term-with-faults, and min-isr-one with E08. It refuses a cluster of its name it did not make and mark, before it changes anything in it.
+# It runs three brokers (P16-TSK-013, kind-rehearsal/brokers.sh), each behind a proxy of its own, for the event pipeline's experiments
+# E08, E09, E22, E23 and E49 (OPERATIONS_RUNBOOK.md section 11.51).
 #
 # A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
 # common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
@@ -481,6 +483,8 @@ if [ "$SCOPE" = load ]; then
     # The generator's model, read from what k6 will run, before anything is built (P16-TSK-006): a closed model never reaches a cluster.
     step load-preflight
     load_preflight
+    # The event pipeline's runs (P16-TSK-013): E47's profile and E48's scale, on three brokers.
+    pipeline_preflight
 fi
 
 step build-images

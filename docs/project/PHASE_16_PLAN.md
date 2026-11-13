@@ -420,6 +420,14 @@ restore term is a measured rate rather than a guess (§11.2).
 | Retention and replication | Retention below the dedupe window; RF 3, min ISR 2 in the reference; RF 1 on `kind` | A test-only three-broker KRaft on `kind` with the reference settings |
 | Broker failure | Outbox holds rows (`OutboxRelayTest#brokerUnavailabilityRetriesAndLosesNothing`); the `incidents` broker step never ran (PI-024) | One of three brokers killed at peak (no outage: ISR 2 holds); all three stopped for 10 minutes (outage: rows wait, readiness holds, `event_freshness` burns, nothing lost); recovery and drain measured |
 
+*(Erratum, 2026-11-13, `P16-TSK-013`, `OPERATIONS_RUNBOOK.md` §11.51, ADR-0136. **(1)** The three-broker cluster runs where the
+experiments and the pipeline's load runs run, from the run's own rendered copy of the `kind` overlay, whose broker is three-capable and
+committed at one: the other scopes' own steps assume one broker, and moving them is `THREAT_MODEL.md` §6 item 58 (a). **(2)** "Scale 3 →
+10 → 3" is built as 3 → 7 → 3 (E48), today's ceiling; ten is `P16-TSK-014`'s, on C3's larger budget. **(3)** E23's delay is held at the
+relay, by its own advisory lock on a few aggregates, so the records reach the consumers late and out of order across aggregates. **(4)**
+The relay's ceiling was read from the code and changed by ADR-0136 before it was measured at three and seven replicas: E47 measures it.
+None of these has run: owed under `POSTPONED_ISSUES.md` PI-025.)*
+
 **Scaling consumers must not violate domain ordering or create a duplicate financial effect.** It cannot by construction —
 a record's effect is one inbox transaction keyed by `(consumer, dedupe_key)` — and `-013` proves it at load with the census,
 since a construction is a claim until it is counted. **Exactly-once is not claimed** because Kafka offers a mode; the

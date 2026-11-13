@@ -1385,6 +1385,13 @@ window, and a person releases money movement. → [ADR-0128](../adr/ADR-0128-rec
 financial-operation availability stated apart from service availability; a read replica, if any, serves the reporting pool
 alone. → [ADR-0129](../adr/ADR-0129-availability-and-the-multi-region-stance.md)
 
+**The relay drains while its batch is full; three test-only brokers where the experiments run.** A candidate another relay already
+drained takes no slot of the batch, and a cycle that worked its whole batch and failed nothing is followed at once by another, the lock,
+the order and the conditional mark unchanged; measured by E47, owed (PI-025). The `kind` overlay's broker is three-capable and committed
+at one; the experiments scope, and the load scope when asked, run three with the catalogue's posture, SCRAM on every broker and the
+quorum and replication over mutual TLS, each broker behind a proxy of its own. *(Added 2026-11-13, `Proposed`.)* →
+[ADR-0136](../adr/ADR-0136-the-event-pipeline-at-load.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
