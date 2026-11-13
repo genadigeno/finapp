@@ -354,6 +354,15 @@ each one's statements from the server log: every deadlock must be explained by a
 converges (the debt row "The idempotency claim row is locked first in Tx1 and last in Tx2", #52, and the advisory namespace
 3 collision, #53, both re-dated here); an unexplained one is a defect, fixed in a task of its own.
 
+*(Erratum, 2026-11-13, `P16-TSK-008`, which built the concurrent-financial profile, the soak and the sweeps' storm; `OPERATIONS_RUNBOOK.md`
+§11.48; the runs owed under `POSTPONED_ISSUES.md` PI-025. **(1)** The probe drops the transfer's fixed lock order
+(`TransferExecution.lockBothInFixedOrder`) rather than `lockBalancesInOrder`. No multi-entry caller of the latter is driven on `kind`
+(BNPL, lending, chargebacks, reconciliation's parks, corridor returns), and the transfer pair's alternating transfers break the same rule
+on a path the profile drives. **(2)** The soak runs at the engineering workload, not the peak, which is past `kind`'s break (E30). It
+leaves the merchant API's payable read out, because that read folds the account's whole history and its cost grows with the run's age.
+ADR-0133 proposes the read's bound. **(3)** Serialisation failures are read from the server's own log, where every one is kept, since
+the server keeps no counter of them.)*
+
 ### 6.4 Hot rows and hot accounts
 
 The platform's known hot rows: a merchant's payable, `FEE_REVENUE`, `FX_POSITION` and `FX_SPREAD_REVENUE` per currency

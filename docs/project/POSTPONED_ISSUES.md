@@ -621,3 +621,12 @@ commit and the date; do not delete the entry.
     ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
     commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
     discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
+  - `P16-TSK-008` (hot rows, locks, deadlocks and plans; `OPERATIONS_RUNBOOK.md` §11.48, whose record is empty; `CAPACITY_MODEL.md`
+    §3.5, its measured cells `—`): **E38**, the concurrent-financial profile (`REHEARSAL_LOAD_PROFILE=concurrent`) at seven replicas and
+    at three, with its control wait, its per-row waits, the server's lock log and every deadlock explained in the record; **E38's
+    probe**, the transfer's fixed lock order dropped on a throwaway branch, at seven replicas, with its `MUTATION_TESTING.md` §2 row;
+    **E39**, the eight-hour soak (`REHEARSAL_LOAD_PROFILE=soak`) at three replicas, with its plans window and the transactional index
+    build on the journal that decides `THREAT_MODEL.md` §6 item 42 (b); **E40**, the sweeps' failure storm (`REHEARSAL_SCOPE=experiments
+    REHEARSAL_EXPERIMENTS=E40`) at three replicas. Nothing ran before the word. The new SQL, the `\watch` sampler, the server's log formats
+    and the readers were run in a throwaway container of the pinned PostgreSQL image (no `kind`, no application) on 2026-11-13; on a
+    cluster they are unproven.
