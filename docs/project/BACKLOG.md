@@ -30329,7 +30329,7 @@ on none:
   run in containers and by the contract test, not on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks
   and tests"): E01 on the final bytes is owed under `POSTPONED_ISSUES.md` PI-025.
 
-**P16-TSK-020 — Instance, pod and node failures at load** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-019`, both `COMPLETE`)
+**P16-TSK-020 — Instance, pod and node failures at load** — `IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-020` from master `fb0e014b`, fast-forwarded to `2e34dd66`, wave F) *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-019`, both `COMPLETE`)" until the design)*
 - **Objective**: E01–E04 and E25 under the sustained profile at ten replicas.
 - **Affected components**: every in-cluster unit.
 - **Dependencies**: `-014`, `-019`.
