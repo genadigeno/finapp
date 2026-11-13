@@ -279,9 +279,15 @@ spec:
         - name: config
           configMap:
             name: finapp-prometheus-config
+        # Both rules ConfigMaps in the one directory (the kustomization says why there are two): Prometheus reads /etc/prometheus-rules/*.yml
+        # as before. A projection of ConfigMaps alone, never a service-account token.
         - name: rules
-          configMap:
-            name: finapp-prometheus-rules
+          projected:
+            sources:
+              - configMap:
+                  name: finapp-prometheus-rules
+              - configMap:
+                  name: finapp-prometheus-rules-domain
         - name: data
           emptyDir:
             sizeLimit: 1Gi
