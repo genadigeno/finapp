@@ -189,7 +189,8 @@ backoff. The inbox's pause is one consumer's, on one partition.
 provider and the reference rate source unavailable), E21 (every provider slowed to two, then ten times its steady latency) are
 built in the `kind` harness's `experiments` scope with the simulator's degradation controls (`OPERATIONS_RUNBOOK.md` section
 11.53). E19 (KYC) refuses to run: no production path runs a customer's checks and `kind` configures no KYC provider
-(`THREAT_MODEL.md` section 6 item 60). E20 (the bureau) rests on the recorded fail-safe: no deployment can configure a bureau, and
+(`THREAT_MODEL.md` section 6 item 60; recorded as not drivable by the owner's decision of 2026-11-13, the missing trigger a
+product question for after the phases, `POSTPONED_ISSUES.md` PI-027). E20 (the bureau) rests on the recorded fail-safe: no deployment can configure a bureau, and
 the owner decided on 2026-11-13 that none is built for `kind` in Phase 16 (unresolved question 13). Every run is owed under
 `POSTPONED_ISSUES.md` PI-025.
 

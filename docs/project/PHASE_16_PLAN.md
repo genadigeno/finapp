@@ -415,7 +415,8 @@ layers, the driver's own choice of host among them (`PrimaryOnlyGuard`). **(3)**
 its cost grows with the journal: at the target one statement passes its four-minute bound within the first year if it folds fewer than
 about 2.1 million lines a second, a rate E65 measures. That is
 a bound on the read (`THREAT_MODEL.md` §6 item 64, the owner's), never a reason for a replica, which would move the cost without bounding
-it.)*
+it.)* *(2026-11-13: item 64 decided by the owner at (i), an opening checkpoint for each locked month, built by `P16-REM-003`; read
+"the owner's" above as decided since.)*
 
 ### 6.7 Vacuum, WAL, checkpoints, backup and restore performance
 
@@ -443,7 +444,8 @@ restore term is a measured rate rather than a guess (§11.2).
 
 *(Erratum, 2026-11-13, `P16-TSK-013`, `OPERATIONS_RUNBOOK.md` §11.51, ADR-0136. **(1)** The three-broker cluster runs where the
 experiments and the pipeline's load runs run, from the run's own rendered copy of the `kind` overlay, whose broker is three-capable and
-committed at one: the other scopes' own steps assume one broker, and moving them is `THREAT_MODEL.md` §6 item 58 (a). **(2)** "Scale 3 →
+committed at one: the other scopes' own steps assume one broker, and moving them is `THREAT_MODEL.md` §6 item 58 (a) *(decided by the
+owner on 2026-11-13 at (ii): every scope moves to three when PI-024's and PI-025's runs are made)*. **(2)** "Scale 3 →
 10 → 3" is built as 3 → 7 → 3 (E48), today's ceiling; ten is `P16-TSK-014`'s, on C3's larger budget. **(3)** E23's delay is held at the
 relay, by its own advisory lock on a few aggregates, so the records reach the consumers late and out of order across aggregates. **(4)**
 The relay's ceiling was read from the code and changed by ADR-0136 before it was measured at three and seven replicas: E47 measures it.
@@ -587,6 +589,7 @@ check (examples; the full matrix per operation and per failure is the task's):
 route the edges serve, are `docs/architecture/AVAILABILITY.md` (ADR-0144), walked by E05, E06, E09, E72 and E73 and held by
 `AvailabilityMatrixTest`; every run owed under `POSTPONED_ISSUES.md` PI-025. The open question above - an automatic refusal on a
 correctness signal - is put to the owner as `THREAT_MODEL.md` §6 item 66 (a), recommended (i): the freeze stays a person's act.)*
+*(2026-11-14: decided by the owner at (i), and item 66 (b)'s rails accepted as designed-only for this phase.)*
 
 ---
 
@@ -927,6 +930,7 @@ before the experiments, the experiments before the scenarios that compose them.
 | **M16.11 The multi-region assessment** | Per-store and per-workflow models; Terraform variants tested with mocks | `-026` |
 | **M16.12 Financial correctness under failure** | The fifteen scenarios executed with the seven checks; security under failure | `-027`, `-028` |
 | **M16.13 Capacity and the operational review** | SLOs validated under load; the extraction evaluation; the distributed-system audit; the integrated soak; the exit | `-029`, `-030`, `-031`, `P16-TST-001`, `P16-TST-002`, `P16-DOC-001` |
+| **M16.14 The owner's remediation (2026-11-13)** | The merchant payable read bounded by ADR-0133's checkpoint and report generation's opening by a checkpoint per locked month, each with its database cases run before it merges; a lost database answered `503 api.TemporarilyUnavailable` with `Retry-After` (`THREAT_MODEL.md` §6 items 55, 64 and 61, decided by the owner) | `P16-REM-001`, `P16-REM-002`, `P16-REM-003` |
 
 **Cut order** (if the phase must shrink, each deferral recorded with its owner): `-012`'s replica route (the decision stays), `-030`
 (the extraction evaluation re-dated), `-026`'s Terraform variants (the assessment stays), `-021`'s DNS and disk-pressure
@@ -970,6 +974,14 @@ experiments. **Never cut**: `-001`, `-006`, `-007`, `-014`, `-022`, `-024`, `-02
 | `P16-TST-001` | The integrated soak: ten replicas, the engineering workload, faults on a schedule | M16.13 | `-015`, `-025`, `-027` | `DOD-TEST`, `DOD-FIN` |
 | `P16-TST-002` | The exit pass: the mandatory experiments' quick forms on the final tree | M16.13 | `-031`, `P16-TST-001` | `DOD-TEST` |
 | `P16-DOC-001` | The Phase 16 exit review | M16.13 | all | `DOD-DOC` |
+| `P16-REM-001` | The merchant payable read bounded by ADR-0133's commit-order checkpoint (item 55) | M16.14 | `-008` | `DOD-FIN`, `DOD-KERNEL`, `DOD-TEST` |
+| `P16-REM-002` | A lost database answered `503 api.TemporarilyUnavailable` with `Retry-After` (item 61) | M16.14 | `-016` | `DOD-API`, `DOD-TEST` |
+| `P16-REM-003` | Report generation's opening bounded by a checkpoint for each locked month (item 64) | M16.14 | `-012` | `DOD-FIN`, `DOD-TEST` |
+
+*(2026-11-13: M16.14's three rows added by the owner's decisions on `THREAT_MODEL.md` §6 items 55, 61 and 64, "Start wave F, and
+accept all nine recommendations"; the phase holds thirty-seven items across fourteen milestones since. Each depends on finished tasks
+only. `P16-REM-001` and `P16-REM-003` run their database cases before they merge, an exception to §19.2's skip of the database tier
+for those two tasks alone, by the same decisions.)*
 
 ## 22. Dependency graph and waves
 
@@ -977,7 +989,8 @@ experiments. **Never cut**: `-001`, `-006`, `-007`, `-014`, `-022`, `-024`, `-02
 standing rule): **A** `-001`, `-002`, `-003`, `-004`, `-005` (the first wave: the owner's decided inputs need nothing of Phase 16);
 **B** `-006`, `-017`; **C** `-007`, `-019`; **D** `-008`, `-009`, `-010`, `-013`, `-016`, `-018`, `-021`, `-022`, `-024`; **E** `-011`,
 `-012`, `-014`, `-023` (and `P15-REM-001`, which the owner schedules before `-030`); **F** `-015`, `-020`, `-025`, `-028`, `-029`, `-030`;
-**G** `-026`, `-027`; **H** `-031`, `P16-TST-001`; **I** `P16-TST-002`; **J** `P16-DOC-001`.
+**G** `-026`, `-027`; **H** `-031`, `P16-TST-001`; **I** `P16-TST-002`; **J** `P16-DOC-001`. *(2026-11-13: M16.14's
+`P16-REM-001`…`-003` depend on finished tasks only, so each may run in any wave before **J**, when the owner schedules it.)*
 
 **Critical path**: **`-001` → `-006` → `-007` → `-009` → `-014` → `-020` → `-027` → `-031` → `TST-002` → `DOC-001`**; the
 equal-length branch `-007` → `-022` → `-023` → `-025` → `-026` → `-031`.

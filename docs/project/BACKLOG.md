@@ -28922,7 +28922,7 @@ in a real environment**, its run with PI-024's
 - Objective: the Phase 15 completion gate's G-3. The `HorizontalPodAutoscaler` (`deploy/base/horizontalpodautoscaler.yaml`) has only ever held the count at its minimum of three: the `kind` rehearsal installs no metrics source, so no scale-up or scale-down it decided was observed; and its `maxReplicas: 7` is the connection budget's (`7 + 2 × maxSurge + 1 = 10 = FINAPP_DB_INSTANCES`), so the owner's "10+ instances" is above what the platform is configured to run. Under Phase 16's load: observe a scale-up and a scale-down on a real metric, each with the financial census green after it and the budget's peak inside its bound; and if ten or more replicas are wanted, raise the ceiling only with the budget (`FINAPP_DB_INSTANCES`, the server's connections) or a pooler changed first, the formula re-proved by `KubernetesManifestsTest` and the policy.
 - Bounded context: `deploy/` and the rehearsal harness; the connection budget (`ConnectionPoolSizingGuard`). Dependencies: Phase 16's load harness. Multi-instance: the subject. Financial: none moves; correctness under the count is what the census asserts.
 - Testing: the scaling run's assertions; the budget's guard and policy with the new numbers, a planted over-budget ceiling refused. DoD: `DOD-OBS`, `DOD-TEST`. Risk: Medium. Cx: M.
-- *(2026-11-13, `P16-TSK-014`: **built, its run owed.** The scaling run is E70 (`OPERATIONS_RUNBOOK.md` §11.58): the run's copy leaves the autoscaler at its floor of three and ten, nothing of the harness writes the count, a surge of sign-ins moves the CPU metric beside the money mix, the scale is judged on the autoscaler's own readings with the census sampled at ten and again at three, and every connection sample is held to the budget's formula at the count asked for then; its probe removes the scale-down policy. Held by `TenInstancesRehearsalContractTest`; not run, owed under `POSTPONED_ISSUES.md` PI-025, so this entry stays `PLANNED` until E70 runs. The ceiling above seven is `kind`'s since ADR-0134 (`P16-TSK-009`); production's stays seven until `THREAT_MODEL.md` §6 item 56 is decided.)*
+- *(2026-11-13, `P16-TSK-014`: **built, its run owed.** The scaling run is E70 (`OPERATIONS_RUNBOOK.md` §11.58): the run's copy leaves the autoscaler at its floor of three and ten, nothing of the harness writes the count, a surge of sign-ins moves the CPU metric beside the money mix, the scale is judged on the autoscaler's own readings with the census sampled at ten and again at three, and every connection sample is held to the budget's formula at the count asked for then; its probe removes the scale-down policy. Held by `TenInstancesRehearsalContractTest`; not run, owed under `POSTPONED_ISSUES.md` PI-025, so this entry stays `PLANNED` until E70 runs. The ceiling above seven is `kind`'s since ADR-0134 (`P16-TSK-009`); production's stays seven by the owner's decision of 2026-11-13 on `THREAT_MODEL.md` §6 item 56 (i), raised to ten only after the ten-instance runs and the HPA's calibration, the declared `max_connections` first (read "production's stays seven until `THREAT_MODEL.md` §6 item 56 is decided" until that decision).)*
 
 ---
 
@@ -28977,6 +28977,9 @@ container stack each run creates, with real PostgreSQL and Kafka), are the phase
 - M16.11 The multi-region assessment (`-026`)
 - M16.12 Financial correctness under failure (`-027`, `-028`)
 - M16.13 Capacity and the operational review (`-029`…`-031`, `P16-TST-001`, `P16-TST-002`, `P16-DOC-001`)
+- M16.14 The owner's remediation (2026-11-13) (`P16-REM-001`…`-003`) *(added by the owner's decisions on `THREAT_MODEL.md` §6
+  items 55, 61 and 64; the phase's items thirty-seven across fourteen milestones since; the Status line above keeps the
+  transition's count)*
 
 **Parallel waves** (`PHASE_16_PLAN.md` §22):
 - **A** `-001`, `-002`, `-003`, `-004`, `-005`: the first wave, the owner's decided inputs.
@@ -30074,7 +30077,8 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.30 and §11.14.
 - **Risk**: Medium. **Cx**: M.
 - **Routed from `P16-TSK-009` (2026-11-13): production's ceiling, the pool's size, and the autoscaler at its ceiling.** ADR-0134 keeps
-  production at seven until the ten-instance runs and this calibration (`THREAT_MODEL.md` §6 item 56); ten there is a larger declared
+  production at seven until the ten-instance runs and this calibration (`THREAT_MODEL.md` §6 item 56, decided so by the owner on
+  2026-11-13, item 56 (i); `ConfigFingerprintDisagrees` stays one rule at 110 minutes, not split by environment); ten there is a larger declared
   `max_connections` (116) first, in `OPERATIONS_RUNBOOK.md` §11.14's order. The pool stays 7 + 1: the census starved of it at the break is
   `P16-TSK-016`'s per-class bound, not a larger pool. No alert says the autoscaler sits at its maximum or cannot read its metric: the cluster
   watcher publishes the autoscaler's replica counts (`k8s.hpa.*`) but not its conditions, so a signal there is this task's to decide with
@@ -30945,7 +30949,9 @@ on none:
   until a run replaces it: this one. The run is the stress profile at three replicas on the final tree, which is E30 run again and E52
   (E30's criteria, and E52's: every sample read past E30's stop, no checkout abandoned), owed under `POSTPONED_ISSUES.md` PI-025; its
   result is appended to both rows (`RESILIENCE_EXPERIMENTS.md` §1.2). If the payable read is still unbounded then, and E30 fails on
-  it again, E30's new result names the task that builds item 55's choice.
+  it again, E30's new result names the task that builds item 55's choice. *(2026-11-13: the owner placed item 55 at (i), and that
+  task is `P16-REM-001`, its database cases run before it merges; E30's remediation cell names it. Read "once the owner places it"
+  above as placed since.)*
 
 **P16-DOC-001 — The Phase 16 exit review** — `PLANNED`
 - **Objective**: rule every criterion of `PHASE_GATES.md` §5 Phase 16 and the universal exit gate with evidence. Accept or correct
@@ -30967,6 +30973,147 @@ on none:
 - **Definition of done**: `DOD-DOC`.
 - **Operational documentation**: the review.
 - **Risk**: Low. **Cx**: L.
+
+*M16.14 The owner's remediation (2026-11-13). Created by the owner's decisions on `THREAT_MODEL.md` §6 items 55, 61 and 64 ("Start
+wave F, and accept all nine recommendations"), each a task of its own as its item's recommendation asked. Each is `PLANNED`; it
+depends on finished tasks only, so the coordinator marks it `READY` when the owner schedules it, and it runs the three-command loop
+(`.claude/skills/task-*`). The items' other parts are not tasks: items 56, 58 and the rest of 61 are recorded where they act
+(`POSTPONED_ISSUES.md` PI-025, the runbook), and items 57 and 62's first-real-environment parts and items 60 and 63's after-the-phases
+parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
+
+**P16-REM-001 — The merchant payable read bounded by ADR-0133's commit-order checkpoint (`THREAT_MODEL.md` §6 item 55)** — `PLANNED`
+- **Objective**: build ADR-0133 decision 3 for `GET /v1/merchant/payable`, as the owner placed it (item 55 (i), 2026-11-13). The read
+  becomes the latest valid checkpoint of the merchant payable account's buckets, the fold of every line whose entry's commit-order
+  position (`txid`, ledger `V034`) lies below the checkpoint's watermark (`pg_snapshot_xmin` of the snapshot that read them), plus every
+  line at or above it, folded through `Money` in one statement. The contract (`DERIVED`, the lifetime terms) and the identity the terms
+  keep with the position are unchanged. This removes E30's first limit: today the read's cost grows with each merchant's history
+  (derived at W4: 60 ms after a month, 0.73 s after a year), and a merchant key, or a stolen one, spends the database's CPU in
+  proportion (T14).
+- **Affected components**: `ledger` (a migration: the entry's `txid` on `ledger.journal_line`, stamped by trigger as `V034`'s is, an
+  index on `(ledger_account_id, txid)`, the checkpoint table; `JdbcPositionBreakdown`'s statement); `merchant` (`MerchantPayable`);
+  `app` (`MerchantPayableController`'s read, unchanged in contract); ADR-0133 (decision 3 from proposed to built, a dated note);
+  `CAPACITY_MODEL.md` §3.5; `OPERATIONS_RUNBOOK.md` §11.48.
+- **Dependencies**: `P16-TSK-008` (`COMPLETE`: the measurement and ADR-0133). None open.
+- **Scope**:
+  - the column, its trigger and the index, on the platform's hottest table, with the migration's lock and its build stated;
+  - the checkpoint rows carrying the classification rules' version (`PositionBreakdown.Bucket#of`) and the caller's precedence and
+    namespaces, so a rule change retires every checkpoint;
+  - the cluster each checkpoint was taken on, a read refusing any other and folding whole (a logical restore resets the counter below
+    the restored `txid`s, `V034`'s own warning);
+  - a read whose new lines pass a threshold storing a new checkpoint at its own snapshot's watermark, best-effort and idempotent
+    (`INSERT … ON CONFLICT DO NOTHING` in a savepoint that never fails the read);
+  - the proofs (`ProductSourceProofs`, the BNPL three-way) kept on the whole fold, so a checkpoint never verifies itself.
+
+  **Exclusions**: the decision path's own whole-history fold (`AvailableBalance` under the account's lock), decided by its own ADR
+  after E38 runs; item 55's option (ii), a contract change for the merchants.
+- **Workload assumptions**: W4 (`CAPACITY_MODEL.md` §2, §3.5); E30's measured first limit at three replicas.
+- **Infrastructure and code changes**: one ledger migration, the read's statement, the checkpoint's write in the read's savepoint; no
+  overlay, no new schedule.
+- **Financial correctness implications**: a checkpoint is derived data beside the journal and never the journal; deleting every
+  checkpoint changes no figure, only the read's cost. The terms still sum to the position by construction. `INV-ACC-01`, `INV-LED-04`
+  (one write path), `INV-MON-03` and `INV-MON-06` hold on the split fold as on the whole.
+- **Multi-instance concerns**: ten instances racing to store a checkpoint write at most a few equal or overlapping rows, each correct,
+  by the conflict clause; no clock and no writer chooses a watermark; nothing is held in memory.
+- **Failure scenarios**: a checkpoint write failing (the read answers from the whole fold); a logical restore (every earlier
+  checkpoint refused); a rules version bump (every checkpoint retired); a long transaction holding `pg_snapshot_xmin` back (the
+  watermark stays low, the read folds more, still correct).
+- **Security considerations**: bounds a resource-exhaustion residual (T14); no new door, permission or logged value.
+- **Test and experiment methodology**: a hermetic property test of the fold's split; **its database cases run before it merges** - the
+  split property under concurrent posting, the racing writers, the version bump and the restore refusal - an exception to the
+  standing database-tier skip for this task alone, by the owner's decision of 2026-11-13. E30 again on the final tree is owed under
+  `POSTPONED_ISSUES.md` PI-025, held by `P16-TST-002`; E38 and E39 measure the index's write cost on the posting path when they run.
+- **Probe**: a checkpoint stored at a watermark above its snapshot's `pg_snapshot_xmin`; the concurrent split case sees a line missed
+  and goes red. A second: the cluster check removed; the restore case goes red.
+- **Measurable acceptance criteria**: the read's statement folds only the lines since its checkpoint; its answers equal the whole fold
+  in every database case; the API's contract tests unchanged; `THREAT_MODEL.md` §4's T14 row for the payable read `EXISTS` with its
+  evidence, and item 55 closed.
+- **Definition of done**: `DOD-FIN`, `DOD-KERNEL`, `DOD-TEST`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.48 (the payable read's bound, and what a restore does to its
+  checkpoints); `CAPACITY_MODEL.md` §3.5.
+- **Risk**: High (a schema change on the hottest table). **Cx**: L.
+
+**P16-REM-002 — A lost database answered `503 api.TemporarilyUnavailable` with `Retry-After` (`THREAT_MODEL.md` §6 item 61)** — `PLANNED`
+- **Objective**: a money-moving command that cannot reach the database - the driver's connection failure, or the pool's wait ending
+  because no connection could be made - answers `503 api.TemporarilyUnavailable` with a `Retry-After`, the same `Idempotency-Key`
+  safe to send again, in one mapping the error contract states, as the owner decided (item 61 (i), 2026-11-13). Today it answers
+  `500 api.InternalError` (the rolls scope's database roll, `OPERATIONS_RUNBOOK.md` §11.28): each such command was retried by its key
+  to one effect, but a `500` does not tell a client the refusal is temporary, and a client that does not retry one leaves the movement
+  undecided.
+- **Affected components**: `app` (`ApiErrorHandler`'s mapping), `platform` (`PlatformErrorCode.TEMPORARILY_UNAVAILABLE`'s text, which
+  today names only the abuse door's refusal); `ERROR_CONTRACT.md`; `OPERATIONS_RUNBOOK.md` §11.28 and §11.54.
+- **Dependencies**: `P16-TSK-016` (`COMPLETE`: the load-shedding answer, `503 api.Overloaded`, which touches the same mapping). None
+  open.
+- **Scope**:
+  - the classification: a connection the driver could not make or lost, and the pool's wait ended because no connection could be
+    made, told apart from an exhausted pool (an overload, already `api.Overloaded` when shed before the handler) by what the pool saw;
+  - the answer, its `Retry-After` and its body (nothing of the pool, the host or the cause);
+  - the error contract's row widened, and the statement that the same key is safe to send again.
+
+  **Exclusions**: any retry inside the platform (a lost commit's outcome stays the client's retry by key to settle); a statement's
+  own failure on a live connection, a constraint or a serialisation refusal, each keeping its own answer.
+- **Workload assumptions**: none; the failure is the subject.
+- **Infrastructure and code changes**: the mapping, the code's text, the contract; no migration, no overlay.
+- **Financial correctness implications**: none moves. A connection lost at the commit leaves the outcome unknown to the instance; the
+  answer stays safe because a retry by the same key either replays the committed command or is a first attempt (`INV-IDEM-*`). No
+  `503` is answered for a command the instance saw commit.
+- **Multi-instance concerns**: every replica maps alike; `Retry-After` is configuration, not state.
+- **Failure scenarios**: the database lost, failing over, or black-holed past the socket timeout; the pool exhausted while the database
+  is up (stays the shedding's); a connection lost after the commit.
+- **Security considerations**: the body names no host, pool figure or exception; the answer is no oracle of the database's state
+  beyond "try again".
+- **Test and experiment methodology**: hermetic tests of the mapping for each cause, with the shed answer beside it unchanged; the
+  error contract's guard; E05 and the rolls scope's database roll read the new answer when they run (owed under
+  `POSTPONED_ISSUES.md` PI-025).
+- **Probe**: map the pool's wait ending without a connection made back to `api.InternalError`; the mapping test goes red. A second:
+  map an exhausted pool to `api.TemporarilyUnavailable`; the outage-or-overload test goes red.
+- **Measurable acceptance criteria**: each cause answered as the contract states; the shed answer unchanged; `THREAT_MODEL.md` §4's
+  T16 row naming item 61 `EXISTS` with its evidence, and item 61 closed.
+- **Definition of done**: `DOD-API`, `DOD-TEST`.
+- **Operational documentation**: `ERROR_CONTRACT.md`; `OPERATIONS_RUNBOOK.md` §11.54 (what a client sees during a failover) and §11.28.
+- **Risk**: Medium. **Cx**: S.
+
+**P16-REM-003 — Report generation's opening bounded by a checkpoint for each locked month (`THREAT_MODEL.md` §6 item 64)** — `PLANNED`
+- **Objective**: bound the trial-balance definitions' from-inception fold, as the owner placed it (item 64 (i), 2026-11-13). When a
+  month locks, store its GL groups (purpose, owner kind, currency, scale, direction) of every line dated before the next month's
+  start, under the mapping version it pinned. A run's opening is then the latest locked month's checkpoint plus the lines dated after
+  it. Today one statement's cost grows with the journal's lifetime, and at the target a run fails `GENERATION_TIMED_OUT` within the
+  first year unless one statement folds more than about 2.1 million lines a second (`CAPACITY_MODEL.md` §3.6, derived; E65 measures it).
+- **Affected components**: `accounting` (a migration: the checkpoint table; the lock's write of it in the close's transaction; the
+  definitions that read an opening: the trial balance's opening and its ledger windows, the balance sheet, the GL activity's and the
+  purpose reports' openings); ADR-0142's follow-up and an ADR of this task's own if its design changes a read's definition;
+  `CAPACITY_MODEL.md` §3.6; `OPERATIONS_RUNBOOK.md` §11.57.
+- **Dependencies**: `P16-TSK-012` (`COMPLETE`: ADR-0142 and the reading E65). None open.
+- **Scope**:
+  - the checkpoint written by the month's lock, under the close's transaction, and never otherwise;
+  - the posting cutoff (ADR-0114) keeping the lines below a locked month fixed, so the checkpoint holds while the cutoff stands; a
+    move back over it voiding it, the read then folding whole;
+  - a FINAL run's regeneration reading the same checkpoint it read;
+  - the proofs and the close's GL = ledger check kept on the whole fold, so a checkpoint never verifies itself.
+
+  **Exclusions**: routing report generation to a read replica (ADR-0142: never the remedy for the fold); the account folds (that is
+  `P16-REM-001`'s).
+- **Workload assumptions**: the target's journal, about 0.5 billion lines a year (`CAPACITY_MODEL.md` §3.6).
+- **Infrastructure and code changes**: one accounting migration, the lock's write, the definitions' openings; no overlay, no schedule.
+- **Financial correctness implications**: a checkpoint is derived from immutable lines below a locked month and never written over;
+  the figures a run reports are unchanged, and a FINAL run's regeneration reads the checkpoint it read and reproduces its
+  figures. `INV-ACC-01` and `INV-ACC-06` (the GL a function of the journal) hold on the split fold as on the whole.
+- **Multi-instance concerns**: the lock is already one transaction arbitrated by the database; two instances locking the same month
+  cannot both write a checkpoint (the close's own arbitration); a read on any instance takes the same checkpoint.
+- **Failure scenarios**: the cutoff moved back (the checkpoint voided, the read folds whole); a mapping version change (the checkpoint
+  keyed by the version it pinned); a lock rolled back (no checkpoint).
+- **Security considerations**: none new; report generation keeps its `SELECT`-only role, and the checkpoint is written by the close's.
+- **Test and experiment methodology**: hermetic tests of the opening's split; **its database cases run before it merges** - the split
+  equal to the whole fold over a journal crossing several locked months, the move back, the regeneration of a FINAL run - an exception
+  to the standing database-tier skip for this task alone, by the owner's decision of 2026-11-13. E65 on the final tree is owed under
+  `POSTPONED_ISSUES.md` PI-025.
+- **Probe**: keep a checkpoint after the cutoff moves back over its month; the move-back case shows a figure different from the whole
+  fold and goes red.
+- **Measurable acceptance criteria**: a run's opening folds only the lines after the latest locked month; every report's figures equal
+  the whole fold's in every database case; a FINAL run's regeneration reproduces its figures; `THREAT_MODEL.md` §4's T14 row for report
+  generation `EXISTS` with its evidence, and item 64 closed.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`.
+- **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.57 (the bound and what a move back costs); `CAPACITY_MODEL.md` §3.6.
+- **Risk**: Medium. **Cx**: L.
 
 ---
 
