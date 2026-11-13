@@ -39,7 +39,8 @@ import org.junit.jupiter.api.Test;
  *   <li>the staged profiles of {@code PHASE_16_PLAN.md} section 5.1 (normal, peak, sustained, stress, isolation) are the target's mix at
  *       its peak, scaled per stage, still an open model, and judged on the sum of their stages; only the stress runs past the break;
  *   <li>the fleet runs at three to seven replicas in the run's own rendered overlay, at the connection budget's formula;
- *   <li>lending repayments are drawn on loans made through the platform's doors, and the census counts the disbursements and repayments;
+ *   <li>the three operations resting on a credit approval (BNPL, lending repayments, loan decisions) stay undriven, each saying that no
+ *       kind deployment can give one;
  *   <li>every run cuts its measures by stage in the host's seconds: the client's per operation, the pods' cgroups, the JVMs' and the
  *       pools' sums, the database's time;
  *   <li>the slow-statement probe drops the relay's index on the run's own server and puts it back as its migration defines it.
@@ -303,11 +304,9 @@ class LoadRehearsalContractTest {
         Matcher share = Pattern.compile("transfers ([0-9.]+)%, card or checkout payments ([0-9.]+)%, top-ups and withdrawals ([0-9.]+)%")
                 .matcher(model);
         assertThat(share.find()).as("the demonstration's split, read from CAPACITY_MODEL.md section 1").isTrue();
-        Matcher lending = Pattern.compile("lending repayments ([0-9.]+)%").matcher(model);
-        assertThat(lending.find()).as("the demonstration's lending share, read from CAPACITY_MODEL.md section 1").isTrue();
         Map<String, Double> perSecond = Map.of("transfer", 5 * Double.parseDouble(share.group(1)) / 100,
                 "checkout", 5 * Double.parseDouble(share.group(2)) / 100, "topup", 5 * Double.parseDouble(share.group(3)) / 100,
-                "read", 50.0, "lending", 5 * Double.parseDouble(lending.group(1)) / 100);
+                "read", 50.0);
         perSecond.forEach((name, wanted) -> assertThat(Double.parseDouble(field(operations.get(name), "perSecond")))
                 .as("%s at the capacity model's rate", name).isCloseTo(wanted, org.assertj.core.data.Offset.offset(0.001)));
         for (Map.Entry<String, String> operation : operations.entrySet()) {
@@ -333,14 +332,11 @@ class LoadRehearsalContractTest {
             assertThat(task.find()).as("%s names the task that drives it", operation.getKey()).isTrue();
             assertThat(statuses.get(task.group())).as("%s's task %s is live", operation.getKey(), task.group())
                     .isIn(EvidenceCitations.LIVE_STATUSES);
-            assertThat(reason).as("%s: the reason is the bureau no kind deployment can configure, which INV-CRD-10 declines or refers on",
-                    operation.getKey()).contains("bureau").contains("unresolved question");
+            // Each rests on a credit approval, and on kind no bureau can be configured, so none can be given (INV-CRD-09, INV-CRD-10).
+            assertThat(reason).as("%s: the reason is the bureau no kind deployment can configure", operation.getKey())
+                    .contains("bureau").contains("unresolved question").contains("INV-CRD-10");
         }
-        assertThat(undriven).as("what this harness leaves undriven, and nothing else").containsExactly("bnpl", "credit");
-        assertThat(field(operations.get("lending"), "exec")).as("lending repayments are driven by their own scenario").isEqualTo("lending");
-        assertThat(scenarios).as("each repayment keyed, on the borrower's own loan, its retried key answered alike")
-                .contains("export function lending()").contains("`/v1/me/loans/${who.loan}/repayments`")
-                .contains("`load-${RUN}-lending-${it}`").contains("agreed(op, answers, 'repaymentId');");
+        assertThat(undriven).as("what this harness leaves undriven, and nothing else").containsExactly("bnpl", "credit", "lending");
     }
 
     @Test
@@ -371,7 +367,7 @@ class LoadRehearsalContractTest {
         }
         // The target's peak, CAPACITY_MODEL.md section 3.1: a day's volume over 36,000 s.
         Map<String, Double> peak = Map.of("transfer", 100_000 / 36_000.0, "checkout", 200_000 / 36_000.0, "topup", 40_000 / 36_000.0,
-                "read", 2_000_000 / 36_000.0, "signin", 240_000 / 36_000.0, "merchant", 400_000 / 36_000.0, "lending", 15_000 / 36_000.0);
+                "read", 2_000_000 / 36_000.0, "signin", 240_000 / 36_000.0, "merchant", 400_000 / 36_000.0);
         Matcher sustained = OPERATION.matcher(read("infra/scripts/kind-rehearsal/load/sustained.json"));
         while (sustained.find()) {
             if (peak.containsKey(sustained.group(1))) {
@@ -432,32 +428,6 @@ class LoadRehearsalContractTest {
                 .contains("= \"$LOAD_REPLICAS\" ]").contains("fail \"the fleet did not reach $LOAD_REPLICAS ready replicas");
         assertThat(read("deploy/overlays/kind/kustomization.yaml")).as("the committed overlay stays the three-replica rehearsal")
                 .contains("FINAPP_DB_INSTANCES=6").contains("value: 3");
-    }
-
-    @Test
-    @DisplayName("lending repayments are drawn on loans made through the platform's doors: a policy reading no source under four eyes, an underwriter's approval, the offer accepted, the disbursement counted by the census")
-    void lendingRepaymentsAreDrawnOnLoansMadeThroughTheDoors() {
-        String client = read(CLIENT);
-        String lending = client.substring(client.indexOf("private void loadLending("), client.indexOf("private Borrower borrowerApplies("));
-        assertThat(lending).as("the policy reading no source, proposed by one person and activated by another, its self-approval tried")
-                .contains("policy.put(\"sources\", new ArrayList<>());").contains("\"EXPOSURE_HEADROOM\".equals(")
-                .contains("fourEyes(\"load-lending policy\", \"self\"").contains("operator, controller);");
-        assertThat(lending).as("the underwriter's role through the administrator's grant door, never SQL")
-                .contains("grant(fresh(\"admin\"), requireIdentity(\"load-lending\", \"operator\"), \"CREDIT_UNDERWRITER\", reason)")
-                .doesNotContain("INSERT INTO");
-        assertThat(lending).as("each referral approved through the review-case door")
-                .contains("/v1/operator/credit/review-cases?status=OPEN").contains("/assignment").contains("/decision")
-                .contains("\\\"outcome\\\":\\\"APPROVED\\\"");
-        assertThat(client).as("the offer accepted with its own terms hash, and the disbursement read from the wallet")
-                .contains("\"/v1/me/loan-offers/\" + offer + \"/acceptance\"").contains("\"{\\\"termsSha256\\\":\\\"\" + hash + \"\\\"}\"")
-                .contains("disbursedMinor.addAndGet(balance);");
-        String setup = function("load_lending");
-        assertThat(setup).as("the platform scope's persons, roles and activations first, each self-approval refused")
-                .contains("client platform-prepare").contains("client platform-staff").contains("for activation in activate-credit activate-lending; do")
-                .contains("'self-approval status=40[39]'").contains("grep -q '^platform load-lending policy self status=40[39]'")
-                .contains("LOAD_WALLET_MINOR=$((LOAD_WALLET_MINOR + LOAD_DISBURSED_MINOR))");
-        assertThat(function("load_census")).as("the wallets hold what was disbursed less what the generator was told it repaid")
-                .contains("LOAD_DISBURSED_MINOR - $(ok_of lending) * $(load_profile_value repaymentMinor)");
     }
 
     @Test

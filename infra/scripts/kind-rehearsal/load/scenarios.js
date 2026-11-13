@@ -13,8 +13,8 @@
 // the census can count exactly one effect per key the generator was told succeeded.
 //
 // THE PROFILES (P16-TSK-007). The demonstration runs every operation at a constant rate; normal, peak, sustained, stress and isolation
-// run them in stages (model.js), each a factor of the target's peak. Lending repayments are drawn on the loans the harness disbursed before
-// the load (the fixture's borrowers); BNPL and loan credit decisions are not driven on kind, each profile saying why.
+// run them in stages (model.js), each a factor of the target's peak. BNPL, lending repayments and loan credit decisions are not driven on
+// kind, each profile saying why: every one rests on a credit approval, which no kind deployment can give.
 //
 // SAME-KEY RETRIES (PHASE_16_PLAN.md section 5.1). One money-moving iteration in twenty (retryShare 0.05) sends each of its commands
 // twice under the same key: half of them the second copy beside the first, before either is answered, half of them after the first
@@ -347,24 +347,6 @@ export function checkout() {
         agreed(op, created, 'checkoutId');
     }
     conclude(op, status === 'COMPLETED' ? null : status === 'FAILED' ? REFUSED : UNRESOLVED, started);
-}
-
-// A lending repayment (P16-TSK-007): EUR repaymentAmount from the borrower's wallet to the loan the harness disbursed to it before the
-// load, under a key, on the borrower's MULTI_FACTOR session (an enrolled identity's repayment takes the platform's conditional step-up).
-// Nothing is billed during a run, so the repayment is held as the loan's credit balance (HOLD_AS_CREDIT): the wallet is debited either
-// way, which is what the census counts.
-export function lending() {
-    const op = 'lending';
-    const it = exec.scenario.iterationInTest;
-    const started = Date.now();
-    metrics[op].iterations.add(1);
-    const all = fixture.borrowers;
-    const who = all[it % all.length];
-    const req = request(op, 'POST', `/v1/me/loans/${who.loan}/repayments`, { amount: profile.repaymentAmount, currency: 'EUR' }, who.token,
-        `load-${RUN}-lending-${it}`, 'loan-repayment');
-    const answers = command(op, it, req, (r) => (r.status === 200 || r.status === 201) && json(r, 'repaymentId'), true, true);
-    agreed(op, answers, 'repaymentId');
-    conclude(op, failedOutcome(answers), started);
 }
 
 // ------------------------------------------------------------------------------------------------ the rest of the mix

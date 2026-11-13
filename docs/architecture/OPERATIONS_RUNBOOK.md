@@ -4673,14 +4673,16 @@ delivered twice. A movement is resolved as a client that lost its answer would r
 progress read, until it concludes, within twice the payment sweep's dispatched age and five minutes (read from the code's default,
 25 minutes today): a provider call cut by a stall leaves its payment `PROCESSING` until the sweep asks the provider, and the
 generator's graceful stop waits past that bound, so the load can outlast its duration by the slowest movement's conclusion.
-**Lending repayments** (0.025 a second, since `P16-TSK-007`, §11.45): EUR 1.00 from a borrower's wallet to the loan the harness disbursed
-to it before the load, keyed, on the borrower's own `MULTI_FACTOR` session. **Not driven**: BNPL purchases and instalments (0.465 of the 5
-movements a second) and loan credit decisions, each declared in the profile with its reason: on `kind` no credit bureau and no financial-data
-provider can be configured (the application refuses either address until the party facts they need exist, `CURRENT_STATE.md`'s
-unresolved questions 13 and 14), so the exposure figure every credit policy reads is unassessed there and every decision takes its policy's
-fallback (`INV-CRD-10`): a BNPL policy declines, a loan policy refers to a person. A BNPL purchase therefore cannot complete on `kind`, and a
-loan decision there is the fail-safe path, `RESILIENCE_EXPERIMENTS.md` E20's, not the target's; both are routed to `P16-TSK-018` (its
-simulated bureau), which needs that application change.
+**Not driven**: BNPL purchases and instalments, lending repayments and loan credit decisions (0.49 of the 5 movements a second), each
+declared in the profile with its reason, found by `P16-TSK-007` on a kept `kind` cluster (§11.45): each rests on a credit approval, and on
+`kind` none can be given. No credit bureau and no financial-data provider can be configured there (the application refuses either address
+until the party facts they need exist, `CURRENT_STATE.md`'s unresolved questions 13 and 14), and every credit policy's exposure rule reads
+the bureau's total balance: unassessed, the policy's fallback decides (`INV-CRD-10`), a BNPL policy declining and a loan policy referring
+to a person, and a person's approval of the referral is refused while the exposure is unassessed (`credit.ExposureUnassessable`,
+`INV-CRD-09`, no exception). So no BNPL agreement and no loan can exist on `kind` for a purchase, an instalment or a repayment to act on, and
+a loan decision there is the fail-safe path, `RESILIENCE_EXPERIMENTS.md` E20's, not the target's. All three are routed to `P16-TSK-018`,
+whose E20 needs a simulated bureau on `kind`: an application change, and the owner's word on unresolved question 13 for a test-only
+deployment.
 
 **Running it.** One full cluster at a time on the machine. From the repository root, with the rehearsal's own prerequisites (§11.28):
 
@@ -4837,17 +4839,18 @@ rendered `kind` overlay, never the committed one, to the connection budget's for
 connections and 12 reserved, so 10 instances and 92 connections at seven; `FINAPP_DB_INSTANCES`, the server's figure the startup guard
 reads and the test-only server's `max_connections`), holds the HorizontalPodAutoscaler at N, sizes the quota to match and waits for N ready
 replicas before the load. Ten is `P16-TSK-014`'s, on owner decision C3's larger server. `REHEARSAL_LOAD_DURATION` shortens every stage in
-proportion, and the run is then not the profile's workload. `REHEARSAL_LOAD_BORROWERS` (10) is how many borrowers the lending repayments
-spread over. `REHEARSAL_PROBE=slow-statement` is the entry's probe (below).
+proportion, and the run is then not the profile's workload. `REHEARSAL_PROBE=slow-statement` is the entry's probe (below).
+
+**What the profiles do not drive, and why.** BNPL purchases and instalments, lending repayments and loan credit decisions, as §11.43 says:
+each rests on a credit approval that no `kind` deployment can give. Found on a kept development cluster on 2026-11-13: the platform scope's
+activations (credit's seeded scorecard and loan policies, lending's capital and terms, each under four eyes) went through; a loan policy
+version reading no source, proposed by one person and activated by another, referred each of three EUR 2,000.00 loan applications at once;
+an underwriter granted through the administrator's door took each case and its approval was refused `422 credit.ExposureUnassessable`
+(a person may decline, never approve, while the bureau's total balance is absent: `INV-CRD-09`). Without a loan there is nothing to repay,
+and a BNPL policy cannot refer, so it declines. Driving them needs a simulated bureau on `kind`, an application change (routed to
+`P16-TSK-018`); the harness was not changed to work around either invariant.
 
 **What it adds to §11.43's run.**
-- `load-setup`, for every profile that drives lending repayments: the platform scope's persons and their roles granted through the
-  administrator's door, credit's seeded scorecard and loan policies and lending's capital and terms each activated under four eyes (the
-  proposer's own approval refused), then `Rehearsal.java load-lending`: a loan policy version reading no source, proposed by one person
-  and activated by another, so a request refers at once (no credit bureau can be configured on `kind`, §11.43); the underwriter's role
-  granted through the door; for each borrower a factor enrolled and the session stepped up, a wallet, a EUR 2,000.00 twelve-month loan
-  application, its referral approved through the review-case door, the offer accepted with its terms hash and the loan disbursed to the
-  wallet. The census counts the disbursements and, after the load, every repayment the generator was told succeeded.
 - `load-run`: every 10 s, besides §11.43's samples, every pod's own cgroup inside the node (`pods.tsv`: CPU, the time its containers were
   throttled against their CPU limits, memory) and the database's statements together (`pg-statements_total.tsv`); the host's and the node's
   clocks either side of the load (`clock.tsv`).

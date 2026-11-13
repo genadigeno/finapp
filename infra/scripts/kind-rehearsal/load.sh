@@ -53,17 +53,15 @@
 # runs the fleet at that count: the rendered kind overlay is patched in the run's own directory, never in the repository, with the
 # connection budget's formula at that count (N + 2 x 1 + 1 instances, each 7 + 1 connections, 12 reserved: FINAPP_DB_INSTANCES, the
 # server's figure the guard reads, and the test-only server's max_connections), the HorizontalPodAutoscaler held at N and the quota to
-# match. Lending repayments are driven on loans the harness has disbursed before the load (Rehearsal.java load-lending); BNPL and loan
-# credit decisions stay undriven on kind, their reasons in the profile.
+# match. BNPL purchases and instalments, lending repayments and loan credit decisions stay undriven on kind, their reason in each profile:
+# every one rests on a credit approval, and on kind none is possible, automatic or by a person (no bureau can be configured there, and
+# without the bureau's total balance the exposure is unassessed: INV-CRD-09, INV-CRD-10; OPERATIONS_RUNBOOK.md section 11.43).
 
 LOAD_PROFILE_NAME=${REHEARSAL_LOAD_PROFILE:-demonstration}
 LOAD_CUSTOMERS=${REHEARSAL_LOAD_CUSTOMERS:-20}
 LOAD_DURATION=${REHEARSAL_LOAD_DURATION:-}
 # The fleet's size for the run: today's minimum by default, today's ceiling at most (ten is P16-TSK-014's, on C3's larger server).
 LOAD_REPLICAS=${REHEARSAL_LOAD_REPLICAS:-3}
-# How many borrowers the lending repayments spread over, each with a loan disbursed before the load.
-LOAD_BORROWERS=${REHEARSAL_LOAD_BORROWERS:-10}
-LOAD_DISBURSED_MINOR=0
 # Run inside the node every 10 s: one line per pod - its uid as systemd spells it, its CPU in nanoseconds, how often and how long its
 # containers were throttled against their CPU limits, and its memory in bytes, each cumulative. The reference machine's kind node runs
 # cgroup v1 under the systemd driver (kubelet.slice); a pod's limits sit on its containers' scopes beneath its slice.
@@ -486,11 +484,6 @@ load_setup() {
     # The funding top-ups are the census's from here on, whatever the load does.
     LOAD_TOPUPS=$LOAD_FUNDED
     LOAD_WALLET_MINOR=$LOAD_FUNDED_MINOR
-    # Lending repayments need loans (P16-TSK-007): the platform scope's persons, roles and activations (credit's seeds, lending's capital
-    # and terms, each under four eyes), then the borrowers and their loans, disbursed to their wallets (Rehearsal.java load-lending).
-    if [ -n "$(load_operations k6 | grep -x lending)" ]; then
-        load_lending
-    fi
     # What the generator is handed: the fixture and the edge's CA, and nothing else of the run's directory.
     cp "$CLIENT/load-fixture.json" "$CLIENT/edge-ca.crt" "$LOAD_GEN/" || cannot "the generator's directory could not be made"
     pg_admin -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements" >> "$LOAD_ART/postgres.log" 2>&1 \
@@ -528,38 +521,6 @@ load_setup() {
     load_sample 0
     [ ! -s "$WORK/load-sample-failed" ] || fail "the platform was not clean before the load: $(cat "$WORK/load-sample-failed"): see load/samples"
     pass "the sampler reads: $pages correctness pages, every one a loaded rule, none firing; every gauge readable; $LOAD_CLAUSES census clauses in one snapshot, all PASS"
-}
-
-# The loans the lending repayments are drawn against: every act through the platform's doors, as the platform scope makes them (its persons,
-# its staff's roles granted through the administrator's door, credit's seeded scorecard and policies and lending's capital and terms under
-# four eyes), then Rehearsal.java load-lending: a loan policy reading no source (no bureau can be configured on kind, so a request refers
-# at once, INV-CRD-10), an underwriter, and a EUR 2,000 loan per borrower approved by that underwriter, accepted and disbursed to the
-# borrower's wallet. The disbursements are the census's from here on: the wallets hold what was disbursed less what the load repaid.
-load_lending() {
-    client platform-prepare >> "$LOAD_ART/lending.log" 2>&1 || fail "the platform's persons could not be registered: see load/lending.log"
-    psql_query -f - < "$CLIENT/seed-platform.sql" >> "$ART/seed.log" 2>&1 || fail "the platform seed failed: see seed.log"
-    psql_query -f - < "$CLIENT/ids.sql" > "$CLIENT/ids.properties" 2>> "$ART/seed.log" || fail "the identities could not be read"
-    client platform-staff >> "$LOAD_ART/lending.log" 2>&1 || fail "the staff's roles could not be granted: see load/lending.log"
-    refused=$(grep '^platform staff grant ' "$LOAD_ART/lending.log" | grep -vc 'status=204' || true)
-    [ "$refused" = 0 ] || fail "$refused of the staff's grants were not 204: see load/lending.log"
-    for activation in activate-credit activate-lending; do
-        client "$activation" >> "$LOAD_ART/lending.log" 2>&1 || fail "$activation could not run: see load/lending.log"
-        grep "^platform $activation " "$LOAD_ART/lending.log" | grep -q 'self-approval status=40[39]' \
-            || fail "$activation: the proposer's own approval was not refused: see load/lending.log"
-    done
-    grep -q 'capital-report status=200 recognised=[1-9]' "$LOAD_ART/lending.log" || fail "no lending capital recognised: see load/lending.log"
-    client load-borrowers "$LOAD_BORROWERS" >> "$LOAD_ART/lending.log" 2>&1 || fail "the borrowers could not be registered: see load/lending.log"
-    psql_query -f - < "$CLIENT/seed-load-borrowers.sql" >> "$ART/seed.log" 2>&1 || fail "the borrowers could not be made ACTIVE: see seed.log"
-    client load-lending load-fixture.json "$LOAD_PROFILE_NAME" >> "$LOAD_ART/lending.log" 2>&1 \
-        || fail "the borrowers' loans could not be made: see load/lending.log"
-    grep -q '^platform load-lending policy self status=40[39]' "$LOAD_ART/lending.log" \
-        || fail "the loan policy reading no source: the proposer's own approval was not refused: see load/lending.log"
-    lent=$(grep '^load lending borrowers=' "$LOAD_ART/lending.log" | tail -1)
-    [ "$(printf '%s' "$lent" | sed -n 's/.*borrowers=\([0-9]*\) .*/\1/p')" = "$LOAD_BORROWERS" ] || fail "the borrowers' loans: $lent: see load/lending.log"
-    LOAD_DISBURSED_MINOR=$(printf '%s' "$lent" | sed -n 's/.* disbursed_minor=\([0-9]*\).*/\1/p')
-    [ "${LOAD_DISBURSED_MINOR:-0}" -gt 0 ] || fail "nothing was disbursed: see load/lending.log"
-    LOAD_WALLET_MINOR=$((LOAD_WALLET_MINOR + LOAD_DISBURSED_MINOR))
-    pass "lending: $LOAD_BORROWERS borrowers, each a loan referred at once (a policy reading no source, under four eyes), approved by an underwriter, accepted and disbursed to the wallet ($LOAD_DISBURSED_MINOR minor units)"
 }
 
 # PROBE slow-statement: the outbox relay's index on pending rows dropped on the run's own server, so every poll scans the outbox; and put
@@ -949,10 +910,6 @@ load_census() {
     LOAD_CHECKOUTS=$(ok_of checkout)
     LOAD_TOPUPS=$((LOAD_FUNDED + $(ok_of topup)))
     LOAD_WALLET_MINOR=$((LOAD_FUNDED_MINOR + $(ok_of topup) * topup_minor))
-    # The borrowers' wallets (P16-TSK-007): what was disbursed to them, less every repayment the generator was told succeeded.
-    if [ -n "$(load_operations k6 | grep -x lending)" ]; then
-        LOAD_WALLET_MINOR=$((LOAD_WALLET_MINOR + LOAD_DISBURSED_MINOR - $(ok_of lending) * $(load_profile_value repaymentMinor)))
-    fi
     census load
     # A last sample, after the census: nothing the load left behind pages afterwards.
     : > "$WORK/load-sample-failed"
@@ -1028,6 +985,5 @@ load_census() {
         printf 'replicas asked\t%s\n' "$LOAD_REPLICAS"
         printf 'stages\t%s\n' "$(tr '\n' ';' < "$WORK/stages.txt")"
         printf 'k6 seconds a host second\t%s (the VM'"'"'s monotonic clock against the host'"'"'s, load/clock.tsv: k6 schedules and times by the first)\n' "$LOAD_SPEED"
-        [ "${LOAD_DISBURSED_MINOR:-0}" = 0 ] || printf 'borrowers\t%s, %s minor units disbursed before the load\n' "$LOAD_BORROWERS" "$LOAD_DISBURSED_MINOR"
     } > "$LOAD_ART/workload.txt"
 }
