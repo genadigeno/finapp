@@ -102,4 +102,5 @@ lost and no key takes a second effect across a failover.
 ## Follow-up
 
 The runs: E05, E06, E57 and the probe E56 at three replicas, and E29's longest statement, owed under PI-025. The answer a client gets
-while the database is away (`500` today) is put to the owner (`THREAT_MODEL.md` §6 item 61).
+while the database is away (`500` today) is put to the owner (`THREAT_MODEL.md` §6 item 61). *(2026-11-13: decided at (i):
+`503 api.TemporarilyUnavailable` with a `Retry-After`, built by `P16-REM-002`.)*

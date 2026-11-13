@@ -3759,8 +3759,9 @@ When a carried finding stops occurring (compare the printed findings with the fi
 
 - **More replicas**: `FINAPP_DB_INSTANCES` must reach `maxReplicas + 2 × maxSurge + 1`, and
   `FINAPP_DB_INSTANCES × (7 + 1)` must fit `FINAPP_DB_SERVER_MAX_CONNECTIONS` less `FINAPP_DB_RESERVED_CONNECTIONS`. The
-  pool sizes are read from `application.yaml`; an overlay does not set them. *(2026-11-13, ADR-0134:)* production past seven is
-  the owner's (`THREAT_MODEL.md` §6 item 56), and ten there is `maxReplicas` 10, `FINAPP_DB_INSTANCES` 13 and
+  pool sizes are read from `application.yaml`; an overlay does not set them. *(2026-11-13, ADR-0134:)* production stays at seven
+  by the owner's decision of 2026-11-13 (`THREAT_MODEL.md` §6 item 56 (i)) until the ten-instance runs are made and the HPA
+  calibrated *(read "production past seven is the owner's" until that decision)*, and ten there is `maxReplicas` 10, `FINAPP_DB_INSTANCES` 13 and
   `FINAPP_DB_SERVER_MAX_CONNECTIONS` 116, the last raised first, applied and rebooted (below), then the other two in one commit with
   the quota (13 application pods and the migrator: 14 pods, 6750m, 27136Mi, 27 cores and 27136Mi on the base's pods; the policy
   refuses any other sum). Never a smaller pool to
@@ -3870,7 +3871,9 @@ harmless. Correctness does not depend on them: a row that is not deleted costs s
   reads the outbox across that window. Lowering it deletes only what is then past it.
 - `finapp.idempotency.sweep.grace` (`FINANCIAL`, §11.31's path): an instance refuses to start with it under a day, and the function
   refuses the same. Raising it keeps every record still there at once. Lowering it shortens how long a command whose only arbiter is
-  its record is answered (`THREAT_MODEL.md` §6 item 63): the owner's to decide, never to relieve space.
+  its record is answered (`THREAT_MODEL.md` §6 item 63): the owner kept it at 30 days on 2026-11-13 (item 63 (i)) until transfers
+  and card checkouts have a second arbiter of their own (`POSTPONED_ISSUES.md` PI-027), and it is never lowered to relieve space.
+  *(Read "the owner's to decide, never to relieve space" until the owner's decision of 2026-11-13.)*
 
 **Never** delete from these tables by hand to relieve space: a dedupe record removed early makes the next redelivery of that
 message a second effect (`INV-IDEM-04`). The application role cannot, and an operator with the migrator's credential must not.
@@ -4297,7 +4300,7 @@ For every restore, logical or to an instant (ADR-0128 decision 3, ADR-0140). The
 1. **The verification passed** (section 11.35's checks, the evidence held by the key rings among them).
 2. **The window.** Every file a provider delivered after the restore's point is delivered again from the provider's copy, and reconciliation runs over the result. `RestoreReconciliation` does it: it connects as the restore's administrator and **acts as `finapp_app`** for its whole session (`options=-c role=finapp_app` in its URL), so every statement runs under the application's own grants while the role itself still cannot log in, and it refuses to run if it is not acting as `finapp_app` or if any of the three roles can log in. It uploads the file as one operator, attests it as another, runs the intake's parse and accept legs, matching until idle and the time sweep once, and reports the file's status and the breaks raised since the window's start, never an amount. A file the restore already holds is answered as already held. **Each break is a finding of the recovery**, for a person to explain or escalate from the break register before the release; the release does not wait for a break to be resolved, but it does wait for a person to have read it.
 3. **The books again**: the verification once more, over the database the window changed. A failure here is a refusal, as in step 1.
-4. **The release, by a person, recorded.** The record names the person, the reason, the database's instant and the SHA-256 of each report the release rests on (the restore's verdicts, the window's report, the verdicts after the window). It belongs in the incident's record (section 11.12, "A restore, decided"); the rehearsal writes it as `release-<label>.tsv` in its artefacts, with `RESTORE_RELEASED_BY` naming the person. The roles are released in one transaction with the instant read: `ALTER ROLE finapp_app LOGIN`, the same for the other two; then each is confirmed to log in.
+4. **The release, by a person, recorded.** The record names the person, the reason, the database's instant and the SHA-256 of each report the release rests on (the restore's verdicts, the window's report, the verdicts after the window). It belongs in the incident's record (section 11.12, "A restore, decided"); the rehearsal writes it as `release-<label>.tsv` in its artefacts, with `RESTORE_RELEASED_BY` naming the person. The roles are released in one transaction with the instant read: `ALTER ROLE finapp_app LOGIN`, the same for the other two; then each is confirmed to log in. *(2026-11-13, the owner's decision on `THREAT_MODEL.md` §6 item 62: the incident's record suffices for the local drill, whose archive's digest-only integrity is accepted (62 (c)); with the first real environment's managed restore rehearsal the release is also written into the restored database's own audit trail by a release command a person runs, in this same transaction (62 (a)), and the window's session on a managed instance is decided there (62 (b)), `POSTPONED_ISSUES.md` PI-026.)*
 5. **Then the broker and the fleet**, section 11.35 steps 6 and 7: the groups to the end with the fleet stopped, the fleet started, the audited replay of the window from the restored outbox, the relay. The window's own re-delivered files reach the broker through the outbox like any other fact.
 
 **What a window cannot find.** A provider's action the restored books have no trace of and the provider sends no file for: a capture or a payout the platform asked for after T. The resolution sweeps ask the providers about every operation the books hold as unresolved; an operation the books never held is found only by the provider's next statement, as a break.
@@ -5263,7 +5266,9 @@ neither takes an effect or records an answer, and every request, degraded or not
   that call no provider within their objectives; the bulkhead's refusals and the rates recorded.
 - **E19** and **E20** refuse to run: no production path runs a KYC case's checks and `kind` configures no KYC provider
   (`THREAT_MODEL.md` section 6 item 60); no deployment configures a bureau, and the owner decided on 2026-11-13 that none is built for
-  `kind` in Phase 16 (unresolved question 13), so E20 rests on the recorded fail-safe.
+  `kind` in Phase 16 (unresolved question 13), so E20 rests on the recorded fail-safe. *(2026-11-13: E19 is recorded as not drivable
+  by the owner's decision on item 60 (i), and the missing trigger is a product question for after the phases, `POSTPONED_ISSUES.md`
+  PI-027.)*
 
 Each record is `experiments/<id>/record.tsv` beside `requests.tsv` and `rail-outcomes-*.tsv`; the verdict goes to
 `RESILIENCE_EXPERIMENTS.md` in its grammar.
@@ -5505,10 +5510,12 @@ deadlock it found.
 **What it is.** Owner decision C3 decided by ADR-0134. The `kind` overlay states the connection budget for ten replicas exactly
 (10 + 2 × 1 + 1 = 13 instances, 13 × 8 + 12 = 116 connections on the test-only server, a quota of 16 pods), and every rehearsal run
 holds its fleet at its own count in its own rendered copy with the formula at that count (`kind-rehearsal.sh`'s `fleet_patch`): three in
-every scope, `REHEARSAL_LOAD_REPLICAS` (3 to 10) in the `load` scope. Staging is unchanged. Production keeps `maxReplicas` 7 until the owner
-decides `THREAT_MODEL.md` §6 item 56; §11.14 says how ten would be set there. The HPA's metric on `kind` is metrics-server, the checked
-render of `infra/scripts/controller-check.sh` (§11.36), installed by the `load` scope. `ConfigFingerprintDisagrees` waits 110 minutes
-(§11.31): its `for` outlasts the longest rollout any overlay allows, and ten replicas make that 107 minutes.
+every scope, `REHEARSAL_LOAD_REPLICAS` (3 to 10) in the `load` scope. Staging is unchanged. Production keeps `maxReplicas` 7, by the
+owner's decision of 2026-11-13 on `THREAT_MODEL.md` §6 item 56 (i), until the ten-instance runs are made and the HPA calibrated; §11.14
+says how ten would be set there. *(Read "until the owner decides `THREAT_MODEL.md` §6 item 56" until that decision.)* The HPA's metric
+on `kind` is metrics-server, the checked render of `infra/scripts/controller-check.sh` (§11.36), installed by the `load` scope.
+`ConfigFingerprintDisagrees` waits 110 minutes (§11.31): its `for` outlasts the longest rollout any overlay allows, and ten replicas
+make that 107 minutes. It is one rule for every environment, not split by environment, by the same decision.
 
 **Running it** (E41, `RESILIENCE_EXPERIMENTS.md`). One full cluster at a time, as §11.43, on a machine that can hold thirteen 1 GiB
 application pods at a rollout's worst moment beside the data tier (the reference machine's VM has 15.6 GiB; `P16-TSK-014`'s risk):
@@ -5596,6 +5603,8 @@ by a build outside the migration is dropped and built again, valid, by the same 
 posting meter's `REPLAYED`, nothing written. A different request under the key is `INV-IDEM-03`'s conflict. A command whose only arbiter
 is its record (a transfer, a card checkout: each posts under a key derived from a row it creates), retried after its record is swept, is a new command: §6 item 63 of `THREAT_MODEL.md`.
 If a client reports one, find both commands by the key and treat the second as a duplicate the client asked for, a reconciliation break.
+*(2026-11-13: the owner kept the 30-day grace (item 63 (i)) and placed a second arbiter of their own for transfers and card checkouts
+after the phases (item 63 (iii), `POSTPONED_ISSUES.md` PI-027); this paragraph holds until each lands.)*
 
 **Running E62, E63 and E64** (`RESILIENCE_EXPERIMENTS.md`). One full cluster at a time, as §11.43 and §11.46.
 
@@ -5767,7 +5776,11 @@ digests. The segment is never marked, and every later attempt meets the same obj
 still in the database. Treat it as an incident first (§11.12): something other than this archive wrote that key, or the store
 lost or damaged an object it had accepted. Do: keep the object as it is (the bucket's lock and history are the evidence); read the
 store's own history of the key; compare the object with `SELECT platform.audit_archive_content(<segment>)` on the database. The way
-on, once understood, is the owner's (`THREAT_MODEL.md` §6 item 57 (c)): nothing here re-keys, rewrites or skips a segment.
+on, decided by the owner on 2026-11-13 (`THREAT_MODEL.md` §6 item 57 (c)): the archive stays stopped until the store's history
+explains the object; then the segment is written again under a new key by a reviewed change with a second approver, the old object
+kept as evidence and the manifest chain naming both. Nothing here re-keys, rewrites or skips a segment outside that change. *(Read
+"The way on, once understood, is the owner's (`THREAT_MODEL.md` §6 item 57 (c)): nothing here re-keys, rewrites or skips a segment."
+until the owner's decision of 2026-11-13.)*
 
 **After a restore or a recovery to an instant** (§11.35, §11.55). The restored segment table is as of the restore's point, and the
 store keeps every object written since. The next segment is cut again from the restored queue. If it holds the same rows as the
@@ -5775,12 +5788,14 @@ copy already under its key, the copy is read back equal and marked. If not, it i
 with nothing overwritten. Expect that after any restore to a point before the last archived segment. Read it with the procedure
 above, knowing the cause. The objects past the point are evidence: they hold audit records the restored database may no longer
 have. Keep them, and read them beside the restore's window (§11.55's gate). Keep `finapp.audit.archive.endpoint` unset on a restored
-environment until the owner's way on (item 57 (c)) is decided.
+environment until each segment that differs is explained and written again under a new key by item 57 (c)'s reviewed change, with
+its second approver. *(Read "until the owner's way on (item 57 (c)) is decided" until the owner's decision of 2026-11-13.)*
 
 **Pause it, or name a store.** Unset `finapp.audit.archive.endpoint`, or set the store, in the environment's overlay (§11.31), and
 let the fleet roll; the schedule exists only where it is named. Pausing is always safe: rows wait in the queue. A real bucket also
 needs request signing and the pod role's credential, which are not built (item 57 (a)): no committed overlay names one until they
-are.
+are. *(2026-11-13: by the owner's decision on item 57 (a), they are the AWS SDK's S3 and STS clients, added with the first real
+environment by the change that names its store, `POSTPONED_ISSUES.md` PI-026.)*
 
 **The read path: restore a segment to a scratch schema.** While the table holds every row, a question is the table's. To read the
 archive itself (for a segment `n`):
@@ -5788,7 +5803,9 @@ archive itself (for a segment `n`):
    platform.audit_archive_segment WHERE segment_seq = n` (`ARCHIVED`, or there is nothing to read).
 2. Fetch its two objects, `audit/v1/segments/<n, twelve digits>.ndjson` and `audit/v1/manifests/<n>.json`, from the store: on
    `kind`, `kubectl -n finapp-rehearsal exec deploy/finapp-archive-store -c store -- cat /archive/finapp-audit-archive/<key>`; from a
-   real bucket, with the bucket's read access (item 57 (b): no application door does this, and no audit record says who read).
+   real bucket, with the bucket's read access (item 57 (b): no application door does this, and no audit record says who read; by
+   the owner's decision of 2026-11-13 this procedure stands while the table holds every row, and an operator route with its own
+   audit record per read comes before any row may leave it, `POSTPONED_ISSUES.md` PI-026).
 3. `sha256sum` each and compare with the recorded digests; read the manifest's `previous_manifest_sha256` and compare it with
    segment `n - 1`'s `manifest_sha256`. Any difference: stop, `AuditArchiveCopyDiffers`' procedure above.
 4. Load the file's lines into a scratch table under break-glass (§11.25), one `text` line per row, and read them back as rows:
@@ -5927,7 +5944,9 @@ dedupe window unless every consumer of the type is naturally idempotent. A day i
 
 At the target's volume (`CAPACITY_MODEL.md` §3.2, about 3.2 million events a day, of which the handled types are a part) a day is
 hundreds of orders. E49 records the replay's rate on its own run's volume; the time a target's day would take is not measured here.
-Whether the door should take a day in one order is `THREAT_MODEL.md` §6 item 58 (b).
+The door keeps its 1,000-event bound until E49 has run, by the owner's decision of 2026-11-13 (`THREAT_MODEL.md` §6 item 58 (b)
+(i)); whether it should take a day in one order is decided again on E49's measured rate. *(Read "Whether the door should take a day
+in one order is `THREAT_MODEL.md` §6 item 58 (b)." until the owner's decision of 2026-11-13.)*
 
 #### Reading a run
 
@@ -6077,7 +6096,8 @@ seen as the role's. That last check is the reader's control: a blind reader woul
 a million lines, its fixed part, and the lines at which one statement reaches the bound. Read it against the target's journal: about 0.5
 billion lines a year (`CAPACITY_MODEL.md` §3.6).
 - Lines at the bound below the target's journal after a year: report generation fails `GENERATION_TIMED_OUT` at the target within
-  that year. That is `THREAT_MODEL.md` §6 item 64's to bound, never a replica's.
+  that year. That is `THREAT_MODEL.md` §6 item 64's to bound, never a replica's: an opening checkpoint for each locked month,
+  decided by the owner on 2026-11-13 (item 64 (i)) and built by `P16-REM-003`.
 - The core-seconds a run costs at the target's journal (the fit at those lines), times the runs a day the owner expects, divided over
   the busiest hour, against the database's CPU the target's peak leaves free (E29 and E30 at seven replicas, owed under PI-025). Only
   a share past that headroom, once the fold is bounded, reopens a replica, by a new ADR on ADR-0142 decision 2's conditions.
@@ -6115,7 +6135,7 @@ run writes its record here with its commit, its artefacts, the fit and each tabl
 scaled up and down and rolled during load", §13's scenario 14, the Phase 15 completion gate's deviation B and `P15-REM-007`'s observed
 scaling. Each run holds its fleet in its own rendered copy of the `kind` overlay, at the connection budget's formula for its count (§11.49:
 13 instances and 116 connections at ten, a quota of 16 pods). Nothing here is production capacity (ADR-0126 decision 1), and production's
-`maxReplicas` stays seven (ADR-0134, `THREAT_MODEL.md` §6 item 56). One full cluster at a time, on a machine that can hold thirteen 1 GiB
+`maxReplicas` stays seven (ADR-0134, `THREAT_MODEL.md` §6 item 56, decided so by the owner on 2026-11-13). One full cluster at a time, on a machine that can hold thirteen 1 GiB
 application pods at a rollout's worst moment beside the data tier (the reference machine's VM has 15.6 GiB): a pod the machine kills is an
 environment limit, recorded as `FAILED` with its numbers, never retried into a pass.
 

@@ -334,8 +334,10 @@ on what the load drives. E38 counts them against the server's own counter, and e
 **The whole-history folds** (ADR-0133). Read: the merchant API's payable read and every balance decision fold an account's whole history.
 The first does it on every call; the second does it under the account's row lock. **Derived** at W4 for the payable read: about 2 ms of a
 core per read per day of a merchant's history, so about 60 ms a read after a month and 0.73 s after a year, against 5.56 payable reads a
-second in the busiest hour. The read was **measured** as E30's first limit (§3.4). Its bound is ADR-0133 decision 3, proposed, and its build
-is the owner's to place (`THREAT_MODEL.md` §6 item 55). The decision path's fold is measured by E38's pair.
+second in the busiest hour. The read was **measured** as E30's first limit (§3.4). Its bound is ADR-0133 decision 3, and its build
+was placed by the owner on 2026-11-13 (`THREAT_MODEL.md` §6 item 55 (i)): `P16-REM-001`, its database cases run before it merges.
+*(Read "proposed, and its build is the owner's to place" until the owner's decision of 2026-11-13.)* The decision path's fold is
+measured by E38's pair.
 
 **The sweeps' failure records in a storm** (routed by `P16-TSK-017`). Read: each of the eight listings' `NOT EXISTS` probe is one primary-key
 probe of `(leg, row_id)` per candidate the listing reads. With the tables empty it adds that probe and no more. In a storm that backs off
@@ -403,7 +405,8 @@ state no report runs a day, so report generation's share of the primary is not d
 generation bound (`finapp.accounting.report.generation-timeout`) once the journal's lines exceed 240 s × its fold rate. At the target's
 ≈ 0.5 billion lines a year, a rate below ≈ 2.1 million lines a second passes it within the first year, and below ≈ 6.3 million within
 three. E65 fits that rate from seven runs over the soak's growing journal (`load/reports-reading.txt`): a statement's milliseconds a million
-lines, and the lines at the bound. Measured: —. The bound is `THREAT_MODEL.md` §6 item 64, the owner's to place.
+lines, and the lines at the bound. Measured: —. The bound is `THREAT_MODEL.md` §6 item 64, placed by the owner on 2026-11-13 at (i):
+an opening checkpoint for each locked month, built by `P16-REM-003`. *(Read "the owner's to place" until that decision.)*
 
 ---
 
@@ -445,7 +448,8 @@ of pools would only queue more work inside a CPU-bound database. So:
   `fleet_patch`).
 - **Staging**: unchanged.
 - **Production**: `maxReplicas` stays 7. Ten replicas would take a larger declared server, `max_connections` 116 in the overlay's
-  one literal that Terraform reads, once the ten-instance runs are made and the HPA calibrated (`THREAT_MODEL.md` §6 item 56).
+  one literal that Terraform reads, once the ten-instance runs are made and the HPA calibrated (`THREAT_MODEL.md` §6 item 56,
+  decided so by the owner on 2026-11-13).
   *Derived, not measured*: at the target's peak (about 2.4 times the engineering workload, §3.4) the replicas would use about
   0.52 × 2.4 ≈ 1.25 cores, which the HPA's target of 70% of 500m a pod answers with about four replicas. Seven is not the limit the
   target meets first; the single writer's CPU is.
@@ -513,7 +517,7 @@ merchants, ten replicas), and neither has been changed. *(2026-11-13, `P16-TSK-0
 this section asks for, and not yet measured: E47, owed under PI-025, §3.4's note.)*
 
 *(2026-11-13, `P16-TSK-008`, read and derived, nothing measured: §3.5.)* The payable read's bound is ADR-0133 decision 3, proposed, its build
-the owner's to place (`THREAT_MODEL.md` §6 item 55). Read from the code beside it: **every balance decision folds the account's whole
+the owner's to place (`THREAT_MODEL.md` §6 item 55) *(2026-11-13: placed by the owner at (i), `P16-REM-001`; read as placed since)*. Read from the code beside it: **every balance decision folds the account's whole
 history under its row lock**, so a hot account's hold grows with its age, measured by E38's pair. The per-currency hot rows, the
 source lock, risk's whole-day proofs and the rescreening census are each ruled in `CURRENT_STATE.md`'s debt rows, and none has a
 mechanism before E38 or E39 names it (ADR-0133 decision 2).

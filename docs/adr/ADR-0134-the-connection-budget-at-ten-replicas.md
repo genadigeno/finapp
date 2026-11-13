@@ -61,6 +61,8 @@ pools saturated only because the database did. Nothing was measured at seven or 
    (`db.m7g.2xlarge`, 32 GiB, holds 116 backends with room; the module admits 20 to 5000), applied and the instance rebooted before
    the application rolls (`OPERATIONS_RUNBOOK.md` §11.14's order). Raising the ceiling waits for the ten-instance runs (E41, and E26 of
    `P16-TSK-014`, owed under PI-025) and the HPA's calibration (`P16-TSK-015`): `THREAT_MODEL.md` §6 item 56 puts it to the owner.
+   *(2026-11-13: decided by the owner at item 56 (i), as this decision says: seven until those runs and that calibration, the
+   declared `max_connections` raised first; no pooler until isolation is set inside each transaction.)*
    *Derived, not measured*: at the target's peak, about 2.4 times the engineering workload, the replicas would use about 1.25 cores,
    which the HPA's target of 70% of 500m a pod answers with about four replicas, so seven is not what the target meets first; the
    single writer's CPU is.
@@ -94,12 +96,14 @@ Cons: no run at ten has been made (PI-025), and nothing measured says the target
 
 Positive: `kind` admits ten replicas within an exact budget, for `P16-TSK-014`; the HPA has a metric on `kind`; the arbiters' locks
 are held transaction-scoped by a guard.
-Negative: production's ceiling stays seven until the owner decides item 56; a pooler stays unavailable until the isolation is moved.
+Negative: production's ceiling stays seven until the owner decides item 56 *(decided 2026-11-13 at (i): seven until the ten-instance
+runs and the HPA's calibration)*; a pooler stays unavailable until the isolation is moved.
 `ConfigFingerprintDisagrees` waits 110 minutes instead of 80. Its `for` must outlast the longest rollout any overlay allows, and ten
 replicas of the ten-minute step the deadline allows, the last pod's grace and the five-minute window come to 107 minutes
 (`ConfigFingerprintAlertTest`, which went red at `kind`'s ten). The rule is one for every environment, so production's lasting
 disagreement now pages half an hour later than its own seven replicas need. Keeping production's 80 would take the rule split by
-environment. Item 56 puts that choice to the owner.
+environment. Item 56 puts that choice to the owner. *(2026-11-13: the owner kept one rule at 110 minutes, not split by
+environment.)*
 Operational impact: a rehearsal at three is unchanged in what it measures; a load run at ten needs the reference machine's memory for
 13 pods at a rollout's worst moment, which `P16-TSK-014`'s risk names.
 Security impact: none new. metrics-server on `kind` is the checked render the delivery scope already installs, told not to verify kind's
@@ -113,5 +117,5 @@ advisory lock and setting transaction-scoped; no money moves differently.
 
 ## Follow-up
 
-The owed runs (E41 at ten; E26); item 56; the HPA's targets from measurement (`P16-TSK-015`); the pooler only through the steps in
+The owed runs (E41 at ten; E26); item 56 (decided 2026-11-13); the HPA's targets from measurement (`P16-TSK-015`); the pooler only through the steps in
 decision 5 and an ADR of its own.
