@@ -794,7 +794,8 @@ commit and the date; do not delete the entry.
     E05, refused); then **E81**, one source's burst at the sign-in door at ten replicas (`REHEARSAL_EXPERIMENTS=E81
     REHEARSAL_EXPERIMENTS_REPLICAS=10`), exactly the door's limit admitted; and **E82**, a rolling restart of the whole fleet at ten replicas
     (`REHEARSAL_EXPERIMENTS=E82 REHEARSAL_EXPERIMENTS_REPLICAS=10`), every new replica serving the held sessions. Every other experiment's
-    run under this list carries the probe from this task's tree on. Nothing ran on a cluster. What ran instead, on 2026-11-13:
+    run under this list carries the probe from this task's tree on; E04's (`P16-TSK-020`'s bullet) also takes the edge's probe pod off its
+    worker first (2026-11-14), which its first run shows. Nothing ran on a cluster. What ran instead, on 2026-11-13:
     `DegradedStorageFailsClosedTest` (the application's checks with the database away) and `SecurityUnderFailureContractTest`, `sh -n` and
     ShellCheck 0.10.0 over the changed scripts, and `javac` over the rehearsal's client.
 

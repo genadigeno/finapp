@@ -4217,6 +4217,14 @@ once (20:46-20:47Z): 39 tests, 4 failed, exactly the aimed members. After each r
 sha256 read equal, and `git status` was clean. Earlier performances of the same plants on the branch's earlier drafts (20:32-20:37Z) saw
 the same members red, P8 once for the reason its row says. The cluster half - a protected request seen refused on every replica while
 E05's primary is lost, the entry's probe - is owed under `POSTPONED_ISSUES.md` PI-025.*
+| DOD-TEST (the security probe's own pod is read back among what must not be lost with E04's worker) | `SecurityUnderFailureContractTest#theProbePodIsKeptOffE04sWorker` | Recorded | A `P16-TSK-028` probe P11 (round three below, `infra/scripts/kind-rehearsal/experiments.sh` sha256 `fa857ea1d542945e740665a0dc47de15d55f084a6f6588394f1f7a7a79dc2955`): **the probe pod dropped from `experiments_spare_left`'s names**, so a probe pod left on the worker would pass the read-back and E04 would fail as unobserved | Caught: red, `read back among what must not be lost with the worker, by its exact name`; the class's other ten members green |
+| DOD-TEST (the probe pod is made again while the worker is cordoned, so it lands off it) | `SecurityUnderFailureContractTest#theProbePodIsKeptOffE04sWorker` | Recorded | A `P16-TSK-028` probe P12 (round four below, the same bytes): **the worker uncordoned before the probe pod is made again**, so the scheduler may put it back on the worker E04 stops | Caught: red, the uncordon read before the pod's deletion and recreation; the class's other ten members green |
+*`P16-TSK-028`'s probes P11 and P12 (2026-11-14, after master `f71e3f27`, holding `P16-TSK-020`'s E04, was merged and the note routed to that
+task applied here) were planted on the bytes of the branch's commit `752398ee` by the same script, each round restored from its saved bytes
+with its sha256 read equal and `git status` clean. Round three, P11 alone (2026-11-13 21:07-21:08Z UTC): one `:app:test` run of
+`SecurityUnderFailureContractTest`, 35 tests - its 11 and the 24 ArchUnit rules - 1 failed, the aimed member. Round four, P12 alone
+(21:08-21:09Z): 35 tests, 1 failed, the aimed member. On a cluster, E04 with the probe pod found on its worker is owed under
+`POSTPONED_ISSUES.md` PI-025.*
 
 ## 3. What the register does not claim
 
