@@ -476,6 +476,12 @@ simulator. Tools (C6): `kubectl` and `docker` primitives, NetworkPolicies, and T
 and provider hops. A multi-node `kind` cluster (one control plane, three workers, each labelled a zone) replaces the
 one-node cluster for the experiments that need nodes or zones.
 
+*(Dated note, 2026-11-13, `P16-TSK-021`: a NetworkPolicy cannot make a partition here. Policies only add what a pod may reach, the
+application's own already admit every hop, and the policy engine admits an established connection before any policy, so a held
+connection could never be cut by one. One replica is cut by a DROP rule each way in its own network namespace, set from its node, and a
+hop for every replica by Toxiproxy's `timeout` toxic; `RESILIENCE_EXPERIMENTS.md` E14 and E15 carry the correction, and ADR-0127 a dated
+note. `kind`'s volume claims have no size of their own either, so E24 brings a size-limited filesystem.)*
+
 **Every result is recorded twice:** in the experiment register `docs/architecture/RESILIENCE_EXPERIMENTS.md` (created by
 `-001`, held by its guard: every experiment carries every field; a result row names its run's date, commit and artefacts; a
 failed result names its remediation task) and in the run's artefacts. The result and remediation slots below stay empty until
