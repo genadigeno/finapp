@@ -270,7 +270,12 @@ SQL
     rm -f "$WORK/replication.phrase"
     image=$(sed -n 's/^ *image: \(postgres:18\.6@sha256:[0-9a-f]*\)$/\1/p' "$ROOT/deploy/overlays/kind/postgres.yaml")
     [ -n "$image" ] || cannot "the test-only PostgreSQL's pinned image could not be read from the kind overlay"
-    sed "s#POSTGRES_IMAGE#$image#" "$DIR/experiments/standby.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "the standby could not be applied"
+    # A hot standby refuses to start below its primary's max_connections, and a promoted one must serve as the primary served: the run's
+    # own primary's value, which fleet_patch set to the formula at the run's count (P16-TSK-009), never the file's (P16-TSK-022).
+    primary_max=$(sed -n 's/^ *- max_connections=\([0-9]*\)$/\1/p' "$A/StatefulSet.finapp-postgres.yaml" | head -1)
+    case $primary_max in '' | *[!0-9]*) cannot "the run's primary's max_connections could not be read from its rendered copy" ;; esac
+    sed "s#POSTGRES_IMAGE#$image#; s#^\( *- \)max_connections=[0-9]*\$#\1max_connections=$primary_max#" "$DIR/experiments/standby.yaml" \
+        | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "the standby could not be applied"
     kube -n finapp rollout status statefulset/finapp-postgres-standby --timeout=420s >> "$ART/apply.log" 2>&1 || {
         kube -n finapp logs finapp-postgres-standby-0 -c base-backup >> "$ART/experiments/standby.log" 2>&1 || true
         fail "the standby did not become ready: see experiments/standby.log"

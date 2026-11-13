@@ -445,6 +445,18 @@ class ExperimentsRehearsalContractTest {
     }
 
     @Test
+    @DisplayName("the standby takes the run's primary's max_connections, which the run sets at its count: below it a hot standby refuses to start")
+    void theStandbyTakesTheRunsPrimarysConnections() {
+        String made = function("experiments_standby");
+        assertThat(made).as("read from the run's rendered primary, never the file's value, and written into the standby's applied copy")
+                .contains("primary_max=$(sed -n 's/^ *- max_connections=\\([0-9]*\\)$/\\1/p' \"$A/StatefulSet.finapp-postgres.yaml\" | head -1)")
+                .contains("s#^\\( *- \\)max_connections=[0-9]*\\$#\\1max_connections=$primary_max#")
+                .contains("cannot \"the run's primary's max_connections could not be read from its rendered copy\"");
+        assertThat(harness.indexOf("fleet_patch \"$A\"")).as("the run's copy set to its count before the standby is made from it").isPositive()
+                .isLessThan(harness.indexOf("    experiments_data_tier\n"));
+    }
+
+    @Test
     @DisplayName("the journal is read whole before the fault and compared after it: a digest per entry over its row and its lines, the counts that only grow")
     void theJournalIsComparedByDigest() {
         String snapshot = function("experiments_db_snapshot");

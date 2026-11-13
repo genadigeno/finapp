@@ -38,7 +38,10 @@ import org.junit.jupiter.api.Test;
  *       to fail pages twice and is routed, its lines reach Loki scrubbed, and every platform stream is swept for every needle;
  *   <li>the staged profiles of {@code PHASE_16_PLAN.md} section 5.1 (normal, peak, sustained, stress, isolation) are the target's mix at
  *       its peak, scaled per stage, still an open model, and judged on the sum of their stages; only the stress runs past the break;
- *   <li>the fleet runs at three to seven replicas in the run's own rendered overlay, at the connection budget's formula;
+ *   <li>the fleet runs at three replicas to the kind overlay's ceiling of ten in the run's own rendered overlay, at the connection budget's
+ *       formula (seven until {@code P16-TSK-009}); and at that count the autoscaler reads its metric before the load, the fleet's connections
+ *       are sampled through it with an operator tried at each peak, and after it each replica's pools are read and the fleet is held at its
+ *       budget with an operator admitted;
  *   <li>the three operations resting on a credit approval (BNPL, lending repayments, loan decisions) stay undriven, each saying that no
  *       kind deployment can give one;
  *   <li>every run cuts its measures by stage in the host's seconds: the client's per operation, the pods' cgroups, the JVMs' and the
@@ -427,22 +430,63 @@ class LoadRehearsalContractTest {
     }
 
     @Test
-    @DisplayName("the fleet runs at REHEARSAL_LOAD_REPLICAS, three to seven, in the run's own rendered overlay at the connection budget's formula")
+    @DisplayName("the fleet runs at REHEARSAL_LOAD_REPLICAS, three to the kind overlay's ceiling of ten, in the run's own rendered overlay at the connection budget's formula")
     void theFleetRunsAtTheBudgetsFormulaInTheRunsOwnCopy() {
-        assertThat(function("load_preflight")).as("today's minimum to today's ceiling, nothing else")
-                .contains("case $LOAD_REPLICAS in 3 | 4 | 5 | 6 | 7) ;; *) cannot");
-        String patch = function("load_replicas_patch");
-        assertThat(patch).as("N + 2 x maxSurge + 1 instances, each 7 + 1 connections, 12 reserved")
-                .contains("instances=$((LOAD_REPLICAS + 3))").contains("connections=$((instances * 8 + 12))")
-                .contains("FINAPP_DB_INSTANCES: \\\"$instances\\\"").contains("max_connections=$connections")
-                .contains("minReplicas: $LOAD_REPLICAS").contains("maxReplicas: $LOAD_REPLICAS")
-                .contains("|| cannot \"the rendered kind overlay could not be set");
-        assertThat(harness.indexOf("[ \"$SCOPE\" != load ] || load_replicas_patch \"$A\"")).as("patched before anything is applied")
+        // Three to seven, by load.sh's own load_replicas_patch, until P16-TSK-009 raised the overlay to ten and moved the patch into the
+        // harness as fleet_patch, every scope's (KindRehearsalContractTest#eachRunHoldsItsFleetAtTheFormulaForItsCount holds its arithmetic).
+        String preflight = function("load_preflight");
+        assertThat(preflight).as("the minimum to the ceiling the overlay states, read before any cluster exists, nothing else")
+                .contains("path: \\/spec\\/maxReplicas$/{n;s/^        value: \\([0-9]*\\)$/\\1/p;}")
+                .contains("\"$ROOT/deploy/overlays/kind/kustomization.yaml\"")
+                .contains("[ \"$LOAD_REPLICAS\" -ge 3 ] && [ \"$LOAD_REPLICAS\" -le \"$ceiling\" ]")
+                .contains("|| cannot \"REHEARSAL_LOAD_REPLICAS is 3 to $ceiling");
+        assertThat(load).as("the patch is the harness's now, not a second copy here").doesNotContain("load_replicas_patch()");
+        assertThat(harness).as("the harness holds the load scope's fleet at REHEARSAL_LOAD_REPLICAS")
+                .contains("[ \"$SCOPE\" != load ] || FLEET_REPLICAS=$LOAD_REPLICAS").contains("\nfleet_patch \"$A\"\n");
+        assertThat(harness.indexOf("\nfleet_patch \"$A\"\n")).as("patched before anything is applied")
                 .isPositive().isLessThan(harness.indexOf("apply_files \"$file\""));
         assertThat(function("load_target")).as("the load waits for the fleet at its count")
                 .contains("= \"$LOAD_REPLICAS\" ]").contains("fail \"the fleet did not reach $LOAD_REPLICAS ready replicas");
-        assertThat(read("deploy/overlays/kind/kustomization.yaml")).as("the committed overlay stays the three-replica rehearsal")
-                .contains("FINAPP_DB_INSTANCES=6").contains("value: 3");
+        assertThat(read("deploy/overlays/kind/kustomization.yaml")).as("the committed overlay is the formula for ten (owner decision C3)")
+                .contains("FINAPP_DB_INSTANCES=13").contains("FINAPP_DB_SERVER_MAX_CONNECTIONS=116").contains("path: /spec/maxReplicas\n        value: 10\n");
+    }
+
+    @Test
+    @DisplayName("the budget at the run's count (P16-TSK-009): the autoscaler's metric read before the load, the fleet's connections sampled through it, judged after it with each replica's pools and the ceiling")
+    void theBudgetIsHeldAtTheRunsCount() {
+        String scope = function("load_scope");
+        assertThat(scope).contains("step load-metrics-source\n    load_metrics_source").contains("step load-budget\n    load_budget");
+        assertThat(scope.indexOf("load_metrics_source")).as("the metric before anything is measured").isLessThan(scope.indexOf("load_setup"));
+        assertThat(scope.indexOf("load_budget")).as("judged after the census").isGreaterThan(scope.indexOf("load_census"));
+        String metrics = function("load_metrics_source");
+        assertThat(metrics).as("metrics-server as controller-check.sh renders and holds it, by its pinned digest, its API available")
+                .contains("sh \"$ROOT/infra/scripts/controller-check.sh\" render \"$controllers\"").contains("grep -q '^ok   rendered into'")
+                .contains("crictl pull \"$METRICS_SERVER_REPOSITORY@$METRICS_SERVER_DIGEST\"")
+                .contains("kube apply --server-side -f - < \"$controllers/metrics-server.yaml\"")
+                .contains("kube get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type==\"Available\")].status}'");
+        assertThat(metrics).as("the autoscaler's own reading: its CPU metric and ScalingActive true, or the run fails")
+                .contains("{.status.currentMetrics[?(@.type==\"Resource\")].resource.current.averageUtilization}")
+                .contains("{.status.conditions[?(@.type==\"ScalingActive\")].status}").contains("until [ -n \"$utilisation\" ] && [ \"$active\" = True ]; do")
+                .contains("fail \"the autoscaler read no CPU metric");
+        String run = function("load_run");
+        assertThat(run).as("the release's sampler through the load").contains("start_sampler load").contains("stop_sampler load");
+        assertThat(run.indexOf("start_sampler load")).as("started before the generators").isLessThan(run.indexOf("dock run -d --name \"$CLUSTER-load-k6-$i\""));
+        assertThat(run.indexOf("stop_sampler load")).as("stopped once the load has ended").isGreaterThan(run.indexOf("LOAD_ENDED=$(date +%s)"));
+        String budget = function("load_budget");
+        assertThat(budget).as("what the release asserts of a rollout's connections, of the load's, through the load")
+                .contains("[ \"$samples\" -ge $(( $(load_total_seconds) / 30 )) ]").contains("[ \"$peak\" -le \"$BUDGET\" ] || fail")
+                .contains("assert_within_pods load").contains("[ \"$(operator_at_peak load)\" -ge 1 ] || fail")
+                .contains("[ \"$(operator_refused load)\" = 0 ] || fail").contains("load_pools || fail").contains("budget_ceiling");
+        String pools = function("load_pools");
+        assertThat(pools).as("each instance's and pool's series over the load's own seconds, from what load_saturation kept")
+                .contains("for signal in hikari_active hikari_pending hikari_acquire_max; do")
+                .contains("-v from=\"$LOAD_STARTED\" -v to=\"$LOAD_ENDED\"").contains("\"instance\":\"[^\"]*\"").contains("\"pool\":\"[^\"]*\"")
+                .contains("> \"$LOAD_ART/pools-per-replica.tsv\"");
+        assertThat(pools).as("fewer writer pools read than replicas is not a reading").contains("-ge \"$LOAD_REPLICAS\" ]");
+        assertThat(function("load_saturation")).as("the series it reads are kept per instance")
+                .contains("\"hikari_active|hikaricp_connections_active{job=\\\"finapp\\\"}\"")
+                .contains("\"hikari_pending|hikaricp_connections_pending{job=\\\"finapp\\\"}\"")
+                .contains("\"hikari_acquire_max|hikaricp_connections_acquire_seconds_max{job=\\\"finapp\\\"}\"");
     }
 
     @Test
