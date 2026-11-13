@@ -621,6 +621,11 @@ commit and the date; do not delete the entry.
     ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
     commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
     discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
+  - The coordinator's rules split (2026-11-13, branch `P16-chore-rules-split`; `docs/project/history/CHANGE_LOG.md`): kind's rules
+    in two ConfigMaps, `finapp-prometheus-rules` and `finapp-prometheus-rules-domain`, projected into `/etc/prometheus-rules`. Owed:
+    the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's
+    `/api/v1/rules` listing every group of all thirteen rule files (`OPERATIONS_RUNBOOK.md` §11.34's alerts on `kind`). Proven
+    without a cluster only: the stream rendered, `kubeconform -strict` and the pipeline's policies green.
   - **`P16-TSK-009`** (the connection budget at ten, `OPERATIONS_RUNBOOK.md` §11.49; `CAPACITY_MODEL.md` §4; ADR-0134): **E41**, the `load`
     scope at ten replicas with the normal profile (`REHEARSAL_LOAD_PROFILE=normal REHEARSAL_LOAD_REPLICAS=10`): the autoscaler reading
     metrics-server's CPU metric, each replica's pools at the engineering workload (`load/pools-per-replica.tsv`), the fleet's peak
