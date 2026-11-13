@@ -29614,7 +29614,7 @@ on none:
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.15 widened.
 - **Risk**: Medium. **Cx**: L.
 
-**P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `PLANNED`
+**P16-TSK-011 — Posting once-ness made unique, then idempotency records swept (`THREAT_MODEL.md` §6 item 18, debt row #61)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
 - **Objective**: as decided:
   - land a uniqueness on the posting scope (`journal_entry.idempotency_scope` is not `UNIQUE`);
   - then sweep expired idempotency records, which today would remove the second rank of posting once-ness;
@@ -29647,7 +29647,7 @@ on none:
 - **Operational documentation**: `DATA_RETENTION.md`; `OPERATIONS_RUNBOOK.md` §11.15.
 - **Risk**: High (the posting path). **Cx**: L.
 
-**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `PLANNED`
+**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
 - **Objective**: decide, from the soak's growth rates extrapolated to the production target, whether any high-volume table needs
   partitioning. Decide whether report generation needs a replica, and hold `PHASE_GATES.md` §5 Phase 16 criterion 6 by a guard
   either way.
