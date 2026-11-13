@@ -114,9 +114,9 @@ Kafka lost: A06; a provider lost: A10 to A13; FX rates stale: A12; the trial bal
 | A04 | One replica cut from PostgreSQL | instance | E14 | — | — | — | — | O01, O02, O03, O04, O05, O06, O07, O08, O09, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19 | The cut replica goes unready and its in-flight requests fail, each retried by its key on another; a connection the cut holds is given up at the data source's socket timeout (ADR-0139); its leases lapse and are taken |
 | A05 | One broker of three lost | transport | E08; D03 | — | — | — | — | O01, O02, O03, O04, O05, O06, O07, O08, O09, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19 | Partitions elect new leaders with two copies in sync; a publication caught in the move is retried by the relay from the outbox |
 | A06 | Every broker lost | transport | E09, F03, F12 | E09 | — | O01, O02, O03, O04, O05, O06, O07, O08, O09, O10, O11, O12, O13, O14, O16, O17, O18, O19 | O15 | — | Every replica stays ready: a broker that is merely down is in no readiness check. Every command answers with its record and its events wait in the outbox, inside the relay's retry window; `OutboxPublicationStalled` pages and `event_freshness` burns. The consumers' reactions wait: a registration's KYC case is opened by the customer's own submission instead (`CustomerOpenedOpensCase` converges), lending's and BNPL's origination steps by their sweeps' next permit, risk's signals on the return - so a view they feed lags |
-| A07 | One application replica lost, a pod evicted, or a node lost | instance | E01, E03, E04; D02 | — | — | — | — | O01, O02, O03, O04, O05, O06, O07, O08, O09, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19 | The others serve; requests in flight on the lost one fail and are retried by key; its claims lapse and are taken; a graceful eviction drains first |
-| A08 | Half the application fleet lost at once | instance | E02 | — | — | — | O01, O02, O03, O04, O05, O06, O07, O08, O09, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19 | — | The rest carry what they can and shed the public rest before any effect; the disruption budget keeps one ready; the autoscaler replaces |
-| A09 | An edge controller lost | edge | E25 | — | — | — | — | O01, O02, O03, O04, O05, O06, O07, O08, O09, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19 | The second controller serves; connections on the lost one fail once and are retried by key |
+| A07 | One application replica lost, a pod evicted, or a node lost | instance | E01, E03, E04; D02 | E01, E03, E04 | — | — | — | O01, O02, O03, O04, O05, O06, O07, O08, O09, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19 | The others serve; requests in flight on the lost one fail and are retried by key; its claims lapse and are taken; a graceful eviction drains first |
+| A08 | Half the application fleet lost at once | instance | E02 | E02 | — | — | O01, O02, O03, O04, O05, O06, O07, O08, O09, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19 | — | The rest carry what they can and shed the public rest before any effect; the disruption budget keeps one ready; the autoscaler replaces |
+| A09 | An edge controller lost | edge | E25 | E25 | — | — | — | O01, O02, O03, O04, O05, O06, O07, O08, O09, O10, O11, O12, O13, O14, O15, O16, O17, O18, O19 | The second controller serves; connections on the lost one fail once and are retried by key |
 | A10 | The card provider unavailable, silent or slow | provider | E17, E21, F02, F13; D05 | — | — | — | O05, O07, O08, O17, O18 | O01, O02, O03, O04, O06, O09, O10, O11, O12, O13, O14, O15, O16, O19 | A card confirmation answers `503` when the provider cannot be asked and rests `UNKNOWN` when it is silent; the sweep's inquiry concludes it once on the return, never a resend (`TIMEOUTS_AND_RETRIES.md` §1). Dispute answers, an operator's refund or void, and the card sweeps' inquiries wait the same way |
 | A11 | The payout rail or card tokenisation unavailable or silent | provider | E73; D05 | E73 | — | — | O03, O08, O17, O18 | O01, O02, O04, O05, O06, O07, O09, O10, O11, O12, O13, O14, O15, O16, O19 | A payout answers `503` or rests `UNKNOWN`, its amount held, and the payout sweep's inquiry concludes it once on the return. Attaching a card is refused with nothing stored and is attached when retried; an operator's destination proposal likewise |
 | A12 | The FX provider or the reference rates unavailable, the rates going stale | provider | E18; D05 | — | — | — | O09, O10, O18 | O01, O02, O03, O04, O05, O06, O07, O08, O11, O12, O13, O14, O15, O16, O17, O19 | Quotes are refused once the reference is past its staleness; no conversion is booked on a stale rate (`INV-FX-*`); same-currency movements are untouched |
@@ -138,9 +138,11 @@ falling and no money-moving success while the database is away (E05, E06), conne
 the outbox holding every event (E09), a card movement concluded only on the provider's answer (E17), no conversion on a stale rate (E18),
 and the census after every one. Rows A13, A17 and A18 are designed-only (`RESILIENCE_EXPERIMENTS.md` §5).
 
-**Five experiments walk their row** (`infra/scripts/kind-rehearsal/experiments.sh`, `availability_check`): E05 and E06 (A01), E09 (A06),
-E72 (A14) and E73 (A11). After the fault each reads every answer of the public edge from the minute before it, takes each answer that
-ended inside the fault's window to the operation whose pattern of §3 matches its method and path most specifically, and compares it with
+**Ten experiments walk their row** (`infra/scripts/kind-rehearsal/experiments.sh`, `availability_check`): E05 and E06 (A01), E09 (A06),
+E72 (A14) and E73 (A11); and E01, E03 and E04 (A07), E02 (A08) and E25 (A09) *(2026-11-13: the instance, node and edge-controller
+experiments, which walk their window to a minute past the lost replica's or controller's return, `EXPERIMENTS_WALK_MARGIN`: a window as
+short as a restart may hold only a retried key's answers for an operation the workload sends a few times a minute)*. After the fault
+each reads every answer of the public edge from the minute before it, takes each answer that ended inside the fault's window to the operation whose pattern of §3 matches its method and path most specifically, and compares it with
 the row read from this document:
 
 - `REFUSED`: no success from the application. One success is a mismatch.
@@ -196,7 +198,7 @@ PI-025.
 ## 8. What this does not claim
 
 - That any row was walked or any experiment run since this document was written. E01 ran before it, at three replicas, and checked
-  A07's mechanism, not the walk.
+  A07's mechanism, not the walk; its walk of A07, at three and at ten, is built since and owed under PI-025 with the others'.
 - That a `kind` result says anything about a managed database's, a managed broker's or a real provider's availability (`PHASE_16_PLAN.md`
   §1.1; rows A13, A17 and A18 and `RESILIENCE_EXPERIMENTS.md` §5).
 - That the walk covers every operation: it covers what the workload sends; the others rest on the mechanism and on §1's rule, which the
