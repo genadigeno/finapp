@@ -1397,6 +1397,12 @@ fleet at its own count; staging unchanged; production's ceiling stays seven, ten
 the ten-instance runs are made (`THREAT_MODEL.md` §6 item 56). A transaction-mode pooler is refused for now: the driver sets isolation
 per session, outside the transaction. → [ADR-0134](../adr/ADR-0134-the-connection-budget-at-ten-replicas.md)
 
+**The database's socket timeout, and the failover drill's rules** *(added 2026-11-13, `P16-TSK-022`)*. Five minutes on the data
+source and the reporting pool: above every statement bound the code arms (the report generation budget, four minutes, armed on both
+pools) and inside the in-region recovery objective; a statement it cuts is the existing "committed, answer lost" case. The drill
+fences the old primary before it promotes, refuses a standby behind, runs the promoted server alone and moves the Service; every run
+owed (PI-025). → [ADR-0139](../adr/ADR-0139-the-database-socket-timeout-and-the-failover-drill.md)
+
 **The audit trail archived by verified segment; dead sessions swept** (`P16-TSK-010`, 2026-11-13, `Proposed`). A queue written by a
 trigger in each audit row's own transaction, never a cursor; one claimer and one segment in flight under a lease on the database's
 clock; the copy the database's own text, written once, read back and compared, and only then marked with digests the database
@@ -1410,11 +1416,24 @@ at one; the experiments scope, and the load scope when asked, run three with the
 quorum and replication over mutual TLS, each broker behind a proxy of its own. *(Added 2026-11-13, `Proposed`.)* →
 [ADR-0136](../adr/ADR-0136-the-event-pipeline-at-load.md)
 
+**Shed before the financial effect, never after a claim** (`P16-TSK-016`, 2026-11-13). A door ahead of every interceptor that borrows
+a connection refuses with `503 api.Overloaded` and a jittered `Retry-After` while the writer pool's queue is at its threshold, a
+command past its instance's permits, or a command whose lookups used its deadline; never inside a handler, so a shed request left no
+claim and its retry is a first attempt. The operator surface and the provider callbacks are not shed. The checkout's create is one
+transaction. → [ADR-0137](../adr/ADR-0137-load-shedding-before-the-financial-effect.md)
+
 **The post-recovery hold is the role lock, held through the window.** The platform's roles stay `NOLOGIN` from before a restore to
 its release; the window since the restore's point is reconciled by one command acting as the application's role while those roles
 cannot log in; the books are verified again; a person releases, with a record naming the reports it rests on. Locally, a recovery
 to an instant from an encrypted WAL archive, held before its server first starts. →
 [ADR-0140](../adr/ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md)
+
+**One journal entry per posting scope, for ever, then the idempotency records swept** (`THREAT_MODEL.md` §6 item 18, debt row #61).
+A census of the journal's duplicated scopes, kept as a row, then a unique index the census must allow (a duplicate stops the release,
+never deleted); a posting or reversal retried after its record is gone answered by the recorded entry, a different request the
+conflict; then a sweep of terminal records past their expiry and a grace (30 days, never under a day) that refuses while the
+uniqueness is absent, and the application's `DELETE` revoked. What the sweep leaves to commands with no second arbiter is item 63. →
+[ADR-0141](../adr/ADR-0141-one-journal-entry-per-posting-scope-then-the-idempotency-sweep.md)
 
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.

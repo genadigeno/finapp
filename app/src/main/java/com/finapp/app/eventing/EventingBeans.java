@@ -177,7 +177,8 @@ public class EventingBeans {
     /** Eager either way, as the consumers' counters are: the two tables' series exist on an instance whose sweeps are off. */
     @Bean
     RetentionSweepMeters retentionSweepMeters(MeterRegistry registry) {
-        return new RetentionSweepMeters(registry, List.of("outbox_event", "inbox_message", "window_counter", SessionRetention.TABLE));
+        return new RetentionSweepMeters(
+                registry, List.of("outbox_event", "inbox_message", "window_counter", SessionRetention.TABLE, "idempotency_record"));
     }
 
     /**
@@ -198,6 +199,30 @@ public class EventingBeans {
             RetentionSweepMeters meters) {
         return new RetentionSweepSchedule(
                 "session-retention-sweep", SessionRetention.sweep(connections, grace, batchSize), interval, meters);
+    }
+
+    /**
+     * Idempotency records past their own expiry and {@code finapp.idempotency.sweep.grace} (`P16-TSK-011`; platform {@code V016},
+     * ADR-0141): terminal records only, never an in-flight claim, and nothing at all while the journal's posting scope is not
+     * unique (ledger {@code V037}), so a posting stays once after its record goes. The grace is refused under a day at start, as
+     * the function refuses it; the default keeps a record thirty days past its expiry (`THREAT_MODEL.md` section 6 item 63).
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "finapp.retention.sweep.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    RetentionSweepSchedule idempotencyRetentionSweepSchedule(
+            RetentionConnectionSource connections,
+            @Value("${finapp.idempotency.sweep.grace:P30D}") Duration grace,
+            @Value("${finapp.retention.sweep.interval:PT5M}") Duration interval,
+            @Value("${finapp.retention.sweep.batch-size:500}") int batchSize,
+            RetentionSweepMeters meters) {
+        return new RetentionSweepSchedule(
+                "idempotency-retention-sweep",
+                RetentionSweep.ofExpiredIdempotencyRecords(connections, grace, batchSize),
+                interval,
+                meters);
     }
 
     // The relay schedule's gate, for its reason: a background worker deleting rows would race the suites' assertions.

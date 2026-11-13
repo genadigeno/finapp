@@ -86,11 +86,12 @@ class RetentionPolicyIsCompleteTest {
     }
 
     @Test
-    @DisplayName("the swept classes name the settings that bound them, and no idempotency record is swept")
+    @DisplayName("the swept classes name the settings that bound them, and an idempotency record is swept only past its expiry and grace")
     void theBoundsAreNamed() {
         assertThat(row("platform.outbox_event")[PERIOD]).contains("`finapp.outbox.retention`");
         assertThat(row("platform.inbox_message")[PERIOD]).contains("`finapp.inbox.retention`");
-        assertThat(row("platform.idempotency_record")[PERIOD]).contains("not swept");
+        // P16-TSK-011: swept since platform V016, past its own expiry and a named grace, never an in-flight claim.
+        assertThat(row("platform.idempotency_record")[PERIOD]).contains("`finapp.idempotency.sweep.grace`").contains("never an in-flight claim");
         // P16-TSK-010: swept since identity V027, by a named grace past the row's own idle bound, never a live session.
         assertThat(row("identity.session")[PERIOD]).contains("`finapp.identity.session.sweep.grace`").contains("never selected");
         assertThat(row("platform.inbox_parked_record")[PERIOD]).contains("never swept");

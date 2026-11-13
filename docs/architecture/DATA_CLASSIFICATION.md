@@ -495,6 +495,18 @@ platform's own text ("accounting period … locked"), never a person's prose.
 | `posting_cutoff_event` | `reason` | `INTERNAL` | The platform's own text naming the period moved - never person-written |
 | `posting_cutoff_event` | `occurred_at` | `INTERNAL` | When it moved |
 
+### `ledger.posting_scope_census` — *added by `P16-TSK-011`*
+
+Counts only, by design (`ledger V036`): never a scope, a key, an entry or an amount.
+
+| Table | Column | Level | Basis |
+|---|---|---|---|
+| `posting_scope_census` | `taken_at` | `INTERNAL` | When the census ran, on the database's clock |
+| `posting_scope_census` | `entries_read` | `INTERNAL` | A count of journal entries |
+| `posting_scope_census` | `scopes_read` | `INTERNAL` | A count of distinct posting scopes |
+| `posting_scope_census` | `duplicated_scopes` | `INTERNAL` | A count of scopes held by more than one entry |
+| `posting_scope_census` | `surplus_entries` | `INTERNAL` | A count of entries beyond one per scope |
+
 ### `ledger.projection_rebuild` — *added by `P14-TSK-026`*
 
 A four-eyes rebuild of one account's balance projection (ADR-0119 decision 1, `V031`): what the proposer observed, what the

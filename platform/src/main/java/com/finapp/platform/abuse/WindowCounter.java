@@ -45,7 +45,8 @@ import java.util.regex.Pattern;
 public final class WindowCounter {
 
     /**
-     * How long a count's connection may go unanswered. The data source sets no {@code socketTimeout}. A count takes about a
+     * How long a count's connection may go unanswered. The data source's own {@code socketTimeout} is five minutes (ADR-0139), a door's
+     * request cannot wait that long. A count takes about a
      * millisecond, so this is a verdict on the connection, not on the statement. HikariCP puts the connection's own value back when
      * it is returned.
      */

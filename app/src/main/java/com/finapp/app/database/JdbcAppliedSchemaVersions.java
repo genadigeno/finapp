@@ -30,9 +30,9 @@ public final class JdbcAppliedSchemaVersions implements AppliedSchemaVersions {
     static final String READ = "SELECT schema_name, version FROM platform.applied_migration_versions()";
 
     /**
-     * How long this connection may go unanswered. The data source sets no {@code socketTimeout}, so without this a
-     * black-holed read would hold its thread until a restart, and no later read would run. HikariCP puts the connection's
-     * own value back when it is returned.
+     * How long this connection may go unanswered. The data source's own {@code socketTimeout} is five minutes (ADR-0139),
+     * so without this a black-holed read would hold its thread that long, and no later read would run meanwhile; this gives
+     * it up in seconds. HikariCP puts the connection's own value back when it is returned.
      */
     static final int NETWORK_TIMEOUT_MILLIS = 3_000;
 

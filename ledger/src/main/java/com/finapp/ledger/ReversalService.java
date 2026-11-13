@@ -2,9 +2,12 @@ package com.finapp.ledger;
 
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.idempotency.CommandResult;
+import com.finapp.platform.idempotency.IdempotencyConflictException;
 import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.RequestFingerprint;
+import com.finapp.platform.idempotency.StoredResponse;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
@@ -127,6 +130,29 @@ public final class ReversalService {
                         ids, clock, command.postingDate(), command.valueDate(),
                         command.lines());
 
+        // An unestablished actor is an error, never a default (ADR-0021).
+        Actor actor = SecurityContext.require();
+        Correlation correlation = resolvedCorrelation();
+
+        String scopeAndKey = IDEMPOTENCY_SCOPE + ":" + command.idempotencyKey();
+        if (scopeAndKey.length() > MAX_SCOPE_AND_KEY_LENGTH) {
+            throw new IllegalArgumentException(
+                    "the idempotency key must leave the scope-and-key pair within "
+                            + MAX_SCOPE_AND_KEY_LENGTH
+                            + " characters, because journal_entry.idempotency_scope records"
+                            + " the pair that ties the entry to its command");
+        }
+        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, command.idempotencyKey());
+
+        // The journal answers a reversal it already holds under this key, before the bound is judged (P16-TSK-011): the
+        // bound counts that very reversal among the prior ones, so a retry of a full reversal would read as over-reversing
+        // its original. Whether its idempotency record is still kept or has been swept, the entry is the outcome.
+        Optional<JournalEntryId> recorded = journal.findByIdempotencyScope(unitOfWork, scopeAndKey);
+        if (recorded.isPresent()) {
+            recorded(unitOfWork, recorded.get(), command, key);
+            return new PostingResult(recorded.get(), true);
+        }
+
         JournalEntryStore.PostedEntry original =
                 journal.findById(unitOfWork, command.original())
                         .orElseThrow(
@@ -148,19 +174,6 @@ public final class ReversalService {
                 journal.reversalLinesOf(unitOfWork, command.original()),
                 command.lines());
 
-        // An unestablished actor is an error, never a default (ADR-0021).
-        Actor actor = SecurityContext.require();
-        Correlation correlation = resolvedCorrelation();
-
-        String scopeAndKey = IDEMPOTENCY_SCOPE + ":" + command.idempotencyKey();
-        if (scopeAndKey.length() > MAX_SCOPE_AND_KEY_LENGTH) {
-            throw new IllegalArgumentException(
-                    "the idempotency key must leave the scope-and-key pair within "
-                            + MAX_SCOPE_AND_KEY_LENGTH
-                            + " characters, because journal_entry.idempotency_scope records"
-                            + " the pair that ties the entry to its command");
-        }
-        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, command.idempotencyKey());
         RequestFingerprint fingerprint = RequestFingerprint.sha256(canonicalForm(command));
         PostingAttribution attribution =
                 new PostingAttribution(
@@ -177,7 +190,20 @@ public final class ReversalService {
                         unitOfWork,
                         key,
                         fingerprint,
-                        uow -> effect.record(uow, entry, attribution, actor, correlation));
+                        uow -> {
+                            try {
+                                return effect.record(uow, entry, attribution, actor, correlation);
+                            } catch (PostingScopeTakenException taken) {
+                                // A writer that claimed nothing committed this scope after the lookup above: V037's
+                                // index refused ours, wrote nothing and aborted nothing (P16-TSK-011).
+                                return recorded(
+                                        uow,
+                                        journal.findByIdempotencyScope(uow, scopeAndKey)
+                                                .orElseThrow(() -> taken),
+                                        command,
+                                        key);
+                            }
+                        });
 
         JournalEntryId reversal =
                 JournalEntryId.of(
@@ -193,6 +219,35 @@ public final class ReversalService {
                                                                             + " entry id")),
                                         StandardCharsets.UTF_8)));
         return new PostingResult(reversal, outcome.replayed());
+    }
+
+    /**
+     * The stored outcome of a reversal the journal already holds under this command's scope (`P16-TSK-011`): its entry's
+     * identifier, the bytes the first execution recorded, when the entry is this request - a {@code REVERSAL} of the same
+     * original, with the same reference, dates and lines in order, which is everything the fingerprint covers - and
+     * {@code INV-IDEM-03}'s conflict when it is not. Nothing is written.
+     */
+    private CommandResult recorded(
+            Connection unitOfWork, JournalEntryId recorded, ReversalCommand command, IdempotencyKey key) {
+        JournalEntryStore.PostedEntry posted =
+                journal.findById(unitOfWork, recorded)
+                        .orElseThrow(
+                                () ->
+                                        new LedgerStorageException(
+                                                "journal entry " + recorded
+                                                        + " was found by its scope and then not by its id"));
+        boolean same =
+                posted.attribution().entryType() == JournalEntryType.REVERSAL
+                        && posted.attribution().reverses().equals(Optional.of(command.original()))
+                        && posted.attribution().reference().equals(command.reference())
+                        && posted.entry().postingDate().equals(command.postingDate())
+                        && posted.entry().valueDate().equals(command.valueDate())
+                        && posted.entry().lines().equals(command.lines());
+        if (!same) {
+            throw new IdempotencyConflictException(key);
+        }
+        return CommandResult.succeeded(
+                StoredResponse.of(recorded.value().toString().getBytes(StandardCharsets.UTF_8), "text/plain"));
     }
 
     /** The flow's correlation with the cause resolved — the {@code PostingService} idiom. */

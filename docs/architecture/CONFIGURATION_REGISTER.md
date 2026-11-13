@@ -221,6 +221,7 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.fx.webhook.tolerance` | `FINAPP_FX_WEBHOOK_TOLERANCE` | OPERATIONAL | `PT5M` | default | default | default | default | default | - |
 | `finapp.gauges.read-at-start` | `FINAPP_GAUGES_READATSTART` | OPERATIONAL | `true` | default | overlay | default | default | default | - |
 | `finapp.gauges.stale-after` | `FINAPP_GAUGES_STALEAFTER` | OPERATIONAL | `PT2M` | default | default | default | default | default | - |
+| `finapp.idempotency.sweep.grace` | `FINAPP_IDEMPOTENCY_SWEEP_GRACE` | FINANCIAL | `P30D` | default | default | default | default | default | How long past its own expiry an idempotency record is kept before the sweep may delete it (platform `V016`): a correctness bound, since a command whose only arbiter is its record is a new command once that record is gone. Refused at start below a day, and the function refuses the same, so every running value keeps every record at least a day past the expiry its caller wrote. Replicas holding different values each delete only records past their own bound, so a mixed fleet keeps every record at least as long as its smallest value, never below the floor; a posting stays once whatever any replica deletes (ledger `V037`). |
 | `finapp.identity.session.sweep.grace` | `FINAPP_IDENTITY_SESSION_SWEEP_GRACE` | OPERATIONAL | `P30D` | default | default | default | default | default | - |
 | `finapp.inbox.consumer.enabled` | `FINAPP_INBOX_CONSUMER_ENABLED` | OPERATIONAL | `true` | default | overlay | default | default | default | - |
 | `finapp.inbox.failure-backoff` | `FINAPP_INBOX_FAILUREBACKOFF` | OPERATIONAL | `PT1S` | default | default | default | default | default | - |
@@ -425,6 +426,11 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.settlement.pull.timeout` | `FINAPP_SETTLEMENT_PULL_TIMEOUT` | OPERATIONAL | `PT10S` | default | default | default | default | default | - |
 | `finapp.settlement.pull.window` | `FINAPP_SETTLEMENT_PULL_WINDOW` | OPERATIONAL | `PT15M` | default | default | default | default | default | - |
 | `finapp.settlement.scheme.report.url` | `FINAPP_SETTLEMENT_SCHEME_REPORT_URL` | FINANCIAL | (none) | default | default | default | default | default | A settlement pull source. The worklist is derived on every replica from accepted batches and each key is pulled through a permit, so a replica with no source skips the key, one with a source pulls it, and a key stays owed until a batch for it is accepted. Absent in every environment until a real provider exists. |
+| `finapp.shedding.command-permits` | `FINAPP_SHEDDING_COMMAND_PERMITS` | OPERATIONAL | `5` | default | default | default | default | default | - |
+| `finapp.shedding.deadline` | `FINAPP_SHEDDING_DEADLINE` | OPERATIONAL | `PT10S` | default | default | default | default | default | - |
+| `finapp.shedding.pool-waiters` | `FINAPP_SHEDDING_POOL_WAITERS` | OPERATIONAL | `7` | default | default | default | default | default | - |
+| `finapp.shedding.retry-after` | `FINAPP_SHEDDING_RETRY_AFTER` | OPERATIONAL | `PT1S` | default | default | default | default | default | - |
+| `finapp.shedding.retry-after-spread` | `FINAPP_SHEDDING_RETRY_AFTER_SPREAD` | OPERATIONAL | `PT2S` | default | default | default | default | default | - |
 | `finapp.telemetry.logs-endpoint` | `FINAPP_TELEMETRY_LOGSENDPOINT` | OPERATIONAL | (none) | default | default | pod | pod | pod | - |
 | `finapp.telemetry.traces-endpoint` | `FINAPP_TELEMETRY_TRACESENDPOINT` | OPERATIONAL | (none) | default | default | pod | pod | pod | - |
 | `management.server.address` | `FINAPP_MANAGEMENT_ADDRESS` | OPERATIONAL | (loopback) | default | default | pod | pod | pod | - |

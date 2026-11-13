@@ -133,6 +133,7 @@ live in `CorrelationId`.*
 | Body will not parse | `api.MalformedRequest` (400) |
 | A public door's per-source limit reached | `api.TooManyRequests` (429), with `Retry-After` in whole seconds |
 | A public door's count could not be taken | `api.TemporarilyUnavailable` (503), the request not served |
+| The instance shed the request before its handler | `api.Overloaded` (503), with `Retry-After` in whole seconds: nothing was done (§5a) |
 
 **400 versus 422** is the distinction between "your serialiser is wrong" and "your data is
 wrong": a client can act on the second, and only a developer can act on the first.
@@ -163,6 +164,28 @@ a new window whichever replica takes it. Two sources behind one carrier's NAT ar
 its signature is checked first, and nothing is written for a forged one. **A retry counts**: a count comes after the `Idempotency-Key`
 header's shape is checked and before its record is read, so a same-key retry past the limit is answered `429` where the stored `201`
 would have been replayed, and gets that stored answer once the window has ended.
+
+## 5a. Load shedding — **Implemented** (`P16-TSK-016`, ADR-0137)
+
+**A request an instance cannot serve in time is refused before its handler, never after.** Every financial effect, and the
+idempotency claim that guards it, is made inside a handler, so a request refused in front of it did nothing: no claim, no row, no
+posting. The client's retry under the same `Idempotency-Key` is therefore a first attempt, and the answer says so.
+
+| Rule | Behaviour |
+|---|---|
+| Where it is decided | An interceptor ahead of every other one: before the `Idempotency-Key` check, the session's and the merchant key's authentication and the per-source count, each of which may borrow a database connection. A second check after both authentications, before the count. Never inside a handler, and never after a claim |
+| The pool | Every request is shed while the instance's writer pool already has `finapp.shedding.pool-waiters` threads waiting for a connection |
+| The command permits | A command - every method but `GET`, `HEAD`, `OPTIONS` and `TRACE`, which move no money (§6) - needs one of the instance's `finapp.shedding.command-permits`, fewer than its pool's connections. Past them it is shed at once: never queued |
+| The deadline | After authentication, a command with less than one connection's wait left of `finapp.shedding.deadline` is shed before its claim |
+| The answer | `api.Overloaded` (503), the same body for every caller and route, naming nothing about why or how busy; `Retry-After` of whole seconds, `finapp.shedding.retry-after` plus a random 0 to `finapp.shedding.retry-after-spread` |
+| What the client does | Waits `Retry-After`, then sends the same request under the same key. It is a first attempt, or, if another copy got through meanwhile, that copy's answer replayed |
+| Not shed | The operator surface (the edges' marker), so staff can act on a shedding platform; the provider callbacks, each declaring `@NotShed` with its reason |
+| Authentication | Never bypassed: the door only refuses, and what it admits goes on to every check behind it unchanged. An unauthenticated caller can be answered `503` under load; it learns that the instance is busy and nothing else |
+
+Per instance: each instance bounds its own threads and pool, and nothing financial rests on it - the claim in PostgreSQL still
+arbitrates a retry that lands on another instance. A shed is a `5xx` on its route and spends that route's availability objective
+(`SLOS.md`). *Proven by `ShedBeforeTheClaimTest`, which counts claims and effects rather than reading the response, and wired as
+`SheddingIsWiredTest` reads the served routes.*
 
 ## 6. Idempotency — **Implemented** (`P0-TSK-017`; first *used* by `P1-TSK-006`)
 

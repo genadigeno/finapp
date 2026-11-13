@@ -122,6 +122,21 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * The instance shed the request before its handler (`P16-TSK-016`, ADR-0137): {@code 503 api.Overloaded} with its jittered
+     * {@code Retry-After}. <strong>No log line</strong>, for the reason above: this is the path an overload takes, and the meter
+     * ({@code finapp.shedding.requests}) already counted it. Nothing in the answer depends on the request or on why it was shed.
+     */
+    @ExceptionHandler(com.finapp.app.shedding.RequestShed.class)
+    public ResponseEntity<ProblemDetailBody> handleRequestShed(
+            com.finapp.app.shedding.RequestShed shed, HttpServletRequest request) {
+        ResponseEntity<ProblemDetailBody> rendered = render(ProblemDetail.of(shed.errorCode(), request.getRequestURI()));
+        return ResponseEntity.status(rendered.getStatusCode())
+                .headers(rendered.getHeaders())
+                .header(org.springframework.http.HttpHeaders.RETRY_AFTER, Long.toString(shed.retryAfterSeconds()))
+                .body(rendered.getBody());
+    }
+
+    /**
      * Records a refused step-up an operation answered itself (`P15-TSK-021`), once per request: the interceptor's own
      * refusals are recorded and marked before they reach here.
      *

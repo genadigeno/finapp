@@ -192,7 +192,7 @@ class PostingFloorTest {
     private PostingService service() {
         return new PostingService(
                 new IdempotentExecutor(claims(), CLOCK, Duration.ofDays(1), Duration.ofMinutes(5)),
-                recording(JournalEntryStore.class, "append", args -> appended.add((JournalEntry) args[1])),
+                journal(),
                 recording(AuditWriter.class, "append", args -> audited.add((AuditRecord) args[1])),
                 recording(OutboxWriter.class, "write", args -> {}),
                 recording(BalanceProjection.class, "apply", args -> {}),
@@ -208,6 +208,23 @@ class PostingFloorTest {
                     public void flooredAtTheCutoff(Command command) {
                         floors.add(command);
                     }
+                });
+    }
+
+    /**
+     * The journal: every append recorded, and no entry under any scope - each command here is a first attempt, so the lookup a
+     * fresh claim makes first (`P16-TSK-011`) finds nothing. Any other call is a failure.
+     */
+    @SuppressWarnings("unchecked")
+    private JournalEntryStore<Connection> journal() {
+        return (JournalEntryStore<Connection>) Proxy.newProxyInstance(PostingFloorTest.class.getClassLoader(),
+                new Class<?>[] {JournalEntryStore.class}, (proxy, call, args) -> switch (call.getName()) {
+                    case "append" -> {
+                        appended.add((JournalEntry) args[1]);
+                        yield null;
+                    }
+                    case "findByIdempotencyScope" -> java.util.Optional.empty();
+                    default -> throw new AssertionError("JournalEntryStore." + call.getName());
                 });
     }
 

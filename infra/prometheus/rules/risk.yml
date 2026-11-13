@@ -309,7 +309,7 @@ groups:
 
       - alert: RiskProofReadingsStalled
         # No reading of the proofs completed on an instance over two floors: a reading stuck on a connection the network
-        # black-holed (the data source sets no socket timeout), or killed by an Error - counted by neither outcome, its
+        # black-holed (held until the socket timeout, 5 min), or killed by an Error - counted by neither outcome, its
         # NaN gauges firing no > 0 rule.
         expr: sum by (instance) (increase(finapp_risk_proof_reading_total{outcome="completed"}[30m])) == 0
         for: 15m

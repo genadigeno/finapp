@@ -48,8 +48,8 @@ import lombok.extern.slf4j.Slf4j;
  * keep reporting an old {@code HELD}. Nothing here is on a money-moving path: the proofs read, they never gate.
  *
  * <p><strong>What this cannot see, and who does</strong> (the review's second round). The statement timeout bounds a
- * statement the database is running; a connection the network black-holes is bounded by nothing here (the data source
- * sets no socket timeout), so a reading stuck on one holds the in-flight flag with no {@code failed} counted, and an
+ * statement the database is running; a connection the network black-holes is bounded only by the data source's
+ * socket timeout (five minutes, ADR-0139), so until then a reading stuck on one holds the in-flight flag with no {@code failed} counted, and an
  * {@link Error} - an {@code OutOfMemoryError} starting the thread or reading - is neither caught nor counted. Both leave
  * the gauges NaN at two floors, which no {@code > 0} rule fires on: `-024` alerts on <em>no increase</em> of
  * {@code finapp.risk.proof.reading{outcome="completed"}} over two floors. The reading's rows - thirty days of counted
