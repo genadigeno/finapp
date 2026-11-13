@@ -1397,6 +1397,12 @@ fleet at its own count; staging unchanged; production's ceiling stays seven, ten
 the ten-instance runs are made (`THREAT_MODEL.md` §6 item 56). A transaction-mode pooler is refused for now: the driver sets isolation
 per session, outside the transaction. → [ADR-0134](../adr/ADR-0134-the-connection-budget-at-ten-replicas.md)
 
+**The audit trail archived by verified segment; dead sessions swept** (`P16-TSK-010`, 2026-11-13, `Proposed`). A queue written by a
+trigger in each audit row's own transaction, never a cursor; one claimer and one segment in flight under a lease on the database's
+clock; the copy the database's own text, written once, read back and compared, and only then marked with digests the database
+recomputes; a copy that differs stops the chain. No audit record is deleted. Dead sessions' rows go a grace past their idle bound,
+never a live one. → [ADR-0135](../adr/ADR-0135-audit-archival-by-verified-segment.md)
+
 **The relay drains while its batch is full; three test-only brokers where the experiments run.** A candidate another relay already
 drained takes no slot of the batch, and a cycle that worked its whole batch and failed nothing is followed at once by another, the lock,
 the order and the conditional mark unchanged; measured by E47, owed (PI-025). The `kind` overlay's broker is three-capable and committed

@@ -117,3 +117,12 @@ C15 (`PHASE_15_PLAN.md` §25), applied by `P15-TSK-002`, places this record's Ph
 ## Read-note: the archival design (2026-11-08)
 
 `P15-TSK-029` wrote the retention policy and the archival design this record's follow-up asked for, in [`DATA_RETENTION.md`](../architecture/DATA_RETENTION.md) §3: archival is a verified **copy** to write-once storage, never a deletion, so the operational table keeps every row and queryability survives. Nothing of it is built, and the archive's retention stays open until a real jurisdiction is chosen. This record's decision and status are unchanged.
+
+## Read-note: the archival built (2026-11-13)
+
+`P16-TSK-010` built the archival this record's follow-up asked for, by [ADR-0135](ADR-0135-audit-archival-by-verified-segment.md):
+every audit row queued by a trigger in its own transaction, cut into segments with each row in one, written once to an object
+store, read back and compared, and only then marked, with digests the database recomputes from the rows. Partitioning did not
+come first, as `DATA_RETENTION.md` §3 had designed: it is a separate decision. The table keeps every row, and the application role
+still holds `INSERT` and `SELECT` on it and nothing else. It runs where a store is named; no committed environment names one yet.
+This record's decision and status are unchanged.

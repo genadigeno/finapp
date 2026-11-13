@@ -1938,7 +1938,7 @@ together, leaves nothing serving, and makes every group rebalance on the way bac
 | 11.12 Incident response: severity, roles, communication, the freeze, a restore decided, a compromised operator credential, post-incident review *(written 2026-11-12, below)* | `-032` | `-032` (a game day, on `kind`) | `platform` |
 | 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) | `platform` |
 | 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads *(written 2026-11-08, below)* | `-009` | `-009` (the check runs on Docker, each plant refused) | `platform` |
-| 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below)* | `-029` | `-032` | `platform` |
+| 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below; widened 2026-11-13 by `P16-TSK-010`: the session sweep)* | `-029` | `-032` | `platform` |
 | 11.25 Break-glass: opening it, what it can and cannot do, closing it, what bounds it in time *(written 2026-11-09, below)* | `-010` | `-032` | `platform` |
 | 11.26 The edge: two controllers, the generated route lists, a renewed certificate *(written 2026-11-09, below)* | `-011` | `-012`, `-020` | `platform`, `identity` |
 | 11.27 A source-join break, the census behind or unreadable, and the fleet-blind page *(written 2026-11-09, below)* | `P15-TSK-035` | `-032` | `accounting` |
@@ -3222,7 +3222,7 @@ latest; the run, as its record names it.
 | §11.12 | `platform` | 1 | 3 | 4 | kind | 2026-11-12 | `ca4c323a` | `dev5, the signals scope's development run` | postponed by the owner (PI-024) |
 | §11.13 | `platform` | 1 | 2 | 3 | containers | 2026-11-12 | `59d8b87e` | `terraform-check.sh, 43 plants, P15-TSK-017's final bytes` | — |
 | §11.14 | `platform` | 1 | 2 | 3 | containers | 2026-11-12 | `59d8b87e` | `manifest-check.sh, 283 plants, P15-TSK-017's final bytes` | — |
-| §11.15 | `platform` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.15 | `platform`, `identity` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.20 | `ledger`, `accounting`, `platform`, `payments` | 0 | 8 | 8 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.21 | `platform` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.22 | `identity`, `ledger`, `payments`, `transfers`, `checkout`, `merchant`, `kyc`, `consent` | 0 | 15 | 15 | — | — | — | — | postponed by the owner (PI-024) |
@@ -3252,6 +3252,7 @@ latest; the run, as its record names it.
 | §11.47 | `platform` | 0 | 8 | 8 | — | — | — | — | Phase 16 drill |
 | §11.48 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.49 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
+| §11.50 | `platform`, `identity` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | §11.51 | `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | §11.55 | `platform`, `settlement`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
@@ -3790,26 +3791,40 @@ rollout and the measured connection peak (`-012`), and delivery (§11.36). *(Rea
 [`DATA_RETENTION.md`](DATA_RETENTION.md).)*
 *(2026-11-12: still not rehearsed. The `incidents` scope's retention step (published rows backdated and swept, a sweep the role
 cannot run, the sweeps paused, a bound refused at start) never ran (`POSTPONED_ISSUES.md` PI-024).)*
+*(2026-11-13, widened by `P16-TSK-010`: the session sweep, a fourth schedule, below. Not rehearsed either: its run on `kind`, E46, is
+owed under `POSTPONED_ISSUES.md` PI-025. The window counter's sweep, the third, is §11.30's.)*
 
 **What runs.** Two schedules on every instance, `outbox-retention-sweep` and `inbox-retention-sweep`, each every
 `finapp.retention.sweep.interval` (default five minutes) and each deleting up to 20 batches of
 `finapp.retention.sweep.batch-size` (default 500, at most 1,000) per tick. Published outbox rows go past
 `finapp.outbox.retention` (default 30 days). Inbox records go past both their written expiry and `finapp.inbox.retention`.
 No lease and no leader: `FOR UPDATE SKIP LOCKED` means instances delete disjoint batches. The counters are per table,
-tagged `type="outbox_event"` or `type="inbox_message"`.
+tagged `type="outbox_event"` or `type="inbox_message"`. *(2026-11-13: and `session-retention-sweep`, on the same interval and batch,
+tagged `type="session"`: a dead session's row once its idle bound passed more than `finapp.identity.session.sweep.grace` ago,
+default 30 days, judged on the database's clock (identity `V027`).)*
 
 **What is never deleted.** A pending or an abandoned outbox row, and a published one that a parked record not yet settled still
-names. An inbox record younger than either bound, or one a replay order has extended.
-`platform.idempotency_record`, sessions and audit records are not swept at all. They grow, by ruling, until Phase 16. Nor are
-parked records, discard decisions or callback hints (`DATA_RETENTION.md`).
+names. An inbox record younger than either bound, or one a replay order has extended. A live session, ever: the sweep selects a row
+only once its idle bound has passed by the grace, and a live session's has not passed at all; nor a dead one inside the grace.
+`platform.idempotency_record` is not swept at all: it grows, by ruling, until the posting scope is unique (`THREAT_MODEL.md` §6
+item 18). Audit records are never deleted: they are archived by copy, §11.50. Nor are parked records, discard decisions or callback
+hints (`DATA_RETENTION.md`). *(Read "`platform.idempotency_record`, sessions and audit records are not swept at all. They grow, by
+ruling, until Phase 16." until 2026-11-13.)*
+
+**The session sweep's grace.** A row stays the grace past its idle bound so that a reported takeover can still be read (which device,
+how strongly the person signed in); the login, its rotations and its revocation stay in the audit trail whatever the sweep does. To
+keep dead sessions longer, raise `finapp.identity.session.sweep.grace` in the environment's overlay (§11.31): rows not yet swept are
+kept at once. Lowering it deletes only what is then past it, never a live session; an instance refuses to start with it under a
+minute, and the function refuses such a grace too (`22023`). A session's audit records then name an id no row holds, which is
+expected.
 
 **`finapp.retention.sweep.failed` rising.** Read the instance's `Retention sweep of <table> failed` line for its SQLState.
 
 | SQLState | Means | Do |
 |---|---|---|
-| `55000` | `platform.inbox_message` has a column the sweep was not reviewed against, so the inbox's sweep stops and deletes nothing. It may carry a state | Nothing is at risk: a kept record only costs storage. Ship a migration that reviews the column, adds a positive condition for its terminal values and lists it. **Never** add the column to the function's list by hand |
+| `55000` | `platform.inbox_message` has a column the sweep was not reviewed against, so the inbox's sweep stops and deletes nothing. It may carry a state *(2026-11-13: on `type="session"`, the same of `identity.session`: a new column may carry a hold)* | Nothing is at risk: a kept record only costs storage. Ship a migration that reviews the column, adds a positive condition for its terminal values and lists it. **Never** add the column to the function's list by hand |
 | `08*`, `null`, or an exception class instead of a SQLState | The database was unreachable or the pool was exhausted | The next tick retries. Treat it as the database's or the pool's incident |
-| `42883` or `42501` | The function does not exist, or the role cannot execute it | Platform `V012` did not apply as it should: read the schema version before anything else |
+| `42883` or `42501` | The function does not exist, or the role cannot execute it | Platform `V012` (identity `V027` for the session sweep) did not apply as it should: read the schema version before anything else |
 
 **A table still growing.** Compare `finapp.retention.swept` with the table's arrival rate. An outbox that keeps
 growing with a healthy sweep is usually a backlog (pending rows, which are never swept): §11.6. If the sweep is merely behind,
@@ -5518,6 +5533,87 @@ three-replica overlay renders, byte for byte except the generated ConfigMap's na
 the overlay unchanged but the autoscaler's minimum. The manifest policies passed on the three overlays, kubeconform passed on `kind`,
 and the budget's plants were refused in containers (§11.14's check, its budget plants only, 2026-11-13). `LoadRehearsalContractTest`
 and `KindRehearsalContractTest` hold what the run would assert.
+
+### 11.50 The audit archive - `AuditArchiveCopyDiffers`, `AuditArchiveBehind`; its store, a copy that differs, the read path, and its experiments (`P16-TSK-010`, ADR-0135)
+
+*(Written by `P16-TSK-010`, 2026-11-13, from the code it landed. Not rehearsed: its experiments E44 and E45 on `kind` are owed under
+`POSTPONED_ISSUES.md` PI-025, and no environment but that scope's names a store. The policy is [`DATA_RETENTION.md`](DATA_RETENTION.md)
+§3.)*
+
+**What runs, and where.** On an instance whose `finapp.audit.archive.endpoint` names a store, the `audit-archive` schedule ticks every
+`finapp.audit.archive.interval` (default one minute) and archives up to twenty segments a tick, each up to
+`finapp.audit.archive.batch-size` audit rows (default 1,000, at most 10,000). One instance claims at a time, by the archive's head row
+under `SKIP LOCKED`; one segment is in flight, under a lease of `finapp.audit.archive.lease` (default two minutes) on the database's
+clock, which must exceed four store calls at `finapp.audit.archive.timeout` (default five seconds) and ten seconds more, or the
+instance refuses to start. Each segment is written once to the store, its file and its manifest read back and compared byte for
+byte, and only then marked `ARCHIVED`. **No committed environment names a store today**: there the queue,
+`platform.audit_archive_pending`, only grows, every audit row waiting in it, and nothing fires, because
+`finapp.audit.archive.enabled` is 0. Nothing is ever deleted from `platform.audit_record`.
+
+**Its signals.** `finapp.audit.archive.segments{outcome}`: `archived`; `store_unavailable` (the store did not answer within its
+bound, or refused); `mismatch` (the copy read back is missing or not the segment's rows); `fenced` (another instance took the
+segment over first: normal after a lapse); `refused` (the database refused the copy's digests as not the rows'); `failed` (the
+database ended the attempt: the line names the SQLState). `finapp.audit.archive.rows`; `finapp.audit.archive.pending` (counted up
+to 100,001) and `finapp.audit.archive.pending.oldest` (seconds); `finapp.audit.archive.enabled`. The segment table,
+`platform.audit_archive_segment`, is the archival's own record: each segment's rows, id and time range, holder token, takeovers
+(`reclaims`) and digests.
+
+**`AuditArchiveBehind`** (ticket): an audit row has waited over an hour while an instance archives. Read the `audit-archive`
+lines and the outcome counter:
+
+| You see | It means | Do |
+|---|---|---|
+| `store_unavailable` rising | The store is down, slow past the timeout, or refusing | Nothing is lost: every row waits in the queue. Restore the store; the segment in flight is taken over when its lease lapses and the queue drains by itself. A store slower than the timeout everywhere: raise `finapp.audit.archive.timeout` and the lease with it (§11.31) |
+| `failed`, SQLState `55000` | `platform.audit_record` has a column, a type or an order format 1 was not reviewed against: a line would not carry every column, so nothing is archived | Ship a migration that reviews the column and replaces `audit_archive_line`, `audit_archive_record` and the review with a new format. **Never** edit the review's list by hand |
+| `failed`, SQLState `XX001` | A queued id has no audit row: an audit record was deleted, which only the schema's owner can do | `OPERATIONS_RUNBOOK.md` §11.12, `SEV-1`: the trail has lost a record. **Never** remove the queued id to let the archive go on: nothing is cut over a gap until the record's loss is understood |
+| `failed`, `08*` or a class | The database was unreachable or the pool exhausted | The next tick retries: the database's or the pool's incident |
+| `fenced` alone, `archived` rising | Instances took over each other's lapsed segments | Normal after a replica died mid-segment |
+
+**`AuditArchiveCopyDiffers`** (page): a segment's copy read back is missing, or is not its rows, or the database refused its
+digests. The segment is never marked, and every later attempt meets the same object, so **the archive stops there**, every row
+still in the database. Treat it as an incident first (§11.12): something other than this archive wrote that key, or the store
+lost or damaged an object it had accepted. Do: keep the object as it is (the bucket's lock and history are the evidence); read the
+store's own history of the key; compare the object with `SELECT platform.audit_archive_content(<segment>)` on the database. The way
+on, once understood, is the owner's (`THREAT_MODEL.md` §6 item 57 (c)): nothing here re-keys, rewrites or skips a segment.
+
+**After a restore or a recovery to an instant** (§11.35, §11.55). The restored segment table is as of the restore's point, and the
+store keeps every object written since. The next segment is cut again from the restored queue. If it holds the same rows as the
+copy already under its key, the copy is read back equal and marked. If not, it is a copy that differs, and the archive stops, paging,
+with nothing overwritten. Expect that after any restore to a point before the last archived segment. Read it with the procedure
+above, knowing the cause. The objects past the point are evidence: they hold audit records the restored database may no longer
+have. Keep them, and read them beside the restore's window (§11.55's gate). Keep `finapp.audit.archive.endpoint` unset on a restored
+environment until the owner's way on (item 57 (c)) is decided.
+
+**Pause it, or name a store.** Unset `finapp.audit.archive.endpoint`, or set the store, in the environment's overlay (§11.31), and
+let the fleet roll; the schedule exists only where it is named. Pausing is always safe: rows wait in the queue. A real bucket also
+needs request signing and the pod role's credential, which are not built (item 57 (a)): no committed overlay names one until they
+are.
+
+**The read path: restore a segment to a scratch schema.** While the table holds every row, a question is the table's. To read the
+archive itself (for a segment `n`):
+1. Read its record: `SELECT state, row_count, content_sha256, manifest_sha256, previous_manifest_sha256 FROM
+   platform.audit_archive_segment WHERE segment_seq = n` (`ARCHIVED`, or there is nothing to read).
+2. Fetch its two objects, `audit/v1/segments/<n, twelve digits>.ndjson` and `audit/v1/manifests/<n>.json`, from the store: on
+   `kind`, `kubectl -n finapp-rehearsal exec deploy/finapp-archive-store -c store -- cat /archive/finapp-audit-archive/<key>`; from a
+   real bucket, with the bucket's read access (item 57 (b): no application door does this, and no audit record says who read).
+3. `sha256sum` each and compare with the recorded digests; read the manifest's `previous_manifest_sha256` and compare it with
+   segment `n - 1`'s `manifest_sha256`. Any difference: stop, `AuditArchiveCopyDiffers`' procedure above.
+4. Load the file's lines into a scratch table under break-glass (§11.25), one `text` line per row, and read them back as rows:
+   `SELECT (platform.audit_archive_record(line)).* FROM scratch.lines`. Each row is the audit record as it was archived, every
+   column in the table's order; compare with `platform.audit_record` by `audit_id` where it still holds them.
+
+**Its experiments** (`RESILIENCE_EXPERIMENTS.md`; the toolkit §11.46): `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E44 E45 E46"`.
+The scope deploys the test-only store (`kind-rehearsal/experiments/archive-store.yaml`, `ArchiveStore.java`: write once, its objects on a
+claim of their own) and names it in its own rendered ConfigMap with a lease of 30 s, a tick of 10 s, a session grace of 5 minutes and the
+retention sweeps' tick at 30 s. **E44**: the store scaled to zero for three minutes under the workload; nothing marked but a segment
+already read back, the queue grows, `store_unavailable` counted, every replica ready, no page; then the queue drains and the archive
+census is green. **E45**: every read held at the store, the holder found by its held read and killed between its copy and its mark; its
+segment taken over at the lease, its file written once and found again (`412`), marked once. **E46** (§11.15's sweep): a soak of
+`REHEARSAL_E46_MINUTES` (45) with a live session and forty dead ones planted; nothing past the grace and two ticks from the second
+minute on, the live one kept, the dead swept. Each archive census reads every audit row queued or in one segment, each segment's count,
+digests and chain recomputed, and every archived object digested in the store against its recorded digest.
+
+**The last record.** None: E44, E45 and E46 have not run (PI-025).
 
 ### 11.51 The event pipeline at load: three brokers, a broker lost, all lost, duplicates, delays, a poison burst, a scaled fleet and a day's replay (`P16-TSK-013`, ADR-0136)
 
