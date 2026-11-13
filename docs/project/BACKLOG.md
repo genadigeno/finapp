@@ -29602,7 +29602,7 @@ on none:
 - **Operational documentation**: a runbook section on a shedding platform.
 - **Risk**: High. **Cx**: L.
 
-**P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, "accept recommendations, start wave B"; its one dependency, `P16-TSK-001`, `COMPLETE`)
+**P16-TSK-017 — Sweeps that survive a poisoned row (`THREAT_MODEL.md` §6 item 42 (i); three debt rows)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-017` from master `c9c07831`, wave B beside `-006`; payments `V040`, merchant `V016`, reconciliation `V025`, no ADR; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave B, ...)" until the gate)
 - **Objective**: as decided 2026-11-12. A sweep's failed tick is metered and paged (item 42 (i) (i)), and each listing skips and
   counts a row it cannot rehydrate ((ii); the corrupt card attempt debt row). A row failing every tick gains a failure count and a
   backoff (the poisoned-row debt row). A rematch residual faulting every tick gains a durable exclusion (the rematch debt row).
@@ -29629,6 +29629,17 @@ on none:
 - **Definition of done**: `DOD-KERNEL`, `DOD-OBS`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.39 rehearsed.
 - **Risk**: Medium. **Cx**: L.
+- **As built** (2026-11-13): as `CURRENT_STATE.md` §Just completed records. `SweepListing` and `SweepBackoff` (platform); the
+  seven payments listings and the payout listing skip and report a row they cannot read and leave out a row whose failure
+  record's retry is ahead, each store recording its rows' failures by one conditional upsert (payments `V040`, merchant `V016`);
+  the five payments sweepers and the payout sweep record unreadable and failing rows and report them in their tallies; the
+  rematch leg records a residual's fault under its claim and its worklist leaves the residual out until its retry
+  (reconciliation `V025`); `SweepMeters` and the six schedules count failed ticks and rows; seven rules with fire and silent
+  promtool cases; the harness step `platform-poisoned-rows` rewritten to the new behaviour. **Corrected by the design**: side
+  tables rather than a column on the hot tables (the listings' added probe routed to `-008`); the sweeps' own claim does not
+  exist, so the record's conditional is the arbiter; risk's two listings and the opening position left failing closed for the
+  owner (`THREAT_MODEL.md` §6 item 51). Hermetic tests for every sweep's skip, count, backoff and exclusion; the entry's probe
+  and ten more Java and harness probes, and seven rule probes, performed (`MUTATION_TESTING.md` §2); database cases written and owed (PI-023). **E28** (runbook §11.39 (a); PI-024's poisoned-row step under C11) `PASSED` on `kind` at 3 replicas, commit `e9cdbb3a`, 2026-11-13 02:22-02:34Z, development mode (the `incidents` prefix, `platform-prepare`, `platform-poisoned-rows`): `PaymentSweepRowUnreadable` fired 95 s after the plant and reached `placeholder-page`, the record held 2 failures, the row stayed `CAPTURE_DISPATCHED`, no replica's tick failed whole, census green, the cluster deleted and the lock released. A first run at `82bab047` passed the same assertions and read `COULD NOT RUN`: the harness's development mode left `wanted`'s refusal of the scope's last unnamed step as the sourced file's status under `set -e`; `platform.sh` now ends its sequences in a zero status (`PlatformRehearsalContractTest#theSequenceEndsInAZeroStatus`, its probe performed).
 
 **P16-TSK-018 — Timeouts and retries classified; provider outages and slow providers (C12)** — `PLANNED`
 - **Objective**: one inventory of every outbound call's connect, request and overall bound and of every retry, each retry classified

@@ -3234,7 +3234,7 @@ latest; the run, as its record names it.
 | §11.35 | `platform` | 2 | 2 | 4 | containers, kind | 2026-11-11 | `0f5921e9` | `§11.35's seeded and kind-source records` | no account |
 | §11.36 | `platform` | 2 | 6 | 8 | kind | 2026-11-12 | `f616b5f8`, `d6168c78` | `the delivery scope's runs of 14:11Z and 14:57Z, the section's last record` | postponed by the owner (PI-024) |
 | §11.37 | `identity`, `accounting` | 2 | 4 | 6 | kind | 2026-11-12 | `5078e612`, `ca4c323a` | `dev3 and dev5, the signals scope's development runs` | postponed by the owner (PI-024) |
-| §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-024) |
+| §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | 1 | 2 | 3 | kind | 2026-11-13 | `e9cdbb3a` | `E28, the incidents scope prefix and platform-poisoned-rows in development mode` | — |
 | §11.40 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
@@ -3272,6 +3272,9 @@ latest; the run, as its record names it.
   refusals, every plant refused and never released), and running the rehearsal. Read: step 6, bringing the broker to the
   restored position, which has run nowhere (the `incidents` scope's break-glass step holds it, never run, PI-024); and the managed
   half (`no account`).
+- **§11.39** *(2026-11-13, `P16-TSK-017`, after this table was first filled)*: rehearsed, (a), a corrupt id at the card sweep's
+  head, as `RESILIENCE_EXPERIMENTS.md` E28 under owner decision C11. Read: (b), a row that keeps failing, and (c), a rematch
+  residual; neither holds a `kind` step, and both are proven hermetically (§11.39's last record).
 - **§11.7**: the cloud half, which no account exists to run; its fleet half is §11.33's.
 
 A step held for a run above and not run is PI-024's: its row changes when that item's runs are made.
@@ -3366,12 +3369,20 @@ counts it as a pending rematch, so it stays a break, aged and alerted as any (§
   within the hour, allocates or examines the item. A person may also work the break through its own door, or open a reprocess run
   (§11.23).
 
-**The last record.** (a) on `kind`: the `incidents` scope's `platform-poisoned-rows` step plants a captured card attempt copied
-under a v4 id into `CAPTURE_DISPATCHED` an hour old, waits for `PaymentSweepRowUnreadable` to reach `placeholder-page`, asserts
-the record, the row unjudged, no `Payment sweep failed` line on any replica and `PaymentSweepFailing` silent, and removes the row
-and its record as the plant's teardown. Not yet run: its record is entered here when it is (`RESILIENCE_EXPERIMENTS.md` E28). (b)
-and (c) hold no step: their behaviour is proven hermetically (`WithdrawalSweepPoisonedRowTest`, `PaymentSweeperScheduleTest`,
-`RematchFaultTest`) and their PostgreSQL cases are written and owed (PI-023). §11.38 counts the three read.
+**The last record.** (a) **rehearsed on `kind`, 2026-11-13** (`RESILIENCE_EXPERIMENTS.md` E28, `PASSED`; PI-024's poisoned-row
+step, run under owner decision C11). The `incidents` scope's prefix and its `platform-prepare` and `platform-poisoned-rows` steps, in
+the harness's development mode, on a cluster of the run's own (three replicas, kube-router), commit `e9cdbb3a`, 02:22-02:34Z, result
+`GREEN`, artefacts `build/rehearsal/experiments/E28`. The step planted a captured card attempt copied under a v4 id into
+`CAPTURE_DISPATCHED`, an hour old, as the throwaway database's superuser. `PaymentSweepRowUnreadable{leg="card"}` fired 95 s after the
+plant and Alertmanager routed it to `placeholder-page`. The row's `payments.sweep_row_failure` record held 2 failures, the skip's
+line was logged on 2 of the 3 replicas, and the row was still `CAPTURE_DISPATCHED`. No replica logged `Payment sweep failed`, and
+`PaymentSweepFailing` was silent. The harness removed the row and its record as the plant's teardown, never as a procedure, and the
+census after it was green. A first run at `82bab047` (02:08-02:20Z) passed the same assertions (95 s, 2 failures, 3 replicas) and then
+read `COULD NOT RUN`: in development mode, `wanted`'s refusal of the scope's last, unnamed step became the status of the sourced
+`platform.sh` under `set -e`. That file now ends its sequences in a zero status (`PlatformRehearsalContractTest#theSequenceEndsInAZeroStatus`).
+(b) and (c) hold no step: they are read against the code, their behaviour proven hermetically (`WithdrawalSweepPoisonedRowTest`,
+`PaymentSweeperScheduleTest`, `RematchFaultTest`), and their PostgreSQL cases written and owed (PI-023). §11.38 counts one
+rehearsed and two read.
 
 ### 11.40 Database failover: what the fleet does and what a person does (`P15-TSK-032`)
 
