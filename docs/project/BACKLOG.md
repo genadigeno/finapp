@@ -30045,7 +30045,7 @@ on none:
     `kustomize` render of the `kind` overlay and stubbed cluster answers (31 checks, 0 failed); the pinned k6 2.3.0's `inspect` of the
     `autoscale` profile; the harness's refusals of a count past the ceiling, a release probe at ten and an experiment written for three.
 
-**P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-015` from master `fb0e014b`, wave F) *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its one dependency, `P16-TSK-014`, `COMPLETE`)" until the design)*
+**P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-015` from master `fb0e014b`, wave F; ADR-0145 `Proposed`; no migration, no application code, no alert rule; **the calibration derived and recorded, its runs built, contract-tested and owed under `POSTPONED_ISSUES.md` PI-025**; marks no task `READY` - the coordinator does) *(read "`IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-015` from master `fb0e014b`, wave F)" until the gate)* *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its one dependency, `P16-TSK-014`, `COMPLETE`)" until the design)*
 - **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection
   limit (item 32 (b)) from measurement. Decide the `api`/`worker` role split that Phase 15's C5 left to this measurement.
 - **Affected components**: `deploy/base/`, the edge's middleware, `application.yaml`'s abuse limits, `CAPACITY_MODEL.md`.
@@ -30079,6 +30079,58 @@ on none:
   `P16-TSK-016`'s per-class bound, not a larger pool. No alert says the autoscaler sits at its maximum or cannot read its metric: the cluster
   watcher publishes the autoscaler's replica counts (`k8s.hpa.*`) but not its conditions, so a signal there is this task's to decide with
   the targets.
+- **As built (2026-11-13): the calibration derived and recorded; every run that would confirm it built, contract-tested and owed under
+  `POSTPONED_ISSUES.md` PI-025** (the owner's word of 2026-11-13, "we dont need long running checks and tests": nothing ran on `kind`).
+  ADR-0145 `Proposed`; `CAPACITY_MODEL.md` §2 (a new reading, **R6**: at most 1,000 active customers behind one public IPv4 address, the
+  owner's to change) and §4a (every value with its derivation and its confirming run); `OPERATIONS_RUNBOOK.md` §11.60, with dated notes in
+  §11.14, §11.26 and §11.30; `THREAT_MODEL.md` §6 item 67. No migration, no application code, no alert rule. Calibrating from what master
+  records means three inputs: the target's rates (§3.1), the per-operation costs measured at three replicas (§3.4) and the code's bounds.
+  - *The HPA*: the metric stays the pods' CPU alone, never latency, the pool's queue or the request rate, which rise when the single writer,
+    the first limit measured, is saturated; the **target stays 70%**, derived (1.37 cores on the replicas at the target's peak, four
+    replicas; W2's burst at about half a pod's 2-core limit; the day's average leaves the floor of three); the **scale-up window 60 → 120 s**,
+    twice W2's burst, so a burst the standing fleet carries never adds a pod (the oscillation the entry names); the **scale-down window
+    stays 300 s and is now held at the grace** (the manifest policy's `[hpa-scale-down]`, raised from a minute, with its plant
+    `hpa-stabilisation-grace`, and `KubernetesManifestsTest`); both policies kept. *The namespace quotas*: unchanged, since they follow the pods'
+    resources, which stay (the request a pod's share at the peak; production's 2 GiB until E39's soak reads memory over hours).
+  - *The abuse limits (item 33 (b))*: re-derived from W1–W3 and R6, **every number kept**: each door at least one person's need (sign-in the
+    lockout's ten failures and a success, read from `LockoutPolicy`; every other door three), sign-in carrying R6's thousand at the busiest
+    hour with W2's burst and a retry each (1,470 at most). **The carrier-NAT finding answered**: the volume is carried; the fate-sharing, one
+    device spending a shared address's budget, is no number's, and is put to the owner as item 67 (a). `PerSourceLimitsAreCalibratedTest`
+    holds both, every input read, over the shipped file and every overlay.
+  - *The edge's bound (item 22 (b); the plan's "item 32 (b)", corrected by a dated erratum in `PHASE_16_PLAN.md` §17.1)*: the edge's per-source
+    tiers re-derived and kept, each times the two public controllers against its sources at W2's spike (held by the same test: door,
+    session, callback); the front door **designed only**: 120 requests a second sustained and 130 in flight per source, merchants and
+    providers by their own paths, no provider's rule relied on. Item 22 (b)'s acceptance stands.
+  - *The role split*: **not split** (ADR-0145 decision 9): the first limit is the writer, which a split does not relieve; the relay's drain
+    falls with fewer relays (ADR-0136); the census's starvation was a pool's (ADR-0137); every objective held at the engineering workload
+    with every role on every replica (§3.4). Reopened by an ADR if E77, E52, or E69 and E70 show otherwise.
+  - *The autoscaler's signal* (routed from `P16-TSK-009`): decided, a ticket at the ceiling for 30 minutes and the failed metric reads from the
+    watcher's events; **not built**, since the platform's rules read only series captured from the pinned images and these never were (item
+    67 (b)); their capture is owed with PI-025's first autoscaled run.
+  - *The runs* (`RESILIENCE_EXPERIMENTS.md`): **E75**, the burst profile (`load/burst.json`: W2's shape at the scale `kind` carries, sign-ins at
+    three times their peak in each burst) with the autoscaler free between three and seven, judged by `load_burst_judge` (a reading above the
+    target in a burst first, then the floor held, then no sign-in answered 429); **E76**, the entry's probe (`REHEARSAL_PROBE=abuse-below-need`,
+    the sign-in limit at the lockout's threshold on the run's own Deployment after the setup); **E77**, the role split's reading
+    (`load/background.json`: the engineering workload in three stages, the run's own events replayed through the audited door at the second,
+    `load/role-split.tsv` by column name, never a verdict). `CapacityCalibrationRehearsalContractTest` (five members) holds them.
+  - **Acceptance criteria**: each value with its derivation in the capacity model - **met** (§4a); the burst run within its SLOs - **built
+    (E75), run owed (PI-025)**, the judgement of the objectives under load being `P16-TSK-029`'s by the standing ruling; the role split decided
+    with its evidence - **met** (ADR-0145, the evidence measured on master), its confirming run E77 owed. **Probe**: its hermetic half
+    performed and recorded (`MUTATION_TESTING.md` §2), its cluster half E76 owed. **DoD** `DOD-BUILD`, `DOD-SEC`: met on these terms.
+  - **Corrected before the gate**: the probe's plant was first written at the render, where the setup's one client, signing in every customer of the
+    run from one address, would have met the lowered limit and failed the setup rather than the doors; it now sets the run's own Deployment
+    after the setup, one rolling update, before the fleet is settled at its floor for the load.
+  - **Ran instead, 2026-11-13, no cluster**: the new shell functions sourced from the committed `load.sh` under `sh` against stubbed answers
+    (17 checks, 0 failed: the burst judge's pass, could-not-measure, scaled, refused and both probe outcomes; the plant set, rolled and read
+    back; the tick once at the second stage; the reading by column name; a short or empty replay); the pinned k6's `inspect` of both profiles
+    (six ramping-arrival-rate scenarios each, sign-ins at 868 and 20,001 per 1,000 s in the burst profile); the manifest policy's new rule in the
+    pinned Kustomize and conftest images (the committed production and staging streams clear of it, a planted 116-s window refused, the same
+    plant passed with the rule taken out).
+  - **Tests**: TESTS_PLACEHOLDER
+  - **Ten instances**: `PASS` on design - nothing here adds state, a lock or a per-instance decision; the per-source counts stay one row per
+    bucket and window across every replica (`WindowCounter`); the autoscaler is the count's one writer, its scale-down one pod per period at
+    least the grace and its window at least the grace, so terminating pods never stack past the budget's one; no role split, so every
+    schedule keeps N leaderless competitors. The counted runs are E75 and E77 (and E70's at ten), owed.
 
 **P16-TSK-016 — Load shedding before the financial effect, and bulkheads** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-016` from master `1fbdf71c`, wave D; no migration; ADR-0137; its runs owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)" until the gate)
 - **Objective**: when the platform cannot finish a money-moving command in time, refuse it with `503` and `Retry-After` before its
