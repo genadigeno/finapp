@@ -181,6 +181,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0141](ADR-0141-one-journal-entry-per-posting-scope-then-the-idempotency-sweep.md) | One journal entry per posting scope, for ever, then the idempotency records swept | Proposed | 16 | Ledger · Platform |
 | [0142](ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md) | No table partitioned and no read replica routed at the target: each decision derived, its overturning measurement built (E65), criterion 6 held by a guard | Proposed | 16 | Platform · Ledger · Accounting (report generation) · every module (the data tier) |
 | [0144](ADR-0144-the-financial-operation-availability-matrix.md) | The financial-operation availability matrix: derived from where the record lives, held to the served routes, walked by the experiments; no automatic refusal on a correctness signal, proposed | Proposed | 16 | Platform · every module that serves a route |
+| [0145](ADR-0145-capacity-calibration-and-no-role-split.md) | Capacity calibration: the autoscaler on CPU alone, a burst never scaled, the per-source limits kept by derivation, and no role split | Proposed | 16 | Platform · every module (operated at scale) |
 | [0149](ADR-0149-the-disaster-recovery-plan-what-survives-what-is-regenerated.md) | The disaster-recovery plan: what survives outside the environment, what is regenerated, and the recovered platform proven before any role logs in | Proposed | 16 | Platform · every module (recovered) · Ledger · Reconciliation |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
@@ -265,6 +266,7 @@ objectives and the post-recovery gate) and ADR-0129 (availability and the multi-
 `PHASE_16_PLAN.md`; the next free number is ADR-0130.)*
 *(`P16-TSK-009`, 2026-11-13, wrote ADR-0134 (the connection budget at ten replicas), `Proposed`, the number the coordinator reserved for it in wave D.)*
 *(`P16-TSK-011`, 2026-11-13, wrote ADR-0141 (one journal entry per posting scope, then the idempotency sweep), `Proposed`, the number the coordinator reserved for it in wave E.)*
+*(`P16-TSK-015`, 2026-11-13, wrote ADR-0145 (capacity calibration and no role split), `Proposed`, the number the coordinator reserved for it in wave F.)*
 *(`P16-TSK-025`, 2026-11-13, wrote ADR-0149 (the disaster-recovery plan), `Proposed`, the number the coordinator reserved for it in wave F.)*
 *(2026-11-13: the partitioning half of the Phase 16 row is decided by
 ADR-0142, no table partitioned, the decision derived and its overturning measurement built and owed under `POSTPONED_ISSUES.md`

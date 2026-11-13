@@ -35,6 +35,8 @@ commit and the date; do not delete the entry.
 | PI-023 | `POSTPONED` | the owner, during Phase 15 wave H (2026-11-12) | every module - the Phase 15 database pass (`P15-TST-002`): every database, own-container and Kafka tier, never run since Phase 15 began; run after the project's phases, with the storms |
 | PI-024 | `POSTPONED` | the owner, at `P15-TSK-032`'s implementation (2026-11-12) | platform and every domain module - the platform rehearsals not run whole on `kind`: every `incidents` step, `signals` from §6.1's clearing on, the delivery's unseen steps, the release scope on the final tree, the cluster probes; run after the project's phases, with PI-004 and PI-023 |
 | PI-025 | `POSTPONED` | the owner, during Phase 16 wave C (2026-11-13) | platform and every domain module - Phase 16's cluster runs not run: each task from wave C on builds its experiments, load profiles and drills and holds them by contract tests, and lists here the `kind` runs it did not perform; run after the project's phases, with PI-004, PI-023 and PI-024 |
+| PI-026 | `POSTPONED` | the owner, deciding `THREAT_MODEL.md` §6 items 57 and 62 (2026-11-13) | platform, the restore - the first real environment's managed-service decisions: the audit archive's request signing and credential and its read door with an audit record of its own, the restore's release written into the restored database's trail and the window's session on a managed instance; with the first real environment, the read door before any audit row may leave the table |
+| PI-027 | `POSTPONED` | the owner, deciding `THREAT_MODEL.md` §6 items 60 and 63 (2026-11-13) | kyc, transfers, checkout - two domain changes placed after the phases: whether a production path should run a KYC case's checks (the product question E19 waits on), and a second arbiter of their own for transfers and card checkouts against a retry after their idempotency record is swept |
 
 ---
 
@@ -585,6 +587,9 @@ commit and the date; do not delete the entry.
   stands (`.github/workflows/ci.yml` runs the two platform scopes on its nightly `schedule`); repair each red as a harness
   defect or fix it as a production defect in a task of its own; fill §11.38's counts and each section's last record from those runs
   and turn this item's `GAP` rows to `EXISTS`; perform the cluster probes and record them in `MUTATION_TESTING.md` §2.
+  *(2026-11-13, the owner's decision on `THREAT_MODEL.md` §6 item 58 (a): when these runs are made, the release, rolls, rotations,
+  platform and delivery scopes move to three brokers first, their one-broker steps changed then and proven in these same runs, beside
+  PI-025's.)*
 - **Owner of the fix:** the owner, after the project's phases, with PI-004 and PI-023; the coordinator reminds the owner at each
   phase exit.
 
@@ -607,6 +612,11 @@ commit and the date; do not delete the entry.
   turn this item's `GAP` rows to `EXISTS`.
 - **Owner of the fix:** the owner, after the project's phases, with PI-004, PI-023 and PI-024; the coordinator reminds the owner
   at each phase exit.
+- **Decided with these runs (the owner, 2026-11-13, `THREAT_MODEL.md` §6 items 56 and 58):** every `kind` scope moves to three
+  brokers when these runs and PI-024's are made, the one-broker steps changed then and proven in the same runs (item 58 (a)); the
+  audited replay door keeps its 1,000-event bound until E49 has run, and the door is decided again on E49's measured rate (item 58
+  (b)); production's ceiling stays seven, and is raised to ten only after the ten-instance runs below (E41, E26, E69, E70) and the
+  HPA's calibration, the declared `max_connections` first (item 56).
 - **Owed runs, by task:**
   - **`P16-TSK-007`** (`OPERATIONS_RUNBOOK.md` §11.45, whose record lists what ran; `CAPACITY_MODEL.md` §3.4): **E29**, the normal,
     peak and sustained profiles at three and at seven replicas (`REHEARSAL_LOAD_PROFILE=sustained`, which holds all three, with
@@ -628,7 +638,8 @@ commit and the date; do not delete the entry.
     **failure rates per rail** each run records, which owner decision C12 waits on before automatic rail availability can be decided.
     Nothing ran before the word; the simulator's degradation controls and the three experiments ran only through
     `ProviderExperimentsContractTest`. E19 and E20 are not owed here: E19 cannot be driven until a production path runs a KYC case's
-    checks (`THREAT_MODEL.md` section 6 item 60), and E20 rests on the recorded fail-safe by the owner's decision of 2026-11-13 on
+    checks (`THREAT_MODEL.md` section 6 item 60, recorded as not drivable by the owner's decision of 2026-11-13; the missing trigger
+    is PI-027's question), and E20 rests on the recorded fail-safe by the owner's decision of 2026-11-13 on
     unresolved question 13.
   - `P16-TSK-008` (hot rows, locks, deadlocks and plans; `OPERATIONS_RUNBOOK.md` §11.48, whose record is empty; `CAPACITY_MODEL.md`
     §3.5, its measured cells `—`): **E38**, the concurrent-financial profile (`REHEARSAL_LOAD_PROFILE=concurrent`) at seven replicas and
@@ -753,6 +764,28 @@ commit and the date; do not delete the entry.
     on a cluster; what ran instead, outside one: the walk's shell functions over a fabricated edge-answers file (every verdict both ways,
     an empty window, the planted copy) and the objectives' reading with Prometheus stubbed, both with the machine's own `bash` and `awk`,
     and the client compiled with the JDK.
+  - **`P16-TSK-015`** (the capacity calibration, `OPERATIONS_RUNBOOK.md` §11.60, whose record is empty; `CAPACITY_MODEL.md` §4a; ADR-0145):
+    **E75**, the burst profile with the calibrated autoscaler left free between three and seven (`REHEARSAL_SCOPE=load
+    REHEARSAL_LOAD_PROFILE=burst REHEARSAL_LOAD_REPLICAS=7`): the bursts read above the autoscaler's target, the count never moving, no
+    sign-in answered 429, each stage's latency and errors recorded for `P16-TSK-029`'s judgement; **E76**, the entry's probe on it
+    (`REHEARSAL_PROBE=abuse-below-need`), which must go red at the door assertion with the refusals counted, its `MUTATION_TESTING.md` §2
+    row with it; **E77**, the role split's reading at three replicas (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=background`),
+    `load/role-split.tsv` read against ADR-0145 decision 9. Also owed by the same change: the cluster watcher's `k8s_hpa_*` series and the
+    autoscaler's events captured during the first autoscaled run (E70 or E75), which `THREAT_MODEL.md` §6 item 67 (b)'s signal waits on.
+    Nothing ran on a cluster. What ran instead, on 2026-11-13: the named test classes, and the manifest policy's scale-down rule over a
+    planted window under the grace in a container (§11.60's record).
+  - **`P16-TSK-020`** (instances, pods, a worker and an edge controller lost at load; `OPERATIONS_RUNBOOK.md` §11.61, whose record is
+    empty; `RESILIENCE_EXPERIMENTS.md` E01-E04 and E25; `AVAILABILITY.md` rows A07-A09): one run in the `experiments` scope at ten replicas
+    under the sustained profile, `REHEARSAL_EXPERIMENTS="E01 E02 E03 E25 E04" REHEARSAL_EXPERIMENTS_REPLICAS=10
+    REHEARSAL_EXPERIMENTS_LOAD=sustained` - **E01 at ten** (its run at three on `a6fee3a1` stands), **E02**, **E03**, **E04** (with
+    §11.8's `InstanceDown` for a lost instance, the part of PI-024 owner decision C11 gives these experiments, and the zone rule's answer
+    `THREAT_MODEL.md` §6 item 68 (a) waits on) and **E25**, each with its unauthenticated probe and its walk of rows A07, A08 or A09, the
+    load judged whole after them with its shed census; then **the entry's probe**, the same run with `REHEARSAL_PROBE=pdb-removed`, E02
+    seen stopping on no replica ready, with its `MUTATION_TESTING.md` §2 row; and the `crash-with-faults` and `term-with-faults` probes
+    once more over the three new kinds of fault (a stopped worker, a cordon, the disruption budget removed). Nothing of the task ran on a
+    cluster. What ran instead, on 2026-11-13, outside one: the new pure functions extracted from the committed `experiments.sh` under `dash`
+    and `mawk` in a container of the JDK image (33 checks), the placement and the brokers' spread over a real `kustomize` render of the
+    `kind` overlay, and the pinned edge proxy in containers for item 47 (e)'s measurement (§11.42).
   - **`P16-TSK-025`** (the disaster-recovery plan and exercise, `OPERATIONS_RUNBOOK.md` §11.64, whose last record holds only what ran
     without a cluster; ADR-0149): **E87**, the whole exercise in the `dr` scope (`REHEARSAL_SCOPE=dr REHEARSAL_DR_RELEASED_BY=<the person>`,
     `REHEARSAL_DR_SCALE=7`): release N at three replicas under its workload, the vault, the window after the backup, the cluster deleted,
@@ -764,3 +797,66 @@ commit and the date; do not delete the entry.
     size is E59's second size, in `P16-TSK-024`'s bullet above. Nothing of the task ran on a cluster; what ran instead, on 2026-11-13:
     `kind-secrets.sh`'s ring mode in its render mode with its six refusals, `sh -n` and ShellCheck over the changed scripts, and the
     contract test (§11.64's record).
+
+## PI-026 — The first real environment's managed-service decisions: the audit archive's bucket and read door, the restore's release and window
+
+- **Status:** `POSTPONED` (owner, 2026-11-13, deciding `THREAT_MODEL.md` §6 items 57 and 62 at their recommendations: "Start wave F,
+  and accept all nine recommendations"). Due with the first real environment; the read door (2) before any audit row may leave the
+  operational table, whichever comes first.
+- **What:** four things the first real environment brings, each decided and none buildable without an account:
+  1. **The archive's request signing and credential** (item 57 (a)). `HttpAuditArchiveStore` speaks S3's object API unsigned,
+     because the only store that exists is the test-only one on `kind`. A real bucket needs SigV4 and the pod role's web-identity
+     credential. Decided: the AWS SDK's S3 and STS clients, pinned and verified like every dependency, added by the change that names
+     the first real environment's store. Whether S3 honours `If-None-Match` beside Object Lock on that bucket is read from the
+     provider's own documentation then (the archive does not rest on it: every copy is read back).
+  2. **The archive's read door and its own audit record** (item 57 (b)). Restoring a segment is `OPERATIONS_RUNBOOK.md` §11.50's
+     procedure, run with the bucket's read access; no application door reads the archive and no audit record says who read which
+     segment. Decided: the procedure while the table holds every row, then an operator route (a permission, a `MULTI_FACTOR` session,
+     a reason, an audit record per read, the decode in the database) before any row may leave the table (item 23 (b)'s period).
+  3. **The restore's release in the restored database's own trail** (item 62 (a)). A person's release is the script's step, recorded
+     in the incident's record (§11.55, §11.12) and nowhere in the restored database. Decided: also an audit record in that trail,
+     through a registered action written by a release command a person runs, in the same transaction as the roles' release, built
+     with the first real environment's managed restore rehearsal (item 38 (a)).
+  4. **The window's session on a managed instance** (item 62 (b)). The window acts as `finapp_app` from the restore's administrator,
+     a superuser locally; a managed instance's master user is not one, and its membership over a role it created is unverified.
+     Decided in that same rehearsal, after the provider's documentation on role membership is read: the membership granted for the
+     window and revoked at the release, both in the incident's record, if it holds there.
+- **Consequence until then:** no committed overlay names an archive store, so outside `kind` no audit row has a copy and the archive's
+  queue grows, which its backlog gauges show; while the operational table holds every row nothing needs the archive to answer a
+  question. A local drill's release is recorded in the incident's record, which suffices for it (item 62 (c) accepts the local
+  archive's digest-only integrity); no managed restore has run (item 38). `THREAT_MODEL.md`'s T10 and T32 rows that rest on these
+  read `GAP` with this item.
+- **Fix:** the four as decided, in the first real environment's changes: the store named with the SDK's clients (1), the managed
+  restore rehearsed with its release command and its window's session (3, 4), each with its tests and `OPERATIONS_RUNBOOK.md` §11.50's
+  and §11.55's procedures rewritten; the read door (2) built and its audit record tested before any audit row may leave the table.
+- **Owner of the fix:** the change that names the first real environment's archive store and its managed restore rehearsal; the
+  read door before any row leaves the table.
+
+## PI-027 — Two domain changes placed after the phases: a production trigger for a KYC case's checks, and a second arbiter for transfers and card checkouts
+
+- **Status:** `POSTPONED` (owner, 2026-11-13, deciding `THREAT_MODEL.md` §6 items 60 and 63 at their recommendations: "Start wave F,
+  and accept all nine recommendations"). After the project's phases: Phase 16 adds no business capability and changes no financial rule
+  beyond its three (`PHASE_16_PLAN.md` §25).
+- **What:**
+  1. **No production path runs a KYC case's checks** (item 60). `VerificationRunService.runChecks`, the case's run that asks the KYC
+     provider for a customer's identity, document and screening checks, is called by database tests only: no door, consumer or
+     schedule calls it. The case's budget of three unknown answers per check type has no re-asker in production, and no customer is
+     activated through a provider's decision. Decided: E19 is recorded as not drivable (`RESILIENCE_EXPERIMENTS.md`), and the
+     missing trigger is a product question for after the phases - a seam waiting for a real provider's integration, or a defect to
+     place as a remediation. Re-scoping E19 to the provider's two production callers (counterparty screening and risk's re-screening)
+     stays the owner's to ask for when PI-025's runs are scheduled.
+  2. **A transfer's and a card checkout's only arbiter against a client's retry is its idempotency record** (item 63 (iii)). Each posts
+     under a key derived from a row it creates, so once the record is swept (`finapp.idempotency.sweep.grace`, 30 days past its
+     24-hour expiry, kept by item 63 (i)) a retry under the same key starts a new command. Decided: each given a second arbiter of its
+     own, a unique on (principal, key) in its module's table, as lending's and BNPL's repayments have, so its once-ness outlives the
+     record as the posting's now does (ADR-0141): a task per module, transfers and card checkouts first.
+- **Consequence until fixed:** (1) a KYC provider's outage cannot be rehearsed, and nothing is activated that an outage could
+  withhold; the KYC provider is reached in production only by counterparty screening and re-screening, each with its own retry
+  (`TIMEOUTS_AND_RETRIES.md` §3). (2) A client that retries a transfer or a card checkout more than a month past its record's expiry
+  makes a second movement it asked for, which reconciliation and the customer see as two movements; `OPERATIONS_RUNBOOK.md` §11.56
+  treats it as a reconciliation break. Nothing inside the platform re-presents a key that late.
+- **Fix:** (1) the owner answers the question; if the trigger is wanted, a remediation task builds it with its audit and its
+  lifecycle, and E19 is driven. (2) Per module, a migration adding the unique over a census of the keys already held, the command's
+  create refusing or answering by it, and its database cases under ten racing instances; the runbook's §11.56 note narrowed as each
+  lands. `THREAT_MODEL.md`'s T23 and T16 rows that name these read `GAP` with this item until then.
+- **Owner of the fix:** the owner, after the project's phases, or sooner if the owner schedules it.

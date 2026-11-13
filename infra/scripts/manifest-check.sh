@@ -364,6 +364,7 @@ YAML
     plant_on hpa-scale-down-percent "$HPA" '1,/type: Pods/s/type: Pods/type: Percent/'
     plant_on hpa-no-behaviour "$HPA" '/^  behavior:$/,$d'
     plant_on hpa-stabilisation "$HPA" 's/stabilizationWindowSeconds: 300/stabilizationWindowSeconds: 30/'
+    plant_on hpa-stabilisation-grace "$HPA" 's/stabilizationWindowSeconds: 300/stabilizationWindowSeconds: 116/'
 
     # The rest of the shape.
     plant_on pdb-two base/poddisruptionbudget.yaml 's/maxUnavailable: 1/maxUnavailable: 2/'
@@ -1621,6 +1622,7 @@ refused hpa-scale-down-two hpa-scale-down
 refused hpa-scale-down-percent hpa-scale-down
 refused hpa-no-behaviour hpa-scale-down
 refused hpa-stabilisation hpa-scale-down
+refused_saying hpa-stabilisation-grace "[hpa-scale-down] the scale-down stabilisation window 116 is under one grace (117 s)"
 
 refused pdb-two pdb
 refused no-pdb pdb

@@ -62,7 +62,9 @@ Cons: every statement would bypass the application's grants, so a defect the gra
 Positive: one enforcement point, the database, from the restore to the release; the window exercises the application's real intake and
 reconciliation code under the application's real grants; the release is a person's act with its evidence named.
 Negative: the window needs a session that may act as `finapp_app` while that role is locked: on the local server the administrator, a
-superuser; on a managed instance the master user's membership is unverified (item 62 (b)).
+superuser; on a managed instance the master user's membership is unverified (item 62 (b), decided by the owner on 2026-11-13:
+settled in the first real environment's managed restore rehearsal, where the release is also written into the restored database's
+own audit trail, item 62 (a); `POSTPONED_ISSUES.md` PI-026).
 Operational impact: a recovery is a declared incident with three steps after the verification (the window, the books again, the
 release), each written in §11.55.
 Security impact: no new standing credential; the archive and the base backup are ciphertext at rest; a restore whose key store lost a

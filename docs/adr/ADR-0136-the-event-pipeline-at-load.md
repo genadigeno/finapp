@@ -73,7 +73,8 @@ needed while a refused or drained candidate costs one round trip.
 ### Three brokers in every scope
 Pros: every rehearsal on the reference posture. Cons: the release, rolls, rotations, platform and delivery scopes' own steps assume
 one broker and none can be run to prove a change now (PI-024, PI-025); three brokers cost 2 GiB more on the one-node cluster those
-scopes use. Put to the owner as `THREAT_MODEL.md` §6 item 58 (a).
+scopes use. Put to the owner as `THREAT_MODEL.md` §6 item 58 (a). *(2026-11-13: decided at (ii): every scope moves to three
+brokers when PI-024's and PI-025's runs are made, its steps changed and proven in those runs.)*
 
 ## Consequences
 

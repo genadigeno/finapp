@@ -43,7 +43,8 @@ Three facts shape the answer:
    with their state on `kind` and in the reference, their answer and their check. Two gaps the register found are closed by experiments
    of their own: the telemetry back ends lost (E72, a single point for detection on `kind`) and the payout rail and card tokenisation
    lost (E73, executable here and taken away by no experiment before). The rails no simulator on `kind` serves are designed-only
-   (`RESILIENCE_EXPERIMENTS.md` D05) and put to the owner (`THREAT_MODEL.md` §6 item 66 (b)).
+   (`RESILIENCE_EXPERIMENTS.md` D05) and put to the owner (`THREAT_MODEL.md` §6 item 66 (b)). *(2026-11-14: accepted by the owner as
+   designed-only for this phase, an experiment each with the first real environment's provider integrations.)*
 4. **The experiments walk their rows.** `availability_check` in the experiments harness reads the matrix from the document itself, takes
    each edge answer in the fault's window to its operation, and compares: no success where `REFUSED`, a success where `QUEUED` or
    `AVAILABLE` once any answer was seen. A mismatch fails the experiment; a row claiming service whose window exercised nothing could not
@@ -51,7 +52,8 @@ Three facts shape the answer:
    database's loss (A01), E09 every broker's (A06), E72 and E73 their own (A14, A11). The guard holds that the walks the harness makes
    are exactly the ones the document declares. The entry's probe is run-time: the run's own copy claims transfers available while the
    database is away (`REHEARSAL_PROBE=matrix-mismatch`, with E06), and the walk must fail.
-5. **No automatic refusal on a correctness signal - proposed, for the owner** (item 66 (a)). A non-zero trial balance cannot come from
+5. **No automatic refusal on a correctness signal - proposed, for the owner** (item 66 (a)). *(2026-11-14: decided by the owner at
+   (i), as this decision says.)* A non-zero trial balance cannot come from
    a posting (every entry balances at its write, held by the database), so it means a fault outside the write path that a person must
    find; the signals are gauges, and an automatic freeze would turn their own failure (`CorrectnessUnverifiable`) into an outage; and
    stopping every customer's access to their money is a harm that needs a person's judgement. The freeze stays a person's recorded act
@@ -96,5 +98,6 @@ PostgreSQL is the only financial truth (`CLAUDE.md` rule 12). `INV-EVT-01`, `INV
 ## Follow-up
 
 - The owner decides `THREAT_MODEL.md` §6 item 66: (a) automatic refusal on a correctness signal; (b) the rails no simulator serves.
+  *(Decided 2026-11-14 by the owner ("yes"): (a) none, the freeze a person's act; (b) designed-only for this phase.)*
 - The ten-replica runs and E25's walk of row A09 are the instance-failure task's; validating the objectives E74 reads is the SLO
   validation task's.

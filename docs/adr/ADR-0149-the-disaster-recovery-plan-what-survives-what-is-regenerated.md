@@ -83,4 +83,5 @@ rule of §11.35 never relaxed between the restore and the release.
 
 The exercise is built and contract-tested (`DisasterRecoveryRehearsalContractTest`); its runs, E87, E88 and E89, are owed
 (`POSTPONED_ISSUES.md` PI-025). The rings' escrow and the image store in a real environment are `THREAT_MODEL.md` §6 item 71, for the
-owner. The release's record in the restored database's own trail is item 62 (a)'s.
+owner. The release's record in the restored database's own trail is item 62 (a)'s, decided by the owner on 2026-11-13 and held by
+`POSTPONED_ISSUES.md` PI-026 until the first real environment's managed restore rehearsal.
