@@ -29647,7 +29647,7 @@ on none:
 - **Operational documentation**: `DATA_RETENTION.md`; `OPERATIONS_RUNBOOK.md` §11.15.
 - **Risk**: High (the posting path). **Cx**: L.
 
-**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)
+**P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-012` from master `ac5aa4a3`, wave E; no migration; ADR-0142 `Proposed`; one new owner item, `THREAT_MODEL.md` §6 item 64; E65's run owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)" until its gate)
 - **Objective**: decide, from the soak's growth rates extrapolated to the production target, whether any high-volume table needs
   partitioning. Decide whether report generation needs a replica, and hold `PHASE_GATES.md` §5 Phase 16 criterion 6 by a guard
   either way.
@@ -29675,8 +29675,41 @@ on none:
 - **Definition of done**: `DOD-ARCH`, `DOD-FIN`.
 - **Operational documentation**: `DATA_ARCHITECTURE.md`'s growth section.
 - **Risk**: Low. **Cx**: M.
-
-**P16-TSK-013 — The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
+- **As built (2026-11-13; branch `P16-TSK-012` from master `ac5aa4a3`; no migration; the run owed under `POSTPONED_ISSUES.md` PI-025 by
+  the owner's word of 2026-11-13, "we dont need long running checks and tests").** "By measurement" is met as the coordinator's brief
+  read it: each decision is taken on what can be derived today (W1–W8's arithmetic, the schema, the statements), names the reading that
+  would confirm or overturn it, and that reading is **built, contract-tested and its run owed**. No figure is claimed as measured.
+  - **Growth per table per day**, derived, and **the queries a partition key would serve**, read from the code: `CAPACITY_MODEL.md` §3.6.
+    The journal takes ≈ 434,000 entries and ≈ 1.4 million lines a day, never deleted. The outbox takes ≈ 3.2 million events a day,
+    kept 30 days, and its sweep has 2.7 times the capacity the target needs at the three-replica minimum (8.64 million a day). The inbox
+    takes at most ≈ 2.3 million rows a day, kept 14 days. The idempotency records, at least 377,000 a day, are unswept until
+    `P16-TSK-011`. The audit trail takes ≈ 0.6–1.4 million rows a day. Bytes are E65's.
+  - **ADR-0142** (`Proposed`), one ADR for both decisions, "no partitioning" recorded the same way. **No table is partitioned.** A time key
+    would split the once-ness arbiters (the idempotency claim, the inbox, the outbox's identity, the posting scope) and open a detach or
+    drop no history guard refuses, and the journal's hot reads are by account over its whole history, which no time key prunes. **No
+    replica is routed.** Report generation is the only read ever eligible, under five stated conditions: the reporting role alone,
+    the replay position stated, a FINAL refused before replay past its lock, a replica down refusing reporting, and the guard turned to
+    its second branch. Each decision's overturning thresholds are stated.
+  - **Criterion 6's guard, its first branch, green and red on the entry's probe.** `OnePrimaryServesEveryDoorTest`: no production class but
+    `DatabaseEndpoint` names a database's address; none but `ReportingPool` builds a connection; no `@Bean` declares a `DataSource`; only
+    report generation's wiring reaches the reporting pool. Each rule carries its planted violation and its census, and the build's test
+    fixtures are set aside by a rule that proves none is in a main source set. `ReportingPoolEndpointTest`: the pool connects to the
+    writer's own address under any name a replica route might take. **`PrimaryOnlyGuard`** (new production code, a startup guard)
+    refuses a `targetServerType` admitting a standby, and several hosts without `targetServerType=primary`. pgjdbc's default `any`
+    would otherwise let a URL alone put either pool on a standby. The entry's probe (a money-moving door, `TransferBeans`'
+    `transferExecution`, wired to `ReportingConnections`) turned the guard red (`MUTATION_TESTING.md` §2).
+  - **E65** (`RESILIENCE_EXPERIMENTS.md`, `OPERATIONS_RUNBOOK.md` §11.57, `REHEARSAL_LOAD_DECISIONS=1` riding E39's soak): seven
+    `TRIAL_BALANCE` runs over the growing journal, each read as `finapp_reporting`'s statements before and after (`load/reports.sql`), fitted
+    by `load/reports.awk` against the bound read from `AccountingBeans`; and every named table's growth per hour and per movement
+    (`load/growth.awk`). The run fails on a run not `PROVISIONAL`, a sample never asked, one run read twice, a blind reader, or a table never
+    read. Held by `DecisionReadingsRehearsalContractTest` (six members, each probed). **Run owed (PI-025).** The awk readers were run on
+    synthetic inputs, and `reports.sql` in a throwaway container of the pinned PostgreSQL image. The report runs through the edge are
+    unproven on a cluster.
+  - **Found by reading: report generation folds the journal from inception.** One statement passes its four-minute bound at the target
+    within the first year unless it folds more than ≈ 2.1 million lines a second. That is put to the owner as `THREAT_MODEL.md` §6
+    item 64, recommendation (i): an opening checkpoint per locked month, in a task of its own. A replica is never the remedy.
+  - **Acceptance criteria**: an ADR for each decision - met (ADR-0142); criterion 6's guard green and red on its probe - met; growth
+    measured in the soak - built, contract-tested, run owed (PI-025, E65 with E39).The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: `PHASE_16_PLAN.md` §7 at the engineering workload on a test-only three-broker KRaft cluster on `kind`, with
   replication 3 and `min.insync.replicas` 2.
 - **Affected components**: `deploy/overlays/kind/kafka.yaml`, `infra/kafka/topics.yaml` (read, unchanged for production), `platform`'s
