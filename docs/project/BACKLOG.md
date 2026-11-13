@@ -29367,7 +29367,7 @@ on none:
   (`P16-TSK-029`); one machine. **Tests**: one Gradle run of 39 named guard classes (the two touched, the guards reading the
   changed files, the migrator's three), 531 tests, 0 failed; no module, ArchUnit or database tier owed by this task.
 
-**P16-TSK-007 — The workload baseline: the demonstration run and the engineering workload measured** — `PLANNED`
+**P16-TSK-007 — The workload baseline: the demonstration run and the engineering workload measured** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)
 - **Objective**: measure the engineering test workload and name the platform's first limit on the reference machine, with the
   evidence.
 - **Affected components**: `CAPACITY_MODEL.md` (filled); the register; no code.
@@ -29793,7 +29793,7 @@ on none:
 - **Operational documentation**: the provider sections of the runbook.
 - **Risk**: Medium. **Cx**: L.
 
-**P16-TSK-019 — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `PLANNED`
+**P16-TSK-019 — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)
 - **Objective**: build the `experiments` scope:
   - a multi-node `kind` cluster (one control plane and three workers, each labelled a zone);
   - Toxiproxy pinned by digest on the data-tier and provider hops;
