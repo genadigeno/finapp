@@ -17,6 +17,7 @@ import com.finapp.app.FinappApplication;
 import com.finapp.app.accounting.GlSnapshots;
 import com.finapp.app.accounting.ProductSourceProofs;
 import com.finapp.app.reconciliation.PositionProof;
+import com.finapp.app.security.KeyRingRetirementGuard;
 import com.finapp.app.restore.RestoreVerdicts.PeriodJudgement;
 import com.finapp.app.restore.RestoreVerdicts.SourceReading;
 import com.finapp.app.restore.RestoreVerdicts.Verdict;
@@ -28,6 +29,7 @@ import com.finapp.ledger.TrialBalance;
 import com.finapp.lending.LendingCapitalProof;
 import com.finapp.lending.LendingProofs;
 import com.finapp.merchant.MerchantPayable;
+import com.finapp.platform.security.KeyRing;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -45,7 +47,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Function;
 import javax.sql.DataSource;
@@ -61,9 +65,16 @@ import org.springframework.context.ConfigurableApplicationContext;
  * accounting period, {@link GeneralLedger#balances} under the version {@link GlPins#forPeriod} reads (a locked period's pin) judged by
  * {@link GlEqualsLedger}; the projection check and every product proof through the wired {@link SourceProofs}
  * ({@code ProductSourceProofs} over the nine proofs, {@code ProjectionVerification} among them), one call per
- * {@link SourceProofs.Source}; and the source-join census, {@link SourceCensus}'s own walk and judgement over the whole journal from its
- * floor. {@link RestoreVerdicts} only decides whether each answer is a pass. {@code flywayValidate}, the row counts and the catalogue
- * are the script's, read against the backup's manifest.
+ * {@link SourceProofs.Source}; the source-join census, {@link SourceCensus}'s own walk and judgement over the whole journal from its
+ * floor; and (`P16-TSK-024`, ADR-0128 decision 5) the evidence's key versions, every column the startup guard lists
+ * ({@code KeyRingRetirementGuard.STAMPED_COLUMNS}) read for the versions its rows stand under, against the versions each ring of this
+ * context holds, so a restore whose key store lost a version is refused before anyone reads evidence that cannot be decrypted.
+ * {@link RestoreVerdicts} only decides whether each answer is a pass. {@code flywayValidate}, the row counts and the catalogue are the
+ * script's, read against the backup's manifest.
+ *
+ * <p><strong>A drill's positive control</strong> ({@value #DRILL}, `P16-TSK-024`; {@code THREAT_MODEL.md} §6 item 44 (a)): a source built
+ * to hold every product is also asked that each proof judged at least one subject, so a proof that passed over nothing fails the drill.
+ * A restore of a real database is never asked it.
  *
  * <p><strong>It cannot write.</strong> The application context is the platform's own ({@link FinappApplication}, the test classpath's
  * {@code application.properties} turning every worker off), and the script hands it a database URL whose sessions default to
@@ -75,8 +86,8 @@ import org.springframework.context.ConfigurableApplicationContext;
  * roles cannot log in to a restored database until this has passed.
  *
  * <p>Exit {@code 0} every check passed, {@code 1} one failed, {@code 2} it could not run. After the verdicts, one {@code SUBJECTS|<proof>|…}
- * line per proof says how many subjects it judged, a description that decides nothing. The report's last line is {@code EXIT|<code>}, so
- * a report cut short is seen to be.
+ * line per proof says how many subjects it judged: a description, which decides something only in a drill, through its own verdict. The
+ * report's last line is {@code EXIT|<code>}, so a report cut short is seen to be.
  */
 public final class RestoreVerification {
 
@@ -91,15 +102,18 @@ public final class RestoreVerification {
 
     private RestoreVerification() {}
 
+    /** The argument that asks a drill's checks ({@link RestoreVerdicts#DRILL_CHECKS}): its source was built to hold every product. */
+    static final String DRILL = "--drill";
+
     public static void main(String[] args) {
-        if (args.length != 1) {
-            System.err.println("usage: RestoreVerification <report file>");
+        if (args.length < 1 || args.length > 2 || (args.length == 2 && !DRILL.equals(args[1]))) {
+            System.err.println("usage: RestoreVerification <report file> [" + DRILL + "]");
             System.exit(2);
         }
         Path report = Path.of(args[0]);
         int exit;
         try {
-            exit = run(report);
+            exit = run(report, args.length == 2);
         } catch (RuntimeException | Error failure) {
             // Classes and frames, never a message: a refusal's message can name a row's values.
             System.err.println("?? the verification could not run: " + failure.getClass().getName());
@@ -112,7 +126,8 @@ public final class RestoreVerification {
         System.exit(exit);
     }
 
-    static int run(Path report) {
+    static int run(Path report, boolean drill) {
+        List<String> catalogue = drill ? RestoreVerdicts.DRILL_CHECKS : RestoreVerdicts.CHECKS;
         write(report, List.of());
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(FinappApplication.class)
                 // No web server: the command opens no port, so nothing can reach the context it holds as the administrator.
@@ -132,14 +147,21 @@ public final class RestoreVerification {
             verdicts.add(guarded(RestoreVerdicts.PROJECTION, () -> RestoreVerdicts.proofs(RestoreVerdicts.PROJECTION, RestoreVerdicts.projectionProofs(), proofs)));
             verdicts.add(guarded(RestoreVerdicts.PRODUCT_PROOFS, () -> RestoreVerdicts.proofs(RestoreVerdicts.PRODUCT_PROOFS, RestoreVerdicts.productProofs(), proofs)));
             verdicts.add(guarded(RestoreVerdicts.SOURCE_CENSUS, () -> census(context, snapshots, journalEntries)));
-            if (!verdicts.stream().map(Verdict::check).toList().equals(RestoreVerdicts.CHECKS)) {
+            verdicts.add(guarded(RestoreVerdicts.EVIDENCE_KEYS, () -> RestoreVerdicts.evidenceHeld(rings(context, snapshots))));
+            Map<SourceProofs.Proof, Subjects> subjects = subjects(context, snapshots);
+            if (drill) {
+                Map<SourceProofs.Proof, OptionalLong> counts = new EnumMap<>(SourceProofs.Proof.class);
+                subjects.forEach((proof, judged) -> counts.put(proof, judged.count()));
+                verdicts.add(guarded(RestoreVerdicts.SUBJECTS, () -> RestoreVerdicts.subjects(counts)));
+            }
+            if (!verdicts.stream().map(Verdict::check).toList().equals(catalogue)) {
                 System.err.println("?? the verdicts are not the catalogue's checks: it refuses to report them");
                 return 2;
             }
             List<String> lines = new ArrayList<>();
-            lines.add("CHECKS|" + RestoreVerdicts.CHECKS.size());
+            lines.add("CHECKS|" + catalogue.size());
             verdicts.stream().map(Verdict::line).forEach(lines::add);
-            subjects(context, snapshots).forEach((proof, judged) -> lines.add("SUBJECTS|" + proof.name() + "|" + judged));
+            subjects.forEach((proof, judged) -> lines.add("SUBJECTS|" + proof.name() + "|" + judged.description()));
             lines.forEach(System.out::println);
             write(report, lines);
             return verdicts.stream().allMatch(Verdict::passed) ? 0 : 1;
@@ -200,36 +222,97 @@ public final class RestoreVerification {
      * write to it), counted and never judged here; the projection's are the accounts its census covers, those with lines or a projection
      * row. Description only: a count that cannot be read is reported as such and decides nothing.
      */
-    private static Map<SourceProofs.Proof, String> subjects(ConfigurableApplicationContext context, GlSnapshots snapshots) {
-        Map<SourceProofs.Proof, String> counted = new EnumMap<>(SourceProofs.Proof.class);
+    private static Map<SourceProofs.Proof, Subjects> subjects(ConfigurableApplicationContext context, GlSnapshots snapshots) {
+        Map<SourceProofs.Proof, Subjects> counted = new EnumMap<>(SourceProofs.Proof.class);
         for (SourceProofs.Proof proof : SourceProofs.Proof.values()) {
-            counted.put(proof, "unread");
+            counted.put(proof, Subjects.UNREAD);
         }
         try {
             snapshots.read(connection -> {
                 LendingProofs.Reading lending = context.getBean(LendingProofs.class).prove(connection);
-                counted.put(SourceProofs.Proof.LOAN_SUBLEDGER, lending.accounts().size() + " loan accounts");
-                counted.put(SourceProofs.Proof.LOAN_REPLAY, lending.accounts().size() + " loan accounts");
+                counted.put(SourceProofs.Proof.LOAN_SUBLEDGER, Subjects.of(lending.accounts().size(), "loan accounts"));
+                counted.put(SourceProofs.Proof.LOAN_REPLAY, Subjects.of(lending.accounts().size(), "loan accounts"));
                 counted.put(SourceProofs.Proof.LENDING_CAPITAL,
-                        context.getBean(LendingCapitalProof.class).prove(connection).currencies().size() + " currencies");
+                        Subjects.of(context.getBean(LendingCapitalProof.class).prove(connection).currencies().size(), "currencies"));
                 BnplProofs.Reading bnpl = context.getBean(BnplProofs.class).prove(connection);
-                counted.put(SourceProofs.Proof.BNPL_SUBLEDGER, bnpl.obligations().size() + " obligations");
-                counted.put(SourceProofs.Proof.BNPL_THREE_WAY, bnpl.currencies().size() + " currencies");
-                counted.put(SourceProofs.Proof.FX_BOOKS, context.getBean(FxBooksProof.class).prove(connection).lines().size() + " book lines");
+                counted.put(SourceProofs.Proof.BNPL_SUBLEDGER, Subjects.of(bnpl.obligations().size(), "obligations"));
+                counted.put(SourceProofs.Proof.BNPL_THREE_WAY, Subjects.of(bnpl.currencies().size(), "currencies"));
+                counted.put(SourceProofs.Proof.FX_BOOKS,
+                        Subjects.of(context.getBean(FxBooksProof.class).prove(connection).lines().size(), "book lines"));
                 PositionProof.Report position = context.getBean(PositionProof.class).sweep(connection);
-                counted.put(SourceProofs.Proof.POSITION, position.verdicts().size() + " positions, " + position.suspenseVerdicts().size()
-                        + " suspense and " + position.cashVerdicts().size() + " cash verdicts");
-                counted.put(SourceProofs.Proof.MERCHANT_PAYABLE, ProductSourceProofs.merchantPayables(
-                        new MerchantPayable(new JdbcLedgerAccountStore(), new JdbcPositionBreakdown())).apply(connection).size()
-                        + " merchant payables");
-                counted.put(SourceProofs.Proof.PROJECTION, count(connection, "SELECT count(*) FROM (SELECT ledger_account_id FROM ledger.journal_line"
-                        + " UNION SELECT ledger_account_id FROM ledger.account_balance) accounts") + " ledger accounts");
+                counted.put(SourceProofs.Proof.POSITION, new Subjects(OptionalLong.of(position.verdicts().size()),
+                        position.verdicts().size() + " positions, " + position.suspenseVerdicts().size() + " suspense and "
+                                + position.cashVerdicts().size() + " cash verdicts"));
+                counted.put(SourceProofs.Proof.MERCHANT_PAYABLE, Subjects.of(ProductSourceProofs.merchantPayables(
+                        new MerchantPayable(new JdbcLedgerAccountStore(), new JdbcPositionBreakdown())).apply(connection).size(),
+                        "merchant payables"));
+                counted.put(SourceProofs.Proof.PROJECTION, Subjects.of(count(connection, "SELECT count(*) FROM (SELECT ledger_account_id"
+                        + " FROM ledger.journal_line UNION SELECT ledger_account_id FROM ledger.account_balance) accounts"), "ledger accounts"));
                 return null;
             });
         } catch (RuntimeException unreadable) {
+            // Every count stays unread, so a drill's positive control fails rather than passing over what it could not count.
             System.err.println("   the subjects could not all be counted: " + unreadable.getClass().getName());
+            counted.replaceAll((proof, judged) -> Subjects.UNREAD);
         }
         return counted;
+    }
+
+    /** What one proof judged: its count, empty when unread, and the words the report prints. */
+    record Subjects(OptionalLong count, String description) {
+
+        static final Subjects UNREAD = new Subjects(OptionalLong.empty(), "unread");
+
+        static Subjects of(long count, String unit) {
+            return new Subjects(OptionalLong.of(count), count + " " + unit);
+        }
+    }
+
+    // ------------------------------------------------------------------ the key rings
+
+    /**
+     * Every column a key version is stamped in, read on the snapshot as the restore's administrator: the rows under each version, against
+     * the versions the ring this context was started with holds (ADR-0128 decision 5). The columns are the startup guard's own list
+     * ({@code KeyRingRetirementGuard.STAMPED_COLUMNS}, held to every migration's {@code key_version} column and to the ring beans by its
+     * test), so a column added later is read here without an edit. Credit's, which the application's role cannot read, is read here: this
+     * runs as the administrator. A version column left null (a row with nothing encrypted) is not counted.
+     */
+    private static List<RestoreVerdicts.RingReading> rings(ConfigurableApplicationContext context, GlSnapshots snapshots) {
+        Map<String, KeyRing> held = context.getBeansOfType(KeyRing.class);
+        List<RestoreVerdicts.RingReading> readings = new ArrayList<>();
+        new TreeMap<>(KeyRingRetirementGuard.STAMPED_COLUMNS).forEach((ringName, columns) -> {
+            KeyRing ring = held.get(ringName);
+            for (String column : columns) {
+                if (ring == null) {
+                    readings.add(RestoreVerdicts.RingReading.unreadable(ringName, column, "no ring of that name in the context"));
+                    continue;
+                }
+                try {
+                    Map<Integer, Long> versions = snapshots.read(connection -> versions(connection, column));
+                    readings.add(new RestoreVerdicts.RingReading(ringName, column, versions, ring.heldVersions(), Optional.empty()));
+                } catch (RuntimeException unreadable) {
+                    readings.add(RestoreVerdicts.RingReading.unreadable(ringName, column, unreadable.getClass().getName()));
+                }
+            }
+        });
+        return readings;
+    }
+
+    /** {@code schema.table.column}'s rows by the version stamped in it. The name is the guard's constant, never input. */
+    private static Map<Integer, Long> versions(Connection connection, String qualifiedColumn) {
+        int columnStart = qualifiedColumn.lastIndexOf('.');
+        String table = qualifiedColumn.substring(0, columnStart);
+        String column = qualifiedColumn.substring(columnStart + 1);
+        try (PreparedStatement read = connection.prepareStatement("SELECT " + column + ", count(*) FROM " + table + " WHERE " + column
+                + " IS NOT NULL GROUP BY 1"); ResultSet rows = read.executeQuery()) {
+            Map<Integer, Long> versions = new HashMap<>();
+            while (rows.next()) {
+                versions.put(rows.getInt(1), rows.getLong(2));
+            }
+            return versions;
+        } catch (SQLException failure) {
+            throw new IllegalStateException("reading a key version column failed (SQLState " + failure.getSQLState() + ")");
+        }
     }
 
     // ------------------------------------------------------------------ the census

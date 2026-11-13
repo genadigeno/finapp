@@ -11,7 +11,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -32,12 +35,23 @@ public final class RestoreVerdicts {
     static final String PROJECTION = "projection check";
     static final String PRODUCT_PROOFS = "every product proof";
     static final String SOURCE_CENSUS = "source-join census";
+    static final String EVIDENCE_KEYS = "evidence held by the key rings";
+    static final String SUBJECTS = "every proof over a subject";
 
     /**
      * The checks in the order they run. {@link RestoreVerification} refuses to report a run whose verdicts are not exactly these, and
      * prints their number first, so the script counts a report against it rather than against a number of its own.
      */
-    public static final List<String> CHECKS = List.of(TRIAL_BALANCE, GL_EQUALS_LEDGER, PROJECTION, PRODUCT_PROOFS, SOURCE_CENSUS);
+    public static final List<String> CHECKS = List.of(TRIAL_BALANCE, GL_EQUALS_LEDGER, PROJECTION, PRODUCT_PROOFS, SOURCE_CENSUS,
+            EVIDENCE_KEYS);
+
+    /**
+     * A drill's checks (`P16-TSK-024`; {@code THREAT_MODEL.md} §6 item 44 (a)): every check, and the drill's positive control, that each
+     * proof judged at least one subject. A restore of a real database is not asked this: a product nobody has bought is no fault of the
+     * restore. A drill's source is built to hold every product, so a proof over none there means the drill showed nothing.
+     */
+    public static final List<String> DRILL_CHECKS = List.of(TRIAL_BALANCE, GL_EQUALS_LEDGER, PROJECTION, PRODUCT_PROOFS, SOURCE_CENSUS,
+            EVIDENCE_KEYS, SUBJECTS);
 
     /** At most this many subjects are named in a detail; the count is always whole. */
     static final int MAX_NAMED = 10;
@@ -231,6 +245,94 @@ public final class RestoreVerdicts {
         long known = found.size();
         return Verdict.pass(SOURCE_CENSUS, "walked " + walked + " of " + journalEntries + " entries: no new finding"
                 + (known == 0 ? "" : "; " + known + " found that were recorded before the backup, disclosed"));
+    }
+
+    // ------------------------------------------------------------------ the key rings
+
+    /**
+     * One stamped column as the restore holds it (`P16-TSK-024`, ADR-0128 decision 5): the ring that must read it, the rows under each
+     * version stamped in it, the versions the ring this verification was started with holds, or why it could not be read. A ring absent
+     * from the context is unreadable, never an empty column.
+     */
+    record RingReading(String ring, String column, Map<Integer, Long> rowsByVersion, Set<Integer> held, Optional<String> unreadable) {
+
+        RingReading {
+            Objects.requireNonNull(ring, "ring");
+            Objects.requireNonNull(column, "column");
+            rowsByVersion = Map.copyOf(rowsByVersion);
+            held = Set.copyOf(held);
+            Objects.requireNonNull(unreadable, "unreadable");
+        }
+
+        static RingReading unreadable(String ring, String column, String why) {
+            return new RingReading(ring, column, Map.of(), Set.of(), Optional.of(why));
+        }
+    }
+
+    /**
+     * Every stamped column read, and every row in it under a version its ring holds: a restore whose key store lost a version keeps rows
+     * nobody can read, which no other check sees. A column that could not be read fails. No row at all in any column fails too: evidence
+     * the restore carries is what this check is about, and a check over nothing proves nothing. A held key that is the wrong value for its
+     * version is the ring's own refusal at start, by its published check value (section 11.29), and is not judged again here.
+     */
+    static Verdict evidenceHeld(List<RingReading> readings) {
+        if (readings.isEmpty()) {
+            return Verdict.fail(EVIDENCE_KEYS, "no stamped column was read: a check over nothing proves nothing");
+        }
+        List<String> failing = new ArrayList<>();
+        long rows = 0;
+        Map<String, Map<Integer, Long>> byRing = new TreeMap<>();
+        for (RingReading reading : readings) {
+            if (reading.unreadable().isPresent()) {
+                failing.add(reading.column() + " unreadable: " + reading.unreadable().get());
+                continue;
+            }
+            for (Map.Entry<Integer, Long> version : new TreeMap<>(reading.rowsByVersion()).entrySet()) {
+                rows += version.getValue();
+                byRing.computeIfAbsent(reading.ring(), ignored -> new TreeMap<>()).merge(version.getKey(), version.getValue(),
+                        Long::sum);
+                if (version.getValue() > 0 && !reading.held().contains(version.getKey())) {
+                    failing.add(reading.column() + ": " + version.getValue() + " rows under version " + version.getKey()
+                            + ", which " + reading.ring() + " does not hold " + new TreeSet<>(reading.held()));
+                }
+            }
+        }
+        if (!failing.isEmpty()) {
+            return Verdict.fail(EVIDENCE_KEYS, failing.size() + " of " + readings.size() + " stamped columns fail: " + named(failing));
+        }
+        if (rows == 0) {
+            return Verdict.fail(EVIDENCE_KEYS, readings.size() + " stamped columns read and no row under any version: a check over"
+                    + " nothing proves nothing");
+        }
+        return Verdict.pass(EVIDENCE_KEYS, rows + " rows in " + readings.size() + " stamped columns, each under a version its ring"
+                + " holds: " + byRing);
+    }
+
+    // ------------------------------------------------------------------ the drill's positive control
+
+    /**
+     * Each proof of the catalogue judged at least one subject (`P16-TSK-024`; {@code THREAT_MODEL.md} §6 item 44 (a)): a proof that
+     * passed over no subject showed nothing, and a count that could not be read is not one. {@code judged} holds a count per proof, empty
+     * where it could not be read; a proof missing from it fails as unread.
+     */
+    static Verdict subjects(Map<SourceProofs.Proof, OptionalLong> judged) {
+        List<String> failing = new ArrayList<>();
+        List<String> held = new ArrayList<>();
+        for (SourceProofs.Proof proof : SourceProofs.Proof.values()) {
+            OptionalLong count = judged.getOrDefault(proof, OptionalLong.empty());
+            if (count.isEmpty()) {
+                failing.add(proof + " unread");
+            } else if (count.getAsLong() < 1) {
+                failing.add(proof + " over " + count.getAsLong());
+            } else {
+                held.add(proof + " " + count.getAsLong());
+            }
+        }
+        if (!failing.isEmpty()) {
+            return Verdict.fail(SUBJECTS, failing.size() + " of " + SourceProofs.Proof.values().length + " proofs judged no subject: "
+                    + named(failing));
+        }
+        return Verdict.pass(SUBJECTS, "each of " + SourceProofs.Proof.values().length + " proofs judged at least one subject: " + held);
     }
 
     // ------------------------------------------------------------------ plumbing

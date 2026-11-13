@@ -465,7 +465,6 @@ final class RestoreRehearsalProducts {
         System.out.println("seed: " + obligations + " BNPL obligation" + (obligations == 1 ? "" : "s"));
         System.out.println("seed: merchant payables " + count(dataSource, "SELECT count(*) FROM ledger.ledger_account"
                 + " WHERE purpose = 'MERCHANT_PAYABLE'"));
-        System.out.println("seed: credit evidence by key version " + evidenceKeyVersions(dataSource));
     }
 
     /** The seed's approved contributions by their derived recognition, read through lending's store and reconciliation's facts. */
@@ -482,36 +481,6 @@ final class RestoreRehearsalProducts {
             recognitions.expectations(connection, expectations).values()
                     .forEach(reading -> counted.merge(reading.status(), 1, Integer::sum));
             return counted;
-        });
-    }
-
-    /**
-     * How many credit evidence rows stand under each key version. The application's role cannot select the version column (credit
-     * {@code V012}); it reads it, row by row, through {@code credit.read_evidence}, the definer that demands a reason. The ciphertext the
-     * definer also answers is never selected.
-     */
-    private static Map<Integer, Integer> evidenceKeyVersions(DataSource dataSource) {
-        return inTransaction(dataSource, PROPOSER, connection -> {
-            List<UUID> evidence = new ArrayList<>();
-            try (PreparedStatement read = connection.prepareStatement(
-                    "SELECT id FROM credit.credit_evidence WHERE NOT consent_withdrawn ORDER BY id");
-                    ResultSet rows = read.executeQuery()) {
-                while (rows.next()) {
-                    evidence.add(rows.getObject(1, UUID.class));
-                }
-            }
-            Map<Integer, Integer> versions = new TreeMap<>();
-            try (PreparedStatement read = connection.prepareStatement("SELECT key_version FROM credit.read_evidence(?, ?)")) {
-                for (UUID id : evidence) {
-                    read.setObject(1, id);
-                    read.setString(2, "the restore rehearsal seed counts its credit evidence by key version");
-                    try (ResultSet row = read.executeQuery()) {
-                        row.next();
-                        versions.merge(row.getInt(1), 1, Integer::sum);
-                    }
-                }
-            }
-            return versions;
         });
     }
 
