@@ -2469,6 +2469,9 @@ used a key is the account's own, and no module creates one (`THREAT_MODEL.md` §
 *(Written by `P15-TSK-024`, 2026-11-08: the instance-down and stale-gauge parts, from `infra/prometheus/rules/platform.yml` and the code. **Not yet rehearsed**: `P15-TSK-032` rehearses this section on `kind` or compose and records the result. Every alert is routed by severity to a placeholder receiver (`infra/alertmanager/alertmanager.yml`); no on-call tool exists.)*
 *(2026-11-12: still not rehearsed. The `incidents` scope's `platform-instance-down` and `platform-fleet-blind` steps hold one
 instance stopped and the database cut off from every replica, and never ran (`POSTPONED_ISSUES.md` PI-024).)*
+*(2026-11-13: the instance-down part is also built as a Phase 16 experiment, under owner decision C11: E04 stops a worker of the
+experiments' cluster under load and must see `InstanceDown` fire for an instance on it and clear after its return (§11.61). Not run:
+owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 **How every gauge reads.** Every `finapp.` gauge of an instance is read on one thread, `gauge-refresher`, never on the scrape. A scrape answers each gauge's last read and asks the thread for another once that read is 5 s old; each gauge class keeps its own floor and bounds on top (accounting's: section 10.14). So a scrape does no database work on its own thread, whatever the database is doing, and every gauge of an instance together holds at most one connection of its pool. A gauge answers no value (NaN) before its first read, when its read failed, and once its ask has gone unanswered for `finapp.gauges.stale-after` (2 minutes): never a zero nobody read, and never its last number for good. The library series (`jvm_*`, `hikaricp_*`, `http_server_*`) read memory and stay on the scrape. Each instance reads the shared database for itself; a fleet-wide gauge aggregates with `max()`.
 
@@ -3275,6 +3278,7 @@ latest; the run, as its record names it.
 | §11.58 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
 | §11.59 | `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | §11.60 | `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
+| §11.61 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
 | §11.63 | `platform`, `payments`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
@@ -3611,7 +3615,20 @@ and a node agent reading the kubelet's files is refused by Pod Security `restric
 environment's back ends bring their own (`THREAT_MODEL.md` section 6 item 37 (a), item 47 (a)). `kubectl logs` reads them.
 
 **What this does not cover.** A real environment's load balancer or WAF in front of the edge (item 32 (b)); a controller lost or rolled
-under traffic (`P16-TSK-005`, `P16-TSK-020`); the edge's SLO of its own, which `-029` decides with the load model.
+under traffic (`P16-TSK-005`; the loss is E25, §11.61); the edge's SLO of its own, which `-029` decides with the load model.
+
+**The correlation id at the edge, measured** (2026-11-13 19:59-20:01Z, `THREAT_MODEL.md` §6 item 47 (e); containers on this machine, no
+cluster): the pinned proxy (Traefik v3.7.17 by its digest) with a minimal static file whose access log keeps the one header
+(`fields.headers.names: {X-Correlation-Id: keep}`, every other header and query dropped), a stand-in backend answering every request with
+its own `X-Correlation-Id`, as a replica does (ADR-0034), and the pinned curl as the caller. **The proxy writes three copies under one
+name's mode**: `request_X-Correlation-Id` (the caller's own text, when it sent one: a needle sent there was written verbatim),
+`origin_X-Correlation-Id` and `downstream_X-Correlation-Id` (the replica's). A request whose backend never answered (`502`, the backend
+absent) carried the caller's copy and no answer's copy. A route middleware removing the caller's header from the request
+(`customRequestHeaders: {X-Correlation-Id: ""}`) kept the caller's copy out of the line, and out of what reached the backend. So the
+answer's copy cannot be kept alone in the proxy's own line: keeping the name writes the caller's text into the console copy (`dualOutput`)
+and the export, and keeping it out removes it from the replica too, ending ADR-0034's echo on that host (`X-Client-Correlation-Id`), which
+`EdgeManifestsTest` holds no edge names. Nothing was changed: the choice is the owner's, item 68 (b). What the measurement adds: a `5xx`
+carrying the answer's id is a replica's own, one with none the edge's (the replica never answered).
 
 **The record** (2026-11-12, `P16-TSK-003`; on containers of the pinned images, from this machine's own store).
 
@@ -6390,6 +6407,124 @@ throwaway clusters of their own names; the probe's lowered limit exists only in 
 tests"): E75, its probe E76, and E77. What ran instead, on 2026-11-13, without a cluster: `KubernetesManifestsTest`,
 `PerSourceLimitsAreCalibratedTest` and `CapacityCalibrationRehearsalContractTest`, and the manifest policy's scale-down rule over a planted
 window under the grace in a container (`MUTATION_TESTING.md` §2).
+
+### 11.61 Instances, pods, a node and an edge controller lost at load: E01 at ten, E02, E03, E04 and E25 (`P16-TSK-020`)
+
+**What it is.** `PHASE_16_PLAN.md` §9.2's instance, pod and node failures, run in the failure-injection toolkit (§11.46) at ten replicas
+under the sustained profile (§11.45), each a `RESILIENCE_EXPERIMENTS.md` row and each walking its row of `AVAILABILITY.md` (§11.59):
+E01 (one replica's JVM killed, row A07), E02 (half the fleet at once, row A08), E03 (graceful evictions, row A07), E04 (a worker stopped,
+row A07) and E25 (an edge controller lost, row A09; `THREAT_MODEL.md` §6 item 43 (f)'s last part). Every replica runs every schedule and
+consumer and arbitrates in PostgreSQL (ADR-0014), so losing replicas must never change money: what was in flight on a lost replica fails
+and is retried by its key to one effect, a claim it held lapses and is taken once, and the census holds through it all. Nothing here is
+production capacity or a real zone's loss (D02 is designed-only).
+
+**Running it.** One full cluster at a time, under the machine's lock, from the repository root:
+
+```
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E01 E02 E03 E25 E04" REHEARSAL_EXPERIMENTS_REPLICAS=10 REHEARSAL_EXPERIMENTS_LOAD=sustained infra/scripts/kind-rehearsal.sh
+```
+
+and the entry's probe, the same run with `REHEARSAL_PROBE=pdb-removed` (it needs E02, and the run must end red at E02's stop). The
+harness refuses before it builds anything: an experiment of these four named without a load, any other experiment named with one (its
+census is the full one, which a load still in flight cannot pass), E01 at ten without a load, the probe without E02, and E01 or E03 named
+after E04 (they send straight to a replica through the edge's probe pod, a bare pod E04's worker may carry away). The order above is the
+runbook's: E04 last, because a failed experiment ends the run and E04 is the one expected to find something (below), and because it moves
+the cluster's own units off its worker. The machine must hold ten 1 GiB replicas and a surge beside the data tier, its standby and three brokers on four nodes: a pod
+the machine cannot hold is an environment limit, recorded `FAILED` with its numbers (§11.58), never retried into a pass. The reference
+machine also stalls on WAL writes for 5 to 25 s in long runs: a failure that stall makes outside an experiment's window fails that
+experiment, and the record says so.
+
+**The load beside the experiments** (`REHEARSAL_EXPERIMENTS_LOAD`). k6 by its digest, as the load scope drives it (§11.43): the
+profile's model read before the build, its customers, fixture and sampler set up once the scope's checks have passed, its census sampled
+every 30 s throughout, the callbacks fed and the settlement file delivered at mid-run. The experiments take their windows in the profile's
+last stage (the sustained profile's two hours at the target's peak, after half an hour at the average). The fleet is read by set while it
+runs (§11.58's `load_scraped`), and the replicas, node and replacements an experiment takes away are excused from that read while it holds
+them: the experiment reads them itself. Under the load an experiment's census is the load's samples through its window, every one `PASS`,
+none 45 s from the next, and one more after its recovery; the full census, with the generators' counts, every workload's and the
+experiments' own payouts, runs once the load has ended, beside the load's own judgement (correctness only, its errors and latency
+recorded: §11.43), the shed census (§11.52: no claim and no transfer under any shed-once key) and each experiment's window read from the
+generators' own series. A dropped iteration under a fault is recorded per stage as the stress profile's is. Without E25 every generator
+reaches the public edge on the workload's node; with it, the four generators are split over the two nodes each running a controller of
+the public edge, because `kind` has no load balancer before its NodePorts (`externalTrafficPolicy: Local`: a client reaches only the
+controllers of the node it is given).
+
+**What a green run says, per experiment**, each in §11.46's step shape, each sending an unauthenticated transfer through the public edge
+while its fault is on (answered `401` or `403` by a replica, and no idempotency record under its key; a success is `FAILED`), and each
+walking its row of the matrix over its window and a minute past the return (`EXPERIMENTS_WALK_MARGIN`):
+
+- **E01 at ten**: as §11.46 records it at three, the waits at the run's count.
+- **E02**: half the fleet's JVMs (five of ten), a zone at a time, every process found on its node before any signal and the signals then
+  sent back to back; once the disruption budget reads the kills (`disruptionsAllowed` 0), an eviction asked for every replica, as a drain
+  arriving mid-incident asks it, and every one refused by the budget (its message names it; anything else could not run). At no reading
+  of the fleet, every 2 s, is no replica ready (the row's stop, sharpened by its own Safety). Every victim back in its pod (exit 137); every
+  failed answer at the edge ended in a window a killed replica could still be picked in (from a second before its kill to five seconds
+  after its endpoint was read out of the Service), a replica's own `503` counted apart as a refusal before any effect; the workload's
+  failed requests, each a key, no more than those. The fleet's shed count over the window is recorded.
+- **E03**: three evictions through the API, one a zone, each asked again every 3 s while the budget refuses it (the budget serialising
+  them) and each with a payout held at the provider in flight on its pod, its claim `IN_PROGRESS`; the hold lifted ten seconds into the
+  pod's drain, so the pod's own answer completes it (`201`). The pod gone and the fleet ready before the next. No failed answer at the edge
+  from an eviction to five seconds after its pod was gone (the stop, read after each eviction, before the next is asked), none of the
+  workload's requests failed, and none of the generators' through those windows (read after the load).
+- **E04**: the spare zone's worker (`zone-c`) stopped as a machine stops (`docker kill`; a `docker stop` is an orderly shutdown), its
+  address recorded, and started again at the stop step, held to that address. When E04 is named, the scope's copies keep the primary, the
+  standby (a synchronous primary whose one standby is gone commits nothing), the simulator (its counts are the census's), the fault proxy
+  and the archive store off `zone-c` and spread the three brokers one a zone, and before the load CoreDNS, the cluster's Prometheus and
+  both edges' controllers are moved off its worker (cordoned, a fault of the registry; restarted; uncordoned), everything read back off it.
+  Observed: the worker `NotReady`; **§11.8's `InstanceDown`** firing for an instance of it and clearing after its return (the PI-024 part
+  owner decision C11 gives these experiments); the lost replicas marked for deletion after their own toleration of an unreachable node
+  (read from one of them); their replacements scheduled and ready on the other workers within 300 s after that, or `Pending` with the
+  scheduler's reason, which is `FAILED` (below); the worker back, every replica ready. Every failed answer at the edge ended in a window a
+  lost replica could still be picked in, to the edge's own wait for an answer (`responseHeaderTimeout`, read from the committed edge) past
+  its leaving the Service.
+- **E25**: the public controller on the node the rehearsal's workload does not reach, its process killed with `SIGKILL` from its node and
+  back in its pod (exit 137) within 10 min, the other ready throughout (the stop: both unready, or the lost one not back). The workload,
+  which reaches the surviving controller, failed none; the surviving controller's own answers failed none from the kill to the edge's wait
+  past the lost one's return; after the load, the generators given the surviving node failed none in that window and those given the lost
+  one failed only inside it. None of them moves to the survivor: a real balancer's health check would move them, designed-only (§6 item
+  32 (b)).
+
+**The probe** (`REHEARSAL_PROBE=pdb-removed`): the application's disruption budget deleted before E02's fault (a fault of the registry,
+applied again from the run's own copy at the stop and on every way out). Every eviction is admitted, the fleet reads no replica ready, and
+E02 must stop on its condition and fail. Its `MUTATION_TESTING.md` §2 row is owed with the run.
+
+**What E04 is expected to find.** The deployed zone rule is `DoNotSchedule` (the experiments' copy keeps the base's), and by Kubernetes'
+own documentation a spread constraint counts every node's domain unless it sets `nodeTaintsPolicy: Honor` (the default, `Ignore`,
+includes tainted nodes): a stopped worker's zone stays a domain while its node object stands, so the replacements of its replicas may
+stay `Pending` until it returns. Whether they do is the run's to measure (`P16-TSK-019`'s note: measured, not relaxed); a `FAILED` E04 on
+that reason is the finding `THREAT_MODEL.md` §6 item 68 (a) puts to the owner.
+
+**Reading the record** (under `$REHEARSAL_ARTEFACTS/experiments`, beside §11.46's files):
+
+| File | What it holds |
+|---|---|
+| `spare.txt`, `spare.log`, `spare-pods.txt` | E04's worker, what was moved off it, what it runs |
+| `windows.tsv`, `<id>/generators-<from>.tsv` | Each experiment's window for the generators' series, and their failed requests in it by generator, address and status |
+| `<id>/unauthenticated.tsv` | The unauthenticated transfer's key, tries and answer |
+| `<id>/matrix-A07.tsv` (A08, A09) | The walk of the row: per operation, its verdict, answers, successes and outcome |
+| `E02/victims.txt`, `kills.tsv`, `evictions.tsv`, `endpoints.tsv`, `windows.txt` | The victims, each kill's second, each eviction's answer, the victims' endpoints every second, their windows |
+| `E03/evictions.tsv`, `drained.tsv`, `payout-held-<n>.txt` | Each eviction asked and answered, each pod's held payout and who answered it |
+| `E04/pending.tsv`, `failed-scheduling.txt`, `pods-before.txt` | The ready and pending replicas every 5 s once the lost ones were marked, the scheduler's reasons, what the worker ran |
+| `E25/survivor-lines.tsv` | The surviving controller's answers |
+| `../load/` | The load's own artefacts (§11.43), `generators.tsv` naming each generator's edge address |
+
+An experiment's standing verdict is the last `verdict` line of its `record.tsv`: a window the generators' series broke after the load
+appends `FAILED` there.
+
+**When it is red.** A stop or a page: the experiment found something, and its register row is `FAILED` with a remediation task. A
+refusal before the build names its reason. `faults-cleared.txt` naming a stopped node, a cordon or an absent budget: start the node
+(`docker start`), `kubectl uncordon` it, apply the budget from the run's copy, and find why the exit trap could not. A worker that came back
+at another address is refused by its restore: the cluster is no longer the one the run made; delete it.
+
+**Failure and rollback.** The run's own cluster, deleted at exit unless kept; nothing here reaches `deploy/`, and the placement and the
+brokers' spread exist only in the run's copies.
+
+**The record.** None. Not run, owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13, "we dont need long running checks
+and tests"): E01 at ten, E02, E03, E04 and E25 under the sustained profile in one run, and the `pdb-removed` probe. What ran instead, on
+2026-11-13, without a cluster: the new pure functions extracted from the committed `experiments.sh` and run under `dash` and `mawk` in a
+container of the JDK image (33 checks: the placement over the four harness manifests, the spare worker's read, a service's leaving, the
+generators' addresses, the excused victims, the failure windows, the workload's failed keys, E02's and E03's choice of victims, the
+generators' series read), the placement and the brokers' spread over a real `kustomize` render of the `kind` overlay, each parsed as YAML;
+`InstanceFailuresRehearsalContractTest` holds the text.
 
 ### 11.63 The objectives under load: judging them, a real burn, a decline wave, and recalibrating one (`P16-TSK-029`, ADR-0148)
 

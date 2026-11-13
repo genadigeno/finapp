@@ -431,7 +431,9 @@ class LoadRehearsalContractTest {
         String judge = function("load_judge");
         assertThat(judge).as("each operation's arrivals held to the sum over the stages, the stress's dropped iterations counted as arrivals")
                 .contains("want=$(load_expected \"$op\")").contains("[ \"$stress\" != true ] || lost=")
-                .as("only the stress profile's dropped iterations are recorded rather than failed")
+                .as("only the stress profile's dropped iterations, and a load's beside the experiments' faults (P16-TSK-020), are recorded"
+                        + " rather than failed")
+                .contains("[ -z \"${EXPERIMENTS_LOAD_ON:-}\" ] || stress=true")
                 .contains("if [ \"$stress\" = true ]; then\n        [ \"$dropped\" = 0 ] || log \"recorded stress: the generator dropped")
                 .contains("else\n        [ \"$dropped\" = 0 ] || fail \"the generator dropped $dropped iterations");
         assertThat(function("load_expected")).as("as model.js rounds: whole iterations per time unit times the stage's seconds")

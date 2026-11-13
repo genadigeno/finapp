@@ -64,6 +64,8 @@
 # re-roll at ten, every wait and assertion at the run's count, the rollout's bound that many of the Deployment's own steps);
 # REHEARSAL_EXPERIMENTS_REPLICAS runs the experiments written for a count (E45). The load scope's autoscale profile (E70) leaves the
 # autoscaler to decide between its floor and the run's count, and every connection sample records the count the Deployment was asked for.
+# P16-TSK-020 (OPERATIONS_RUNBOOK.md section 11.61): E01, E02, E03, E04 and E25 are written for a count too, and run under a load profile beside
+# them (REHEARSAL_EXPERIMENTS_LOAD=sustained), its model read before anything is built (experiments_load_resolve, experiments_load_preflight).
 #
 # A DEVELOPMENT MODE (P15-TSK-032, the design's Q11): REHEARSAL_STEPS="a b c" runs only those of a scope's own steps (`wanted`), after the
 # common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
@@ -140,7 +142,7 @@ FLEET_REPLICAS=3
 FLEET_AUTOSCALE=""
 FLEET_START=$FLEET_REPLICAS
 # The experiments that read the run's count rather than three: the others are refused at any other count.
-EXPERIMENTS_AT_A_COUNT="E45"
+EXPERIMENTS_AT_A_COUNT="E45 E01 E02 E03 E04 E25"
 # fleet_resolve (P16-TSK-014): the run's count refused before anything is built unless it is three to the kind overlay's ceiling, read from the
 # overlay, and a count other than three refused wherever the steps are written for three: the release's probes (their quota and timings are
 # three's), every experiment but those of EXPERIMENTS_AT_A_COUNT, and every other scope. The load scope's count is load_preflight's too.
@@ -166,6 +168,8 @@ fleet_resolve() {
     esac
 }
 fleet_resolve
+# The experiments and the load beside them (P16-TSK-020): what does not go together refused before anything is built.
+[ "$SCOPE" != experiments ] || experiments_load_resolve
 
 # The development mode (Q11): never in CI, never against a cluster the run will delete.
 STEPS=${REHEARSAL_STEPS:-}
@@ -661,6 +665,11 @@ if [ "$SCOPE" = load ]; then
     # The event pipeline's runs (P16-TSK-013): E47's profile and E48's scale, on three brokers.
     pipeline_preflight
 fi
+# The experiments' load (P16-TSK-020): the profile REHEARSAL_EXPERIMENTS_LOAD names, its model read before anything is built.
+if [ "$SCOPE" = experiments ] && [ -n "$EXPERIMENTS_LOAD" ]; then
+    step load-preflight
+    experiments_load_preflight
+fi
 
 step build-images
 if [ -z "${REHEARSAL_SKIP_BUILD:-}" ]; then
@@ -868,7 +877,8 @@ step simulator
     printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: finapp-simulator-source\n  namespace: finapp-rehearsal\ndata:\n  Simulator.java: |\n'
     sed 's/^/    /' "$DIR/Simulator.java"
 } | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the simulator's source"
-sed "s#JDK_IMAGE#$JDK_IMAGE#" "$DIR/simulator.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the simulator"
+# Kept off E04's spare zone in the experiments scope when E04 is named (P16-TSK-020, experiments_place): its counts are the census's.
+sed "s#JDK_IMAGE#$JDK_IMAGE#" "$DIR/simulator.yaml" | experiments_place | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the simulator"
 kube -n finapp-rehearsal rollout status deployment/finapp-simulator --timeout=180s >> "$ART/apply.log" 2>&1 || fail "the simulator did not become ready"
 
 step data-tier
