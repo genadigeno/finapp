@@ -4,8 +4,9 @@
 # AND THE ALERTS (P15-TSK-032): Prometheus here loads every committed rule file and sends what fires to an Alertmanager running the committed
 # routing (deploy/observability/alertmanager), so a rehearsal reads an alert and its receiver on a real Prometheus, not only promtool's cases.
 # The rule files are in rules/, a byte-for-byte copy of infra/prometheus/rules: kustomize reads no file outside this directory, and the kind
-# rehearsal renders deploy/ alone. AlertCatalogueTest holds the copy equal to the source, file for file, and this list to the directory: a rule
-# changed in infra/prometheus/rules is copied here in the same change.
+# rehearsal renders deploy/ alone. AlertCatalogueTest holds the copy equal to the source, file for file, and the two rules ConfigMaps' lists
+# below to the directory, each file in exactly one: a rule changed in infra/prometheus/rules is copied here in the same change, and a new rule
+# file is listed in one of them.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -38,22 +39,29 @@ configMapGenerator:
       - prometheus.yml
     options:
       disableNameSuffixHash: true
-  # Every rule file, mounted at /etc/prometheus-rules. Hashed: a changed rule rolls the scraper.
+  # Every rule file, mounted at /etc/prometheus-rules, in TWO ConfigMaps (2026-11-13): one held them all until it came within 216 bytes of the
+  # 32 KiB margin AlertCatalogueTest keeps under kubectl's 256 KiB annotation cap for a client-side apply. Here the platform's own and the
+  # cross-cutting files (the objectives, their recording rules, the flows and the correctness signals); the domains' in the next. backends.yaml
+  # projects both into the one directory, so Prometheus's rule path and rules/ are unchanged. AlertCatalogueTest holds each file in exactly one
+  # and each ConfigMap under the margin on its own. Hashed, both: a changed rule rolls the scraper.
   - name: finapp-prometheus-rules
     files:
-      - rules/accounting.yml
-      - rules/bnpl.yml
       - rules/correctness.yml
-      - rules/credit.yml
       - rules/flows.yml
-      - rules/fx.yml
-      - rules/lending.yml
       - rules/platform.yml
-      - rules/risk.yml
-      - rules/settlement-reconciliation.yml
       - rules/slo-recording.yml
       - rules/slo.yml
       - rules/telemetry.yml
+  # The domains' rule files: the ledger's, each product's, risk's and settlement's.
+  - name: finapp-prometheus-rules-domain
+    files:
+      - rules/accounting.yml
+      - rules/bnpl.yml
+      - rules/credit.yml
+      - rules/fx.yml
+      - rules/lending.yml
+      - rules/risk.yml
+      - rules/settlement-reconciliation.yml
 
 patches:
   # The quota follows the backends (deploy/observability/base/resourcequota.yaml shows the collector's and the cluster watcher's sum). Each of
