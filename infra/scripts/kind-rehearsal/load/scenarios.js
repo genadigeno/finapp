@@ -77,6 +77,7 @@ for (const operation of driven) {
         failed: new Counter(`failed_attempts_${name}`),
         conflicts: new Counter(`conflicts_${name}`),
         unresolved: new Counter(`unresolved_${name}`),
+        abandoned: new Counter(`abandoned_${name}`),
         retried: new Counter(`retried_${name}`),
         agreed: new Counter(`retry_agreed_${name}`),
     };
@@ -149,6 +150,12 @@ function retryable(response) {
 // definitive answer within the bound, which the census must then be able to explain and the harness fails the run for.
 const REFUSED = 'refused';
 const UNRESOLVED = 'unresolved';
+// ABANDONED (P16-TSK-007): a checkout whose every answer under its key was a replay. The session token is in the creating answer and in
+// no other (CheckoutService.create), so a client that lost that answer can never pay the session: it stays OPEN and expires, nothing moved,
+// and the census counts no payment for it. Found on a compressed stress run: the session committed, then the second transaction that reads
+// it back waited past the pool's 5 s bound and the creating answer was a 500. Recorded per operation and stage, never a pass of anything:
+// the outcome is known (no payment), unlike UNRESOLVED's.
+const ABANDONED = 'abandoned';
 
 // Between two asks: a second through the first minute, then five, as a client backs off while the platform concludes.
 function pause(since) {
@@ -205,6 +212,8 @@ function conclude(op, outcome, started) {
     m.flow.add(Date.now() - started);
     if (outcome === UNRESOLVED) {
         m.unresolved.add(1);
+    } else if (outcome === ABANDONED) {
+        m.abandoned.add(1);
     } else if (outcome === REFUSED) {
         m.refused.add(1);
     } else {
@@ -327,8 +336,16 @@ export function checkout() {
     // The token appears once, in the creating answer; a replay names the same session and carries none.
     const checkoutId = json(created[0], 'checkoutId');
     const token = created.map((answer) => json(answer, 'sessionToken')).find((value) => value);
-    if (!token || (created.length === 2 && json(created[1], 'checkoutId') !== checkoutId)) {
+    // Two sessions under one key would be the key's second effect: never explained away.
+    if (created.length === 2 && json(created[1], 'checkoutId') !== checkoutId) {
         conclude(op, UNRESOLVED, started);
+        return;
+    }
+    if (!token) {
+        if (created.length === 2) {
+            agreed(op, created, 'checkoutId');
+        }
+        conclude(op, ABANDONED, started);
         return;
     }
     const confirm = request(op, 'POST', '/v1/checkout/sessions/confirmation', { sessionToken: token, paymentMethodId: who.card },

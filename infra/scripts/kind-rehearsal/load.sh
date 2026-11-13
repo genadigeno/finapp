@@ -789,6 +789,10 @@ EOF
             [ "$retried" -ge 1 ] || fail "$op: no key was retried, so one effect per key was not tried"
             [ "$agreed" = "$retried" ] || fail "$op: $agreed of $retried retried keys answered alike"
             pass "$op: $iterations movements, every one resolved by its key and none refused, $agreed of $retried retried keys answered alike"
+            # A checkout whose creating answer was lost (scenarios.js ABANDONED): known to have moved nothing, recorded with the platform's
+            # answer that lost it, never a verdict; the census counts no payment for it.
+            abandoned=$(awk -F'\t' -v op="$op" 'NR > 1 && $1 == op {n += $22} END {print n + 0}' "$LOAD_ART/k6/stages.tsv")
+            [ "$abandoned" = 0 ] || log "recorded $op: $abandoned sessions abandoned, every answer under their keys a replay without the session token: see load/k6/stages.tsv"
         fi
         [ "$attempts" -gt 0 ] || fail "$op: no attempt was made"
         # The errors, recorded by status and never a verdict here (load_errors_chance says why); latency likewise.

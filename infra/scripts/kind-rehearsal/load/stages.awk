@@ -44,7 +44,7 @@ BEGIN {
 }
 # ---------------------------------------------------------------------------------------------- pass one: counts, and the latencies out
 pass == "count" && $1 == "metric_name" { for (i = 1; i <= NF; i++) col[$i] = i; next }
-pass == "count" && $1 ~ /^(iterations|ok|refused|unresolved|attempts|failed_attempts|conflicts)_/ {
+pass == "count" && $1 ~ /^(iterations|ok|refused|unresolved|abandoned|attempts|failed_attempts|conflicts)_/ {
     op = $1; sub(/^[a-z_]*_/, "", op)
     if ($1 ~ /^failed_attempts_/) name = "failed"; else { name = $1; sub(/_[a-z]*$/, "", name) }
     count[op SUBSEP stage_of($2 + 0) SUBSEP name] += $3
@@ -85,7 +85,7 @@ END {
         exit
     }
     flush()
-    print "op\tstage\tfrom_host_s\tto_host_s\tfactor\tarrivals\tarrivals_per_host_s\tok\trefused\tunresolved\tattempts\tfailed_attempts\tconflicts\tanswers_5xx\tanswers_429\tanswers_none\tdropped\tp50_ms\tp95_ms\tp99_ms\tmax_ms"
+    print "op\tstage\tfrom_host_s\tto_host_s\tfactor\tarrivals\tarrivals_per_host_s\tok\trefused\tunresolved\tattempts\tfailed_attempts\tconflicts\tanswers_5xx\tanswers_429\tanswers_none\tdropped\tp50_ms\tp95_ms\tp99_ms\tmax_ms\tabandoned"
     split(ops, list, " ")
     for (o = 1; o in list; o++) {
         op = list[o]
@@ -98,10 +98,10 @@ END {
             fct = (i <= n) ? ((only[i] == "-" || only[i] == op) ? factor[i] : 0) : "-"
             arrivals = c[key SUBSEP "iterations"] + 0
             rate = (i <= n && secs[i] > 0) ? sprintf("%.3f", arrivals * speed / secs[i]) : "-"
-            printf "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\n", op, s, from + 0, to, fct, arrivals,
+            printf "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%d\n", op, s, from, to, fct, arrivals,
                 rate, c[key SUBSEP "ok"], c[key SUBSEP "refused"], c[key SUBSEP "unresolved"], c[key SUBSEP "attempts"],
                 c[key SUBSEP "failed"], c[key SUBSEP "conflicts"], c[key SUBSEP "s5xx"], c[key SUBSEP "s429"], c[key SUBSEP "s0"],
-                c[key SUBSEP "dropped"], p50[key], p95[key], p99[key], pmax[key]
+                c[key SUBSEP "dropped"], p50[key], p95[key], p99[key], pmax[key], c[key SUBSEP "abandoned"]
         }
     }
 }
