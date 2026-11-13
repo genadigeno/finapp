@@ -47,7 +47,7 @@ Reading the code against the plan found three things the plan assumed otherwise:
    fast pair must stop once the burn does; E86 is a decline wave at the target's peak, 30% of card authorizations declined by the simulator
    by their key, each refusal a decline the provider gave and the payment objective's errors within what the client saw. E17 records the
    payment objective's pairs during a provider's outage and never judges them.
-5. **The latency, processing, read, settlement-ingestion and reconciliation-completion indicators are proposed, not adopted** (`SLOS.md` §7):
+5. **The latency, processing, read, edge, settlement-ingestion and reconciliation-completion indicators are proposed, not adopted** (`SLOS.md` §7):
    no bucket, recording rule or alert until the owner adopts one (`THREAT_MODEL.md` §6 item 70), since §15 adds a bucket only where a target
    is adopted.
 6. **The break-age counts (item 42 (a), (i)):** `finapp.reconciliation.break.aged{severity}` and `finapp.reconciliation.suspense.aged`, the

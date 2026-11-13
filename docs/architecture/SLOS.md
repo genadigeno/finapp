@@ -175,8 +175,9 @@ machine's limit; that is no reason to recalibrate a production reference, and th
   by design, and `PaymentUnknownAged` (`OPERATIONS_RUNBOOK.md` §11.22) is what tells. A processing indicator that would spend budget there
   is proposed in §7 (`THREAT_MODEL.md` §6 item 70).
 - **A request the edge answers itself.** The SLIs are the application's request timer: the edge's own `429` (its per-source in-flight
-  bound under a stall) and its `5xx` when no replica is ready never reach it. `EdgeErrorRatioHigh` (`OPERATIONS_RUNBOOK.md` §11.42) is
-  their signal; a load run records them per operation in `load/k6/statuses.tsv`.
+  bound under a stall) and its `5xx` when no replica is ready never reach it. `EdgeErrorRatioHigh` (`OPERATIONS_RUNBOOK.md` §11.42), a
+  fast pair alone, is their signal; a load run records them per operation in `load/k6/statuses.tsv`; an objective of the edge's own is
+  proposed in §7.
 - **The balance read has no objective**, though it is the largest operation of the target (`PHASE_16_PLAN.md` §4.3). Proposed in §7.
 - **Shedding spends the budget it protects.** A spike the platform sheds is a burn on every shed route (ADR-0137 decision 4); the spike
   profile's run records whether it pages (E50), which is the shedding thresholds' calibration, not the objectives'.
@@ -191,6 +192,7 @@ recording rule, a bucket or an alert, because `PHASE_16_PLAN.md` §15 adds a buc
 |---|---|---|---|---|
 | `payment_processing` | Card payments reaching a final state (`SUCCEEDED` or `FAILED`) within 15 minutes of their creation, over those created | 99% within 15 minutes, `PaymentUnknownAged`'s own bound | A counter of concluded card payments by whether they concluded within the bound, counted after commit | proposed |
 | `account_read_availability` | Non-5xx ratio of `GET /v1/me/accounts/{id}/balance` and the account reads | 99.9% | Recording rules and burn pairs only: the request timer already carries the routes | proposed |
+| `edge_availability` | The edge's own answers that are not `5xx`, per edge over its controllers - the requests no replica saw included, which no application objective can count | 99.9%, the availability objectives' | A slow pair beside `EdgeErrorRatioHigh`, which today is the fast pair alone at that budget (`OPERATIONS_RUNBOOK.md` §11.42) | proposed |
 | `account_read_latency` | Balance reads within 300 ms | 99% within 300 ms | A 300 ms boundary on those routes in `SloLatencyBuckets` | proposed |
 | `payment_latency` | Payment and checkout commands within 2 s, the simulated provider included | 99% within 2 s | A 2 s boundary on those routes | proposed |
 | `merchant_api_latency` | Merchant API requests within 1 s | 99% within 1 s | The 1 s boundary on `/v1/merchant/**` | proposed |

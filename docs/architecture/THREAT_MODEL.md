@@ -2785,13 +2785,15 @@ objectives' validation under load and awaits the owner.**
     `docs/architecture/SLOS.md` §6 and §7)*. Reading the objectives against the code found that a budgeted objective cannot see a
     provider's outage: the card adapter reads a provider's `503` or its silence as an indeterminate answer (`INV-LIFE-03`), the payment
     rests `UNKNOWN` and its command answers the payment's state with a success status, so `payment_checkout` spends nothing while no card
-    payment can conclude. Only `PaymentUnknownAged` tells, a page fifteen minutes in. The balance read, the target's largest operation, has
+    payment can conclude. Only `PaymentUnknownAged` tells, a page fifteen minutes in. The edge's own answers (its `429`s, its `5xx` when no
+    replica is ready) never reach the application's request timer, so only the edge's fast-pair page reads them, with no objective or slow
+    pair of their own. The balance read, the target's largest operation, has
     no objective at all, and `PHASE_16_PLAN.md` §4.3's latency targets for payments, the merchant API and reads, and §15's settlement
     ingestion and reconciliation completion indicators, are proposed and not adopted, so no bucket or rule exists for them (§15 adds one
     only where a target is adopted). The options:
     - **(i) Adopt `SLOS.md` §7's indicators** as objectives: a payment-processing indicator (card payments concluded within
-      `PaymentUnknownAged`'s fifteen minutes, which a provider's outage spends), balance-read availability and latency, payment and
-      merchant-API latency, settlement ingestion (the platform's own wait, the attestation left out) and reconciliation completion; each
+      `PaymentUnknownAged`'s fifteen minutes, which a provider's outage spends), balance-read availability and latency, the edge's own
+      availability with its slow pair, payment and merchant-API latency, settlement ingestion (the platform's own wait, the attestation left out) and reconciliation completion; each
       with its buckets or meter, its recording windows, its two burn pairs and its promtool cases, built in a task of its own, its targets
       the proposed ones until a run measures them.
     - **(ii) Adopt only the processing indicator and the balance read's availability now**, the latency indicators after E84's run has
