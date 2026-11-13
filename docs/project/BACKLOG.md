@@ -30045,7 +30045,7 @@ on none:
     `kustomize` render of the `kind` overlay and stubbed cluster answers (31 checks, 0 failed); the pinned k6 2.3.0's `inspect` of the
     `autoscale` profile; the harness's refusals of a count past the ceiling, a release probe at ten and an experiment written for three.
 
-**P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its one dependency, `P16-TSK-014`, `COMPLETE`)
+**P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-015` from master `fb0e014b`, wave F) *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its one dependency, `P16-TSK-014`, `COMPLETE`)" until the design)*
 - **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection
   limit (item 32 (b)) from measurement. Decide the `api`/`worker` role split that Phase 15's C5 left to this measurement.
 - **Affected components**: `deploy/base/`, the edge's middleware, `application.yaml`'s abuse limits, `CAPACITY_MODEL.md`.
