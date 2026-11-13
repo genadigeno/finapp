@@ -237,6 +237,29 @@ class KubernetesManifestsTest {
     }
 
     @Test
+    @DisplayName("C3 decided (ADR-0134): kind admits ten replicas on its larger test-only server, its connections the formula exactly; production's ceiling stays seven, ten taking a larger declared server first")
+    void kindAdmitsTenAndProductionKeepsSeven() {
+        int surge = number(deployment, "spec", "strategy", "rollingUpdate", "maxSurge");
+        int perInstance = number(application, "spring", "datasource", "hikari", "maximum-pool-size")
+                + placeholderDefault(String.valueOf(value(application, "finapp", "database", "reporting", "pool-size")));
+        String kind = EvidenceCitations.read(root.resolve("deploy/overlays/kind/kustomization.yaml"));
+        assertThat(maxReplicas(kind)).as("kind's ceiling: the owner's ten").isEqualTo(10);
+        int instances = literal(kind, "FINAPP_DB_INSTANCES");
+        assertThat(instances).as("kind: maxReplicas + 2 x maxSurge + 1").isEqualTo(10 + 2 * surge + 1);
+        assertThat(literal(kind, "FINAPP_DB_SERVER_MAX_CONNECTIONS")).as("kind's test-only server: instances x pool + reserved, the rule and no margin")
+                .isEqualTo(instances * perInstance + literal(kind, "FINAPP_DB_RESERVED_CONNECTIONS"));
+        assertThat(number(document("deploy/base/horizontalpodautoscaler.yaml"), "spec", "minReplicas")).as("the minimum every overlay keeps").isEqualTo(3);
+
+        String production = EvidenceCitations.read(root.resolve("deploy/overlays/production/kustomization.yaml"));
+        assertThat(maxReplicas(production)).as("production's ceiling stays the base's seven until the ten-instance runs and the calibration (item 56)")
+                .isEqualTo(7);
+        assertThat(literal(production, "FINAPP_DB_INSTANCES")).isEqualTo(7 + 2 * surge + 1);
+        // What ten would need there, read from the same numbers: more than its declared server holds, which is why ten takes a larger one first.
+        assertThat((10 + 2 * surge + 1) * perInstance).as("ten in production with today's declaration")
+                .isGreaterThan(literal(production, "FINAPP_DB_SERVER_MAX_CONNECTIONS") - literal(production, "FINAPP_DB_RESERVED_CONNECTIONS"));
+    }
+
+    @Test
     @DisplayName("scale-down is one pod per period no shorter than the grace, and the disruption budget allows one")
     void scaleDownCannotStackTerminatingPods() {
         Map<String, Object> hpa = document("deploy/base/horizontalpodautoscaler.yaml");

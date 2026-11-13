@@ -655,3 +655,11 @@ commit and the date; do not delete the entry.
     `term-with-faults` probes over the four new kinds of fault (a black hole, the holder, a lock, a ballast), and a first run of the
     loop-mounted volume and the local PersistentVolume on a cluster. What ran instead: `NetworkFaultExperimentsContractTest`, and short
     container checks of the node image's tools and of Toxiproxy 2.13.0 with PostgreSQL 18.6 (§11.47's last record).
+  - **`P16-TSK-009`** (the connection budget at ten, `OPERATIONS_RUNBOOK.md` §11.49; `CAPACITY_MODEL.md` §4; ADR-0134): **E41**, the `load`
+    scope at ten replicas with the normal profile (`REHEARSAL_LOAD_PROFILE=normal REHEARSAL_LOAD_REPLICAS=10`): the autoscaler reading
+    metrics-server's CPU metric, each replica's pools at the engineering workload (`load/pools-per-replica.tsv`), the fleet's peak
+    within 13 x 8 with an operator admitted at it and with the fleet held at 104; §11.49's record. Also owed by the same change, since it
+    touches every scope's rendered copy: the first cluster run of `kind-rehearsal.sh`'s `fleet_patch` and of the `load` scope's new steps
+    at any count (the release scope at three on these bytes is already PI-024's). The peak during a rollout at ten is E26's
+    (`P16-TSK-014`). Nothing ran on a cluster: `fleet_patch` ran once by itself over a real render, and the manifest policies and the
+    budget's plants in containers (§11.49's record).

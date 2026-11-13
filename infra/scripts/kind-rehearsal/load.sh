@@ -50,11 +50,19 @@
 # stage instead of failing on them, and is judged on everything else. The run writes, per operation and stage, the arrivals, outcomes,
 # errors by class and the latency percentiles (k6/stages.tsv), and per stage the fleet's and each pod's CPU, throttling and memory, the
 # JVMs' heap, GC, threads, request threads, the pools' hold and wait, and the database's time (stages-resources.tsv), so every number
-# the capacity model takes is read from the run's own artefacts. REHEARSAL_LOAD_REPLICAS (3, today's minimum; up to 7, today's ceiling)
-# runs the fleet at that count: the rendered kind overlay is patched in the run's own directory, never in the repository, with the
-# connection budget's formula at that count (N + 2 x 1 + 1 instances, each 7 + 1 connections, 12 reserved: FINAPP_DB_INSTANCES, the
-# server's figure the guard reads, and the test-only server's max_connections), the HorizontalPodAutoscaler held at N and the quota to
-# match. BNPL purchases and instalments, lending repayments and loan credit decisions stay undriven on kind, their reason in each profile:
+# the capacity model takes is read from the run's own artefacts. REHEARSAL_LOAD_REPLICAS (3, the minimum; up to the kind overlay's ceiling,
+# ten since P16-TSK-009) runs the fleet at that count: the rendered kind overlay is patched in the run's own directory, never in the
+# repository, with the connection budget's formula at that count (N + 2 x 1 + 1 instances, each 7 + 1 connections, 12 reserved:
+# FINAPP_DB_INSTANCES, the server's figure the guard reads, and the test-only server's max_connections), the HorizontalPodAutoscaler held at N
+# and the quota to match (kind-rehearsal.sh's fleet_patch, every scope's since P16-TSK-009; this file's load_replicas_patch until then).
+#
+# THE BUDGET AT THE RUN'S COUNT (P16-TSK-009; ADR-0134; OPERATIONS_RUNBOOK.md section 11.49). Before the load, the metrics source: metrics-server
+# exactly as infra/scripts/controller-check.sh renders and holds it (the delivery scope's), its API available, and the autoscaler reading its
+# CPU metric with ScalingActive true, so the HPA has a metric on kind (P15-REM-007). It is held at N and does not act on it here. Through the
+# load, the fleet's pg_stat_activity every two seconds with an operator tried at each peak (the release's sampler); after it, the peak within
+# instances x pool, no sample above eight a pod, an operator admitted at the peak and none refused, each replica's pools read per instance
+# (load/pools-per-replica.tsv), and an operator admitted with the fleet held at its budget (the release's budget_ceiling). At ten: E41.
+# BNPL purchases and instalments, lending repayments and loan credit decisions stay undriven on kind, their reason in each profile:
 # every one rests on a credit approval, and on kind none is possible, automatic or by a person (no bureau can be configured there, and
 # without the bureau's total balance the exposure is unassessed: INV-CRD-09, INV-CRD-10; OPERATIONS_RUNBOOK.md section 11.43).
 #
@@ -82,7 +90,7 @@
 LOAD_PROFILE_NAME=${REHEARSAL_LOAD_PROFILE:-demonstration}
 LOAD_CUSTOMERS=${REHEARSAL_LOAD_CUSTOMERS:-20}
 LOAD_DURATION=${REHEARSAL_LOAD_DURATION:-}
-# The fleet's size for the run: today's minimum by default, today's ceiling at most (ten is P16-TSK-014's, on C3's larger server).
+# The fleet's size for the run: the minimum by default, the kind overlay's ceiling at most (ten, on C3's larger test-only server: P16-TSK-009).
 LOAD_REPLICAS=${REHEARSAL_LOAD_REPLICAS:-3}
 # Run inside the node every 10 s: one line per pod - its uid as systemd spells it, its CPU in nanoseconds, how many of its containers'
 # 100 ms periods hit their CPU limit and the task-time throttled there, its memory in bytes, and the periods its limited containers ran,
@@ -194,34 +202,6 @@ load_expected() {
     fi
 }
 
-# load_replicas_patch <rendered overlay directory>: the fleet at LOAD_REPLICAS, in the run's own rendered copy (kind-rehearsal.sh calls it
-# for the load scope before anything is applied). The connection budget's formula at that count (DISTRIBUTED_EXECUTION.md section 4a): N +
-# 2 x maxSurge + 1 instances, each its pool of 7 and its reporting connection, and the 12 reserved; the quota sized as the kind overlay
-# sizes it for three. Three changes nothing: the committed overlay is the three-replica rehearsal.
-load_replicas_patch() {
-    [ "$LOAD_REPLICAS" != 3 ] || return 0
-    instances=$((LOAD_REPLICAS + 3))
-    connections=$((instances * 8 + 12))
-    # The split files the run applies, and all.yaml beside them, which the harness reads the budget from.
-    sed -i "s/^\(  \)minReplicas: 3$/\1minReplicas: $LOAD_REPLICAS/; s/^\(  \)maxReplicas: 3$/\1maxReplicas: $LOAD_REPLICAS/" \
-        "$1/HorizontalPodAutoscaler.finapp-app.yaml" "$1/all.yaml"
-    for file in "$1"/ConfigMap.finapp-app-config*.yaml "$1/all.yaml"; do
-        sed -i "s/^\(  FINAPP_DB_INSTANCES: \)\"6\"$/\1\"$instances\"/; s/^\(  FINAPP_DB_SERVER_MAX_CONNECTIONS: \)\"60\"$/\1\"$connections\"/" "$file"
-    done
-    sed -i "s/^\( *- \)max_connections=60$/\1max_connections=$connections/" "$1/StatefulSet.finapp-postgres.yaml" "$1/all.yaml"
-    sed -i "s/^\(    pods: \)\"9\"$/\1\"$((instances + 3))\"/; s/^\(    requests.cpu: \)3750m$/\1$((instances * 500 + 750))m/;
-        s/^\(    requests.memory: \)8704Mi$/\1$((instances * 1024 + 2560))Mi/; s/^\(    limits.cpu: \)\"15\"$/\1\"$((instances * 2 + 3))\"/;
-        s/^\(    limits.memory: \)8704Mi$/\1$((instances * 1024 + 2560))Mi/" "$1/ResourceQuota.finapp.yaml" "$1/all.yaml"
-    grep -q "minReplicas: $LOAD_REPLICAS\$" "$1/HorizontalPodAutoscaler.finapp-app.yaml" \
-        && grep -q "maxReplicas: $LOAD_REPLICAS\$" "$1/HorizontalPodAutoscaler.finapp-app.yaml" \
-        && grep -q "FINAPP_DB_INSTANCES: \"$instances\"" "$1"/ConfigMap.finapp-app-config*.yaml \
-        && grep -q "FINAPP_DB_SERVER_MAX_CONNECTIONS: \"$connections\"" "$1"/ConfigMap.finapp-app-config*.yaml \
-        && grep -q "max_connections=$connections\$" "$1/StatefulSet.finapp-postgres.yaml" \
-        && grep -q "pods: \"$((instances + 3))\"" "$1/ResourceQuota.finapp.yaml" \
-        || cannot "the rendered kind overlay could not be set to $LOAD_REPLICAS replicas: a value it patches has moved"
-    log "the fleet at $LOAD_REPLICAS replicas: $instances instances in the budget, the test-only server at $connections connections (the run's own copy)"
-}
-
 pg_admin() {
     # The superuser in the server's maintenance database, where pg_stat_statements lives: the finapp database gains no object.
     kube -n finapp exec -i finapp-postgres-0 -c postgres -- psql -q -X -A -t -U finapp -d postgres "$@"
@@ -243,7 +223,12 @@ load_preflight() {
     LOAD_CONTENTION_ON=$(load_profile_value contention)
     LOAD_SOAK=$(load_profile_value soak)
     [ "$(load_seconds "$LOAD_DURATION")" -gt 0 ] || cannot "the load's duration '$LOAD_DURATION' is not a number of seconds, minutes or hours"
-    case $LOAD_REPLICAS in 3 | 4 | 5 | 6 | 7) ;; *) cannot "REHEARSAL_LOAD_REPLICAS is 3 to 7 (today's minimum to its ceiling), not '$LOAD_REPLICAS'" ;; esac
+    # The minimum to the kind overlay's ceiling (P16-TSK-009), read from the overlay that will be rendered, before any cluster exists.
+    ceiling=$(sed -n '/^        path: \/spec\/maxReplicas$/{n;s/^        value: \([0-9]*\)$/\1/p;}' "$ROOT/deploy/overlays/kind/kustomization.yaml")
+    case $ceiling in '' | *[!0-9]*) cannot "the kind overlay's maxReplicas could not be read" ;; esac
+    case $LOAD_REPLICAS in '' | *[!0-9]*) cannot "REHEARSAL_LOAD_REPLICAS is a whole number, not '$LOAD_REPLICAS'" ;; esac
+    [ "$LOAD_REPLICAS" -ge 3 ] && [ "$LOAD_REPLICAS" -le "$ceiling" ] \
+        || cannot "REHEARSAL_LOAD_REPLICAS is 3 to $ceiling (the minimum to the kind overlay's ceiling), not '$LOAD_REPLICAS'"
     if [ -n "$(load_stages)" ]; then
         load_stages > "$LOAD_ART/stages.txt"
         log "a staged profile: $(grep -c . "$LOAD_ART/stages.txt") stages, $(load_total_seconds) s"
@@ -474,6 +459,9 @@ load_scope() {
     load_paths
     step load-target
     load_target
+    # The autoscaler's metric (P16-TSK-009, P15-REM-007): before anything is measured, read by the autoscaler the run holds at its count.
+    step load-metrics-source
+    load_metrics_source
     step load-setup
     load_setup
     # The platform's own signals (THREAT_MODEL.md section 6 item 47 (c); telemetry.sh): planted before the load, read after its census.
@@ -485,6 +473,9 @@ load_scope() {
     load_judge
     step load-census
     load_census
+    # The connection budget at the run's count (P16-TSK-009; OPERATIONS_RUNBOOK.md section 11.49; at ten, E41).
+    step load-budget
+    load_budget
     step platform-signals
     platform_signals
 }
@@ -505,6 +496,43 @@ load_target() {
     done
     kube -n finapp get pods -o wide > "$LOAD_ART/pods.txt" 2>&1 || true
     pass "the fleet is $LOAD_REPLICAS ready replicas"
+}
+
+# The metrics source (P16-TSK-009; P15-REM-007; ADR-0134): metrics-server exactly as infra/scripts/controller-check.sh renders and holds it to
+# its rule, the delivery scope's own (OPERATIONS_RUNBOOK.md section 11.36), told not to verify kind's kubelets; then the autoscaler's own
+# reading, its CPU metric and ScalingActive true, which the controller writes only once it has computed from a metric. A real environment
+# brings its own metrics source. The run holds the autoscaler at its count (fleet_patch), so it reads the metric here and never acts on it.
+load_metrics_source() {
+    controllers="$WORK/controllers"
+    mkdir -p "$controllers"
+    sh "$ROOT/infra/scripts/controller-check.sh" render "$controllers" > "$LOAD_ART/controller-render.log" 2>&1 \
+        || cannot "controller-check.sh could not render metrics-server: see load/controller-render.log"
+    grep -q '^ok   rendered into' "$LOAD_ART/controller-render.log" || cannot "controller-check.sh rendered nothing"
+    for node in $NODES; do
+        dock exec "$node" crictl pull "$METRICS_SERVER_REPOSITORY@$METRICS_SERVER_DIGEST" >> "$ART/images.log" 2>&1 \
+            || cannot "the node $node could not pull metrics-server"
+    done
+    kube apply --server-side -f - < "$controllers/metrics-server.yaml" >> "$ART/apply.log" 2>&1 || cannot "could not apply metrics-server"
+    kube -n kube-system rollout status deployment/metrics-server --timeout=240s >> "$ART/apply.log" 2>&1 || fail "metrics-server did not become ready"
+    deadline=$(( $(date +%s) + 180 ))
+    until [ "$(kube get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null)" = True ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || fail "the metrics API was not available within three minutes of metrics-server's rollout"
+        sleep 3
+    done
+    deadline=$(( $(date +%s) + 300 ))
+    utilisation=""
+    active=""
+    until [ -n "$utilisation" ] && [ "$active" = True ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || {
+            kube -n finapp describe hpa finapp-app > "$LOAD_ART/hpa.txt" 2>&1
+            fail "the autoscaler read no CPU metric within five minutes of the metrics API (utilisation '${utilisation}', ScalingActive '${active}'): see load/hpa.txt"
+        }
+        sleep 5
+        utilisation=$(kube -n finapp get hpa finapp-app -o jsonpath='{.status.currentMetrics[?(@.type=="Resource")].resource.current.averageUtilization}' 2>/dev/null || true)
+        active=$(kube -n finapp get hpa finapp-app -o jsonpath='{.status.conditions[?(@.type=="ScalingActive")].status}' 2>/dev/null || true)
+    done
+    kube -n finapp describe hpa finapp-app > "$LOAD_ART/hpa.txt" 2>&1 || true
+    pass "the autoscaler reads its metric on kind: ${utilisation}% of the pods' CPU request, ScalingActive true, held at $LOAD_REPLICAS by the run"
 }
 
 load_setup() {
@@ -855,6 +883,9 @@ load_run() {
     load_clock start
     LOAD_STARTED=$(date +%s)
     secs=$(load_total_seconds)
+    # The fleet's connections every two seconds through the load, an operator tried at each peak (the release's sampler, P16-TSK-009):
+    # load_budget judges them after the census.
+    start_sampler load
     load_statistics &
     BACKGROUND="$BACKGROUND $!"
     if [ "$PROBE" = sampler-disabled ]; then
@@ -918,6 +949,7 @@ load_run() {
         sleep 5
     done
     LOAD_ENDED=$(date +%s)
+    stop_sampler load
     [ -n "$settled" ] || fail "settlement: the load captured no card payment to settle"
     load_clock end
     [ "$PROBE" != slow-statement ] || load_restore_slow_statement
@@ -1362,4 +1394,63 @@ load_census() {
         printf 'stages\t%s\n' "$(tr '\n' ';' < "$WORK/stages.txt")"
         printf 'k6 seconds a host second\t%s (the VM'"'"'s monotonic clock against the host'"'"'s, load/clock.tsv: k6 schedules and times by the first)\n' "$LOAD_SPEED"
     } > "$LOAD_ART/workload.txt"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The connection budget at the run's count (P16-TSK-009; ADR-0134; OPERATIONS_RUNBOOK.md section 11.49; at ten replicas, E41).
+# ---------------------------------------------------------------------------------------------------
+
+# load_budget: what the release asserts of a rollout's connections, asserted of the load's (the sampler load_run started and stopped), then
+# each replica's pools read per instance, then the fleet held at its budget with an operator tried. BUDGET is the run's own copy's
+# instances x pool, at its count: (N + 3) x (7 + 1), 104 at ten.
+load_budget() {
+    samples=$(awk 'NR > 1' "$ART/samples-load.tsv" 2>/dev/null | grep -c . || true)
+    [ "$samples" -ge $(( $(load_total_seconds) / 30 )) ] \
+        || fail "load: the fleet's connections were sampled $samples times over the load, too few to have read it through: see samples-load.tsv"
+    peak=$(peak_of load)
+    [ "$peak" -gt 0 ] || fail "load: no sample read the fleet's connections: see samples-load.tsv"
+    log "peak pg_stat_activity for finapp during the load at $LOAD_REPLICAS replicas: $peak (budget $BUDGET), $samples samples"
+    [ "$peak" -le "$BUDGET" ] || fail "load: the peak of $peak connections exceeds instances x pool = $BUDGET"
+    pass "load: peak $peak connections within instances x pool = $BUDGET, at $LOAD_REPLICAS replicas"
+    assert_within_pods load
+    [ "$(operator_at_peak load)" -ge 1 ] || fail "load: no operator connection was tried at the peak"
+    [ "$(operator_refused load)" = 0 ] || fail "load: an operator was refused during the load: see samples-load.tsv"
+    pass "load: an operator was admitted at the peak, and none was refused through the load"
+    load_pools || fail "the pools were not read for each of $LOAD_REPLICAS replicas from Prometheus: see load/pools-per-replica.tsv and load/prometheus"
+    pass "each replica's pools over the load are in load/pools-per-replica.tsv: $(awk -F'\t' 'NR > 1 && $2 != "finapp-reporting" {n++} END {print n + 0}' "$LOAD_ART/pools-per-replica.tsv") writer pools read"
+    budget_ceiling
+}
+
+# load_pools: load/pools-per-replica.tsv, one line per instance and pool over the load's own seconds (LOAD_STARTED to LOAD_ENDED), from the
+# series load_saturation kept: its active connections' mean and most, its pending most and its longest acquisition (Hikari's maximum over
+# each scrape). Recorded, never judged: the pool's size is the budget's and the guard's, its use is what the capacity model reads. It returns
+# non-zero when fewer writer pools than the run's replicas were read, so a run whose pools nobody could read does not pass as one that did.
+load_pools() {
+    for signal in hikari_active hikari_pending hikari_acquire_max; do
+        [ -s "$LOAD_ART/prometheus/$signal.json" ] || return 1
+        sed 's/{"metric":/\n{"metric":/g' "$LOAD_ART/prometheus/$signal.json" | awk -v s="$signal" -v from="$LOAD_STARTED" -v to="$LOAD_ENDED" '
+            /^{"metric":/ {
+                i = "-"; p = "-"
+                if (match($0, /"instance":"[^"]*"/)) i = substr($0, RSTART + 12, RLENGTH - 13)
+                if (match($0, /"pool":"[^"]*"/)) p = substr($0, RSTART + 8, RLENGTH - 9)
+                rest = $0
+                while (match(rest, /\[[0-9.]+,"[^"]*"\]/)) {
+                    pair = substr(rest, RSTART + 1, RLENGTH - 2)
+                    rest = substr(rest, RSTART + RLENGTH)
+                    split(pair, f, ",")
+                    v = f[2]
+                    gsub(/"/, "", v)
+                    if (f[1] + 0 >= from && f[1] + 0 <= to && v != "NaN") print s "\t" i "\t" p "\t" v
+                }
+            }'
+    done | awk -F'\t' '
+        { k = $2 "\t" $3; seen[k] = 1 }
+        $1 == "hikari_active" { n[k]++; sum[k] += $4; if ($4 + 0 > most[k]) most[k] = $4 + 0 }
+        $1 == "hikari_pending" && $4 + 0 > pending[k] { pending[k] = $4 + 0 }
+        $1 == "hikari_acquire_max" && $4 + 0 > wait[k] { wait[k] = $4 + 0 }
+        END {
+            print "instance\tpool\tsamples\tactive_mean\tactive_most\tpending_most\tacquire_most_seconds"
+            for (k in seen) if (n[k] > 0) printf "%s\t%d\t%.2f\t%d\t%d\t%.3f\n", k, n[k], sum[k] / n[k], most[k], pending[k], wait[k]
+        }' > "$LOAD_ART/pools-per-replica.tsv"
+    [ "$(awk -F'\t' 'NR > 1 && $2 != "finapp-reporting" {n++} END {print n + 0}' "$LOAD_ART/pools-per-replica.tsv")" -ge "$LOAD_REPLICAS" ]
 }
