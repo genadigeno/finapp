@@ -29496,7 +29496,7 @@ on none:
   decide by measurement (an ADR first where it changes the ledger's reads, `PHASE_16_PLAN.md` §5.4); the hot merchant also serialises
   its `ledger.account_balance` upserts (mean 14 ms in that run).
 
-**P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `IN_PROGRESS` (2026-11-13, designed on branch `P16-TSK-009` from master `1fbdf71c`, wave D) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)" until the design)*
+**P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-009` from master `1fbdf71c`, wave D, master `6f23a4a1` merged in; ADR-0134 `Proposed`, no migration, no application code; its cluster run owed under PI-025; marks no task `READY` - the coordinator does) *(read "`IN_PROGRESS` (2026-11-13, designed on branch `P16-TSK-009` from master `1fbdf71c`, wave D)" until the gate)* *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)" until the design)*
 - **Objective**: make ten replicas possible without breaking the connection budget, decided by measurement, and give the HPA a
   metric to act on. Today `maxReplicas` 7 + 2 × `maxSurge` 1 + 1 = 10 = `FINAPP_DB_INSTANCES`. Ten replicas need 13 instances and
   104 connections, against 88 usable. The `kind` rehearsal installs no metrics source, so the HPA has never scaled (`P15-REM-007`,
@@ -29538,6 +29538,36 @@ on none:
 - **Definition of done**: `DOD-ARCH`, `DOD-BUILD`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's budget procedure; `DISTRIBUTED_EXECUTION.md` §4a.
 - **Risk**: Medium. **Cx**: M.
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-009` from master `1fbdf71c`, master `6f23a4a1` merged in once; ADR-0134
+  `Proposed`; no migration, no application code; `OPERATIONS_RUNBOOK.md` §11.49 the procedure, `CAPACITY_MODEL.md` §4 and
+  `DISTRIBUTED_EXECUTION.md` §4a the decision's reading, `RESILIENCE_EXPERIMENTS.md` E41 the row; under the owner's word of 2026-11-13,
+  "we dont need long running checks and tests", nothing ran on a cluster and the run is owed under `POSTPONED_ISSUES.md` PI-025):*
+  **The decision** (C3), from `CAPACITY_MODEL.md` §3.4's measurement at three replicas: at the engineering workload the fleet's 21
+  writer connections held 5.0 on average and 9 at most, none pending; at the break every connection was held because the database's CPU
+  was. So ten take a larger server: `kind`'s test-only server at the formula for ten (13 instances, 116 connections, a quota of 16 pods);
+  staging unchanged; production kept at seven, ten there a larger declared `max_connections` first, put to the owner (`THREAT_MODEL.md`
+  §6 item 56); the pool kept at 7 + 1. **The pooler**, evaluated and refused for now: every lock and setting the platform's statements
+  take is transaction-scoped, now held by `TransactionScopedDatabaseStateTest`; but PgJDBC 42.7.13's `setTransactionIsolation` sends
+  `SET SESSION CHARACTERISTICS` outside the transaction (read from its source), which twelve classes rely on for `REPEATABLE READ`; the
+  prepared statements need PgBouncer's `max_prepared_statements` or `prepareThreshold=0`, measured (its documentation, read). ADR-0134
+  lists what adoption first takes. **The harness**: `kind-rehearsal.sh`'s `fleet_patch` holds every run's fleet at its own count in its
+  own rendered copy, the budget at the formula for that count, every number read from the render (it replaced `load.sh`'s
+  `load_replicas_patch`); `REHEARSAL_LOAD_REPLICAS` runs 3 to the overlay's ceiling; the `load` scope installs metrics-server from
+  `controller-check.sh`'s checked render and waits for the autoscaler's CPU metric with `ScalingActive` true; every load run samples the
+  fleet's connections every two seconds through the load and, after the census, judges the peak within instances x pool, no sample above
+  eight a pod, an operator admitted at the peak and none refused, writes each replica's pools (`load/pools-per-replica.tsv`) and holds the
+  fleet at its budget with an operator tried (the release's step, now `budget_ceiling`). **Found by the guards**:
+  `ConfigFingerprintAlertTest` went red at `kind`'s ten (the longest rollout any overlay allows became 107 minutes), so
+  `ConfigFingerprintDisagrees` waits 110 minutes instead of 80 in both copies, its promtool cases moved with it and green; production's
+  lasting disagreement now pages half an hour later, and item 56 asks whether to split the rule by environment. **Run without a cluster**:
+  `fleet_patch` over a real `kustomize` render (at three the copy is master's three-replica render byte for byte but the generated
+  ConfigMap's name; seven and ten as the formula; 2, 11 and a moved ceiling refused); `load_pools` over Prometheus answers of the API's
+  shape; the manifest policies on the three overlays, `kubeconform` on `kind` and the budget's plants in containers (manifest-check.sh's
+  own halves, 2 minutes); promtool on `config-fingerprint.test.yml`. **Acceptance**: the decision recorded with its measurement (met);
+  the `kind` overlay admitting ten within its budget (met: `KubernetesManifestsTest`, the policy); the formula re-proved (met); the HPA's
+  metric available on `kind` (built and contract-tested, run owed: E41, PI-025); an operator admitted at the measured peak (built and
+  contract-tested, run owed: E41, PI-025). **Owed under PI-025**: E41 at ten replicas; the first cluster run of `fleet_patch` and of the
+  load scope's new steps at any count. **Routed**: `P16-TSK-014`, `-015`, `-022` (notes on their entries).
 
 **P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: as decided 2026-11-09, scheduled into Phase 16's archival:
