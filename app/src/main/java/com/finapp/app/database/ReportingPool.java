@@ -228,6 +228,14 @@ public final class ReportingPool implements ReportingConnections, AutoCloseable 
         return pool.getDataSourceProperties().getProperty(name);
     }
 
+    /**
+     * The address this pool connects to - read by the endpoint test, never by production code (`P16-TSK-012`, ADR-0142): it is the
+     * writer's own, so no replica is reached through report generation's pool.
+     */
+    String jdbcUrl() {
+        return pool.getJdbcUrl();
+    }
+
     /** The statement every new connection runs before it is handed out - read by the capability test, never by production code. */
     String connectionInitSql() {
         return pool.getConnectionInitSql();
