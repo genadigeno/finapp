@@ -78,12 +78,24 @@
 #                        index build on ledger.journal_line (load/index-build.sql, THREAT_MODEL.md section 6 item 42 (b)) measures the
 #                        write stop a migration's CREATE INDEX makes under the load, and the throwaway index is dropped.
 # The probe of E38 (the lock order removed from the transfer's two account locks) is a throwaway branch's, section 11.48.
+#
+# THE DECISIONS' READINGS (P16-TSK-012, ADR-0142; OPERATIONS_RUNBOOK.md section 11.57; E65). REHEARSAL_LOAD_DECISIONS=1 rides the soak
+# (E39's run, REHEARSAL_LOAD_PROFILE=soak) and reads what would confirm or overturn ADR-0142's two decisions: at 10%, 20% ... 70% of the
+# load, this month's TRIAL_BALANCE is asked as the rehearsal's operator, through the operator edge, and report generation's statements
+# (finapp_reporting's, load/reports.sql) are read before and after each, beside the journal's lines and entries then (reports/); after the
+# load load/reports.awk fits the slowest statement's time to the journal's lines and states the lines at which one statement reaches the
+# generation bound, read from AccountingBeans' default (reports-reading.txt), and load/growth.awk reads every named table's growth per
+# hour and per money movement from the soak's own samples (growth.tsv). Every run must complete PROVISIONAL and the reader must see the
+# role's statements, or the run fails; the figures are the record's, never a verdict.
 
 LOAD_PROFILE_NAME=${REHEARSAL_LOAD_PROFILE:-demonstration}
 LOAD_CUSTOMERS=${REHEARSAL_LOAD_CUSTOMERS:-20}
 LOAD_DURATION=${REHEARSAL_LOAD_DURATION:-}
 # The fleet's size for the run: today's minimum by default, today's ceiling at most (ten is P16-TSK-014's, on C3's larger server).
 LOAD_REPLICAS=${REHEARSAL_LOAD_REPLICAS:-3}
+# P16-TSK-012: E65's readings ride the soak (0 off, 1 on); the samples taken so far.
+LOAD_DECISIONS=${REHEARSAL_LOAD_DECISIONS:-0}
+LOAD_REPORTS_TAKEN=0
 # Run inside the node every 10 s: one line per pod - its uid as systemd spells it, its CPU in nanoseconds, how many of its containers'
 # 100 ms periods hit their CPU limit and the task-time throttled there, its memory in bytes, and the periods its limited containers ran,
 # each cumulative. The reference machine's kind node runs cgroup v1 under the systemd driver (kubelet.slice); a pod's limits sit on its
@@ -242,6 +254,19 @@ load_preflight() {
     # P16-TSK-008: the waits sampled and the server's lock log read (E38), the soak's tables, plans and index build (E39).
     LOAD_CONTENTION_ON=$(load_profile_value contention)
     LOAD_SOAK=$(load_profile_value soak)
+    # P16-TSK-012: E65 rides the soak alone, and its bound is the code's, read before anything is built.
+    case $LOAD_DECISIONS in
+        0) ;;
+        1)
+            [ "$LOAD_SOAK" = true ] || cannot "REHEARSAL_LOAD_DECISIONS=1 rides the soak (E65 rides E39): set REHEARSAL_LOAD_PROFILE=soak"
+            LOAD_REPORT_BOUND_MINUTES=$(sed -n 's/.*finapp\.accounting\.report\.generation-timeout:PT\([0-9]*\)M}.*/\1/p' \
+                "$ROOT/app/src/main/java/com/finapp/app/accounting/AccountingBeans.java" | head -1)
+            case $LOAD_REPORT_BOUND_MINUTES in '' | *[!0-9]*) cannot "the report generation bound could not be read from AccountingBeans.java" ;; esac
+            ! grep -Eqr 'REPORT_GENERATION_TIMEOUT|report\.generation-timeout' "$ROOT/deploy" \
+                || cannot "a deployed overlay sets the report generation bound, which E65 reads from the code's default"
+            ;;
+        *) cannot "REHEARSAL_LOAD_DECISIONS is 0 or 1, not '$LOAD_DECISIONS'" ;;
+    esac
     [ "$(load_seconds "$LOAD_DURATION")" -gt 0 ] || cannot "the load's duration '$LOAD_DURATION' is not a number of seconds, minutes or hours"
     case $LOAD_REPLICAS in 3 | 4 | 5 | 6 | 7) ;; *) cannot "REHEARSAL_LOAD_REPLICAS is 3 to 7 (today's minimum to its ceiling), not '$LOAD_REPLICAS'" ;; esac
     if [ -n "$(load_stages)" ]; then
@@ -844,6 +869,77 @@ load_soak_judge() {
     pass "the soak: the named tables read $samples times (load/pg-soak-tables.tsv), $(grep -c . "$LOAD_ART/autovacuum.txt" || true) autovacuum runs and $(grep -c 'checkpoint complete' "$LOAD_ART/checkpoints.txt" || true) checkpoints from the server's log, $wal WAL bytes over $moved money movements; the top statements' plans: $PG_PLANS_SUMMARY"
 }
 
+# ---------------------------------------------------------------------------------------------------
+# The decisions' readings (P16-TSK-012, ADR-0142; OPERATIONS_RUNBOOK.md section 11.57; E65), riding the soak.
+# ---------------------------------------------------------------------------------------------------
+
+# load_decisions_tick <elapsed> <seconds>: the next report run at 10%, 20% ... 70% of the load, each once. Counted in the host's seconds,
+# which can end at 92% of the written length (load_soak_tick's note): 70% is reached, and every run ends before the plans window opens at
+# 80%, so the window's plans are the soak's own. In the load's own loop, not the background: the rehearsal's operator elevates with a
+# one-time code whose step it records, and the mid-run settlement file's persons are the same client's, so two clients at once could
+# present one step twice. A sample holds the loop for its client's few seconds (at most its 60 s wait for the run).
+load_decisions_tick() {
+    next=$((LOAD_REPORTS_TAKEN + 1))
+    [ "$next" -le 7 ] && [ "$1" -ge $(($2 * next * 10 / 100)) ] || return 0
+    mkdir -p "$LOAD_ART/reports"
+    ( load_report_sample "$next" )
+    LOAD_REPORTS_TAKEN=$next
+}
+
+# load_report_sample <n>: the journal's size and report generation's statements read before and after one TRIAL_BALANCE of this month,
+# asked through the operator edge as the rehearsal's operator (Rehearsal.java trial-balance-report, which waits for the run to leave
+# GENERATING); then the run's own row: its status, and its claim to its completion on the database's clock. A run is a PROVISIONAL one:
+# the month is open, and a run asked again past the freshness window is a new revision, so each sample is a run of its own.
+load_report_sample() {
+    set +e
+    dir="$LOAD_ART/reports"
+    psql_query -c "SELECT (SELECT count(*) FROM ledger.journal_line) || '|' || (SELECT count(*) FROM ledger.journal_entry)" \
+        > "$dir/$1-journal.txt" 2>> "$dir/errors.log"
+    pg_admin -f - < "$LOAD_SRC/reports.sql" > "$dir/$1-before.txt" 2>> "$dir/errors.log"
+    client trial-balance-report > "$dir/$1-client.txt" 2>&1
+    pg_admin -f - < "$LOAD_SRC/reports.sql" > "$dir/$1-after.txt" 2>> "$dir/errors.log"
+    run=$(sed -n 's/^platform trial-balance-report status=[0-9]* run=\([0-9a-f-]\{36\}\) .*/\1/p' "$dir/$1-client.txt" | head -1)
+    if [ -n "$run" ]; then
+        psql_query -c "SELECT status || '|' || coalesce(round(extract(epoch FROM (coalesce(completed_at, failed_at) - claimed_at)) * 1000)::text, '-')
+            || '|' || coalesce(failure_code, '-') FROM accounting.report_run WHERE id = '$run'::uuid" > "$dir/$1-run.txt" 2>> "$dir/errors.log"
+    fi
+    printf '%s\t%s\t%s\n' "$1" "$(date +%s)" "${run:--}" >> "$dir/samples.tsv"
+}
+
+# After the soak: every report run completed PROVISIONAL, the reader saw the reporting role's statements at each, and every named table
+# was read; then the fit (reports-reading.txt) and the growth (growth.tsv). A run that did not complete, a sample that never ran, a reader
+# that saw nothing or a table never read fails the run: the figures themselves are the record's, never a verdict.
+load_decisions_judge() {
+    dir="$LOAD_ART/reports"
+    [ "$LOAD_REPORTS_TAKEN" = 7 ] || fail "E65: $LOAD_REPORTS_TAKEN report runs of seven were asked: the soak ended before 70% of its length"
+    printf 'sample\tepoch\tjournal_lines\tjournal_entries\trun\tstatus\tgeneration_ms\ttotal_ms\tlargest_ms\tcalls\n' > "$LOAD_ART/reports.tsv"
+    n=1
+    while [ "$n" -le 7 ]; do
+        run=$(awk -F'\t' -v n="$n" '$1 == n {print $3}' "$dir/samples.tsv")
+        case $run in '' | -) fail "E65: report run $n was not asked: see load/reports/$n-client.txt" ;; esac
+        grep -q '^role|1$' "$dir/$n-after.txt" || fail "E65: the reporting role's statements were not read at run $n: see load/reports/errors.log"
+        IFS='|' read -r status generation failure < "$dir/$n-run.txt"
+        [ "$status" = PROVISIONAL ] || fail "E65: report run $n ($run) ended $status ($failure), not PROVISIONAL: see load/reports/$n-client.txt"
+        cost=$(awk -v mode=delta -f "$LOAD_SRC/reports.awk" "$dir/$n-before.txt" "$dir/$n-after.txt")
+        calls=$(printf '%s' "$cost" | cut -f3)
+        [ "${calls:-0}" -gt 0 ] || fail "E65: report run $n's statements were not seen as finapp_reporting's: a blind reader, see load/reports/$n-after.txt"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "$(awk -F'\t' -v n="$n" '$1 == n {print $2}' "$dir/samples.tsv")" \
+            "$(tr '|' '\t' < "$dir/$n-journal.txt")" "$run" "$status" "$generation" "$cost" >> "$LOAD_ART/reports.tsv"
+        n=$((n + 1))
+    done
+    [ "$(cut -f5 "$LOAD_ART/reports.tsv" | sort -u | grep -c .)" = 8 ] || fail "E65: two samples read one report run: see load/reports.tsv"
+    awk -v mode=fit -v bound_ms=$((LOAD_REPORT_BOUND_MINUTES * 60000)) -f "$LOAD_SRC/reports.awk" "$LOAD_ART/reports.tsv" \
+        > "$LOAD_ART/reports-reading.txt" || cannot "E65: the report runs could not be read: see load/reports.tsv"
+    moved=$(awk -F'\t' '$1 == "transfer" || $1 == "checkout" || $1 == "topup" {n += $4} END {print n + 0}' "$LOAD_ART/k6/report.tsv")
+    awk -v moved="$moved" -f "$LOAD_SRC/growth.awk" "$LOAD_ART/pg-soak-tables.tsv" > "$LOAD_ART/growth.tsv" \
+        || cannot "E65: the soak's tables could not be read for their growth"
+    tables=$(grep -o "('[a-z_]*', '[a-z_]*')" "$LOAD_SRC/soak.sql" | sort -u | grep -c .)
+    [ "$(($(grep -c . "$LOAD_ART/growth.tsv") - 1))" = "$tables" ] || fail "E65: a named table of soak.sql was never read: see load/growth.tsv"
+    awk -F'\t' '$1 == "ledger.journal_line" && $4 + 0 > 0 {found = 1} END {exit !found}' "$LOAD_ART/growth.tsv" \
+        || fail "E65: the journal grew by nothing over the soak: the growth reading read nothing"
+    pass "E65: seven report runs completed PROVISIONAL as the journal grew, each read as finapp_reporting's (load/reports.tsv: $(tr '\n' ';' < "$LOAD_ART/reports-reading.txt" | cut -c1-300)); every named table's growth per hour and per money movement over $moved movements in load/growth.tsv"
+}
+
 load_run() {
     LOAD_RUN_TAG=$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
     pg_admin -c "SELECT pg_stat_statements_reset()" >> "$LOAD_ART/postgres.log" 2>&1 || true
@@ -906,6 +1002,7 @@ load_run() {
         fi
         elapsed=$(( $(date +%s) - LOAD_STARTED ))
         [ "$LOAD_SOAK" != true ] || load_soak_tick "$elapsed" "$secs"
+        [ "$LOAD_DECISIONS" != 1 ] || load_decisions_tick "$elapsed" "$secs"
         if [ "$PROBE" = unbalanced-entry ] && [ -z "$planted" ] && [ "$elapsed" -ge 60 ]; then
             load_plant_unbalanced
             planted=1
@@ -1208,6 +1305,8 @@ EOF
     # P16-TSK-008: the contended rows' waits and the deadlocks (E38); the soak's tables, log, plans and index build (E39).
     [ "$LOAD_CONTENTION_ON" != true ] || load_contention_judge
     [ "$LOAD_SOAK" != true ] || load_soak_judge
+    # P16-TSK-012: the decisions' readings over the soak (E65).
+    [ "$LOAD_DECISIONS" != 1 ] || load_decisions_judge
 }
 
 # The platform's side per stage (P16-TSK-007, load/resources.awk): every sampled signal as "kind name epoch value" - the pods' cgroups by
