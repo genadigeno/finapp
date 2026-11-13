@@ -683,6 +683,11 @@ jobs:
           - scope: delivery
             timeout: 180
             nightly: true
+          # P16-TSK-005 (OPERATIONS_RUNBOOK.md sections 11.26 and 11.28): the edge's controllers, the test-only PostgreSQL and the test-only
+          # broker, each rolled to the other image of its pair and back under the workload. Nightly (and by hand), like the delivery's.
+          - scope: rolls
+            timeout: 150
+            nightly: true
     steps:
       - name: Check out, with the history N - 1 is built from
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

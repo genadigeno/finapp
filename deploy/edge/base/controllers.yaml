@@ -53,6 +53,13 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --configFile=/etc/traefik/traefik.yaml
+          # The proxy reads no Kubernetes API (its routes are files). With its own log shipped over OTLP (traefik.yaml's log.otlp), the pinned
+          # proxy treats a set KUBERNETES_SERVICE_HOST as an invitation to build an in-cluster client for its resource attributes, which needs
+          # the service-account token this pod is never given, and exits 1 at start without a line (measured on kind by P16-TSK-006's first
+          # full run: both edges crash-looping). Emptied, the variable says nothing and the proxy starts; the token stays unmounted.
+          env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: ""
           ports:
             - name: https
               containerPort: 8443
@@ -166,6 +173,10 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --configFile=/etc/traefik/traefik-operator.yaml
+          # As the public edge's: the variable emptied so the proxy's OTLP log never builds an in-cluster client it has no token for.
+          env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: ""
           ports:
             - name: https
               containerPort: 8443

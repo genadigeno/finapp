@@ -230,3 +230,95 @@ groups:
         annotations:
           summary: "No certificate expiry series is published"
           description: "cert-manager publishes no expiry series here, so an expiring certificate cannot be seen. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # The platform's own components (P16-TSK-003; THREAT_MODEL.md section 6 item 43 (b), decided 2026-11-12): the migrator Job, the cluster
+  # watcher that reads it, and the edge. A third group, so the first stays what PlatformAlertRulesTest holds it to; PlatformComponentAlertRulesTest
+  # holds every for below to the numbers it is derived from, read from the manifests, and every series and label to what the pinned images
+  # publish (infra/prometheus/platform-components-series.txt). Promtool: infra/prometheus/tests/platform-components.test.yml.
+  #
+  # THE JOB'S STATE IS THE API SERVER'S, read by the cluster watcher (deploy/observability/base/cluster-watch.yaml, job finapp-cluster-watch):
+  # k8s_job_*_pods per Job, labelled by k8s_namespace_name, k8s_job_name and k8s_job_uid. A Job is read by its NAME, never its uid: one release's
+  # Job replaces the last under the same name (the delivery's BeforeHookCreation, or the rehearsal's apply), and the exporter keeps a deleted
+  # Job's series for its metric_expiration, so a max by name lets the successor's own state win. N watchers publish the same series under N
+  # instances; max() is one verdict.
+  - name: platform-components
+    labels:
+      owner: platform
+    rules:
+      - alert: MigratorJobFailed
+        # Aggregation: max by (k8s_namespace_name, k8s_job_name) - every watcher publishes the same Job, and a replaced Job's predecessor is read beside it until its series expire
+        # A migrator pod failed and nothing is trying: a migration or a validation failed (exit 10) or the configuration, identity or credential
+        # was refused (exit 12) - the Job's podFailurePolicy fails it at once - or three transient failures used its backoffLimit, or its
+        # deadline killed a pod that hung. The release waits; money moves on the old one. Between two tries of a transient failure the Job has a
+        # failed pod and none active for its backoff (10 s, then 20 s): the for outlasts that, the watcher's collection and the scrape.
+        expr: >-
+          max by (k8s_namespace_name, k8s_job_name) (k8s_job_failed_pods{k8s_job_name="finapp-migrator"}) > 0
+          unless on(k8s_namespace_name, k8s_job_name)
+          (max by (k8s_namespace_name, k8s_job_name) (k8s_job_active_pods{k8s_job_name="finapp-migrator"}) > 0
+          or max by (k8s_namespace_name, k8s_job_name) (k8s_job_successful_pods{k8s_job_name="finapp-migrator"}) > 0)
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "The migrator Job in {{ $labels.k8s_namespace_name }} has failed"
+          description: "A migrator pod failed and no other is running or has succeeded, so the release is held. See OPERATIONS_RUNBOOK.md section 11.41."
+      - alert: MigratorJobOverdue
+        # Aggregation: max by (k8s_namespace_name, k8s_job_name) - every watcher publishes the same Job, and a replaced Job's predecessor is read beside it until its series expire
+        # The migrator Job has not succeeded for longer than its own deadline allows: a Job whose pod was never created (a quota, an admission
+        # refusal, an image that cannot be pulled) fails by its deadline with no failed pod, which MigratorJobFailed cannot see (measured on
+        # kind); a pod that hangs is killed at the deadline. The for is the Job's activeDeadlineSeconds, the watcher's collection, the scrape
+        # and the evaluation, with a minute to spare: a Job inside its deadline never fires.
+        expr: >-
+          max by (k8s_namespace_name, k8s_job_name) (k8s_job_successful_pods{k8s_job_name="finapp-migrator"})
+          < max by (k8s_namespace_name, k8s_job_name) (k8s_job_desired_successful_pods{k8s_job_name="finapp-migrator"})
+        for: 17m
+        labels:
+          severity: page
+        annotations:
+          summary: "The migrator Job in {{ $labels.k8s_namespace_name }} has not succeeded within its deadline"
+          description: "The migrator Job has not succeeded for longer than its deadline, so the release is held. See OPERATIONS_RUNBOOK.md section 11.41."
+      - alert: ClusterWatchBlind
+        # Aggregation: none - absent() asks whether the watcher publishes the application's Deployment at all, gated to a deployed fleet
+        # The Job rules read the cluster watcher, and a watcher down, unscraped or refused by the API server publishes nothing, so they are silent
+        # for the wrong reason. Every deployment runs finapp-app, so a watcher that sees finapp publishes its Deployment. Compose runs no watcher,
+        # so only where a finapp target is not labelled env="local". A ticket: nothing is failing that the platform knows of.
+        expr: absent(k8s_deployment_desired{k8s_namespace_name="finapp", k8s_deployment_name="finapp-app"}) and on() (count(up{job="finapp", env!="local"}) > 0)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The cluster watcher publishes nothing about finapp"
+          description: "No series of the finapp-app Deployment has been published for 15 minutes, so MigratorJobFailed and MigratorJobOverdue are blind. See OPERATIONS_RUNBOOK.md section 11.41."
+      - alert: EdgeErrorRatioHigh
+        # Aggregation: sum by (edge) - counters are per controller, and an edge's ratio sums its controllers' before dividing
+        # The edge answering 5xx: the application's own (HttpServerErrorsHigh reads those from the replicas) and the edge's - 502, 503, 504, a
+        # replica that cannot be reached or does not answer in time - which no replica counts. The SLO document's fast pair, both windows over
+        # 14.4 times the strictest budget the edge carries (0.001: transfers, payments, merchant, authentication), on the TLS listener alone; a
+        # reference value Phase 16's load model recalibrates. A code's series is born at its first request, so a burst's first scrape is not
+        # counted; a ratio held for minutes is. No traffic is no ratio, and no alert.
+        expr: >-
+          (sum by (edge) (rate(traefik_entrypoint_requests_total{job="finapp-edge", entrypoint="websecure", code=~"5.."}[5m]))
+          / sum by (edge) (rate(traefik_entrypoint_requests_total{job="finapp-edge", entrypoint="websecure"}[5m]))) > (14.4 * 0.001)
+          and (sum by (edge) (rate(traefik_entrypoint_requests_total{job="finapp-edge", entrypoint="websecure", code=~"5.."}[1h]))
+          / sum by (edge) (rate(traefik_entrypoint_requests_total{job="finapp-edge", entrypoint="websecure"}[1h]))) > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "The {{ $labels.edge }} edge is answering errors"
+          description: "Over 1.44% of the {{ $labels.edge }} edge's requests answered 5xx over both the last hour and the last five minutes. See OPERATIONS_RUNBOOK.md section 11.42."
+      - alert: EdgeUnscraped
+        # Aggregation: sum by (edge) - an edge is down when none of its controllers answers, and one of two is the other's to serve
+        # An edge none of whose controllers answers its scrape, or with no controller to scrape at all: the edge is down or cannot be seen, and
+        # either way EdgeErrorRatioHigh counts no request there - a client refused at the load balancer is no 5xx. Gated, as the absent half
+        # is, to a deployed fleet: compose runs no edge.
+        expr: >-
+          sum by (edge) (up{job="finapp-edge"}) == 0
+          or ((absent(up{job="finapp-edge", edge="public"}) or absent(up{job="finapp-edge", edge="operator"}))
+          and on() (count(up{job="finapp", env!="local"}) > 0))
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "No controller of the {{ $labels.edge }} edge can be scraped"
+          description: "No controller of the {{ $labels.edge }} edge has answered its scrape for 5 minutes, so it may be down and its errors cannot be counted. See OPERATIONS_RUNBOOK.md section 11.42."

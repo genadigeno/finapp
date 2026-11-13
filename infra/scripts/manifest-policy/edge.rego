@@ -376,6 +376,29 @@ edge_port_is_tls(port) if {
 	port.targetPort == "https"
 }
 
+# Every other Service selecting a controller is a scrape's (P16-TSK-003): headless, so it carries no traffic, and naming the TLS port alone, so
+# the management port - the counters and /ping - stays off every Service while the scraper reaches it by address.
+selects_a_controller(doc) if {
+	some name in controller_names
+	doc.spec.selector["app.kubernetes.io/name"] == name
+}
+
+scrape_service_holds(doc) if {
+	doc.spec.clusterIP == "None"
+	count(doc.spec.ports) > 0
+	every port in doc.spec.ports {
+		port.targetPort == "https"
+	}
+}
+
+deny contains msg if {
+	some doc in main.of_kind("Service")
+	not doc.metadata.name in controller_names
+	selects_a_controller(doc)
+	not scrape_service_holds(doc)
+	msg := sprintf("[edge-scrape-service] %s selects a controller and is not headless on the TLS port alone: the management port stays off every Service", [main.label(doc)])
+}
+
 load_balancer_scheme(doc) := doc.metadata.annotations["service.beta.kubernetes.io/aws-load-balancer-scheme"]
 
 deny contains msg if {

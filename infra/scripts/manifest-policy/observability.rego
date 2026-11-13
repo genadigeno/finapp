@@ -135,6 +135,27 @@ deny contains msg if {
 	msg := sprintf("[obs-collector-ingress] %s has an ingress rule naming no port: every port of the collector, the peers' 4317 among them", [main.label(policy)])
 }
 
+# The platform's own receiver (P16-TSK-003): on 4319 every peer is the edge's controllers or the cluster watcher, exactly, never the
+# application (which has 4318) and never a namespace or a pod by any other label.
+platform_senders := [
+	{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "finapp-edge"}}, "podSelector": {"matchLabels": {"finapp/role": "ingress-controller"}}},
+	{"podSelector": {"matchLabels": {"finapp/role": "cluster-watch"}}},
+]
+
+is_a_platform_sender(peer) if {
+	some sender in platform_senders
+	peer == sender
+}
+
+deny contains msg if {
+	some policy in collector_policies
+	some rule in main.list_of(policy.spec, "ingress")
+	rule_names_port(rule, 4319)
+	some peer in main.list_of(rule, "from")
+	not is_a_platform_sender(peer)
+	msg := sprintf("[obs-platform-ingress] %s admits the platform receiver's 4319 from something other than the edge's controllers and the cluster watcher", [main.label(policy)])
+}
+
 # The second tier's receiver takes spans already scrubbed by a peer and scrubs nothing itself: only a collector of this namespace may
 # send to it.
 peer_is_a_collector(peer) if {
@@ -216,6 +237,8 @@ scrape_targets := [
 	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "finapp"}}, "podSelector": {"matchLabels": {"app.kubernetes.io/name": "finapp-app"}}}, "ports": {["TCP", 8081]}},
 	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "finapp-edge"}}, "podSelector": {"matchLabels": {"finapp/role": "ingress-controller"}}}, "ports": {["TCP", 8081]}},
 	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "telemetry-collector"}}}, "ports": {["TCP", 8888]}},
+	# The cluster watcher's gauges (P16-TSK-003).
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "cluster-watch"}}}, "ports": {["TCP", 8889]}},
 	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "trace-store"}}}, "ports": {["TCP", 3200]}},
 	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "log-store"}}}, "ports": {["TCP", 3100]}},
 	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "alert-router"}}}, "ports": {["TCP", 9193]}},
@@ -272,6 +295,36 @@ store_admits := {
 	"log-store": [{"role": "telemetry-collector", "ports": {["TCP", 3100]}}, {"role": "metrics-scraper", "ports": {["TCP", 3100]}}],
 	"alert-router": [{"role": "metrics-scraper", "ports": {["TCP", 9193]}}],
 	"metrics-scraper": [],
+	# The cluster watcher (P16-TSK-003), which holds a Kubernetes credential: the scraper on its exporter, nothing else.
+	"cluster-watch": [{"role": "metrics-scraper", "ports": {["TCP", 8889]}}],
+}
+
+# ------------------------------------------------------------------------------------------- the cluster watcher reaches two things
+
+# P16-TSK-003: the one pod here with a Kubernetes credential reaches its resolver and the collector's platform receiver, and nothing else
+# by policy (the API server it reads is its node's, which no policy here names: cluster-watch-workload.yaml). Every egress rule of a policy
+# that may select it is one of these, every peer exactly and every port its own.
+cluster_watch_targets := [
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "telemetry-collector"}}}, "ports": {["TCP", 4319]}},
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}, "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}, "ports": {["UDP", 53], ["TCP", 53]}},
+]
+
+reaches_a_cluster_watch_target(rule) if {
+	some target in cluster_watch_targets
+	count(main.list_of(rule, "to")) > 0
+	every peer in main.list_of(rule, "to") {
+		peer == target.peer
+	}
+	main.ports_within(rule, target.ports)
+}
+
+deny contains msg if {
+	some policy in main.of_kind("NetworkPolicy")
+	in_namespace(policy)
+	may_select(policy, pod_labels("cluster-watch"))
+	some rule in main.list_of(policy.spec, "egress")
+	not reaches_a_cluster_watch_target(rule)
+	msg := sprintf("[obs-cluster-watch-egress] %s lets the cluster watcher reach something other than the collector's platform receiver or DNS", [main.label(policy)])
 }
 
 admitted_to_store(rule, role) if {
@@ -406,6 +459,18 @@ deny contains msg if {
 	"otlp" in main.list_of(pipeline, "receivers")
 	not scrubbed(pipeline)
 	msg := sprintf("[obs-scrub] the collector's %s pipeline takes the application's telemetry and does not scrub it", [name])
+}
+
+# The platform's own lines (P16-TSK-003) have a second net of their own: each pipeline taking from 4319 scrubs with it.
+scrubbed_as_the_platform(pipeline) if {
+	"transform/scrub-platform" in main.list_of(pipeline, "processors")
+}
+
+deny contains msg if {
+	some name, pipeline in main.section(main.section(collector_config, "service"), "pipelines")
+	"otlp/platform" in main.list_of(pipeline, "receivers")
+	not scrubbed_as_the_platform(pipeline)
+	msg := sprintf("[obs-scrub] the collector's %s pipeline takes the platform's own lines and does not scrub them", [name])
 }
 
 deny contains "[obs-scrub] the collector's configuration renders no pipeline at all" if {

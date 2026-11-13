@@ -27,7 +27,8 @@
 #      rebuilt and moved on purpose, so a new digest behind it is reported as a newer build, rot.
 #
 #   2. Is there a newer release?
-#      That is rot. Not urgent, and invisible without asking.
+#      That is rot. Not urgent, and invisible without asking. Not asked of a ROLL TARGET (P16-TSK-005), the kind
+#      rehearsal's other image of a pair, chosen older or newer than its deployed pin on purpose: the deployed pin is asked.
 #
 # Exit status: 0 current, 1 unpinned, stale or drifted, 2 could not check. A network failure is NOT
 # reported as "current" - a check that cannot run must not look like a check that passed, and a
@@ -235,6 +236,12 @@ check() {
         return
     fi
 
+    # A roll target (P16-TSK-005) is chosen as the other patch of a pair, older or newer than its deployed pin: only question 1 is its.
+    if [ "$lister" = roll-target ]; then
+        echo "ok $name: $version, digest matches; a roll target, so a newer release is its deployed pin's question"
+        return
+    fi
+
     newest=$("$lister" "$repository" "$version" 2>/dev/null | sort -V | tail -1 || true)
     if [ -z "$newest" ]; then
         echo "?? $name: could not list the releases of $repository"
@@ -295,6 +302,12 @@ check argocd-dex   "$ARGOCD_DEX_REPOSITORY"   "$ARGOCD_DEX_VERSION"   "$ARGOCD_D
 check argocd-redis "$ARGOCD_REDIS_REPOSITORY" "$ARGOCD_REDIS_VERSION" "$ARGOCD_REDIS_DIGEST" list_tags_ecr_library
 # metrics-server, for the kind delivery rehearsal (P15-TSK-032): its manifest moves with its version (METRICS_SERVER_MANIFEST_SHA256).
 check metrics-server "$METRICS_SERVER_REPOSITORY" "$METRICS_SERVER_VERSION" "$METRICS_SERVER_DIGEST" list_tags_registry_k8s
+# The kind rehearsal's roll targets (P16-TSK-005): each the other image of a pair, so whether its tag moved is the only question.
+check traefik-roll  "$TRAEFIK_ROLL_REPOSITORY"  "$TRAEFIK_ROLL_VERSION"  "$TRAEFIK_ROLL_DIGEST"  roll-target
+check postgres-roll "$POSTGRES_ROLL_REPOSITORY" "$POSTGRES_ROLL_VERSION" "$POSTGRES_ROLL_DIGEST" roll-target
+check kafka-roll    "$KAFKA_ROLL_REPOSITORY"    "$KAFKA_ROLL_VERSION"    "$KAFKA_ROLL_DIGEST"    roll-target
+# The load generator (P16-TSK-006): k6, for the kind rehearsal's load scope.
+check k6 "$K6_REPOSITORY" "$K6_VERSION" "$K6_DIGEST" list_tags_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

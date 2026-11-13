@@ -225,6 +225,29 @@ class EdgeManifestsTest {
     }
 
     @Test
+    @DisplayName("each controller starts on Kubernetes with no token: while it ships its own log over OTLP, KUBERNETES_SERVICE_HOST is emptied (P16-TSK-006)")
+    @SuppressWarnings("unchecked")
+    void theControllersStartWithoutAKubernetesClient() {
+        // The pinned proxy, its own log shipped over OTLP, builds an in-cluster client when KUBERNETES_SERVICE_HOST is set, and exits 1 at
+        // start without a line when no token is mounted, which no controller here has (measured on kind and on the pinned image).
+        int deployments = 0;
+        for (Map<String, Object> document : controllers) {
+            if (!"Deployment".equals(document.get("kind"))) {
+                continue;
+            }
+            deployments++;
+            for (Map<String, Object> container : (List<Map<String, Object>>) map(map(map(document, "spec"), "template"), "spec").get("containers")) {
+                assertThat((List<Object>) container.get("env")).as("%s: the variable emptied", map(document, "metadata").get("name"))
+                        .contains(Map.of("name", "KUBERNETES_SERVICE_HOST", "value", ""));
+            }
+        }
+        assertThat(deployments).as("the public and the operator controllers").isEqualTo(2);
+        for (String file : List.of(STATIC, OPERATOR_STATIC)) {
+            assertThat(map(yaml(read(file)), "log")).as("%s: why the variable is emptied - its own log over OTLP", file).containsKey("otlp");
+        }
+    }
+
+    @Test
     @DisplayName("the operator edge is internal in a real overlay, and limited to the private ranges at the proxy as well")
     void theOperatorEdgeIsInternal() {
         for (String overlay : List.of("staging", "production")) {
@@ -327,6 +350,49 @@ class EdgeManifestsTest {
                 assertThat(((Number) map(map(map(document, "spec"), "template"), "spec").get("terminationGracePeriodSeconds")).longValue())
                         .as("%s", document.get("metadata")).isGreaterThan(drain);
             }
+        }
+    }
+
+    @Test
+    @DisplayName("each edge is scraped by a headless Service of its own naming the TLS port alone, and each controller ships its lines to the"
+            + " collector's platform receiver alone, query strings and headers dropped at the proxy (P16-TSK-003)")
+    @SuppressWarnings("unchecked")
+    void eachEdgeIsScrapedAndShipsItsLines() {
+        List<Map<String, Object>> services = yamlAll(read("deploy/edge/base/scrape-services.yaml"));
+        Map<String, String> selected = new java.util.TreeMap<>();
+        for (Map<String, Object> service : services) {
+            Map<String, Object> spec = map(service, "spec");
+            assertThat(spec).as("headless, so it carries no traffic; ready or not, so a controller that cannot answer is a failed scrape")
+                    .containsEntry("clusterIP", "None").containsEntry("publishNotReadyAddresses", true);
+            assertThat((List<Object>) spec.get("ports")).isEqualTo(List.of(Map.of("name", "https", "port", 8443, "targetPort", "https", "protocol", "TCP")));
+            selected.put(String.valueOf(map(service, "metadata").get("name")), String.valueOf(map(spec, "selector").get("app.kubernetes.io/name")));
+        }
+        assertThat(selected).containsExactly(Map.entry("finapp-edge-operator-scrape", "finapp-edge-operator"),
+                Map.entry("finapp-edge-public-scrape", "finapp-edge-public"));
+        assertThat(read("deploy/edge/base/kustomization.yaml")).contains("  - scrape-services.yaml");
+        assertThat(read(POLICY)).contains("[edge-scrape-service]");
+
+        // Both controllers reach the collector's platform receiver, and nothing else of the namespace, by label on 4319.
+        Map<String, Object> collectorPeer = Map.of(
+                "namespaceSelector", Map.of("matchLabels", Map.of("kubernetes.io/metadata.name", "finapp-observability")),
+                "podSelector", Map.of("matchLabels", Map.of("finapp/role", "telemetry-collector")));
+        int shipping = 0;
+        for (Map<String, Object> policy : yamlAll(read("deploy/edge/base/networkpolicy.yaml"))) {
+            for (Object rule : (List<Object>) map(policy, "spec").getOrDefault("egress", List.of())) {
+                Map<String, Object> egress = (Map<String, Object>) rule;
+                if (((List<Object>) egress.get("to")).contains(collectorPeer)) {
+                    shipping++;
+                    assertThat(egress.get("to")).isEqualTo(List.of(collectorPeer));
+                    assertThat(egress.get("ports")).isEqualTo(List.of(Map.of("protocol", "TCP", "port", 4319)));
+                }
+            }
+        }
+        assertThat(shipping).as("the public and the operator controllers").isEqualTo(2);
+        for (String file : List.of(STATIC, OPERATOR_STATIC)) {
+            Map<String, Object> access = map(yaml(read(file)), "accessLog");
+            assertThat(map(map(access, "fields"), "queryParameters")).as(file).containsEntry("defaultMode", "drop");
+            assertThat(access).as("%s: the console's copy kept while the collector is away", file).containsEntry("dualOutput", true);
+            assertThat(read(file)).as(file).contains(":4319/v1/logs").doesNotContain(":4318");
         }
     }
 

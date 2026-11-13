@@ -209,16 +209,29 @@ deny contains msg if {
 	msg := sprintf("[security-host] %s mounts a hostPath volume %s", [label(doc), volume.name])
 }
 
+# A token only to a controller the list below names, in its own namespace (P16-TSK-003: the cluster watcher of finapp-observability, the first
+# workload of these namespaces that reads the API server): its workload mounts it and its ServiceAccount offers it. Every other workload and
+# account is held as before, the application's and the migrator's above all.
 deny contains msg if {
 	some [doc, spec] in workloads
 	not object.get(spec, "automountServiceAccountToken", true) == false
+	not runs_as_a_listed_controller(doc, spec)
 	msg := sprintf("[security-token] %s mounts a service-account token", [label(doc)])
 }
 
 deny contains msg if {
 	some doc in of_kind("ServiceAccount")
 	not object.get(doc, "automountServiceAccountToken", true) == false
+	not is_a_listed_controller_account(doc)
 	msg := sprintf("[security-token] %s offers a service-account token", [label(doc)])
+}
+
+runs_as_a_listed_controller(doc, spec) if {
+	account_listed({"namespace": namespace_of(doc), "name": object.get(spec, "serviceAccountName", "default")})
+}
+
+is_a_listed_controller_account(doc) if {
+	account_listed({"namespace": namespace_of(doc), "name": doc.metadata.name})
 }
 
 deny contains msg if {
@@ -1184,7 +1197,9 @@ deny contains msg if {
 # a role given to the wrong account reaches exactly as far as one given to a person.
 
 # THE CONTROLLER ACCOUNTS, one per line: adding a controller is adding its line, and nothing else.
+# The cluster watcher (P16-TSK-003): list and watch in finapp, granted by deploy/base/rbac-cluster-watch.yaml; the only account that holds a token.
 controller_accounts := [
+	{"namespace": "finapp-observability", "name": "finapp-cluster-watch"},
 ]
 
 # Accepted in the kind overlay alone, so a plant can show a controller's role is left alone while no real overlay trusts it.
@@ -1422,6 +1437,53 @@ deny contains msg if {
 	some subject in list_of(binding, "subjects")
 	not is_service_account(subject)
 	msg := sprintf("[rbac-human-cluster-wide] %s reaches every namespace: a person's access is one namespace's", [label(binding)])
+}
+
+# THE CLUSTER WATCHER'S READ, EXACTLY (P16-TSK-003). Its account is a listed controller, so no rule written for a person's role reads its
+# role, and a controller's role is otherwise left alone: this rule reads it. List and watch on the kinds its receiver lists and on events,
+# in finapp alone, by a RoleBinding; a Secret, a ConfigMap, pods/log, a write, a wildcard or a ClusterRoleBinding is refused.
+cluster_watch_account := {"namespace": "finapp-observability", "name": "finapp-cluster-watch"}
+
+cluster_watch_reads := {
+	["", "pods"], ["", "events"], ["", "services"], ["", "replicationcontrollers"], ["", "resourcequotas"],
+	["apps", "deployments"], ["apps", "replicasets"], ["apps", "statefulsets"], ["apps", "daemonsets"],
+	["batch", "jobs"], ["batch", "cronjobs"], ["autoscaling", "horizontalpodautoscalers"],
+}
+
+binds_the_cluster_watch(binding) if {
+	some subject in list_of(binding, "subjects")
+	is_service_account(subject)
+	{"namespace": object.get(subject, "namespace", "absent"), "name": object.get(subject, "name", "absent")} == cluster_watch_account
+}
+
+cluster_watch_may(group, resource, verb) if {
+	[group, resource] in cluster_watch_reads
+	verb in {"list", "watch"}
+}
+
+deny contains msg if {
+	some binding in rbac_bindings
+	binds_the_cluster_watch(binding)
+	some role in rbac_roles
+	binds(binding, role)
+	some rule in list_of(role, "rules")
+	some group in list_of(rule, "apiGroups")
+	some resource in list_of(rule, "resources")
+	some verb in list_of(rule, "verbs")
+	not cluster_watch_may(group, resource, verb)
+	msg := sprintf("[rbac-cluster-watch] %s gives the cluster watcher %v %v in API group %v: it lists and watches the kinds its receiver reads, and nothing else", [label(role), verb, resource, group])
+}
+
+watch_bound_in_finapp(binding) if {
+	binding.kind == "RoleBinding"
+	namespace_of(binding) == "finapp"
+}
+
+deny contains msg if {
+	some binding in rbac_bindings
+	binds_the_cluster_watch(binding)
+	not watch_bound_in_finapp(binding)
+	msg := sprintf("[rbac-cluster-watch] %s binds the cluster watcher other than by a RoleBinding in finapp", [label(binding)])
 }
 
 workload_accounts := {"finapp-app", "finapp-migrator"}

@@ -39,6 +39,10 @@ spec:
       containers:
         - name: migrator
           image: finapp-migrator
+          # A failed run's last lines (at most 80, or 2 KiB) kept in the pod's status by the kubelet, where the cluster watcher reads them
+          # and ships them through the collector (P16-TSK-003): the image is distroless and nothing else can read its output off the node.
+          # The lines carry no row data, URL or statement (MigratorMainTest). A run that succeeds leaves the status empty.
+          terminationMessagePolicy: FallbackToLogsOnError
           envFrom:
             - secretRef:
                 name: finapp-migrator-secrets

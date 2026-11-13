@@ -20,7 +20,7 @@ Every experiment, in §3 and §4.2, carries every field:
 
 | Field | Means |
 |---|---|
-| ID | `E01`…`E26` are `PHASE_16_PLAN.md` §9.2's experiments; `F01`…`F15` are the experiments of §13's fifteen scenarios, one each. Ids are never renumbered or reused |
+| ID | `E01`…`E26` are `PHASE_16_PLAN.md` §9.2's experiments; `F01`…`F15` are the experiments of §13's fifteen scenarios, one each. Ids are never renumbered or reused. *(2026-11-13: `E27` onward are runs a later task registers beside §9.2's list so that their results take this register's grammar; `E27` is the load harness's demonstration run, which injects no fault.)* |
 | Scenario | What is done to the platform |
 | Hypothesis | What the platform is expected to do, stated before the run |
 | Affected | The units and modules the fault reaches |
@@ -95,7 +95,13 @@ to that experiment.
 ## 3. The experiments
 
 `PHASE_16_PLAN.md` §9.2, every field filled. Where the plan left a field `—`, this register states it, and a task that runs the
-experiment may sharpen it (§1.2).
+experiment may sharpen it (§1.2). *(2026-11-13: `E27`, the load harness's demonstration run, is registered after them; it is not one
+of §9.2's experiments and injects no fault. Its result is its tenth run's, the first green: the nine before it were the harness's
+development runs on the same machine, each stopped red on what it found, and `OPERATIONS_RUNBOOK.md` §11.43's record lists them;
+the artefacts are kept under `build/` on that machine, not in the repository.)* *(2026-11-13: `E28`, `POSTPONED_ISSUES.md`
+PI-024's poisoned-row step run under owner decision C11, is registered after `E27` the same way; it is not one of §9.2's experiments.
+Its result is its second run's: the first passed every assertion and read `COULD NOT RUN` on the harness's own status, as
+`OPERATIONS_RUNBOOK.md` §11.39's last record says.)*
 
 | ID | Scenario | Hypothesis | Affected | Expected behaviour | Safety | Success criteria | Stop | Instances | Runs in | Result | Remediation |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -125,6 +131,7 @@ experiment may sharpen it (§1.2).
 | E24 | Database disk pressure (the data volume filled to its threshold) | Writes fail cleanly; no partial transaction; readiness and alerts tell | PostgreSQL | Write errors; the platform refuses work; recovery when space returns | A size-limited volume on `kind` | 0 partial effects; census green after recovery | The volume full for 5 min | 3 replicas at least | `P16-TSK-021` | — | — |
 | E25 | An edge controller lost under traffic (`THREAT_MODEL.md` §6 item 43 (f)) | The second controller serves | edge | Connections on the lost controller fail once; the rest are served | One controller of two | Failed requests no more than those on the lost controller | Both controllers down, or the lost one not replaced in 10 min | 10 replicas | `P16-TSK-020` | — | — |
 | E26 | Rolling deploy and rollback during load at ten replicas (scenario 14) | N − 1 and N coexist; zero failed requests; one effect per key | `finapp-app`, the migrator | As the release scope, at ten | The run's own images, built in the run | As `OPERATIONS_RUNBOOK.md` §11.28's assertions, at ten | A failed request, a second effect, or the rollout not complete in 30 min | 10 replicas | `P16-TSK-014` | — | — |
+| E27 | The demonstration workload (`CAPACITY_MODEL.md` §1) driven through the edge for 10 minutes by the load harness's open-model generator, no fault injected: the load harness's own run (`PHASE_GATES.md` §5 Phase 16 criterion 1, `OPERATIONS_RUNBOOK.md` §11.43) | Every correctness page stays silent and every committed-fact census clause holds at every 30 s sample; every money movement resolves by its key and is counted once; the full census holds after | the edge, `finapp-app`, PostgreSQL, Kafka, the provider simulator, settlement and reconciliation | Latency, errors and saturation rise with the load and are recorded; nothing pages | The run's own cluster and generated credentials; the generator handed only its fixture and the edge's CA, its CPU bounded | Every sample PASS, the samples covering the load with no gap over 45 s; no iteration dropped and every arrival rate within 2%; 0 movements unresolved and every retried key answered alike; every callback answered and a duplicate accepted; each operation's errors recorded by status beside the chance its objective explains them, never a verdict (`PHASE_16_PLAN.md` §5.3; the objectives under load are `P16-TSK-029`'s); every ready replica serving each money-moving route; the full census green | A sample failing or unable to read, which stops the load at once; the generator unable to hold its rate | 3 replicas | `P16-TSK-006`, `P16-TSK-007` | PASSED on 2026-11-13 at 3 replicas, commit `7231d298`, artefacts `build/rehearsal/experiments/E27` | — |
 | E28 | A poisoned row at a sweep's head: a captured card attempt copied under a version-4 id back into `CAPTURE_DISPATCHED`, an hour old (`OPERATIONS_RUNBOOK.md` §11.39 (a); `POSTPONED_ISSUES.md` PI-024's poisoned-row step, run under owner decision C11) | The card sweep's listing skips and records the row and reaches everything behind it; the row is never judged; `PaymentSweepRowUnreadable` pages naming no identifier; no replica's tick fails whole | `finapp-app`, payments | The skip's WARN line on the replicas that read it; a `payments.sweep_row_failure` record for the row; no `Payment sweep failed` line; `PaymentSweepFailing` silent | The plant is a raw insert by the run's own throwaway superuser; the row and its record are removed by the harness as the plant's teardown, never by a procedure | `PaymentSweepRowUnreadable` fired and reached the page receiver within 600 s; the record holds at least one failure; the row still `CAPTURE_DISPATCHED`; no replica's tick failed whole; census green | The page not fired in 600 s, the row judged, or a tick failing whole | 3 replicas | `P16-TSK-017` | PASSED on 2026-11-13 at 3 replicas, commit `e9cdbb3a`, artefacts `build/rehearsal/experiments/E28` | — |
 
 ---

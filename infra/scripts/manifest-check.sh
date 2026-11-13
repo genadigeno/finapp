@@ -960,6 +960,37 @@ subjects:
     name: finapp-test-only-controller
     namespace: finapp
 YAML
+    # The cluster watcher's read of finapp, exactly (P16-TSK-003): its account is a listed controller, so the rules for a person's role do not
+    # read its role and [rbac-cluster-watch] does. A Secret added, a write added, and a binding that is not a RoleBinding in finapp, each refused.
+    plant_on rbac-cluster-watch-secrets base/rbac-cluster-watch.yaml 's/resources: \[pods, events, services, replicationcontrollers, resourcequotas\]/resources: [pods, events, services, replicationcontrollers, resourcequotas, secrets]/'
+    plant_on rbac-cluster-watch-writes base/rbac-cluster-watch.yaml '1,/verbs: \[list, watch\]/s/verbs: \[list, watch\]/verbs: [list, watch, delete]/'
+    plant rbac-cluster-watch-cluster-wide
+    add_resource rbac-cluster-watch-cluster-wide binding.yaml <<'YAML'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: watch-everything
+rules:
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: watch-everything
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: watch-everything
+subjects:
+  - kind: ServiceAccount
+    name: finapp-cluster-watch
+    namespace: finapp-observability
+YAML
+    # A token is the listed controller's in its own namespace alone: the application naming an account of the watcher's name in finapp, and
+    # mounting its token, is refused as any other workload is.
+    plant_on automount-under-a-listed-name-elsewhere "$DEPLOYMENT" "s/serviceAccountName: finapp-app/serviceAccountName: finapp-cluster-watch/; s/$SWITCH: false/$SWITCH: true/"
     plant rbac-aggregated-into-view
     add_resource rbac-aggregated-into-view role.yaml <<'YAML'
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1699,6 +1730,10 @@ refused rbac-edge-account-reads-secrets rbac-account-unlisted
 refused rbac-account-with-no-namespace rbac-account-unlisted
 refused rbac-test-only-account-in-production rbac-account-unlisted
 refused rbac-listed-account-built-in-role rbac-binding-rendered
+refused rbac-cluster-watch-secrets rbac-cluster-watch
+refused rbac-cluster-watch-writes rbac-cluster-watch
+refused rbac-cluster-watch-cluster-wide rbac-cluster-watch
+refused automount-under-a-listed-name-elsewhere security-token
 refused rbac-aggregated-into-view rbac-aggregate-label
 refused rbac-same-name-elsewhere rbac-human-secrets
 refused rbac-person-bound-elsewhere rbac-human-namespace

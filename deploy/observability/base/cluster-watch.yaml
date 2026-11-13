@@ -1,0 +1,146 @@
+# The cluster watcher (P16-TSK-003; THREAT_MODEL.md section 6 item 43 (b), decided 2026-11-12): the one reader of the Kubernetes API in the
+# platform's namespaces, so that a migrator Job that failed or never ran wakes someone. The pinned collector image, a second configuration.
+#
+# WHY IT EXISTS. A Job's state lives in the API server alone: nothing the platform scraped could say that a migration failed, and a Job whose
+# pod was never created (a quota, an admission refusal, an image) fails by its deadline with no failed pod at all (measured on kind,
+# OPERATIONS_RUNBOOK.md section 11.41). And the migrator's image is distroless and Pod Security restricted refuses a node agent, so its lines
+# reach the log back end only through the API: a failed run's last lines, which the kubelet keeps in the pod's status
+# (terminationMessagePolicy: FallbackToLogsOnError on the Job), and the Job's and its pods' events.
+#
+# WHAT IT READS, AND NOTHING ELSE. The namespace finapp alone, list and watch, through the Role the application's own release grants it
+# (deploy/base/rbac-cluster-watch.yaml): the kinds k8s_cluster lists (it logs a refusal every few seconds for any it may not), and events. No
+# Secret, no ConfigMap, no pods/log, no way inside a pod. It writes nothing anywhere.
+#
+# WHAT IT PUBLISHES. k8s_cluster's gauges on 8889 for the scraper (job finapp-cluster-watch): k8s_job_failed_pods, k8s_job_active_pods,
+# k8s_job_successful_pods and k8s_job_desired_successful_pods per Job, k8s_deployment_desired and the rest; the resource's attributes are
+# the labels (k8s_namespace_name, k8s_job_name, k8s_job_uid). A deleted Job's series stays until metric_expiration, which is why the rules
+# read a Job by its name and never its uid. And the migrator's records, reduced here to a message and a few named attributes and sent to the
+# collector's platform receiver, which scrubs them as the second net: service.name finapp-migrator.
+#
+# N INSTANCES. One replica. At N every series is published N times under N instances, and every rule takes max() by the Job's name; every
+# record arrives N times, an observation repeated. Each failed pod's message arrives once per status update of that pod (three were measured)
+# and again when the watcher restarts. It holds no lease and decides nothing.
+#
+# ITS OWN LINES go to the collector's platform receiver, as the collector's do.
+extensions:
+  health_check:
+    endpoint: ${env:POD_IP}:13133
+
+receivers:
+  k8s_cluster:
+    auth_type: serviceAccount
+    namespaces: [finapp]
+    collection_interval: 15s
+  k8s_objects:
+    auth_type: serviceAccount
+    objects:
+      # The migrator's pods: a failed one's terminated container carries the run's last lines.
+      - name: pods
+        mode: watch
+        namespaces: [finapp]
+        label_selector: app.kubernetes.io/name=finapp-migrator
+      # The namespace's events, of which the migrator's are kept below: a pod refused (FailedCreate), a deadline passed, a FailJob rule matched.
+      - name: events
+        mode: watch
+        namespaces: [finapp]
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+
+  # A watched object reduced to what an operator reads: its kind read once into an attribute, so no later condition indexes a body that has
+  # already become a message; the attributes first, then the body. A pod: its terminated container's message, exit code and reason, its name
+  # and its Job; a pod still running carries none, and its record is dropped below. An event: its message, reason and type, and the object it
+  # is about. Everything else of the object - its spec, its environment's names, its node, its addresses - stays here.
+  transform/migrator:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - set(attributes["k8s.object.class"], body["object"]["kind"])
+          - set(attributes["k8s.pod.name"], body["object"]["metadata"]["name"]) where attributes["k8s.object.class"] == "Pod"
+          - set(attributes["k8s.job.name"], body["object"]["metadata"]["labels"]["job-name"]) where attributes["k8s.object.class"] == "Pod"
+          - set(cache["terminated"], body["object"]["status"]["containerStatuses"][0]["state"]["terminated"]) where attributes["k8s.object.class"] == "Pod" and body["object"]["status"]["containerStatuses"] != nil
+          - set(attributes["k8s.container.exit_code"], cache["terminated"]["exitCode"]) where cache["terminated"] != nil
+          - set(attributes["k8s.container.reason"], cache["terminated"]["reason"]) where cache["terminated"] != nil
+          - set(attributes["k8s.event.reason"], body["object"]["reason"]) where attributes["k8s.object.class"] == "Event"
+          - set(attributes["k8s.event.type"], body["object"]["type"]) where attributes["k8s.object.class"] == "Event"
+          - set(attributes["k8s.object.kind"], body["object"]["involvedObject"]["kind"]) where attributes["k8s.object.class"] == "Event"
+          - set(attributes["k8s.object.name"], body["object"]["involvedObject"]["name"]) where attributes["k8s.object.class"] == "Event"
+          - set(body, cache["terminated"]["message"]) where cache["terminated"] != nil
+          - set(body, "") where attributes["k8s.object.class"] == "Pod" and cache["terminated"] == nil
+          - set(body, body["object"]["message"]) where attributes["k8s.object.class"] == "Event"
+          - keep_keys(attributes, ["k8s.pod.name", "k8s.job.name", "k8s.container.exit_code", "k8s.container.reason", "k8s.event.reason", "k8s.event.type", "k8s.object.kind", "k8s.object.name"])
+
+  # What is not the migrator's, or carries nothing: an event about another object, a pod still running (no terminated message), an object
+  # the reduction could not read (its body is still a map).
+  filter/migrator:
+    error_mode: ignore
+    logs:
+      log_record:
+        - attributes["k8s.object.name"] != nil and not IsMatch(attributes["k8s.object.name"], "^finapp-migrator(-[a-z0-9]+)?$")
+        - attributes["k8s.pod.name"] == nil and attributes["k8s.object.name"] == nil
+        - body == nil or body == ""
+        - not IsString(body)
+
+  # The stream an operator searches: {service_name="finapp-migrator"}.
+  resource/migrator:
+    attributes:
+      - key: service.name
+        value: finapp-migrator
+        action: upsert
+      - key: k8s.namespace.name
+        value: finapp
+        action: upsert
+
+  batch:
+    send_batch_size: 256
+    timeout: 2s
+
+exporters:
+  prometheus:
+    endpoint: ${env:POD_IP}:8889
+    # The object's identity as labels, the names the rules read; nothing else of the resource.
+    resource_constant_labels:
+      included: [k8s.namespace.name, k8s.job.name, k8s.job.uid, k8s.deployment.name, k8s.deployment.uid]
+    # A Job deleted (its TTL, or the next release's hook replacing it) is read for this long after: four of k8s_cluster's collections, which
+    # re-publish every object they hold, so a live object never expires. The exporter's default, five minutes, kept a predecessor's state
+    # beside its successor's for that long (measured on kind).
+    metric_expiration: 1m
+
+  otlp_http/platform:
+    endpoint: http://finapp-collector.finapp-observability.svc.cluster.local:4319
+    sending_queue:
+      queue_size: 100
+    retry_on_failure:
+      max_elapsed_time: 60s
+
+service:
+  extensions: [health_check]
+  telemetry:
+    resource:
+      attributes:
+        - name: service.name
+          value: finapp-cluster-watch
+        - name: k8s.pod.name
+          value: ${env:HOSTNAME}
+    logs:
+      level: warn
+      processors:
+        - batch:
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                endpoint: http://finapp-collector.finapp-observability.svc.cluster.local:4319/v1/logs
+    metrics:
+      level: none
+  pipelines:
+    metrics:
+      receivers: [k8s_cluster]
+      exporters: [prometheus]
+    logs:
+      receivers: [k8s_objects]
+      processors: [memory_limiter, transform/migrator, filter/migrator, resource/migrator, batch]
+      exporters: [otlp_http/platform]

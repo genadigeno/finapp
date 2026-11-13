@@ -1,0 +1,34 @@
+# The edge's metrics, found by the scraper (P16-TSK-003; THREAT_MODEL.md section 6 item 43 (b), decided 2026-11-12): one headless Service per
+# edge, so a scrape knows which edge a controller serves and the error ratio is per edge, summed over its controllers. finapp-app-scrape's
+# shape (deploy/base/service-scrape.yaml): DNS alone, each controller's own address, ready or not, so a controller that cannot answer is a
+# failed scrape and not a vanished target; the TLS port is the one named, and the management port, where the proxy publishes its counters
+# and answers /ping, stays off every Service. The scraper reaches 8081 on each address by finapp-edge's policy, which admits it by label.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-edge-public-scrape
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: finapp-edge-public
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-edge-operator-scrape
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: finapp-edge-operator
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+      protocol: TCP

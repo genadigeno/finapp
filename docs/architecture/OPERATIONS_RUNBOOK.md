@@ -1955,6 +1955,8 @@ together, leaves nothing serving, and makes every group rebalance on the way bac
 | 11.38 The platform rehearsals: the record and the count per section *(written 2026-11-12, below)* | `-032` | — (a record; `RunbookRehearsalCountTest` holds its form) | `platform` |
 | 11.39 A row that fails every tick: a corrupt id that stalls a sweep, a row at a sweep's head, a rematch residual *(written 2026-11-12, below)* | `-032` | `-032` | `payments`, `merchant`, `reconciliation`, `risk` |
 | 11.40 Database failover: what the fleet does and what a person does *(written 2026-11-12, below; procedure only, the drill is Phase 16's)* | `-032` | `-032` (a database restart on `kind`, never a failover) | `platform` |
+| 11.41 The migrator Job watched: a failed or overdue Job, the watcher blind, a run's lines in Loki *(written 2026-11-12, below)* | `P16-TSK-003` | `P16-TSK-003` (a small `kind` cluster with no application stack) | `platform` |
+| 11.42 The edge watched: its error ratio, an edge unscraped, the platform's own lines in Loki *(written 2026-11-12, below)* | `P16-TSK-003` | `P16-TSK-003` (containers) | `platform` |
 
 The table's rows are the plan's; the sections below them are numbered as written, not in this order. Rows 11.2, 11.3 and 11.5
 are written under 11.36 and 11.35, and row 11.10 under 11.26 and 11.30. *(The owner column added 2026-11-12, `P15-TSK-032`:
@@ -3222,9 +3224,9 @@ latest; the run, as its record names it.
 | §11.23 | `reconciliation`, `settlement` | 0 | 11 | 11 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.24 | `fx`, `crossborder` | 0 | 9 | 9 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.25 | `platform` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-024) |
-| §11.26 | `platform`, `identity` | 2 | 10 | 12 | containers, kind | 2026-11-12 | `e0ed74f2`, `59d8b87e` | `§11.33 run 3; edge-check.sh on P15-TSK-017's final bytes` | — |
+| §11.26 | `platform`, `identity` | 3 | 10 | 13 | containers, kind | 2026-11-12 | `e0ed74f2`, `59d8b87e`, `35981197` | `§11.33 run 3; edge-check.sh on P15-TSK-017's final bytes; §11.28's rolls record` | — |
 | §11.27 | `accounting` | 0 | 7 | 7 | — | — | — | — | postponed by the owner (PI-024) |
-| §11.28 | `platform` | 1 | 0 | 1 | kind | 2026-11-09 | `18326010` | `§11.28's run` | — |
+| §11.28 | `platform` | 1 | 0 | 1 | kind | 2026-11-12 | `18326010`, `35981197` | `§11.28's run; §11.28's rolls record` | — |
 | §11.29 | `platform` | 3 | 6 | 9 | kind | 2026-11-11 | `38576191`, `e0ed74f2`, `4e29b4fd` | `§11.33 runs 2, 3 and 5` | — |
 | §11.30 | `platform` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-024) |
 | §11.31 | `platform` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-024) |
@@ -3236,6 +3238,9 @@ latest; the run, as its record names it.
 | §11.37 | `identity`, `accounting` | 2 | 4 | 6 | kind | 2026-11-12 | `5078e612`, `ca4c323a` | `dev3 and dev5, the signals scope's development runs` | postponed by the owner (PI-024) |
 | §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | 1 | 2 | 3 | kind | 2026-11-13 | `e9cdbb3a` | `E28, the incidents scope prefix and platform-poisoned-rows in development mode` | — |
 | §11.40 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
+| §11.41 | `platform` | 3 | 1 | 4 | kind | 2026-11-13 | `722365ad`, `d8f907c4`, `7231d298` | `§11.41's runs 1 and 2; §11.43's tenth run` | — |
+| §11.42 | `platform` | 4 | 0 | 4 | containers, kind | 2026-11-13 | `d8f907c4`, `7231d298` | `§11.42's record; §11.43's tenth run` | — |
+| §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3434,15 +3439,162 @@ promoted) is not this section: it is §11.35's restore, decided as §11.12 says.
 to see the new primary (Phase 16). A socket timeout, which would bound the black-holed connection above and is unset by an
 earlier decision (`application.yaml`'s note). A read replica or another region (Phase 16).
 
-**The `kind` restart, and what it shows.** On `kind` the database is one PostgreSQL pod whose data lives in an `emptyDir`
-(`deploy/overlays/kind/postgres.yaml`): **deleting that pod deletes the database**, so the rehearsal restarts its container in
-place (the pod, and its data, kept), and by killing the server rather than shutting it down: PostgreSQL empties an unlogged table
+**The `kind` restart, and what it shows.** On `kind` the database is one PostgreSQL pod whose data lives on a volume claim
+(`deploy/overlays/kind/postgres.yaml`; in an `emptyDir` until 2026-11-12, when deleting the pod deleted the database). The rehearsal
+restarts its container in place (the pod, and its data, kept), and by killing the server rather than shutting it down: PostgreSQL empties an unlogged table
 after a crash and keeps it across a clean shutdown, and a standby promoted by a failover never held an unlogged table's rows. It
 shows readiness down and back on every replica with none restarted, claims lapsing and
 taken, and the abuse table empty after. It does not show a standby taking over, an endpoint moving, a connection black-holed (a
 stopped server resets its connections), or anything of the managed service's own. **The last record**: not run. The
 `incidents` scope's database-restart step holds the `kind` half above and never ran (`POSTPONED_ISSUES.md` PI-024); the failover itself is a Phase
 16 drill.
+
+### 11.41 The migrator Job watched: `MigratorJobFailed`, `MigratorJobOverdue`, `ClusterWatchBlind`; a run's lines in Loki (`P16-TSK-003`)
+
+*(Written by `P16-TSK-003`, 2026-11-12, from `infra/prometheus/rules/platform.yml`'s `platform-components` group, the cluster watcher
+(`deploy/observability/base/cluster-watch.yaml`), the migrator Job (`deploy/base/migrator-job.yaml`) and the runs recorded below.
+`THREAT_MODEL.md` section 6 item 43 (b), decided 2026-11-12.)*
+
+**What watches the Job.** A migrator Job's state lives in the API server alone, so the platform reads it through one component that may
+ask: the **cluster watcher**, one replica of the pinned collector image in `finapp-observability`, the only pod of the platform's
+namespaces that holds a Kubernetes credential. It lists and watches, in `finapp` alone, what its receiver needs and the namespace's events
+(`deploy/base/rbac-cluster-watch.yaml`: no Secret, no ConfigMap, no `pods/log`, no write), publishes each Job's pods - failed, active,
+succeeded and wanted - to the scraper (job `finapp-cluster-watch`), and sends the migrator Job's records to the collector. A Job is read
+by its **name**: the next release's Job replaces a failed one under the same name, and the rules let the newest Job's state decide. A
+deleted Job's state is still read for a minute (the exporter's `metric_expiration`).
+
+**A failing migration holds a release, never money.** The migrator runs before the rollout (ADR-0120 decision 1); while it fails, the old
+release keeps serving on the schema it had, a release's migrations being expand-only or carrying a contract marker
+(`DATA_MIGRATIONS.md` §4.1). Nothing here is fixed by retrying the Job by hand: a migration that failed is fixed forward (§11.4).
+
+| Alert | What it means | First response |
+|---|---|---|
+| `MigratorJobFailed` (page) | A migrator pod failed and no other is running or has succeeded, for two minutes: a migration or a validation failed (exit 10), the configuration, identity or credential was refused (exit 12), three transient failures used the Job's `backoffLimit`, or the deadline killed a pod that hung. A transient failure retried inside the Job's backoff (10 s, then 20 s) does not fire. | Read the run's own lines (below): its result line names the schema and the failure. Exit 10: §11.4, a forward fix in a new release. Exit 12: the variable, the role or the credential its line names, fixed in the environment and never by a weaker check (§11.4; §11.7 for a credential). Transient three times: the database itself (§11.40; the pool alerts say whether the fleet sees it too). Through the delivery, the failed Sync hook stopped the sync: §11.36. |
+| `MigratorJobOverdue` (page) | No migrator Job has succeeded for longer than its own deadline allows (`activeDeadlineSeconds` 900 s, the watcher's collection, the scrape and the evaluation, with a minute to spare: 17 minutes). Above all the Job **whose pod was never created** - a quota refusing it (§11.14), admission refusing its image (§11.32), an image that cannot be pulled - which fails by its deadline with no failed pod, so `MigratorJobFailed` cannot see it; also a pod that hung on a lock until the deadline killed it. | Read the Job's events (below): `FailedCreate` names the refusal - a quota, a policy, an account - and the pod's events an image or a mount. Fix that, then the release again. A pod that hung: what it waited on (its last lines; §11.4) and whether a second Job ran beside it. |
+| `ClusterWatchBlind` (ticket) | The watcher publishes nothing about `finapp` for fifteen minutes where a deployed fleet is scraped: it is down, unscraped, or refused by the API server - its Role gone from the application's release, its egress to the API server not named in a real environment. The two Job alerts are silent for the wrong reason. | Under read-only, its pod in `finapp-observability` and its own lines (`{service_name="finapp-cluster-watch"}` in Loki, or `kubectl logs`): a `forbidden` names the kind it may not list. Its Role and binding are `finapp`'s release's, so a release that dropped them is the cause; restore them by a release. While it lasts, check every release's migrator Job by hand (`kubectl -n finapp get job finapp-migrator`). |
+
+**A run's lines and the Job's story, in Loki.** `{service_name="finapp-migrator"}`, on the environment's own Loki, holds:
+
+- **a failed run's last lines**, as its pod's status keeps them (`terminationMessagePolicy: FallbackToLogsOnError`: at most the last 80
+  lines or 2 KiB of a container that exited non-zero), each record carrying `k8s_pod_name`, `k8s_job_name`, `k8s_container_exit_code` and
+  `k8s_container_reason`. The migrator's lines carry no row data, URL or statement (`MigratorMainTest`), and the collector scrubs a card
+  number's shape and an amount on its way. One record per status update of the pod, so the same lines arrive up to three times, and
+  again whenever the watcher restarts;
+- **the Job's and its pods' events**: `FailedCreate`, `SuccessfulCreate`, the `FailJob` rule that matched, `DeadlineExceeded`,
+  `BackoffLimitExceeded`, a pod's image and mount failures, each with `k8s_event_reason`, `k8s_event_type`, `k8s_object_kind` and
+  `k8s_object_name`.
+
+A **successful** run's lines are not shipped: the status keeps nothing for an exit 0, and the image cannot ship its own output
+(`THREAT_MODEL.md` section 6 item 47 (b)). They stay on the node with the Job's pods for its `ttlSecondsAfterFinished` (24 hours):
+`kubectl -n finapp logs job/finapp-migrator` under read-only.
+
+**What this does not cover.** The managed database's own state (item 43 (a)); a real environment's API server egress for the watcher,
+which an observability overlay per environment names (item 43 (c)); the delivery's own view of the hook (§11.36).
+
+**The record** (2026-11-12, `P16-TSK-003`; a `kind` cluster of one node with kube-router as the policy engine and **no application
+stack** - no lock needed, the full harness being another task's that wave; `kind` v0.33.0, node `v1.34.11`; the images loaded from this
+machine's own store, none pulled).
+
+- **Measured before the design.** The watcher under the namespace's default-deny with an egress rule for its resolver alone reached the
+  API server. Given list and watch on jobs, deployments, pods and events alone, `k8s_cluster` logged a refusal every few seconds for each
+  of services, replicationcontrollers, cronjobs, replicasets, resourcequotas, statefulsets, daemonsets and horizontalpodautoscalers;
+  given those too, none - the Role names exactly these. A Job failing exit 10 under the base's `podFailurePolicy` was published as
+  `k8s_job_failed_pods` 1, active 0, succeeded 0, wanted 1. **A Job whose pod a quota of zero pods refused** (deadline 45 s) failed by
+  `DeadlineExceeded` with failed 0, active 0, succeeded 0, which is why `MigratorJobOverdue` exists. A deleted Job's series stayed in the
+  exporter beside its successor's (its five-minute default, since set to one).
+- **Run 1** (19:22-19:44Z; the manifests at `722365ad`). The kind overlay of `deploy/observability` as committed, with one exception:
+  its Loki ran as a container of the pinned image beside the node (this machine's Docker cannot save that image for the node's store), so
+  the collector named it and one experiment-only policy let the collector reach it on 3100. The base's Role and binding, rendered from the
+  application's kind overlay. The migrator Job rendered from the same overlay, its image's entrypoint replaced by the prometheus image's
+  shell printing migrator-shaped lines - a card number and an amount among them - and exiting 10, and its `envFrom` removed (no Secret
+  there). Its pod was first refused (`FailedCreate`: no `finapp-migrator` account on that cluster), then waited on a missing mount; given
+  both, it exited 10 at 19:35. **`MigratorJobOverdue`** pending from 19:26:49 and **firing at 19:43:49**, seventeen minutes with no Job
+  succeeded; **`MigratorJobFailed`** pending 19:34:34 and **firing 19:36:34**; each at Alertmanager's `placeholder-page`. Loki held 27
+  records under `{service_name="finapp-migrator"}` - the Job's and its pod's events (`FailedCreate`, `SuccessfulCreate`, `Scheduled`,
+  `FailedMount`, `Pulled`, `Created`, `Started`, `PodFailurePolicy`) and the failed run's lines three times, `k8s_container_exit_code`
+  10, the card number and the amount `[scrubbed]` - and 22 under `finapp-collector` and 20 under `finapp-cluster-watch` (the watcher's
+  own warnings: its reduction indexed a pod's body that was already a message); the card number and the amount in no record of any
+  stream.
+- **Run 2** (19:46-19:49Z; the watcher's reduction revised to read an object's kind once). The same planted Job, created 19:46:11 and
+  failed by its `FailJob` rule at 19:46:16: **`MigratorJobFailed` pending 19:46:34, firing 19:48:34**. Nine records under the migrator's
+  stream (six events, the run's lines three times, scrubbed); the watcher's own log empty; no needle.
+- **On the full cluster, under the demonstration load** (2026-11-13, §11.43's tenth run, the `load` scope's own steps; THREAT_MODEL
+  §6 item 47 (c)). Neither page active at 01:01:13; the planted Job at 01:01:14: **`MigratorJobFailed` pending 01:02:15, firing
+  01:04:15**; **`MigratorJobOverdue` pending 01:02:15, firing 01:19:15**; both held by Alertmanager on `placeholder-page`. Twelve
+  records under the migrator's stream with the exit code, the card number and the amount scrubbed. The release's own Job run again at
+  01:32:58 and both pages cleared by 01:33:15.
+- **Read, not run**: `ClusterWatchBlind`, which reads a deployed fleet's scrape, and that cluster scraped none.
+
+### 11.42 The edge watched: `EdgeErrorRatioHigh`, `EdgeUnscraped`; the platform's own lines in Loki (`P16-TSK-003`)
+
+*(Written by `P16-TSK-003`, 2026-11-12, from `infra/prometheus/rules/platform.yml`'s `platform-components` group, the edge's static files
+(`deploy/edge/base/traefik.yaml`, `traefik-operator.yaml`), their scrape Services (`deploy/edge/base/scrape-services.yaml`), the
+collector's platform pipeline (`deploy/observability/base/collector.yaml`) and the runs recorded below. `THREAT_MODEL.md` section 6 item 43
+(b), decided 2026-11-12.)*
+
+**What is read.** Each controller's counters on its management port, 8081, which stays off every Service: the scraper finds each
+controller of each edge by DNS on a headless Service of that edge's naming the TLS port alone (job `finapp-edge`, `edge="public"` or
+`"operator"`), ready or not. The ratio is the edge's - its two controllers' counters summed before dividing - on the TLS listener
+(`entrypoint="websecure"`); a 5xx there is the application's own (`HttpServerErrorsHigh` reads those on the replicas) or the edge's (a
+replica refusing, gone or too slow: 502, 503, 504), which no replica counts.
+
+| Alert | What it means | First response |
+|---|---|---|
+| `EdgeErrorRatioHigh` (page) | Over 1.44% of an edge's requests answered 5xx over both the last hour and the last five minutes, for two minutes: `SLOS.md`'s fast pair at the budget of the transfer, payment, merchant and authentication availability objectives (0.001), a reference value Phase 16's load model recalibrates. A burst the hour does not carry does not page. | Which: the edge's lines (below), `DownstreamStatus` against `OriginStatus` - the same code from the replica is the application's (its own alerts and §11.21), a 502, 503 or 504 the replica never answered is the edge's way to the fleet: the replicas' readiness (§11.8), the NetworkPolicy admitting the controllers (§11.26), a replica past the edge's `responseHeaderTimeout`. Never restart the controllers to clear it. |
+| `EdgeUnscraped` (page) | No controller of an edge answers its scrape for five minutes, or that edge has no controller to scrape at all, where a deployed fleet is scraped: the edge is down, or it cannot be seen. Either way `EdgeErrorRatioHigh` counts nothing there: a client refused at the load balancer is no 5xx. One controller of two down does not fire; the other serves. | Under read-only, `kubectl -n finapp-edge get pods -o wide` and `describe`: crash-looping (a static file or a certificate it cannot read: §11.26), unschedulable, or evicted. Controllers up and still unscraped: the scraper's flow (`finapp-edge`'s policy admits `finapp/role: metrics-scraper` on 8081) and the scrape Services. |
+
+**The platform's own lines, in Loki.** Each source sends to the collector's **platform receiver**, 4319 - never the application's 4318 -
+and a pipeline of its own scrubs them (`transform/scrub-platform`), so what leaves is what an operator needs and nothing a source wrote
+about anybody:
+
+- `{service_name="finapp-edge"}`: each controller's access line and its own log (at `ERROR`). An access line keeps what the request was
+  and how it ended - `RequestMethod`, `RequestPath` where a route matched it, `RouterName`, `ServiceName`, `entryPointName`,
+  `DownstreamStatus`, `OriginStatus`, `Duration`, `OriginDuration`, sizes, protocol and TLS version - and its line is rebuilt from those
+  (`GET 502 public-door@file 3430534`). Never the client's address or port, the host it named, the backend's address, a user name, a
+  header (dropped at the proxy) or a query string (dropped at the proxy, and cut again here); an unrouted request's path is the caller's
+  own text and is dropped. The proxy's own log writes a client's address into its text (`http: TLS handshake error from ...`): every
+  address in an edge record reads `[address]`. The controller is `k8s_pod_name`. The console keeps its own copy too (`dualOutput`),
+  for the collector's absence;
+- `{service_name="finapp-collector"}` and `{service_name="finapp-cluster-watch"}`: the collectors' and the watcher's own lines, at
+  `warn`, each sent to its own platform receiver;
+- `{service_name="finapp-migrator"}`: §11.41.
+
+**Not shipped**: Tempo's, Loki's, Prometheus's and Alertmanager's own lines on `kind` and in compose. None of the four can export OTLP,
+and a node agent reading the kubelet's files is refused by Pod Security `restricted`; they are the reference back ends, and a real
+environment's back ends bring their own (`THREAT_MODEL.md` section 6 item 37 (a), item 47 (a)). `kubectl logs` reads them.
+
+**What this does not cover.** A real environment's load balancer or WAF in front of the edge (item 32 (b)); a controller lost or rolled
+under traffic (`P16-TSK-005`, `P16-TSK-020`); the edge's SLO of its own, which `-029` decides with the load model.
+
+**The record** (2026-11-12, `P16-TSK-003`; on containers of the pinned images, from this machine's own store).
+
+- **The edge watched** (19:49-19:59Z). The pinned proxy with the committed static file's `experimental`, `log` and `accessLog` blocks
+  as written, a plain listener named `websecure` and one route whose backend does not exist (so every `/v1` request answers 502); the
+  pinned Prometheus loading the committed `platform.yml` and scraping the proxy's management port as kind's `finapp-edge` job does
+  (`edge="public"`); the committed collector; Loki; Alertmanager with the committed routing. **`up{job="finapp-edge"}` 1.** About one
+  request every two seconds, 89 answering 502 and every tenth an unrouted 404 carrying a card number, each with a query and a header
+  that must not leave: **`EdgeErrorRatioHigh` pending 19:50:50, firing 19:52:50** at `placeholder-page`. Loki held 86 records under
+  `{service_name="finapp-edge"}`, each with its router, status, path and durations as fields and its line rebuilt
+  (`GET 502 public-door@file 1129771927`), the unrouted ones `GET 404 <nil> ...` with no path, `k8s_pod_name` the controller's; none
+  held the client's address, the query, the header, the unrouted path, the card number or the backend's name. The proxy's console kept
+  its own copy (`dualOutput`), with no query. **The proxy stopped at 19:53:35: `EdgeUnscraped` pending 19:53:50, firing 19:58:50**, at
+  `placeholder-page`.
+- **`infra/scripts/edge-check.sh`**, CI's, over the full static files with TLS and the generated routes: the pinned proxy's own lines
+  through the committed collector to a stand-in back end. **Its first run found the client's address** in the proxy's own log
+  (`http: TLS handshake error from <address>:<port>`, a record whose body is the proxy's message): the collector now cuts every address
+  from an edge record, and the next run read `TLS handshake error from [address]` and no needle, with the router, the routed path and the
+  status kept. With the collector replaced by a stand-in that takes every connection and answers nothing, 30 requests each answered, the
+  slowest in 171, 54, 32 and 95 ms over four runs; the final run (begun 20:23Z) green whole, 146 checks.
+- **The platform's own lines.** `{service_name="finapp-collector"}` held the collectors' warnings on `kind` (§11.41's runs) and on these
+  containers, each with its `k8s_pod_name`; the watcher's on `kind`'s first run.
+- **On the full cluster, under the demonstration load** (2026-11-13, §11.43's tenth run, the `load` scope's own steps; THREAT_MODEL
+  §6 item 47 (c)): two requests through the real public edge carrying a card number in a routed path, an unrouted path, a query and a
+  header (answered `401` and `404`); after the load the sweep of 31 needles over the edge's 45,737 records found none in a line or a
+  kept path, the routed request there with its path `[scrubbed]`; the collectors' and the watcher's streams each held a control
+  planted on 4319, scrubbed. `EdgeErrorRatioHigh` and `EdgeUnscraped` were not planted there. The first full cluster after this
+  section's build found both edges crash-looping: the proxy's own OTLP log builds an in-cluster client when `KUBERNETES_SERVICE_HOST`
+  is set and exits 1 without a line, its token never mounted; the variable is emptied on both controllers
+  (`EdgeManifestsTest#theControllersStartWithoutAKubernetesClient`).
 
 ### 11.13 Infrastructure code: running the Terraform checks, and changing a pin
 
@@ -3536,7 +3688,7 @@ the quota and the `LimitRange`.
 
 | Overlay | For | `maxReplicas` | `FINAPP_DB_INSTANCES` | Difference from the base |
 |---|---|---|---|---|
-| `kind` | The rehearsal, test-only | 3 | 6, the formula exactly | Single-node PostgreSQL and Kafka, ephemeral, labelled `finapp/test-only`; 1 GiB; the zone spread relaxed, since `kind`'s nodes carry no zone label; NetworkPolicies selecting those copies; a quota of 9 pods |
+| `kind` | The rehearsal, test-only | 3 | 6, the formula exactly | Single-node PostgreSQL and Kafka, gone with their cluster (their data on volume claims since 2026-11-12, so a roll keeps it), labelled `finapp/test-only`; 1 GiB; the zone spread relaxed, since `kind`'s nodes carry no zone label; NetworkPolicies selecting those copies; a quota of 9 pods |
 | `staging` | Reference values | 4 | 7 | The maximum, its budget and a quota of 8 pods; placeholder data-tier and provider addresses |
 | `production` | Reference values | 7 | 10 | Its own statement of the same numbers; the base's quota of 11 pods; placeholder data-tier and provider addresses |
 
@@ -3706,6 +3858,8 @@ suspect issuer is no fix.
 
 **Failure and rollback.** An edge outage is refused traffic and nothing more: the application stays ready, and its schedules and consumers do not notice. Revert by the previous manifest digest; every route and limit is in the ConfigMap's hash, so a revert restores them together.
 
+**Rolling the controllers onto another Traefik, and back** *(`P16-TSK-005`, 2026-11-12; rehearsed on `kind` under the workload, §11.28's rolls record)*. A new proxy version is one change: `TRAEFIK_VERSION` and `TRAEFIK_DIGEST` in `infra/scanner-pins.sh` and the digest in `controllers.yaml` together (`EdgeManifestsTest` holds them equal), checked by `edge-check.sh`, then applied as the edge's own release. Both Deployments roll at once, each one controller at a time: `maxUnavailable: 0` and `maxSurge: 1` start a new controller and wait for it to be ready before an old one is told to stop, and the old one keeps accepting for `requestAcceptGraceTimeout` (10 s) while the load balancer drops it, then drains for up to `graceTimeOut` (30 s), inside its 45 s grace. Watch `kubectl -n finapp-edge rollout status` on `finapp-edge-public` and `finapp-edge-operator`, and the ready controllers, which never fall below two on either. **The rollout's end is not the roll's**: an old controller still drains after `rollout status` returns, so the roll is over when no controller in `finapp-edge` is terminating. Then read the version from the binary (`kubectl -n finapp-edge exec <pod> -c edge -- traefik version`). To go back, apply the previous manifest digest: the same roll the other way. Never raise `maxUnavailable` to make a roll quicker: with every controller replaceable at once and a version slow to become ready, the rehearsal's probe left neither surface a ready controller for about 26 s, and 15 of 79 requests failed.
+
 **The operators' half: staff on the operator host alone** *(written by `P15-TSK-042`, 2026-11-11, from the code and its checks; not yet run on a cluster - the `kind` rehearsal's edge step asserts it from its next run; its two signals alerted, a first role's sign-in again and the operator edge's trace context added by `P15-TSK-043`, 2026-11-12, section 11.37)*. Each controller sets `X-Finapp-Surface` (`public-edge.yaml`, `operator-edge.yaml`, the `edge-headers` middleware), replacing whatever a client sent. The application refuses a role-holding identity - anyone holding a live role - at sign-in, the MFA step, a factor's enrolment and confirmation, the password change, a recovery channel's addition and recovery, unless the operator edge marked the request. The word is trusted only because `finapp-app-ingress` admits no pod but the two controllers to port 8080: a change to that policy that admits anything else makes the marker anybody's to write, and is a security change, not a network one. One exception is the policy's own: a pod cannot block its node, and on EKS the network policy agent admits the node's address on every port, so a host-network process on that node could write the marker; it could reach the operator routes directly as well, so the marker gives it nothing more, and keeping host-network workloads off the application's nodes is what bounds both.
 
 **Rolling it out, and back.** The edge first, then the application: an application that requires the marker must never meet an edge that does not send it. The order is always safe, because an application without this change ignores the header. To roll back, the application first, then the edge if at all; the header left on the edge harms nothing. Wherever nothing is deployed in front of the application - no edge network named (`FINAPP_EDGE_PROXIES` blank) and its database on loopback: a laptop, the test tiers - it needs no marker and the one port serves both surfaces, as before the edge. A deployment whose database is reached through a sidecar on 127.0.0.1 is still behind the edge, because its overlay names the edge network.
@@ -3798,6 +3952,34 @@ suspect issuer is no fix.
 **What this does not mean.** One node, one machine, three replicas plus a surge: load, chaos and ten instances are the storm's (`P15-TST-001`, postponed by the owner). The broker and the database are test-only copies. kindnetd has not answered yet: `THREAT_MODEL.md` section 6 item 30. No Prometheus runs in the cluster: cert-manager's series and a replica's scrape are read once by the rehearsal's own pod. The cooperative assignor's moving only what changes hands is counted by a test of the broker tier owed to `P15-TST-002`, and a refused broker credential failing readiness was not exercised. T40's acceptance rows were not created, because an offer needs the origination chain the rehearsal does not build: the forged address is measured on the per-source key, the same `request.getRemoteAddr()`. The numbers are from a loaded development machine.
 
 **CI's runner.** Nothing has run there. `ubuntu-latest` on a public repository is, by GitHub's published figures, 4 vCPUs and 16 GB. The application namespace's quota is 8 GiB, and the rest of the cluster comes on top of it (the node's own components, cert-manager, both edge controllers, the simulator, the client's JVM), so it should fit with little to spare, and a 7 GB runner would not. The job's first run is the test. It sits inside the workflow's `concurrency` group: a run in progress on `master` is not cancelled, but a newer push replaces one still waiting, so a rehearsal can be skipped between two pushes and the nightly run is what covers it.
+
+**The rolls scope** *(`P16-TSK-005`, 2026-11-12; `THREAT_MODEL.md` section 6 item 43 (f))*. `REHEARSAL_SCOPE=rolls` deploys release N alone, as the rotations' scope does, and then changes the version of the three components the platform runs beside its own release, each to the other image of its pair in `infra/scanner-pins.sh` (`*_ROLL_*`, pulled by digest) and back, under the workload, with the census after every leg (`infra/scripts/kind-rehearsal/rolls.sh`). CI runs it nightly on a runner of its own. The test-only PostgreSQL and broker keep their data on volume claims since this scope, because a roll replaces the pod and an `emptyDir` goes with it.
+
+| Step | What it asserts |
+|---|---|
+| roll-edge | Both controllers' Deployments set to the pair's other Traefik and then back to the pin, together, each one controller at a time: zero failed requests through the public and the operator host (an unauthenticated operator read the application answers `401`, beside the public flows), counted until no controller is terminating, so the old ones' accept grace and drain are inside the window; every controller ready throughout; each live controller's version read from its binary |
+| roll-postgres | The server's StatefulSet set to the pair's other patch and back on one volume claim: the server's start time moved and `server_version` is the one asked; every request of the workload retried with the same key until it resolved, none unresolved, with the retries bounded past twice the payment sweep's dispatched age, which the leg reads from the code, because a card payment caught mid-call stays `PROCESSING` until the sweep asks the provider (the simulator answers the card rail's inquiry, `GET /operations/{reference}`, since this scope) and is never sent again, and an authorization concluded that way still needs its capture; no replica restarted; the census after each leg |
+| roll-kafka | The broker's StatefulSet set to the pair's other patch and back on one volume claim: zero failed requests (no request waits on the broker), three replicas ready throughout (a broker away is not a refusal), the outbox seen holding rows while it was away, the version asked, and then the census: the outbox drained, every partition owned with no lag, nothing lost to a consumer |
+
+`REHEARSAL_PROBE=edge-max-unavailable` sets both controllers' `maxUnavailable` to their replica count and holds their readiness 30 s after start, past the 10 s accept grace, before the edge's first roll: the zero-failed assertion must go red.
+
+**The rolls' last record.** 2026-11-12, 20:17-20:58 UTC, one whole run of the scope on a fresh cluster, release N built in the run from the branch head `35981197`: `kind` v0.33.0, node `v1.34.11`, kube-router as the policy engine (as above). 78 assertions held, none failed; the census was green after each of the six legs. The pairs: Traefik 3.7.17 and 3.7.18, PostgreSQL 18.6 and 18.4 (18.6 is the newest patch published, so the database's step went to the older one first), Kafka 4.3.1 and 4.3.2.
+
+| Leg | Measured |
+|---|---|
+| Edge to 3.7.18 | 18 s from the change to no controller terminating; 92 requests succeeded, 0 failed, 35 of them through the operator host; two ready controllers per surface at every sample; all four then reporting 3.7.18 |
+| Edge back to 3.7.17 | 19 s; 95 succeeded, 0 failed, 36 through the operator host; two ready per surface throughout; all four reporting 3.7.17 |
+| PostgreSQL to 18.4 | The server's pod replaced and ready in 6 s, its predecessor having stopped cleanly; 3 requests answered `500 api.InternalError` while it was away (a transfer, a top-up's confirmation, a checkout's confirmation); a top-up and a checkout caught mid-authorization stayed `PROCESSING` until the payment sweep asked the simulated provider at its 10-minute dispatched age, then completed, so their retries account for most of the 246 failed attempts; 24 logical requests, none unresolved; no replica restarted, and three stayed ready at every sample (readiness waits 30 s before it falls) |
+| PostgreSQL back to 18.6 | 5 s, a clean stop again; 3 requests answered `500` (a transfer, a top-up's confirmation, a payout), the payout then refused `409 api.IdempotencyInProgress` 17 times until its claim's lease lapsed and the retry completed it; a top-up caught mid-authorization concluded by the sweep; 55 failed attempts, 21 logical requests, none unresolved; no replica restarted; one volume claim through both legs |
+| Kafka to 4.3.2 | 41 s from the change to the broker ready; 141 succeeded, 0 failed; three replicas ready throughout; the outbox held up to 327 events while the broker was away |
+| Kafka back to 4.3.1 | 57 s; 164 succeeded, 0 failed; three ready throughout; up to 420 events held; one volume claim through both legs |
+| The whole run | 40 minutes; the database's step 22 of them, waiting for the sweep that concludes a payment caught mid-call |
+
+**The probe** (20:58-21:09 UTC, the same head, on the run's kept cluster with the common prefix deployed again and `roll-edge` alone): red, exit 1, at `edge roll roll-edge-to: 15 failed requests through the edge`, its first failure; 64 requests succeeded beside them, four of the 15 on the operator host, each a connection refused or timed out; the ready controllers fell to none on both surfaces, for 13 consecutive samples, about 26 s. The entry's own form of the break, `maxUnavailable` alone with no slow start, was not run, and what it would do is a prediction only: the new controllers were ready within seconds in every green leg, inside the old ones' 10 s accept grace, during which kube-proxy still sends a node port's traffic to a terminating controller that serves, so no request is expected to fail; the slow start is the case `maxUnavailable: 0` exists for.
+
+**What it found.** Two defects of the harness, fixed before the recorded run: the database leg's retries were bounded below the sweep that concludes a payment caught mid-call (they are now bounded past twice its dispatched age, read from the code), and the simulator served no card inquiry, so such a payment could never be concluded on `kind` (it now answers `GET /operations/{reference}` as the payout rail's inquiry does). Two observations of the platform, routed to the database failover drill (`P16-TSK-022`'s entry): a lost database connection answers `500 api.InternalError` rather than a `503` a client reads as temporary, and a card payment caught mid-call waits the sweep's ten minutes for its conclusion. The run's own count of payments the sweep concluded read top-ups alone (one per leg); its artefacts show the checkout too, and that log line now counts both (changed after the run; no assertion reads it).
+
+**What this does not mean.** One node, three replicas, the test-only copies of a managed database and broker: a managed minor upgrade (a provider's own restart and endpoint) never ran, and is `THREAT_MODEL.md` section 6 item 43 (f)'s with the first real environment. A controller lost under traffic is experiment E25's. The numbers are from a loaded development machine.
 
 ### 11.32 A refused image: signing, admission, and what to do when the cluster says no (`P15-TSK-007`)
 
@@ -4452,6 +4634,180 @@ own series.
 
 **Failure and rollback.** A rule that cannot be evaluated pages nobody; `InstanceDown` and `FinappTargetsAbsent` (section 11.8) are what
 say the scrape is gone. Removing either rule is a change to `flows.yml`, which the tests above refuse.
+
+### 11.43 Running a load test and reading its artefacts (`P16-TSK-006`, ADR-0126)
+
+**What it is.** The `kind` rehearsal's `load` scope (`infra/scripts/kind-rehearsal.sh`, `kind-rehearsal/load.sh`): release N deployed,
+smoked and its census green as in every scope, then a load profile (`infra/scripts/kind-rehearsal/load/<profile>.json`) driven through
+the platform's real public edge by k6 (pinned by digest in `infra/scanner-pins.sh`) as an **open model**: each operation arrives at
+its profile's rate whatever the platform answers, so a slow answer queues work as real clients would and its waiting is counted.
+While it runs, every 30 s, the harness reads every correctness page of `SLOS.md` §3 from the cluster's Prometheus and every clause of
+`kind-rehearsal/census.sql` marked `[sampled during load]` inside one `REPEATABLE READ READ ONLY` transaction; every 10 s, PostgreSQL's
+own statistics and `pg_stat_statements`. After it, the full census. It runs on the reference machine, not in CI: a runner is another
+machine, and a number is always reported with its workload and its machine (ADR-0126 decision 1).
+
+**The generator arrives from several addresses.** k6 runs as four instances (`REHEARSAL_LOAD_GENERATORS`), each its own container on
+the `kind` network and so its own address, each running its exact share of every arrival rate (k6's execution segments). Customers
+arrive from many addresses, and the edge's per-source tiers are a client's limits: one address carrying the whole population met them
+and measured them instead of the platform (the first run below). Each instance has one core; its summary, report and series are under
+`k6/<n>/`, and the harness's `k6/report.tsv` adds their counts and takes the percentiles from all their samples together.
+
+**The same run rehearses the platform's own signals** (`THREAT_MODEL.md` §6 item 47 (c); §11.41 and §11.42 hold the procedures).
+Before the load, once neither page is active (the control, so what fires afterwards is the plant's), a migrator Job is planted to
+fail (the release's own Job, its image a shell printing migrator-shaped lines with a card number and an amount, exiting 10) and two
+requests carrying a card number go through the public edge; after the load's census
+the run reads `MigratorJobFailed` and `MigratorJobOverdue` firing and held by Alertmanager on `placeholder-page`, the failed run's
+lines in Loki under `finapp-migrator` with the exit code and the scrub's mark, and sweeps the edge's, the migrator's, the collectors'
+and the watcher's streams for every needle (in each line, and in the request path the edge's records keep) beside a count of what
+it read and a planted control per stream found scrubbed; then the release's own Job is run again and both pages clear. The
+Overdue page's seventeen minutes pass under the load (`signals-*` in the artefacts).
+
+**What it drives (the `demonstration` profile).** `CAPACITY_MODEL.md` §1's demonstration workload: transfers 1.325 a second, card or
+checkout payments 2.655, card top-ups 0.53 (the withdrawals of R2 folded into top-ups), balance reads 50, sign-ins 3.18 and merchant
+API reads 5.3 (the target's peak scaled by 5 / 10.47), each through its own scenario; the provider's signed callbacks, two per captured
+card payment, from `Rehearsal.java load-callbacks` run as four senders (four addresses, each a quarter of the feed), each naming the
+operation the platform minted; and one PSP settlement file of the
+run's captures at mid-run, uploaded and attested through the operator edge and reconciled during the load. One money-moving iteration
+in twenty sends each of its commands twice under one key, half before the first answer and half after it; one callback in twenty is
+delivered twice. A movement is resolved as a client that lost its answer would resolve it: the same key asked again, and a payment in
+progress read, until it concludes, within twice the payment sweep's dispatched age and five minutes (read from the code's default,
+25 minutes today): a provider call cut by a stall leaves its payment `PROCESSING` until the sweep asks the provider, and the
+generator's graceful stop waits past that bound, so the load can outlast its duration by the slowest movement's conclusion.
+**Not driven**: BNPL purchases and instalments, lending repayments and loan credit decisions (0.49 of the 5 movements a second), each
+declared in the profile with its reason, routed to `P16-TSK-007`.
+
+**Running it.** One full cluster at a time on the machine. From the repository root, with the rehearsal's own prerequisites (§11.28):
+
+```
+REHEARSAL_SCOPE=load infra/scripts/kind-rehearsal.sh
+```
+
+`REHEARSAL_LOAD_PROFILE` names another profile file; `REHEARSAL_LOAD_DURATION` shortens the run, which then is not the profile's
+workload (`load/workload.txt` says so); `REHEARSAL_LOAD_CUSTOMERS` (20) is how many customers the load spreads over;
+`REHEARSAL_LOAD_GENERATORS` (4) how many addresses the generator arrives from; `REHEARSAL_PROBE`
+takes `closed-model`, `sampler-disabled` or `unbalanced-entry`. The usual `REHEARSAL_KEEP`, `REHEARSAL_REUSE_CLUSTER`,
+`REHEARSAL_SKIP_BUILD` and `REHEARSAL_ARTEFACTS` apply. Exit 0 green, 1 an assertion failed, 2 a step could not run.
+
+**What a green run says, step by step** (each a line of `rehearsal.log` and `assertions.tsv`):
+- `load-preflight`, before anything is built: what k6 will run, read by `k6 inspect`; every scenario an arrival-rate executor, one per
+  operation the profile gives k6, TLS verified, no request cap.
+- `load-target`: the node the harness reaches is a node of the run's own cluster (kind's label), at the address the generator is given.
+- `load-setup`: the load's customers registered, made `ACTIVE`, each with a session, a wallet, a card and one funding top-up; the
+  fixture written for the generator; `pg_stat_statements` created in the server's maintenance database; every page a rule the
+  cluster's Prometheus loaded; a sample before the load, which must pass.
+- `load-run`: the load, the samplers, the callback sender and the settlement file. **A sample that fails or cannot read stops the load
+  at once and fails the run.**
+- `load-judge`: the samples covering the load (none missing at either end, no gap over 45 s, every one `PASS`); the generator holding
+  its model (no dropped iteration, every arrival rate within 2%, each instance's CPU under 90% of its core); every money movement resolved by
+  its key and every retried key answered alike; the callbacks two per capture, every delivery answered and a duplicate accepted; every
+  ready replica serving each money-moving route; the settlement file taken whole and reconciled. **Errors and latency are recorded,
+  never a verdict** (`PHASE_16_PLAN.md` §5.3: a run fails on correctness, whatever the latency did; §5.2: error rates by status): a
+  `recorded` line per operation gives its 5xx beside the chance an operation meeting its objective errs that often in that many
+  attempts (`load_errors_chance`, a one-sided test; below 1% the 5xx are more than the objective explains), its other answers by
+  status, and its percentiles; the objectives under load are `P16-TSK-029`'s to judge.
+- `load-census`: the full census with the generator's counts (one effect per key, the provider's keys, the wallets, the outbox drained,
+  no event lost, GL = ledger), a last sample, and the saturation signals exported.
+
+**Reading the artefacts** (under `$REHEARSAL_ARTEFACTS/load`, `build/rehearsal/load` by default):
+
+| File | What it holds | Read it for |
+|---|---|---|
+| `workload.txt` | The profile, whether this run is its workload, duration, replicas, commit, machine, the generator's pin, what was and was not driven | Whose number this is, before any number |
+| `k6/report.tsv` | Per operation: its rate, arrivals, resolved, refused, unresolved, attempts, failed attempts, `409`s, retried keys and those answered alike, p50, p95, p99 and max latency as the client saw it (connection and handshake included), the flow's p99 | Latency and errors per operation |
+| `k6/statuses.tsv` | Per operation, every answer that was not a success by status (`0`: none, a timeout or a refused connection) | Errors by status: the platform's `5xx`, the edge's `429`, a `409` |
+| `k6/generator.tsv` | Dropped iterations, peak and allocated virtual users, requests, duration | Whether the generator held its model |
+| `k6/<n>/summary.json`, `k6/<n>/k6-series.csv.gz`, `k6-<n>.log` | Each instance's summary, every sample of every metric with its tags, and its log | Anything the report does not show; `P16-TSK-007`'s analysis |
+| `samples.tsv`, `samples/` | One line per 30 s sample (verdict, replicas scraped of ready, clauses, detail) and each sample's raw answers | The invariants during the load |
+| `sample.sql` | The exact clauses sampled, extracted from `census.sql` | What "the census during load" was |
+| `pg-*.tsv`, `pg-statements-final.txt` | Every 10 s: sessions by state and wait, lock waits, commits, rollbacks, deadlocks, temporary files, WAL, checkpoints, the busiest tables; the top statements by time | The database's side of saturation |
+| `containers.tsv` | Every 10 s: the node's, each generator instance's and the callback sender's CPU and memory | The machine, and the generator's own saturation |
+| `prometheus/*.json` | CPU, heap, GC, threads, busy request threads, Hikari active and pending and acquisition, the outbox's oldest publishable age, consumer lag, requests per replica, over the run | The application's side of saturation |
+| `callbacks-load-<n>.*`, `callbacks-feed-load.txt`, `spread.tsv`, `settlement.*` | Each sender's answers and its summary, the feed; replicas per route; the settlement file and its reconciliation counts | The provider's, the edge's and reconciliation's share |
+| `../census-load.txt` | The full census after the load | One effect per key, counted |
+
+**When it is red.** A failed sample's line in `samples.tsv` names the page or the clause: treat it as the page itself (§11.20 for the
+trial balance or the projection, §11.22 for a duplicated effect, §11.6 for the outbox) on a cluster that is the run's own. The
+generator saturated, or a dropped iteration: the run is invalid, not slow; lower the profile or give the machine more room, and never
+read its latencies. An unreadable sample (Prometheus silent, a replica unscraped, a gauge no instance reads): the run passed nothing;
+find why the sampler was blind. A refused or unresolved movement: `k6/k6-series.csv.gz` has its status and tags.
+
+**The probes**, each seen red: `closed-model` (the generator's model replaced by a closed one: refused by the pre-flight before any
+cluster exists), `sampler-disabled` (the load with no sampler: refused by the coverage), `unbalanced-entry` (an entry of one debit line
+planted 60 s into the load by the test-only superuser: caught by the next sample, which stops the run).
+
+**Failure and rollback.** It touches nothing but the run's own cluster, which it deletes at exit unless kept; a kept cluster is deleted
+with `kind delete cluster`. Its only change outside the harness is the `kind` overlay's test-only server preloading
+`pg_stat_statements` (and `track_io_timing`), which no deployed overlay carries.
+
+**The last record** *(2026-11-13, on `kind`)*. One development machine (Docker Desktop 28.0.1 on WSL2, 12 CPUs, 15.6 GiB to
+Docker), `kind` v0.33.0, node `v1.34.11`, kube-router as the policy engine, three replicas, the `demonstration` profile for 10
+minutes, 20 customers, four generator addresses, k6 2.3.0 by its digest. Every run on one kept cluster (`REHEARSAL_KEEP=1`, the
+later ones with `REHEARSAL_REUSE_CLUSTER=1` and `REHEARSAL_SKIP_BUILD=1`, each deploying release N − 1 and N again on fresh
+namespaces), in one hold of the machine's one-cluster lock. Nine runs went red before the tenth, each on what it found:
+
+| Run | Head | Stopped at | What it found, and the correction |
+|---|---|---|---|
+| 1 | `f38a2ff4` | sample 10 `UNREADABLE`, 4.5 min into the load | The test-only PostgreSQL killed in its 512 MiB memory cgroup and reinitialised; the sampler read nothing and stopped the run, as it must. Before that one generator address met the edge's per-source tiers (429s from 2 a second to 46). The server given 1 GiB (the quota +512 MiB); the generator four instances on four addresses |
+| 2 | `0e3670cc` | `finapp-edge-public did not become ready` | Both edges crash-looping since the edge's own log went over OTLP: the pinned proxy builds an in-cluster client when `KUBERNETES_SERVICE_HOST` is set and exits 1 without a line, its token never mounted (reproduced on the pinned image). The variable emptied on both controllers (`EdgeManifestsTest#theControllersStartWithoutAKubernetesClient`) |
+| 3 | `ea22f4d0` | the planted Job's command could not be written | Under kube-router the Job's wait init container runs a shell too; the plant counted by its own line |
+| 4 | `7fd991d0` | `settlement.DeliveryRefused` | The door's screen refused the PSP file: a simulator reference holds a UUID whose number groups make a Luhn-valid run across dashes. A capture whose reference holds 13 or more numbers across separators is left out of the file and counted |
+| 5 | `1fd3bef7` | 150 iterations dropped | Invalid by its generator: checkout's VU bound met while the pool starved (Hikari 7 active, 47 waiting, acquisition 5.0 s), and one callback sender's 1,397 of 3,934 deliveries held by the edge. Money flows' VU bound a minute of arrivals, four callback senders, a retried key counted once |
+| 6 | `52654f35` | 111 iterations dropped | Every sample `PASS`, every callback accepted; VUs initialised mid-run at the start and in a 5 s stall. Every VU allocated before the load |
+| 7 | `ba5b4ae6` | transfer's 5 errors of 840 | Every sample `PASS`, nothing dropped, every movement resolved and every retried key alike; red on an error test the fifth run's correction had added: a 25 s stall of the machine's disk (commits waiting on WAL writes, 74 requests waiting on the pools, acquisition at its 5 s bound) answered 5xx to sign-ins (9), reads (12) and the merchant API (2), and the edge's in-flight bound 429 to 147 more. Errors recorded by status, never a verdict (§5.3; `P16-TSK-029` judges the objectives under load); the statistics read with one call (18 s apart, now 10) |
+| 8 | `6219ea77` | 6 checkouts and 1 top-up unresolved | Every sample `PASS`, nothing dropped; a stall cut 7 card provider calls (4 authorizations, 3 captures dispatched) and the payments stayed `PROCESSING`, the client reading for 30 s where the platform concludes such a payment once its sweep asks the provider past the dispatched age; and the simulator then answered no card inquiry. Each movement resolved and read within twice the sweep's dispatched age and five minutes (read from the code), and the simulator's card inquiry taken from master |
+| 9 | `7d112a12` | settlement: 1972 lines of 986 | Every sample `PASS` (60, the load running 1,773 s to its slowest movement), every movement resolved (four authorizations cut by a stall concluded by the sweep's inquiry and captured by its stranded-authorization leg 20 minutes on), callbacks all answered; the census, read by hand on the kept cluster, green. The judge counted the file's records against its lines, where each record is two once taken, its capture and the PSP's fee |
+| 10 | `7231d298` | — | Green, below |
+
+**The tenth run** (2026-11-13 00:52-01:33Z, head `7231d298`, `RESULT: GREEN`, 62 assertions; `RESILIENCE_EXPERIMENTS.md` E27's
+result, its artefacts kept on that machine under `build/rehearsal/experiments/E27`):
+
+- **The load.** From 01:01:27 for 10 minutes, then the generator waiting for its slowest movements until 01:31:09 (1,782 s in all).
+  A stall at 01:09:54-01:10:24 (WAL written at nearly three times its rate, full-page images six times, eight backends waiting on
+  `WALWrite`, up to 111 requests waiting on
+  the replicas' pools of 7, acquisition at its 5 s bound) cut five card provider calls; the sweep's inquiry concluded them about
+  01:20 and its stranded-authorization leg captured the three authorizations about 01:30, the generator reading each until then.
+  No iteration dropped; 52 virtual users at the peak of 580 allocated; each generator instance at most 9.6% of its core; 41,581
+  requests.
+- **The invariants during the load**: 61 samples 30 s apart, every one `PASS`, each with the three replicas scraped and the eight
+  clauses in one snapshot; the sample after the census `PASS`; PostgreSQL's statistics read 180 times.
+- **Per operation** (`k6/report.tsv`, `k6/statuses.tsv`; latency as the client saw it, connection and handshake included; the 5xx's
+  chance is the chance an operation meeting its objective errs that often, recorded):
+
+  | Operation | Arrivals | Resolved | Retried keys alike | 5xx (chance) | Other answers | p50 | p95 | p99 | max |
+  |---|---|---|---|---|---|---|---|---|---|
+  | transfer | 796 | 796 | 39 of 39 | 1 of 844 (0.57) | 429 ×8 | 50 ms | 1.9 s | 4.3 s | 8.2 s |
+  | checkout | 1,594 | 1,594 | 79 of 79 | 18 of 4,653 (0.00) | 429 ×12 | 109 ms | 5.6 s | 11.4 s | 20.3 s |
+  | top-up | 319 | 319 | 15 of 15 | 1 of 991 (0.63) | 409 ×7, 429 ×3 | 68 ms | 5.2 s | 10.2 s | 16.0 s |
+  | balance read | 30,001 | 29,749 | — | 37 (0.12) | 429 ×215 | 13 ms | 995 ms | 3.2 s | 9.5 s |
+  | sign-in | 1,911 | 1,894 | — | 17 (0.00) | none | 72 ms | 1.1 s | 3.3 s | 6.9 s |
+  | merchant API | 3,181 | 3,178 | — | 3 (0.62) | none | 38 ms | 2.1 s | 4.4 s | 8.5 s |
+
+  Checkouts' and sign-ins' 5xx are more than 99.9% explains, all in the stalls (`500` after the pool's 5 s, sign-ins `503`), and the
+  edge's in-flight bound answered `429` to a source whose requests piled up there: recorded for `P16-TSK-029`, and the stall for
+  `P16-TSK-007`, neither a verdict here.
+- **The provider's callbacks**: 1,913 captured card payments fed to four senders; 3,822 first deliveries and 197 redeliveries accepted
+  (`204`); 4 answered `500` in the stall, which the senders do not redeliver, their payments already captured by their confirmations
+  (callbacks are hints, ADR-0083).
+- **Settlement**: one PSP file of 1,001 captures (25 left out, their references shaped like a card number) uploaded and attested at
+  01:06:28, taken whole as 2,002 lines (each capture and its fee), every line a reconciliation item, every capture allocated to its
+  expectation.
+- **Spread**: every ready replica served transfers, payment and checkout confirmations and balance reads.
+- **The census after** (`census-load.txt`): green - 797 transfers for 797 keys, 1,938 captured intents for 343 top-ups and 1,595
+  checkouts, 1,938 capture postings and 1,938 capture keys at the provider, 171,500 minor units in 24 wallets as the client put in,
+  the outbox drained (19,984 events), no event lost, nothing parked, GL = ledger.
+- **The platform's own signals** (§11.41, §11.42): neither page active at 01:01:13; the planted Job at 01:01:14; `MigratorJobFailed`
+  pending 01:02:15, **firing 01:04:15**; `MigratorJobOverdue` pending 01:02:15, **firing 01:19:15**; both held by Alertmanager on
+  `placeholder-page`; 12 records under `finapp-migrator` with the exit code, the card number and the amount scrubbed; the sweep of 31
+  needles over the edge's 45,737 records, the migrator's 12, the collectors' 16 and the watcher's 1 found none, each stack stream's
+  planted control there scrubbed and the edge's planted path there scrubbed; the release's own Job run again at 01:32:58 and both
+  pages cleared by 01:33:15.
+
+**The probes**, each seen red on the tenth run's bytes (head `7231d298`; `MUTATION_TESTING.md` §2): `closed-model` (00:53Z), refused
+by the pre-flight 2 s in, before any image or cluster (`the generator dropped its open model: its scenarios run constant-vus` six
+times); `unbalanced-entry` on the kept cluster (a 3-minute load), the entry planted at 01:42:42 and the next sample, at 01:43:08,
+`FAIL` on the trial balance (EUR net 1 over 1,387 lines), one unbalanced entry and one account its balance no longer explains, the
+load stopped there; `sampler-disabled` on the same cluster (a 2-minute load), refused at the judge (`the samples do not cover the
+load (0 samples)`). The cluster was deleted and the lock released at 01:55Z.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

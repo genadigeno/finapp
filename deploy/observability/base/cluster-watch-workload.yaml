@@ -1,0 +1,120 @@
+# The cluster watcher (P16-TSK-003; cluster-watch.yaml says what it reads and why): one replica of the pinned collector image, the one
+# workload of the platform's namespaces that holds a Kubernetes credential. Its ServiceAccount is the first entry of finapp.rego's controller
+# accounts, the only way a token is admitted, and its Role is granted by the application's own release in finapp
+# (deploy/base/rbac-cluster-watch.yaml): finapp's owner decides who reads finapp. It reaches the API server, its resolver and the collector's
+# platform receiver, and the scraper reaches its exporter; nothing else reaches it.
+#
+# THE API SERVER IS NOT NAMED IN ITS POLICY. On kind under kube-router a pod reaches its own node's API server whatever its egress policy says
+# (measured, OPERATIONS_RUNBOOK.md section 11.41), and an address committed here would be real or wrong. A real environment's overlay names
+# the API server's address for it (THREAT_MODEL.md section 6 item 43 (c), the overlay per environment, which does not exist yet).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finapp-cluster-watch
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-cluster-watch
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-cluster-watch
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-cluster-watch
+        app.kubernetes.io/component: cluster-watch
+        finapp/role: cluster-watch
+        app.kubernetes.io/part-of: finapp
+    spec:
+      serviceAccountName: finapp-cluster-watch
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: watch
+          image: docker.io/otel/opentelemetry-collector-contrib@sha256:e40d61f10c9a617cca1ffd1be4d7e2b3a4b0f0001798ff07e58cabe82e618cea
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/otelcol/config.yaml
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # The Go runtime's soft limit under the container's, so memory_limiter refuses before the kernel kills.
+            - name: GOMEMLIMIT
+              value: 200MiB
+          ports:
+            - name: metrics
+              containerPort: 8889
+              protocol: TCP
+            - name: health
+              containerPort: 13133
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: finapp-cluster-watch-config
+---
+# The scraper finds the watcher by DNS, ready or not, as it finds every collector: no token, no role and no route to the API server for it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-cluster-watch
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: finapp-cluster-watch
+  ports:
+    - name: metrics
+      port: 8889
+      targetPort: metrics
+      protocol: TCP

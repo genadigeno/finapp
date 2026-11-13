@@ -1,5 +1,9 @@
-# Test-only, single-node, ephemeral: the kind rehearsal's PostgreSQL. C3: state lives outside the cluster in
+# Test-only, single-node, gone with its cluster: the kind rehearsal's PostgreSQL. C3: state lives outside the cluster in
 # every real environment, and the manifest policy refuses a StatefulSet in any other overlay.
+#
+# The data directory is on a volume claim that kind's own provisioner (local-path, the cluster's default StorageClass) backs, not an
+# emptyDir (P16-TSK-005): a roll replaces the pod, and an emptyDir goes with the pod it belongs to, so the rehearsal's version change
+# would start an empty server. The claim outlives the pod and is deleted with the namespace or the cluster.
 #
 # The restricted pod profile holds here too: this image was run with a read-only root, as 999:999, with every
 # capability dropped, and reached ready. Mounted at /var/lib/postgresql rather than /var/lib/postgresql/data, as
@@ -87,6 +91,13 @@ spec:
             - ssl_key_file=/etc/finapp-postgres-tls/tls.key
             - -c
             - hba_file=/etc/finapp-postgres-hba/pg_hba.conf
+            # The load harness's statement statistics (P16-TSK-006, PHASE_16_PLAN.md section 5.2): loaded here, and the extension
+            # created by the load scope in the server's maintenance database alone, so the finapp database gains no object. A
+            # test-only server's setting: a managed database's statistics are its own (Performance Insights in the reference cloud).
+            - -c
+            - shared_preload_libraries=pg_stat_statements
+            - -c
+            - track_io_timing=on
           ports:
             - name: postgres
               containerPort: 5432
@@ -100,13 +111,16 @@ spec:
                 secretKeyRef:
                   name: finapp-kind-postgres
                   key: password
+          # 1 GiB since P16-TSK-006: at 512 MiB the demonstration load drove a backend into the container's memory limit 4.5 minutes in,
+          # the kernel killed it and the server reinitialised (OPERATIONS_RUNBOOK.md section 11.43's record). A test-only stand-in's size; a
+          # managed database is sized on its own.
           resources:
             requests:
               cpu: 250m
-              memory: 512Mi
+              memory: 1Gi
             limits:
               cpu: "1"
-              memory: 512Mi
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
@@ -143,8 +157,6 @@ spec:
               mountPath: /etc/finapp-postgres-hba
               readOnly: true
       volumes:
-        - name: data
-          emptyDir: {}
         - name: run
           emptyDir: {}
         - name: tmp
@@ -158,3 +170,12 @@ spec:
         - name: hba
           configMap:
             name: finapp-kind-postgres-hba
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi

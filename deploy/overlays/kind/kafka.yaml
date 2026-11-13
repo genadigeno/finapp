@@ -1,4 +1,8 @@
-# Test-only, single-node, ephemeral: the kind rehearsal's broker, in KRaft mode. Refused in any other overlay.
+# Test-only, single-node, gone with its cluster: the kind rehearsal's broker, in KRaft mode. Refused in any other overlay.
+#
+# Its log directory (the topics, the consumer groups' offsets, and in KRaft the metadata: ACLs and SCRAM credentials) is on a volume claim
+# that kind's own provisioner backs, not an emptyDir (P16-TSK-005), so a roll that replaces the pod keeps it: `format --ignore-formatted`
+# below leaves a formatted directory alone. Deleted with the namespace or the cluster.
 #
 # SASL_SSL on 9092, as every deployed client needs: SCRAM-SHA-512 and a certificate from the rehearsal's local CA. The application
 # connects as itself, with the catalogued ACLs and nothing more, because KafkaTransportGuard refuses PLAINTEXT off loopback.
@@ -9,7 +13,8 @@
 #
 # Everything generated is the rehearsal's, never committed: the broker's keystore (finapp-kind-kafka-tls), its properties from
 # infra/kafka/broker.properties with replication overridden to one node (finapp-kind-kafka-config), and the SCRAM passwords in
-# finapp-kind-kafka-scram. The kafka-storage step that takes those passwords runs once, at the start of this pod.
+# finapp-kind-kafka-scram. The kafka-storage step that takes those passwords formats the directory at the first start of this pod and
+# leaves it alone at every later one, a roll's included: the credential is in the metadata from then on.
 #
 # The restricted pod profile holds here too: the image was run with a read-only root, as 1000:1000, with every capability dropped,
 # until it served. The image's own start script writes its configuration under /opt/kafka/config and /mnt/shared/config and is not used.
@@ -145,8 +150,6 @@ spec:
               mountPath: /etc/finapp-kind-kafka-tls
               readOnly: true
       volumes:
-        - name: data
-          emptyDir: {}
         - name: logs
           emptyDir: {}
         - name: tmp
@@ -161,3 +164,12 @@ spec:
           secret:
             secretName: finapp-kind-kafka-tls
             defaultMode: 288
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi

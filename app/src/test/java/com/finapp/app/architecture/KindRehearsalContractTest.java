@@ -36,6 +36,7 @@ class KindRehearsalContractTest {
     private static final String PINS = "infra/scanner-pins.sh";
     private static final String OVERLAY = "deploy/overlays/kind/";
     private static final String CENSUS = "infra/scripts/kind-rehearsal/census.sql";
+    private static final String ROLLS = "infra/scripts/kind-rehearsal/rolls.sh";
 
     private static Path root;
     private static String harness;
@@ -221,6 +222,98 @@ class KindRehearsalContractTest {
         assertThat(workflow).as("CI runs both scopes, each on its own runner, the rotations' with a bound of its own")
                 .contains("          - scope: release\n            timeout: 150").contains("          - scope: rotations\n            timeout: 240")
                 .contains("timeout-minutes: ${{ matrix.timeout }}").contains("REHEARSAL_SCOPE: ${{ matrix.scope }}");
+    }
+
+    @Test
+    @DisplayName("the rolls scope rolls the edge's controllers, the test-only PostgreSQL and the test-only broker to the other image of each pair and back"
+            + " under the workload, with the census after each leg, and keeps the data tier's data across a roll (P16-TSK-005)")
+    void theRollsAssertWhatTheEntryNames() {
+        String rolls = read(ROLLS);
+        assertThat(harness).as("a scope of the harness, on release N alone, after N is deployed and smoked")
+                .contains("delivery) ;; rolls) ;;").contains("[ \"$SCOPE\" != rolls ] || N_ONLY=1")
+                .contains("if [ \"$SCOPE\" = rolls ]; then\n    # shellcheck source=infra/scripts/kind-rehearsal/rolls.sh\n    . \"$DIR/rolls.sh\"");
+        assertThat(harness).as("the other image of each pair loaded into the node by its digest")
+                .contains("load_tagged \"$TRAEFIK_ROLL_REPOSITORY\" \"$TRAEFIK_ROLL_VERSION\" \"$TRAEFIK_ROLL_DIGEST\"")
+                .contains("load_tagged \"$POSTGRES_ROLL_REPOSITORY\" \"$POSTGRES_ROLL_VERSION\" \"$POSTGRES_ROLL_DIGEST\"")
+                .contains("load_tagged \"$KAFKA_ROLL_REPOSITORY\" \"$KAFKA_ROLL_VERSION\" \"$KAFKA_ROLL_DIGEST\"");
+        assertThat(rolls).as("each component to the other image and back, every step a wanted one")
+                .contains("edge_leg roll-edge-to \"$EDGE_TARGET\"").contains("edge_leg roll-edge-back \"$EDGE_PINNED\"")
+                .contains("postgres_leg roll-postgres-to \"$POSTGRES_TARGET\"").contains("postgres_leg roll-postgres-back \"$POSTGRES_PINNED\"")
+                .contains("kafka_leg roll-kafka-to \"$KAFKA_TARGET\"").contains("kafka_leg roll-kafka-back \"$KAFKA_PINNED\"")
+                .contains("if wanted roll-edge; then roll_edge; fi").contains("if wanted roll-postgres; then roll_postgres; fi")
+                .contains("if wanted roll-kafka; then roll_kafka; fi");
+        assertThat(rolls.split("\n    census \"\\$label\"\n", -1)).as("the census after every leg of the three").hasSize(4);
+        assertThat(rolls).as("the edge: zero failed requests through both hosts, counted until no controller terminates, every controller ready"
+                        + " throughout, each running the version asked as its binary reports it")
+                .contains("[ \"$failed\" = 0 ] || fail \"edge roll $label: $failed failed requests through the edge")
+                .contains("start_workload \"$label\" \"\" operator-edge").contains("edge_none_terminating 300 || fail")
+                .contains("no request reached the application through the operator host").contains("maxUnavailable 0 keeps every one")
+                .contains("-c edge -- traefik version");
+        assertThat(rolls).as("PostgreSQL: retried by key and none unresolved, the server restarted onto the version asked on one volume claim, no replica"
+                        + " restarted for it")
+                .contains("WORKLOAD_RETRY_SECONDS=$ROLL_RETRY_SECONDS start_workload \"$label\" retry").contains("requests stayed unresolved")
+                .as("retried past the sweep that concludes a payment caught mid-call, its age read from the code")
+                .contains("sweeper\\.dispatched-age:PT").contains("ROLL_RETRY_SECONDS=$((2 * ROLL_RETRY_MINUTES * 60 + 300))")
+                .contains("the server's start time did not move");
+        assertThat(read("infra/scripts/kind-rehearsal/Simulator.java")).as("the simulated card rail answers the sweep's inquiry, or nothing caught mid-call"
+                        + " could ever be concluded here")
+                .contains("server.createContext(OPERATIONS, Simulator::operationInquiry)").contains("\"{\\\"status\\\":\\\"unrecognised\\\"}\"");
+        assertThat(rolls)
+                .contains("SHOW server_version").contains("a replica restarted for the database's restart")
+                .contains("the server's volume claim was replaced");
+        assertThat(rolls).as("the broker: zero failed requests, every replica ready, the outbox seen holding rows, the version asked, one volume claim")
+                .contains("and the broker is on no request's path").contains("and a broker away is not a refusal")
+                .contains("the outbox never held a row").contains("kafka-topics.sh --version").contains("the broker's volume claim was replaced");
+        assertThat(rolls).as("the entry's probe, with the slow start maxUnavailable 0 exists for")
+                .contains("PROBE edge-max-unavailable: zero failed requests").contains("/spec/strategy/rollingUpdate/maxUnavailable")
+                .contains("readinessProbe/initialDelaySeconds\\\",\\\"value\\\":30");
+        for (String overlay : List.of("postgres.yaml", "kafka.yaml")) {
+            assertThat(read(OVERLAY + overlay)).as("%s keeps its data on a volume claim, which a roll that replaces the pod keeps", overlay)
+                    .contains("  volumeClaimTemplates:\n    - metadata:\n        name: data\n").doesNotContain("- name: data\n          emptyDir");
+        }
+        assertThat(read("infra/scripts/kind-rehearsal/Rehearsal.java")).as("the operator host read under its controllers' roll")
+                .contains("\"operator-edge\".equals(System.getenv(\"WORKLOAD_EDGE\"))").contains("get(operatorBase, \"/v1/operator/events/dead-letters\", null), 401");
+        assertThat(read(".github/workflows/ci.yml")).as("CI runs the scope nightly, on a runner of its own")
+                .contains("          - scope: rolls\n            timeout: 150\n            nightly: true");
+    }
+
+    @Test
+    @DisplayName("each roll target is pinned by digest, the deployed pin's repository and release line with another patch, and its tag is watched (P16-TSK-005)")
+    void eachRollTargetIsAnotherPatchOfItsDeployedPin() {
+        Matcher postgres = Pattern.compile("image: postgres:(\\S+)@(sha256:[0-9a-f]{64})").matcher(read(OVERLAY + "postgres.yaml"));
+        assertThat(postgres.find()).as("the kind overlay pins its PostgreSQL").isTrue();
+        Matcher kafka = Pattern.compile("image: apache/kafka:(\\S+)@(sha256:[0-9a-f]{64})").matcher(read(OVERLAY + "kafka.yaml"));
+        assertThat(kafka.find()).as("the kind overlay pins its broker").isTrue();
+        String[][] pairs = {
+            {"TRAEFIK", pin("TRAEFIK_REPOSITORY"), pin("TRAEFIK_VERSION"), pin("TRAEFIK_DIGEST")},
+            {"POSTGRES", "library/postgres", postgres.group(1), postgres.group(2)},
+            {"KAFKA", "apache/kafka", kafka.group(1), kafka.group(2)},
+        };
+        String check = read("infra/scripts/check-pinned-images.sh");
+        for (String[] pair : pairs) {
+            String target = pin(pair[0] + "_ROLL_VERSION");
+            assertThat(pin(pair[0] + "_ROLL_REPOSITORY")).as("%s's target is its deployed pin's repository", pair[0]).isEqualTo(pair[1]);
+            assertThat(pin(pair[0] + "_ROLL_DIGEST")).as("%s's target is pinned by a digest that is not the deployed one's", pair[0])
+                    .matches("sha256:[0-9a-f]{64}").isNotEqualTo(pair[3]);
+            assertThat(line(target)).as("%s's target %s is on the deployed %s's release line", pair[0], target, pair[2]).isEqualTo(line(pair[2]));
+            assertThat(target).as("%s's target is another patch than the deployed one: a bump onto it needs a new target", pair[0]).isNotEqualTo(pair[2]);
+            assertThat(check).as("the weekly pin job checks %s's target's tag has not moved", pair[0])
+                    .containsPattern("(?m)^check \\S+-roll +\"\\$" + pair[0] + "_ROLL_REPOSITORY\" +\"\\$" + pair[0] + "_ROLL_VERSION\" +\"\\$" + pair[0]
+                            + "_ROLL_DIGEST\" +roll-target$");
+        }
+    }
+
+    private static String pin(String name) {
+        Matcher value = Pattern.compile("(?m)^" + name + "=(\\S+)$").matcher(pins);
+        assertThat(value.find()).as("%s is in %s", name, PINS).isTrue();
+        return value.group(1);
+    }
+
+    /** A version's release line: everything before its last number, so v3.7.17 is on 3.7 and PostgreSQL's 18.6 on 18. */
+    private static String line(String version) {
+        String bare = version.startsWith("v") ? version.substring(1) : version;
+        assertThat(bare).as("a version of numbers and dots").matches("[0-9]+(\\.[0-9]+)+");
+        return bare.substring(0, bare.lastIndexOf('.'));
     }
 
     @Test
