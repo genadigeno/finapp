@@ -4853,11 +4853,16 @@ and a BNPL policy cannot refer, so it declines. Driving them needs a simulated b
 **What it adds to §11.43's run.**
 - `load-run`: every 10 s, besides §11.43's samples, every pod's own cgroup inside the node (`pods.tsv`: CPU, the time its containers were
   throttled against their CPU limits, memory) and the database's statements together (`pg-statements_total.tsv`); the host's and the node's
-  clocks either side of the load (`clock.tsv`).
+  clocks either side of the load (`clock.tsv`). The settlement file goes at mid-run as before, or at the load's first card capture after
+  it (the isolation profile captures nothing before its fifth stage, so its file goes with the first top-ups); a run that reaches its end
+  without one capture fails.
 - `load-judge`: each operation's arrivals held to the sum over the stages of its rate times its factor times the stage's seconds. The
   stress profile runs past the platform's break by design: the iterations the generator drops there (its bound of in-flight iterations
   outgrown) are recorded per stage and counted as arrivals, never a pass; every other judgement stands, the census included.
 - `load-census`: the per-stage tables, and the fleet's sums from Prometheus.
+- A run a sample stops (a failing or unreadable sample stops the load at once, as §11.43) still keeps what it measured before it fails:
+  the per-stage tables up to the stop, the saturation signals, what the run wrote and the callback senders' records (`stopped.log` names
+  any that could not be kept). Keeping them judges nothing: the run stays red.
 
 **Reading the artefacts** (beside §11.43's):
 
