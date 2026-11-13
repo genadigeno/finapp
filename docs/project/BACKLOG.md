@@ -30234,6 +30234,15 @@ on none:
   `finapp/experiment-fault`, `scaled <namespace> <deployment> <replicas> <replicas to restore>` (E16's CoreDNS would be its first use
   outside the simulator). Each passes the boundary first and is removed at the experiment's stop and on every
   way out. On several nodes, read Prometheus through its pod (`experiments_prometheus`), not the API server's proxy.
+- *Routed from `P16-TSK-022` (2026-11-13):* E14's "decided bound" is the data source's socket timeout, five minutes
+  (ADR-0139, `application.yaml`; `DatabaseSocketTimeoutTest`): a cut replica's black-holed connections are given up within it, and
+  E14 reads it from `application.yaml` as E57 does (`experiments_socket_timeout`). The with-and-without comparison the failover drill
+  owed is its own experiment, E57, over the whole database hop: the fault proxy's toxics act on a hop, not on one client, so E57
+  black-holes every replica's connections, as a failover does. Its step is written against the toolkit's `toxic` primitive (a latency
+  toxic, then Toxiproxy's `timeout` toxic with `timeout=0`) in `e57_hole`; where this task builds its own black-holed-connection step,
+  the two meet at merge and one can serve both. E57 also adds the `setting` fault (a variable on the application's Deployment,
+  removed on every way out). A fleet-wide hole longer than five minutes pages `GaugesStaleAcrossTheFleet`, its expected signal there
+  (`EXP_PAGES_EXPECTED`); E14's one replica should not.
 - **As built** (2026-11-13). **Nothing of this task has run on a cluster.** By the owner's word of 2026-11-13 ("we dont need long
   running checks and tests") every experiment, the probe and the measurement are built and held by contract tests, and their runs are
   owed under `POSTPONED_ISSUES.md` PI-025 (its bullet names each). The acceptance criterion "each experiment's criteria met and
@@ -30283,7 +30292,7 @@ on none:
   `kind` the experiments scope names a test-only store in `finapp-rehearsal`. That store's own outage is E44's; E11 keeps the
   infrastructure stores (the restore's archive, the Terraform state), and its row may want a dated note saying so.
 
-**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)
+**P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-022` from master `1fbdf71c`, wave D, master merged in six times (`ac5aa4a3`, `9ec48bdc`, `ac8f2d81`, `d7081fa9`, `215deb70`, `16581447`); no migration; ADR-0139; every cluster run owed under PI-025; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until the design, then "`IN_PROGRESS`" until its gate)*
 - **Objective**: as decided:
   - E05, a database primary failover under load on the test-only synchronous standby pair;
   - its interruption measured;
@@ -30348,6 +30357,39 @@ on none:
   (`kind-rehearsal.sh`'s `fleet_patch`): 60 at three, the count the experiments scope runs at. `experiments/standby.yaml` keeps
   `max_connections=60`, which still equals the run's primary at three. A hot standby refuses to start below its primary's setting, so a
   failover drill at more than three replicas needs the standby's value taken from the run's copy, not the file.
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-022` from master `1fbdf71c`, master merged in six times (`ac5aa4a3`, `9ec48bdc`, `ac8f2d81`, `d7081fa9`, `215deb70`, `16581447`); no migration; ADR-0139;
+  `OPERATIONS_RUNBOOK.md` §11.54 the drill's procedure and empty record, §11.40 corrected; `RESILIENCE_EXPERIMENTS.md` E05, E06, E56
+  and E57; under the owner's word of 2026-11-13, "we dont need long running checks and tests", **nothing ran on a cluster: every run is
+  owed under `POSTPONED_ISSUES.md` PI-025**):* **The socket timeout**: `socketTimeout: 300` on the writer's driver properties, which the
+  reporting pool takes too. Reading the code corrected the item's premise: the longest statement bound armed on the writer's pool is
+  report generation's four-minute budget (the shared report snapshots: final statements, the report run desk, the close's final trial
+  balance), not the checks' 30 s, so a number chosen from 30 s would have failed those reads. Five minutes is every armed bound and a
+  minute for the server's answer, and frees a black-holed connection with ten minutes of ADR-0128's in-region objective left;
+  `DatabaseSocketTimeoutTest` holds both, discovering every class that arms `statement_timeout` and the bound properties their beans read, and that no
+  overlay moves a bound. A statement it cuts is the existing "committed, answer lost" case. The stale "no socket timeout" sentences
+  were corrected wherever they stood (the runbook's §6 gauge section, §11.8, §11.40 and risk's proofs; `DISTRIBUTED_EXECUTION.md`; the
+  debt register; three classes' and risk's rule's comments; ADR-0016's note). **The drill** (the experiments scope): **E06**, the
+  primary's unclean stop in place (PI-024's step, under C11); **E57**, the database hop black-holed for the whole fleet (a latency toxic,
+  then Toxiproxy's `timeout` toxic with no timeout), first with the socket timeout and then with the fleet rolled without it (a new
+  `setting` fault, undone on every way out), each held connection read from the writer pool's meter; **E05**, the primary's server
+  killed with `SIGKILL` from its node, a payout held at the provider with its claim `IN_PROGRESS`, the old primary fenced and its pod
+  gone before anything is promoted, the promotion refused unless the primary named the standby synchronous at its last read and the
+  standby holds the last commit the drill saw acknowledged, the standby promoted alone (`synchronous_standby_names` reset: the routed
+  question decided), the Service moved, every harness read following the primary (`PG_POD`), the old primary never back; the standby preloads `auto_explain` as the primary has since the merge of master, so a promoted standby serves as the primary served. Each reads the
+  journal with a digest per entry before its fault and compares it after, records each replica's readiness (an outage shorter than
+  three failed checks may leave them ready: recorded, never assumed), asserts no money-moving success while the database was away and
+  reads the interruption from the edge's answers; E05 also measures the card payments caught mid-call (the routed measurement). The
+  entry's probe is `REHEARSAL_PROBE=async-standby` (E56): the refusal fires, the probe overrides it, and the comparison must name the lost
+  entries. The load scope records each statement's longest execution (`pg-statements_longest.tsv`) for E29's owed run, the socket
+  timeout's measured evidence. **Acceptance**: E05 and E06 with interruption times - built, contract-tested, run owed (PI-025); the
+  socket timeout decided with its evidence - decided from the code's armed bounds and the recovery objective, its measured evidence (E57,
+  E29's longest statement) owed (PI-025), with ADR-0139's revision rule; §11.40's record filled - owed (PI-025), §11.54 written; the
+  readiness cells of §3.3 (and §3.1, §4.2) re-ruled. **Deviation**: the failover runs under the experiments scope's retrying workload, not
+  the sustained k6 profile: the load sampler stops at the first unreadable sample, and a failover makes them all unreadable; routed to
+  `P16-TST-001` with what the soak needs. **Owner item 61** (new, awaiting the owner): the `500` while the database is away, recommended
+  `503` with `Retry-After` in a task of its own after the load-shedding answer. **Routed**: `P16-TSK-021` (E14's bound; E57's black-hole
+  step on the `toxic` primitive, where the two meet), `P16-TSK-023` (the drill's rules for the matrix), `P16-TST-001` (the failover in
+  the soak). **Owed under PI-025**: E06, E57 and E05 at three replicas, E56, and E29's longest statement. **Guards**: `DatabaseSocketTimeoutTest` (6) and `ExperimentsRehearsalContractTest` (19: seven members new, one strengthened) hold the work; sixteen hermetic probes in five rounds, each caught (`MUTATION_TESTING.md` §2). The third merge brought `P16-TSK-009`'s routed note: the `kind` primary's `max_connections` is now set per run at the budget's count, and a hot standby refuses to start below it, so the standby now takes the run's primary's value from its rendered copy (`experiments_standby`; contract member and probe, round five). The merges kept both sides throughout; the second brought `P16-TSK-021`'s E14, whose record and pin said the data source set no socket timeout: E14 now reads and records the timeout it runs under (its pin re-stated, round four), and its row, runbook §11.47's sentence, its T14 row and its PI-025 bullet carry dated notes; the guards the resolutions touched ran after each merge, green but for `OutboundCallsAreBoundedTest`'s three after the fifth, red on master's inventory too (a control run: the audit archive's HTTP client and schedule missing from it, master's, not this task's); after the sixth (`16581447`, `P16-TSK-013`'s: the fault kind `setting` beside `brokers-stopped`, `relay-held` and `min-isr`, the database's experiments beside the event pipeline's, the probe `async-standby` beside `min-isr-one`, item 61 after item 58), the 19 classes it touched, 246 tests, and the 8 ArchUnit suites the filter pulls in, 24 tests, 0 failed. The final run (14:10Z), 71 named `app` classes and the ArchUnit suites the filter pulls in (8, 24 tests): 656 tests, 5 failed, the five red on master's bytes too (a control run, 14:34Z, with the six classes this branch edits put back to master's): `OwnershipIsScopedTest` (`JdbcMerchantPayoutStore.recordSweepFailure` unclassified), `CashAtBankHasOnePosterTest`, `CounterpartyClearingIsNamedByDeclarationsTest` and `FxBooksHaveOnePosterTest` (the source census's `SettlementJournalSources` and `FxJournalSources` naming those books), and `RequestDecimalsAreBoundedTest` (a `StackOverflowError` in its pattern) - none of them this task's, reported to the coordinator; `MigratorMatchesTheBuildTest` (4) and `AdvisoryNamespaceIsPinnedTest` (1) green. Not run: `AlertRulesResolveTest` (database tier) and `RiskAlertRulesTest` (slow), each reading `risk.yml`, whose comment alone changed.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
 - **Objective**: as decided:
@@ -30377,6 +30419,12 @@ on none:
 - **Definition of done**: `DOD-ARCH`, `DOD-TEST`.
 - **Operational documentation**: the matrix referenced from the runbook's incident section (§11.12).
 - **Risk**: Low. **Cx**: M.
+- *Routed from `P16-TSK-022` (2026-11-13):* the failover drill's rules (ADR-0139) for the matrix: no money-moving command is answered
+  with a success while no primary serves (E05 and E06 assert it from the edge's answers); after a promotion the new primary runs
+  alone (`synchronous_standby_names` none) until a standby is rebuilt, a window in which losing its volume loses what it committed;
+  the old primary is fenced for good. The answer a client gets while the database is away is `500` today, put to the owner as
+  `THREAT_MODEL.md` §6 item 61 (recommended `503` with `Retry-After`). None of E05, E06, E56 or E57 has run (PI-025), so the
+  matrix's database rows rest on runs owed.
 
 **P16-TSK-024 — Restore and point-in-time recovery with the post-recovery verification (`THREAT_MODEL.md` §6 item 44 (a); ADR-0128)** — `COMPLETE` (2026-11-13; built and contract-tested, its drills owed under PI-025; marked `READY` by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: as decided:
@@ -30616,6 +30664,12 @@ on none:
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: the soak's record in the register.
 - **Risk**: High (machine endurance). **Cx**: L.
+- *Routed from `P16-TSK-022` (2026-11-13):* the failover drill (E05, `OPERATIONS_RUNBOOK.md` §11.54) runs under the experiments
+  scope's retrying workload, not a k6 profile: the load harness's sampler stops the load at any unreadable sample, and a database
+  failover makes every sample unreadable. A database failover in this soak needs the sampler to hold a declared fault window (the
+  samples inside it recorded as the outage's, the load not stopped, a sample after it required to pass) and E05's steps
+  (fence, check, promote alone, move the Service, the journal compared) called from the soak's schedule. E05 leaves one server and
+  no standby, so in a soak it is the last database fault, or the standby is rebuilt after it.
 
 **P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `PLANNED`
 - **Objective**: once, on the final tree, re-run the quick forms of the mandatory experiments, and run the named guard classes. Then

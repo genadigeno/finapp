@@ -669,7 +669,7 @@ commit and the date; do not delete the entry.
     database hop's latency at 50, 200 and 1000 ms), E13 (resets at 1% and 10% of the links, then **the entry's probe**: a transfer cut
     inside its transaction left absent, one cut on its commit left whole, each retried by key to one effect), E14 (one replica
     black-holed from the database: **the black-holed connection's measurement**, without a socket timeout, that `P16-TSK-022` decides
-    the timeout from), E15 (the broker's hop, then the provider's, black-holed), E16 (CoreDNS scaled to zero) and E24 (the primary's
+    the timeout from; on the tree since that task it runs under the decided five minutes, its control without one E57's second leg), E15 (the broker's hop, then the provider's, black-holed), E16 (CoreDNS scaled to zero) and E24 (the primary's
     own 2 GiB filesystem filled; E24 must be named when the run makes its data tier). Also owed: the `crash-with-faults` and
     `term-with-faults` probes over the four new kinds of fault (a black hole, the holder, a lock, a ballast), and a first run of the
     loop-mounted volume and the local PersistentVolume on a cluster. What ran instead: `NetworkFaultExperimentsContractTest`, and short
@@ -682,6 +682,14 @@ commit and the date; do not delete the entry.
     at any count (the release scope at three on these bytes is already PI-024's). The peak during a rollout at ten is E26's
     (`P16-TSK-014`). Nothing ran on a cluster: `fleet_patch` ran once by itself over a real render, and the manifest policies and the
     budget's plants in containers (§11.49's record).
+  - **`P16-TSK-022`** (the database failover drill and the socket timeout; `OPERATIONS_RUNBOOK.md` §11.54, whose last record is empty,
+    and §11.40's record; ADR-0139): **E06**, the primary's unclean stop in place (PI-024's step, under owner decision C11), at three
+    replicas; **E57**, the database hop black-holed for the whole fleet with and without the socket timeout, at three replicas; **E05**,
+    the failover on the synchronous pair, run last, at three replicas (`REHEARSAL_EXPERIMENTS="E06 E57 E05"`); **E56**, the entry's probe,
+    an asynchronous standby promoted (`REHEARSAL_PROBE=async-standby` with `REHEARSAL_EXPERIMENTS=E05`), with its `MUTATION_TESTING.md` §2
+    row; and the longest statement under the sustained profile, which the load scope now records (`pg-statements_longest.tsv`) and
+    `P16-TSK-007`'s owed E29 run reads, the measurement ADR-0139's revision rule needs for the socket timeout. Nothing of the task ran on
+    a cluster; its hermetic probes are in `MUTATION_TESTING.md` §2.
   - `P16-TSK-024` (restore and point-in-time recovery, `OPERATIONS_RUNBOOK.md` §11.35 and §11.55; ADR-0140): **E59**, the whole
     seeded restore rehearsal on the task's tree (`infra/scripts/restore-rehearsal.sh` with its defaults: the widened seed, the
     logical restore and its gate, every plant, `key-version-missing` among them), then the logical restore of a `kind` database after

@@ -1397,6 +1397,12 @@ fleet at its own count; staging unchanged; production's ceiling stays seven, ten
 the ten-instance runs are made (`THREAT_MODEL.md` §6 item 56). A transaction-mode pooler is refused for now: the driver sets isolation
 per session, outside the transaction. → [ADR-0134](../adr/ADR-0134-the-connection-budget-at-ten-replicas.md)
 
+**The database's socket timeout, and the failover drill's rules** *(added 2026-11-13, `P16-TSK-022`)*. Five minutes on the data
+source and the reporting pool: above every statement bound the code arms (the report generation budget, four minutes, armed on both
+pools) and inside the in-region recovery objective; a statement it cuts is the existing "committed, answer lost" case. The drill
+fences the old primary before it promotes, refuses a standby behind, runs the promoted server alone and moves the Service; every run
+owed (PI-025). → [ADR-0139](../adr/ADR-0139-the-database-socket-timeout-and-the-failover-drill.md)
+
 **The audit trail archived by verified segment; dead sessions swept** (`P16-TSK-010`, 2026-11-13, `Proposed`). A queue written by a
 trigger in each audit row's own transaction, never a cursor; one claimer and one segment in flight under a lease on the database's
 clock; the copy the database's own text, written once, read back and compared, and only then marked with digests the database

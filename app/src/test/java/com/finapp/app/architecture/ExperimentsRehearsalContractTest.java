@@ -35,7 +35,11 @@ import org.junit.jupiter.api.Test;
  *   <li>no fault goes on without the boundary, and every fault comes off on every way out;
  *   <li>every experiment keeps the step shape, and E01 measures what its register row names;
  *   <li>E51 ({@code P16-TSK-016}) slows the database through the proxy and measures shedding, the correctness gauges and the recovery its
- *       row names, and could not run when nothing was shed.
+ *       row names, and could not run when nothing was shed;
+ *   <li>the database's experiments ({@code P16-TSK-022}, ADR-0139): every read follows the primary across a failover; the journal is read
+ *       with a digest per entry before the fault and compared after it; E05 fences the old primary before it promotes, refuses a standby
+ *       behind, promotes it alone and moves the Service; E06 stops the server uncleanly in place; E57 black-holes the database hop with and
+ *       without the socket timeout; and the entry's probe, an asynchronous standby promoted, is wired to go red for its reason.
  * </ol>
  *
  * <p>Hermetic: it reads files only.
@@ -322,10 +326,17 @@ class ExperimentsRehearsalContractTest {
         String on = function("experiments_fault_on");
         assertThat(on).as("the boundary, then the registry, then the fault")
                 .startsWith("\n    experiments_guard\n    printf '%s\\n' \"$*\" >> \"$FAULTS\"\n");
-        for (String kind : List.of("toxic)", "proxy-down)", "hold)", "store-hold)", "partition)", "node-paused)", "scaled)", "brokers-stopped)", "relay-held)", "min-isr)")) {
+        for (String kind : List.of("toxic)", "proxy-down)", "hold)", "store-hold)", "partition)", "node-paused)", "scaled)",
+                "setting)", "brokers-stopped)", "relay-held)", "min-isr)")) {
             assertThat(on).as("put on: %s", kind).contains("        " + kind);
             assertThat(function("experiments_undo")).as("taken off: %s", kind).contains("        " + kind);
         }
+        // P16-TSK-022's setting: a variable on the application's Deployment, read back from the Deployment itself, and removed on every way out.
+        assertThat(on).contains("setting) kube -n finapp set env deployment/finapp-app \"$1=$2\"");
+        assertThat(function("experiments_undo")).contains("setting) kube -n finapp set env deployment/finapp-app \"$1-\"");
+        assertThat(function("experiments_faults_left")).as("a setting still on is read from the Deployment, never from the registry alone")
+                .contains("[ \"$kind\" = setting ] || continue").contains("echo \"the application's Deployment still sets $variable\"");
+        assertThat(function("experiments_clear_faults")).contains("kube -n finapp set env deployment/finapp-app SPRING_APPLICATION_JSON-");
         assertThat(on).as("a node paused only if it is this cluster's").contains("|| fail \"the safety boundary refused to pause $1: it is not a node of $CLUSTER\"");
         String finish = function(harness, "finish");
         assertThat(finish.indexOf("    experiments_clear_faults\n")).as("the faults cleared on every way out, before the cluster may go")
@@ -450,6 +461,185 @@ class ExperimentsRehearsalContractTest {
         }
         assertThat(crash).contains("kill -TERM $$").contains("\n    false\n");
         assertThat(harness).contains("guard-off, crash-with-faults and").contains("term-with-faults");
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // The database's experiments (P16-TSK-022, ADR-0139; OPERATIONS_RUNBOOK.md sections 11.40 and 11.54).
+    // ------------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("every read of the database follows the primary: the harness's reads name a pod a failover moves, and E05 moves it")
+    void theReadsFollowThePrimary() {
+        assertThat(harness).as("one name for the pod every read uses, the test-only server's until a failover")
+                .contains("\nPG_POD=finapp-postgres-0\n").contains("kube -n finapp exec -i \"$PG_POD\" -c postgres -- psql -q -X -A -t -U finapp -d finapp \"$@\"");
+        assertThat(function(harness, "psql_query")).doesNotContain("finapp-postgres-0");
+        String observe = function("E05_observe");
+        assertThat(observe.indexOf("PG_POD=finapp-postgres-standby-0")).as("the reads moved with the Service, after the promotion")
+                .isGreaterThan(observe.indexOf("kube -n finapp patch service finapp-postgres")).isGreaterThan(observe.indexOf("SELECT pg_promote(true, 60)"));
+        assertThat(observe).contains("printf '%s' \"$PG_POD\" > \"$EXP_DIR/primary\"");
+        assertThat(function("e05_processing_sampler")).as("a background reader takes the primary from the file the move writes")
+                .contains("PG_POD=$(cat \"$1/primary\")");
+        assertThat(function("experiments_db_snapshot")).as("the journal read through the reads that follow the primary").contains("psql_query -F");
+    }
+
+    @Test
+    @DisplayName("the standby takes the run's primary's max_connections, which the run sets at its count: below it a hot standby refuses to start")
+    void theStandbyTakesTheRunsPrimarysConnections() {
+        String made = function("experiments_standby");
+        assertThat(made).as("read from the run's rendered primary, never the file's value, and written into the standby's applied copy")
+                .contains("primary_max=$(sed -n 's/^ *- max_connections=\\([0-9]*\\)$/\\1/p' \"$A/StatefulSet.finapp-postgres.yaml\" | head -1)")
+                .contains("s#^\\( *- \\)max_connections=[0-9]*\\$#\\1max_connections=$primary_max#")
+                .contains("cannot \"the run's primary's max_connections could not be read from its rendered copy\"");
+        assertThat(harness.indexOf("fleet_patch \"$A\"")).as("the run's copy set to its count before the standby is made from it").isPositive()
+                .isLessThan(harness.indexOf("    experiments_data_tier\n"));
+    }
+
+    @Test
+    @DisplayName("the journal is read whole before the fault and compared after it: a digest per entry over its row and its lines, the counts that only grow")
+    void theJournalIsComparedByDigest() {
+        String snapshot = function("experiments_db_snapshot");
+        assertThat(snapshot).as("one consistent cut, every entry with its lines, the append-only counts")
+                .contains("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;")
+                .contains("md5(e::text || ';' || coalesce((SELECT string_agg(l::text, ';' ORDER BY l.id) FROM ledger.journal_line l")
+                .contains("FROM ledger.journal_entry e ORDER BY e.id;")
+                .contains("SELECT 'count', 'ledger.journal_line', count(*) FROM ledger.journal_line;")
+                .contains("SELECT 'count', 'platform.idempotency_record', count(*) FROM platform.idempotency_record;")
+                .contains("[ \"$entries\" -gt 0 ] || cannot");
+        String compare = function("experiments_db_compare");
+        assertThat(compare).as("every entry read before present after with its digest, and no counted table shrank")
+                .contains("if (!($2 in after)) missing++; else if (after[$2] != $3) changed++")
+                .contains("after[$2] + 0 < $3 + 0");
+        for (String id : List.of("E05", "E06")) {
+            String recover = function(id + "_recover");
+            assertThat(recover).as("%s compares, and a lost or changed entry fails it", id)
+                    .contains("experiments_db_snapshot \"$EXP_DIR\" after").contains("experiments_db_compare \"$EXP_DIR\" before after")
+                    .contains("if [ \"$DB_MISSING\" != 0 ] || [ \"$DB_CHANGED\" != 0 ] || [ -n \"$DB_FEWER\" ]; then");
+            assertThat(function(id + "_fault")).as("%s reads the journal before its fault", id).contains("experiments_db_snapshot \"$EXP_DIR\" before");
+        }
+    }
+
+    @Test
+    @DisplayName("E05 fences the old primary and waits for its pod to go before it promotes, and refuses a standby behind")
+    void e05FencesThenPromotesAndRefusesAStandbyBehind() {
+        String fault = function("E05_fault");
+        List<String> order = List.of("experiments_fault_on hold hold-payouts", "[ \"$claim\" = IN_PROGRESS ] || cannot", "experiments_db_snapshot \"$EXP_DIR\" before",
+                "pg_logical_emit_message(true, 'finapp-experiments'", "E05_SYNC_AT_FAULT=$(experiments_replication)", "experiments_context_check || fail",
+                "experiments_kill_server finapp-postgres-0", "kube -n finapp scale statefulset/finapp-postgres --replicas=0");
+        int at = -1;
+        for (String part : order) {
+            int next = fault.indexOf(part, at + 1);
+            assertThat(next).as("%s after the step before it", part).isGreaterThan(at);
+            at = next;
+        }
+        assertThat(function("experiments_kill_server")).as("SIGKILL to the server's first process, from its node, the boundary first")
+                .contains("containerStatuses[?(@.name==\"postgres\")].containerID").contains("dock exec \"$node\" kill -9 \"$pid\"")
+                .contains("|| fail \"the safety boundary refused to kill on $node: it is not a node of $CLUSTER\"");
+        String observe = function("E05_observe");
+        List<String> steps = List.of("kube -n finapp wait --for=delete pod/finapp-postgres-0", "pg_last_wal_receive_lsn()",
+                "[ \"$E05_SYNC_AT_FAULT\" = \"finapp_standby|streaming|sync\" ] || E05_REFUSED=", "[ \"$held\" = t ] || E05_REFUSED=",
+                "SELECT pg_promote(true, 60)", "ALTER SYSTEM RESET synchronous_standby_names", "[ -z \"$names\" ] || cannot",
+                "kube -n finapp patch service finapp-postgres --type=merge -p '{\"spec\":{\"selector\":{\"app.kubernetes.io/name\":\"finapp-postgres-standby\"}}}'",
+                "[ \"$endpoints\" = \"$promoted_ip\" ]", "experiments_ready_again $((E05_FAULT_AT + 600))");
+        at = -1;
+        for (String part : steps) {
+            int next = observe.indexOf(part, at + 1);
+            assertThat(next).as("%s after the step before it: the old primary gone before anything is promoted", part).isGreaterThan(at);
+            at = next;
+        }
+        assertThat(observe).as("a standby behind refused: the stop condition, and the old primary brought back")
+                .contains("EXP_STOPPED=\"the standby not caught up when the promotion was due, the promotion refused: $E05_REFUSED\"")
+                .contains("if [ \"$PROBE\" != async-standby ]; then").contains("e05_unfence");
+        assertThat(observe.indexOf("e05_unfence")).isLessThan(observe.indexOf("SELECT pg_promote(true, 60)"));
+        assertThat(function("e05_unfence")).contains("kube -n finapp scale statefulset/finapp-postgres --replicas=1")
+                .contains("until [ \"$(experiments_replication)\" = \"finapp_standby|streaming|sync\" ]; do");
+        assertThat(function("E05_steady")).as("it leaves one server and no standby, so it runs last")
+                .contains("[ \"${EXPERIMENTS##* }\" = E05 ] || cannot");
+        assertThat(experiments).as("the fence and the promotion are the drill's acts, never registered faults the exit would undo")
+                .doesNotContain("experiments_fault_on scaled finapp finapp-postgres").doesNotContain("experiments_fault_on scaled finapp statefulset");
+    }
+
+    @Test
+    @DisplayName("E05 counts what its row names: the payout in flight answered once, nothing acknowledged lost, no success while no primary served, the interruption")
+    void e05MeasuresWhatItsRowNames() {
+        String recover = function("E05_recover");
+        assertThat(recover).as("the payout held when the primary was lost: its key answered, its claim completed once, the census told")
+                .contains("e05_payout \"$E05_TARGET_IP\" \"retry-$tries\"").contains("[ \"$(e05_claim)\" = COMPLETED ] || fail")
+                .contains("EXPERIMENTS_PAYOUTS=$((EXPERIMENTS_PAYOUTS + 1))");
+        assertThat(recover).as("the workload resolved by its keys, none unresolved; no replica restarted")
+                .contains("[ \"$(workload_unresolved e05)\" = 0 ] || fail").contains("assert_flows_ran e05")
+                .contains("[ \"$(experiments_restarts)\" = \"$E05_RESTARTS\" ]");
+        assertThat(recover).as("no money-moving command answered a success between the fault and the Service's move, and the interruption read")
+                .contains("away=$(experiments_money_succeeded \"$EXP_DIR\" $((E05_FAULT_AT + 5)) \"${E05_MOVED_AT:-$(date +%s)}\")")
+                .contains("[ \"$away\" = 0 ] || EXP_STOPPED=").contains("back=$(experiments_money_back \"$EXP_DIR\" \"$E05_FAULT_AT\")")
+                .contains("experiments_record timeline").contains("experiments_record \"caught mid-call\"");
+        assertThat(function("experiments_money_succeeded")).contains("$6 == \"POST\" && $7 ~ paths && $5 >= 200 && $5 < 300");
+        assertThat(experiments).contains("EXPERIMENTS_MONEY_PATHS='^/v1/(transfers|payments|checkout/sessions|merchant/payouts)(/|$)'");
+        assertThat(function("experiments_edge_read")).as("the edge's lines read beside a control of served answers")
+                .contains("\"RequestMethod\"").contains("\"RequestPath\"").contains("[ \"$EDGE_SERVED\" -ge 10 ] || fail");
+        assertThat(function("experiments_retry_bound")).as("the workload's retries outlast the sweeps' dispatched age, read from the code, and the socket timeout")
+                .contains("sweeper\\.dispatched-age:PT\\([0-9]*\\)M}").contains("EXP_RETRY_SECONDS=$((2 * minutes * 60 + 300 + EXP_SOCKET_TIMEOUT + 60))");
+        assertThat(function("E05_steady")).contains("WORKLOAD_RETRY_SECONDS=$EXP_RETRY_SECONDS start_workload e05 retry");
+    }
+
+    @Test
+    @DisplayName("E06 stops the server uncleanly in place, shows that it stopped, and holds the standby, the counters and the fleet to what §11.40 says")
+    void e06StopsTheServerUncleanlyInPlace() {
+        assertThat(function("E06_fault")).contains("pg_ctl stop -m immediate -D \"$datadir\"").contains("E06_DB_BEFORE=$(db_epoch)")
+                .doesNotContain("patch service").doesNotContain("pg_promote");
+        String observe = function("E06_observe");
+        assertThat(observe).as("its stop condition, the server not accepting 10 min after the stop")
+                .contains("EXP_STOPPED=\"the server not accepting connections 10 min after its restart\"");
+        assertThat(observe).as("the control: the server's start after the stop, or the stop never happened")
+                .contains("pg_postmaster_start_time()").contains("[ \"${started:-0}\" -gt \"$E06_DB_BEFORE\" ] || fail");
+        assertThat(observe).as("the standby synchronous again, the fleet ready, the unlogged counters empty")
+                .contains("until [ \"$(experiments_replication)\" = \"finapp_standby|streaming|sync\" ]; do")
+                .contains("[ \"$after\" = 0 ] || EXP_STOPPED=");
+        assertThat(function("E06_steady")).as("rows in the counters first, so their emptying is a reading")
+                .contains("[ \"${E06_COUNTED:-0}\" -gt 0 ] || cannot");
+        assertThat(function("E06_recover")).contains("[ \"$(experiments_restarts)\" = \"$E06_RESTARTS\" ]").contains("experiments_money_back");
+    }
+
+    @Test
+    @DisplayName("E57 black-holes the database hop with and without the socket timeout, read from application.yaml, and holds each leg to it")
+    void e57HoldsBothLegsToTheSocketTimeout() {
+        assertThat(function("experiments_socket_timeout")).as("the bound read from the application's own configuration, never copied")
+                .contains("sed -n 's/^        socketTimeout: \\([0-9]*\\)$/\\1/p' \"$ROOT/app/src/main/resources/application.yaml\"")
+                .contains("'' | *[!0-9]* | 0) cannot");
+        assertThat(function("e57_hole")).as("statements in flight first, then every answer held")
+                .contains("experiments_fault_on toxic postgres \"e57-$1-slow\" latency latency=3000")
+                .contains("experiments_fault_on toxic postgres \"e57-$1-hole\" timeout timeout=0");
+        String watch = function("e57_watch");
+        assertThat(watch).as("the held ones read 20 s after the hole, from the writer's pool, the fleet's blind page the fault's own signal")
+                .contains("EXP_PAGES_EXPECTED=GaugesStaleAcrossTheFleet").contains("$2 >= 20 && $2 < 35 && $4 + 0 >= 1");
+        assertThat(function("e57_active")).contains("hikaricp_connections_active{job=\"finapp\",pool!=\"finapp-reporting\"}");
+        String observe = function("E57_observe");
+        assertThat(observe).as("with it: every held connection given up within it, and not before it could have been")
+                .contains("[ \"$E57_LAST_FREED\" -gt $((EXP_SOCKET_TIMEOUT + 45)) ]").contains("[ \"$E57_FIRST_FREED\" -lt $((EXP_SOCKET_TIMEOUT - 30)) ]");
+        assertThat(observe).as("without it: the fleet rolled with none, every held connection still held past it")
+                .contains("experiments_fault_on setting SPRING_APPLICATION_JSON '{\"spring\":{\"datasource\":{\"hikari\":{\"data-source-properties\":{\"socketTimeout\":\"0\"}}}}}'")
+                .contains("e57_watch $((EXP_SOCKET_TIMEOUT + 65)) without").contains("[ \"$E57_STILL\" != \"$E57_HELD\" ]");
+        assertThat(observe.indexOf("e57_watch $((EXP_SOCKET_TIMEOUT + 45)) with")).as("the leg with the timeout first, the fleet as deployed")
+                .isLessThan(observe.indexOf("experiments_fault_on setting"));
+        assertThat(observe).as("a leg with nothing in flight shows nothing").contains("[ -n \"$E57_HELD\" ] || cannot \"E57 with:")
+                .contains("[ -n \"$E57_HELD\" ] || cannot \"E57 without:");
+        assertThat(function("experiments_watch_pages")).as("only the named page is expected; any other stops the experiment")
+                .contains("case \" ${EXP_PAGES_EXPECTED:-} \" in *\" $page \"*) ;; *) firing=\"$firing $page\" ;; esac");
+    }
+
+    @Test
+    @DisplayName("the entry's probe is wired: an asynchronous standby cut from the WAL, the refusal overridden, and the comparison must show the loss")
+    void theAsyncStandbyProbeIsWired() {
+        assertThat(function("experiments_scope")).contains("if [ \"$PROBE\" = async-standby ]; then")
+                .contains("*\" E05 \"*) ;; *) cannot \"PROBE async-standby plants E05's standby");
+        String plant = function("e05_plant_lag");
+        assertThat(plant).as("the primary asynchronous, the standby cut, journal entries it never received counted")
+                .contains("ALTER SYSTEM SET synchronous_standby_names = ''").contains("ALTER SYSTEM SET primary_conninfo = ''")
+                .contains("[ \"$behind\" -ge 5 ] || cannot");
+        assertThat(function("E05_fault").indexOf("[ \"$PROBE\" != async-standby ] || e05_plant_lag")).as("planted before the journal is read")
+                .isPositive().isLessThan(function("E05_fault").indexOf("experiments_db_snapshot \"$EXP_DIR\" before"));
+        assertThat(function("E05_recover")).as("the probe red for its reason, or red because the comparison read nothing")
+                .contains("[ \"$DB_MISSING\" -gt 0 ] || fail \"PROBE async-standby: the standby was promoted behind the primary");
+        assertThat(harness).contains("and E05's async-standby (P16-TSK-022");
     }
 
     @Test

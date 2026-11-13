@@ -232,7 +232,8 @@ class NetworkFaultExperimentsContractTest {
         assertThat(function("experiments_socket_sampler")).as("the namespace's established sockets to the hop, a running retransmission timer read as held")
                 .contains("ss -tnoH state established dst \"$4:$5\"").contains("/timer:\\(on,/").contains("sockets-read.tsv");
         String steady = function("E14_steady");
-        assertThat(steady).contains("sysctl -n net.ipv4.tcp_retries2").contains("the data source sets no socket timeout");
+        assertThat(steady).contains("sysctl -n net.ipv4.tcp_retries2").contains("experiments_socket_timeout")
+                .contains("the data source's socket timeout $EXP_SOCKET_TIMEOUT s (application.yaml, ADR-0139)");
         String observe = function("E14_observe");
         assertThat(observe).as("the control: something held within 60 s; the stop: a second replica unready; the end: every held one freed or the bound")
                 .contains("cannot \"E14: no connection of the cut replica was held by the black hole within 60 s")

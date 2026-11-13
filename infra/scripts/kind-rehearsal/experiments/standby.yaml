@@ -136,7 +136,7 @@ spec:
             - -c
             - hba_file=/etc/finapp-postgres-hba/pg_hba.conf
             - -c
-            - shared_preload_libraries=pg_stat_statements
+            - shared_preload_libraries=pg_stat_statements,auto_explain
             - -c
             - track_io_timing=on
             - -c
