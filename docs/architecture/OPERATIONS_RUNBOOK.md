@@ -4822,7 +4822,7 @@ load (0 samples)`). The cluster was deleted and the lock released at 01:55Z.
 **What it is.** §11.43's `load` scope with the profiles of `PHASE_16_PLAN.md` §5.1 beside the demonstration, each a file under
 `infra/scripts/kind-rehearsal/load/`: `normal` (the target's average, 30 minutes), `peak` (the normal profile, then a step to the target's
 peak held 30 minutes), `sustained` (the same step, the peak held 2 hours: its first hour is the peak profile), `stress` (a quarter of the
-target's peak, up 25% every 5 minutes for twelve steps to 2.9 times it) and `isolation` (each operation alone at the target's peak for
+target's peak, up 25% every 5 minutes for nine steps to 1.5 times it, past the break) and `isolation` (each operation alone at the target's peak for
 4 minutes after 4 minutes with none, so each one's cost is read with nothing else driven). Every operation is named at the target's peak
 (`CAPACITY_MODEL.md` §3.1) and each stage scales the lot; k6 runs a staged profile with `ramping-arrival-rate`, still an open model, each
 step a one-second ramp. The same run measures the platform per stage, which is what `CAPACITY_MODEL.md` §3.4 is filled from.
@@ -4864,7 +4864,7 @@ and a BNPL policy cannot refer, so it declines. Driving them needs a simulated b
 | File | What it holds | Read it for |
 |---|---|---|
 | `k6/stages.tsv` | Per operation and stage: arrivals and their rate a host second, outcomes, attempts, failed attempts, `409`s, the answers `5xx`, `429` and none, iterations dropped, p50, p95, p99 and max as the client saw them | The break: the first stage past a latency objective or an error target |
-| `stages-resources.tsv` | Per stage: each pod group's CPU in cores and its throttled seconds a second (the replicas, PostgreSQL, the broker, the edge, the telemetry stack, the rest) and memory; the fleet's heap, GC time and pauses, threads, busy request threads, the pools' active, pending, held and waited connections; requests a second; the database's statement time a second, statements, commits, rollbacks, deadlocks, rows written, WAL and full-page images, checkpoints' write and sync, sessions active and waiting on WAL, locks and I/O; the outbox's oldest age and the consumers' lag | The first limit, in §5.4's order |
+| `stages-resources.tsv` | Per stage: each pod group's CPU in cores, the periods its CPU limit held it back (`throttled_<group>_periods_per_s` over `limited_<group>_periods_per_s`) and its throttled task-time (the replicas, PostgreSQL, the broker, the edge, the telemetry stack, the provider simulator, the rest) and memory; the fleet's heap, GC time and pauses, threads, busy request threads, the pools' active, pending, held and waited connections; requests a second; the database's statement time a second, statements, commits, rollbacks, deadlocks, rows written, WAL and full-page images, checkpoints' write and sync, sessions active and waiting on WAL, locks and I/O; the outbox's oldest age and the consumers' lag | The first limit, in §5.4's order |
 | `pods.tsv`, `pods-names.tsv`, `pg-*.tsv` | The samples behind the table, each stamped with the host's epoch second | Anything the table does not show |
 | `clock.tsv`, `k6/t0.txt` | The host's clock and the node's monotonic and wall clocks before and after the load; the load's first sample and how many of k6's seconds passed in one of the host's | Reading a k6 duration or rate in the host's seconds |
 

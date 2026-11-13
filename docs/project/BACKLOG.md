@@ -29792,6 +29792,18 @@ on none:
 - **Definition of done**: `DOD-SEC`, `DOD-FIN`, `DOD-TEST`.
 - **Operational documentation**: the provider sections of the runbook.
 - **Risk**: Medium. **Cx**: L.
+- **Routed from `P16-TSK-007` (2026-11-13): no credit approval can be given on `kind`, so the load harness cannot drive BNPL purchases and
+  instalments, lending repayments or loan credit decisions, and E20 has no bureau to take away.** Found on a kept `kind` cluster
+  (`OPERATIONS_RUNBOOK.md` §11.45): `CreditBeans` refuses any `finapp.credit.bureau.url` and `finapp.credit.findata.url` at start
+  (`CURRENT_STATE.md` unresolved questions 13 and 14), so every deployment's bureau is `UnconfiguredBureau`; every credit policy must carry
+  an exposure rule (`CreditPolicy#boundsExposure`), and the exposure figure reads the bureau's total balance, so it is unassessed and the
+  policy's fallback decides (`INV-CRD-10`: a BNPL policy declines; a loan policy refers); a person's approval of the referral is refused
+  `credit.ExposureUnassessable` (`INV-CRD-09`, no exception). The three operations are 9.8% of the target's movements (`CAPACITY_MODEL.md`
+  §3.1) and their measured cells stay empty with this reason. E20's "the simulator only" needs a simulated bureau on `kind`: an application
+  change (a test-only bureau the overlay may name), which first needs the owner's word on unresolved question 13 for a test-only
+  deployment. Once that exists the load profiles' three `"generator": "none"` operations can be driven: the setup is the platform scope's
+  activations and a customer's decision request, application, offer and agreement through their doors. `LoadRehearsalContractTest` names
+  this task as their driver while it is live.
 
 **P16-TSK-019 — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)
 - **Objective**: build the `experiments` scope:

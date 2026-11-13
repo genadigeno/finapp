@@ -212,7 +212,7 @@ class LoadRehearsalContractTest {
                 .contains("fail \"the samples do not cover the load");
         assertThat(judge).as("the generator, never trusted to have kept up")
                 .contains("[ \"$dropped\" = 0 ] || fail \"the generator dropped $dropped iterations")
-                .contains("$3 < want * 0.98 || $3 > want * 1.02 + 1").contains("(c < 90)")
+                .contains("n = got + lost; if (n < want * 0.98 || n > want * 1.02 + 1)").contains("(c < 90)")
                 .as("each operation's 5xx recorded beside the chance its objective explains them, never left unread")
                 .contains("chance=$(load_errors_chance \"$server\" \"$attempts\" \"$target\")").contains("log \"recorded $op: 5xx $server");
         assertThat(judge).as("the settlement file taken whole: its captures counted by type, every line an item, every capture allocated")
@@ -387,7 +387,7 @@ class LoadRehearsalContractTest {
         while (steps.find()) {
             factors.add(Double.parseDouble(steps.group(1)));
         }
-        assertThat(factors).as("stress: twelve 5-minute steps from a quarter of the peak").hasSize(12).first().isEqualTo(0.25);
+        assertThat(factors).as("stress: nine 5-minute steps from a quarter of the peak to one and a half times it").hasSize(9).first().isEqualTo(0.25);
         for (int i = 1; i < factors.size(); i++) {
             assertThat(factors.get(i) / factors.get(i - 1)).as("stress: step %d is 25%% above the one before", i)
                     .isCloseTo(1.25, org.assertj.core.data.Offset.offset(0.001));
@@ -403,7 +403,9 @@ class LoadRehearsalContractTest {
         String judge = function("load_judge");
         assertThat(judge).as("each operation's arrivals held to the sum over the stages, the stress's dropped iterations counted as arrivals")
                 .contains("want=$(load_expected \"$op\")").contains("[ \"$stress\" != true ] || lost=")
-                .contains("if [ \"$stress\" = true ]; then").contains("fail \"the generator dropped $dropped iterations");
+                .as("only the stress profile's dropped iterations are recorded rather than failed")
+                .contains("if [ \"$stress\" = true ]; then\n        [ \"$dropped\" = 0 ] || log \"recorded stress: the generator dropped")
+                .contains("else\n        [ \"$dropped\" = 0 ] || fail \"the generator dropped $dropped iterations");
         assertThat(function("load_expected")).as("as model.js rounds: whole iterations per time unit times the stage's seconds")
                 .contains("int(rate * $2 + 0.5)").contains("n += target * $1 / unit");
         assertThat(scenarios).as("a shortened run shortens every stage in proportion, as the shell does")

@@ -62,18 +62,20 @@ LOAD_CUSTOMERS=${REHEARSAL_LOAD_CUSTOMERS:-20}
 LOAD_DURATION=${REHEARSAL_LOAD_DURATION:-}
 # The fleet's size for the run: today's minimum by default, today's ceiling at most (ten is P16-TSK-014's, on C3's larger server).
 LOAD_REPLICAS=${REHEARSAL_LOAD_REPLICAS:-3}
-# Run inside the node every 10 s: one line per pod - its uid as systemd spells it, its CPU in nanoseconds, how often and how long its
-# containers were throttled against their CPU limits, and its memory in bytes, each cumulative. The reference machine's kind node runs
-# cgroup v1 under the systemd driver (kubelet.slice); a pod's limits sit on its containers' scopes beneath its slice.
+# Run inside the node every 10 s: one line per pod - its uid as systemd spells it, its CPU in nanoseconds, how many of its containers'
+# 100 ms periods hit their CPU limit and the task-time throttled there, its memory in bytes, and the periods its limited containers ran,
+# each cumulative. The reference machine's kind node runs cgroup v1 under the systemd driver (kubelet.slice); a pod's limits sit on its
+# containers' scopes beneath its slice. Throttled periods over periods is the share of the time a pod's CPU limit held it back.
 LOAD_CGROUPS='cd /sys/fs/cgroup || exit 0
 for p in cpu/kubelet.slice/kubelet-kubepods.slice/*-pod*.slice cpu/kubelet.slice/kubelet-kubepods.slice/*/*-pod*.slice; do
     [ -d "$p" ] || continue
-    r=${p#cpu/}; u=${p##*-pod}; u=${u%.slice}; n=0; t=0
+    r=${p#cpu/}; u=${p##*-pod}; u=${u%.slice}; n=0; t=0; q=0
     for c in "$p"/*/cpu.stat; do
         [ -f "$c" ] || continue
         n=$((n + $(sed -n "s/^nr_throttled //p" "$c"))); t=$((t + $(sed -n "s/^throttled_time //p" "$c")))
+        q=$((q + $(sed -n "s/^nr_periods //p" "$c")))
     done
-    printf "%s\t%s\t%s\t%s\t%s\n" "$u" "$(cat "cpuacct/$r/cpuacct.usage")" "$n" "$t" "$(cat "memory/$r/memory.usage_in_bytes")"
+    printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$u" "$(cat "cpuacct/$r/cpuacct.usage")" "$n" "$t" "$(cat "memory/$r/memory.usage_in_bytes")" "$q"
 done'
 # How many addresses the generator arrives from: each instance its own container, running its share of every rate.
 LOAD_GENERATORS=${REHEARSAL_LOAD_GENERATORS:-4}
@@ -857,7 +859,7 @@ EOF
 }
 
 # The platform's side per stage (P16-TSK-007, load/resources.awk): every sampled signal as "kind name epoch value" - the pods' cgroups by
-# group (the replicas, PostgreSQL, the broker, the edge, the telemetry stack, the rest), the fleet's JVM and pool sums from Prometheus, the
+# group (the replicas, PostgreSQL, the broker, the edge, the telemetry stack, the provider simulator, the rest), the fleet's JVM and pool sums from Prometheus, the
 # database's own counters - cut by the generator's stages in the host's seconds.
 load_resources() {
     kube get pods -A -o jsonpath='{range .items[*]}{.metadata.uid}{"\t"}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null \
@@ -868,11 +870,14 @@ load_resources() {
                 n = name[$3]; g = "other"
                 if (n ~ /^finapp\/finapp-app-/) g = "app"; else if (n ~ /^finapp\/finapp-postgres-/) g = "postgres"
                 else if (n ~ /^finapp\/finapp-kafka-/) g = "broker"; else if (n ~ /^finapp-edge\//) g = "edge"
-                else if (n ~ /^finapp-observability\//) g = "telemetry"
-                cpu[$2 SUBSEP g] += $4; thr[$2 SUBSEP g] += $6; mem[$2 SUBSEP g] += $7; seen[$2 SUBSEP g] = 1 }
+                else if (n ~ /^finapp-observability\//) g = "telemetry"; else if (n ~ /^finapp-rehearsal\//) g = "simulator"
+                cpu[$2 SUBSEP g] += $4; nthr[$2 SUBSEP g] += $5; thr[$2 SUBSEP g] += $6; mem[$2 SUBSEP g] += $7; per[$2 SUBSEP g] += $8
+                seen[$2 SUBSEP g] = 1 }
             END { for (k in seen) { split(k, p, SUBSEP)
                 print "c cpu_" p[2] "_cores " p[1] " " cpu[k] / 1e9
-                print "c throttled_" p[2] "_seconds " p[1] " " thr[k] / 1e9
+                print "c throttled_" p[2] "_task_seconds " p[1] " " thr[k] / 1e9
+                print "c throttled_" p[2] "_periods " p[1] " " nthr[k]
+                print "c limited_" p[2] "_periods " p[1] " " per[k]
                 print "g memory_" p[2] "_mib " p[1] " " mem[k] / 1048576 } }' "$LOAD_ART/pods-names.tsv" "$LOAD_ART/pods.tsv" 2>/dev/null
         for json in "$LOAD_ART"/prometheus/fleet_*.json "$LOAD_ART/prometheus/outbox_oldest_seconds.json" "$LOAD_ART/prometheus/inbox_lag_records.json"; do
             [ -f "$json" ] || continue

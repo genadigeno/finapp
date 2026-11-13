@@ -13,6 +13,14 @@ environment, and nothing here calls the platform ready for production.*
   changes.
 - **Measured**: produced by a run on the reference machine's `kind`, named with its workload, its machine, its date, its commit
   and its artefacts. Every measured cell below is `—` until `P16-TSK-007` fills it, and nothing is measured on this page yet.
+  *(2026-11-13, `P16-TSK-007`: §3.4 and §3.5 hold the measured cells, each naming its run; an operation no `kind` deployment can run
+  keeps `—` with its reason.)*
+
+**The reference machine's two clocks** (`OPERATIONS_RUNBOOK.md` §11.45). Its Linux VM's monotonic clock runs about 8% faster than its
+wall clock, which follows the host's (1.083 measured on 2026-11-13). The load generator schedules arrivals and times requests on the
+monotonic clock, so a rate written in a profile is carried about 8% faster in the host's seconds, and a latency reads about 8% longer
+than the host would measure it. A measured rate here is a host second's; a latency is the client's, as k6 counted it. Each run records
+its own ratio.
 
 A `kind` number is never presented as production capacity. The production target is never presented as measured (ADR-0126
 decision 1).
