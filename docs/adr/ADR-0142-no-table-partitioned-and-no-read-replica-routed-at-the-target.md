@@ -157,6 +157,7 @@ answers a decision.
 
 - Run E65 with E39 (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak REHEARSAL_LOAD_DECISIONS=1`, PI-025), and record its readings in
   `OPERATIONS_RUNBOOK.md` §11.57 against this ADR's thresholds.
-- The owner decides item 64, the report folds' bound.
+- The owner decides item 64, the report folds' bound. *(Decided 2026-11-13 at (i): an opening checkpoint for each locked month,
+  built by `P16-REM-003`, its database cases run before it merges.)*
 - Revisit decision 1 for the audit trail when a jurisdiction's retention period is decided (item 23 (b)), and for the idempotency records
   once their sweep exists.

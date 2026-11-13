@@ -31,7 +31,8 @@
 # `load` (P16-TSK-006, ADR-0126, OPERATIONS_RUNBOOK.md section 11.43): release N alone, smoked and its census green, then a load profile
 # driven through the real edge by k6 as an open model, the correctness pages and the census's committed-fact clauses sampled every 30 s
 # while it runs, and the full census after it (kind-rehearsal/load.sh, whose probes are closed-model, sampler-disabled and
-# unbalanced-entry; slow-statement, P16-TSK-007's; scale-down-unbounded with the autoscale profile, P16-TSK-014's). Its pre-flight reads
+# unbalanced-entry; slow-statement, P16-TSK-007's; scale-down-unbounded with the autoscale profile, P16-TSK-014's; abuse-below-need with
+# the burst profile, P16-TSK-015's). Its pre-flight reads
 # what k6 will run before anything is built. The same run rehearses the platform's own signals
 # (kind-rehearsal/telemetry.sh's platform_signals_plant and platform_signals; THREAT_MODEL.md section 6 item 47 (c)).
 #

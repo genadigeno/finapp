@@ -57,7 +57,8 @@ instance's clock, while the sweep must judge it on the database's.
 - **What the sweep leaves to other commands** is `THREAT_MODEL.md` §6 item 63: a command whose only arbiter is its record (a
   transfer and a card checkout, as read: each posts under a key derived from a row it creates) is a new command when retried after its
   record is swept. That is `DATA_MIGRATIONS.md` §8's contract made real; the grace's default puts it a month past the 24-hour retry
-  window the records are written with.
+  window the records are written with. *(2026-11-13: the owner kept the 30-day grace (item 63 (i)) and placed a second arbiter of
+  their own for transfers and card checkouts after the phases (item 63 (iii), `POSTPONED_ISSUES.md` PI-027).)*
 - The posting hot path gains one index probe (the lookup) and one index entry per entry; the claim's completion gains one partial
   index entry. Both builds hold `SHARE` on their tables for their length. E62 measures the first under load against E38's run on the
   tree before this decision, and E64 the builds' write stop on a soak's journal; both are owed (`POSTPONED_ISSUES.md` PI-025). E63

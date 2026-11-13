@@ -109,7 +109,8 @@ spec:
                 name: finapp-app-secrets
           # Memory request = limit: no overcommit of the JVM heap. The image's -XX:MaxRAMPercentage=75.0
           # makes the heap 1.5 GiB of this. CPU limit at a multiple of the request, for startup.
-          # Reference figures, calibrated in Phase 16.
+          # Calibrated 2026-11-13 and kept (docs/architecture/CAPACITY_MODEL.md section 4a): the request is about a pod's share of the
+          # target's peak at four replicas, the limit its headroom through W2's burst; the memory waits on the soak's reading (E39).
           resources:
             requests:
               cpu: 500m

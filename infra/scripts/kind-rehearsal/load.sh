@@ -118,6 +118,25 @@
 # hour and per money movement from the soak's own samples (growth.tsv). Every run must complete PROVISIONAL and the reader must see the
 # role's statements, or the run fails; the figures are the record's, never a verdict.
 #
+# THE CALIBRATION (P16-TSK-015; ADR-0145; CAPACITY_MODEL.md section 4a; OPERATIONS_RUNBOOK.md section 11.60). Two profiles, each a flag:
+#   "bursts": true      (burst.json, E75, with "autoscale": true, so the run's autoscaler is free between the overlay's floor and the run's
+#                       count) W2's shape at the scale kind carries: the mix at a third of E30's step 3, a 60-s burst at that step every ten
+#                       minutes, with sign-ins at three times their target peak in each burst so that the bursts take the replicas' CPU
+#                       above the autoscaler's target. After the census, load_burst_judge instead of load_autoscale_judge: the autoscaler
+#                       read every 10 s; a reading above its target inside a burst (the positive control: a fleet that never reached its
+#                       target shows nothing); the count never asked above the floor through the load (a burst the standing fleet carries
+#                       never scales it: the scale-up window is twice the burst); and no sign-in answered 429 (no per-source limit, the
+#                       edge's or the application's, refused legitimate traffic). Its probe, abuse-below-need (E76), sets the run's own
+#                       Deployment's sign-in limit to the identity lockout's threshold, below one person's need, after the setup and before
+#                       the load (load_plant_abuse_below_need): the door assertion must go red, the refusals counted.
+#   "background": true  (background.json, E77) the engineering workload (E30's step 3) in three stages at one count; at the second's start
+#                       the run's own published events of every type a catalogued handler names are replayed through the audited operator
+#                       door in windows under its bound (load_background_tick, E49's form), so every consumer group and the relay work while
+#                       the generator holds its rate. After the census, load_background_judge: every window requeued whole, the outbox
+#                       drained and the groups settled, and each stage's latency per operation beside its resources (the replicas' CPU and
+#                       throttling, their threads, the pools' queue, the database's CPU) in load/role-split.tsv. Never a verdict on the
+#                       numbers: ADR-0145's rule for reopening the role split is read from them.
+#
 # THE OBJECTIVES JUDGED (P16-TSK-029; ADR-0148; docs/architecture/SLOS.md section 6; OPERATIONS_RUNBOOK.md section 11.63). After the census
 # every run writes load/slo-objectives.tsv: each objective of infra/prometheus/rules/slo.yml, read and never copied - its budget from its
 # fast pair, its five-minute SLI from slo-recording.yml taken over the run's window (rates as increases) - with the burn rate it ran at
@@ -177,6 +196,11 @@ PG_PLANS_SUMMARY=""
 LOAD_AUTOSCALE=""
 LOAD_FLOOR=""
 LOAD_HPA_TARGET=""
+# P16-TSK-015: the profile's "bursts" and "background" flags, read by load_preflight; when the background's replay was ordered and done.
+LOAD_BURSTS=""
+LOAD_BACKGROUND=""
+LOAD_REPLAY_AT=""
+LOAD_REPLAY_DONE=""
 
 load_paths() {
     LOAD_ART="$ART/load"
@@ -322,6 +346,19 @@ load_preflight() {
     fi
     [ "$PROBE" != scale-down-unbounded ] || [ "$LOAD_AUTOSCALE" = true ] \
         || cannot "PROBE scale-down-unbounded runs with the autoscale profile, whose count the autoscaler decides"
+    # P16-TSK-015: the burst profile (E75) judges an autoscaler left free, and its probe runs only with it; the background profile (E77)
+    # compares its stages at one count, so never beside a count that moves.
+    LOAD_BURSTS=$(load_profile_value bursts)
+    [ "$LOAD_BURSTS" != true ] || [ "$LOAD_AUTOSCALE" = true ] \
+        || cannot "the burst profile judges an autoscaler left free between its floor and the run's count: it needs \"autoscale\": true"
+    [ "$PROBE" != abuse-below-need ] || [ "$LOAD_BURSTS" = true ] \
+        || cannot "PROBE abuse-below-need runs with the burst profile, whose door assertion it must turn red"
+    LOAD_BACKGROUND=$(load_profile_value background)
+    if [ "$LOAD_BACKGROUND" = true ]; then
+        [ "$LOAD_AUTOSCALE" != true ] && [ -z "$PIPELINE_SCALE" ] \
+            || cannot "the background profile compares its stages at one count: not with the autoscaler free, nor beside REHEARSAL_LOAD_SCALE"
+        [ "$(load_stages | grep -c .)" = 3 ] || cannot "the background profile is three stages, the replay at the second's start"
+    fi
     generators=$(load_profile_value generators)
     if [ -n "$generators" ] && [ -z "${REHEARSAL_LOAD_GENERATORS:-}" ]; then
         case $generators in '' | *[!0-9]*) cannot "the profile's generators is a whole number, not '$generators'" ;; esac
@@ -597,6 +634,134 @@ load_autoscale_judge() {
     [ "$PROBE" != scale-down-unbounded ] || fail "PROBE scale-down-unbounded: every sample stayed within the formula at its count, so the assertion cannot fail"
 }
 
+# PROBE abuse-below-need (P16-TSK-015, E76): the sign-in limit per source set to the identity lockout's threshold, read from the code, below
+# one person's need of that many failures and a success. Planted after the load's setup and before the load, never at the render: the setup's
+# one client signs in every customer of the run from one address, and a limit lowered there would fail the setup, not the door assertion. An
+# environment variable on the run's own Deployment, which takes precedence over its ConfigMap, rolled one pod at a time as every change rolls;
+# the autoscaled run then waits for its floor again as the load starts (load_autoscale_start). Never an overlay.
+load_plant_abuse_below_need() {
+    threshold=$(sed -n 's/.*return new LockoutPolicy(\([0-9]*\), .*/\1/p' "$ROOT/identity/src/main/java/com/finapp/identity/LockoutPolicy.java" | head -1)
+    case $threshold in '' | *[!0-9]*) cannot "PROBE abuse-below-need: the lockout's threshold could not be read from LockoutPolicy.java" ;; esac
+    kube -n finapp set env deployment/finapp-app "FINAPP_ABUSE_SIGN_IN_LIMIT=$threshold" >> "$LOAD_ART/plants.log" 2>&1 \
+        || cannot "PROBE abuse-below-need: the sign-in limit could not be set on the run's Deployment: see load/plants.log"
+    kube -n finapp rollout status deployment/finapp-app --timeout="${ROLLOUT_TIMEOUT}s" >> "$LOAD_ART/plants.log" 2>&1 \
+        || cannot "PROBE abuse-below-need: the fleet did not roll onto the lowered limit: see load/plants.log"
+    set_to=$(kube -n finapp get deployment finapp-app -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="FINAPP_ABUSE_SIGN_IN_LIMIT")].value}' 2>/dev/null || true)
+    [ "$set_to" = "$threshold" ] || cannot "PROBE abuse-below-need: the run's Deployment holds '$set_to', not the lockout's threshold of $threshold"
+    log "PROBE abuse-below-need: the sign-in limit per source set to $threshold, the lockout's threshold, below one person's need of $((threshold + 1)), on the run's own Deployment"
+}
+
+# load_burst_judge: after the census, the burst profile's autoscaler (E75) judged as a fleet that must not have moved, and its doors:
+#   - the autoscaler read every 10 s through the load;
+#   - a reading above its target inside a burst or within LOAD_BURST_TAIL after it (the metric trails the load): the bursts reached the
+#     target, or a fleet that did not move would show nothing, and the run could not measure;
+#   - the count asked, and the autoscaler's own desired count, never above the floor: a burst the standing fleet carries never scales it;
+#   - no sign-in answered 429: no per-source limit, the edge's tier or the application's door, refused legitimate traffic.
+# Recorded: each burst's readings and its most utilisation (load/bursts.tsv), the autoscaler's events. Under the probe, the last must go red.
+LOAD_BURST_TAIL=90
+load_burst_judge() {
+    file="$LOAD_ART/autoscale.tsv"
+    samples=$(awk 'NR > 1' "$file" | grep -c . || true)
+    [ "$samples" -ge $(( (LOAD_ENDED - LOAD_STARTED) / 10 * 9 / 10 )) ] \
+        || fail "the autoscaler was read $samples times over a load of $((LOAD_ENDED - LOAD_STARTED)) s, not every 10 s: see load/autoscale.tsv"
+    load_stages | awk -v t0="$LOAD_STARTED" 'NR == 1 {base = $2} $2 + 0 > base + 0 {print t0 + at "\t" t0 + at + $1} {at += $1}' > "$WORK/bursts.txt"
+    [ -s "$WORK/bursts.txt" ] || cannot "the burst profile names no stage above its first: no burst to judge"
+    printf 'from\tto\treadings\tmost_utilisation\tmost_asked\n' > "$LOAD_ART/bursts.tsv"
+    awk -F'\t' -v tail="$LOAD_BURST_TAIL" 'NR == FNR {from[NR] = $1; to[NR] = $2; n = NR; next}
+        FNR > 1 {for (i = 1; i <= n; i++) if ($1 >= from[i] && $1 <= to[i] + tail) {r[i]++; if ($6 + 0 > u[i]) u[i] = $6 + 0; if ($2 + 0 > c[i]) c[i] = $2 + 0}}
+        END {for (i = 1; i <= n; i++) print from[i] "\t" to[i] "\t" r[i] + 0 "\t" u[i] + 0 "\t" c[i] + 0}' "$WORK/bursts.txt" "$file" >> "$LOAD_ART/bursts.tsv"
+    above=$(awk -F'\t' -v t="$LOAD_HPA_TARGET" 'NR > 1 && $4 + 0 > t {n++} END {print n + 0}' "$LOAD_ART/bursts.tsv")
+    bursts=$(awk 'NR > 1' "$LOAD_ART/bursts.tsv" | grep -c . || true)
+    [ "$above" -ge 1 ] || cannot "no reading of the autoscaler's above its target of $LOAD_HPA_TARGET% inside any of the $bursts bursts: the bursts never reached it, and a fleet that did not move shows nothing: see load/bursts.tsv"
+    most=$(awk -F'\t' 'NR > 1 && $2 + 0 > m {m = $2 + 0} END {print m + 0}' "$file")
+    desired=$(awk -F'\t' 'NR > 1 && $4 + 0 > m {m = $4 + 0} END {print m + 0}' "$file")
+    kube -n finapp get events --field-selector involvedObject.kind=HorizontalPodAutoscaler,involvedObject.name=finapp-app \
+        -o custom-columns=LAST:.lastTimestamp,COUNT:.count,REASON:.reason,MESSAGE:.message > "$LOAD_ART/autoscale-events.txt" 2>&1 || true
+    [ "$most" -le "$LOAD_FLOOR" ] && [ "$desired" -le "$LOAD_FLOOR" ] \
+        || fail "the autoscaler scaled for a burst the standing fleet carries: it asked $most replicas and desired $desired where its floor is $LOAD_FLOOR, after $above of $bursts bursts read above its target: see load/bursts.tsv and load/autoscale.tsv"
+    pass "the autoscaler held the floor of $LOAD_FLOOR through $bursts bursts, $above of them read above its $LOAD_HPA_TARGET% target: a burst the standing fleet carries did not scale it"
+    refused=$(awk -F'\t' 'NR > 1 && $1 == "signin" && $2 == 429 {n += $3} END {print n + 0}' "$LOAD_ART/k6/statuses.tsv")
+    [ "$refused" = 0 ] || fail "a per-source limit refused legitimate traffic: $refused sign-ins answered 429 (the edge's door tier or the application's door): see load/k6/statuses.tsv"
+    pass "no sign-in answered 429: neither the edge's door tier nor the application's door refused the bursts' legitimate traffic"
+    [ "$PROBE" != abuse-below-need ] || fail "PROBE abuse-below-need: no sign-in was refused under a limit below one person's need, so the assertion cannot fail"
+}
+
+# load_background_tick <elapsed>: E77's background (P16-TSK-015), once, at the background profile's second stage: the run's own published
+# events of every type a catalogued handler names, replayed through the audited operator door in windows of at most 900 by first
+# publication (E49's form, under the door's bound of 1000 an order). The orders run inside the load's loop, as the decisions' reports do;
+# each answer in load/replays.tsv, judged after the census.
+load_background_tick() {
+    [ -z "$LOAD_REPLAY_AT" ] || return 0
+    [ "$1" -ge "$(load_stages | awk 'NR == 1 {print $1}')" ] || return 0
+    LOAD_REPLAY_AT=$(date +%s)
+    printf 'type\tfrom\tto\tevents\trequeued\n' > "$LOAD_ART/replays.tsv"
+    if ! psql_query -v "handlers=$HANDLERS" -v "from=$LOAD_FROM" -f - > "$LOAD_ART/replay-windows.txt" 2> "$LOAD_ART/replay.log" <<'SQL'
+\set ON_ERROR_STOP on
+WITH published AS (
+    SELECT e.event_type, coalesce(e.first_published_at, e.published_at) AS t
+      FROM platform.outbox_event e
+     WHERE e.published_at IS NOT NULL AND e.discarded_at IS NULL
+       AND coalesce(e.first_published_at, e.published_at) >= to_timestamp(:from)
+       AND e.event_type IN (SELECT h.event_type FROM (VALUES :handlers) AS h (consumer, event_type))),
+numbered AS (
+    SELECT event_type, t, (row_number() OVER (PARTITION BY event_type ORDER BY t) - 1) / 900 AS chunk FROM published),
+chunks AS (
+    SELECT event_type, chunk, min(t) AS first_t, max(t) AS last_t, count(*) AS events FROM numbered GROUP BY event_type, chunk)
+SELECT event_type || '|' || to_char(first_t AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|'
+       || to_char(coalesce(lead(first_t) OVER (PARTITION BY event_type ORDER BY chunk), last_t + interval '1 millisecond') AT TIME ZONE 'UTC',
+                  'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|' || events
+  FROM chunks ORDER BY event_type, chunk;
+SQL
+    then
+        LOAD_REPLAY_DONE=$(date +%s)
+        return 0
+    fi
+    # Each order waits for a fresh second factor (one a 30-s step), so the orders take minutes: a sample that failed meanwhile ends them,
+    # and the loop then stops the load.
+    while IFS='|' read -r type from to events; do
+        [ -n "$type" ] || continue
+        [ ! -s "$WORK/load-sample-failed" ] || break
+        answer=$(client replay "$type" "$from" "$to" "E77: the run's own events replayed under load, the background roles at work" 2>> "$LOAD_ART/replay.log" \
+            | grep '^replay ' | tail -1)
+        got=$(printf '%s' "$answer" | sed -n 's/.* requeued=\([0-9]*\) .*/\1/p')
+        printf '%s\t%s\t%s\t%s\t%s\n' "$type" "$from" "$to" "$events" "${got:-refused}" >> "$LOAD_ART/replays.tsv"
+    done < "$LOAD_ART/replay-windows.txt"
+    LOAD_REPLAY_DONE=$(date +%s)
+    log "E77: $(awk -F'\t' 'NR > 1 {n++; e += $4} END {print n + 0 " replay orders for " e + 0 " events"}' "$LOAD_ART/replays.tsv") through the operator door, $((LOAD_REPLAY_DONE - LOAD_REPLAY_AT)) s from the first order to the last"
+}
+
+# load_background_judge: after the census, E77's background judged and its reading written. The replay must have been ordered in the second
+# stage and requeued every window whole (the positive control: with no background, nothing was compared), its rows published again and every
+# group settled. Then each stage's latency per operation (k6/stages.tsv) beside its resources (stages-resources.tsv), every column read by its
+# name, into load/role-split.tsv: recorded, never a verdict. ADR-0145's rule reads it: the background stage's request latency against the
+# steady stages', beside the replicas' throttling and threads and the database's CPU.
+LOAD_ROLE_SPLIT_RESOURCES="cpu_app_cores_per_s throttled_app_periods_per_s limited_app_periods_per_s fleet_threads_max fleet_pool_pending_max cpu_postgres_cores_per_s throttled_postgres_periods_per_s limited_postgres_periods_per_s"
+load_background_judge() {
+    [ -n "$LOAD_REPLAY_AT" ] || fail "E77: the background profile ordered no replay: the load ended before its second stage"
+    windows=$(awk -F'\t' 'NR > 1' "$LOAD_ART/replays.tsv" | grep -c . || true)
+    requeued=$(awk -F'\t' 'NR > 1 && $5 ~ /^[0-9]+$/ {n += $5} END {print n + 0}' "$LOAD_ART/replays.tsv")
+    [ "$windows" -ge 1 ] && [ "$requeued" -ge 1 ] \
+        || cannot "E77: no event of a handled type was replayed, so no background ran and nothing was compared: see load/replays.tsv and load/replay.log"
+    short=$(awk -F'\t' 'NR > 1 && $5 != $4' "$LOAD_ART/replays.tsv" | grep -c . || true)
+    [ "$short" = 0 ] || fail "E77: $short of $windows replay orders requeued other than their window's events: see load/replays.tsv"
+    drained 900 || fail "E77: the replayed rows were not all published again within 15 minutes of the load's end"
+    lag_settled background || fail "E77: a group did not settle after the replay: see consumer-groups-background.txt"
+    printf 'stage\tmeasure\tvalue\n' > "$LOAD_ART/role-split.tsv"
+    awk -F'\t' -v lat="$LOAD_ART/k6/stages.tsv" -v res="$LOAD_ART/stages-resources.tsv" -v keep="$LOAD_ROLE_SPLIT_RESOURCES" '
+        FNR == 1 {for (i = 1; i <= NF; i++) col[FILENAME, $i] = i; next}
+        FILENAME == lat {print $col[lat, "stage"] "\t" $col[lat, "op"] "_p50_ms\t" $col[lat, "p50_ms"]
+                         print $col[lat, "stage"] "\t" $col[lat, "op"] "_p99_ms\t" $col[lat, "p99_ms"]; next}
+        FILENAME == res {n = split(keep, k, " "); for (i = 1; i <= n; i++) if ((res, k[i]) in col) print $col[res, "stage"] "\t" k[i] "\t" $col[res, k[i]]}' \
+        "$LOAD_ART/k6/stages.tsv" "$LOAD_ART/stages-resources.tsv" >> "$LOAD_ART/role-split.tsv" \
+        || cannot "E77: the stages' latency and resources could not be read: see load/k6/stages.tsv and load/stages-resources.tsv"
+    awk -F'\t' '$1 == 2 && $2 == "cpu_app_cores_per_s" && $3 != "" {c = 1} $1 == 2 && $2 ~ /_p99_ms$/ && $3 ~ /^[0-9]/ {l = 1} END {exit !(c && l)}' \
+        "$LOAD_ART/role-split.tsv" || cannot "E77: the background stage has no latency or no replica CPU in load/role-split.tsv"
+    side=$(awk -F'\t' 'NR > 1 && ($2 ~ /_p99_ms$/ || $2 == "cpu_app_cores_per_s" || $2 == "cpu_postgres_cores_per_s") {v[$1, $2] = $3; m[$2] = 1}
+        END {for (k in m) printf "%s %s / %s / %s; ", k, v[1, k], v[2, k], v[3, k]}' "$LOAD_ART/role-split.tsv")
+    log "E77 recorded, steady / background / steady: $side"
+    pass "E77: $requeued events replayed in $windows audited orders in the background stage, the outbox drained and every group settled; each stage's latency and resources side by side in load/role-split.tsv"
+}
+
 # PostgreSQL's statistics and the containers' CPU and memory, every 10 s, into the artefacts. Never judged here.
 load_statistics() {
     set +e
@@ -739,10 +904,19 @@ load_scope() {
     # The objectives over the run (P16-TSK-029: E84, E86), after the census and while the migrator Job planted before the load still pages.
     step load-objectives
     load_objectives
-    # The autoscaler's decisions (P16-TSK-014, E70), judged after the census has counted one effect per key at the floor it returned to.
-    if [ "$LOAD_AUTOSCALE" = true ]; then
+    # The autoscaler's decisions (P16-TSK-014, E70), judged after the census has counted one effect per key at the floor it returned to;
+    # the burst profile's (P16-TSK-015, E75) as a fleet that must not have moved.
+    if [ "$LOAD_BURSTS" = true ]; then
+        step load-bursts
+        load_burst_judge
+    elif [ "$LOAD_AUTOSCALE" = true ]; then
         step load-autoscale
         load_autoscale_judge
+    fi
+    # The role split's reading (P16-TSK-015, E77), after the census has counted the replay's effects.
+    if [ "$LOAD_BACKGROUND" = true ]; then
+        step load-background
+        load_background_judge
     fi
     # The connection budget at the run's count (P16-TSK-009; OPERATIONS_RUNBOOK.md section 11.49; at ten, E41).
     step load-budget
@@ -1301,6 +1475,8 @@ load_run() {
     [ "$LOAD_SOAK" != true ] || load_soak_start
     # The event pipeline's runs (P16-TSK-013, kind-rehearsal/pipeline.sh: E47, E48): a scale's first count, the offsets, the sampler.
     pipeline_start
+    # P16-TSK-015's probe (E76), after the setup and before the fleet is settled at its floor for the load.
+    [ "$PROBE" != abuse-below-need ] || load_plant_abuse_below_need
     # An autoscaled run (P16-TSK-014, E70): the probe's plant, and the autoscaler's own reading from the load's start.
     load_autoscale_start
     LOAD_FROM=$(db_epoch)
@@ -1366,6 +1542,8 @@ load_run() {
         [ "$LOAD_DECISIONS" != 1 ] || load_decisions_tick "$elapsed" "$secs"
         # E48's next count at its share of the load (P16-TSK-013); nothing in any other run.
         pipeline_tick "$elapsed" "$secs"
+        # E77's replay at the background profile's second stage (P16-TSK-015); nothing in any other run.
+        [ "$LOAD_BACKGROUND" != true ] || load_background_tick "$elapsed"
         if [ "$PROBE" = unbalanced-entry ] && [ -z "$planted" ] && [ "$elapsed" -ge 60 ]; then
             load_plant_unbalanced
             planted=1
