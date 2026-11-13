@@ -29756,7 +29756,9 @@ on none:
     `IdempotencySweepMigrationTest`, `NoIdempotencyRecordIsSweptTest` re-scoped to admit the one guarded function, keeping its members for
     the mutation rows); a two-minute container check of the SQL on `postgres:18.6` (§11.56's record: the chain applied, the census, its stop
     on a planted duplicate, the conditional insert, the sweep's selection, floors, refusals and the revoke); `sast.sh` green (61 findings,
-    61 rows); nine hermetic probes, every one caught (`MUTATION_TESTING.md` §2).
+    61 rows); nine hermetic probes, every one caught (`MUTATION_TESTING.md` §2). **Tests, fresh XML:** before the merge, 73 named classes,
+    926 tests (`LoanWriteOffsTest`'s 26 from the first pass, its inputs unchanged), and the 7 rule suites the filters pull in, 20 tests;
+    after the merge of `ce1abd2e`, the same 73 named classes, 940 tests, and the 7 suites, 20 tests - 0 failed each time.
   - **Owed:** E62, E63 and E64 at three replicas, and E38 on `ac5aa4a3` as E62's control (PI-025); `PostingScopeUniquenessDatabaseTest`
     (ten writers of one scope, a post and a reversal after their record's sweep, the sweep's bounds and refusals, ten sweepers) and
     `InstalmentBillingDatabaseTest.advance`'s two-step re-key under the new index (PI-023's kind). **Acceptance:** the constraint in
