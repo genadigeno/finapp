@@ -30671,7 +30671,7 @@ on none:
   - **Owner item**: `THREAT_MODEL.md` §6 item 62 (the release's record in the database's trail, the window on a managed instance, the archive's integrity).
   - **The routed note from `P16-TSK-021` (E11)**: the WAL archive built here is a Docker volume of the restore rehearsal's own run, in containers: not an object store, and nothing of it deployed on `kind`. So E11's store half has no local subject from it, which a dated note in E11's row now says; its run stays owed under PI-025.
 
-**P16-TSK-025 — The disaster-recovery plan and exercise; RTO and RPO measured (C9; ADR-0128; T42)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-023`'s merge, under the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-023` and `P16-TSK-024`, both `COMPLETE`)
+**P16-TSK-025 — The disaster-recovery plan and exercise; RTO and RPO measured (C9; ADR-0128; T42)** — `IN_PROGRESS` (2026-11-14; designed on branch `P16-TSK-025` from master `2e34dd66`, wave F) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-023`'s merge, under the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-023` and `P16-TSK-024`, both `COMPLETE`)" until the design)*
 - **Objective**: write the DR plan, and exercise it locally end to end: the `kind` cluster and its data destroyed, then the platform
   rebuilt from the repository, a backup and regenerated secrets, ending in the post-recovery gate and timed per step.
 - **Affected components**: a DR section of the runbook (§11.41, new), the harness (a `dr` scope), `deploy/`, the backup procedure.
