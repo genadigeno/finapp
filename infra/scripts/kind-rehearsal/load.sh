@@ -881,6 +881,8 @@ load_run() {
     [ "$PROBE" != slow-statement ] || load_plant_slow_statement
     [ "$LOAD_CONTENTION_ON" != true ] || load_contention_start
     [ "$LOAD_SOAK" != true ] || load_soak_start
+    # The event pipeline's runs (P16-TSK-013, kind-rehearsal/pipeline.sh: E47, E48): a scale's first count, the offsets, the sampler.
+    pipeline_start
     LOAD_FROM=$(db_epoch)
     load_clock start
     LOAD_STARTED=$(date +%s)
@@ -939,6 +941,8 @@ load_run() {
         fi
         elapsed=$(( $(date +%s) - LOAD_STARTED ))
         [ "$LOAD_SOAK" != true ] || load_soak_tick "$elapsed" "$secs"
+        # E48's next count at its share of the load (P16-TSK-013); nothing in any other run.
+        pipeline_tick "$elapsed" "$secs"
         if [ "$PROBE" = unbalanced-entry ] && [ -z "$planted" ] && [ "$elapsed" -ge 60 ]; then
             load_plant_unbalanced
             planted=1
@@ -1210,7 +1214,9 @@ EOF
         case $driven in *" ${pair%%|*} "*) ;; *) printf '%s\tnot driven\n' "$route" >> "$LOAD_ART/spread.tsv"; continue ;; esac
         load_prom "count(sum by (instance) (increase(http_server_requests_seconds_count{job=\"finapp\",$route}[$window])) != 0)" > "$LOAD_ART/spread.json" 2>&1 || true
         served=$(sed -n 's/.*"value":\[[^,]*,"\([0-9]*\)"\].*/\1/p' "$LOAD_ART/spread.json")
-        [ -n "$served" ] && [ "$served" = "$ready" ] || fail "spread: ${served:-no} of $ready ready replicas served $route during the load"
+        # A fleet scaled during the load (E48, P16-TSK-013) was served by every replica it had, more than are ready at its end.
+        [ -n "$served" ] && { [ "$served" = "$ready" ] || { [ -n "$PIPELINE_SCALE" ] && [ "$served" -ge "$ready" ]; }; } \
+            || fail "spread: ${served:-no} of $ready ready replicas served $route during the load"
         printf '%s\t%s\n' "$route" "$served" >> "$LOAD_ART/spread.tsv"
     done
     pass "spread: every one of $ready ready replicas served each driven route of transfers, payment and checkout confirmations and balance reads through the edge"
@@ -1416,6 +1422,8 @@ load_census() {
     LOAD_TOPUPS=$((LOAD_FUNDED + $(ok_of topup)))
     LOAD_WALLET_MINOR=$((LOAD_FUNDED_MINOR + $(ok_of topup) * topup_minor))
     census load
+    # The event pipeline's numbers and a scale's judgement (P16-TSK-013), after the census has counted one effect per record.
+    pipeline_report
     # A last sample, after the census: nothing the load left behind pages afterwards.
     : > "$WORK/load-sample-failed"
     load_sample final

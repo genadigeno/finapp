@@ -627,6 +627,14 @@ nothing; losing the executor costs this instance's polling and nothing else. The
 this class alone and is proven load-bearing — any future scheduler that is not lease-protected
 is a new decision, not a ride on this one.
 
+*(2026-11-13, `P16-TSK-013`, ADR-0136.)* A tick is no longer exactly one poll: while a poll comes
+back with its whole batch worked and nothing failed, the tick polls again at once, asking
+`ScheduleDrain.stopping()` and its hold before each further poll; a short, failed or thrown poll
+ends it. And an aggregate a poll locks and finds already drained by another instance takes no slot
+of its batch. Neither touches the lease above: every poll is still a transaction-scoped advisory
+lock per aggregate, the rows read inside it, the mark conditional, so ten instances looping drain
+disjoint aggregates exactly as ten polling once did.
+
 The `KafkaProducer` the adapter holds is likewise per-instance and non-authoritative: its
 buffers are in-flight copies of durable outbox rows, and losing them costs a retry, never a
 fact.

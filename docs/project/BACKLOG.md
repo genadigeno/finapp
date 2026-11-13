@@ -29758,7 +29758,7 @@ on none:
   run; the archive's queue (`platform.audit_archive_pending`) grows with the table while no environment names a store, which the
   growth figures should count.
 
-**P16-TSK-013 — The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
+**P16-TSK-013 — The event pipeline at load: three brokers, lag, rebalance, broker loss, replay** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-013` from master `1fbdf71c`, wave D; no migration; ADR-0136; every cluster run owed under PI-025; marks no task `READY` - the coordinator does; read `READY` from 2026-11-13, marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step")
 - **Objective**: `PHASE_16_PLAN.md` §7 at the engineering workload on a test-only three-broker KRaft cluster on `kind`, with
   replication 3 and `min.insync.replicas` 2.
 - **Affected components**: `deploy/overlays/kind/kafka.yaml`, `infra/kafka/topics.yaml` (read, unchanged for production), `platform`'s
@@ -29802,8 +29802,44 @@ on none:
   not measured. At E30's step 3 (27.3 events a second) publication stayed within 4 s. Measure the relay's ceiling in aggregates and
   events a second at three and seven replicas, and whether more relays add drain; `event_freshness` (60 s) is at stake well below
   the target's 89.3 events a second at peak.
+ - *As built (2026-11-13, the gate's record; branch `P16-TSK-013` from master `1fbdf71c`, masters `6f23a4a1`, `9ec48bdc`, `d7081fa9` and
+   `4dcce65d`, then `215deb70`, merged in (the last four after the gate, at the coordinator's word); no
+   migration; ADR-0136 `Proposed`; `OPERATIONS_RUNBOOK.md` §11.51 is the procedure and the record, `RESILIENCE_EXPERIMENTS.md` E08, E09,
+   E22, E23 and E47–E49 the rows; under the owner's word of 2026-11-13, "we dont need long running checks and tests", **no cluster run
+   was made: every acceptance criterion below that needs one is built, contract-tested and its run owed under `POSTPONED_ISSUES.md`
+   PI-025**):* **The relay** (ADR-0136, the ceiling `-007` routed here): a candidate another relay drained after the candidates were read
+   takes no slot of the batch (`OutboxRelay`, `RelayPollResult.batchFull`), and the schedule's tick polls again at once while a cycle
+   worked its whole batch and failed nothing (`OutboxRelaySchedule.tick`), asking its stop and its hold before each further cycle; the
+   lock, the read inside it, the order and the conditional mark unchanged; held by `OutboxRelaySlotTest` and `OutboxRelayScheduleTest`,
+   its database case `OutboxRelayTest#aDrainedCandidateTakesNoSlot` written and owed (PI-023); its effect unmeasured (E47). **Three
+   brokers** (`kind-rehearsal/brokers.sh`): the overlay's StatefulSet three-capable and **committed at one** - a deviation from "the
+   kind overlay's broker StatefulSet at three": three run in the experiments scope always and in the load scope on
+   `REHEARSAL_KAFKA_BROKERS=3`, from the run's own rendered copy, and are refused in the other scopes, whose own steps assume one broker
+   (`THREAT_MODEL.md` §6 item 58 (a) puts every scope's move to the owner); the catalogue's posture whole, SASL_SSL with SCRAM on every
+   broker, the quorum and replication over mutual TLS, the admin tools on that listener, `brokers_check` at the topics' step and every
+   steady state; proven in containers (§11.51's record), never on `kind`. **The proxies** (`-019`'s routed note): one Toxiproxy hop and
+   Service per broker, the boundary and the topology check over six proxies. **Scope items**: partition skew per key - E47's
+   records per partition per topic (read from the code meanwhile: the merchant's fee events are keyed by the merchant,
+   `CAPACITY_MODEL.md` §3.2's note); lag at peak and drain after a burst, the relay's ceiling - E47, the `pipeline` profile at three
+   and seven replicas; scale 3 → 7 → 3 during load - E48 (`REHEARSAL_LOAD_SCALE`); E08, E09, E22, E23 - the experiments scope; a day's
+   replay through the audited door - E49 and §11.51's procedure (the door's 1,000-event bound kept; one order for a day is item 58
+   (b)); a poison record burst parking without stopping the group - **E68** (reserved by the coordinator for this scope item): six
+   records that are no event, a key each, on `finapp.payments`; every group that reads it parks each once while it keeps applying, no
+   member evicted, `InboxDeadLetterParked` its only page; a release refused and each park discarded by two persons; the census's
+   nothing-parked clause now leaves out a record whose approved discard's approver is not its proposer, and counts every other row (a
+   change to a shared clause, without which no run that discards through the door could end green). **The probe** (`REHEARSAL_PROBE=min-isr-one`): every topic at
+   `min.insync.replicas` 1 and a probe topic of two copies, its victim held down 90 s, E08's copy check required to name the one-copy
+   writes; its premise proven in containers on the third attempt (§11.51's record), the cluster probe owed. **Acceptance
+   (`PHASE_GATES.md` §5 Phase 16's Kafka block)**: lag per group at peak and drained after a burst; scale under load with one effect per
+   record; one broker lost without an error; all brokers lost 10 minutes and every row published once after; a day's replay with zero
+   second effects - each **built, contract-tested (`PipelineRehearsalContractTest`), run owed (PI-025)**; every experiment's register
+   row filled in the not-run form. §11.6's rehearsal (that part of PI-024 under C11) closes only with E09. **E15** (`P16-TSK-021`'s,
+   merged before this task's end, so the note routed to it had no owner): its broker-hop cut widened here to every broker's own proxy
+   as well as the bootstrap's, held by `PipelineRehearsalContractTest#e15CutsEveryBrokersHop`, its run owed with the cut (a dated
+   note on its register row and on this task's PI-025 bullet). Routed: to `P16-TSK-014` (the load scope's three brokers, the pipeline
+   sampler and the scale at ten).
 
-**P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `PLANNED`
+**P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-013`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its dependencies, `P16-TSK-009` and `P16-TSK-013`, both `COMPLETE`)
 - **Objective**: the ten-instance answer counted. Ten application replicas carry the engineering workload on `kind`, scale between
   three and ten under a real metric, and roll during load, with one effect per key and the census green throughout. This closes the
   deviation B that the Phase 15 completion gate left with this task, and `P15-REM-007`'s observed scaling.
@@ -29835,6 +29871,13 @@ on none:
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.28's record at ten; `P15-REM-007` closed.
 - **Risk**: High (the machine may not hold ten; the record says so). **Cx**: L.
+- *Routed from `P16-TSK-013` (2026-11-13):* the load scope takes three test-only brokers (`REHEARSAL_KAFKA_BROKERS=3`,
+  `kind-rehearsal/brokers.sh`) and reads the event pipeline every 30 s (`kind-rehearsal/pipeline.sh`: each group's lag per partition,
+  its members and idle members, the outbox's backlog and the relay's drain), with a scale through counts under load
+  (`REHEARSAL_LOAD_SCALE`, today 3 to 7, the autoscaler held at each count; E48; `OPERATIONS_RUNBOOK.md` §11.51). Ten replicas and
+  twelve partitions: no member idle is expected at ten; the members table records it. A count of ten needs C3's budget beside
+  `pipeline_preflight`'s check (today it refuses a count past 7 or past `REHEARSAL_LOAD_REPLICAS`; `P16-TSK-009`'s overlay admits ten, so
+  the case goes to the overlay's ceiling here, with E48's budget judged at each count).
 - **Routed from `P16-TSK-009` (2026-11-13): what the run at ten starts from.** The `kind` overlay admits ten (13 instances, 116 connections,
   a quota of 16 pods; ADR-0134). Every run holds its fleet at its count in its own copy, `REHEARSAL_LOAD_REPLICAS` up to 10 in the load
   scope, the autoscaler held there (minimum and maximum). A run that lets the metric decide between three and ten is this task's: leave

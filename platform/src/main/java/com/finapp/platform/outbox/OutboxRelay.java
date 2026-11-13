@@ -101,7 +101,8 @@ public final class OutboxRelay {
      * <p>Every instance's candidate query returns the same oldest-first list, so with no
      * overscan they would all contend for the same few aggregates and all but one would come
      * back with nothing. Reading further down the backlog gives each instance somewhere else to
-     * go the moment it is refused a lock.
+     * go the moment it is refused a lock, or finds an aggregate another instance has already drained,
+     * which takes no slot of the batch (ADR-0136).
      */
     private static final int CANDIDATE_OVERSCAN = 4;
 
@@ -260,12 +261,20 @@ public final class OutboxRelay {
                 // Another instance holds it. Not a failure: it is the mechanism working.
                 continue;
             }
+            if (!outcome.attempted()) {
+                // Locked, and nothing left to attempt: another instance drained it after this cycle read its
+                // candidates (every instance reads the same oldest heads), or its head stopped being due meanwhile.
+                // It takes no slot of the batch (`P16-TSK-013`, ADR-0136): counting it let a relay that arrived a
+                // moment late spend its whole batch on aggregates already published, so more instances added no drain.
+                continue;
+            }
             drained++;
             published += outcome.published();
             failed += outcome.failed();
             deadLettered += outcome.deadLettered();
         }
-        return new RelayPollResult(drained, published, failed, deadLettered);
+        boolean batchFull = drained == aggregatesPerPoll && failed == 0 && deadLettered == 0;
+        return new RelayPollResult(drained, published, failed, deadLettered, batchFull);
     }
 
     // -----------------------------------------------------------------
@@ -498,5 +507,10 @@ public final class OutboxRelay {
 
     private record AggregateOutcome(boolean locked, int published, int failed, int deadLettered) {
         static final AggregateOutcome NOT_LOCKED = new AggregateOutcome(false, 0, 0, 0);
+
+        /** Whether anything was attempted on the locked aggregate: published, failed or abandoned. */
+        boolean attempted() {
+            return published + failed + deadLettered > 0;
+        }
     }
 }
