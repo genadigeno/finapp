@@ -29884,7 +29884,7 @@ on none:
   replica** (it reaches them through their Service): E01 tells a failed answer apart by when it ended; at ten replicas and under
   E02-E04 that window is per fault. Item 47 (e)'s correlation id, once kept, would join each failed answer to its replica.
 
-**P16-TSK-021 — Network, DNS, connection and disk faults** — `IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-021` from master `1f70ccad`; marked `READY` by the coordinator at `P16-TSK-019`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-019`, `COMPLETE`)
+**P16-TSK-021 — Network, DNS, connection and disk faults** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-021` from master `1f70ccad`, wave D; gate `COMPLETE` 2026-11-13; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; no production code, migration, alert rule or new ADR; marks no task `READY` - the coordinator does; marked `READY` by the coordinator at `P16-TSK-019`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-019`, `COMPLETE`) *(read "`READY`", then "`IN_PROGRESS`", until its gate)*
 - **Objective**: E07, E11–E16, E24 under load.
 - **Affected components**: every replica; PostgreSQL; Kafka; the simulator; CoreDNS on `kind`.
 - **Dependencies**: `-019`.
@@ -29907,6 +29907,49 @@ on none:
   `finapp/experiment-fault`, `scaled <namespace> <deployment> <replicas> <replicas to restore>` (E16's CoreDNS would be its first use
   outside the simulator). Each passes the boundary first and is removed at the experiment's stop and on every
   way out. On several nodes, read Prometheus through its pod (`experiments_prometheus`), not the API server's proxy.
+- **As built** (2026-11-13). **Nothing of this task has run on a cluster.** By the owner's word of 2026-11-13 ("we dont need long
+  running checks and tests") every experiment, the probe and the measurement are built and held by contract tests, and their runs are
+  owed under `POSTPONED_ISSUES.md` PI-025 (its bullet names each). The acceptance criterion "each experiment's criteria met and
+  recorded" is met as **built, contract-tested, run owed (PI-025)**: every register row's result stays empty, and §11.47's record says
+  not run.
+  - **The experiments** (`infra/scripts/kind-rehearsal/experiments.sh`, the `experiments` scope; `OPERATIONS_RUNBOOK.md` §11.47 writes
+    each fault's signature and what a person does; `RESILIENCE_EXPERIMENTS.md` rows carry dated notes where building sharpened or
+    corrected a field):
+    - E07: a holder takes every slot of the test-only server an ordinary role may take; the database's proxy goes down so the fleet's
+      sessions close, then comes back. An ordinary role is refused (the control), an operator's TLS session as the superuser is admitted
+      on a reserved slot, and `ConnectionPoolStarved` must fire within 10 min. No replica restarts.
+    - E11: the application's settings name no object store. The store's half needs the WAL archive's store (`P16-TSK-024`, routed);
+      without one named the step cannot run.
+    - E12: 50, 200 and 1000 ms after a baseline, each step's p50 and p99 and the pools recorded; a p99 past 30 s stops it.
+    - E13: resets on 1%, then 10%, of the database hop's links, drawn afresh every 30 s, connections made anew counted; then **the
+      probe**.
+    - E14: one replica black-holed from the database, and **the black-holed connection measured** for `P16-TSK-022` (routed).
+    - E15: the broker's hop, then the provider's, black-holed.
+    - E16: CoreDNS scaled to zero, new connections forced, the proxy's failed lookup the control, recovery timed to a provider call
+      answered.
+    - E24: the primary's own 2 GiB filesystem filled from its node.
+  - **The probe**: two transfers sent straight to one replica. One is cut while it waits inside its transaction on a lock the run holds
+    on its table, after it has written: it must leave nothing. The other has its answers held 1500 ms (under the pool's 2 s validation,
+    read from `application.yaml` by the test); its row is read committed on the server's own socket, and the database's proxy is
+    disabled at that moment. It must be whole - its row, its journal entry and its claim `COMPLETED` - and its retry by key must answer
+    the committed transfer. The census counts both. A cut that misses its moment is never counted as the probe: three attempts, then
+    could-not-run.
+  - **Four new kinds of fault**, each behind the whole boundary and the registry, cleared at the stop and on every way out, read after,
+    and put on by the crash probes: a black hole (a DROP each way in one replica's own network namespace, from its node), the slots'
+    holder, a table lock, a ballast. A toxic takes `stream=upstream` and `toxicity=<p>`. A proxy may be armed (boundary and registry
+    first) and fired at a measured moment.
+  - **Corrections the building found.** (1) A NetworkPolicy cannot make a partition here: policies only add what a pod may reach, and
+    an established connection is admitted before any policy. So the entry's E14 and E15 "NetworkPolicy" became a DROP in the replica's
+    namespace and the proxy's `timeout` toxic; ADR-0127 and `PHASE_16_PLAN.md` §9.1 carry dated notes. (2) `kind`'s claims have no
+    size, so E24 makes its own filesystem (`experiments/limited-volume.yaml`, only when E24 is named). (3) The entry's "Toxiproxy's
+    reset on commit": a reset toxic added while a commit's answer is held lets the answer through first (a short container check on
+    the pinned images), so the cut is the proxy disabled, which loses what it holds.
+  - **The register's guard**: `ResilienceExperimentsAreRegisteredTest` now admits an unrun row whose runners have all finished when it
+    says its run is `owed under PI-NNN` and that issue stands `POSTPONED`, so this task's eight rows stand after its gate. The other
+    wave D tasks owing runs need the same words.
+  - **Threat model**: a T29 `EXISTS` row (the new faults reach only what the run made); `GAP | PI-025` rows on T14 (slots held, volume
+    full, the black-holed connection), T16 (the cut on a commit), T23 and T25 (the hops black-holed); item 42 (h) a dated note.
+  - **Not used**: E35-E37, runbook numbers beyond §11.47, `THREAT_MODEL.md` §6 item 54, ADR-0132. No owner item.
 
 **P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `PLANNED`
 - **Objective**: as decided:

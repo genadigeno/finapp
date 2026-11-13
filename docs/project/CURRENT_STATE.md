@@ -827,6 +827,28 @@ It depends on no owner decision and changes no runtime behaviour. Built and gate
 
 ### Just completed
 
+**`P16-TSK-021` — Network, DNS, connection and disk faults** — `COMPLETE` (2026-11-13; branch `P16-TSK-021` from master `1f70ccad`,
+wave D; no production code, no migration, no alert rule, nothing in `deploy/`, no new ADR - ADR-0127 carries a dated note; marks no
+task `READY` - the coordinator does). **Built and contract-tested; no experiment of it has run on a cluster**: by the owner's word of
+2026-11-13 every run is owed under `POSTPONED_ISSUES.md` PI-025, and each acceptance criterion only a run can meet is met as built,
+contract-tested, run owed. **What changed.** Eight experiments in the `experiments` scope (`kind-rehearsal/experiments.sh`,
+`OPERATIONS_RUNBOOK.md` §11.47, each fault's signature and what a person does): E07 (every ordinary slot of the test-only server held by
+a role with no superuser attribute, the pools' share taken with the database's proxy down, an operator's TLS session as the superuser
+admitted on a reserved slot, `ConnectionPoolStarved` within 10 min), E11 (the application names no object store; the WAL archive's store
+stopped, which `P16-TSK-024` brings), E12 (latency 50, 200, 1000 ms; p99 past 30 s stops it), E13 (resets on 1% then 10% of the
+database hop's links, drawn afresh every 30 s, then **the entry's probe**: a transfer cut inside its transaction left absent, one cut
+between its commit and its answer left whole, each retried by key to one effect), E14 (one replica black-holed from the database, and
+**the black-holed connection measured** per held connection for `P16-TSK-022`'s socket timeout), E15 (the broker's hop, then the
+provider's, black-holed), E16 (CoreDNS scaled to zero, new connections forced) and E24 (the primary's own 2 GiB filesystem filled). Four
+new kinds of fault behind the boundary and the registry, each cleared on every way out and put on by the crash probes: a black hole in a
+replica's own network namespace, the slots' holder, a table lock, a ballast. **Two corrections and a finding**: a NetworkPolicy cannot
+make a partition here (policies only add what a pod may reach, and an established connection is admitted before any policy), so E14 and
+E15 cut by a DROP in the namespace and by the proxy's `timeout` toxic; `kind`'s claims have no size, so E24 makes its own filesystem; and
+a reset toxic added while a commit's answer is held lets the answer through (a short container check), so the probe's cut is the proxy
+disabled. `ResilienceExperimentsAreRegisteredTest` now admits an unrun row whose runner has finished when it says its run is
+`owed under PI-NNN` and that issue stands `POSTPONED`. `THREAT_MODEL.md`: a T29 `EXISTS` row (the new faults reach only what the run
+made) and `GAP | PI-025` rows on T14, T16, T23 and T25; item 42 (h) a dated note. Tests: TESTS-PENDING.
+
 **`P16-TSK-019` — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `COMPLETE` (2026-11-13; branch
 
 `P16-TSK-019` from master `0a09a273`, wave C beside `-007`; no migration, no application code, no new ADR - ADR-0127 carries a dated note;
@@ -1572,6 +1594,18 @@ Resolved during initiation:
 ---
 
 ## Next Task
+
+**After `P16-TSK-021`'s gate (2026-11-13):** makes no task `READY` by itself: of the entries that name it, `P16-TSK-027` (the fifteen
+scenarios) still waits on `-013`, `-016`, `-018`, `-020` and `-022`. Routed notes in two entries: `-022` (E14 is the black-holed
+connection's measurement: per held connection, when the kernel freed it, beside `net.ipv4.tcp_retries2`; its run with the decided
+timeout is the drill's; never black-hole the database hop with the proxy's `timeout` toxic) and `-024` (E11 needs the WAL archive's
+store, named by `REHEARSAL_E11_STORE`, or its row says why it has no local subject). For the coordinator: `ResilienceExperimentsAreRegisteredTest`
+now admits an unrun row whose runner has finished when the row says `owed under PI-025` and PI-025 stands `POSTPONED`, which every
+wave D task that owes a run will need; the shared files touched are `kind-rehearsal.sh` (the census counts the experiments' transfers),
+`experiments.sh` (four fault kinds, the crash probe, the experiments), the register, runbook §11.47 and its §11.38 row and a note in
+§11.46, `THREAT_MODEL.md`, `PHASE_16_PLAN.md` §9.1's note, PI-025's bullet. No owner item (`THREAT_MODEL.md` §6 item 54, ADR-0132 and
+E35-E37 not used). Owed under PI-025: every run of E07, E11-E16 and E24, the entry's probe (E13's cut on a commit), the black-holed
+connection's measurement (E14), and the crash probes over the four new fault kinds.
 
 **After `P16-TSK-019`'s merge (2026-11-13, master `7575ff5a`):** Phase 16 at 8 of 34, **M16.7 at 1 of 3**. Newly eligible: `P16-TSK-021` (network, DNS, connection and disk faults; its one dependency `-019`), marked `READY` under the owner's word to start wave D as each task's dependencies merge ("go next step") and launched; it builds and contract-tests its experiments and owes their cluster runs under PI-025. `P16-TSK-018` and `-022` also wait on `-007`, as do `-008`, `-009`, `-010`, `-013`, `-016` and `-024`. E01's run was on `a6fee3a1`; the run on the final bytes, its plants and the three cluster probes are owed under PI-025. Routed by `-019` to the entries of `-013` (an alias and a proxy per broker), `-020` (no `docker stop` fault, a `Pending` replacement under `DoNotSchedule`, the edge naming no replica), `-021` (the fault primitives, Prometheus through its pod) and `-022` (the pair built, promotion the drill's). No owner item.
 
