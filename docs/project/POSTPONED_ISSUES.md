@@ -635,3 +635,12 @@ commit and the date; do not delete the entry.
     the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's
     `/api/v1/rules` listing every group of all thirteen rule files (`OPERATIONS_RUNBOOK.md` §11.34's alerts on `kind`). Proven
     without a cluster only: the stream rendered, `kubeconform -strict` and the pipeline's policies green.
+  - `P16-TSK-012` (partitioning and read replicas, ADR-0142; `OPERATIONS_RUNBOOK.md` §11.57, whose record is empty; `CAPACITY_MODEL.md`
+    §3.6, its measured cells `—`): **E65**, the decisions' readings, riding E39's eight-hour soak at three replicas in one run
+    (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak REHEARSAL_LOAD_DECISIONS=1`): seven `TRIAL_BALANCE` runs over the growing journal,
+    their slowest statement fitted to its lines against the four-minute bound, and every named table's growth per hour and per money
+    movement read against ADR-0142's thresholds. Nothing ran before the word. `load/reports.awk` and `load/growth.awk` were run on
+    synthetic inputs on the development machine, and `load/reports.sql` with the reader's delta in a throwaway container of the pinned
+    PostgreSQL image (2026-11-13, no `kind`, no application: a `finapp_reporting` role's two statements read by role, the role line
+    present). The report runs through the operator edge, the journal's count, the run's row and the judge are unproven on a cluster.
+    No mutation probe of this task needs a cluster.

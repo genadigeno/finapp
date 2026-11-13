@@ -1391,6 +1391,14 @@ target, the runs (E38–E40) built and owed under `POSTPONED_ISSUES.md` PI-025; 
 whole history on every call and was E30's first limit, bounded by a checkpoint below the journal's commit-order watermark, its build
 the owner's to place (`THREAT_MODEL.md` §6 item 55). → [ADR-0133](../adr/ADR-0133-contention-measured-before-any-mechanism-and-the-whole-history-folds.md)
 
+**No table partitioned and no read replica routed at the target (proposed).** Partitioning would split the once-ness arbiters (the
+idempotency claim, the inbox, the posting scope) and open a drop or detach no history guard sees, and the journal's hot reads are by
+account over its whole history, which no time key prunes; the swept tables' sweeps keep pace at the minimum fleet by derivation. One
+primary serves every door, held by a guard in layers (who reads an address, who builds a connection, no `DataSource` bean, only report
+generation on the reporting pool, that pool on the writer's address, the driver refusing to pick a standby); report generation is the
+only read ever eligible for a replica, under stated conditions. Each decision's overturning reading, E65, is built and owed under
+`POSTPONED_ISSUES.md` PI-025; report generation's from-inception fold is `THREAT_MODEL.md` §6 item 64. → [ADR-0142](../adr/ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
