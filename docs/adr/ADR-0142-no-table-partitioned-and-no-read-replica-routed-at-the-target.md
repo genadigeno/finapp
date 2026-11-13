@@ -4,7 +4,7 @@ Status: Proposed
 Date: 2026-11-13
 Phase: 16
 Context: Platform · Ledger · Accounting (report generation) · every module (the data tier)
-Rests on: ADR-0001, ADR-0009, ADR-0010, ADR-0011, ADR-0039, ADR-0041, ADR-0115, ADR-0126, ADR-0129, ADR-0133; ledger `V004`, `V029`,
+Rests on: ADR-0001, ADR-0009, ADR-0010, ADR-0011, ADR-0039, ADR-0041, ADR-0115, ADR-0126, ADR-0129, ADR-0133, ADR-0135; ledger `V004`, `V029`,
 `V034`, `V035`; platform `V002`, `V005`, `V007`, `V009`, `V012`; `PHASE_16_PLAN.md` §6.5 and §6.6; `PHASE_GATES.md` §5 Phase 16
 criteria 5 and 6; `CAPACITY_MODEL.md` §2, §3.1–§3.3 and §3.6; `THREAT_MODEL.md` §6 items 18, 55 and 64.
 
@@ -64,7 +64,8 @@ standby. So a deployment's URL alone could put either pool on a copy.
    - The idempotency claims and the inbox are never partitioned by a time: their primary keys are the once-ness arbiters.
    - The outbox, the audit trail and the payment attempts and their history are not partitioned. The outbox's sweep keeps pace at the
      minimum fleet and keeps evidence a drop would lose; the audit trail and the attempts are kept, so a partition buys no retention
-     until a jurisdiction's period is decided (`THREAT_MODEL.md` §6 item 23 (b)).
+     until a jurisdiction's period is decided (`THREAT_MODEL.md` §6 item 23 (b)). The audit trail's archive is built by segment, not by
+     partition (ADR-0135), and its queue (`platform.audit_archive_pending`) is one of the tables E65 reads.
    - The balance projection, the window counter and the other tables bounded by their population, not by time, need nothing.
    - **What would overturn it**, each read by E65 from the soak's own samples (E39's run, PI-025):
      - for a swept table, its rows written a day at the target (inserted a money movement × the target's 377,000 movements a day) above

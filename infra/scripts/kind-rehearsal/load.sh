@@ -946,6 +946,7 @@ load_decisions_judge() {
         run=$(awk -F'\t' -v n="$n" '$1 == n {print $3}' "$dir/samples.tsv")
         case $run in '' | -) fail "E65: report run $n was not asked: see load/reports/$n-client.txt" ;; esac
         grep -q '^role|1$' "$dir/$n-after.txt" || fail "E65: the reporting role's statements were not read at run $n: see load/reports/errors.log"
+        [ -s "$dir/$n-run.txt" ] || fail "E65: report run $n's row ($run) could not be read: see load/reports/errors.log"
         IFS='|' read -r status generation failure < "$dir/$n-run.txt"
         [ "$status" = PROVISIONAL ] || fail "E65: report run $n ($run) ended $status ($failure), not PROVISIONAL: see load/reports/$n-client.txt"
         cost=$(awk -v mode=delta -f "$LOAD_SRC/reports.awk" "$dir/$n-before.txt" "$dir/$n-after.txt")

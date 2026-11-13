@@ -342,7 +342,8 @@ tables' growth and dead rows, autovacuum's runs, the checkpoints and the WAL a m
 
 ### 3.6 Growth, partitioning and read replicas (`P16-TSK-012`)
 
-**Nothing in this section is measured.** Rows are **derived** from W1–W8 and §3.1–§3.3, or **read** from the schema and the code, each
+**Nothing in this section is measured by its task.** One ratio is §3.4's measured run's (the journal's lines an entry), and says so. Rows are
+**derived** from W1–W8 and §3.1–§3.3, or **read** from the schema and the code, each
 naming its source. Bytes are not derived: E65, which rides the soak (E39), reads every named table's growth per hour and per money
 movement from the soak's own samples (`load/growth.tsv`), owed under `POSTPONED_ISSUES.md` PI-025. ADR-0142 records the decisions taken
 on these figures, and what would overturn each.

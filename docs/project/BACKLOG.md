@@ -29723,6 +29723,11 @@ on none:
   first), which suits an idempotency sweep run as the role that keeps `DELETE` or a definer function. `THREAT_MODEL.md` T37's
   idempotency row is the `GAP` this entry closes (item 18's note says so), and `DATA_RETENTION.md` §1's idempotency row still reads
   "Not swept". `ShutdownOrderTest` counts forty-one lifecycle components and thirty-eight schedules since: a new schedule moves both.
+- *Routed from `P16-TSK-012` (2026-11-13):* ADR-0142 keeps `ledger.journal_entry` and `platform.idempotency_record` unpartitioned
+  because a partition key would split this entry's arbiters: the posting scope's new uniqueness holds across the whole journal only
+  while no partition splits it. Once the sweep exists, the idempotency table is a swept table under ADR-0142's thresholds: its rows a day
+  at the target (at least 377,000, `CAPACITY_MODEL.md` §3.6) against its sweep's capacity, read by E65 from the soak's samples, so
+  `CAPACITY_MODEL.md` §3.6's row gains the sweep's capacity with it.
 
 **P16-TSK-012 — Partitioning and read-replica decisions by measurement** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-012` from master `ac5aa4a3`, wave E; no migration; ADR-0142 `Proposed`; one new owner item, `THREAT_MODEL.md` §6 item 64; E65's run owed under PI-025; marks no task `READY` - the coordinator does; read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-008`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its one dependency, `P16-TSK-008`, `COMPLETE`)" until its gate)
 - **Objective**: decide, from the soak's growth rates extrapolated to the production target, whether any high-volume table needs
@@ -30308,6 +30313,12 @@ on none:
   (`kind-rehearsal.sh`'s `fleet_patch`): 60 at three, the count the experiments scope runs at. `experiments/standby.yaml` keeps
   `max_connections=60`, which still equals the run's primary at three. A hot standby refuses to start below its primary's setting, so a
   failover drill at more than three replicas needs the standby's value taken from the run's copy, not the file.
+- *Routed from `P16-TSK-012` (2026-11-13): a URL the driver could route is refused at startup.* `PrimaryOnlyGuard` (ADR-0142) refuses a
+  `targetServerType` other than `primary` and a database URL naming more than one host, or a `host` or `service` parameter, without
+  `targetServerType=primary` under the driver's own spelling. The drill's promotion by the Service's selector keeps one host, so it
+  passes. A drill that lists the primary and the standby in the URL must say `targetServerType=primary`, or every replica refuses to
+  start. With it, a connection made while the standby is still read-only is refused by the driver rather than served stale, which is
+  worth counting in the interruption the drill measures.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
 - **Objective**: as decided:
