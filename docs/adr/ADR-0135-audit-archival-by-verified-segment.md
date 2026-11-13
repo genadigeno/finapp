@@ -85,7 +85,9 @@ would use its role). Both wait for the first real bucket (item 57).
 Positive: the audit trail gains a copy outside the database's failure and insider domain, provably equal to its rows, with nothing
 deleted; a row cannot escape the archive by committing late; ten instances archive each row once, by the database.
 Negative: one insert more in every audited transaction (the queue); one segment in flight at a time; a divergent object stops the
-archive until a person acts; until a store is named the queue only grows.
+archive until a person acts; until a store is named the queue only grows. A restore to a point before the last archived segment
+(ADR-0128, ADR-0140) takes the segment table back but not the store: a segment cut again from other rows meets a copy that
+differs, and the archive stops there, overwriting nothing (`OPERATIONS_RUNBOOK.md` §11.50).
 Operational impact: `OPERATIONS_RUNBOOK.md` §11.15 (the session sweep) and §11.50 (the archive: its signals, its failures, the read
 path); alerts on the backlog's age and on a copy that differs; experiments E44–E46 built and owed (PI-025).
 Security impact: no new grant of a write on any audit table; the application role executes six functions and reads the archive's

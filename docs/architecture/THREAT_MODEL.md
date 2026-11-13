@@ -760,6 +760,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T32 | A backup under a key separate from the database's own. RDS gives no setting for it, and AWS Backup's vault key does not change an RDS recovery point inside one account and region, so a vault key that differs (asserted) does not by itself separate anything. Only the copy across the boundary does, at a daily recovery point, and its destination does not exist. A point-in-time backup under a separate key needs cross-region replication, Phase 16's | GAP | `owner item 23`; owner: the owner, since 2026-11-09 |
 | T32 | A logical backup restored into a fresh database and held there: the backup encrypted as it is written and removed with its work directory, the platform's three roles unable to log in until the platform's own checks pass on the restore, the transaction counter moved past every restored `xid8`, every sequence at or past the backup's, each kind of corruption (an unbalanced entry, a balance row disagreeing with its journal, a missing row, a role altered, a trigger dropped, a sequence set back, a migration's checksum changed, a GL rule repointed, the counter left behind) refused by its own check alone, a dropped grant by the catalogue and the schema each, and a removed journal line refused by every check that reads the lines. Rehearsed on one machine into containers, from a seeded source and from a `kind` rehearsal's database (854 journal entries walked), never against a managed instance; that is the `GAP` row below | EXISTS | `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#theRolesAreHeldUntilTheVerificationPasses`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#theBackupIsNeverPlainAtRest`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#noPasswordIsOnACommandLine`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#theCounterMovesBeforeTheChecks`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#everyPlantIsRefusedByItsOwnCheckAlone`; `app/src/test/java/com/finapp/app/restore/RestoreVerdictsTest.java#theCensusFailsShortOfTheJournalAndOnANewFinding`; `infra/scripts/restore-rehearsal.sh` `contains: ALTER ROLE finapp_app NOLOGIN;` |
 | T32 | A managed restore: a point-in-time restore into a new instance with its parameter, security and subnet groups attached before anything connects, the platform's roles held by the master user until the verification passes, the verification run from inside the network; a logical restore into a managed instance, which cannot move its counter and so is refused by the census check; and GL = ledger over a locked period on a restore, which has run only over none, because no rehearsal source can hold a locked period without its database's clock faked | GAP | `owner item 38`; owner: the owner, since 2026-11-11 |
+| T32 | No restore, logical or to an instant, is released but through the post-recovery gate, and a recovery is held from its first start: the window since the restore's point reconciled by a command that acts as the application's role while the platform's three roles cannot log in and refuses to deliver anything otherwise, the books verified again after it, and only then the roles released, in one transaction with the database's instant read, and the release recorded with the person, the reason, that instant and the digests of the reports it rests on; every restore's evidence read for the key versions its rows stand under against the rings it was started with, a restore whose ring lost a version refused by that check alone; a point-in-time recovery refusing the platform's roles in `pg_hba.conf` before its server first starts and making them `NOLOGIN` before any check, its WAL archive encrypted segment by segment with each ciphertext's digest beside it and read back only when that digest holds, its base backup written into `openssl`, a withheld or damaged segment required to end in PostgreSQL's own refusal; and a drill's source asked that every proof judged a subject. Built and held by its contract tests; not run whole, which is the `GAP` row below | EXISTS | `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#theGateHoldsMoneyUntilThePersonsRecordedRelease`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#thePointInTimeRecoveryIsEncryptedAndHeldFromItsFirstStart`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#theRecoveryRefusesAGapAndADamagedSegment`; `app/src/test/java/com/finapp/app/architecture/RestoreRehearsalScriptTest.java#aRestoreWithAVersionMissingIsVerifiedWithoutIt`; `app/src/test/java/com/finapp/app/restore/RestoreVerdictsTest.java#evidenceUnderAVersionTheRingDoesNotHoldFails`; `app/src/test/java/com/finapp/app/restore/RestoreVerdictsTest.java#aProofOverNoSubjectFailsTheDrill`; `infra/scripts/restore-rehearsal.sh` `contains: grep -q "$NOT_REACHED" "$ART/recovery-$name.log"` |
+| T32 | The drills run on the widened tree: the logical restore over a source holding a loan and a BNPL obligation and over a `kind` database after a load run, each proof judging its subjects on the restores; the point-in-time recovery to an instant before a bad write and its two refusals; the post-recovery gate on both, with the window's delivery and the recorded release; the broker step for a restored database; and the restore's rate measured at two sizes | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T33 | Locally (compose and the test databases), the migrator is `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
 | T33 | The journal's append-only trigger binds the migrator | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
 | T33 | The migrator image holds no credential (no environment of its own, read from the built image), the application's configuration never reads the migrator's, and the runner refuses an identity holding any administrative right, a session without its lock bound and a URL that could move the host or undo verification | EXISTS | `migrator/src/test/java/com/finapp/migrator/MigratorImageTest.java#onlyTheMigratorHoldsItsCredential`; `migrator/src/test/java/com/finapp/migrator/ConnectedRoleTest.java#anAdministrativeRightIsRefused`; `migrator/src/test/java/com/finapp/migrator/ConnectedRoleTest.java#aMembershipIsARight`; `migrator/src/test/java/com/finapp/migrator/ConnectedRoleTest.java#aSessionWithoutTheBoundIsRefused`; `migrator/src/test/java/com/finapp/migrator/DatabaseUrlTest.java#parametersThatChangeWhatTheUrlMeans`; `infra/scripts/migrator-image-build.sh` `contains: the image sets environment of its own` |
@@ -2213,7 +2215,7 @@ contention measurement and awaits the owner.**
     holds only the locked period. The options: **(i)** the Phase 15 → 16 transition writes Phase 16's post-recovery verification
     drill over a source that holds a loan and a BNPL obligation, and the seeded source gains both in that task; **(ii)** seed
     them into section 11.35's seeded source now, as its own change. *Recommendation*: **(i)**, since Phase 16's exit already
-    requires a post-recovery verification before money moves, and one drill can show both. **Decided 2026-11-12** by the owner ("accept all", the exit review's acceptances): as recommended.
+    requires a post-recovery verification before money moves, and one drill can show both. **Decided 2026-11-12** by the owner ("accept all", the exit review's acceptances): as recommended. *(Built 2026-11-13: the seeded source holds a personal loan, approved by credit over simulated sources, offered, accepted and disbursed, and a pay-in-4 BNPL obligation at a BNPL-enabled merchant, each through the platform's own services, and a seeded source's verifications fail any proof that judged no subject. The source's own verification judged `LOAN_SUBLEDGER`, `LOAN_REPLAY`, `BNPL_SUBLEDGER` and `BNPL_THREE_WAY` over one subject each, every check passing, on a container run that stopped before the backup (`OPERATIONS_RUNBOOK.md` section 11.55's record). The same four verdicts on the source's restores are owed with the drill, `POSTPONED_ISSUES.md` PI-025, §4's T32 `GAP` row; a `kind` database cannot hold either product until a bureau can be configured there.)*
 
     **(b) The rendered manifests are not scanned by a graded misconfiguration scanner** (T4; criterion 2's "configuration scans
     of manifests"). ADR-0122 decision 2 said Trivy scans the rendered manifests. As built, the overlays are held by
@@ -2352,7 +2354,9 @@ contention measurement and awaits the owner.**
       segment is written again under a new key (the old object kept as evidence, the manifest chain naming both); **(ii)** the
       archive stays stopped until the store's history explains the object. *Recommendation*: **(ii)** first, as runbook §11.50 says,
       then **(i)** as a reviewed change, because an archive that differs from its rows is an incident before it is an operational
-      fault.
+      fault. A restore or a recovery to a point before the last archived segment meets this by design: the segment table goes back,
+      the store does not, and a segment cut again from other rows differs from the copy under its key (runbook §11.50). The same
+      way on serves both, and the objects past the point are kept as evidence of the records the restore lost.
 
     *Awaiting the owner* (2026-11-13). Until decided: §4's T10 `GAP` row naming this item.
 
@@ -2405,6 +2409,38 @@ contention measurement and awaits the owner.**
     the rule is split by environment: one more rule, its own runbook line and promtool cases.
 
     *Awaiting the owner* (2026-11-13). Until decided: production at seven, and §4's T14 `GAP` row for the runs at ten.
+
+62. **T32's residual: the post-recovery gate as a real environment would hold it** *(added 2026-11-13 when the gate and the
+    point-in-time recovery were built, ADR-0140; `OPERATIONS_RUNBOOK.md` section 11.55)*. Three things, each a decision.
+
+    **(a) Where a person's release is recorded.** As built, the release is the script's step: the roles released in one
+    transaction with the database's instant read, and a record (the person, the reason, the instant, the digests of the reports it
+    rests on) written beside the run's artefacts; section 11.55 puts it in the incident's record (section 11.12). The restored
+    database's own audit trail holds nothing of it, because no platform door or command performs a release: in a real environment it
+    is the master user's act. The options: **(i)** the incident's record alone, as built; **(ii)** also an audit record in the restored
+    database's trail, through a registered action written by a release command a person runs, in the same transaction as the roles'
+    release. *Recommendation*: **(ii)**, built with the first real environment's managed restore rehearsal (item 38 (a)), where the
+    command that runs the verification as a Job of the application image would also run the release; until then (i), which the drill
+    exercises.
+
+    **(b) The window on a managed instance.** As built, the window's command connects as the restore's administrator, a superuser,
+    and acts as `finapp_app` for its session (`options=-c role=finapp_app`), so the application's own grants apply while the role
+    cannot log in. A managed instance's master user is not a superuser: acting as `finapp_app` needs a membership that lets it set that
+    role, and whether the provider's master user holds one over a role it created, and with which options, was not read from the
+    provider's own documentation here and is unverified. The options: **(i)** grant the master user that membership for the window
+    and revoke it at the release, both in the incident's record; **(ii)** a recovery role of its own, holding the application's grants,
+    able to log in only for the window from the operator's network; **(iii)** release `finapp_app` for one operator's connection only,
+    by address. *Recommendation*: decide with item 38 (a)'s rehearsal, after reading the provider's documentation on role membership;
+    **(i)** if it holds there, since it adds no standing credential.
+
+    **(c) The WAL archive's integrity.** As built locally, each segment is encrypted (AES-256-CBC, `openssl enc`) with the SHA-256 of
+    its ciphertext beside it: a damaged segment is refused, and one rewritten with its digest by someone who can write the archive is
+    not, beyond PostgreSQL's own record checksums. The logical backup's digest has the same reach (section 11.35). The reference cloud's
+    archive is the provider's, encrypted under its key and copied across the account boundary (item 21 (a)), which this does not model.
+    The options: **(i)** accept it for the local drill; **(ii)** a keyed digest (an HMAC under a key the archive's writers do not hold).
+    *Recommendation*: **(i)**: the local archive is the drill's, lives as long as the run, and is written only by the run's own server.
+
+    *Awaiting the owner* (2026-11-13). Until decided: as built, §4's T32 rows.
 
 ## 7. Decided against
 

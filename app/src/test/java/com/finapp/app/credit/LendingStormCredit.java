@@ -18,7 +18,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The lending storm's bridge to credit's simulators (`P11-TST-001`; reused by `P12-TSK-001`'s BNPL decision suite; the {@link CreditFixtures} shape - a bridge only, the
+ * The lending storm's bridge to credit's simulators (`P11-TST-001`; reused by `P12-TSK-001`'s BNPL decision suite and by `P16-TSK-024`'s
+ * restore rehearsal seed, {@code RestoreRehearsalSeed}; the {@link CreditFixtures} shape - a bridge only, the
  * simulators themselves stay package-private where they live): one simulated bureau and one simulated financial-data
  * provider ({@link SimulatedBureauEngine}) shared by both of the storm's application instances, the real
  * {@link SimulatedBureauAdapter} and {@link SimulatedFinancialDataAdapter} over them, and each storm party's identifying

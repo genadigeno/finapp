@@ -1403,6 +1403,12 @@ clock; the copy the database's own text, written once, read back and compared, a
 recomputes; a copy that differs stops the chain. No audit record is deleted. Dead sessions' rows go a grace past their idle bound,
 never a live one. → [ADR-0135](../adr/ADR-0135-audit-archival-by-verified-segment.md)
 
+**The post-recovery hold is the role lock, held through the window.** The platform's roles stay `NOLOGIN` from before a restore to
+its release; the window since the restore's point is reconciled by one command acting as the application's role while those roles
+cannot log in; the books are verified again; a person releases, with a record naming the reports it rests on. Locally, a recovery
+to an instant from an encrypted WAL archive, held before its server first starts. →
+[ADR-0140](../adr/ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
