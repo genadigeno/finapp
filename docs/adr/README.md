@@ -171,6 +171,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0127](ADR-0127-the-failure-injection-method.md) | The failure-injection method: scripted experiments on `kind`, registered with their stop conditions, never against anything the run did not create | Proposed | 16 | Platform · every module (operated under failure) |
 | [0128](ADR-0128-recovery-objectives-and-the-post-recovery-gate.md) | Recovery objectives and the post-recovery financial gate: RTO and RPO by tier, no money moves until the books are proven | Proposed | 16 | Platform · Ledger · Reconciliation |
 | [0129](ADR-0129-availability-and-the-multi-region-stance.md) | Availability and the multi-region stance: one writer, multi-AZ active-passive, no active-active writes | Proposed | 16 | Platform · Ledger · every module (availability) |
+| [0133](ADR-0133-contention-measured-before-any-mechanism-and-the-whole-history-folds.md) | Contention measured before any mechanism, and the whole-history folds bounded by a commit-order checkpoint (the checkpoint proposed, its build the owner's to place) | Proposed | 16 | Ledger · Merchant · Platform (operated under load) |
 | [0140](ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md) | The post-recovery hold and point-in-time recovery: the role lock held through the window, the window acting as the application's role, a person's recorded release | Proposed | 16 | Platform · Settlement · Reconciliation |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was

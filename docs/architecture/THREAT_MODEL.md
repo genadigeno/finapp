@@ -617,6 +617,9 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T14 | A pod stating no requests refused by a real API server, in admission's two orders: no resources at all by the LimitRange, a second container stating nothing by the quota, with a complete pod admitted beside them | EXISTS | `infra/scripts/kind-rehearsal.sh` `contains: a pod stating no resources is refused by the LimitRange` `contains: a container stating nothing beside one that does is refused by the quota` `contains: 3 control: the same pod with every container's requests and limits is admitted` |
 | T14 | The budget on one `kind` cluster at three replicas, each replica's reporting pool opened by a report so that all eight of its connections are counted: `pg_stat_activity` for the fleet read every two seconds through a rollout, a pod kill and a rollback with an eviction mid-way, the peak asserted at most `instances x pool`, every sample at most eight for each pod it had, an operator asserted admitted at each peak, and an operator admitted with the fleet held at the budget itself. What keeps the fleet to six pods there is the overlay's quota and not the rollout: with the quota raised by one pod, the same rollout went past the budget | EXISTS | `infra/scripts/kind-rehearsal.sh` `contains: the peak of $peak connections exceeds instances x pool` `contains: an operator was admitted at the peak` `contains: evicted $victim mid-rollout, through the Eviction API` `contains: assert_within_pods "$label"` `contains: assert_reporting_open "$label"` `contains: an operator is admitted with the fleet held at its budget` `contains: operator_at_peak kill` |
 | T14 | Every gauge read off the scrape thread: one scrape of every meter of the real context, each meter's measurements read again on the same thread, asks the database for nothing there (a planted gauge reading it on the scrape is caught), and the reads run on the instance's one gauge thread, where ten concurrent looks at a blocked read start one read. A scrape, still unauthenticated, therefore holds no connection of its own, and a slow database never loses the whole scrape | EXISTS | `app/src/test/java/com/finapp/app/telemetry/NoGaugeReadsOnTheScrapeTest.java#noGaugeReadsTheDatabaseOnTheScrapeThread`; `app/src/test/java/com/finapp/app/telemetry/NoGaugeReadsOnTheScrapeTest.java#aPlantedReadOnTheScrapeIsCaught`; `platform/src/test/java/com/finapp/platform/metrics/GaugeRefresherTest.java#aBlockedReadNeverBlocksALookAndFliesOnce` |
+| T14 | The contended rows measured, never assumed: the concurrent-financial load samples every wait on a lock every 250 ms and resolves it to its row (a balance or account row to its account, an advisory lock to its key, a table to its name); before the load it is shown a wait on one wallet's balance row it must place, and the server's own log must hold that wait too, so a blind sampler or log reader cannot pass; every deadlock the server counted must have its record in that log; the soak's index build is a migration's, in its transaction under the migrator's own lock timeout read from its code, bounded and dropped. Built, not run: the row below | EXISTS | `app/src/test/java/com/finapp/app/architecture/ContentionRehearsalContractTest.java#theSamplerSeesAWaitItWasShown`; `app/src/test/java/com/finapp/app/architecture/ContentionRehearsalContractTest.java#everyDeadlockHasItsRecord`; `app/src/test/java/com/finapp/app/architecture/ContentionRehearsalContractTest.java#theIndexBuildIsAMigrationsBuild` |
+| T14 | The contended rows' waits, the deadlocks, the top statements' plans, the soak's growth and a transactional index build's write stop measured on a real cluster under the concurrent-financial profile and the soak, and the sweeps' failure records in a provider storm; no hot row's mechanism is decided until a run names one past its objective at the target | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
+| T14 | The merchant API's payable read bounded: each call folds the merchant payable account's whole history (the first limit of the stress run at three replicas), so its cost grows with the merchant's age, and a merchant key, or a stolen one, spends the database's CPU in proportion; the commit-order checkpoint that bounds it is proposed and not built | GAP | `owner item 55`; owner: the owner, since 2026-11-13 |
 | T15 | An unbalanced journal entry is refused at commit, whoever writes it, raw SQL included (`INV-LED-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#aDirectUnbalancedInsertIsRefusedAtCommit` |
 | T15 | The application role holds no `UPDATE`, `DELETE` or `TRUNCATE` on the journal | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theColumnSweep` |
 | T15 | The journal's append-only trigger binds even the migrator (`INV-HIST-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
@@ -984,7 +987,10 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   management port can keep each instance's one gauge thread, and so one of its pool's connections, busy at the floors'
   rate (each gauge at most once per 5 s, each class's own floor beyond that). Since 2026-11-09 a NetworkPolicy admits to
   that port only the scraper's label in the monitoring namespace, and whatever runs on the pod's own node. Since
-  2026-11-08 the port is apart from the API port, loopback outside Kubernetes.
+  2026-11-08 the port is apart from the API port, loopback outside Kubernetes. *(2026-11-13.)* Two reads fold an account's whole
+  history: the merchant API's payable read on every call, and every balance decision under its account's row lock. The first was
+  the stress run's first limit, and a merchant key spends the database's CPU in proportion to its merchant's age (item 55). The
+  second makes a hot account's lock longer as it ages, unmeasured until the concurrent-financial run. Neither is changed yet.
 - **T38.** *(Rewritten 2026-11-08: this read "every session actor is audited as `CUSTOMER`, operators included, and a
   refused step-up writes no record".)* An operator act is now recorded `EMPLOYEE` and every refused step-up is recorded.
   **Operator acts recorded before 2026-11-08 read `CUSTOMER` and stay so**: the audit record is append-only and the
@@ -1059,7 +1065,8 @@ were added on 2026-11-09 and await the owner." until then.)* **Items 35, 36, 38 
 read "... and they await the owner." until then.)* **Item 40 was added on 2026-11-12 by the delivery's task and decided the same
 day under the owner's standing word for waves G and H ("start H after G, accept all recommendations"), as recommended.**
 **Item 42 was added on 2026-11-12 by the runbooks' rehearsal and decided the same day under the same standing word, each part as
-recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
+recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.** **Item 55 was added on 2026-11-13 by the
+contention measurement and awaits the owner.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -2295,6 +2302,32 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     plants such an id at each of the three and sees it stop and page.
 
     *(Read "*Awaiting the owner* (2026-11-13). Until decided: §4's T15 `GAP` row." until the owner's decision of 2026-11-13.)*
+
+55. **T14's residual: a merchant read whose cost grows with the merchant's history** *(added 2026-11-13 by the contention
+    measurement)*. `GET /v1/merchant/payable` answers a merchant's payable and the terms that explain it. Each call folds every line of
+    the merchant payable account in one statement, three correlated lookups a line, about 10 µs a line on the test-only server's core.
+    In the stress run at three replicas it was four fifths of the database's statement time when the database's CPU became the first
+    limit (`CAPACITY_MODEL.md` §3.4). At the production target the read costs about 2 ms of a core per day of a merchant's history,
+    derived from W4: 60 ms after a month and 0.73 s after a year. A merchant key, or a stolen one, can therefore spend the database's CPU
+    in proportion to the merchant's age, within the edge's per-source limits. The options:
+    - **(i) Bound it by a commit-order checkpoint** (ADR-0133 decision 3): the fold of the lines below the journal's commit-order watermark
+      (ledger `V034`'s `txid` below `pg_snapshot_xmin`, a position no clock or writer can choose), plus every line since, in one statement,
+      so the contract and the identity the terms keep are unchanged. It needs the entry's `txid` on `ledger.journal_line` and an index
+      on `(ledger_account_id, txid)`: a schema change on the hottest table, and an index write on every line, a cost E38 and E39
+      measure. It also needs the classification rules' version on each checkpoint, a checkpoint refused on any cluster other than its
+      own (a logical restore resets the counter below the restored `txid`s), the proofs kept on the whole fold, and its database cases
+      run before it merges.
+    - **(ii) Bound the answer instead**: the position from the balance projection and the terms over a period. Cheaper. But every
+      merchant's figures change meaning (lifetime terms become a period's, `DERIVED` becomes `PROJECTION`), a contract change for the
+      merchants.
+    - **(iii) Keep it**, with the edge's limits and the first limit recorded, until a real environment holds months of a merchant's
+      history.
+
+    *Recommendation*: **(i)**, built in a task of its own with its database cases run before it merges, ahead of any real environment.
+    It removes the limit and keeps what a merchant reads. The same mechanism is the candidate for the decision path's own whole-history
+    fold (`AvailableBalance` under the account's lock), decided by its own ADR once the concurrent-financial run (E38) measures it.
+
+    *Awaiting the owner* (2026-11-13). Until decided: §4's T14 `GAP` row naming this item.
 
 62. **T32's residual: the post-recovery gate as a real environment would hold it** *(added 2026-11-13 when the gate and the
     point-in-time recovery were built, ADR-0140; `OPERATIONS_RUNBOOK.md` section 11.55)*. Three things, each a decision.

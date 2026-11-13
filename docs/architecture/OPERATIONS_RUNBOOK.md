@@ -3243,6 +3243,7 @@ latest; the run, as its record names it.
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | §11.45 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `89b8fc60`, `f021383f` | `§11.45's record: E30 at three replicas and the isolation run` | — |
 | §11.46 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `a6fee3a1` | `§11.46's record: E01's run and the probes` | — |
+| §11.48 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.55 | `platform`, `settlement`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
@@ -4181,7 +4182,7 @@ then, under break-glass, `kubectl create --raw /api/v1/namespaces/finapp-observa
 | `journal-line-removed` | One wallet line of a transfer's entry deleted, `PHASE_GATES.md` §5 Phase 15 criterion 6's plant, made in the restore rather than in the dump's bytes | the row counts, the trial balance, the projection check and the census together; GL = ledger and the product proofs do not see it, because GL = ledger compares the GL with the same lines and no proof covers a wallet |
 | `key-version-missing` | Nothing in the restore: it is verified with a credit evidence ring that lost version 2, as a restore whose key store lost a version (a reverted listing, section 11.29) would be. The context starts, because a version missing from the top leaves no hole | the evidence held by the key rings, alone (*added 2026-11-13; not yet run, PI-025*) |
 
-The product proofs have no plant of their own here: each is the platform's check with its own tests, run here as it is. On the seeded source as the 2026-11-11 record ran it the products with no seed flow gave their proofs nothing to judge, which the subjects each one reports made visible; *since 2026-11-13* the seed holds a loan and a BNPL obligation, and a seeded source's verifications fail any proof that judged no subject (item 44 (a)). The `kind` source cannot hold either until a bureau can be configured there (`CURRENT_STATE.md`'s unresolved question 13), so its verifications are not a drill's.
+The product proofs have no plant of their own here: each is the platform's check with its own tests, run here as it is. On the seeded source as the 2026-11-11 record ran it the products with no seed flow gave their proofs nothing to judge, which the subjects each one reports made visible; *since 2026-11-13* the seed holds a loan and a BNPL obligation, and a seeded source's verifications fail any proof that judged no subject (item 44 (a)). The `kind` source cannot hold either until a bureau can be configured there (`CURRENT_STATE.md`'s unresolved question 13; the owner decided on 2026-11-13 that no test-only bureau is built for `kind` in Phase 16), so its verifications are not a drill's.
 
 **The last record, seeded (CI's sequence and every plant).** 2026-11-11, one run on one development machine: Docker 28.0.1, `postgres:18.6` by the overlay's digest, the harness at sha256 `0e3004e2…8d6ddacd`, `RestoreVerification` `128e5b34…907fa0fe`, `RestoreVerdicts` `e536c832…dc9aa533`, `RestoreRehearsalSeed` `711a175e…43e1cb29`. 27 assertions held, none failed, in 15 minutes 9 seconds; the thirteen verifications' logs hold no `ERROR` line, so nothing in them tried to write.
 
@@ -5138,6 +5139,107 @@ words that discoverer reads as credentials, and the boundary's cadence is worded
 on the same pinned image (a base backup at `verify-full` through the slot, streaming, `FIRST 1` synchronous, a commit held while the
 standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"), it is owed under
 `POSTPONED_ISSUES.md` PI-025 with E01's run on the final bytes.
+
+### 11.48 Hot rows, locks, deadlocks and plans under load: the contention run, the soak and the sweeps' storm (`P16-TSK-008`, ADR-0133)
+
+**What it is.** Three runs that measure the platform's contended financial rows and the database under load (`PHASE_16_PLAN.md`
+§6.3–§6.5 and §6.7; `RESILIENCE_EXPERIMENTS.md` E38, E39 and E40): which row waits, for how long and at what rate; every deadlock and
+serialisation failure with the statements that made it; the tables' growth, autovacuum, checkpoints and WAL over hours; the top
+statements' plans; a transactional index build's write stop; the sweeps' failure records in a provider storm. Each runs on the reference
+machine, on the run's own cluster, as §11.43 and §11.46 run theirs. **None has run** (`POSTPONED_ISSUES.md` PI-025):
+what follows is how they run and how they are read, held by `ContentionRehearsalContractTest`.
+
+**Every setting is the run's own server's.** The harness sets the test-only server by `ALTER SYSTEM` and a reload, reads each setting back
+from a new session, and throws the server away with the cluster: `log_lock_waits` (E38), `log_autovacuum_min_duration` 0 and
+`log_checkpoints` (E39), and auto_explain's window (E39, E40). The `kind` overlay preloads `auto_explain` beside `pg_stat_statements`, inert:
+its threshold is unset until a window sets it, and the window resets it. A window logs plans with `ANALYZE` and `BUFFERS`, timing off, verbose
+so each ends in its `Query Identifier`, and `auto_explain.log_parameter_max_length` 0 so no parameter's value is logged. A custom plan's
+conditions can still print the run's generated values, and they stay in the run's artefacts on the machine that ran it. The
+server's log is followed while it is written (`pg_log_follow`), never read once at the end: the kubelet rotates a container's log at
+10 MiB, and `kubectl logs` reads only the current file.
+
+**E38, the concurrent-financial profile.** `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=concurrent REHEARSAL_LOAD_REPLICAS=7`, then the
+same at 3. The profile (`kind-rehearsal/load/concurrent.json`) drives many clients on few accounts: every transfer between one pair of
+customers, one way and back by turns (`transferPair`), every checkout from every customer to the fixture's one merchant, and every card
+top-up through the one clearing. It runs 15 minutes at the engineering workload (E30's step 3) and then the target's burst (W2: three
+times its peak for 60 s) twice, each followed by the engineering workload. The burst is past `kind`'s break, so its dropped iterations are
+recorded as the stress profile's are. Reads, sign-ins and the merchant API are left undriven and the profile says why. BNPL purchases and
+lending repayments, whose rows are the capital row (L6) and `BNPL_MERCHANT_FEE_INCOME`, cannot be driven on `kind` (§11.45).
+- *Before the load* the sampler starts (`kind-rehearsal/load/contention.sql` under `\watch` every 250 ms, its own application name), and
+  it is shown a wait: one customer wallet's balance row held four seconds by the run's superuser while a second session waits on it. The
+  run fails unless the sampler places that wait on that row in at least four samples. After the load the server's log must hold it too.
+  A sampler or a log reader that sees nothing cannot pass for a platform with no waits.
+- *The artefacts* (`load/`): `contention-samples.txt`, every waiting backend each sample with its row (`balance:<purpose>:<currency>:<account>`,
+  `account:…`, `advisory:<namespace>:<key>`, `row:<table>`, `table:<table>`); `contention-rows.tsv`, per row and stage the waits seen, the
+  seconds waited, p50, p95 and the longest wait (to the 250 ms grid) and the most waiting at once; `lock-waits.tsv`, every wait of a second
+  or more as the server logged it, with how it ended and the relation; `deadlocks.txt`, every deadlock and serialisation failure whole;
+  `locks-summary.txt`; and §11.45's per-stage tables beside them.
+- *Reading a row's wait.* A row's waiting seconds over a stage's seconds is the mean number of transactions waiting on it. Divided by the
+  stage's movements that touch the row (from `k6/stages.tsv`), it is the mean wait per movement. Against the movement's mean latency, it
+  is the share of the command spent waiting. Read it beside the stage's database CPU throttling (`stages-resources.tsv`): in the bursts
+  the CPU saturates (E30's limit), and a holder slowed by the CPU holds its row longer. The throughput at which a row's wait passes the
+  operation's objective lies between the engineering stage and the burst. To place it finer, run the stress profile's steps with
+  `transferPair` set.
+- *The pair's history.* A transfer derives the source's balance from every line of its account while it holds the account's row
+  (ADR-0133). Read the pair's waits stage by stage against the pair's line count
+  (`SELECT count(*) FROM ledger.journal_line WHERE ledger_account_id = '<the pair's account>'`, by the run's superuser after the load).
+- *Explaining a deadlock.* The run passes only if every deadlock the server counted has its record in the server's log. Each one is then
+  explained in this section's record by a known path that rolls back whole and converges (its movement retried by its key and counted
+  once by the census). The known paths, by the statements its record names:
+  - the transfer's two account rows (`TransferExecution.lockBothInFixedOrder`, one fixed order): none expected;
+  - a posting's balance rows (`JdbcBalanceProjection.apply`, sorted by account): none expected;
+  - a multi-entry caller's rows (`PostingService.lockBalancesInOrder`): none of its callers is driven here;
+  - the idempotency claim row locked first in one transaction and last in the other (`CURRENT_STATE.md`'s debt row #52: a refund, a
+    withdrawal or a dispute answer meeting a lease takeover): none of them driven here;
+  - advisory namespace 3 (`advisory:3:<key>`, #53): only on a 32-bit collision.
+
+  A deadlock none of these explains is a defect, fixed in a task of its own.
+- **The probe** (the entry's; `MUTATION_TESTING.md` §2 once run). On a throwaway branch, `TransferExecution.lockBothInFixedOrder` takes the
+  source's row first and then the destination's (its fixed order dropped). Build, run E38 at seven replicas, and delete the branch. The
+  pair's transfers, one way and back, then meet each other's rows in opposite orders. The deadlock count rises from nought, every record in
+  `deadlocks.txt` names two transfers each holding one of the pair's account rows, every movement still resolves by its key, and the
+  census holds. The entry named `lockBalancesInOrder` on a multi-entry path. No caller of it is driven on `kind` (BNPL, lending,
+  chargebacks, reconciliation's parks, corridor returns), so the probe drops the same rule on the path the profile drives.
+
+**E39, the soak.** `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak` at three replicas, eight hours (`kind-rehearsal/load/soak.json`). It
+holds the target's mix at the engineering workload, not at the peak, which is past `kind`'s break. The merchant API reads the merchant's
+own record alone: the payable read's cost grows with the run's age (ADR-0133) and would end the soak as E30's limit. It reads:
+- `pg-soak-tables.tsv` every 60 s: the journal, the balance projection, the outbox, the inbox, the idempotency claims, the audit trail, the
+  window counter, the payment attempts and their history, and both sweeps' failure records, each with its live and dead rows, writes,
+  HOT updates, vacuum and analyze runs and bytes. `pg-soak-database.tsv` holds the database's bytes and the WAL's position.
+  `autovacuum.txt` and `checkpoints.txt` come from the server's log. `wal-per-movement.tsv` holds the WAL's bytes over the money movements.
+  Growth per hour, multiplied by the target's ratio to the engineering workload (`CAPACITY_MODEL.md` §3.4), is `P16-TSK-012`'s input for
+  partitioning;
+- `plans/`, from auto_explain's window over 80% to 83% of the run (a twentieth of every plan). `top.tsv` holds the 25 statements
+  `pg_stat_statements` ranks highest by total time over the run, `<rank>-<queryid>.txt` the slowest plan of each the window caught,
+  `not-caught.tsv` the rest, and `seq-scans.tsv` every sequential scan by table and statement. A sequential scan on a table that grows
+  (`pg-soak-tables.tsv`) is recorded in the capacity model (§6.5);
+- `index-build.tsv`, `index-build.log` and `index-build-latency.tsv`. At 86% of the run `kind-rehearsal/load/index-build.sql` builds a plain
+  index on `ledger.journal_line` in one transaction, as a migration would, under the migrator's own `lock_timeout` (read from
+  `MigrationPlan.java`) and a 10-minute statement bound. It is tried three times if its lock is refused, then dropped. The write stop is
+  the time from its lock request to its commit. Beside it are the table's rows and bytes, and each operation's answers in that window
+  against the ten minutes before. The stop divided into the table's rows is a build rate: at the production target's journal it gives the
+  stop a migration would make, which decides `THREAT_MODEL.md` §6 item 42 (b) between (i), (ii) and (iii).
+
+**E40, the sweeps' failure storm.** `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E40` at three replicas (§11.46's toolkit). Every call
+to the provider simulator hangs (a `timeout` toxic on its proxy, through the fault registry) for the payment sweep's dispatched age and
+fifteen minutes more. Every card payment then dispatched is left for the sweep, and every inquiry fails, so every candidate is recorded
+in `payments.sweep_row_failure` or `merchant.sweep_row_failure` and backed off. It reads, under `experiments/E40/`:
+- `empty/plans` and `storm/plans`: every statement naming a record table (the eight listings, the record's upsert), each the slowest
+  plan of a three-minute window of every plan. One window runs with both tables empty, one over the storm's last minutes. Compare each
+  listing's anti-join, a primary-key probe per candidate or a hash, and the rows each read;
+- `listings.tsv`: each such statement's calls, time, rows and buffers from `pg_stat_statements`, after the empty window and after the storm;
+- `tables.tsv` every 30 s: both tables' rows by leg, inserts, updates, HOT updates, dead rows, autovacuum runs and bytes. The write rate
+  is the inserts and updates a minute; the bloat is the dead rows and the bytes against the live rows.
+
+  The reading the code makes, which the run confirms or corrects: with every candidate backed off, a listing's `LIMIT` never stops early,
+  so each tick of each instance reads every candidate and probes the record for each, at a cost proportional to the candidates, not the
+  batch. After the storm every attempt must resolve within twice the dispatched age and the backoff's cap (both read from the code), and
+  the census holds.
+
+**The record.** Empty: none of E38, E39, E40 or the probe has run. Each is owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of
+2026-11-13), and the first run of each writes its record here with its commit, its artefacts and, for E38, the explanation of every
+deadlock it found.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 
