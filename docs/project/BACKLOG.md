@@ -29934,7 +29934,7 @@ on none:
   no rate measured, availability stays an operator's recorded act. **Found and put to the owner**: no production path runs a KYC
   case's checks (`VerificationRunService.runChecks` has test callers only), `THREAT_MODEL.md` section 6 item 60. **Routed**:
   `P16-TSK-016` - `CallbackInquiryBulkhead`'s refusals are counted by no meter (a log line only). **Owed under PI-025**: E17, E18 and
-  E21 at three replicas, with their failure rates per rail. **Tests**: TESTS_PLACEHOLDER **Probes**: eighteen hermetic plants in two rounds, each caught by its own member (`MUTATION_TESTING.md` section 2); none on a cluster
+  E21 at three replicas, with their failure rates per rail. **Tests**: TESTS_PLACEHOLDER **Probes**: twenty-two hermetic plants in four rounds, each caught by the member aimed at it, two of them on the helper's first form and planted again on its second (`MUTATION_TESTING.md` section 2); none on a cluster
 
 **P16-TSK-019 — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `COMPLETE` (2026-11-13; branch `P16-TSK-019` from master `0a09a273`; gate `COMPLETE` 2026-11-13; marked `READY` by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)
 - **Objective**: build the `experiments` scope:

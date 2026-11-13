@@ -114,7 +114,7 @@ class OutboundExchangeTest {
     }
 
     @Test
-    @DisplayName("a body that stops after the headers is cut at the overall bound, as a timeout, where the JDK's own send is still waiting")
+    @DisplayName("a body that stops after the headers is cut at its bound, as a timeout, where the JDK's own send is still waiting")
     void aStalledBodyIsCutAtTheOverallBound() throws Exception {
         // The control first: the JDK's send, its request timeout as short as the body's bound, still waits on the body.
         HttpRequest shortTimeout = HttpRequest.newBuilder(request("/stalled").uri())
