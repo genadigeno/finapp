@@ -29535,7 +29535,7 @@ on none:
     A throwaway container of the pinned PostgreSQL image proved the new SQL, the sampler's `\watch` and its streaming, auto_explain's
     log format (the `Query Identifier` line, and that `log_parameter_max_length` 0 drops the parameters line) and the three readers.
 
-**P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
+**P16-TSK-009 — The connection budget at ten, the pooler evaluated, and a metrics source on `kind` (C3, `P15-REM-007`)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-009` from master `1fbdf71c`, wave D, masters `6f23a4a1`, `ac5aa4a3` and `9ec48bdc` merged in; ADR-0134 `Proposed`, no migration, no application code; its cluster run owed under PI-025; marks no task `READY` - the coordinator does) *(read "`IN_PROGRESS` (2026-11-13, designed on branch `P16-TSK-009` from master `1fbdf71c`, wave D)" until the gate)* *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)" until the design)*
 - **Objective**: make ten replicas possible without breaking the connection budget, decided by measurement, and give the HPA a
   metric to act on. Today `maxReplicas` 7 + 2 × `maxSurge` 1 + 1 = 10 = `FINAPP_DB_INSTANCES`. Ten replicas need 13 instances and
   104 connections, against 88 usable. The `kind` rehearsal installs no metrics source, so the HPA has never scaled (`P15-REM-007`,
@@ -29577,6 +29577,45 @@ on none:
 - **Definition of done**: `DOD-ARCH`, `DOD-BUILD`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.14's budget procedure; `DISTRIBUTED_EXECUTION.md` §4a.
 - **Risk**: Medium. **Cx**: M.
+- *As built (2026-11-13, the gate's record; branch `P16-TSK-009` from master `1fbdf71c`, masters `6f23a4a1`, `ac5aa4a3` and `9ec48bdc` merged in (the first before the alert change, the coordinator's rules split; the last at the coordinator's word); ADR-0134
+  `Proposed`; no migration, no application code; `OPERATIONS_RUNBOOK.md` §11.49 the procedure, `CAPACITY_MODEL.md` §4 and
+  `DISTRIBUTED_EXECUTION.md` §4a the decision's reading, `RESILIENCE_EXPERIMENTS.md` E41 the row; under the owner's word of 2026-11-13,
+  "we dont need long running checks and tests", nothing ran on a cluster and the run is owed under `POSTPONED_ISSUES.md` PI-025):*
+  **The decision** (C3), from `CAPACITY_MODEL.md` §3.4's measurement at three replicas: at the engineering workload the fleet's 21
+  writer connections held 5.0 on average and 9 at most, none pending; at the break every connection was held because the database's CPU
+  was. So ten take a larger server: `kind`'s test-only server at the formula for ten (13 instances, 116 connections, a quota of 16 pods);
+  staging unchanged; production kept at seven, ten there a larger declared `max_connections` first, put to the owner (`THREAT_MODEL.md`
+  §6 item 56); the pool kept at 7 + 1. **The pooler**, evaluated and refused for now: every lock and setting the platform's statements
+  take is transaction-scoped, now held by `TransactionScopedDatabaseStateTest`; but PgJDBC 42.7.13's `setTransactionIsolation` sends
+  `SET SESSION CHARACTERISTICS` outside the transaction (read from its source), which twelve classes rely on for `REPEATABLE READ`; the
+  prepared statements need PgBouncer's `max_prepared_statements` or `prepareThreshold=0`, measured (its documentation, read). ADR-0134
+  lists what adoption first takes. **The harness**: `kind-rehearsal.sh`'s `fleet_patch` holds every run's fleet at its own count in its
+  own rendered copy, the budget at the formula for that count, every number read from the render (it replaced `load.sh`'s
+  `load_replicas_patch`); `REHEARSAL_LOAD_REPLICAS` runs 3 to the overlay's ceiling; the `load` scope installs metrics-server from
+  `controller-check.sh`'s checked render and waits for the autoscaler's CPU metric with `ScalingActive` true; every load run samples the
+  fleet's connections every two seconds through the load and, after the census, judges the peak within instances x pool, no sample above
+  eight a pod, an operator admitted at the peak and none refused, writes each replica's pools (`load/pools-per-replica.tsv`) and holds the
+  fleet at its budget with an operator tried (the release's step, now `budget_ceiling`). **Found by the guards**:
+  `ConfigFingerprintAlertTest` went red at `kind`'s ten (the longest rollout any overlay allows became 107 minutes), so
+  `ConfigFingerprintDisagrees` waits 110 minutes instead of 80 in both copies, its promtool cases moved with it and green; production's
+  lasting disagreement now pages half an hour later, and item 56 asks whether to split the rule by environment. **Run without a cluster**:
+  `fleet_patch` over a real `kustomize` render (at three the copy is master's three-replica render byte for byte but the generated
+  ConfigMap's name; seven and ten as the formula; 2, 11 and a moved ceiling refused); `load_pools` over Prometheus answers of the API's
+  shape; the manifest policies on the three overlays, `kubeconform` on `kind` and the budget's plants in containers (manifest-check.sh's
+  own halves, 2 minutes); promtool on `config-fingerprint.test.yml`. **Acceptance**: the decision recorded with its measurement (met);
+  the `kind` overlay admitting ten within its budget (met: `KubernetesManifestsTest`, the policy); the formula re-proved (met); the HPA's
+  metric available on `kind` (built and contract-tested, run owed: E41, PI-025); an operator admitted at the measured peak (built and
+  contract-tested, run owed: E41, PI-025). **Owed under PI-025**: E41 at ten replicas; the first cluster run of `fleet_patch` and of the
+  load scope's new steps at any count. **Routed**: `P16-TSK-014`, `-015`, `-022` (notes on their entries).
+  **Gate** (2026-11-13): `COMPLETE`. **Tests**, one fresh `:app:test` run of named classes after the last change (14:20-14:33Z, every
+  XML read newer than its start): 42 named classes, 548 tests, and the 7 ArchUnit suites the filter pulls in, 20 tests; 0 failed. The
+  named: the guards reading each changed file (the manifests, the rehearsal and load harness, the pins, the controller render, the alert
+  rules and their runbook sections, the documents, the ADRs) and the four always run. An earlier run (13:17-13:42Z) found
+  `ConfigFingerprintAlertTest` red at `kind`'s ten, fixed above. **Owed** to PI-023's kind: none (no database case written).
+  **Probes**: five performed and caught in two hermetic rounds (`MUTATION_TESTING.md` §2), none owed. **Ten instances**: `PASS` on
+  design (the budget a declaration checked at start on every replica and by the policy against the overlay's maximum; fixed-size pools;
+  every arbiter's lock transaction-scoped, now guarded; the autoscaler's metric read per pod by the API server); the counted run at ten
+  is E41's and E26's, owed.
 
 **P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: as decided 2026-11-09, scheduled into Phase 16's archival:
@@ -29793,7 +29832,18 @@ on none:
   its members and idle members, the outbox's backlog and the relay's drain), with a scale through counts under load
   (`REHEARSAL_LOAD_SCALE`, today 3 to 7, the autoscaler held at each count; E48; `OPERATIONS_RUNBOOK.md` §11.51). Ten replicas and
   twelve partitions: no member idle is expected at ten; the members table records it. A count of ten needs C3's budget beside
-  `pipeline_preflight`'s check (today it refuses a count past `REHEARSAL_LOAD_REPLICAS`, which is 3 to 7).
+  `pipeline_preflight`'s check (today it refuses a count past 7 or past `REHEARSAL_LOAD_REPLICAS`; `P16-TSK-009`'s overlay admits ten, so
+  the case goes to the overlay's ceiling here, with E48's budget judged at each count).
+- **Routed from `P16-TSK-009` (2026-11-13): what the run at ten starts from.** The `kind` overlay admits ten (13 instances, 116 connections,
+  a quota of 16 pods; ADR-0134). Every run holds its fleet at its count in its own copy, `REHEARSAL_LOAD_REPLICAS` up to 10 in the load
+  scope, the autoscaler held there (minimum and maximum). A run that lets the metric decide between three and ten is this task's: leave
+  the copy's autoscaler at the overlay's 3 and 10 (for example a count of its own that `fleet_patch` passes through). The load scope installs
+  metrics-server and waits for the autoscaler's metric (`OPERATIONS_RUNBOOK.md` §11.49). It samples the fleet's connections every two
+  seconds through the load and judges the peak and an operator after it (`load_budget`), and holds the fleet at its budget. The peak during
+  a rollout at ten is E26's. Two interactions to settle there: the load scope's correctness sampler compares the replicas scraped with
+  those ready, which a roll makes differ for a scrape interval; and the release's `rollout`, `assert_reporting_open` and `ready_three`
+  assume three. Memory: thirteen 1 GiB pods at a roll's worst moment beside the data tier, on the reference machine's 15.6 GiB VM.
+  E41 (`P16-TSK-009`'s, owed under PI-025) is the budget's run at ten, without a roll.
 
 **P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `PLANNED`
 - **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection
@@ -29823,6 +29873,12 @@ on none:
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.30 and §11.14.
 - **Risk**: Medium. **Cx**: M.
+- **Routed from `P16-TSK-009` (2026-11-13): production's ceiling, the pool's size, and the autoscaler at its ceiling.** ADR-0134 keeps
+  production at seven until the ten-instance runs and this calibration (`THREAT_MODEL.md` §6 item 56); ten there is a larger declared
+  `max_connections` (116) first, in `OPERATIONS_RUNBOOK.md` §11.14's order. The pool stays 7 + 1: the census starved of it at the break is
+  `P16-TSK-016`'s per-class bound, not a larger pool. No alert says the autoscaler sits at its maximum or cannot read its metric: the cluster
+  watcher publishes the autoscaler's replica counts (`k8s.hpa.*`) but not its conditions, so a signal there is this task's to decide with
+  the targets.
 
 **P16-TSK-016 — Load shedding before the financial effect, and bulkheads** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: when the platform cannot finish a money-moving command in time, refuse it with `503` and `Retry-After` before its
@@ -30163,6 +30219,11 @@ on none:
   with the proxy's `timeout` toxic: it drops what it holds and closes the link only at its removal, so with no socket timeout a thread
   would wait with no bound at all (a container check of 2026-11-13). The probe's cut on a commit (E13) found that a reset toxic added
   while an answer is held lets the answer through first; the proxy disabled loses it.
+- **Routed from `P16-TSK-009` (2026-11-13): the standby's `max_connections` and the primary's.** The `kind` overlay's test-only primary now
+  states `max_connections=116`, the budget for ten replicas, and every rehearsal run sets its own copy back to the formula at its count
+  (`kind-rehearsal.sh`'s `fleet_patch`): 60 at three, the count the experiments scope runs at. `experiments/standby.yaml` keeps
+  `max_connections=60`, which still equals the run's primary at three. A hot standby refuses to start below its primary's setting, so a
+  failover drill at more than three replicas needs the standby's value taken from the run's copy, not the file.
 
 **P16-TSK-023 — The data tier's availability: the SPOF register and the financial-operation matrix (`THREAT_MODEL.md` §6 item 43 (g))** — `PLANNED`
 - **Objective**: as decided:
@@ -30193,7 +30254,7 @@ on none:
 - **Operational documentation**: the matrix referenced from the runbook's incident section (§11.12).
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-024 — Restore and point-in-time recovery with the post-recovery verification (`THREAT_MODEL.md` §6 item 44 (a); ADR-0128)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
+**P16-TSK-024 — Restore and point-in-time recovery with the post-recovery verification (`THREAT_MODEL.md` §6 item 44 (a); ADR-0128)** — `COMPLETE` (2026-11-13; built and contract-tested, its drills owed under PI-025; marked `READY` by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: as decided:
   - the restore's lending and BNPL proofs judged over a source that holds a loan and a BNPL obligation;
   - a point-in-time restore from archived WAL to an instant before a planted bad write, verified;
@@ -30234,6 +30295,14 @@ on none:
   catching up after; it closes a WAL segment each minute so there is something to send. Without a store named it reads could-not-run.
   If the archive here is a local directory rather than an object store, E11's store half has no local subject: say so in E11's row at
   this task's gate (a dated note, or `N/A:` with the reason). Its run is owed under PI-025 either way.
+- **As built** (2026-11-13; branch `P16-TSK-024` from master `1fbdf71c`; no migration; one production line, `KeyRingRetirementGuard.STAMPED_COLUMNS` made public for the verification to read; ADR-0140 `Proposed`; marks no task `READY`). **Built, contract-tested, runs owed (PI-025)**, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"):
+  - **The seed** (`RestoreRehearsalSeed`, `RestoreRehearsalProducts`, `RestoreRehearsalStatements`): a personal loan approved by credit over a simulated bureau and financial-data provider (registered as primary beans in the seed's own context only), offered, accepted and disbursed by the platform's sweeps; a pay-in-4 BNPL obligation at a BNPL-enabled merchant (its payable with it); lending capital recognised from the simulated bank's statement through settlement intake (two persons), a second contribution left awaiting its statement, which `--statement` sends later and keeps as the bank's copy. Credit policies, scorecard and terms in force by two persons. What stands in for a door: a `MULTI_FACTOR` session issued through the session store, the merchant key verified as its interceptor does, credit's hints handed to origination directly; parties and identities by SQL as before; no journal entry or balance by SQL.
+  - **The verification**: every restore reads each stamped key-version column against the rings it was started with (`evidence held by the key rings`); a drill's source is also asked that every proof judged a subject (`--drill`, `every proof over a subject`), the entry's guard.
+  - **The script**: the seeded source archives its WAL (encrypted per segment, digest beside it, never overwritten) from a base backup taken before the seed; after the logical backup an instant T, the second statement, a raw writer's bad write; a damaged backup refused by its digest; the logical restore and the recovery to T each gated (§11.55): the window reconciled by `RestoreReconciliation` acting as `finapp_app` while the roles are `NOLOGIN`, the books verified again, a person's recorded release; the recovery held by `pg_hba.conf` before its first start, then `NOLOGIN`; the plants `key-version-missing`, `wal-gap` and `wal-damaged`; `rates.tsv` per restore; `RESTORE_STOP_AFTER=source`.
+  - **Acceptance, each criterion**: both drills green with their records and rates - **built, run owed (PI-025: E59, E60)**; the four lending and BNPL verdicts over real subjects - **met on the seeded source's own verification** (a container run, `OPERATIONS_RUNBOOK.md` §11.55's record), **owed on its restores** (E59); the reconciliation window run - **built, run owed (E61)**; the Kafka step (§11.35 step 6) - **owed (E61 with F15 on `kind`)**; the rate per GiB at two sizes - **built (`rates.tsv`), owed (E59)**; item 44 (a) - **built, its source shown, its restores owed** (`THREAT_MODEL.md` §6 item 44 (a)'s dated note).
+  - **Ran, 2026-11-13, in containers only**: the seed's check (`RESTORE_STOP_AFTER=source`) and the recovery's mechanics over a bare server (the script's own functions, a toy table): see §11.55's record. Every `kind` run and every whole rehearsal is owed.
+  - **Owner item**: `THREAT_MODEL.md` §6 item 62 (the release's record in the database's trail, the window on a managed instance, the archive's integrity).
+  - **The routed note from `P16-TSK-021` (E11)**: the WAL archive built here is a Docker volume of the restore rehearsal's own run, in containers: not an object store, and nothing of it deployed on `kind`. So E11's store half has no local subject from it, which a dated note in E11's row now says; its run stays owed under PI-025.
 
 **P16-TSK-025 — The disaster-recovery plan and exercise; RTO and RPO measured (C9; ADR-0128; T42)** — `PLANNED`
 - **Objective**: write the DR plan, and exercise it locally end to end: the `kind` cluster and its data destroyed, then the platform

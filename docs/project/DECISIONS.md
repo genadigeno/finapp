@@ -1391,12 +1391,24 @@ target, the runs (E38–E40) built and owed under `POSTPONED_ISSUES.md` PI-025; 
 whole history on every call and was E30's first limit, bounded by a checkpoint below the journal's commit-order watermark, its build
 the owner's to place (`THREAT_MODEL.md` §6 item 55). → [ADR-0133](../adr/ADR-0133-contention-measured-before-any-mechanism-and-the-whole-history-folds.md)
 
+**The connection budget at ten replicas: a larger server, no smaller pool, no transaction-mode pooler yet** (owner decision C3,
+2026-11-13). `kind`'s test-only server is raised to the formula for ten (13 instances, 116 connections), each rehearsal run holding its
+fleet at its own count; staging unchanged; production's ceiling stays seven, ten taking a larger declared `max_connections` first once
+the ten-instance runs are made (`THREAT_MODEL.md` §6 item 56). A transaction-mode pooler is refused for now: the driver sets isolation
+per session, outside the transaction. → [ADR-0134](../adr/ADR-0134-the-connection-budget-at-ten-replicas.md)
+
 **The relay drains while its batch is full; three test-only brokers where the experiments run.** A candidate another relay already
 drained takes no slot of the batch, and a cycle that worked its whole batch and failed nothing is followed at once by another, the lock,
 the order and the conditional mark unchanged; measured by E47, owed (PI-025). The `kind` overlay's broker is three-capable and committed
 at one; the experiments scope, and the load scope when asked, run three with the catalogue's posture, SCRAM on every broker and the
 quorum and replication over mutual TLS, each broker behind a proxy of its own. *(Added 2026-11-13, `Proposed`.)* →
 [ADR-0136](../adr/ADR-0136-the-event-pipeline-at-load.md)
+
+**The post-recovery hold is the role lock, held through the window.** The platform's roles stay `NOLOGIN` from before a restore to
+its release; the window since the restore's point is reconciled by one command acting as the application's role while those roles
+cannot log in; the books are verified again; a person releases, with a record naming the reports it rests on. Locally, a recovery
+to an instant from an encrypted WAL archive, held before its server first starts. →
+[ADR-0140](../adr/ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md)
 
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.

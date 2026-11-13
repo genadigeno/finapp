@@ -370,8 +370,8 @@ fleet refuses to start when the arithmetic stops holding.
 |---|---|---|---|---|---|---|---|
 | Base and production | 7 | 7 + 2 + 1 = 10 | 10 | 80 | 100 | 88 | yes, 8 spare |
 | Staging | 4 | 4 + 2 + 1 = 7 | 7 | 56 | 100 | 88 | yes, 32 spare |
-| `kind` (test-only) | 3 | 3 + 2 + 1 = 6 | 6 | 48 | 60 | 48 | yes, exactly: the rehearsal measures the rule, not a margin |
-| **Ten replicas** | 10 | 10 + 2 + 1 = 13 | would be 13 | **104** | 100 | 88 | **no: 16 short** |
+| `kind` (test-only) | 10 | 10 + 2 + 1 = 13 | 13 | 104 | 116 | 104 | yes, exactly: owner decision C3's larger test-only server; a rehearsal run at three sets its own copy to 6, 48 and 60 *(read "3, 6, 6, 48, 60, 48" until 2026-11-13)* |
+| **Ten replicas on production's server** | 10 | 10 + 2 + 1 = 13 | would be 13 | **104** | 100 | 88 | **no: 16 short** |
 
 **Ten replicas do not fit today's numbers.** The decision is owner decision C3's, and it is measured first by `P16-TSK-009`. For the
 `kind` drill, the test-only server's `max_connections` is raised to at least 104 + 12 = **116** and the overlay's
@@ -381,6 +381,26 @@ pool, or a transaction-mode pooler. The pooler first needs the server-side prepa
 `maxReplicas` stays 7 until then. The HPA has never been seen scaling, because `kind` has no metrics source (`P15-REM-007`):
 `P16-TSK-009` installs one, test-only. The peak `pg_stat_activity` count for `application_name = 'finapp'` is measured at ten
 during a rollout, as `P15-TSK-012` measured it at three.
+
+*(2026-11-13, `P16-TSK-009`, ADR-0134: **decided** from §3.4's measurement at three replicas.)* At the engineering workload the
+fleet's 21 writer connections were 5.0 active on average and 9 at most, with no request pending; at the break every connection was
+held because the database's CPU was held back in every period. The pool's size is therefore not the binding limit, and a larger fleet
+of pools would only queue more work inside a CPU-bound database. So:
+- **`kind`**: a larger test-only server, the table's row above, which admits ten replicas within an exact budget. Each rehearsal
+  run holds its fleet at its own count in its own copy of the overlay with the formula at that count (`kind-rehearsal.sh`'s
+  `fleet_patch`).
+- **Staging**: unchanged.
+- **Production**: `maxReplicas` stays 7. Ten replicas would take a larger declared server, `max_connections` 116 in the overlay's
+  one literal that Terraform reads, once the ten-instance runs are made and the HPA calibrated (`THREAT_MODEL.md` §6 item 56).
+  *Derived, not measured*: at the target's peak (about 2.4 times the engineering workload, §3.4) the replicas would use about
+  0.52 × 2.4 ≈ 1.25 cores, which the HPA's target of 70% of 500m a pod answers with about four replicas. Seven is not the limit the
+  target meets first; the single writer's CPU is.
+- **No smaller pool**: the correctness monitors already starved of the pool at the break (routed to `P16-TSK-016`).
+- **No transaction-mode pooler yet**: the driver sets isolation per session, outside the transaction (ADR-0134's context).
+
+The HPA's metric on `kind` is metrics-server, installed by the `load` scope (`OPERATIONS_RUNBOOK.md` §11.49). **Not measured**, owed
+under `POSTPONED_ISSUES.md` PI-025: each replica's pools at the engineering workload at ten replicas, the peak there, an operator
+admitted at it and with the fleet held at 104 (E41); the peak during a rollout at ten (E26, `P16-TSK-014`).
 
 ---
 

@@ -74,7 +74,8 @@ class PipelineRehearsalContractTest {
         assertThat(harness.indexOf("\nbrokers_resolve\n")).as("resolved once the scope is read, before the build").isPositive()
                 .isGreaterThan(harness.indexOf("[ \"$SCOPE\" != experiments ] || N_ONLY=1")).isLessThan(harness.indexOf("step build-images"));
         assertThat(harness.indexOf("brokers_render \"$A\"")).as("the run's own copy rendered after the fleet's patch and before anything is applied")
-                .isGreaterThan(harness.indexOf("[ \"$SCOPE\" != load ] || load_replicas_patch \"$A\"")).isLessThan(harness.indexOf("apply_files \"$file\""));
+                .isGreaterThan(harness.indexOf("\nfleet_patch \"$A\"\n")).isLessThan(harness.indexOf("apply_files \"$file\""));
+        assertThat(harness.indexOf("\nfleet_patch \"$A\"\n")).as("the fleet's patch is there to follow").isPositive();
         assertThat(read(OVERLAY)).as("the committed overlay keeps one broker, three-capable").contains("  replicas: 1\n")
                 .doesNotContain("podManagementPolicy");
         String render = function(brokers, "brokers_render");

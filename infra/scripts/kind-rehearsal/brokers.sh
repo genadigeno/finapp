@@ -74,7 +74,8 @@ brokers_render() {
     grep -q "^  replicas: $KAFKA_BROKERS\$" "$set_file" && grep -q '^  podManagementPolicy: Parallel$' "$set_file" \
         && grep -q '^  publishNotReadyAddresses: true$' "$1/Service.finapp-kafka.yaml" \
         || cannot "the rendered broker StatefulSet could not be set to $KAFKA_BROKERS brokers started in parallel: a value it patches has moved"
-    # The quota grows by each broker past the first: one pod, 250m and 1 CPU, 1 GiB, as the overlay's broker asks.
+    # The quota grows by each broker past the first: one pod, 250m and 1 CPU, 1 GiB, as the overlay's broker asks. It is read after
+    # fleet_patch (P16-TSK-009), which writes the CPU in millicores or whole cores and the memory in MiB.
     quota="$1/ResourceQuota.finapp.yaml"
     extra=$((KAFKA_BROKERS - 1))
     for field in pods requests.cpu requests.memory limits.cpu limits.memory; do
@@ -82,8 +83,10 @@ brokers_render() {
         case $field:$value in
             pods:[0-9]*) grown=$((value + extra)) ;;
             requests.cpu:*m) grown="$((${value%m} + 250 * extra))m" ;;
+            limits.cpu:*m) grown="$((${value%m} + 1000 * extra))m" ;;
             limits.cpu:[0-9]*) grown=$((value + extra)) ;;
             *:*Mi) grown="$((${value%Mi} + 1024 * extra))Mi" ;;
+            *:*Gi) grown="$((${value%Gi} * 1024 + 1024 * extra))Mi" ;;
             *) cannot "the quota's $field ($value) is not of a form the broker count can grow" ;;
         esac
         sed -i "s/^    $field: \"\{0,1\}$value\"\{0,1\}$/    $field: \"$grown\"/" "$quota"
