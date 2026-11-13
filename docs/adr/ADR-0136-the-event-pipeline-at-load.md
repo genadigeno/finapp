@@ -81,7 +81,9 @@ Positive: an instance publishes as fast as its cycles run while there is a full 
 contending for the same few heads; the experiments run on the reference posture with every broker behind the proxy.
 
 Negative: under a standing backlog the relay's thread no longer pauses between cycles, so its database round trips and broker sends
-follow the backlog's size rather than the interval (bounded by the batch, the candidates and the per-event acknowledgement timeout).
+follow the backlog's size rather than the interval (bounded by the batch, the candidates and the per-event acknowledgement timeout),
+and it holds one of the writer pool's seven connections for as long as the backlog stands, where before it held it for a cycle in
+every interval. The pool's wait and the HTTP path's latency at E47's burst are what say whether that costs anything.
 Neither change is measured yet: the relay's ceiling at three and seven replicas, and whether more relays add drain, are E47's, owed
 under PI-025; `OutboxRelayTest#aDrainedCandidateTakesNoSlot` is written and owed to PI-023's database pass. Only the experiments and the
 pipeline's load runs use three brokers.

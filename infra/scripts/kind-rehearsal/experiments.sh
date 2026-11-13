@@ -947,7 +947,7 @@ YAML
     # P16-TSK-013's three kinds: the topics' posture lowered with the probe topic, a relay hold, every broker stopped.
     experiments_fault_on min-isr 1 "$(brokers_replication | cut -d' ' -f2)" finapp-kafka-1
     experiments_fault_on relay-held 600 8
-    experiments_fault_on brokers-stopped
+    experiments_fault_on brokers-stopped 0
     experiments_faults_left > "$EXP_ART/faults-before-crash.txt" 2>&1 || true
     experiments_fault_on node-paused "$victim_node"
     echo "paused node $victim_node" >> "$EXP_ART/faults-before-crash.txt"
@@ -1392,7 +1392,7 @@ E09_steady() {
 }
 
 E09_fault() {
-    experiments_fault_on brokers-stopped
+    experiments_fault_on brokers-stopped 0
     deadline=$(( $(date +%s) + 180 ))
     until [ -z "$(brokers_ready)" ]; do
         [ "$(date +%s)" -lt "$deadline" ] || cannot "E09: the brokers did not stop within 180 s"

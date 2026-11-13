@@ -29714,6 +29714,12 @@ on none:
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.28's record at ten; `P15-REM-007` closed.
 - **Risk**: High (the machine may not hold ten; the record says so). **Cx**: L.
+- *Routed from `P16-TSK-013` (2026-11-13):* the load scope takes three test-only brokers (`REHEARSAL_KAFKA_BROKERS=3`,
+  `kind-rehearsal/brokers.sh`) and reads the event pipeline every 30 s (`kind-rehearsal/pipeline.sh`: each group's lag per partition,
+  its members and idle members, the outbox's backlog and the relay's drain), with a scale through counts under load
+  (`REHEARSAL_LOAD_SCALE`, today 3 to 7, the autoscaler held at each count; E48; `OPERATIONS_RUNBOOK.md` §11.51). Ten replicas and
+  twelve partitions: no member idle is expected at ten; the members table records it. A count of ten needs C3's budget beside
+  `pipeline_preflight`'s check (today it refuses a count past `REHEARSAL_LOAD_REPLICAS`, which is 3 to 7).
 
 **P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `PLANNED`
 - **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection
@@ -29978,6 +29984,12 @@ on none:
   `finapp/experiment-fault`, `scaled <namespace> <deployment> <replicas> <replicas to restore>` (E16's CoreDNS would be its first use
   outside the simulator). Each passes the boundary first and is removed at the experiment's stop and on every
   way out. On several nodes, read Prometheus through its pod (`experiments_prometheus`), not the API server's proxy.
+- *Routed from `P16-TSK-013` (2026-11-13):* the experiments scope now runs three brokers (`kind-rehearsal/brokers.sh`), and the broker
+  hop is four Toxiproxy proxies, not one: `kafka` (the bootstrap) and `kafka-0`, `kafka-1`, `kafka-2`, one per broker, each broker's name
+  sent to a Service of its own (`OPERATIONS_RUNBOOK.md` §11.51). E15's partition between the application and Kafka must take all four
+  down (`proxy-down` each, or one policy over the proxy's ports 9092 and 19092-19094), or the clients keep the brokers through the
+  other three. Three fault kinds were added beside yours: `brokers-stopped [replicas]`, `relay-held <seconds> <aggregates>` and
+  `min-isr <n> <restore> <broker pod>`, each with its undo, its reading in `experiments_faults_left` and its blanket reset.
 
 **P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)
 - **Objective**: as decided:

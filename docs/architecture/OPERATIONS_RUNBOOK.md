@@ -5156,7 +5156,8 @@ PostgreSQL's, never the broker's: every outbox row published, every record a cat
   attempt its retry, which the outbox holds.
 - **E09, every broker stopped.** The StatefulSet at zero (fault kind `brokers-stopped`), held 10 minutes at least and until
   `OutboxPublicationStalled` fires (§11.21; its rule needs the oldest row past 5 minutes for 5 minutes), 15 at most, or E09 fails; the
-  stop at 30 minutes, inside the relay's retry window of about 33 minutes, so no row is abandoned. Every replica must stay ready (Kafka is
+  stop condition at 30 minutes. 15 minutes is well inside the relay's retry window: 1,711 s of backoff before a row's fourteenth and
+  last attempt (`RetryPolicy.DEFAULT`), so no row is abandoned; an outage held to the stop's 30 minutes would abandon some. Every replica must stay ready (Kafka is
   not in readiness), at least one money movement must be answered meanwhile, rows must wait, and the event freshness must burn. Then the
   brokers come back, the outbox drains within 15 minutes and every group settles.
 - **E22, duplication.** First 200 published rows of handled types are unmarked by the run's own superuser, as a relay that crashed

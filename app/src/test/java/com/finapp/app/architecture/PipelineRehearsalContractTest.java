@@ -176,6 +176,20 @@ class PipelineRehearsalContractTest {
                 .contains("[ -n \"$burning\" ] || fail").contains("[ \"$(experiments_dead_lettered)\" = 0 ] || fail");
         assertThat(function(experiments, "E09_recover")).as("then drained and settled")
                 .contains("drained 900 || fail").contains("lag_settled e09 || fail");
+        // The outage's cap is inside the relay's retry window, read from the policy, not copied: no row may be abandoned by the outage.
+        Matcher policy = Pattern.compile("DEFAULT =\\s*new RetryPolicy\\(Duration\\.ofSeconds\\((\\d+)\\), Duration\\.ofMinutes\\((\\d+)\\), (\\d+)\\);")
+                .matcher(read("platform/src/main/java/com/finapp/platform/outbox/RetryPolicy.java"));
+        assertThat(policy.find()).as("the relay's default retry policy").isTrue();
+        long initial = Long.parseLong(policy.group(1));
+        long ceiling = Long.parseLong(policy.group(2)) * 60;
+        int attempts = Integer.parseInt(policy.group(3));
+        long window = 0;
+        for (int attempt = 1; attempt < attempts; attempt++) {
+            window += Math.min(initial << Math.min(attempt - 1, 30), ceiling);
+        }
+        assertThat(window).as("the backoff before a row's last attempt, seconds").isEqualTo(1711).isGreaterThan(900);
+        assertThat(read("docs/architecture/OPERATIONS_RUNBOOK.md")).as("the runbook states the window the policy gives")
+                .contains("1,711 s of backoff before a row's fourteenth and");
         assertThat(function(experiments, "experiments_undo")).contains("brokers-stopped) kube -n finapp scale statefulset/finapp-kafka --replicas=\"$KAFKA_BROKERS\"");
     }
 
