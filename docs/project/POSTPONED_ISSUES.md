@@ -34,6 +34,7 @@ commit and the date; do not delete the entry.
 | PI-022 | `POSTPONED` | `P15-TSK-023`'s gate, by the owner (2026-11-11) | observability - an amount printed into an exception's message or a builder's generated form, which a pod's console keeps; required before production use |
 | PI-023 | `POSTPONED` | the owner, during Phase 15 wave H (2026-11-12) | every module - the Phase 15 database pass (`P15-TST-002`): every database, own-container and Kafka tier, never run since Phase 15 began; run after the project's phases, with the storms |
 | PI-024 | `POSTPONED` | the owner, at `P15-TSK-032`'s implementation (2026-11-12) | platform and every domain module - the platform rehearsals not run whole on `kind`: every `incidents` step, `signals` from §6.1's clearing on, the delivery's unseen steps, the release scope on the final tree, the cluster probes; run after the project's phases, with PI-004 and PI-023 |
+| PI-025 | `POSTPONED` | the owner, during Phase 16 wave C (2026-11-13) | platform and every domain module - Phase 16's cluster runs not run: each task from wave C on builds its experiments, load profiles and drills and holds them by contract tests, and lists here the `kind` runs it did not perform; run after the project's phases, with PI-004, PI-023 and PI-024 |
 
 ---
 
@@ -586,3 +587,30 @@ commit and the date; do not delete the entry.
   and turn this item's `GAP` rows to `EXISTS`; perform the cluster probes and record them in `MUTATION_TESTING.md` §2.
 - **Owner of the fix:** the owner, after the project's phases, with PI-004 and PI-023; the coordinator reminds the owner at each
   phase exit.
+
+## PI-025 — Phase 16's cluster runs not run (`kind` experiments, load profiles and drills)
+
+- **Status:** `POSTPONED` (owner, 2026-11-13, while wave C's `P16-TSK-007` and `P16-TSK-019` were running: "we dont need long running checks and tests").
+  Due after the project's phases, beside PI-004's storms, PI-023's database pass and PI-024's platform rehearsals.
+- **What:** from this word on, a Phase 16 task builds its harness steps, experiments (`RESILIENCE_EXPERIMENTS.md`), load
+  profiles and drills, holds their text by its contract tests, and runs only short named test classes. It does not run them on a
+  `kind` cluster, and it never records a run it did not perform. Runs already performed before the word keep their records,
+  each on the commit it ran on. Each task lists below the runs it owes: the experiment, profile, replica count, drill or
+  cluster probe, and the runbook section that would carry its record.
+- **Consequence until it runs:** a measurement, limit, recovery time or verdict that rests on an owed run is not claimed. The
+  experiment's register entry reads not run, and its runbook record stays empty. `THREAT_MODEL.md`'s rows that would have rested
+  on such a run read `GAP | PI-025`. A mutation demonstration that needs a cluster is listed here, not recorded as performed in
+  `MUTATION_TESTING.md` §2. Phase 16's exit criteria that rest on runs (`PHASE_GATES.md`, `PHASE_16_PLAN.md`) are met only in
+  part, and the exit review names this item as the reason.
+- **Fix:** run each owed item on the tree as it then stands, one cluster at a time. Repair each red as a harness defect, or fix it
+  as a production defect in a task of its own. Fill each register entry, runbook record and capacity figure from the runs, and
+  turn this item's `GAP` rows to `EXISTS`.
+- **Owner of the fix:** the owner, after the project's phases, with PI-004, PI-023 and PI-024; the coordinator reminds the owner
+  at each phase exit.
+- **Owed runs, by task:**
+  - `P16-TSK-019` (the failure-injection toolkit, `OPERATIONS_RUNBOOK.md` §11.46): E01 at three replicas
+    (`RESILIENCE_EXPERIMENTS.md`) on the branch's final bytes, with the scope's topology checks and the boundary's three plants of
+    the same run, and the `guard-off`, `crash-with-faults` and `term-with-faults` probes on those bytes. Every cluster run of the task
+    ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
+    commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
+    discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
