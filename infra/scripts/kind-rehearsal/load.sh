@@ -1368,7 +1368,43 @@ load_run() {
     [ ! -s "$WORK/load-sample-failed" ] || fail "a sample failed during the load: $(cat "$WORK/load-sample-failed" | tr '\n' ' ' | cut -c1-600)see load/samples.tsv"
     [ "$k6_status" = 0 ] || cannot "a generator ended with status $k6_status: see load/k6-*.log"
     load_report
+    # The availability objectives over the run, recorded and never judged (P16-TSK-023, E74 at the sustained profile).
+    load_availability_objectives
     log "the load ran $((LOAD_ENDED - LOAD_STARTED)) s"
+}
+
+# load_availability_objectives (P16-TSK-023; docs/architecture/AVAILABILITY.md section 7; RESILIENCE_EXPERIMENTS.md E74): every availability
+# objective of SLOS.md section 2 read over the run's whole window from the platform's own SLI rules - each objective's five-minute error
+# ratio in infra/prometheus/rules/slo-recording.yml, read and never copied, its rates taken as increases over the run - beside its target
+# and the burn rate it ran at (1 spends the 30-day budget exactly at its pace), into load/slo-availability.tsv. Recorded, never judged: a
+# load run fails on correctness only (PHASE_16_PLAN.md section 5.2), and judging the objectives is P16-TSK-029's. An objective the profile
+# sends nothing to has no sample and reads none.
+load_availability_objectives() {
+    span=$((LOAD_ENDED - LOAD_STARTED))
+    out="$LOAD_ART/slo-availability.tsv"
+    printf 'objective\ttarget\trequests\terrors\terror_ratio\tburn_rate\n' > "$out"
+    awk '$1 == "-" && $2 == "record:" && $3 ~ /^finapp:slo_[a-z_]+:error_ratio_rate5m$/ { name = $3; getline; sub(/^ *expr: /, "")
+            if ($0 ~ /status=~"5\.\."/) { sub(/^finapp:slo_/, "", name); sub(/:error_ratio_rate5m$/, "", name); print name "\t" $0 } }' \
+        "$ROOT/infra/prometheus/rules/slo-recording.yml" > "$LOAD_ART/slo-availability.rules"
+    objectives=$(grep -c . "$LOAD_ART/slo-availability.rules" || true)
+    [ "$objectives" -ge 6 ] || cannot "only $objectives availability objectives were read from slo-recording.yml"
+    while IFS="$(printf '\t')" read -r objective rule; do
+        target=$(sed -n "s/^| \`$objective\` | .* | \([0-9.]*\)% | [a-z]* | [0-9.]* |\$/\1/p" "$ROOT/docs/architecture/SLOS.md" | head -1)
+        over=$(printf '%s' "$rule" | sed "s/rate(/increase(/g; s/\[5m\]/[${span}s]/g")
+        requests=$(load_prom_at "${over##* / }")
+        errors=$(load_prom_at "${over% / *}")
+        ratio=$(load_prom_at "$over")
+        burn=$(awk -v r="$ratio" -v t="$target" 'BEGIN { if (r == "" || t == "" || t >= 100) print "-"; else printf "%.4f", r / (1 - t / 100) }')
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$objective" "${target:--}" "${requests:-none}" "${errors:-none}" "${ratio:-none}" "$burn" >> "$out"
+    done < "$LOAD_ART/slo-availability.rules"
+    log "the availability objectives over the run, recorded and never judged here: $(awk -F'\t' 'NR > 1 {printf "%s %s errors of %s, burn %s; ", $1, $4, $3, $6}' "$out")"
+}
+
+# load_prom_at <query>: the query's first value at the load's end, or nothing (no sample - no traffic - or no answer). A backslash in a
+# rule's regex is encoded after urlencode, which encodes the percent sign first.
+load_prom_at() {
+    telemetry_get "$LOAD_PROM" "/api/v1/query?query=$(urlencode "$1" | sed 's/\\/%5C/g')&time=$LOAD_ENDED" 2>/dev/null \
+        | sed -n 's/.*"value":\[[0-9.e+]*,"\([^"]*\)"\].*/\1/p' | head -1
 }
 
 # load_generating: whether any generator instance still runs.

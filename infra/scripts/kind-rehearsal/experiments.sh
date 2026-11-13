@@ -98,7 +98,10 @@
 #                      highest-ordinal broker killed and held down 90 s leaves the probe topic one copy in sync, its writes still acknowledged,
 #                      and E08's copy check must see them;
 #   async-standby      E05 with its standby made asynchronous and cut from the primary's WAL before the fault (the entry's probe, register
-#                      E56): the promotion is refused, the probe promotes it anyway, and the journal's comparison must show the commits lost.
+#                      E56): the promotion is refused, the probe promotes it anyway, and the journal's comparison must show the commits lost;
+#   matrix-mismatch    (P16-TSK-023, with E06) the run's own copy of docs/architecture/AVAILABILITY.md claims internal transfers (O04)
+#                      AVAILABLE while the database is away (row A01): E06's walk must fail on that row, and a run that sent no transfer in
+#                      the window could not show it.
 # REHEARSAL_EXPERIMENTS names the experiments to run (E01 by default; the catalogue is P16-TSK-008's, -013's, -018's, -020...-023's and
 # P16-TSK-027's).
 # The provider experiments E17, E18 and E21 (P16-TSK-018) degrade the simulator one rail at a time (its flags degrade-<rail>-unavailable and
@@ -143,6 +146,21 @@
 # E46: the session table bounded over a soak, a live session planted kept and forty dead ones swept. archive_census reads every audit row
 # queued or in one segment, every segment's digests and chain recomputed, and every archived object digested in the store. Built and not
 # run: their runs are owed under POSTPONED_ISSUES.md PI-025.
+#
+# THE AVAILABILITY MATRIX, WALKED (P16-TSK-023; ADR-0144; docs/architecture/AVAILABILITY.md; OPERATIONS_RUNBOOK.md section 11.59), at the
+# end of this file. availability_check <row> <from> <to> reads the matrix's row and its operations' route patterns from the document
+# itself, takes every answer of the public edge that ended in the fault's window to the operation whose pattern matches its method and
+# path most specifically, and compares: REFUSED - no success from the application; QUEUED or AVAILABLE - at least one success once any
+# answer was seen; DEGRADED - answered, its financial half the experiment's own criteria. A mismatch fails the experiment. E05 and E06
+# walk row A01 (the database away), E09 row A06 (every broker away), and two experiments of the task's own walk theirs:
+#   E72  the telemetry back ends lost: Prometheus and Alertmanager scaled to zero for five minutes under the workload (row A14) - every
+#        replica ready throughout, no page readable while they are away, Prometheus back and reading every replica after, its history
+#        read for what the loss took;
+#   E73  the payout rail and card tokenisation unavailable, one card attached meanwhile, then the payout rail silent past the timeout,
+#        under the workload (row A11) - no payout completed without the creation the provider took, every payout born since the start
+#        concluded within twice the payout sweep's dispatched age and five minutes, none left UNKNOWN twice, no blind resend; the attach
+#        refused with nothing stored, and attached once after.
+# Built and not run: owed under POSTPONED_ISSUES.md PI-025.
 
 EXPERIMENTS=${REHEARSAL_EXPERIMENTS:-E01}
 # Every degradation flag the simulator reads (Simulator.java): the clearing removes each, whatever was registered.
@@ -1379,6 +1397,11 @@ experiments_scope() {
     if [ "$PROBE" = async-standby ]; then
         case " $EXPERIMENTS " in *" E05 "*) ;; *) cannot "PROBE async-standby plants E05's standby: name E05 in REHEARSAL_EXPERIMENTS" ;; esac
     fi
+    # The entry's probe of P16-TSK-023 is E06's walk of the matrix's row A01: planted in the run's own copy before any experiment runs.
+    if [ "$PROBE" = matrix-mismatch ]; then
+        case " $EXPERIMENTS " in *" E06 "*) ;; *) cannot "PROBE matrix-mismatch plants row A01, which E06 walks: name E06 in REHEARSAL_EXPERIMENTS" ;; esac
+        availability_plant
+    fi
     for id in $EXPERIMENTS; do
         if wanted "$id"; then
             command -v "${id}_fault" >/dev/null 2>&1 || cannot "no experiment $id in this toolkit"
@@ -1958,6 +1981,8 @@ E06_recover() {
     [ "$(experiments_restarts)" = "$E06_RESTARTS" ] \
         || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a replica restarted for the database's stop: $E06_RESTARTS -> $(experiments_restarts)"
     experiments_edge_read "$EXP_DIR" $((E06_FAULT_AT - 60))
+    # The availability matrix's row A01 walked over the same window (P16-TSK-023): every operation the workload sent refused.
+    availability_check A01 $((E06_FAULT_AT + 5)) "${E06_BACK_AT:-$(date +%s)}"
     away=$(experiments_money_succeeded "$EXP_DIR" $((E06_FAULT_AT + 5)) "${E06_BACK_AT:-$(date +%s)}")
     [ "$away" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$away money-moving commands answered a success while the server was down"
     back=$(experiments_money_back "$EXP_DIR" "$E06_FAULT_AT")
@@ -2304,6 +2329,8 @@ E05_recover() {
     [ "$(experiments_restarts)" = "$E05_RESTARTS" ] \
         || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a replica restarted for the failover: $E05_RESTARTS -> $(experiments_restarts)"
     experiments_edge_read "$EXP_DIR" $((E05_FAULT_AT - 60))
+    # The availability matrix's row A01 walked over the same window (P16-TSK-023): every operation the workload sent refused.
+    availability_check A01 $((E05_FAULT_AT + 5)) "${E05_MOVED_AT:-$(date +%s)}"
     away=$(experiments_money_succeeded "$EXP_DIR" $((E05_FAULT_AT + 5)) "${E05_MOVED_AT:-$(date +%s)}")
     [ "$away" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$away money-moving commands answered a success while no primary served"
     back=$(experiments_money_back "$EXP_DIR" "$E05_FAULT_AT")
@@ -2633,6 +2660,10 @@ E09_recover() {
     assert_flows_ran e09
     [ "$(experiments_dead_lettered)" = 0 ] || fail "E09: an outbox row was abandoned"
     experiments_record workload "$(cat "$CLIENT/workload-e09.summary")"
+    # The availability matrix's row A06 walked (P16-TSK-023): every operation the workload sent while the brokers were away, answered with
+    # its record and its events waiting, against docs/architecture/AVAILABILITY.md.
+    experiments_edge_read "$EXP_DIR" $((E09_STOPPED_AT - 60))
+    availability_check A06 "$E09_STOPPED_AT" $((E09_STOPPED_AT + E09_HELD))
 }
 
 # E22: duplication. (a) Published rows sent again, as a relay that crashed between the broker's acknowledgement and its mark sends
@@ -3228,6 +3259,11 @@ provider_stop_condition() {
             [ "$stale" = 0 ] || PROVIDER_STOP="a conversion on a stale rate, or the count unreadable ('$stale')" ;;
         E21)
             provider_unaffected_breach ;;
+        # P16-TSK-023's E73: a payout completed with no creation the provider took for its reference.
+        E73)
+            experiments_simulator cat /tmp/requests.tsv > "$EXP_DIR/requests.tsv" 2>/dev/null || true
+            unanswered=$(e73_unanswered)
+            [ -z "$unanswered" ] || PROVIDER_STOP="a payout completed without the provider's effect: $(printf '%s' "$unanswered" | head -1)" ;;
     esac
 }
 
@@ -4921,4 +4957,328 @@ E51_recover() {
     shed_answers=$(grep -c 'ATTEMPT-FAILED .*answered 503: .*api\.Overloaded' "$CLIENT/workload-e51.tsv" || true)
     experiments_record workload "$(cat "$CLIENT/workload-e51.summary"); $shed_answers of its attempts answered 503 api.Overloaded and retried by their keys"
     pass "E51: the fleet stopped shedding $((last_change - removed)) s after the database recovered; every request resolved by its key, $shed_answers shed attempts among them"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The financial-operation availability matrix, walked (P16-TSK-023; ADR-0144; docs/architecture/AVAILABILITY.md sections 3 to 5;
+# OPERATIONS_RUNBOOK.md section 11.59). The matrix is read from the document itself, never copied here: its section 3 classes the routes the
+# edges serve into operations, its section 4 places every operation once per failure row. The probe matrix-mismatch points this at a planted
+# copy in the run's own work directory; the repository's copy is never changed.
+# ---------------------------------------------------------------------------------------------------
+
+AVAILABILITY_MATRIX="$ROOT/docs/architecture/AVAILABILITY.md"
+
+# availability_routes: every operation's route patterns, one line each - the operation, its methods (comma-separated), its path as an
+# anchored regex ({name} one segment, a trailing /** the path and anything under it), and its specificity: an exact path beats any /**
+# prefix, a longer prefix a shorter. AvailabilityMatrixTest holds the same reading over both edges' generated route lists.
+availability_routes() {
+    awk -F'|' '/^## 3\. /{on = 1; next} /^## /{on = 0} on && $2 ~ /^ O[0-9][0-9] $/ {
+        id = $2; gsub(/ /, "", id); cell = $4
+        while (match(cell, /`[^`]+`/)) {
+            route = substr(cell, RSTART + 1, RLENGTH - 2); cell = substr(cell, RSTART + RLENGTH)
+            split(route, part, " "); methods = part[1]; path = part[2]
+            if (path ~ /\/\*\*$/) { prefix = substr(path, 1, length(path) - 3); exact = 0 } else { prefix = path; exact = 1 }
+            regex = prefix; gsub(/\{[A-Za-z]+\}/, "[^/]+", regex)
+            regex = exact ? "^" regex "$" : "^" regex "(/.*)?$"
+            print id "\t" methods "\t" regex "\t" (exact ? 100000 + length(prefix) : length(prefix))
+        }
+    }' "$AVAILABILITY_MATRIX"
+}
+
+# availability_verdicts <row>: the matrix's row, one line per operation it places - the operation and its verdict.
+availability_verdicts() {
+    awk -F'|' -v row="$1" '/^## 4\. /{on = 1; next} /^## /{on = 0} on && $2 == " " row " " {
+        split("REFUSED QUEUED DEGRADED AVAILABLE", verdict, " ")
+        for (v = 1; v <= 4; v++) {
+            n = split($(6 + v), ids, ",")
+            for (i = 1; i <= n; i++) { id = ids[i]; gsub(/[ `]/, "", id); if (id ~ /^O[0-9][0-9]$/) print id "\t" verdict[v] }
+        }
+    }' "$AVAILABILITY_MATRIX"
+}
+
+# availability_check <row> <from epoch> <to epoch>: the matrix's row compared with every answer of the public edge that ended in [from, to]
+# (edge-answers.tsv, which the caller has read with experiments_edge_read from before <from>). Each answer goes to the operation whose
+# pattern matches its method and its path, the query left off, most specifically. Per operation: REFUSED - no success from the
+# application; QUEUED or AVAILABLE - at least one success once any answer was seen; DEGRADED - answered. An operation the workload did not
+# send is recorded as not exercised, never as a pass; a row claiming QUEUED or AVAILABLE for a routed operation whose window exercised
+# nothing could not show itself, and fails. A mismatch stops the experiment (FAILED), its recovery and census still running: the platform
+# and the document disagree, and one of them is wrong.
+availability_check() {
+    [ -s "$AVAILABILITY_MATRIX" ] || cannot "$EXP_ID: the availability matrix could not be read ($AVAILABILITY_MATRIX)"
+    availability_routes > "$EXP_DIR/matrix-routes.tsv"
+    availability_verdicts "$1" > "$EXP_DIR/matrix-$1-verdicts.tsv"
+    placed=$(cut -f1 "$EXP_DIR/matrix-$1-verdicts.tsv" | sort -u | grep -c . || true)
+    [ "$placed" -ge 19 ] || cannot "$EXP_ID: the matrix's row $1 placed $placed operations, not every one"
+    [ "$(cut -f1 "$EXP_DIR/matrix-routes.tsv" | sort -u | grep -c . || true)" -ge 17 ] || cannot "$EXP_ID: the matrix's operations name too few routes"
+    awk -F'\t' -v from="$2" -v to="$3" '
+        FILENAME == ARGV[1] { n++; op[n] = $1; methods[n] = $2; regex[n] = $3; spec[n] = $4; routed[$1] = 1; next }
+        FILENAME == ARGV[2] { verdict[$1] = $2; next }
+        $1 >= from && $1 <= to {
+            path = $7; sub(/\?.*/, "", path)
+            best = ""; top = -1; tie = 0
+            for (i = 1; i <= n; i++) {
+                if (("," methods[i] ",") !~ ("," $6 ",") || path !~ regex[i]) continue
+                if (spec[i] > top) { top = spec[i]; best = op[i]; tie = 0 } else if (spec[i] == top && op[i] != best) tie = 1
+            }
+            if (best == "" || tie) { unmatched++; next }
+            answers[best]++
+            if ($5 >= 200 && $5 < 300) successes[best]++
+        }
+        END {
+            for (id in verdict) {
+                a = answers[id] + 0; s = successes[id] + 0; v = verdict[id]
+                if (!(id in routed)) outcome = "no route"
+                else if (a == 0) outcome = "not exercised"
+                else if (v == "REFUSED") outcome = (s == 0 ? "held" : "MISMATCH: " s " successes while refused")
+                else if (v == "QUEUED" || v == "AVAILABLE") outcome = (s > 0 ? "held" : "MISMATCH: no success in " a " answers")
+                else outcome = "answered"
+                print id "\t" v "\t" a "\t" s "\t" outcome
+            }
+            print "~unmatched\t-\t" unmatched + 0 "\t-\t-"
+        }' "$EXP_DIR/matrix-routes.tsv" "$EXP_DIR/matrix-$1-verdicts.tsv" "$EXP_DIR/edge-answers.tsv" | sort > "$EXP_DIR/matrix-$1.tsv"
+    experiments_record "matrix $1" "$(awk -F'\t' '$1 ~ /^O/ && $5 != "no route" {printf "%s %s %s of %s answers a success, %s; ", $1, $2, $4, $3, $5}' "$EXP_DIR/matrix-$1.tsv")"
+    exercised=$(awk -F'\t' '$1 ~ /^O/ && $5 != "not exercised" && $5 != "no route"' "$EXP_DIR/matrix-$1.tsv" | grep -c . || true)
+    if [ "$PROBE" = matrix-mismatch ] && [ "$1" = A01 ]; then
+        planted=$(awk -F'\t' '$1 == "O04" {print $5}' "$EXP_DIR/matrix-$1.tsv")
+        case $planted in
+            MISMATCH*) log "PROBE matrix-mismatch: the walk saw the planted row - internal transfers claimed AVAILABLE while the database was away: $planted" ;;
+            *) cannot "PROBE matrix-mismatch: the planted row O04 read '$planted', so the run shows nothing: no transfer was answered in the window" ;;
+        esac
+    fi
+    mismatched=$(awk -F'\t' '$5 ~ /^MISMATCH/ {printf "%s %s (%s); ", $1, $2, $5}' "$EXP_DIR/matrix-$1.tsv")
+    if [ -n "$mismatched" ]; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the platform answered against the availability matrix's row $1: $mismatched"
+        log "$EXP_ID STOP: $EXP_STOPPED"
+        return 0
+    fi
+    if [ "$exercised" = 0 ]; then
+        if awk -F'\t' '$1 ~ /^O/ && $5 != "no route" && ($2 == "QUEUED" || $2 == "AVAILABLE") {found = 1} END {exit !found}' "$EXP_DIR/matrix-$1.tsv"; then
+            EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }no operation of the availability matrix's row $1 was answered in its window, so the row could not show itself"
+            log "$EXP_ID STOP: $EXP_STOPPED"
+            return 0
+        fi
+        experiments_record "matrix $1" "no operation was answered in the window (it may be shorter than a retry), so nothing was refused or served there"
+        return 0
+    fi
+    pass "$EXP_ID: the availability matrix's row $1 held for the $exercised operations the workload sent in the window"
+}
+
+# PROBE matrix-mismatch: the run's own copy of the matrix, row A01 claiming internal transfers (O04) AVAILABLE, the planted copy read back.
+availability_plant() {
+    planted="$WORK/availability-planted.md"
+    awk -F'|' 'BEGIN {OFS = "|"} $2 == " A01 " { gsub(/ O04,/, "", $7); $10 = " O04 " } {print}' "$AVAILABILITY_MATRIX" > "$planted" \
+        || cannot "PROBE matrix-mismatch: the matrix could not be copied"
+    AVAILABILITY_MATRIX=$planted
+    [ "$(availability_verdicts A01 | awk -F'\t' '$1 == "O04" {print $2}')" = AVAILABLE ] \
+        || cannot "PROBE matrix-mismatch: the planted copy does not claim O04 AVAILABLE in row A01"
+    log "PROBE matrix-mismatch: row A01 of the run's copy claims internal transfers AVAILABLE while the database is away ($planted)"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E72 (P16-TSK-023; AVAILABILITY.md row A14): the telemetry back ends lost - the cluster's Prometheus and Alertmanager scaled to zero for
+# five minutes under the workload, at three replicas. No operation reads them and they are in no readiness check, so money moves as before;
+# the platform is blind while they are away, and on kind their history (emptyDir) goes with them.
+# ---------------------------------------------------------------------------------------------------
+
+E72_SECONDS=300
+
+# e72_oldest: the oldest sample Prometheus holds, in milliseconds (its head block's minTime), or nothing.
+e72_oldest() {
+    experiments_prometheus /api/v1/status/tsdb 2>/dev/null | sed -n 's/.*"minTime":\([0-9]*\).*/\1/p' | head -1
+}
+
+E72_steady() {
+    start_workload e72 retry
+    sleep 30
+    experiments_sampler "$EXP_DIR" &
+    E72_FLEET=$!
+    BACKGROUND="$BACKGROUND $E72_FLEET"
+    E72_OLDEST_BEFORE=$(e72_oldest)
+    [ -n "$E72_OLDEST_BEFORE" ] || cannot "E72: Prometheus did not say what history it holds before the fault"
+    experiments_record "steady state" "the workload running; Prometheus answering, its oldest sample at $E72_OLDEST_BEFORE ms"
+}
+
+E72_fault() {
+    experiments_fault_on scaled finapp-observability finapp-alertmanager 0 1
+    experiments_fault_on scaled finapp-observability finapp-prometheus 0 1
+    deadline=$(( $(date +%s) + 180 ))
+    until [ -z "$(kube -n finapp-observability get pods -l 'app.kubernetes.io/name in (finapp-prometheus,finapp-alertmanager)' -o name 2>/dev/null)" ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || cannot "E72: the telemetry back ends did not stop within 180 s"
+        sleep 2
+    done
+    E72_FAULT_AT=$(date +%s)
+    experiments_record fault "Prometheus and Alertmanager at zero replicas from $(date -u -d "@$E72_FAULT_AT" +%H:%M:%SZ), their pods gone"
+}
+
+E72_observe() {
+    # No page can be read while they are away - that is the fault - so the stop condition is the fleet's own readiness, read from the API
+    # server every 2 s by the sampler: the telemetry back ends are in no replica's readiness, and a replica unready for them is a FAILED run.
+    blind=$(experiments_pages_firing)
+    experiments_record "pages during" "${blind:-silent} (the correctness pages' query, asked while the back ends were away)"
+    [ "$blind" = UNREADABLE ] || cannot "E72: the correctness pages were still readable with Prometheus at zero, so the fault did not take"
+    until_epoch=$((E72_FAULT_AT + E72_SECONDS))
+    while [ "$(date +%s)" -lt "$until_epoch" ]; do
+        unready=$(experiments_unready_others - "$E72_FAULT_AT")
+        if [ -n "$unready" ]; then
+            EXP_STOPPED="a replica unready while the telemetry back ends were away: $unready"
+            log "$EXP_ID STOP: $EXP_STOPPED"
+            break
+        fi
+        sleep 5
+    done
+    E72_FAULT_END=$(date +%s)
+}
+
+E72_recover() {
+    # The stop scaled both back. Prometheus reading every replica again, within five minutes; what the loss took from its history read.
+    kube -n finapp-observability rollout status deployment/finapp-prometheus --timeout=300s >> "$ART/apply.log" 2>&1 || fail "E72: Prometheus did not come back"
+    kube -n finapp-observability rollout status deployment/finapp-alertmanager --timeout=300s >> "$ART/apply.log" 2>&1 || fail "E72: Alertmanager did not come back"
+    back=$(date +%s)
+    deadline=$((back + 300))
+    until [ "$(experiments_value 'count(up{job="finapp"} == 1)')" = 3 ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || fail "E72: Prometheus did not read three replicas within 300 s of its return"
+        sleep 5
+    done
+    oldest=$(e72_oldest)
+    if [ -n "$oldest" ] && [ "$oldest" -ge $((E72_FAULT_AT * 1000)) ]; then
+        lost="its history lost: the oldest sample after the fault ($oldest ms; $E72_OLDEST_BEFORE before it), so every burn window restarted empty"
+    else
+        lost="its history kept: the oldest sample at ${oldest:-unreadable} ms ($E72_OLDEST_BEFORE before the fault)"
+    fi
+    experiments_record "back" "Prometheus reading three replicas $(( $(date +%s) - back )) s after its rollout; $lost"
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E72_FLEET" 2>/dev/null || true
+    unready=$(awk -F'\t' -v at="$E72_FAULT_AT" -v end="$E72_FAULT_END" 'NR > 1 && $1 >= at && $1 <= end && $4 != "True"' "$EXP_DIR/fleet.tsv" | grep -c . || true)
+    [ "$unready" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$unready replica readings unready while the telemetry back ends were away"
+    stop_workload e72
+    [ "$(workload_unresolved e72)" = 0 ] || fail "E72: $(workload_unresolved e72) requests stayed unresolved: see workload-e72.tsv"
+    assert_flows_ran e72
+    experiments_record workload "$(cat "$CLIENT/workload-e72.summary")"
+    experiments_edge_read "$EXP_DIR" $((E72_FAULT_AT - 60))
+    availability_check A14 "$E72_FAULT_AT" "$E72_FAULT_END"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E73 (P16-TSK-023; AVAILABILITY.md row A11): the payout rail and card tokenisation unavailable, one card attached meanwhile; then the payout
+# rail silent past the timeout; under the workload, at three replicas. Each phase holds PROVIDER_PHASE_SECONDS, as E17's do.
+# ---------------------------------------------------------------------------------------------------
+
+# The bound a payout is concluded within once its rail answers again, read from the code's default as provider_resolve_seconds reads the
+# card's (never copied): twice the payout sweep's dispatched age, and five minutes for the sweep's poll, its claim and the client.
+e73_resolve_seconds() {
+    age=$(sed -n 's/.*finapp\.merchant\.payout\.sweeper\.dispatched-age:PT\([0-9]*\)M}.*/\1/p' \
+        "$ROOT/app/src/main/java/com/finapp/app/merchant/MerchantPayoutBeans.java" | head -1)
+    case $age in '' | *[!0-9]*) cannot "the payout sweep's dispatched age could not be read from MerchantPayoutBeans.java" ;; esac
+    ! grep -Eqr 'PAYOUT_SWEEPER_DISPATCHED_?AGE|payout\.sweeper\.dispatched-age' "$ROOT/deploy" \
+        || cannot "a deployed overlay sets the payout sweep's dispatched age, which this bound reads from the code's default"
+    E73_RESOLVE_SECONDS=$((2 * age * 60 + 300))
+}
+
+# Payouts born since the start that the platform concluded COMPLETED with no creation the provider took under their reference (the
+# Idempotency-Key SimulatedPayoutProvider sends): money paid out on no answer. One line each; nothing printed is none. Called inside $( ):
+# it never ends the run itself, and an unreadable side is printed as a problem.
+e73_unanswered() {
+    psql_query -c "SELECT provider_idempotency_reference FROM merchant.merchant_payout WHERE created_at >= to_timestamp($PROVIDER_START)
+        AND status = 'COMPLETED'" > "$EXP_DIR/payouts-completed.raw" 2>/dev/null || { echo "the completed payouts could not be read"; return 0; }
+    tr -d '\r ' < "$EXP_DIR/payouts-completed.raw" | grep . > "$EXP_DIR/payouts-completed.txt" || true
+    [ -s "$EXP_DIR/requests.tsv" ] || { echo "the provider's requests could not be read"; return 0; }
+    awk -F'\t' '$2 == "POST" && $3 == "/payouts" && $5 == "effect" {print $4}' "$EXP_DIR/requests.tsv" | sort -u > "$EXP_DIR/payout-effects.txt"
+    awk 'NR == FNR {taken[$0] = 1; next} !($0 in taken) {print "completed with no creation the provider took: " $0}' \
+        "$EXP_DIR/payout-effects.txt" "$EXP_DIR/payouts-completed.txt"
+}
+
+e73_waiting() {
+    psql_query -c "SELECT count(*) FROM merchant.merchant_payout WHERE created_at >= to_timestamp($PROVIDER_START)
+        AND status IN ('DISPATCHED', 'UNKNOWN')" | tr -d '[:space:]'
+}
+
+# Payouts that left UNKNOWN more than once: an unknown is concluded once.
+e73_resolved_twice() {
+    psql_query -c "SELECT count(*) FROM (SELECT e.payout_id FROM merchant.merchant_payout_event e
+        JOIN merchant.merchant_payout p ON p.id = e.payout_id
+        WHERE p.created_at >= to_timestamp($PROVIDER_START) AND e.from_status = 'UNKNOWN' AND e.to_status <> 'UNKNOWN'
+        GROUP BY e.payout_id HAVING count(*) > 1) twice" | tr -d '[:space:]'
+}
+
+# e73_attach <label>: the rehearsal's first customer attaches one card under E73's client token, its live methods counted before and
+# after (Rehearsal.java's attach-card), into attach-<label>.txt; sets E73_STATUS, E73_BEFORE and E73_AFTER. Never called inside $( ).
+e73_attach() {
+    client attach-card "$E73_GRANT" > "$EXP_DIR/attach-$1.txt" 2>&1 || true
+    E73_STATUS=$(sed -n 's/^status=//p' "$EXP_DIR/attach-$1.txt" | tail -1)
+    E73_BEFORE=$(sed -n 's/^before=//p' "$EXP_DIR/attach-$1.txt" | tail -1)
+    E73_AFTER=$(sed -n 's/^after=//p' "$EXP_DIR/attach-$1.txt" | tail -1)
+    [ -n "$E73_STATUS" ] && [ -n "$E73_BEFORE" ] && [ -n "$E73_AFTER" ] \
+        || cannot "E73: the attach ($1) was not answered and counted: see experiments/E73/attach-$1.txt"
+    experiments_record "attach $1" "answered $E73_STATUS; the customer's methods $E73_BEFORE before, $E73_AFTER after"
+}
+
+E73_steady() {
+    e73_resolve_seconds
+    PROVIDER_START=$(db_epoch)
+    PROVIDER_START_MILLIS=$((PROVIDER_START * 1000))
+    E73_GRANT="ctok_$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+    # The client keeps asking under each key until its movement ends, past the outage and the payout sweep's conclusion.
+    WORKLOAD_RETRY_SECONDS=$((2 * PROVIDER_PHASE_SECONDS + E73_RESOLVE_SECONDS))
+    start_workload e73 retry
+    unset WORKLOAD_RETRY_SECONDS
+    sleep 60
+    experiments_record "steady state" "the workload running with retries under its keys for $((2 * PROVIDER_PHASE_SECONDS + E73_RESOLVE_SECONDS)) s; the payout rail and card tokenisation answering"
+}
+
+E73_fault() {
+    experiments_fault_on hold degrade-payout-unavailable
+    experiments_fault_on hold degrade-tokenisation-unavailable
+    E73_FAULT_AT=$(date +%s)
+    experiments_record fault "the payout rail and card tokenisation answered 503 for every request (degrade-payout-unavailable, degrade-tokenisation-unavailable) from $(date -u -d "@$E73_FAULT_AT" +%H:%M:%SZ)"
+    sleep 20
+    e73_attach during
+    case $E73_STATUS in 2*) EXP_STOPPED="a card attached while tokenisation was away answered $E73_STATUS" ;; esac
+    [ "$E73_AFTER" = "$E73_BEFORE" ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the refused attach stored a method ($E73_BEFORE -> $E73_AFTER)"
+    [ -n "$EXP_STOPPED" ] && return 0
+    provider_watch "$PROVIDER_PHASE_SECONDS" "the payout rail and card tokenisation unavailable"
+    [ -n "$EXP_STOPPED" ] && return 0
+    experiments_fault_off hold degrade-tokenisation-unavailable
+    experiments_fault_off hold degrade-payout-unavailable
+    experiments_fault_on hold degrade-payout-silent
+    experiments_record fault "the payout rail silent past the timeout for every request (degrade-payout-silent) from $(date -u +%H:%M:%SZ)"
+}
+
+E73_observe() {
+    if [ -z "$EXP_STOPPED" ]; then
+        provider_watch "$PROVIDER_PHASE_SECONDS" "the payout rail silent"
+    fi
+    E73_FAULT_END=$(date +%s)
+}
+
+E73_recover() {
+    # The faults are off (the stop removed them). Every payout born since the start concludes within the bound, each unknown once.
+    deadline=$(( $(date +%s) + E73_RESOLVE_SECONDS ))
+    waiting=1
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        waiting=$(e73_waiting)
+        [ "$waiting" = 0 ] && break
+        sleep 15
+    done
+    [ "$waiting" = 0 ] || fail "E73: $waiting payouts born since the start still wait on an answer $E73_RESOLVE_SECONDS s after the rail returned"
+    e73_attach after
+    [ "$E73_STATUS" = 201 ] || fail "E73: the card was not attached once tokenisation returned: it answered $E73_STATUS"
+    [ "$E73_AFTER" = $((E73_BEFORE + 1)) ] || fail "E73: the attach after the return left $E73_BEFORE -> $E73_AFTER methods, not one more"
+    stop_workload e73
+    [ "$(workload_unresolved e73)" = 0 ] || fail "E73: $(workload_unresolved e73) requests stayed unresolved: see workload-e73.tsv"
+    assert_flows_ran e73
+    experiments_record workload "$(cat "$CLIENT/workload-e73.summary")"
+    provider_requests
+    unanswered=$(e73_unanswered)
+    [ -z "$unanswered" ] || fail "E73: a payout concluded without its provider's effect: $(printf '%s' "$unanswered" | head -3 | tr '\n' ';')"
+    twice=$(e73_resolved_twice)
+    [ "$twice" = 0 ] || fail "E73: $twice payouts left UNKNOWN more than once"
+    blind=$(provider_blind_resends "$PROVIDER_START_MILLIS" | awk -F'\t' '$3 == "/payouts"')
+    [ -z "$blind" ] || fail "E73: a payout sent to the provider again with no inquiry of it in between: $(printf '%s' "$blind" | head -3 | tr '\n' ';')"
+    degraded=$(awk -F'\t' -v since="$PROVIDER_START_MILLIS" '$1 >= since && $3 == "/payouts" && ($5 == "unavailable" || $5 == "silent")' "$EXP_DIR/requests.tsv" | grep -c . || true)
+    [ "$degraded" -ge 1 ] || fail "E73: the payout rail degraded no request, so nothing was shown: the control"
+    concluded=$(grep -c . "$EXP_DIR/payouts-completed.txt" || true)
+    experiments_record "provider's side" "$degraded payout requests degraded; no blind resend; $concluded payouts completed since the start, each on a creation the provider took"
+    experiments_edge_read "$EXP_DIR" $((E73_FAULT_AT - 60))
+    availability_check A11 "$E73_FAULT_AT" "${E73_FAULT_END:-$(date +%s)}"
+    pass "E73: 0 payouts concluded without the provider's effect, every payout concluded once within $E73_RESOLVE_SECONDS s of the rail's return, no blind resend ($degraded degraded requests); the refused attach stored nothing and the retried one stored one"
 }

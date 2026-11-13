@@ -752,6 +752,18 @@ commit and the date; do not delete the entry.
     above, runs with. Nothing ran on a cluster. What ran instead, on 2026-11-13: the new shell functions under `dash` against a real
     `kustomize` render of the `kind` overlay and stubbed cluster answers, the pinned k6's `inspect` of the `autoscale` profile, and the
     harness's refusals before any build (§11.58's record).
+  - **`P16-TSK-023`** (the data tier's availability, `docs/architecture/AVAILABILITY.md`, ADR-0144; `OPERATIONS_RUNBOOK.md` §11.59, whose
+    last record is empty): in the `experiments` scope at three replicas, **E72**, the telemetry back ends lost (`REHEARSAL_EXPERIMENTS=E72`),
+    and **E73**, the payout rail and card tokenisation lost (`REHEARSAL_EXPERIMENTS=E73`), each walking its row of the matrix; the walks
+    the task added to **E05**, **E06** and **E09** (rows A01 and A06), made with those experiments' own owed runs (`P16-TSK-022`'s and
+    `P16-TSK-013`'s bullets above); **the entry's probe**, `REHEARSAL_PROBE=matrix-mismatch` with `REHEARSAL_EXPERIMENTS=E06` at three
+    replicas, the run's own copy of the matrix claiming transfers available while the database is away and E06's walk seen failing on
+    that row, with its `MUTATION_TESTING.md` §2 row; and in the `load` scope, **E74**, the sustained profile at three replicas
+    (`REHEARSAL_LOAD_PROFILE=sustained`) with each availability objective read over the run into `load/slo-availability.tsv`, the same
+    run as `P16-TSK-007`'s E29 sustained leg when it is made on a tree with the reading, judged by `P16-TSK-029`. Nothing of the task ran
+    on a cluster; what ran instead, outside one: the walk's shell functions over a fabricated edge-answers file (every verdict both ways,
+    an empty window, the planted copy) and the objectives' reading with Prometheus stubbed, both with the machine's own `bash` and `awk`,
+    and the client compiled with the JDK.
 
 ## PI-026 — The first real environment's managed-service decisions: the audit archive's bucket and read door, the restore's release and window
 

@@ -1444,6 +1444,12 @@ generation on the reporting pool, that pool on the writer's address, the driver 
 only read ever eligible for a replica, under stated conditions. Each decision's overturning reading, E65, is built and owed under
 `POSTPONED_ISSUES.md` PI-025; report generation's from-inception fold is `THREAT_MODEL.md` §6 item 64, decided by the owner on
 2026-11-13: an opening checkpoint for each locked month, `P16-REM-003`. → [ADR-0142](../adr/ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md)
+**The financial-operation availability matrix** (`P16-TSK-023`, 2026-11-13, `Proposed`). Every operation, under every failure, is
+refused (no record), queued (its record written, its effects waiting), degraded or available; no request is answered while its record
+cannot be written, and none is refused for the broker's sake. The operations are classes of both edges' served routes, every route in
+exactly one; every failure row is checked by registered experiments or designed-only; E05, E06, E09, E72 and E73 walk their rows at the
+edge and fail on a mismatch. No automatic refusal on a correctness signal: the freeze stays a person's act, proposed to the owner
+(`THREAT_MODEL.md` §6 item 66). Every run owed (PI-025). → [ADR-0144](../adr/ADR-0144-the-financial-operation-availability-matrix.md)
 
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.

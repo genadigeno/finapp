@@ -2985,6 +2985,11 @@ other, and never may one person both hold a break-glass session and approve it, 
    moved it. `RESOLVED` only when the signal is clear and the section's own check, or the census, says the money is whole;
    `REVIEWED` when the review below is written.
 
+*(2026-11-13, `P16-TSK-023`: for a dependency lost or degraded, the financial-operation availability matrix -
+`docs/architecture/AVAILABILITY.md` §4, read as §11.59 says - gives per operation whether it is refused with no record, answered with its
+effects waiting, degraded or untouched, and what the client sees; the record's messages draw on its row. A freeze of money movement on a
+correctness page stays the lead's recorded decision (§11.20; `THREAT_MODEL.md` §6 item 66).)*
+
 **Communication.** *Inside*: one channel per incident, the record its source of truth; an update at each change of state, and
 at least every 30 minutes at `SEV-1` and every hour at `SEV-2`. *Outside* (customers, merchants, a provider): what is known,
 what is not, what they should do, and when the next word comes; never a figure the record does not hold, a cause not yet
@@ -3261,6 +3266,7 @@ latest; the run, as its record names it.
 | §11.56 | `ledger`, `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | §11.57 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.58 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
+| §11.59 | `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -5735,6 +5741,73 @@ delete the kept cluster (`kind delete cluster`) rather than reuse it.
 **The last record.** Not run. The owner postponed Phase 16's `kind` runs on 2026-11-13 ("we dont need long running checks and tests"):
 E05, E06, E57 and the probe, each at three replicas, are owed under `POSTPONED_ISSUES.md` PI-025, with E29's longest statement. Their
 text is held by `ExperimentsRehearsalContractTest`; nothing here has run on a cluster, and no number above is a measurement.
+
+### 11.59 The data tier's availability: what still works under each failure, and the walks that check it (`P16-TSK-023`, ADR-0144)
+
+**What it is.** `docs/architecture/AVAILABILITY.md`: the single points of failure (its §2), the financial operations as classes of the
+routes the edges serve (§3), and the matrix (§4) that says, for twenty failures, which operations are refused with no record, answered
+with their effects waiting, served with a limitation, or untouched, and what the client and the money see. PostgreSQL is the only
+financial truth: no request is answered while its record cannot be written. `AvailabilityMatrixTest` holds the document to the served
+routes, to the register of experiments and to that rule on every build.
+
+**Reading the matrix in an incident** (§11.12). Find the failure's row and read the client's answers from it before writing any message:
+the database away (A01) refuses everything at the edge with `503`, or `500 api.InternalError` from a replica before readiness falls
+(`THREAT_MODEL.md` §6 item 61, decided by the owner on 2026-11-13: `503 api.TemporarilyUnavailable` with `Retry-After` once
+`P16-REM-002` is built; read "(`THREAT_MODEL.md` §6 item 61)" alone until that decision), and a retry under the same key is a first attempt; every broker away (A06) answers every command with its
+record and holds its events in the outbox, so money moves and the events follow; a provider lost (A10 to A13) leaves its rail's movements
+`UNKNOWN` or refused openly, concluded by its sweep's inquiry, never resent. A correctness page (A19) refuses nothing by itself: freezing
+money movement is the incident lead's recorded decision with the financial controller (§11.20), and whether a flow should refuse
+automatically is put to the owner (`THREAT_MODEL.md` §6 item 66 (a)). A row the platform contradicts in an incident is a defect of the
+platform or of the document: record which, and correct the one that is wrong.
+
+**Running the walks.** One full cluster at a time, under the machine's lock, as §11.46:
+
+```
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E06 E09 E72 E73 E05" infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E06 REHEARSAL_PROBE=matrix-mismatch infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=sustained infra/scripts/kind-rehearsal.sh
+```
+
+E05 leaves one server and no standby, so it runs last (§11.54). In each walking experiment, after the fault, `availability_check` reads
+every answer of the public edge from the minute before it, takes each answer that ended in the fault's window to the operation whose
+pattern matches its method and path most specifically, and compares with the experiment's row: no success where the row says
+`REFUSED`; a success where it says `QUEUED` or `AVAILABLE`, once any answer was seen. E72 scales the cluster's Prometheus and
+Alertmanager to zero for five minutes (row A14); E73 takes the payout rail and card tokenisation away, attaches one card meanwhile, then
+silences the payout rail (row A11). The second command is the entry's probe: the run's own copy of the matrix claims transfers
+available while the database is away, and E06's walk must fail on that row - red for that reason, or unable to run because no transfer
+was answered in the window. The third is E74: the sustained profile, after which `load/slo-availability.tsv` holds each availability
+objective's requests, errors, error ratio and burn rate over the run, recorded and never judged here.
+
+**What a green run says** (each a line of `assertions.tsv` and the experiment's `record.tsv`): E05's, E06's and E09's own criteria (§11.54,
+§11.51) and their row held; E72: every replica ready throughout, the pages unreadable while the back ends were away, Prometheus reading
+three replicas within five minutes of their return and its history read against the fault, every request resolved by its key, the row
+held; E73: no payout completed without a creation the provider took under its reference, every payout born since the start concluded
+within twice the payout sweep's dispatched age and five minutes, none left `UNKNOWN` twice, no blind resend, at least one payout request
+degraded, the attach refused with nothing stored and stored once after, the row held. Then each experiment's census, after which no page
+fires.
+
+**Reading the record** (under `$REHEARSAL_ARTEFACTS/experiments/<id>`, and `load/` for E74):
+
+| File | What it holds |
+|---|---|
+| `matrix-<row>.tsv` | Per operation: its verdict, the answers in the window, the successes among them, and held, a mismatch, answered (`DEGRADED`) or not exercised; the answers no pattern took |
+| `matrix-routes.tsv`, `matrix-<row>-verdicts.tsv` | The patterns and the row as the walk read them from the document |
+| `edge-answers.tsv` | Every answer of the public edge from the minute before the fault, as §11.54 reads them |
+| `attach-during.txt`, `attach-after.txt` (E73) | The card attach's answer and the customer's methods before and after it |
+| `requests.tsv`, `payouts-completed.txt`, `payout-effects.txt` (E73) | The simulator's own record of every request; the payouts completed since the start; the creations it took |
+| `load/slo-availability.tsv` (E74) | Each availability objective over the run: target, requests, errors, error ratio, burn rate |
+
+**When a walk is red.** A success where the row says `REFUSED` means an operation answered without the record it needs, or the row is
+wrong: read the operation's answers in `edge-answers.tsv` and the application's log for the request before anything else, and treat a
+success while the database was away as an incident in a real environment (§11.12). No success where the row says `QUEUED` or
+`AVAILABLE` means the operation depends on the failed component in a way the document does not say: find where, and correct the code or
+the row with its reason - never the row alone to make a run pass. A row that exercised nothing could not show itself: run it again with
+the workload sending that operation, never as a pass.
+
+**The last record.** Not run. The owner postponed Phase 16's `kind` runs on 2026-11-13 ("we dont need long running checks and tests"):
+E72, E73 and E74, each at three replicas, the walks of E05, E06 and E09 with their own runs, and the probe are owed under
+`POSTPONED_ISSUES.md` PI-025. Their text is held by `AvailabilityMatrixTest`; nothing here has run on a cluster, and no number above is a
+measurement.
 
 ### 11.50 The audit archive - `AuditArchiveCopyDiffers`, `AuditArchiveBehind`; its store, a copy that differs, the read path, and its experiments (`P16-TSK-010`, ADR-0135)
 

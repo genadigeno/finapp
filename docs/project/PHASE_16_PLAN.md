@@ -585,6 +585,11 @@ check (examples; the full matrix per operation and per failure is the task's):
 | The trial balance non-zero | Up | **An operator's decision** (`OPERATIONS_RUNBOOK.md` §11.20): the freeze of money movement is a person's act, not automatic — recorded as a question for `-023` whether any flow should refuse automatically | Reads |
 | A restore under way | Down (roles locked, §11.35) | All money movement until the verification passes | None |
 
+*(Dated note, 2026-11-13, `P16-TSK-023`: the register of §10.1 and the full matrix, twenty failures over nineteen operations held to every
+route the edges serve, are `docs/architecture/AVAILABILITY.md` (ADR-0144), walked by E05, E06, E09, E72 and E73 and held by
+`AvailabilityMatrixTest`; every run owed under `POSTPONED_ISSUES.md` PI-025. The open question above - an automatic refusal on a
+correctness signal - is put to the owner as `THREAT_MODEL.md` §6 item 66 (a), recommended (i): the freeze stays a person's act.)*
+
 ---
 
 ## 11. Disaster recovery (Part 18)
