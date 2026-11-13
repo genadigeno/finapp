@@ -413,6 +413,10 @@ class NoFloatingPointMoneyRulesTest {
                     // for unreadable. Counts and ages, never a value at issue (ADR-0072).
                     "com.finapp.app.telemetry.BreakMetrics",
                     "com.finapp.app.telemetry.BreakMetrics$Cached",
+                    // P16-TSK-029. The SAME case again: the open breaks past their severity's bound and the suspense items past
+                    // thirty days (counts, longs end to end), published through the ToDoubleFunction a Gauge imposes, NaN the
+                    // sentinel for unreadable. Counts, never a value at issue (ADR-0072).
+                    "com.finapp.app.telemetry.AgedCountMetrics",
                     // P8-TSK-024. The OutboxRelaySchedule case: a run's outcome counts (longs)
                     // published through Counter.increment(double), the only instrument
                     // Micrometer offers; durations through Timer.record(Duration). Counts and
