@@ -30725,7 +30725,7 @@ on none:
 - **Operational documentation**: the scenarios' findings in the runbook where a person acts.
 - **Risk**: High. **Cx**: XL.
 
-**P16-TSK-028 — Security under scale and failure** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-022`, both `COMPLETE`)
+**P16-TSK-028 — Security under scale and failure** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-028` from master `fb0e014b`, wave F; no migration, no production code changed, no alert rule; ADR-0147 `Proposed`; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; one owner item, `THREAT_MODEL.md` §6 item 69; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-022`, both `COMPLETE`)" until the gate)*
 - **Objective**: `PHASE_16_PLAN.md` §18 executed. Failover, recovery and load bypass no security control.
 - **Affected components**: `identity` (sessions), `platform` (abuse limits, audit), the edge, the restore.
 - **Dependencies**: `-014`, `-022`.
@@ -30742,6 +30742,43 @@ on none:
 - **Definition of done**: `DOD-SEC`, `DOD-TEST`.
 - **Operational documentation**: the security notes in the affected runbook sections.
 - **Risk**: Medium. **Cx**: M.
+- **As built** (2026-11-13). **Nothing of this task has run on a cluster.** By the owner's word of 2026-11-13 ("we dont need long
+  running checks and tests") every run is owed under `POSTPONED_ISSUES.md` PI-025 (this task's bullet there), and each criterion that
+  rests on a run is met as **built, contract-tested, run owed (PI-025)**. ADR-0147; `OPERATIONS_RUNBOOK.md` §11.62 (and security notes in
+  §11.30, §11.40, §11.52, §11.55); `RESILIENCE_EXPERIMENTS.md` E81, E82 and §1.1's Stop note; `PHASE_16_PLAN.md` §18's dated note. Every
+  reservation used but E83.
+  - *The security probe, in every experiment* (`experiment_run`'s hooks in `infra/scripts/kind-rehearsal/experiments.sh`; the client's
+    `security-tokens`, `four-eyes-plant` and `four-eyes-self`): a customer's and an elevated operator's sessions and the merchant's key held
+    from the steady state; the probe's control on every ready replica (held served `200`, four protected requests refused `401`, or the
+    run cannot go on); every application pod asked directly every 5 s from just before the fault to the recovery's end, looks labelled
+    `arming` until the fault is on; a protected request answered `2xx`/`3xx` (**a fail-open observation**), a held credential refused, or a
+    fault with no answered look fails the experiment. **Built; runs owed.** The entry's probe, an unauthenticated request during E05
+    refused, is this probe's `customer-none` case in E05. **Owed.**
+  - *Four eyes across every fault*: one identity holding both accounting roles proposes a GL mapping version, never activated; its own
+    activation tried while the fault is on and after the recovery - never `2xx`, `403 accounting.SelfApprovalRefused` after, every `403`
+    recorded, the plant still `PROPOSED`. **Built; owed** (E05 first: no primary, then the promoted one).
+  - *Audit integrity across every fault*: every audit record's digest before the fault, present and unchanged after the recovery.
+    **Built; owed.**
+  - *The application's half without a cluster*: `DegradedStorageFailsClosedTest` - the real session interceptor and merchant key's door
+    over a database that is away, and over a role read that fails mid-request: the failure thrown as itself, never `401` and never a pass,
+    nothing recorded, nothing left on the thread, no handler reached. **Met.**
+  - *Rate limiting across instances, API abuse during spikes*: **E81**, one source's burst of three times the sign-in door's own limit over
+    every replica (the door set back to `application.yaml`'s limit, which the `kind` overlay raises), exactly the limit admitted, by more than
+    one replica, the counter's row at the limit, inside one window; E05 reads the door's counts across the promotion (the unlogged counter's
+    fresh windows, measured, never judged). **Built; owed at ten.** *Deviation*: the spike for abuse is one source's burst in the
+    experiments scope, not the load scope's spike profile, whose many sources would not show an exact per-source count.
+  - *Session during instance replacement*: **E82**, a rolling restart of every replica at ten, every new replica serving the held
+    sessions. **Built; owed.** *Deviation*: a rolling restart of one release, not E26's walk N − 1 → N at ten (the release scope carries no
+    probe); a session's row is the same across both.
+  - *Authentication under failover*: the probe's held sessions in E01 (a replica's replacement) and E05 (the failover). **Built; owed.**
+  - *Key availability, backup confidentiality, the restore's audit rows*: the restore drills' (E59-E61, `RestoreRehearsalScriptTest`):
+    named, not rebuilt. *Secrets during DR*: routed to `P16-TSK-025`. *DDoS*: designed-only (item 32 (b), `P16-TSK-015`'s sizing).
+  - *Found*: **a restore undoes the security record after its point** (sessions, roles, suspensions, passwords, factors, merchant keys revoked
+    after it live again) - `THREAT_MODEL.md` §6 item 69, recommendation (i), a security window in the post-recovery gate built with
+    `P16-TSK-025`; the interim in §11.55's security note. And in the harness, by its own first test run: a forged merchant key of UUID
+    version 4 is refused as malformed before the store, so the probe's forged key is version 7.
+  - *Probes* (hermetic, performed; `MUTATION_TESTING.md` §2): P1-P10, each red on its aimed member. The cluster half owed.
+  - *Routed*: `P16-TSK-025` (secrets during DR; item 69's window if decided (i)); `P16-TSK-020` (E04's node must not be the probe pod's).
 
 **P16-TSK-029 — SLOs and error budgets validated under load; break-age counts (`THREAT_MODEL.md` §6 item 42 (a))** — `READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-003` and `P16-TSK-014`, both `COMPLETE`)
 - **Objective**: `PHASE_16_PLAN.md` §15:

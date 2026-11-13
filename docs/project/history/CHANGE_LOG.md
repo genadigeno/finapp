@@ -21,6 +21,7 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 | Date | Change |
 |------|--------|
+| 2026-11-13 | `P16-TSK-028` gated `COMPLETE` on its branch (security under scale and failure, ADR-0147): a security probe in every experiment (every replica asked while the fault is on; a fail-open, a lost session or an unobserved fault fails it), a four-eyes plant and the audit trail compared across every fault, E81 (the sign-in door's limit exact over ten replicas) and E82 (sessions through a rolling restart at ten); `DegradedStorageFailsClosedTest` and `SecurityUnderFailureContractTest`; probes P1-P10 performed; every run owed under PI-025; `THREAT_MODEL.md` §6 item 69 (a restore undoes the security record after its point) put to the owner. |
 | 2026-11-13 | Wave F started (the owner: "Start wave F, and accept all nine recommendations"): `P16-TSK-015`, `-020`, `-028` and `-029` marked `READY`; `-025` to start at `-023`'s merge. |
 | 2026-11-13 | `P16-TSK-014` merged (merge `4ede754c` of `e689c86c` into `62e90a1a`, both sides kept): Phase 16 at 21 of 34, **M16.5 at 1 of 2**; `P16-TSK-012`'s record archived (TASK_HISTORY 445 → 446); wave F (`P16-TSK-015`, `-020`, `-028`, `-029`) eligible and put to the owner. |
 | 2026-11-13 | `P16-TSK-012` merged (merge `0701241b` of `07450220` into `bc61243f`, both sides kept): Phase 16 at 20 of 34, **M16.3 closed at 5 of 5**; `P16-TSK-011`'s record archived (TASK_HISTORY 444 → 445); no task newly eligible; item 64 put to the owner. |
