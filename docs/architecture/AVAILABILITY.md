@@ -186,8 +186,8 @@ item 66 (a), ADR-0144 decision 5):
 `SLOS.md` §2's availability objectives - `authentication_availability`, `transfer_availability`, `payment_checkout`, `merchant_api`,
 `provider_callbacks` and `operator_surface` - are read over a load run's whole window from the platform's own SLI rules
 (`infra/prometheus/rules/slo-recording.yml`: each objective's five-minute error ratio, taken over the run instead), beside each
-objective's target and the share of its 30-day budget the run spent: `load/slo-availability.tsv`, written by every `load` run
-(`load_availability_objectives`). At the sustained profile that reading is E74. **It is recorded, never judged here**: a load run fails on
+objective's target and the burn rate the run ran at (1 spends the 30-day budget exactly at its pace): `load/slo-availability.tsv`,
+written by every `load` run (`load_availability_objectives`). At the sustained profile that reading is E74. **It is recorded, never judged here**: a load run fails on
 correctness only (`PHASE_16_PLAN.md` §5.2-§5.3), and validating or recalibrating each objective is `P16-TSK-029`'s. Not run: owed under
 PI-025.
 

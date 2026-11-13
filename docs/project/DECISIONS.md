@@ -1428,6 +1428,13 @@ cannot log in; the books are verified again; a person releases, with a record na
 to an instant from an encrypted WAL archive, held before its server first starts. →
 [ADR-0140](../adr/ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md)
 
+**The financial-operation availability matrix** (`P16-TSK-023`, 2026-11-13, `Proposed`). Every operation, under every failure, is
+refused (no record), queued (its record written, its effects waiting), degraded or available; no request is answered while its record
+cannot be written, and none is refused for the broker's sake. The operations are classes of both edges' served routes, every route in
+exactly one; every failure row is checked by registered experiments or designed-only; E05, E06, E09, E72 and E73 walk their rows at the
+edge and fail on a mismatch. No automatic refusal on a correctness signal: the freeze stays a person's act, proposed to the owner
+(`THREAT_MODEL.md` §6 item 66). Every run owed (PI-025). → [ADR-0144](../adr/ADR-0144-the-financial-operation-availability-matrix.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

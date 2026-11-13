@@ -632,6 +632,10 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T14 | Shedding seen on a real cluster: the spike profile's shed requests leaving no idempotency claim and no transfer, with the shed rate and each spike's recovery measured; a slowed database shed while every correctness gauge stays readable, and the shedding stopping after it; the stress profile's break crossed with the source-join census reading at every sample and no checkout's creating answer lost after its commit | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T14 | A database connection the network black-holes (after a failover, a hung or vanished server) is given up by the driver after the data source's socket timeout, five minutes, rather than holding its thread and one of the pool's seven until the pod is replaced; the reporting pool takes the same value; it stays above every statement bound the code arms on either pool (report generation's four minutes the longest), the bounds discovered from the arming sites and the register and moved by no overlay, and frees a connection with ten minutes of the in-region recovery objective left | EXISTS | `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theDataSourceGivesUpABlackHoledConnection`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#itIsAboveEveryArmedBound`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theBoundsAreDiscovered`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theReportingPoolCarriesIt`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#itFreesABlackHoledConnectionInTime` |
 | T14 | On a real cluster, the black-holed database hop held for the whole fleet: every held connection given up within the socket timeout, and, as the control, still held without it; the longest statement under the sustained profile measured below half the timeout | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
+| T14 | What each financial operation does while a dependency is away is written once and held: every route either edge serves belongs to exactly one operation, every failure row places every operation once and names the registered experiments that check it or its designed-only row, and no request is answered available or with its effects waiting while its financial record cannot be written, nor refused for the broker's sake, a row's kind read from the experiments that check it (`docs/architecture/AVAILABILITY.md`) | EXISTS | `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#everyServedRouteBelongsToExactlyOneOperation`; `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#everyFailureRowPlacesEveryOperationOnce`; `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#noRequestIsAnsweredWhileItsRecordCannotBeWritten` |
+| T14 | The experiments that take the database, the brokers, the telemetry back ends and the payout rail away compare every operation the workload sends with their row at the edge - no success where it says refused, a success where it says available or waiting - and fail on a mismatch either way or on a row that exercised nothing; the walks the harness makes are exactly the ones the document declares | EXISTS | `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#theWalkComparesBothWaysAndReadsTheDocument`; `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#eachWalkerComparesItsRowAndOnlyItsRow`; `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#theProbeIsPlantedInTheRunsCopyAlone` |
+| T14 | On a real cluster, the matrix's rows walked: the database away (E05, E06), every broker away (E09), the telemetry back ends away (E72) and the payout rail and card tokenisation away (E73), with the probe's planted row seen failing E06's walk; and the availability objectives read at the sustained profile (E74) for the SLO validation to judge. Built and contract-tested; their runs postponed by the owner with Phase 16's other cluster runs | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
+| T14 | Whether any flow refuses money movement by itself when a correctness signal pages, and an experiment for each rail no simulator on `kind` serves (the instant scheme, the corridors, the KYC provider, a bureau, a settlement report source) | GAP | `owner item 66`; owner: the owner, since 2026-11-13 |
 | T15 | An unbalanced journal entry is refused at commit, whoever writes it, raw SQL included (`INV-LED-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#aDirectUnbalancedInsertIsRefusedAtCommit` |
 | T15 | The application role holds no `UPDATE`, `DELETE` or `TRUNCATE` on the journal | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theColumnSweep` |
 | T15 | The journal's append-only trigger binds even the migrator (`INV-HIST-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
@@ -717,6 +721,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T23 | On a real API server, a provider outage and a slow provider under the workload: the card PSP unavailable and then silent past the timeout, no payment concluded without its answer, no blind resend and every unknown resolved once (E17); the FX provider and then the reference taken away, no conversion on a stale rate (E18); every provider at two and ten times its latency, the routes that call none within their objectives (E21); and the failure rate per rail each measures, which owner decision C12 waits on | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T23 | A KYC provider's outage during onboarding, rehearsed (E19): no production path runs a case's checks, so the case's retry budget has no re-asker and no customer is ever activated through a provider's decision for an outage to withhold | GAP | `owner item 60`; owner: the owner, since 2026-11-13 |
 | T23 | The provider's hop black-holed for every replica on a real cluster (E15): a call that never reached the provider answering `503`, one sent and unanswered recorded unknown and never sent again, and every payment and payout concluded once by the sweeps after the return. Built and contract-tested; its run postponed by the owner with Phase 16's other cluster runs | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
+| T23 | The payout rail's outage experiment measures what its row names, on the platform's side and the simulator's: the payout rail and card tokenisation degraded through the fault registry; no payout completed without a creation the provider took under its reference, read at every pass of the watch and after; every payout born since the start concluded within twice the payout sweep's dispatched age, read from the code, and none left unknown twice; no payout's key sent again without an inquiry between; a fault that degraded nothing is no pass; a card attach refused during it storing no method, and one stored after | EXISTS | `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#e73TakesThePayoutRailAndTokenisationAway` |
+| T23 | On a real cluster, the payout rail unavailable and then silent and card tokenisation unavailable under the workload (E73): no payout concluded without the provider's effect, every unknown concluded once, no blind resend, the refused attach storing nothing. Built and contract-tested; its run postponed by the owner with Phase 16's other cluster runs | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T24 | Every webhook delivery, duplicates included, is retained as evidence (`INV-HIST-02`) | EXISTS | `app/src/test/java/com/finapp/app/payments/PaymentWebhookDatabaseTest.java#aTripleDeliveryLandsOneDedupeRecordAndThreeEvidenceRows` |
 | T24 | A late KYC callback is kept as evidence and decides nothing | EXISTS | `app/src/test/java/com/finapp/app/kyc/ProviderCallbackDatabaseTest.java#aLateCallbackIsEvidenceOnly` |
 | T24 | FX provider evidence is append-only | EXISTS | `fx/src/test/java/com/finapp/fx/FxProviderEvidenceDatabaseTest.java#evidenceIsAppendOnly` |
@@ -2222,10 +2228,15 @@ contention measurement and awaits the owner.**
     the data tier's availability and ten instances at load as Phase 16 tasks.
 
     *(Dated note, 2026-11-12: **this part is closed.** The Phase 15 → 16 transition wrote the three drills as Phase 16 tasks:
-    the database failover drill, with item 42 (h)'s socket timeout; the data tier's availability, `P16-TSK-023`; ten instances at
-    load, `P16-TSK-014`. The readiness cells this part held named the drill's task and `P16-TSK-023` as their owners in place of this
-    item (`PRODUCTION_READINESS.md` §3.1 Failure handling and Runbooks, §3.3 Failure handling, Runbooks and Multi-instance, §4.2
-    Runbooks), each with its own dated note. Until this note, those cells read "a Phase 16 drill no backlog entry holds".)*
+    the database failover drill, with item 42 (h)'s socket timeout; the data tier's availability; ten instances at
+    load, `P16-TSK-014`. The readiness cells this part held named the drill's task and the data tier's availability task as their owners
+    in place of this item (`PRODUCTION_READINESS.md` §3.1 Failure handling and Runbooks, §3.3 Failure handling, Runbooks and
+    Multi-instance, §4.2 Runbooks), each with its own dated note. Until this note, those cells read "a Phase 16 drill no backlog entry
+    holds".)*
+    *(2026-11-13: the data tier's availability is built - the single points of failure registered and the financial-operation matrix
+    written in `docs/architecture/AVAILABILITY.md`, held by its guard and walked by the database's, the brokers', the telemetry back
+    ends' and the payout rail's experiments (ADR-0144) - and its runs are owed under `POSTPONED_ISSUES.md` PI-025; what it put to the
+    owner is item 66. Until this note the paragraph above named that task by its id.)*
     *(2026-11-13: the failover drill is built - E05 and E06 on the test-only synchronous pair, the socket timeout set (item 42 (h)'s
     dated note) - and its runs are owed under `POSTPONED_ISSUES.md` PI-025, which the drill's readiness cells now name in place of its
     finished task; until then this note named that task by its id.)*
@@ -2532,6 +2543,35 @@ contention measurement and awaits the owner.**
     callers rehearsed. Until decided: §4's T23 `GAP` row naming this item, and E19's Result cell.
 
     *Awaiting the owner* (2026-11-13).
+
+66. **T14's residual: availability under a correctness signal, and the rails no experiment can take away** *(added 2026-11-13 by
+    Phase 16's data tier availability task, `docs/architecture/AVAILABILITY.md`, ADR-0144)*. Two questions the financial-operation
+    matrix leaves to the owner.
+
+    **(a) Should any flow refuse money movement by itself when a correctness signal pages?** `PHASE_16_PLAN.md` §10.3 left it open.
+    Today none does: a non-zero trial balance, a projection drifting from the journal or the GL apart from the ledger pages a person,
+    and freezing money movement is the incident lead's recorded decision (`OPERATIONS_RUNBOOK.md` §11.20, §11.12); the matrix's row A19
+    says so. The options:
+    - **(i)** keep the freeze a person's act. A posting cannot unbalance the books (every entry balances at its write, held by the
+      database), so the page means a fault outside the write path that a person must find and an automatic freeze would not; the signals
+      are gauges, so their own failure (`CorrectnessUnverifiable`) would close every door; and stopping every customer's access to their
+      money needs a person's judgement. The one automatic refusal that exists keeps its shape: a restored database refuses the platform's
+      logins until its verification passes and a person releases it;
+    - **(ii)** a narrow automatic hold once the signals' false-alarm rates are measured: a page scoped to one product or currency
+      suspends only the commands that would post there, written as the same audited fact a person writes and confirmed by an operator
+      within a bound - the stance owner decision C12 took for a rail's availability;
+    - **(iii)** refuse all money movement on any correctness page.
+    *Recommendation*: **(i)** now; **(ii)** to be weighed when PI-025's runs have measured how often the signals fire without a fault.
+
+    **(b) The rails no simulator on `kind` serves.** The matrix's row A13 - the instant scheme, the corridors, the KYC provider, a credit
+    bureau, a settlement report source - is designed-only: the simulator serves none of them (E19 cannot be driven, item 60; E20 rests
+    on the recorded fail-safe). Their adapters' contracts are unit-tested, and none is taken away under load. The options: **(i)** accept
+    the row as designed-only at the phase's exit (owner decision C4), the adapters' contracts and `TIMEOUTS_AND_RETRIES.md` §2.1 its
+    evidence; **(ii)** grow the simulator to serve the instant scheme and one corridor, with degradation flags, and an experiment each
+    beside E73. *Recommendation*: **(i)** for this phase, since no workload drives those flows on `kind` either; **(ii)** with the first
+    real environment's provider integrations.
+
+    Until decided: §4's T14 `GAP` row naming this item. *Awaiting the owner* (2026-11-13).
 
 ## 7. Decided against
 

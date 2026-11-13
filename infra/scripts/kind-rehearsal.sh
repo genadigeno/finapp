@@ -48,7 +48,9 @@
 # failure experiments of kind-rehearsal/experiments.sh (REHEARSAL_EXPERIMENTS, E01 by default), each steady state, fault, observation,
 # stop, recovery and census, behind the safety boundary's refusals and their plants. Its probes are guard-off, crash-with-faults and
 # term-with-faults, min-isr-one with E08, and E05's async-standby (P16-TSK-022: an asynchronous standby promoted after a planted lag,
-# which the journal's checksum must show). It refuses a cluster of its name it did not make and mark, before it changes anything in it.
+# which the journal's checksum must show), and E06's matrix-mismatch (P16-TSK-023: the run's own copy of the availability matrix claims
+# transfers available while the database is away, which E06's walk must refuse). It refuses a cluster of its name it did not make and
+# mark, before it changes anything in it.
 # P16-TSK-021 added the network, DNS, connection and disk faults (E07, E11-E16, E24; OPERATIONS_RUNBOOK.md section 11.47): E24 must be
 # named when the run makes its data tier, which then puts the primary on a size-limited filesystem of its own, and E11 needs
 # REHEARSAL_E11_STORE naming a store. It runs three brokers (P16-TSK-013, kind-rehearsal/brokers.sh), each behind a proxy of its own,
