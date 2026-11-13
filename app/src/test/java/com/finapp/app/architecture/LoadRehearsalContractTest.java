@@ -341,7 +341,8 @@ class LoadRehearsalContractTest {
                     .isIn(EvidenceCitations.LIVE_STATUSES);
             // Each rests on a credit approval, and on kind no bureau can be configured, so none can be given (INV-CRD-09, INV-CRD-10).
             assertThat(reason).as("%s: the reason is the bureau no kind deployment can configure", operation.getKey())
-                    .contains("bureau").contains("unresolved question").contains("INV-CRD-10");
+                    .containsPattern("no kind deployment can configure a bureau|the bureau and financial data, neither configurable on kind")
+                    .contains("unresolved question").contains("INV-CRD-10");
         }
         assertThat(undriven).as("what this harness leaves undriven, and nothing else").containsExactly("bnpl", "credit", "lending");
     }
