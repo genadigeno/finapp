@@ -595,6 +595,7 @@ load_run() {
         if [ -s "$WORK/load-sample-failed" ]; then
             touch "$WORK/load-stop" "$WORK/load-feed-stop" "$CLIENT/stop-callbacks-load"
             load_generators stop
+            load_stopped
             fail "a sample failed during the load, which stopped it: $(cat "$WORK/load-sample-failed" | tr '\n' ' ' | cut -c1-600)see load/samples.tsv"
         fi
         elapsed=$(( $(date +%s) - LOAD_STARTED ))
@@ -615,18 +616,7 @@ load_run() {
     load_generators logs
     # The last captures fed, then the sender drained: everything fed before its stop is delivered and answered.
     sleep 15
-    touch "$WORK/load-feed-stop"
-    wait "$LOAD_FEEDER" 2>/dev/null || true
-    touch "$CLIENT/stop-callbacks-load"
-    : > "$LOAD_ART/callbacks.log"
-    s=0
-    while [ "$s" -lt "$LOAD_GENERATORS" ]; do
-        dock wait "$CLUSTER-load-callbacks-$s" >/dev/null 2>&1 || true
-        dock logs "$CLUSTER-load-callbacks-$s" >> "$LOAD_ART/callbacks.log" 2>&1 || true
-        cp "$CLIENT/callbacks-load-$s.tsv" "$CLIENT/callbacks-load-$s.summary" "$LOAD_ART/" 2>/dev/null || true
-        s=$((s + 1))
-    done
-    cp "$CLIENT/callbacks-feed-load.txt" "$LOAD_ART/" 2>/dev/null || true
+    load_keep_senders
     # One sample after the load's end, so the samples cover all of it; then the samplers stop.
     if [ "$PROBE" != sampler-disabled ]; then
         deadline=$((LOAD_ENDED + 60))
@@ -700,26 +690,65 @@ load_report() {
     head -1 "$LOAD_ART/k6/0/generator.tsv" > "$LOAD_ART/k6/generator.tsv"
     awk -F'\t' 'FNR == 2 {d += $1; if ($2 + 0 > p) p = $2 + 0; m += $3; r += $4; if ($5 + 0 > t) t = $5 + 0} END {print d + 0 "\t" p + 0 "\t" m + 0 "\t" r + 0 "\t" t + 0}' \
         "$LOAD_ART"/k6/*/generator.tsv >> "$LOAD_ART/k6/generator.tsv"
-    # Per operation and stage (P16-TSK-007, load/stages.awk): a profile without stages is one stage, its duration. The load's start is
-    # the earliest sample any instance wrote.
+    load_stage_tables || cannot "the per-stage report could not be written from the series"
+}
+
+# load_stage_tables: per operation and stage (P16-TSK-007, load/stages.awk), from every instance's series; a profile without stages is one
+# stage, its duration. The load's start is the earliest sample any instance wrote. Returns non-zero, never stops the run: a run stopped by
+# a sample writes its tables too, before it fails.
+load_stage_tables() {
     if [ -s "$LOAD_ART/stages.txt" ]; then
         cp "$LOAD_ART/stages.txt" "$WORK/stages.txt"
     else
         printf '%s 1 -\n' "$(load_seconds "$LOAD_DURATION")" > "$WORK/stages.txt"
     fi
     LOAD_T0=$(for series in "$LOAD_ART"/k6/*/k6-series.csv.gz; do gzip -dc "$series"; done | awk -F, 'NR > 1 && $2 ~ /^[0-9]+$/ && (m == "" || $2 < m) {m = $2} END {print m}')
+    [ -n "$LOAD_T0" ] || return 1
     # How many of k6's seconds passed in one of the host's over the load (load_clock's samples): 1 where the clocks agree.
     LOAD_SPEED=$(awk -F'\t' '$1 == "start" {h0 = $2; m0 = $3} $1 == "end" {h1 = $2; m1 = $3}
         END {if (h1 > h0 && m1 > m0) printf "%.4f", (m1 - m0) / (h1 - h0); else print 1}' "$LOAD_ART/clock.tsv" 2>/dev/null || echo 1)
     printf 't0\t%s\nk6 seconds a host second\t%s\n' "$LOAD_T0" "$LOAD_SPEED" > "$LOAD_ART/k6/t0.txt"
     for series in "$LOAD_ART"/k6/*/k6-series.csv.gz; do gzip -dc "$series"; done \
         | awk -v pass=count -v stages="$WORK/stages.txt" -v t0="$LOAD_T0" -v speed="$LOAD_SPEED" -v out="$WORK/latencies.tsv" \
-            -f "$LOAD_SRC/stages.awk" > "$WORK/stage-counts.tsv" || cannot "the per-stage counts could not be read from the series"
+            -f "$LOAD_SRC/stages.awk" > "$WORK/stage-counts.tsv" || return 1
     sort -t"$(printf '\t')" -k1,1 -k2,2 -k3,3g "$WORK/latencies.tsv" \
         | awk -v pass=report -v stages="$WORK/stages.txt" -v speed="$LOAD_SPEED" -v counts="$WORK/stage-counts.tsv" \
-            -v ops="$(load_operations k6 | tr '\n' ' ')" -f "$LOAD_SRC/stages.awk" > "$LOAD_ART/k6/stages.tsv" \
-            || cannot "the per-stage report could not be written"
+            -v ops="$(load_operations k6 | tr '\n' ' ')" -f "$LOAD_SRC/stages.awk" > "$LOAD_ART/k6/stages.tsv" || return 1
     rm -f "$WORK/latencies.tsv"
+}
+
+# load_keep_senders: the callback senders stopped and drained, and their records kept.
+load_keep_senders() {
+    touch "$WORK/load-feed-stop"
+    [ -z "${LOAD_FEEDER:-}" ] || wait "$LOAD_FEEDER" 2>/dev/null || true
+    touch "$CLIENT/stop-callbacks-load"
+    : > "$LOAD_ART/callbacks.log"
+    s=0
+    while [ "$s" -lt "$LOAD_GENERATORS" ]; do
+        dock wait "$CLUSTER-load-callbacks-$s" >/dev/null 2>&1 || true
+        dock logs "$CLUSTER-load-callbacks-$s" >> "$LOAD_ART/callbacks.log" 2>&1 || true
+        cp "$CLIENT/callbacks-load-$s.tsv" "$CLIENT/callbacks-load-$s.summary" "$LOAD_ART/" 2>/dev/null || true
+        s=$((s + 1))
+    done
+    cp "$CLIENT/callbacks-feed-load.txt" "$LOAD_ART/" 2>/dev/null || true
+}
+
+# load_stopped: what a run a sample stopped had measured until then (P16-TSK-007) - the senders' records, the generators' logs, the
+# per-stage tables, the saturation signals and the counts - kept before it fails, so a run that ends at its first limit still says where.
+# Nothing here judges, and nothing here can turn the run's red into anything else.
+load_stopped() {
+    LOAD_ENDED=$(date +%s)
+    load_clock end
+    [ "$PROBE" != slow-statement ] || load_restore_slow_statement
+    load_generators logs
+    load_keep_senders
+    touch "$WORK/load-stop"
+    {
+        load_stage_tables || echo "the per-stage tables could not be written"
+        load_saturation || echo "saturation signals absent from Prometheus:$LOAD_MISSING"
+        load_resources || echo "the per-stage resources could not be written"
+    } >> "$LOAD_ART/stopped.log" 2>&1
+    log "the load ran $((LOAD_ENDED - LOAD_STARTED)) s before a sample stopped it; what it measured is in load/k6/stages.tsv and load/stages-resources.tsv"
 }
 
 # load_clock <label>: the host's clock, the node's monotonic clock and the node's own wall clock, side by side (P16-TSK-007). k6 schedules
@@ -906,10 +935,67 @@ load_resources() {
         awk -F'\t' 'NF >= 3 {print "g db_lock_waits " $2 " " $3}' "$LOAD_ART/pg-locks.tsv" 2>/dev/null
     } > "$WORK/signals.txt"
     awk -v stages="$WORK/stages.txt" -v t0="$LOAD_T0" -v speed="$LOAD_SPEED" -f "$LOAD_SRC/resources.awk" "$WORK/signals.txt" \
-        > "$LOAD_ART/stages-resources.tsv" || cannot "the per-stage resources could not be written"
+        > "$LOAD_ART/stages-resources.tsv" || return 1
+    # A table with no replica CPU or no database time is no reading of the platform's side: the caller fails the run on it.
     [ "$(grep -c . "$LOAD_ART/stages-resources.tsv")" -ge 2 ] && grep -q 'cpu_app_cores_per_s' "$LOAD_ART/stages-resources.tsv" \
-        && grep -q 'db_statement_seconds_per_s' "$LOAD_ART/stages-resources.tsv" \
-        || fail "the per-stage resources hold no replica CPU or no database time: see load/stages-resources.tsv and load/pods.tsv"
+        && grep -q 'db_statement_seconds_per_s' "$LOAD_ART/stages-resources.tsv"
+}
+
+# load_saturation: the saturation signals as Prometheus holds them over the run, what the run wrote counted by minute, and the statements
+# with their text, into the artefacts. LOAD_MISSING names the signals Prometheus held no series for; it returns non-zero then.
+load_saturation() {
+    mkdir -p "$LOAD_ART/prometheus"
+    to=$(date +%s)
+    for signal in \
+        "cpu|process_cpu_usage{job=\"finapp\"}" \
+        "system_cpu|system_cpu_usage{job=\"finapp\"}" \
+        "heap|sum by (instance) (jvm_memory_used_bytes{job=\"finapp\",area=\"heap\"})" \
+        "gc|sum by (instance) (rate(jvm_gc_pause_seconds_sum{job=\"finapp\"}[1m]))" \
+        "threads|jvm_threads_live_threads{job=\"finapp\"}" \
+        "tomcat_busy|tomcat_threads_busy_threads{job=\"finapp\"}" \
+        "hikari_active|hikaricp_connections_active{job=\"finapp\"}" \
+        "hikari_pending|hikaricp_connections_pending{job=\"finapp\"}" \
+        "hikari_acquire_max|hikaricp_connections_acquire_seconds_max{job=\"finapp\"}" \
+        "outbox_age|max(finapp_outbox_oldest_publishable_seconds)" \
+        "inbox_lag|max(finapp_inbox_lag)" \
+        "requests|sum by (instance) (rate(http_server_requests_seconds_count{job=\"finapp\"}[1m]))" \
+        "fleet_heap_bytes|sum(jvm_memory_used_bytes{job=\"finapp\",area=\"heap\"})" \
+        "fleet_gc_seconds_per_s|sum(rate(jvm_gc_pause_seconds_sum{job=\"finapp\"}[1m]))" \
+        "fleet_gc_pauses_per_s|sum(rate(jvm_gc_pause_seconds_count{job=\"finapp\"}[1m]))" \
+        "fleet_threads|sum(jvm_threads_live_threads{job=\"finapp\"})" \
+        "fleet_busy_request_threads|sum(tomcat_threads_busy_threads{job=\"finapp\"})" \
+        "fleet_pool_active|sum(hikaricp_connections_active{job=\"finapp\"})" \
+        "fleet_pool_pending|sum(hikaricp_connections_pending{job=\"finapp\"})" \
+        "fleet_pool_held_connections|sum(rate(hikaricp_connections_usage_seconds_sum{job=\"finapp\"}[1m]))" \
+        "fleet_pool_wait_seconds|sum(rate(hikaricp_connections_acquire_seconds_sum{job=\"finapp\"}[1m])) / sum(rate(hikaricp_connections_acquire_seconds_count{job=\"finapp\"}[1m]))" \
+        "fleet_pool_wait_max_seconds|max(hikaricp_connections_acquire_seconds_max{job=\"finapp\"})" \
+        "fleet_requests_per_s|sum(rate(http_server_requests_seconds_count{job=\"finapp\"}[1m]))" \
+        "outbox_oldest_seconds|max(finapp_outbox_oldest_publishable_seconds)" \
+        "inbox_lag_records|max(finapp_inbox_lag)"; do
+        # The name before the first bar, the query after it (no query holds a bar).
+        telemetry_get "$LOAD_PROM" "/api/v1/query_range?query=$(urlencode "${signal#*|}")&start=$LOAD_STARTED&end=$to&step=10" \
+            > "$LOAD_ART/prometheus/${signal%%|*}.json" 2>&1 || true
+    done
+    # What the run wrote, counted by minute (P16-TSK-007): the events and when they were published, the journal's entries and lines, the
+    # events by type and the records each consumer took. Counts and times only, by the test-only server's superuser.
+    psql_query -F "$(printf '\t')" -c "SELECT extract(epoch FROM date_trunc('minute', occurred_at))::bigint, count(*),
+        count(*) FILTER (WHERE published_at IS NOT NULL), round(avg(extract(epoch FROM (coalesce(first_published_at, published_at) - occurred_at)))::numeric, 3),
+        round(max(extract(epoch FROM (coalesce(first_published_at, published_at) - occurred_at)))::numeric, 3)
+        FROM platform.outbox_event GROUP BY 1 ORDER BY 1" > "$LOAD_ART/written-events-per-minute.tsv" 2>&1 || true
+    psql_query -F "$(printf '\t')" -c "SELECT extract(epoch FROM date_trunc('minute', e.created_at))::bigint, count(DISTINCT e.id), count(*)
+        FROM ledger.journal_entry e JOIN ledger.journal_line l ON l.entry_id = e.id GROUP BY 1 ORDER BY 1" > "$LOAD_ART/written-entries-per-minute.tsv" 2>&1 || true
+    psql_query -F "$(printf '\t')" -c "SELECT event_type, count(*) FROM platform.outbox_event GROUP BY 1 ORDER BY 2 DESC" \
+        > "$LOAD_ART/written-events-by-type.tsv" 2>&1 || true
+    psql_query -F "$(printf '\t')" -c "SELECT consumer, count(*) FROM platform.inbox_message GROUP BY 1 ORDER BY 2 DESC" \
+        > "$LOAD_ART/consumed-by-consumer.tsv" 2>&1 || true
+    pg_admin -c "SELECT s.queryid, s.calls, round(s.total_exec_time::numeric, 1), round(s.mean_exec_time::numeric, 3), s.rows,
+        left(regexp_replace(s.query, '\s+', ' ', 'g'), 300) FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid
+        WHERE d.datname = 'finapp' ORDER BY s.total_exec_time DESC LIMIT 50" > "$LOAD_ART/pg-statements-final.txt" 2>&1 || true
+    LOAD_MISSING=""
+    for signal in cpu heap threads hikari_active outbox_age inbox_lag requests fleet_heap_bytes fleet_pool_held_connections; do
+        grep -q '"values":\[\[' "$LOAD_ART/prometheus/$signal.json" || LOAD_MISSING="$LOAD_MISSING $signal"
+    done
+    [ -z "$LOAD_MISSING" ]
 }
 
 load_census() {
@@ -926,65 +1012,9 @@ load_census() {
     load_sample final
     [ ! -s "$WORK/load-sample-failed" ] || fail "the sample after the load failed: $(cat "$WORK/load-sample-failed")"
     pass "the sample after the load and its census passed"
-    # The saturation signals, as Prometheus holds them over the run, and the statements with their text.
-    mkdir -p "$LOAD_ART/prometheus"
-    to=$(date +%s)
-    for signal in \
-        "cpu|process_cpu_usage{job=\"finapp\"}" \
-        "system_cpu|system_cpu_usage{job=\"finapp\"}" \
-        "heap|sum by (instance) (jvm_memory_used_bytes{job=\"finapp\",area=\"heap\"})" \
-        "gc|sum by (instance) (rate(jvm_gc_pause_seconds_sum{job=\"finapp\"}[1m]))" \
-        "threads|jvm_threads_live_threads{job=\"finapp\"}" \
-        "tomcat_busy|tomcat_threads_busy_threads{job=\"finapp\"}" \
-        "hikari_active|hikaricp_connections_active{job=\"finapp\"}" \
-        "hikari_pending|hikaricp_connections_pending{job=\"finapp\"}" \
-        "hikari_acquire_max|hikaricp_connections_acquire_seconds_max{job=\"finapp\"}" \
-        "outbox_age|max(finapp_outbox_oldest_publishable_seconds)" \
-        "inbox_lag|max(finapp_inbox_lag)" \
-        "requests|sum by (instance) (rate(http_server_requests_seconds_count{job=\"finapp\"}[1m]))"; do
-        telemetry_get "$LOAD_PROM" "/api/v1/query_range?query=$(urlencode "${signal#*|}")&start=$LOAD_STARTED&end=$to&step=10" \
-            > "$LOAD_ART/prometheus/${signal%%|*}.json" 2>&1 || true
-    done
-    # The fleet's sums (P16-TSK-007), one series each, for the per-stage table: what the replicas hold together.
-    for signal in \
-        "fleet_heap_bytes|g|sum(jvm_memory_used_bytes{job=\"finapp\",area=\"heap\"})" \
-        "fleet_gc_seconds_per_s|g|sum(rate(jvm_gc_pause_seconds_sum{job=\"finapp\"}[1m]))" \
-        "fleet_gc_pauses_per_s|g|sum(rate(jvm_gc_pause_seconds_count{job=\"finapp\"}[1m]))" \
-        "fleet_threads|g|sum(jvm_threads_live_threads{job=\"finapp\"})" \
-        "fleet_busy_request_threads|g|sum(tomcat_threads_busy_threads{job=\"finapp\"})" \
-        "fleet_pool_active|g|sum(hikaricp_connections_active{job=\"finapp\"})" \
-        "fleet_pool_pending|g|sum(hikaricp_connections_pending{job=\"finapp\"})" \
-        "fleet_pool_held_connections|g|sum(rate(hikaricp_connections_usage_seconds_sum{job=\"finapp\"}[1m]))" \
-        "fleet_pool_wait_seconds|g|sum(rate(hikaricp_connections_acquire_seconds_sum{job=\"finapp\"}[1m])) / sum(rate(hikaricp_connections_acquire_seconds_count{job=\"finapp\"}[1m]))" \
-        "fleet_pool_wait_max_seconds|g|max(hikaricp_connections_acquire_seconds_max{job=\"finapp\"})" \
-        "fleet_requests_per_s|g|sum(rate(http_server_requests_seconds_count{job=\"finapp\"}[1m]))" \
-        "outbox_oldest_seconds|g|max(finapp_outbox_oldest_publishable_seconds)" \
-        "inbox_lag_records|g|max(finapp_inbox_lag)"; do
-        name=${signal%%|*}
-        telemetry_get "$LOAD_PROM" "/api/v1/query_range?query=$(urlencode "${signal##*|}")&start=$LOAD_STARTED&end=$to&step=10" \
-            > "$LOAD_ART/prometheus/$name.json" 2>&1 || true
-    done
-    missing=""
-    for signal in cpu heap threads hikari_active outbox_age inbox_lag requests fleet_heap_bytes fleet_pool_held_connections; do
-        grep -q '"values":\[\[' "$LOAD_ART/prometheus/$signal.json" || missing="$missing $signal"
-    done
-    [ -z "$missing" ] || fail "saturation signals absent from Prometheus over the run:$missing: see load/prometheus"
-    load_resources
-    # What the run wrote, counted by minute (P16-TSK-007): the events and when they were published, the journal's entries and lines, the
-    # events by type and the records each consumer took. Counts and times only, by the test-only server's superuser.
-    psql_query -F "$(printf '\t')" -c "SELECT extract(epoch FROM date_trunc('minute', occurred_at))::bigint, count(*),
-        count(*) FILTER (WHERE published_at IS NOT NULL), round(avg(extract(epoch FROM (coalesce(first_published_at, published_at) - occurred_at)))::numeric, 3),
-        round(max(extract(epoch FROM (coalesce(first_published_at, published_at) - occurred_at)))::numeric, 3)
-        FROM platform.outbox_event GROUP BY 1 ORDER BY 1" > "$LOAD_ART/written-events-per-minute.tsv" 2>&1 || true
-    psql_query -F "$(printf '\t')" -c "SELECT extract(epoch FROM date_trunc('minute', e.created_at))::bigint, count(DISTINCT e.id), count(*)
-        FROM ledger.journal_entry e JOIN ledger.journal_line l ON l.entry_id = e.id GROUP BY 1 ORDER BY 1" > "$LOAD_ART/written-entries-per-minute.tsv" 2>&1 || true
-    psql_query -F "$(printf '\t')" -c "SELECT event_type, count(*) FROM platform.outbox_event GROUP BY 1 ORDER BY 2 DESC" \
-        > "$LOAD_ART/written-events-by-type.tsv" 2>&1 || true
-    psql_query -F "$(printf '\t')" -c "SELECT consumer, count(*) FROM platform.inbox_message GROUP BY 1 ORDER BY 2 DESC" \
-        > "$LOAD_ART/consumed-by-consumer.tsv" 2>&1 || true
-    pg_admin -c "SELECT s.queryid, s.calls, round(s.total_exec_time::numeric, 1), round(s.mean_exec_time::numeric, 3), s.rows,
-        left(regexp_replace(s.query, '\s+', ' ', 'g'), 300) FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid
-        WHERE d.datname = 'finapp' ORDER BY s.total_exec_time DESC LIMIT 50" > "$LOAD_ART/pg-statements-final.txt" 2>&1 || true
+    # The saturation signals, what the run wrote and the statements (load_saturation), and the per-stage table of the platform's side.
+    load_saturation || fail "saturation signals absent from Prometheus over the run:$LOAD_MISSING: see load/prometheus"
+    load_resources || fail "the per-stage resources hold no replica CPU or no database time: see load/stages-resources.tsv and load/pods.tsv"
     stats=$(cat "$LOAD_ART"/pg-database.tsv 2>/dev/null | grep -c . || true)
     [ "$stats" -ge $(( $(load_total_seconds) / 12 )) ] || fail "PostgreSQL's statistics were read $stats times over the load, not every 10 s: see load/statistics-errors.log"
     pass "the saturation signals are in the artefacts: Prometheus over the run, PostgreSQL's statistics $stats times, the containers' CPU and memory"

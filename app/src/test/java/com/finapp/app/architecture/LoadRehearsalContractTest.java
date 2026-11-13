@@ -231,7 +231,7 @@ class LoadRehearsalContractTest {
                 .contains("statistics.sql").contains("statements.sql").contains("dock stats --no-stream").contains("started + 10");
         assertThat(function("load_census")).as("a statistics read at least every 12 s of the load, or the run fails")
                 .contains("/ 12 )) ] || fail \"PostgreSQL's statistics were read");
-        assertThat(function("load_census")).as("the saturation signals exported, and absent ones refused")
+        assertThat(function("load_saturation") + function("load_census")).as("the saturation signals exported, and absent ones refused")
                 .contains("/api/v1/query_range").contains("fail \"saturation signals absent from Prometheus");
         assertThat(read("deploy/overlays/kind/postgres.yaml")).contains("shared_preload_libraries=pg_stat_statements");
         assertThat(function("load_setup")).as("the extension in the maintenance database alone")
@@ -442,7 +442,7 @@ class LoadRehearsalContractTest {
     @Test
     @DisplayName("every run cuts its measures by stage, in the host's seconds: the client's per operation, the platform's per signal, the pods' cgroups and the database's time")
     void everyRunCutsItsMeasuresByStage() {
-        String report = function("load_report");
+        String report = function("load_stage_tables");
         assertThat(report).as("the client's side per operation and stage, from the series, on the clock the samples carry")
                 .contains("-f \"$LOAD_SRC/stages.awk\" > \"$WORK/stage-counts.tsv\"").contains("> \"$LOAD_ART/k6/stages.tsv\"")
                 .contains("-v speed=\"$LOAD_SPEED\"").contains("\"$LOAD_ART/clock.tsv\"");
@@ -455,7 +455,14 @@ class LoadRehearsalContractTest {
         String resources = function("load_resources");
         assertThat(resources).as("the platform's side per stage, failing when it holds no replica CPU or no database time")
                 .contains("-f \"$LOAD_SRC/resources.awk\"").contains("cpu_app_cores_per_s").contains("db_statement_seconds_per_s")
-                .contains("fail \"the per-stage resources hold no replica CPU or no database time");
+                .contains("grep -q 'db_statement_seconds_per_s'");
+        assertThat(function("load_census")).contains("load_resources || fail \"the per-stage resources hold no replica CPU or no database time");
+        String run = function("load_run");
+        assertThat(run).as("a run a sample stops keeps what it measured, then fails")
+                .contains("load_generators stop\n            load_stopped\n            fail \"a sample failed during the load, which stopped it");
+        assertThat(function("load_stopped")).as("keeping what a stopped run measured judges nothing: it cannot turn the run's red into anything")
+                .contains("load_stage_tables").contains("load_saturation").contains("load_resources").contains("load_keep_senders")
+                .doesNotContain("pass \"").doesNotContain("fail \"").doesNotContain("FAILED=");
         assertThat(read("infra/scripts/kind-rehearsal/load/resources.awk")).contains("secs[n] = f[1] / speed");
         assertThat(read("infra/scripts/kind-rehearsal/load/stages.awk")).contains("upto[n] = upto[n - 1] + f[1] / speed");
     }

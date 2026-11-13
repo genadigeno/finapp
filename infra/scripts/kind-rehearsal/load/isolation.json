@@ -1,8 +1,8 @@
 {
   "name": "isolation",
-  "workload": "each operation of the target's mix alone at the target's peak for 4 minutes, after 4 minutes with none, so each one's CPU, GC, threads, pool and database time are read with nothing else driven (CAPACITY_MODEL.md section 3.4's resource columns)",
+  "workload": "each operation of the target's mix alone at the target's peak for 4 minutes, after 4 minutes with none, so each one's CPU, GC, threads, pool and database time are read with nothing else driven (CAPACITY_MODEL.md section 3.4's resource columns); the merchant API first, while the merchant's payable account is short, since its read folds the account's whole history",
   "duration": "28m",
-  "stages": [[240, 0.0], [240, 1.0, "transfer"], [240, 1.0, "checkout"], [240, 1.0, "topup"], [240, 1.0, "read"], [240, 1.0, "signin"], [240, 1.0, "merchant"]],
+  "stages": [[240, 0.0], [240, 1.0, "merchant"], [240, 1.0, "read"], [240, 1.0, "signin"], [240, 1.0, "transfer"], [240, 1.0, "topup"], [240, 1.0, "checkout"]],
   "retryShare": 0.05,
   "transferAmount": "0.01",
   "topUpAmount": "5.00",
